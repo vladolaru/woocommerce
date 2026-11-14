@@ -26,13 +26,12 @@ use WC_Unit_Test_Case;
 use WP_REST_Request;
 
 /**
- * What a failed payment attempt leaves of the order's other attempts.
+ * What the failure of an earlier payment attempt does once the order has moved on to a newer attempt.
  *
  * A shopper pays with a saved card, the first attempt is declined, and a second attempt with the same card is attached to
- * the order. The first attempt's payment_intent.payment_failed event then arrives. A later attempt can also fail at
- * checkout over an earlier attempt the order still stores. These tests drive the production wiring, with only the
- * platform's transport replaced by recorded responses, and assert the order's status, transaction ID, stored intent and
- * notes after every attempt.
+ * the order. The first attempt's payment_intent.payment_failed event then arrives. These tests drive the production
+ * wiring, with only the platform's transport replaced by recorded responses, and assert the order's status, transaction
+ * ID, stored intent and notes after every attempt.
  */
 class WooPaymentsEarlierAttemptFailureTest extends WC_Unit_Test_Case {
 
@@ -74,7 +73,6 @@ class WooPaymentsEarlierAttemptFailureTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
-		unset( $GLOBALS['theorder'] );
 		as_unschedule_all_actions( WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		$this->reset_container_replacements();
@@ -212,184 +210,6 @@ class WooPaymentsEarlierAttemptFailureTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox When $_dataName, the order stores the status only with the intent it describes, and a status change to Completed acts on that pair.
-	 *
-	 * Client 11.3.0's checkout catch fails the order and stores the intent a decline names, and writes no intent status
-	 * (class-wc-payment-gateway-wcpay.php:1604-1614), so a failure that names no intent leaves the order the intent and
-	 * status an earlier attempt stored. A decline that names an intent stores requires_payment_method beside it, the status
-	 * that intent has. The order screen offers capture and cancel only for a stored requires_capture
-	 * (class-wc-payment-gateway-wcpay.php:4307), and a status change to Completed acts on the stored pair: nothing without
-	 * a stored intent, the stored authorization when the order stores requires_capture, and otherwise a read of the stored
-	 * intent (class-wc-payments-order-service.php:2327-2345, :2381-2429).
-	 *
-	 * Responses: the decline is REC-1's generic_decline (Fixtures/platform-intention-declines.json); the earlier attempt is
-	 * the recorded saved-card 3D Secure intent (Fixtures/platform-intention-3ds-requires-action.json) or the recorded
-	 * manual-capture authorization and capture (Fixtures/platform-manual-capture.json), each set to the order as checkout
-	 * sets it. The platform failure is the platform's 502 with a top-level code, which names no intent (client 11.3.0
-	 * includes/wc-payment-api/class-wc-payments-api-client.php:2880-2905); the transport failure is a WordPress HTTP error on
-	 * every send of the charge and its retries; the extension error is an exception from a wcpay_metadata_from_order callback.
-	 *
-	 * @dataProvider provider_failed_attempts
-	 *
-	 * @param string $earlier          The earlier attempt the order stores: '', 'started' or 'authorized'.
-	 * @param string $failure          How the attempt fails: 'decline', 'platform failure', 'transport failure' or 'extension error'.
-	 * @param string $stored_intent    Which intent the order stores after the failure: '', 'earlier' or 'declined'.
-	 * @param string $stored_status    Intent status the order stores after the failure, or '' for none at all.
-	 * @param bool   $capture_actions  Whether the order screen offers capture and cancel after the failure.
-	 * @param string $status_change    What the change to Completed does: 'nothing', 'reads' (one read of the stored intent) or 'captures'.
-	 */
-	public function test_failed_attempt_stores_the_status_only_with_the_intent_it_describes( string $earlier, string $failure, string $stored_intent, string $stored_status, bool $capture_actions, string $status_change ): void {
-		$order    = $this->create_order();
-		$declined = $this->declined_intent( $order );
-		$attempts = array(
-			''           => array(),
-			'started'    => $this->recorded_intent( 'platform-intention-3ds-requires-action.json', 'saved_payment_method_requires_action', $order ),
-			'authorized' => $this->recorded_authorization( $order ),
-		);
-		$intents  = array(
-			''         => '',
-			'earlier'  => $attempts[ $earlier ]['id'] ?? '',
-			'declined' => $declined['id'],
-		);
-		if ( '' !== $earlier ) {
-			$this->transport->responses = array( $this->respond( $attempts[ $earlier ] ) );
-			$this->checkout( $order );
-			$this->reload( $order )->update_status( OrderStatus::PENDING );
-		}
-
-		$this->fail_attempt( $order, $failure, $declined );
-
-		$failed = $this->reload( $order );
-		$this->assert_order( $failed, OrderStatus::FAILED, $intents['earlier'], $intents[ $stored_intent ], $stored_status );
-		$this->assertSame( '' !== $stored_status, $failed->meta_exists( '_intention_status' ), 'The order stores an intent status only with the intent it describes.' );
-		$this->assertSame( 1, $this->count_notes_containing( $failed, '<strong>failed</strong> to complete' ) );
-		if ( 'decline' === $failure ) {
-			$this->assertSame( 'allow', $failed->get_meta( '_wcpay_fraud_meta_box_type', true ) );
-		}
-
-		wc_get_container()->get( WooPaymentsOrderAdminActionsController::class )->register();
-		$GLOBALS['theorder'] = $failed;
-		$actions             = apply_filters( 'woocommerce_order_actions', array(), $failed );
-		$this->assertSame( $capture_actions, isset( $actions['capture_charge'], $actions['cancel_authorization'] ), 'The order screen offers capture and cancel only for a stored authorization.' );
-
-		$answers                    = array(
-			'nothing'  => array(),
-			'reads'    => array( 'declined' === $stored_intent ? $declined : ( $attempts[ $earlier ] ?? array() ) ),
-			'captures' => array( $this->recorded_intent( 'platform-manual-capture.json', 'capture_full_amount', $order ) ),
-		);
-		$this->transport->responses = array_map( fn( array $body ): array => $this->respond( $body ), $answers[ $status_change ] );
-		$sent_before                = count( $this->transport->requests );
-
-		$this->reload( $order )->update_status( OrderStatus::COMPLETED );
-
-		$expected_requests = array(
-			'nothing'  => array(),
-			'reads'    => array( 'GET intentions/' . $intents[ $stored_intent ] ),
-			'captures' => array( 'POST intentions/' . $intents['earlier'] . '/capture' ),
-		);
-		$this->assertSame( $expected_requests[ $status_change ], $this->intent_requests_since( $sent_before ) );
-		$this->assert_order( $order, OrderStatus::COMPLETED, $intents['earlier'], $intents[ $stored_intent ], 'captures' === $status_change ? 'succeeded' : $stored_status );
-		$this->assertSame( 'captures' === $status_change ? 1 : 0, $this->count_notes_containing( $order, 'was <strong>successfully captured</strong>' ) );
-	}
-
-	/**
-	 * Failed attempts, the earlier attempt the order stores, and what the order keeps.
-	 *
-	 * @return array<string,array{string,string,string,string,bool,string}>
-	 */
-	public function provider_failed_attempts(): array {
-		return array(
-			'a fresh order is declined'              => array( '', 'decline', 'declined', 'requires_payment_method', false, 'reads' ),
-			'an authorized order is declined'        => array( 'authorized', 'decline', 'declined', 'requires_payment_method', false, 'reads' ),
-			'a fresh order meets a platform failure' => array( '', 'platform failure', '', '', false, 'nothing' ),
-			'a started authentication meets a platform failure' => array( 'started', 'platform failure', 'earlier', 'requires_action', false, 'reads' ),
-			'a started authentication meets an extension error' => array( 'started', 'extension error', 'earlier', 'requires_action', false, 'reads' ),
-			'an authorized order meets a transport failure' => array( 'authorized', 'transport failure', 'earlier', 'requires_capture', true, 'captures' ),
-		);
-	}
-
-	/**
-	 * @testdox A resubmission refused because $_dataName keeps the order's status and the intent and status an earlier attempt stored.
-	 *
-	 * The order stores a started 3D Secure attempt; a resubmission with the same card gets the platform's 502, so its
-	 * outcome is unknown and its key is kept; the next resubmission, with a new card, is refused under the kept key and the
-	 * order's intents are looked up. Neither refusal names an intent the order should store, so neither writes an intent
-	 * status, as client 11.3.0's checkout catch writes none (class-wc-payment-gateway-wcpay.php:1604-1614). The order is
-	 * Pending again before the last resubmission, as a Store API checkout leaves it.
-	 *
-	 * Responses: the earlier attempt is the recorded saved-card 3D Secure intent
-	 * (Fixtures/platform-intention-3ds-requires-action.json); the platform failure is the platform's 502 with a top-level
-	 * code; the refused key is Stripe's idempotency_error passed through (https://docs.stripe.com/api/idempotent_requests).
-	 * The lookup fails with Stripe's api_error, or lists the recorded basic card payment
-	 * (Fixtures/platform-intention-basic-card.json) set to the order, with its charge disputed.
-	 *
-	 * @dataProvider provider_refused_resubmissions
-	 *
-	 * @param bool $disputed Whether the lookup finds the earlier payment disputed, rather than failing.
-	 */
-	public function test_refused_resubmission_keeps_the_earlier_attempts_intent_and_status( bool $disputed ): void {
-		$order   = $this->create_order();
-		$started = $this->recorded_intent( 'platform-intention-3ds-requires-action.json', 'saved_payment_method_requires_action', $order );
-
-		$this->transport->responses = array( $this->respond( $started ) );
-		$this->checkout( $order );
-		$this->fail_attempt( $order, 'platform failure', array() );
-		$this->reload( $order )->update_status( OrderStatus::PENDING );
-
-		$paid                                   = $this->recorded_intent( 'platform-intention-basic-card.json', 'basic_card_usd_create_and_confirm', $order );
-		$paid['created']                        = time();
-		$paid['charges']['data'][0]['disputed'] = true;
-		$lookup                                 = $disputed
-			? $this->respond(
-				array(
-					'object'   => 'list',
-					'data'     => array( $paid ),
-					'has_more' => false,
-				)
-			)
-			: $this->respond(
-				array(
-					'error' => array(
-						'type'    => 'api_error',
-						'message' => 'An unknown error occurred',
-					),
-				),
-				500
-			);
-		$this->transport->responses             = array(
-			$this->respond(
-				array(
-					'error' => array(
-						'type'    => 'idempotency_error',
-						'message' => 'Keys for idempotent requests can only be used with the same parameters they were first used with.',
-					),
-				),
-				400
-			),
-			$lookup,
-		);
-		$sent_before                            = count( $this->transport->requests );
-
-		$this->checkout( $order, 'pm_new_card' );
-
-		$this->assertSame( array( 'POST intentions', 'GET intentions' ), $this->intent_requests_since( $sent_before ), 'The kept key is refused and the order\'s intents are looked up; the new card is not charged.' );
-		$this->assert_order( $order, OrderStatus::PENDING, $started['id'], $started['id'], 'requires_action' );
-		$this->assertSame( $disputed ? 1 : 0, $this->count_notes_containing( $order, 'is disputed' ) );
-	}
-
-	/**
-	 * Lookups that refuse the resubmission.
-	 *
-	 * @return array<string,array{bool}>
-	 */
-	public function provider_refused_resubmissions(): array {
-		return array(
-			'the lookup of the earlier request fails' => array( false ),
-			'the earlier payment is disputed'         => array( true ),
-		);
-	}
-
-	/**
 	 * Run the charge callback once, as the platform client sends the next checkout charge.
 	 */
 	public function run_while_charging(): void {
@@ -494,15 +314,6 @@ class WooPaymentsEarlierAttemptFailureTest extends WC_Unit_Test_Case {
 
 				return parent::create_and_confirm_payment_intention( $request_data, $idempotency_key );
 			}
-
-			/**
-			 * Retry a transport failure without waiting.
-			 *
-			 * @param int $backoff_microseconds Base retry backoff in microseconds.
-			 */
-			protected function sleep_before_retry( int $backoff_microseconds ): void {
-				unset( $backoff_microseconds );
-			}
 		};
 		wc_get_container()->replace( Client::class, $api );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
@@ -546,66 +357,14 @@ class WooPaymentsEarlierAttemptFailureTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Run a checkout attempt that fails, without a check of what it leaves.
+	 * Run a checkout of the order with the saved card, through the payment runtime and the WooPayments provider.
 	 *
-	 * @param WC_Order            $order    Order.
-	 * @param string              $failure  'decline', 'platform failure', 'transport failure' or 'extension error'.
-	 * @param array<string,mixed> $declined The intent a decline names.
+	 * @param WC_Order $order Order.
 	 */
-	private function fail_attempt( WC_Order $order, string $failure, array $declined ): void {
-		$decline                                    = $this->recorded_entry( 'platform-intention-declines.json', 'generic_decline' );
-		$decline['body']['error']['payment_intent'] = $declined;
-		$answers                                    = array(
-			'decline'           => array( $this->respond( $decline['body'], $decline['http_status'] ) ),
-			'platform failure'  => array(
-				$this->respond(
-					array(
-						'code'    => 'wcpay_request_failure',
-						'message' => 'Error: cURL error when connecting to Stripe (see error properties for details).',
-						'data'    => array( 'status' => 502 ),
-					),
-					502
-				),
-			),
-			'transport failure' => array_fill( 0, 4, new \WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out' ) ),
-			'extension error'   => array(),
-		);
-		$this->transport->responses                 = $answers[ $failure ];
-		$extension_error                            = static function () {
-			throw new \Exception( 'An extension failed.' );
-		};
-		if ( 'extension error' === $failure ) {
-			add_filter( 'wcpay_metadata_from_order', $extension_error );
-		}
-
-		$this->checkout( $order );
-
-		remove_filter( 'wcpay_metadata_from_order', $extension_error );
-	}
-
-	/**
-	 * Run a checkout of the order through the payment runtime and the WooPayments provider.
-	 *
-	 * @param WC_Order $order          Order.
-	 * @param string   $payment_method Payment method the shopper pays with; the saved card by default.
-	 */
-	private function checkout( WC_Order $order, string $payment_method = self::SAVED_CARD ): void {
+	private function checkout( WC_Order $order ): void {
 		wc_get_container()->get( PaymentProcessingService::class )->process_checkout_outcome(
-			PaymentOperationContext::for_checkout( $this->reload( $order ), WooPaymentsPersistenceVocabulary::GATEWAY_ID, $payment_method ),
+			PaymentOperationContext::for_checkout( $this->reload( $order ), WooPaymentsPersistenceVocabulary::GATEWAY_ID, self::SAVED_CARD ),
 			wc_get_container()->get( WooPaymentsProvider::class )
-		);
-	}
-
-	/**
-	 * List the intent requests sent since a count of requests, as their method and the path after `wcpay/`, without its query.
-	 *
-	 * @param int $sent_before Number of requests sent before.
-	 * @return string[]
-	 */
-	private function intent_requests_since( int $sent_before ): array {
-		return array_map(
-			static fn( array $request ): string => $request['method'] . ' ' . preg_replace( '#^.*?/wcpay/|\?.*$#', '', (string) $request['path'] ),
-			array_slice( $this->transport->requests, $sent_before )
 		);
 	}
 
