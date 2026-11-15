@@ -473,7 +473,6 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, 'hello-dolly/hello.php' ), $seen_during_call, 'A hook during the call reads the stored list.' );
 		$this->assertSame( array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ), get_option( 'active_plugins' ), "After the call this request's filter applies again." );
 		$this->assertSame( array(), $GLOBALS['wp_filter']['pre_option']->callbacks[ PHP_INT_MAX ] ?? array(), 'No callback is left on the generic pre_option filter.' );
-		$this->assertSame( array(), $GLOBALS['wp_filter']['pre_update_option']->callbacks[ PHP_INT_MAX ] ?? array(), 'No callback is left on the generic pre_update_option filter.' );
 	}
 
 	/**
@@ -588,38 +587,10 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox No stored plugin-list read runs inside the deactivation call, also when its hooks read active_plugins.
-	 */
-	public function test_no_stored_read_runs_inside_the_deactivation(): void {
-		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, 'hello-dolly/hello.php' ) );
-		$read_inside = static function (): void {
-			get_option( 'active_plugins' );
-		};
-		add_action( 'deactivate_plugin', $read_inside );
-		add_action( 'update_option_active_plugins', $read_inside );
-		$this->read_failure = new StoredPluginListReadFailure();
-		$read_failure       = $this->read_failure;
-		$reads_during_call  = null;
-		$this->register_legacy_proxy_function_mocks(
-			array(
-				'deactivate_plugins' => static function ( $plugins, $silent = false, $network_wide = null ) use ( $read_failure, &$reads_during_call ): void {
-					$reads_before = $read_failure->reads;
-					deactivate_plugins( $plugins, $silent, $network_wide );
-					$reads_during_call = $read_failure->reads - $reads_before;
-				},
-			)
-		);
-
-		$this->assertTrue( $this->create_sut()->deactivate_woopayments_plugin() );
-		$this->assertSame( 0, $reads_during_call );
-		$this->assertGreaterThan( 0, $read_failure->reads, 'The reads before and after the call are counted.' );
-	}
-
-	/**
-	 * update_option() writes only a value that differs from the old one it reads, and inside the call that read answers
-	 * the list read before it, which holds the extension.
+	 * update_option() writes only a value that differs from the old one it reads. When that read fails, WordPress answers it
+	 * from its own cached list, which still holds the extension.
 	 *
-	 * @testdox When WooPayments is the site list's only entry, the deactivation writes an empty list, even with a stored read set to fail inside the call.
+	 * @testdox When WooPayments is the site list's only entry, the deactivation writes an empty list, even when update_option()'s read of the old list fails.
 	 */
 	public function test_the_sole_site_entry_is_written_as_an_empty_list(): void {
 		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
@@ -627,12 +598,166 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 		$this->fail_a_stored_read_after_the_deactivation_callbacks();
 
 		$this->assertTrue( $sut->deactivate_woopayments_plugin() );
+		$this->assertSame( 0, $this->read_failure->site_failures, 'The failure was spent inside the call.' );
 		$this->assertSame( array(), $this->read_stored_active_plugins() );
 	}
 
 	/**
-	 * update_option() runs its post-write hooks while the deactivation's view is still on. A write guard on the generic
-	 * pre_update_option filter changes the value after the option's own filter, so the view must take it from there.
+	 * A read from the generic update_option action runs after WordPress has prepared the new list and before it writes it.
+	 *
+	 * @testdox A read from the update_option action, before WordPress writes the list, sees the stored list with WooPayments still in it.
+	 */
+	public function test_a_read_before_the_deactivation_write_sees_the_stored_list(): void {
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, 'hello-dolly/hello.php' ) );
+		$seen = null;
+		add_action(
+			'update_option',
+			static function ( $option ) use ( &$seen ): void {
+				if ( 'active_plugins' === $option ) {
+					$seen = get_option( 'active_plugins' );
+				}
+			}
+		);
+
+		$this->assertTrue( $this->create_sut()->deactivate_woopayments_plugin() );
+		$this->assertSame( array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, 'hello-dolly/hello.php' ), $seen );
+		$this->assertSame( array( 'hello-dolly/hello.php' ), array_values( (array) $this->read_stored_active_plugins() ) );
+	}
+
+	/**
+	 * A guard registered during the call at the last priority runs after every callback already there, so a list kept from
+	 * an earlier filter would miss its change; a read of the stored row sees it.
+	 *
+	 * @testdox A write guard added during the deactivation at the last priority is in what later reads see, and a nested plugin change keeps it.
+	 */
+	public function test_a_write_guard_added_during_the_deactivation_is_kept(): void {
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, 'other-plugin/other-plugin.php' ) );
+		// Adds its entry when WooPayments leaves the list, so it acts on the deactivation's write only.
+		$guard = static function ( $value, $option, $old_value ) {
+			if ( 'active_plugins' === $option && is_array( $value ) && in_array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, (array) $old_value, true ) && ! in_array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, $value, true ) ) {
+				$value[] = 'guarded/guarded.php';
+			}
+			return $value;
+		};
+		add_action(
+			'deactivate_plugin',
+			static function () use ( $guard ): void {
+				add_filter( 'pre_update_option', $guard, PHP_INT_MAX, 3 );
+			}
+		);
+		$seen   = null;
+		$result = 'not run';
+		add_action(
+			'updated_option',
+			static function ( $option ) use ( &$seen, &$result ): void {
+				if ( 'active_plugins' === $option && null === $seen ) {
+					$seen   = get_option( 'active_plugins' );
+					$result = activate_plugin( 'hello.php', '', false, true );
+				}
+			}
+		);
+
+		$this->assertTrue( $this->create_sut()->deactivate_woopayments_plugin() );
+		$this->assertSame(
+			array(
+				1 => 'other-plugin/other-plugin.php',
+				2 => 'guarded/guarded.php',
+			),
+			$seen,
+			'The read after the write sees the guarded list as stored.'
+		);
+		$this->assertNull( $result, 'The nested activation succeeded.' );
+		$this->assertSame( array( 'guarded/guarded.php', 'hello.php', 'other-plugin/other-plugin.php' ), $this->read_stored_active_plugins() );
+	}
+
+	/**
+	 * A plugin load manager answers through pre_option_active_plugins or filters option_active_plugins; a read of ours that
+	 * fails must leave the answer to WordPress and those filters, not invent one.
+	 *
+	 * @dataProvider failed_read_provider
+	 * @testdox A stored read that fails inside the deactivation is answered by WordPress as if the switch's filter were not there: $_dataName.
+	 *
+	 * @param string   $read_filter Which read filter this request has, if any.
+	 * @param string[] $expected    What the failed read answers.
+	 */
+	public function test_a_failed_read_inside_the_deactivation_falls_back_to_wordpress( string $read_filter, array $expected ): void {
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, 'hello-dolly/hello.php' ) );
+		if ( 'option' === $read_filter ) {
+			add_filter( 'option_active_plugins', static fn( $plugins ) => array_values( array_diff( (array) $plugins, array( 'hello-dolly/hello.php' ) ) ) );
+		} elseif ( 'pre_option' === $read_filter ) {
+			add_filter( 'pre_option_active_plugins', static fn() => array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
+		}
+		$sut                = $this->create_sut();
+		$this->read_failure = new StoredPluginListReadFailure();
+		$read_failure       = $this->read_failure;
+		$seen               = null;
+		$spent              = null;
+		add_action(
+			'deactivate_plugin',
+			static function () use ( $read_failure, &$seen, &$spent ): void {
+				$read_failure->site_failures = 1;
+				$seen                        = get_option( 'active_plugins' );
+				$spent                       = 0 === $read_failure->site_failures;
+			}
+		);
+
+		$this->assertTrue( $sut->deactivate_woopayments_plugin() );
+		$this->assertTrue( $spent, 'The read inside the call queried the stored row.' );
+		$this->assertSame( $expected, $seen );
+		$this->assertSame( array( 'hello-dolly/hello.php' ), array_values( (array) $this->read_stored_active_plugins() ) );
+	}
+
+	/**
+	 * @return array<string,array{string,string[]}>
+	 */
+	public function failed_read_provider(): array {
+		return array(
+			'no read filter, the stored list'            => array( '', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, 'hello-dolly/hello.php' ) ),
+			'an option_active_plugins filter'            => array( 'option', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) ),
+			'a pre_option_active_plugins filter answers' => array( 'pre_option', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) ),
+		);
+	}
+
+	/**
+	 * Each read queries the options table of the blog current at that moment.
+	 *
+	 * @testdox On a multisite, a plugin activated on another site by a listener inside the deactivation leaves both sites' stored lists exact.
+	 * @group multisite
+	 */
+	public function test_a_nested_activation_on_another_site_keeps_both_lists(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, 'other-plugin/other-plugin.php' ) );
+		$second_blog_id = self::factory()->blog->create();
+		switch_to_blog( $second_blog_id );
+		update_option( 'active_plugins', array( 'site-two/site-two.php' ) );
+		restore_current_blog();
+		$result = 'not run';
+		add_action(
+			'updated_option',
+			static function ( $option ) use ( $second_blog_id, &$result ): void {
+				if ( 'active_plugins' === $option && 'not run' === $result ) {
+					$result = null;
+					switch_to_blog( $second_blog_id );
+					$result = activate_plugin( 'hello.php', '', false, true );
+					restore_current_blog();
+				}
+			}
+		);
+
+		$this->assertTrue( $this->create_sut()->deactivate_woopayments_plugin() );
+		$this->assertNull( $result, 'The nested activation succeeded.' );
+		$this->assertSame( array( 1 => 'other-plugin/other-plugin.php' ), $this->read_stored_active_plugins() );
+		switch_to_blog( $second_blog_id );
+		$second_site_plugins = $this->read_stored_active_plugins();
+		restore_current_blog();
+		$this->assertSame( array( 'hello.php', 'site-two/site-two.php' ), $second_site_plugins );
+	}
+
+	/**
+	 * A write guard on the generic pre_update_option filter changes the value after the option's own filter; a read after
+	 * the write gets the stored row, so it sees that change.
 	 *
 	 * @testdox A read made after WordPress wrote the list, inside the deactivation, sees the list as stored, a late write guard's change included.
 	 */
@@ -1004,7 +1129,7 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Set the next stored site-list read to fail once the deactivation's callbacks have run, just before WordPress writes
-	 * the list. A deactivation that reads nothing inside the call leaves it to the write's own autoload read.
+	 * the list: the read that fails is update_option()'s read of the old list.
 	 */
 	private function fail_a_stored_read_after_the_deactivation_callbacks(): void {
 		$this->read_failure = new StoredPluginListReadFailure();

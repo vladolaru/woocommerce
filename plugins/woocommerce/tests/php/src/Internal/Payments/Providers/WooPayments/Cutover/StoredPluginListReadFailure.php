@@ -10,7 +10,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\C
  * The match is by query text, not by caller. The site read's text is also WordPress's uncached get_option() read, which
  * this suite never issues because active_plugins is autoloaded and so cached, and update_option()'s autoload read, which
  * every write of active_plugins issues. A count set before such a read is consumed by it. The network read does not
- * collide: WordPress puts meta_key before site_id. The read count leaves out the autoload read by its leading SELECT.
+ * collide: WordPress puts meta_key before site_id.
  */
 class StoredPluginListReadFailure {
 
@@ -25,9 +25,6 @@ class StoredPluginListReadFailure {
 
 	/** @var int Number of upcoming network list reads that fail. */
 	public int $network_failures = 0;
-
-	/** @var int Number of site and network list reads seen, by their text as PreflightService queries them. */
-	public int $reads = 0;
 
 	/** @var bool Whether wpdb suppressed errors before. */
 	private bool $suppressed_errors;
@@ -50,9 +47,6 @@ class StoredPluginListReadFailure {
 	public function fail_matching_read( $query ) {
 		if ( ! is_string( $query ) ) {
 			return $query;
-		}
-		if ( ( 0 === strpos( $query, 'SELECT option_value FROM' ) && false !== strpos( $query, self::SITE_READ ) ) || false !== strpos( $query, self::NETWORK_READ ) ) {
-			++$this->reads;
 		}
 		if ( $this->site_failures > 0 && false !== strpos( $query, self::SITE_READ ) ) {
 			--$this->site_failures;
