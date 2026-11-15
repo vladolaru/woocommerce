@@ -1326,40 +1326,56 @@ test.describe( 'WooPayments transition: extension activation during an open cuto
 			// queued the extension's order check 10 s ahead and the click came
 			// first, so the switch defers for that check, and retries a minute
 			// later because the check is due within that minute. Drive the queue
-			// until the check has run, moving no attempt.
+			// until the switch defers, moving no attempt.
 			let deferredRecord: CutoverRecord | null = null;
 			await expect
 				.poll(
 					async () => {
 						const record = ( await readCutoverStatus( 0 ) ).record;
-						const polled = await readExtensionOrderCheck();
-						if (
-							record?.state === 'deferred' &&
-							polled?.status === 'complete'
-						) {
+						if ( record?.state === 'deferred' ) {
 							deferredRecord = record;
 							return true;
 						}
 						await triggerActionSchedulerQueue( baseURL! );
 						return false;
 					},
-					{ timeout: 3 * 60_000, intervals: [ 1000, 3000, 5000 ] }
+					{ timeout: 60_000, intervals: [ 500, 1000 ] }
 				)
 				.toBe( true );
-			const check = await readExtensionOrderCheck();
-			expect(
-				check?.status,
-				"the extension's order check must have run through the queue"
-			).toBe( 'complete' );
 
-			// The ownership check is due 5 s after the hand-over, so hold the
-			// queue's runners before the hand-over, and wait out any runner
-			// admitted before the hold: the extension then comes back while
-			// the switch is still open, every time.
+			// Hold the queue's runners now, before the minute retry is due: left
+			// to the queue, one batch would run the check and the retry back to
+			// back, and the switch would never be seen deferred with the check
+			// done. The hold also keeps the ownership check, due 5 s after the
+			// hand-over, from running: the extension then comes back while the
+			// switch is still open, every time. Under the hold, wait out any
+			// runner admitted before it, run the check here, then the retry.
 			let rollback: CutoverRecord;
 			await holdQueueRunners();
 			try {
 				await waitForIdleQueueRunners();
+				await refreshQueueRunnerHold();
+				await expect
+					.poll(
+						async () => {
+							await wpCLI( [
+								'wp',
+								'action-scheduler',
+								'run',
+								`--hooks=${ EXTENSION_ORDER_CHECK_HOOK }`,
+								'--batches=1',
+								'--force',
+							] );
+							return ( await readExtensionOrderCheck() )?.status;
+						},
+						{ timeout: 60_000, intervals: [ 1000 ] }
+					)
+					.toBe( 'complete' );
+				const check = await readExtensionOrderCheck();
+				expect(
+					check?.status,
+					"the extension's order check must have run through the queue"
+				).toBe( 'complete' );
 				await refreshQueueRunnerHold();
 				expect(
 					await runDeferredAttemptNow(),
