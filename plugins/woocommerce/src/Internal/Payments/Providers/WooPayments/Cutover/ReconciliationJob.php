@@ -98,7 +98,14 @@ class ReconciliationJob implements RegisterHooksInterface {
 	/** Time a claimed attempt may run before repair_schedule() recovers it as stale; fixed at claim, there is no heartbeat. */
 	public const RUNNING_TIMEOUT = 15 * MINUTE_IN_SECONDS;
 
-	/** Fast retry delay during the first day. */
+	/**
+	 * Retry delay in the first day after the merchant's start (FAST_RETRY_WINDOW), for a held switch no store manager is
+	 * looking at: an admin page brings the attempt forward sooner (ADMIN_PAGE_ATTEMPT_FLOOR), and so do the events that
+	 * clear a code (bring_deferred_attempt_forward()).
+	 *
+	 * Cost: 96 attempts a day, each running the preflight, two queue scans, three record writes and one queued action. It
+	 * buys a blocker that clears with nothing the switch hears, on a store nobody is looking at, continuing within 15 minutes.
+	 */
 	private const FAST_RETRY_DELAY = 15 * MINUTE_IN_SECONDS;
 
 	/**
@@ -187,16 +194,39 @@ class ReconciliationJob implements RegisterHooksInterface {
 	 * The same five minutes Action Scheduler gives a claimed action before it unclaims or fails it
 	 * (ActionScheduler_QueueCleaner::reset_timeouts() and mark_failures()), so a stuck running action leaves the queue
 	 * within it. A queue runner can also be filtered to claim the switch's action and never the one it waits for; that one
-	 * stays pending and overdue for good, so past this limit the switch goes back to the retry cadence: for a queue that gets
-	 * no new actions, about six short retries at most. While fresh unhandled actions keep arriving and running, with none
-	 * left overdue, each retry finds only actions due inside the window, so the short retries go on until the arrivals pause.
+	 * stays pending and overdue for good, so past this limit the switch goes back to the retry cadence, or to one attempt a
+	 * minute while a store manager browses (ADMIN_PAGE_ATTEMPT_FLOOR): for a queue that gets no new actions, about six short
+	 * retries at most. While fresh unhandled actions keep arriving and running, with none left overdue, each retry finds only
+	 * actions due inside the window, so the short retries go on until the arrivals pause.
 	 */
 	private const QUEUED_ACTION_OVERDUE_LIMIT = 5 * MINUTE_IN_SECONDS;
 
-	/** Age at which retries become daily. */
+	/**
+	 * Least time from a held switch's last record write to the attempt a store manager's admin page brings forward, so
+	 * browsing runs at most about one attempt a minute; a page inside it moves the attempt to its end.
+	 *
+	 * Stated from QUEUED_ACTION_RETRY_DELAY, one second above it, so the two cannot drift: is_waiting_for_queued_actions()
+	 * tells a cadence deferral from a short retry by a gap above that delay from the deferral to the next attempt, and every
+	 * record write since the deferral is at or after it, so a moved attempt keeps the "waiting for scheduled tasks" line.
+	 */
+	private const ADMIN_PAGE_ATTEMPT_FLOOR = self::QUEUED_ACTION_RETRY_DELAY + 1;
+
+	/**
+	 * Time after the merchant's start during which retries take FAST_RETRY_DELAY, and after which they take
+	 * SLOW_RETRY_DELAY; log_late_first_attempt() also warns about a first attempt this late.
+	 *
+	 * It bounds the frequent attempts of a held switch nobody is looking at to the first day's 96 retries; past it the switch
+	 * costs one attempt a day.
+	 */
 	private const FAST_RETRY_WINDOW = DAY_IN_SECONDS;
 
-	/** Slow retry delay after the first day. */
+	/**
+	 * Retry delay past FAST_RETRY_WINDOW, for a held switch no store manager is looking at.
+	 *
+	 * Cost: one attempt a day, with no end. It falls on a merchant who clears the blocker with nothing the switch hears and
+	 * opens no admin page: the switch continues up to a day later. A store manager's admin page brings it within about a
+	 * minute (ADMIN_PAGE_ATTEMPT_FLOOR).
+	 */
 	private const SLOW_RETRY_DELAY = DAY_IN_SECONDS;
 
 	/** Source used for cutover diagnostics. */
@@ -855,19 +885,25 @@ class ReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Bring a deferred switch's next attempt forward after an event that can clear what holds it back.
+	 * Bring a deferred switch's next attempt forward after an event that can clear what holds it back, or, with no code, on
+	 * a store manager's admin page.
 	 *
-	 * Only a deferred record carrying the code moves; the job's own work runs inside a running claim, which this leaves
-	 * alone. A deactivated renewal plugin or a finished per-site conversion clears its condition at once, so the attempt is
-	 * due now. An extension update takes UPDATED_PLUGIN_RETRY_DELAY, since the updating request still runs the old code;
-	 * the hand-over time is not touched. The attempt re-runs every check, so the bound is one attempt per event.
+	 * With a code, only a deferred record carrying it moves; the job's own work runs inside a running claim, which this
+	 * leaves alone. A deactivated renewal plugin or a finished per-site conversion clears its condition at once, so the
+	 * attempt is due now. An extension update takes UPDATED_PLUGIN_RETRY_DELAY, since the updating request still runs the
+	 * old code; the hand-over time is not touched. The attempt re-runs every check, so the bound is one attempt per event.
+	 * With no code, a switch held before the hand-over moves no sooner than ADMIN_PAGE_ATTEMPT_FLOOR after its last write,
+	 * so browsing runs at most about one attempt a minute (get_admin_page_attempt_target()).
 	 *
 	 * @since 11.4.0
 	 *
-	 * @param string $code The deferral code the event can clear.
+	 * @param string|null $code The deferral code the event can clear, or null for an admin page.
 	 * @return bool True when the next attempt was moved and scheduled.
 	 */
-	public function bring_deferred_attempt_forward( string $code ): bool {
+	public function bring_deferred_attempt_forward( ?string $code = null ): bool {
+		if ( null === $code ) {
+			return $this->bring_attempt_forward_for_admin_page();
+		}
 		if ( ! $this->is_deferred_for( $this->state_store->get_record(), $code ) || ! $this->arbiter->is_builtin_enabled() ) {
 			return false;
 		}
@@ -883,17 +919,8 @@ class ReconciliationJob implements RegisterHooksInterface {
 				if ( is_int( $record['next_attempt_at'] ) && $record['next_attempt_at'] <= $now + $delay ) {
 					return true;
 				}
-				$forward                    = $record;
-				$forward['revision']        = $record['revision'] + 1;
-				$forward['action_id']       = 0;
-				$forward['updated_at']      = $now;
-				$forward['next_attempt_at'] = $now + $delay;
-				if ( ! $this->state_store->compare_and_set_record( $record, $forward ) ) {
-					return false;
-				}
-				$this->scheduler->cancel( $record['generation'], $record['attempt'] + 1 );
 
-				return $this->ensure_record_scheduled( $forward, $now );
+				return $this->move_next_attempt( $record, $now + $delay, $now );
 			},
 			false
 		);
@@ -904,6 +931,90 @@ class ReconciliationJob implements RegisterHooksInterface {
 		}
 
 		return $moved;
+	}
+
+	/**
+	 * Bring a held switch's next attempt forward on a store manager's admin page.
+	 *
+	 * The record the page already read decides, so a page that moves nothing runs no query. Under the lock, the
+	 * compare-and-set on that record catches one another request has changed since.
+	 *
+	 * @return bool True when the next attempt was moved and scheduled.
+	 */
+	private function bring_attempt_forward_for_admin_page(): bool {
+		$now    = time();
+		$record = $this->state_store->get_record();
+		if ( ! is_array( $record ) ) {
+			return false;
+		}
+		$target = $this->get_admin_page_attempt_target( $record, $now );
+		if ( null === $target || ! $this->arbiter->is_builtin_enabled() ) {
+			return false;
+		}
+		$moved = $this->with_write_lock(
+			$now,
+			fn(): bool => $this->move_next_attempt( $record, $target, $now ),
+			false
+		);
+		// An attempt due now needs a runner once the page ends; one due at the floor's end is left to the next runner.
+		if ( $moved && $target === $now && ! ( is_multisite() && ms_is_switched() ) ) {
+			add_action( 'shutdown', array( $this->scheduler, 'dispatch_async' ) );
+		}
+
+		return $moved;
+	}
+
+	/**
+	 * Get the time a store manager's admin page moves a held switch's next attempt to, or null to leave it.
+	 *
+	 * Only a deferred record with no hand-over token moves: past the hand-over the switch keeps its own timing. The target is
+	 * at least ADMIN_PAGE_ATTEMPT_FLOOR after the record's last write, and the attempt only ever moves sooner. A record held
+	 * by the extension version moves once the installed files carry a supported version, read last, and like the update
+	 * event to UPDATED_PLUGIN_RETRY_DELAY from now, so the job's updater never runs from browsing.
+	 *
+	 * @param array<string,mixed> $record Cutover record.
+	 * @param int                 $now    Current UTC timestamp.
+	 * @return int|null
+	 */
+	private function get_admin_page_attempt_target( array $record, int $now ): ?int {
+		if (
+			StateStore::STATE_DEFERRED !== $record['state']
+			|| null !== ( $record['request_origin_token'] ?? null )
+			|| ! is_int( $record['next_attempt_at'] )
+		) {
+			return null;
+		}
+		$held_by_version = in_array( PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED, (array) $record[ StateStore::BLOCKING_CODES_KEY ], true );
+		$target          = max( $now + ( $held_by_version ? self::UPDATED_PLUGIN_RETRY_DELAY : 0 ), $record['updated_at'] + self::ADMIN_PAGE_ATTEMPT_FLOOR );
+		if ( $record['next_attempt_at'] <= $target || ( $held_by_version && ! $this->is_installed_woopayments_plugin_version_supported() ) ) {
+			return null;
+		}
+
+		return $target;
+	}
+
+	/**
+	 * Move a deferred record's next attempt and schedule it; call with the write lock held.
+	 *
+	 * The old action is cancelled only after the compare-and-set, so a request that read a stale record changes nothing.
+	 *
+	 * @param array<string,mixed> $record          Current deferred record.
+	 * @param int                 $next_attempt_at When the next attempt is due.
+	 * @param int                 $now             Current UTC timestamp.
+	 * @return bool True when the next attempt was moved and scheduled.
+	 */
+	private function move_next_attempt( array $record, int $next_attempt_at, int $now ): bool {
+		$forward                    = $record;
+		$forward['revision']        = $record['revision'] + 1;
+		$forward['action_id']       = 0;
+		$forward['updated_at']      = $now;
+		$forward['next_attempt_at'] = $next_attempt_at;
+		if ( ! $this->state_store->compare_and_set_record( $record, $forward ) ) {
+			return false;
+		}
+		$this->scheduler->cancel( $record['generation'], $record['attempt'] + 1 );
+
+		return $this->ensure_record_scheduled( $forward, $now );
 	}
 
 	/**
@@ -1050,8 +1161,9 @@ class ReconciliationJob implements RegisterHooksInterface {
 		// lists: a plugin load manager can filter them in the queue request it runs in.
 		$network_active = $this->preflight_service->is_woopayments_stored_network_active();
 		// A network list that could not be read decides nothing. No token is stored yet, so the deferral leaves the extension
-		// with payments, and the next attempt runs the whole check again. It waits the usual cadence, not a shorter one: a
-		// failed query is not known to clear in seconds, the extension keeps payments meanwhile, and nothing is lost by waiting.
+		// with payments, and the next attempt runs the whole check again. It waits the usual cadence, or a store manager's
+		// admin page a minute on, not a shorter delay: a failed query is not known to clear in seconds, the extension keeps
+		// payments meanwhile, and nothing is lost by waiting.
 		if ( null === $network_active ) {
 			$this->log_unknown_stored_list( 'WooPayments cutover: the stored network plugin list could not be read before the switch, so the switch waits.', $claimed, self::CODE_RECONCILIATION_RESOLVER_FAILED );
 			$this->defer( $claimed, array( self::CODE_RECONCILIATION_RESOLVER_FAILED ), $outcomes );

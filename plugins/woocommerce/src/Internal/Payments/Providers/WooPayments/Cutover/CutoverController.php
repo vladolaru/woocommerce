@@ -611,7 +611,7 @@ class CutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Render the notice derived from durable reconciliation state.
+	 * Render the notice derived from durable reconciliation state, and bring a held switch's next attempt forward.
 	 */
 	private function output_cutover_notice(): void {
 		$record = $this->reconciliation_job->refresh_notice_record();
@@ -647,6 +647,11 @@ class CutoverController implements RegisterHooksInterface {
 				// Shown until dismissed; rendering claims nothing, since some screens hide notices.
 				if ( $this->reconciliation_job->is_reconnect_notice_due( $record ) ) {
 					$this->output_reconnect_notice();
+				}
+				// A store manager's page brings a held switch's next attempt forward, at most about once a minute, so a merchant who
+				// cleared what holds it back sees it continue. After the lines above, which render the record as it was.
+				if ( StateStore::STATE_DEFERRED === $record['state'] ) {
+					$this->reconciliation_job->bring_deferred_attempt_forward();
 				}
 				return;
 			}

@@ -957,9 +957,9 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 			/**
 			 * Record the code.
 			 *
-			 * @param string $code Deferral code.
+			 * @param string|null $code Deferral code, or null for an admin page.
 			 */
-			public function bring_deferred_attempt_forward( string $code ): bool {
+			public function bring_deferred_attempt_forward( ?string $code = null ): bool {
 				$this->codes[] = $code;
 				return true;
 			}
@@ -970,6 +970,134 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 		$controller->handle_woopayments_updated();
 
 		$this->assertSame( array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE, PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED ), $job->codes );
+	}
+
+	/**
+	 * @testdox Only a deferred switch on a store manager's admin page asks the job to bring its next attempt forward: $_dataName.
+	 * @dataProvider provide_admin_page_bring_forward_calls
+	 *
+	 * @param string $state        The record's state.
+	 * @param string $current_step The record's current step.
+	 * @param bool   $can_manage   Whether the user may manage WooCommerce.
+	 * @param bool   $expected     Whether the page asks the job, with no code.
+	 */
+	public function test_only_a_deferred_switch_on_a_managers_page_is_brought_forward( string $state, string $current_step, bool $can_manage, bool $expected ): void {
+		$this->fake_plugin_active();
+		$this->fake_current_user_caps( $can_manage );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$job = new class( $state, $current_step ) extends ReconciliationJob {
+			/** @var array<int,string|null> Codes the page asked to bring forward. */
+			public array $codes = array();
+
+			/** @var array<string,mixed> */
+			private array $record;
+
+			/**
+			 * @param string $state        The record's state.
+			 * @param string $current_step The record's current step.
+			 */
+			public function __construct( string $state, string $current_step ) {
+				$this->record = array(
+					'state'                  => $state,
+					'current_step'           => $current_step,
+					'deferred_codes'         => array( PreflightService::FAILURE_BUILTIN_TRANSPORT_UNAVAILABLE ),
+					'informational_outcomes' => array(),
+					'next_attempt_at'        => time() + 15 * MINUTE_IN_SECONDS,
+					'step_log'               => array(),
+				);
+			}
+
+			/** @return array<string,mixed>|null */
+			public function refresh_notice_record(): ?array {
+				return $this->record;
+			}
+
+			/**
+			 * Record the call.
+			 *
+			 * @param string|null $code Deferral code, or null for an admin page.
+			 */
+			public function bring_deferred_attempt_forward( ?string $code = null ): bool {
+				$this->codes[] = $code;
+				return true;
+			}
+		};
+
+		$this->render_admin_notices( $this->create_cutover_controller( $job ) );
+
+		$this->assertSame( $expected ? array( null ) : array(), $job->codes );
+	}
+
+	/**
+	 * @return array<string,array{string,string,bool,bool}>
+	 */
+	public function provide_admin_page_bring_forward_calls(): array {
+		return array(
+			'deferred'                              => array( StateStore::STATE_DEFERRED, 'deferred', true, true ),
+			'deferred, a user who cannot manage it' => array( StateStore::STATE_DEFERRED, 'deferred', false, false ),
+			'queued'                                => array( StateStore::STATE_PENDING, 'queued', true, false ),
+			'the ownership check pending'           => array( StateStore::STATE_PENDING, 'verify_builtin_ownership', true, false ),
+			'running'                               => array( StateStore::STATE_RUNNING, 'running', true, false ),
+			'awaiting the merchant start'           => array( StateStore::STATE_PENDING, 'awaiting_merchant_start', true, false ),
+			'done'                                  => array( StateStore::STATE_DONE, 'done', true, false ),
+			'excluded'                              => array( StateStore::STATE_EXCLUDED, 'excluded', true, false ),
+		);
+	}
+
+	/**
+	 * @testdox A switch waiting for tasks queued far ahead shows the waiting line on the admin page that moves its next attempt and on the next page ($_dataName).
+	 * @testWith ["past the floor", 61]
+	 *           ["inside the floor", 30]
+	 *
+	 * @param string $label Where the page lands.
+	 * @param int    $age   Seconds since the deferral.
+	 */
+	public function test_waiting_line_shows_on_the_page_that_moves_the_switch_and_the_next( string $label, int $age ): void {
+		unset( $label );
+		$this->fake_plugin_active();
+		$this->fake_current_user_caps( true );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$this->assertIsInt( as_schedule_single_action( time() + HOUR_IN_SECONDS, 'wcpay_check_affected_auth_fee_orders', array(), 'woocommerce-payments' ) );
+		$state_store       = wc_get_container()->get( StateStore::class );
+		$scheduler         = new RecordingCutoverActionScheduler( $state_store );
+		$preflight_service = $this->create_preflight_service();
+		$job               = new ReconciliationJob();
+		$job->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), $state_store, $scheduler, $preflight_service, wc_get_container()->get( DataMigration::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
+		$this->assertTrue( $job->enqueue( ReconciliationJob::SOURCE_MERCHANT ) );
+		$queued = $state_store->get_record();
+		$this->assertIsArray( $queued );
+		$scheduler->cancel( $queued['generation'], 1 );
+		$deferred_at                 = time() - $age;
+		$deferred                    = $queued;
+		$deferred['revision']        = $queued['revision'] + 1;
+		$deferred['state']           = StateStore::STATE_DEFERRED;
+		$deferred['current_step']    = 'deferred';
+		$deferred['attempt']         = 1;
+		$deferred['deferred_codes']  = array( PreflightService::FAILURE_QUEUE_HOOKS_UNHANDLED );
+		$deferred['updated_at']      = $deferred_at;
+		$deferred['step_log'][]      = array(
+			'step'    => 'deferred',
+			'at'      => $deferred_at,
+			'context' => array( 'codes' => $deferred['deferred_codes'] ),
+		);
+		$deferred['next_attempt_at'] = $deferred_at + 15 * MINUTE_IN_SECONDS;
+		$deferred['action_id']       = $scheduler->schedule( $deferred['next_attempt_at'], $queued['generation'], 2 );
+		$this->assertTrue( $state_store->compare_and_set_record( $queued, $deferred ) );
+		$controller = $this->create_cutover_controller( $job, $preflight_service );
+		$sentence   = 'The switch is waiting for scheduled WooPayments tasks to finish.';
+
+		try {
+			$moving_page = $this->render_admin_notices( $controller );
+			$moved       = $state_store->get_record();
+			$next_page   = $this->render_admin_notices( $controller );
+		} finally {
+			as_unschedule_all_actions( 'wcpay_check_affected_auth_fee_orders' );
+		}
+
+		$this->assertIsArray( $moved );
+		$this->assertLessThan( $deferred['next_attempt_at'], $moved['next_attempt_at'], 'The page moved the next attempt.' );
+		$this->assertStringContainsString( $sentence, $moving_page );
+		$this->assertStringContainsString( $sentence, $next_page );
 	}
 
 	/**
@@ -1276,9 +1404,9 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 			/**
 			 * No switch waits here.
 			 *
-			 * @param string $code Deferral code.
+			 * @param string|null $code Deferral code, or null for an admin page.
 			 */
-			public function bring_deferred_attempt_forward( string $code ): bool {
+			public function bring_deferred_attempt_forward( ?string $code = null ): bool {
 				unset( $code );
 				return false;
 			}
@@ -1908,7 +2036,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 		$legacy_proxy      = wc_get_container()->get( LegacyProxy::class );
 		$preflight_service = $preflight_service ?? $this->create_preflight_service();
 
-		$job        = $job ?? new class() extends ReconciliationJob {
+		$job = $job ?? new class() extends ReconciliationJob {
 			/** Return no durable state after notice classification. */
 			public function refresh_notice_record(): ?array {
 				return null;
@@ -1937,13 +2065,20 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 			/**
 			 * No durable record, so nothing waits.
 			 *
-			 * @param string $code Deferral code.
+			 * @param string|null $code Deferral code, or null for an admin page.
 			 */
-			public function bring_deferred_attempt_forward( string $code ): bool {
+			public function bring_deferred_attempt_forward( ?string $code = null ): bool {
 				unset( $code );
 				return false;
 			}
 		};
+		// A deferred record under Switch in progress calls the job's own bring-forward, which reads the job's store. Doubles that
+		// only stub what the notice reads get the real services, where no record waits, so nothing moves.
+		$job_state_store = new \ReflectionProperty( ReconciliationJob::class, 'state_store' );
+		$job_state_store->setAccessible( true );
+		if ( ! $job_state_store->isInitialized( $job ) ) {
+			$job->init( $arbiter, wc_get_container()->get( StateStore::class ), wc_get_container()->get( CutoverActionScheduler::class ), $preflight_service, wc_get_container()->get( DataMigration::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
+		}
 		$controller = new CutoverController();
 		$controller->init( $arbiter, $legacy_proxy, $preflight_service, $job, $renewal_plugins ?? $this->create_renewal_plugins( array() ) );
 

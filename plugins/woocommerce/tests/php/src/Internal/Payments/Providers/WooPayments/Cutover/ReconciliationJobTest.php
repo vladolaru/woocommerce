@@ -1553,6 +1553,321 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * A merchant who cleared a blocker no event reports sees the switch continue within about a minute of a store manager's
+	 * admin page. A page inside the minute after the last write moves the attempt to the minute's end instead of skipping it,
+	 * and a record held by the extension version waits the update minute, as the update event does.
+	 *
+	 * @testdox A store manager's admin page brings a held switch's next attempt forward to $expected: $_dataName.
+	 * @dataProvider provide_admin_page_moves
+	 *
+	 * @param string $code     The deferral code.
+	 * @param int    $age      Seconds since the record's last write.
+	 * @param string $expected "now", "the floor's end" or "the update minute".
+	 */
+	public function test_an_admin_page_brings_a_held_switch_forward( string $code, int $age, string $expected ): void {
+		$this->sut = $this->create_job( true, null, $this->create_installed_version_job( true ) );
+		$deferred  = $this->age_record( $this->create_deferred_record( array( $code ) ), $age );
+		$old       = $deferred['action_id'];
+
+		try {
+			$this->assertTrue( $this->sut->bring_deferred_attempt_forward() );
+
+			$moved = $this->state_store->get_record();
+			$this->assertIsArray( $moved );
+			$expected_at = array(
+				'now'               => $moved['updated_at'],
+				"the floor's end"   => $deferred['updated_at'] + 61,
+				'the update minute' => $moved['updated_at'] + MINUTE_IN_SECONDS,
+			)[ $expected ];
+			$this->assertSame( $expected_at, $moved['next_attempt_at'] );
+			$this->assertSame( StateStore::STATE_DEFERRED, $moved['state'] );
+			$this->assertSame( $deferred['attempt'], $moved['attempt'] );
+			$this->assertSame( $deferred['deferred_codes'], $moved['deferred_codes'] );
+			$this->assertSame( $deferred['step_log'], $moved['step_log'], 'A move is not an attempt.' );
+			$this->assertSame( ActionScheduler_Store::STATUS_CANCELED, ActionScheduler::store()->get_status( $old ) );
+			$this->assertSame( $moved['action_id'], $this->scheduler->get_scheduled_action_id( $moved['generation'], 2 ) );
+			$this->assertSame( $moved['next_attempt_at'], ActionScheduler::store()->fetch_action( $moved['action_id'] )->get_schedule()->get_date()->getTimestamp() );
+			$this->assertSame( $moved['next_attempt_at'] === $moved['updated_at'], is_int( has_action( 'shutdown', array( $this->scheduler, 'dispatch_async' ) ) ), 'A runner is started only for an attempt due now.' );
+		} finally {
+			remove_action( 'shutdown', array( $this->scheduler, 'dispatch_async' ) );
+		}
+	}
+
+	/**
+	 * @return array<string,array{string,int,string}>
+	 */
+	public function provide_admin_page_moves(): array {
+		$transport = PreflightService::FAILURE_BUILTIN_TRANSPORT_UNAVAILABLE;
+		$version   = PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED;
+		return array(
+			'past the floor'                              => array( $transport, 61, 'now' ),
+			'well past the floor'                         => array( $transport, 120, 'now' ),
+			'inside the floor'                            => array( $transport, 30, "the floor's end" ),
+			'exactly at the floor'                        => array( $transport, 60, "the floor's end" ),
+			'tasks queued far ahead, past the floor'      => array( PreflightService::FAILURE_QUEUE_HOOKS_UNHANDLED, 61, 'now' ),
+			'the version code, installed files supported' => array( $version, 61, 'the update minute' ),
+			'the version code inside the floor, files supported' => array( $version, 30, 'the update minute' ),
+		);
+	}
+
+	/**
+	 * Past the hand-over the switch keeps its own timing, a second reading 15 minutes later included; a page that moves
+	 * nothing reads the record the notice already read and runs no query.
+	 *
+	 * @testdox A store manager's admin page leaves a record it must not move, with no query: $_dataName.
+	 * @dataProvider provide_admin_page_non_moves
+	 *
+	 * @param array<string,mixed> $changes             Record fields to set; time fields are offsets from now.
+	 * @param int                 $age                 Seconds since the record's last write.
+	 * @param bool                $feature_on          Whether the WooPayments feature is on.
+	 * @param bool                $installed_supported Whether the installed extension files carry a supported version.
+	 */
+	public function test_an_admin_page_leaves_a_record_it_must_not_move( array $changes, int $age, bool $feature_on, bool $installed_supported ): void {
+		$deferred = $this->create_deferred_record( $changes['deferred_codes'] ?? array( PreflightService::FAILURE_BUILTIN_TRANSPORT_UNAVAILABLE ) );
+		$now      = time();
+		$record   = $deferred;
+		foreach ( $changes as $key => $value ) {
+			$record[ $key ] = in_array( $key, array( 'next_attempt_at', 'lease_expires_at', StateStore::HANDED_OVER_AT_KEY ), true ) && is_int( $value ) ? $now + $value : $value;
+		}
+		$record['revision'] = $deferred['revision'] + 1;
+		$this->assertTrue( $this->state_store->compare_and_set_record( $deferred, $record ) );
+		$record = $this->age_record( $record, $age );
+		$job    = $this->create_job( $feature_on, null, $this->create_installed_version_job( $installed_supported ) );
+		$this->state_store->get_record();
+		$queries = 0;
+		$count   = static function ( $query ) use ( &$queries ) {
+			++$queries;
+			return $query;
+		};
+
+		add_filter( 'query', $count );
+		try {
+			$moved = $job->bring_deferred_attempt_forward();
+		} finally {
+			remove_filter( 'query', $count );
+		}
+
+		$this->assertFalse( $moved );
+		$this->assertSame( 0, $queries );
+		$this->assertSame( $record, $this->state_store->get_record() );
+		$this->assertSame( ActionScheduler_Store::STATUS_PENDING, ActionScheduler::store()->get_status( $deferred['action_id'] ) );
+		$this->assertFalse( has_action( 'shutdown', array( $this->scheduler, 'dispatch_async' ) ) );
+	}
+
+	/**
+	 * @return array<string,array{array<string,mixed>,int,bool,bool}>
+	 */
+	public function provide_admin_page_non_moves(): array {
+		$token = array( 'request_origin_token' => 'hand-over-token' );
+		return array(
+			'past the hand-over, plugin_deactivation_failed' => array( $token + array( 'deferred_codes' => array( 'plugin_deactivation_failed' ) ), 120, true, true ),
+			'past the hand-over, builtin_ownership_unverified' => array( $token + array( 'deferred_codes' => array( 'builtin_ownership_unverified' ) ), 120, true, true ),
+			'past the hand-over, another code' => array( $token, 120, true, true ),
+			'awaiting the merchant start'      => array(
+				array(
+					'state'          => StateStore::STATE_PENDING,
+					'current_step'   => 'awaiting_merchant_start',
+					'deferred_codes' => array(),
+				),
+				120,
+				true,
+				true,
+			),
+			'the ownership check pending'      => array(
+				$token + array(
+					'state'                        => StateStore::STATE_PENDING,
+					'current_step'                 => 'verify_builtin_ownership',
+					'deferred_codes'               => array(),
+					StateStore::HANDED_OVER_AT_KEY => -120,
+				),
+				120,
+				true,
+				true,
+			),
+			'running'                          => array(
+				array(
+					'state'            => StateStore::STATE_RUNNING,
+					'current_step'     => 'running',
+					'next_attempt_at'  => null,
+					'lease_token'      => 'claim-token',
+					'lease_expires_at' => ReconciliationJob::RUNNING_TIMEOUT,
+				),
+				120,
+				true,
+				true,
+			),
+			'done'                             => array(
+				array(
+					'state'           => StateStore::STATE_DONE,
+					'current_step'    => 'done',
+					'deferred_codes'  => array(),
+					'next_attempt_at' => null,
+				),
+				120,
+				true,
+				true,
+			),
+			'excluded'                         => array(
+				array(
+					'state'           => StateStore::STATE_EXCLUDED,
+					'current_step'    => 'excluded',
+					'deferred_codes'  => array( PreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS ),
+					'next_attempt_at' => null,
+				),
+				120,
+				true,
+				true,
+			),
+			'already due'                      => array( array( 'next_attempt_at' => 0 ), 120, true, true ),
+			'due at the floor\'s end'          => array( array( 'next_attempt_at' => 31 ), 30, true, true ),
+			'the version code, installed files unsupported' => array( array( 'deferred_codes' => array( PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED ) ), 120, true, false ),
+			'the WooPayments feature off'      => array( array(), 120, false, true ),
+		);
+	}
+
+	/**
+	 * Attempts stay at most about one a minute however many pages load, because a move needs a minute since the record's
+	 * last write, and the attempt and its deferral are writes.
+	 *
+	 * @testdox Browsing runs one attempt per floor: a page moves it, the next pages do not, and after the attempt defers the next move is a floor later.
+	 */
+	public function test_browsing_runs_at_most_one_attempt_per_floor(): void {
+		$this->sut = $this->create_job_with_preflight( true, $this->create_preflight_with_failures( array( PreflightService::FAILURE_BUILTIN_TRANSPORT_UNAVAILABLE ) ) );
+		$deferred  = $this->age_record( $this->create_deferred_record( array( PreflightService::FAILURE_BUILTIN_TRANSPORT_UNAVAILABLE ) ), 30 );
+
+		try {
+			$this->assertTrue( $this->sut->bring_deferred_attempt_forward(), 'The first page moves the attempt to the floor\'s end.' );
+			$moved = $this->state_store->get_record();
+			$this->assertFalse( $this->sut->bring_deferred_attempt_forward(), 'A second page before the attempt moves nothing.' );
+			$this->assertSame( $moved, $this->state_store->get_record() );
+
+			$this->sut->handle_reconcile( $deferred['generation'], 2 );
+			$again = $this->state_store->get_record();
+			$this->assertIsArray( $again );
+			$this->assertSame( StateStore::STATE_DEFERRED, $again['state'] );
+			$deferral = end( $again['step_log'] );
+			$this->assertSame( 'deferred', $deferral['step'] );
+
+			$this->assertTrue( $this->sut->bring_deferred_attempt_forward() );
+			$next = $this->state_store->get_record();
+			$this->assertIsArray( $next );
+			$this->assertSame( $deferral['at'] + 61, $next['next_attempt_at'], 'The next attempt is a floor after the last one deferred.' );
+			$this->assertFalse( $this->sut->bring_deferred_attempt_forward() );
+			$this->assertCount( 1, array_filter( $next['step_log'], static fn( $entry ) => 'running' === $entry['step'] ), 'One attempt ran.' );
+		} finally {
+			remove_action( 'shutdown', array( $this->scheduler, 'dispatch_async' ) );
+		}
+	}
+
+	/**
+	 * Another manager's request can move the record after this one read it. Only the compare-and-set sees that, so the old
+	 * action must be cancelled and the new one scheduled after it, never before.
+	 *
+	 * @testdox A store manager's admin page that read a record another request has since moved cancels and schedules nothing.
+	 */
+	public function test_an_admin_page_with_a_stale_record_cancels_and_schedules_nothing(): void {
+		global $wpdb;
+		$deferred = $this->age_record( $this->create_deferred_record( array( PreflightService::FAILURE_BUILTIN_TRANSPORT_UNAVAILABLE ) ), 120 );
+		$this->assertSame( $deferred, $this->state_store->get_record() );
+		// Another request's move, written behind this request's cached copy.
+		$elsewhere               = $deferred;
+		$elsewhere['revision']   = $deferred['revision'] + 1;
+		$elsewhere['updated_at'] = time();
+		$wpdb->update( $wpdb->options, array( 'option_value' => maybe_serialize( $elsewhere ) ), array( 'option_name' => StateStore::OPTION_NAME ) );
+		$this->assertSame( $deferred, $this->state_store->get_record(), 'This request still reads its own copy.' );
+
+		$this->assertFalse( $this->sut->bring_deferred_attempt_forward() );
+
+		$this->assertSame( $elsewhere, $this->state_store->get_record() );
+		$this->assertSame( ActionScheduler_Store::STATUS_PENDING, ActionScheduler::store()->get_status( $deferred['action_id'] ) );
+		$this->assertSame( $deferred['action_id'], $this->scheduler->get_scheduled_action_id( $deferred['generation'], 2 ) );
+		$this->assertFalse( has_action( 'shutdown', array( $this->scheduler, 'dispatch_async' ) ) );
+	}
+
+	/**
+	 * The page that moves a switch waiting for tasks queued far ahead renders the record as it was, and the next page renders
+	 * the moved one: the "waiting for scheduled tasks" line needs the next attempt more than QUEUED_ACTION_RETRY_DELAY after
+	 * the deferral, which the floor's margin keeps.
+	 *
+	 * @testdox A switch waiting for tasks queued far ahead still says so after an admin page moves it: $_dataName.
+	 * @testWith ["past the floor", 61]
+	 *           ["inside the floor", 30]
+	 *           ["exactly at the floor", 60]
+	 *
+	 * @param string $label Where the page lands.
+	 * @param int    $age   Seconds since the deferral.
+	 */
+	public function test_a_moved_switch_still_says_it_waits_for_queued_tasks( string $label, int $age ): void {
+		unset( $label );
+		$deferred                  = $this->create_deferred_record( array( PreflightService::FAILURE_QUEUE_HOOKS_UNHANDLED ) );
+		$at_deferral               = $deferred;
+		$at_deferral['revision']   = $deferred['revision'] + 1;
+		$at_deferral['step_log'][] = array(
+			'step'    => 'deferred',
+			'at'      => $deferred['updated_at'],
+			'context' => array( 'codes' => $deferred['deferred_codes'] ),
+		);
+		$this->assertTrue( $this->state_store->compare_and_set_record( $deferred, $at_deferral ) );
+		$deferred = $this->age_record( $at_deferral, $age, true );
+		$this->assertTrue( $this->sut->is_waiting_for_queued_actions( $deferred ), 'The moving page renders the line.' );
+
+		try {
+			$this->assertTrue( $this->sut->bring_deferred_attempt_forward() );
+		} finally {
+			remove_action( 'shutdown', array( $this->scheduler, 'dispatch_async' ) );
+		}
+
+		$moved = $this->state_store->get_record();
+		$this->assertIsArray( $moved );
+		$this->assertTrue( $this->sut->is_waiting_for_queued_actions( $moved ), 'The next page renders the line too.' );
+	}
+
+	/**
+	 * Create a job double whose installed extension files carry a supported version, or not.
+	 *
+	 * @param bool $supported Whether the installed files carry a supported version.
+	 * @return ReconciliationJob
+	 */
+	private function create_installed_version_job( bool $supported ): ReconciliationJob {
+		return new class( $supported ) extends ReconciliationJob {
+			/** @var bool */
+			private bool $supported;
+
+			/**
+			 * @param bool $supported Whether the installed files carry a supported version.
+			 */
+			public function __construct( bool $supported ) {
+				$this->supported = $supported;
+			}
+
+			/** Report the installed version the row sets. */
+			public function is_installed_woopayments_plugin_version_supported(): bool {
+				return $this->supported;
+			}
+		};
+	}
+
+	/**
+	 * Set a record's last write a number of seconds ago, and with $with_step_log its last step too.
+	 *
+	 * @param array<string,mixed> $record        Current record.
+	 * @param int                 $age           Seconds since the last write.
+	 * @param bool                $with_step_log Whether the last step moves with it.
+	 * @return array<string,mixed> The aged record.
+	 */
+	private function age_record( array $record, int $age, bool $with_step_log = false ): array {
+		$aged               = $record;
+		$aged['revision']   = $record['revision'] + 1;
+		$aged['updated_at'] = time() - $age;
+		if ( $with_step_log ) {
+			$aged['step_log'][ count( $aged['step_log'] ) - 1 ]['at'] = $aged['updated_at'];
+		}
+		$this->assertTrue( $this->state_store->compare_and_set_record( $record, $aged ) );
+
+		return $aged;
+	}
+
+	/**
 	 * Create a deferred record with codes, its next attempt at the cadence and scheduled.
 	 *
 	 * @param string[] $codes Deferral codes.
