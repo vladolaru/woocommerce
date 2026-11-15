@@ -90,6 +90,11 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	private const NOT_FOUND_LINE = 'Stripe has no such subscription on this account and mode, so it is counted as cancelled.';
 
 	/**
+	 * Start of the note a subscription off WooPayments gets once Stripe confirms its Stripe subscription cancelled.
+	 */
+	private const CANCELLED_NOTE_START = 'This subscription\'s payment method is no longer WooPayments';
+
+	/**
 	 * The System Under Test.
 	 *
 	 * @var StripeBillingSubscriptionService
@@ -1077,8 +1082,9 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_a_cancel_counts_only_a_live_stripe_not_found_as_confirmed( int $http_status, array $body, bool $test_mode, bool $expected_confirmed, string $expectation ): void {
 		unset( $expectation );
-		$this->test_mode                = $test_mode;
-		$subscription                   = $this->create_subscription( array( '_wcpay_subscription_id' => self::MAIN_SUBSCRIPTION_ID ) );
+		$this->test_mode = $test_mode;
+		// WooCommerce Subscriptions saves the new payment method before it fires the hook (class-wc-subscriptions-change-payment-gateway.php:601-607).
+		$subscription                   = $this->create_subscription( array( '_wcpay_subscription_id' => self::MAIN_SUBSCRIPTION_ID ), 2, '49.80', 'USD', 'stripe' );
 		$this->http_client->responses[] = $this->make_response( $http_status, $body );
 		$logger                         = RecordingWcLogger::install();
 
@@ -1091,6 +1097,7 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 		$messages = array_column( $logger->lines, 1 );
 		$this->assertSame( $expected_confirmed ? 1 : 0, count( array_keys( $messages, self::NOT_FOUND_LINE, true ) ) );
 		$this->assertSame( $expected_confirmed ? 0 : 1, count( array_keys( $messages, 'There was a problem canceling the subscription on WooPayments server.', true ) ) );
+		$this->assertSame( array(), $this->get_notes_starting_with( $saved, self::CANCELLED_NOTE_START ), 'Neither a not-found nor a failure is said to be a cancel.' );
 		if ( $expected_confirmed ) {
 			$context = $this->get_logged_context( $logger, self::NOT_FOUND_LINE );
 			$this->assertSame( array( $subscription->get_id(), self::MAIN_SUBSCRIPTION_ID, 1, 404, 'resource_missing' ), array( $context['subscription_id'], $context['wcpay_subscription_id'], $context['attempt'], $context['http_status'], $context['error_code'] ) );
@@ -1169,6 +1176,7 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 		$context = $this->get_logged_context( $logger, self::NOT_FOUND_LINE );
 		$this->assertSame( array( $subscription->get_id(), self::MAIN_SUBSCRIPTION_ID, 4 ), array( $context['subscription_id'], $context['wcpay_subscription_id'], $context['attempt'] ) );
 		$this->assertSame( array(), $this->get_notes_starting_with( wc_get_order( $subscription->get_id() ), 'WooPayments could not' ), 'No give-up note.' );
+		$this->assertSame( array(), $this->get_notes_starting_with( wc_get_order( $subscription->get_id() ), self::CANCELLED_NOTE_START ), 'Stripe answers the same for another account, so no cancel note.' );
 	}
 
 	/**
@@ -1204,6 +1212,7 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'woocommerce_payments', $saved->get_payment_method() );
 		$this->assertSame( $status, $saved->get_status() );
 		$this->assertNull( $this->get_retry_cancel_delay( $subscription, $retry + 1 ) );
+		$this->assertSame( array(), $this->get_notes_starting_with( $saved, self::CANCELLED_NOTE_START ), 'The return read is silent.' );
 	}
 
 	/**
@@ -1217,6 +1226,64 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 			'reads the live Stripe subscription of one on hold and keeps the ID' => array( 1, 'on-hold', 'active', '_wcpay_subscription_id' ),
 			'reads a canceled Stripe subscription after a failed attempt and releases the ID' => array( 2, 'active', 'canceled', '_cancelled_wcpay_subscription_id' ),
 			'reads nothing on a first attempt' => array( 0, 'active', null, '_wcpay_subscription_id' ),
+		);
+	}
+
+	/**
+	 * @testdox A subscription off WooPayments whose Stripe subscription $_dataName gets one note naming it, and no second one when the cancel runs again.
+	 *
+	 * A background job can end a customer's automatic billing long after the move, so the subscription says why. The note
+	 * is written where the ID moves; once it has moved, every cancel path finds no ID and stops.
+	 *
+	 * @dataProvider provider_confirmed_cancels_off_woopayments
+	 *
+	 * @param string $route How the cancel ran: `job`, `job reads canceled` or `customer change`.
+	 */
+	public function test_a_confirmed_cancel_off_woopayments_notes_the_subscription_once( string $route ): void {
+		$payment_method = 'customer change' === $route ? 'stripe' : '';
+		$subscription   = $this->create_subscription( array( '_wcpay_subscription_id' => self::MAIN_SUBSCRIPTION_ID ), 2, '49.80', 'USD', $payment_method );
+		if ( 'customer change' !== $route ) {
+			$entry = $this->get_entry( 'get_subscription' );
+			if ( 'job reads canceled' === $route ) {
+				$entry['response']['body']['status'] = 'canceled';
+			}
+			$this->queue_entry( $entry );
+		}
+		if ( 'job reads canceled' !== $route ) {
+			$this->queue_entry( $this->get_entry( 'cancel_subscription' ) );
+		}
+
+		if ( 'customer change' === $route ) {
+			$this->sut->maybe_cancel_subscription( $subscription, $payment_method );
+		} else {
+			$this->sut->handle_retry_cancel_subscription( $subscription->get_id(), 'job' === $route ? 0 : 2 );
+		}
+		$requests = $this->http_client->request_count;
+		$this->sut->handle_retry_cancel_subscription( $subscription->get_id(), 0 );
+		$this->sut->maybe_cancel_subscription( wc_get_order( $subscription->get_id() ), $payment_method );
+		$this->sut->request_stripe_subscription_cancel( wc_get_order( $subscription->get_id() ) );
+
+		$saved = wc_get_order( $subscription->get_id() );
+		$this->assertSame( self::MAIN_SUBSCRIPTION_ID, $saved->get_meta( '_cancelled_wcpay_subscription_id', true ) );
+		$this->assertSame(
+			array( 'This subscription\'s payment method is no longer WooPayments, so its Stripe billing (' . self::MAIN_SUBSCRIPTION_ID . ') was cancelled and Stripe no longer charges the customer for it. Renewals now use the payment method set on this subscription.' ),
+			$this->get_notes_starting_with( $saved, self::CANCELLED_NOTE_START )
+		);
+		$this->assertSame( $requests, $this->http_client->request_count, 'Nothing more is sent once the ID moved.' );
+		$this->assertNull( $this->get_retry_cancel_delay( $subscription, 0 ) );
+	}
+
+	/**
+	 * Cancels Stripe confirms for a subscription moved off WooPayments: the job's DELETE and its read of a canceled Stripe
+	 * subscription for one moved to Manual Renewal, and the customer's change to another gateway.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function provider_confirmed_cancels_off_woopayments(): array {
+		return array(
+			'is cancelled by the job'                => array( 'job' ),
+			'reads canceled on a later attempt'      => array( 'job reads canceled' ),
+			'is cancelled on the customer\'s change' => array( 'customer change' ),
 		);
 	}
 

@@ -65,6 +65,13 @@ class StripeBillingSubscriptionService {
 	public const RETRY_CANCEL_ACTION = 'woocommerce_woopayments_retry_stripe_billing_cancel';
 
 	/**
+	 * Outcomes of a cancel attempt: Stripe confirmed it, Stripe has no such subscription in live mode, or it failed.
+	 */
+	private const CANCEL_CONFIRMED         = 'confirmed';
+	private const CANCEL_UNKNOWN_TO_STRIPE = 'unknown_to_stripe';
+	private const CANCEL_FAILED            = 'failed';
+
+	/**
 	 * The only features a Stripe-billed subscription supports.
 	 */
 	private const SUPPORTED_FEATURES = array(
@@ -586,7 +593,7 @@ class StripeBillingSubscriptionService {
 			return false;
 		}
 
-		return $this->cancel_stripe_subscription( $subscription, 0 );
+		return self::CANCEL_FAILED !== $this->cancel_stripe_subscription( $subscription, 0 );
 	}
 
 	/**
@@ -646,15 +653,15 @@ class StripeBillingSubscriptionService {
 			// Back on WooPayments after a failed attempt, which Stripe may have applied: one read tells. A canceled Stripe
 			// subscription releases the ID, so WooCommerce Subscriptions renews it with its saved token.
 			if ( 0 < absint( $retry ) && 'canceled' === ( $this->get_wcpay_subscription( $subscription )['status'] ?? '' ) ) {
-				$this->move_wcpay_subscription_id_to_cancelled( $subscription, $wcpay_subscription_id );
+				$this->move_wcpay_subscription_id_to_cancelled( $subscription, $wcpay_subscription_id, true );
 			}
 			return;
 		}
 
 		$wcpay_subscription = $this->get_wcpay_subscription( $subscription );
-		$cancelled          = 'canceled' === ( $wcpay_subscription['status'] ?? '' ) || $this->cancel_stripe_subscription( $subscription, absint( $retry ) );
-		if ( $cancelled && WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $subscription->get_payment_method() ) {
-			$this->move_wcpay_subscription_id_to_cancelled( $subscription, $wcpay_subscription_id );
+		$outcome            = 'canceled' === ( $wcpay_subscription['status'] ?? '' ) ? self::CANCEL_CONFIRMED : $this->cancel_stripe_subscription( $subscription, absint( $retry ) );
+		if ( self::CANCEL_FAILED !== $outcome && WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $subscription->get_payment_method() ) {
+			$this->move_wcpay_subscription_id_to_cancelled( $subscription, $wcpay_subscription_id, self::CANCEL_CONFIRMED === $outcome );
 		}
 	}
 
@@ -1022,8 +1029,9 @@ class StripeBillingSubscriptionService {
 			return;
 		}
 
-		if ( $this->cancel_subscription( $subscription ) ) {
-			$this->move_wcpay_subscription_id_to_cancelled( $subscription, $wcpay_subscription_id );
+		$outcome = $this->cancel_stripe_subscription( $subscription, 0 );
+		if ( self::CANCEL_FAILED !== $outcome ) {
+			$this->move_wcpay_subscription_id_to_cancelled( $subscription, $wcpay_subscription_id, self::CANCEL_CONFIRMED === $outcome );
 		}
 	}
 
@@ -1034,17 +1042,17 @@ class StripeBillingSubscriptionService {
 	 *
 	 * @param WC_Order $subscription Subscription.
 	 * @param int      $retry        Which retry this is, 0 for the first attempt.
-	 * @return bool Whether Stripe confirmed the cancel or, in live mode, has no such subscription.
+	 * @return string One of the CANCEL_ outcomes.
 	 */
-	private function cancel_stripe_subscription( WC_Order $subscription, int $retry ): bool {
+	private function cancel_stripe_subscription( WC_Order $subscription, int $retry ): string {
 		$wcpay_subscription_id = $this->get_wcpay_subscription_id( $subscription );
 		if ( ! $wcpay_subscription_id ) {
-			return false;
+			return self::CANCEL_FAILED;
 		}
 
 		try {
 			$this->api->cancel_subscription( $wcpay_subscription_id );
-			return true;
+			return self::CANCEL_CONFIRMED;
 		} catch ( ApiException $exception ) {
 			if ( $this->is_unknown_to_stripe_in_live_mode( $exception ) ) {
 				// Stripe has no subscription with this ID for this live account, so nothing bills under it here. The same
@@ -1058,7 +1066,7 @@ class StripeBillingSubscriptionService {
 						'attempt'               => $retry + 1,
 					)
 				);
-				return true;
+				return self::CANCEL_UNKNOWN_TO_STRIPE;
 			}
 
 			// Client 11.1.0 logs this only when WooPayments logging is on (class-wc-payments-subscription-service.php:525-529); a
@@ -1084,7 +1092,7 @@ class StripeBillingSubscriptionService {
 				time() + $delays[ $retry ]
 			);
 
-			return false;
+			return self::CANCEL_FAILED;
 		}
 
 		$subscription->add_order_note(
@@ -1096,7 +1104,7 @@ class StripeBillingSubscriptionService {
 			)
 		);
 
-		return false;
+		return self::CANCEL_FAILED;
 	}
 
 	/**
@@ -1127,15 +1135,29 @@ class StripeBillingSubscriptionService {
 	}
 
 	/**
-	 * Move a subscription's Stripe ID to `_cancelled_wcpay_subscription_id`, once Stripe cancelled its subscription.
+	 * Move a subscription's Stripe ID to `_cancelled_wcpay_subscription_id`, once its Stripe subscription counts as cancelled.
+	 *
+	 * One off WooPayments that Stripe confirmed cancelled gets a note. A live-mode not-found gets none: Stripe answers the
+	 * same for a subscription on another account, which may still bill, so its always-written line is the only trace.
 	 *
 	 * @param WC_Order $subscription          Subscription.
 	 * @param string   $wcpay_subscription_id Stripe subscription ID.
+	 * @param bool     $stripe_cancelled      Whether Stripe confirmed the cancel or reads the subscription canceled.
 	 */
-	private function move_wcpay_subscription_id_to_cancelled( WC_Order $subscription, string $wcpay_subscription_id ): void {
+	private function move_wcpay_subscription_id_to_cancelled( WC_Order $subscription, string $wcpay_subscription_id, bool $stripe_cancelled ): void {
 		$subscription->update_meta_data( '_cancelled' . self::SUBSCRIPTION_ID_META_KEY, $wcpay_subscription_id );
 		$subscription->delete_meta_data( self::SUBSCRIPTION_ID_META_KEY );
 		$subscription->save();
+
+		if ( $stripe_cancelled && WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $subscription->get_payment_method() ) {
+			$subscription->add_order_note(
+				sprintf(
+					/* translators: %s: Stripe subscription ID. */
+					__( 'This subscription\'s payment method is no longer WooPayments, so its Stripe billing (%s) was cancelled and Stripe no longer charges the customer for it. Renewals now use the payment method set on this subscription.', 'woocommerce' ),
+					esc_html( $wcpay_subscription_id )
+				)
+			);
+		}
 	}
 
 	/**
