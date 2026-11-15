@@ -746,10 +746,11 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	 * Client 11.3.0's status-change capture records a capture on an order whose status the merchant just set, and does
 	 * not complete the payment (class-wc-payments-order-service.php:2381-2429); it writes no transaction ID. The built-in
 	 * one records the captured payment as the transaction ID: it fills an empty one, leaves an equal one, and replaces a
-	 * different one, a value typed into the order and not yet saved included, with one warning naming both. Core's PayPal
-	 * Standard also writes the transaction ID on its status-change capture (includes/gateways/paypal/class-wc-gateway-paypal.php:774).
-	 * The event is applied under the caller's lock, as the status-change capture applies it, so the order object is not
-	 * read again.
+	 * different one with one warning naming both. Core's PayPal Standard also writes the transaction ID on its status-change
+	 * capture (includes/gateways/paypal/class-wc-gateway-paypal.php:774). The event is applied under the caller's lock, as the
+	 * status-change capture applies it, so the lifecycle does not read the order again. In production the provider has
+	 * re-read the order before the capture, so a typed value reaches it already saved; the typed-value row sets one on the
+	 * object to pin the same replacement at this layer.
 	 *
 	 * @dataProvider completions_that_leave_the_order_status
 	 *
@@ -810,13 +811,13 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	 */
 	public static function completions_that_leave_the_order_status(): array {
 		return array(
-			'on hold, no transaction ID'                  => array( 'on-hold', false, '', '', 'pi_recorded', 'pi_recorded', null ),
-			'completed, no transaction ID'                => array( 'completed', false, '', '', 'pi_recorded', 'pi_recorded', null ),
-			'pending, with a hold, no transaction ID'     => array( 'pending', true, '', '', 'pi_recorded', 'pi_recorded', null ),
-			'another attempt\'s transaction ID'           => array( 'on-hold', false, 'pi_earlier', '', 'pi_recorded', 'pi_recorded', 'pi_earlier' ),
-			'the same transaction ID'                     => array( 'on-hold', false, 'pi_recorded', '', 'pi_recorded', 'pi_recorded', null ),
-			'no payment reference'                        => array( 'on-hold', false, 'pi_earlier', '', null, 'pi_earlier', null ),
-			'a typed transaction ID the save has not run' => array( 'on-hold', false, '', 'manual-ref-123', 'pi_recorded', 'pi_recorded', 'manual-ref-123' ),
+			'on hold, no transaction ID'                 => array( 'on-hold', false, '', '', 'pi_recorded', 'pi_recorded', null ),
+			'completed, no transaction ID'               => array( 'completed', false, '', '', 'pi_recorded', 'pi_recorded', null ),
+			'pending, with a hold, no transaction ID'    => array( 'pending', true, '', '', 'pi_recorded', 'pi_recorded', null ),
+			'another attempt\'s transaction ID'          => array( 'on-hold', false, 'pi_earlier', '', 'pi_recorded', 'pi_recorded', 'pi_earlier' ),
+			'the same transaction ID'                    => array( 'on-hold', false, 'pi_recorded', '', 'pi_recorded', 'pi_recorded', null ),
+			'no payment reference'                       => array( 'on-hold', false, 'pi_earlier', '', null, 'pi_earlier', null ),
+			'a typed transaction ID on the order object' => array( 'on-hold', false, '', 'manual-ref-123', 'pi_recorded', 'pi_recorded', 'manual-ref-123' ),
 		);
 	}
 
