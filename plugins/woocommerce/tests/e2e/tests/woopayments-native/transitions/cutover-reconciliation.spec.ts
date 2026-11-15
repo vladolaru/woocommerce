@@ -562,17 +562,24 @@ async function refreshQueueRunnerHold(): Promise< void > {
 }
 
 /**
- * Counts the queue work the hold does not cover: actions claimed by another
- * runner, and actions running.
+ * Counts the live queue work the hold does not cover: claims other than the
+ * hold's, and actions running. A finished action keeps its claim ID for good;
+ * the claim's own row goes when its batch ends
+ * (`ActionScheduler_DBStore::release_claim()`), so only the claims table
+ * tells a live claim.
  */
 async function countOtherQueueWork(): Promise< number > {
 	return wpEvalJson< number >( `
 		global $wpdb;
-		return (int) $wpdb->get_var( $wpdb->prepare(
-			"SELECT COUNT(*) FROM {$wpdb->actionscheduler_actions} WHERE ( ( claim_id > 0 AND hook <> %s ) OR status = %s )",
-			'${ QUEUE_RUNNER_HOLD_HOOK }',
+		$claims = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$wpdb->actionscheduler_claims} WHERE claim_id NOT IN ( SELECT claim_id FROM {$wpdb->actionscheduler_actions} WHERE hook = %s AND claim_id > 0 )",
+			'${ QUEUE_RUNNER_HOLD_HOOK }'
+		) );
+		$running = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$wpdb->actionscheduler_actions} WHERE status = %s",
 			ActionScheduler_Store::STATUS_RUNNING
 		) );
+		return $claims + $running;
 	` );
 }
 
@@ -582,7 +589,7 @@ async function countOtherQueueWork(): Promise< number > {
  * claiming batches while they hold due actions
  * (`ActionScheduler_QueueRunner::run()`). Between batches it holds a claim
  * only for an instant, and a batch that finds nothing due ends it. So two
- * reads a second apart with no other claimed or running action mean no such
+ * reads a second apart with no other claim and no running action mean no such
  * runner is left to claim the ownership check the held section schedules.
  */
 async function waitForIdleQueueRunners(): Promise< void > {
@@ -745,9 +752,11 @@ test.describe( 'WooPayments transition: old plugin cutover advancement', () => {
 
 			// Step 1: the first attempt. Not asserted: record.deferred_codes,
 			// a stale mid-attempt snapshot taken before this same attempt's
-			// own upgrade result lands (F-UPGRADELOG, T.7).
+			// own upgrade result lands (F-UPGRADELOG, T.7). The status is read
+			// only inside the poll's try: a WP-CLI process that loads the
+			// extension while the attempt swaps its files fails and is retried.
 			let owner = '';
-			let status = await readCutoverStatus( 0 );
+			let status!: CutoverStatus;
 			await expect
 				.poll(
 					async () => {
