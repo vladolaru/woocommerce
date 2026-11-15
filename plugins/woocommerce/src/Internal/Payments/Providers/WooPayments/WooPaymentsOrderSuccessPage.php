@@ -270,7 +270,8 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 						array_merge(
 							array(
 								'order_id'  => $order->get_id(),
-								'intent_id' => $intent_id,
+								// Falls back to the transaction ID, which a merchant can type.
+								'intent_id' => WooPaymentsLogger::get_loggable_provider_id( $intent_id ),
 							),
 							WooPaymentsLogger::get_failure_context( $exception )
 						)

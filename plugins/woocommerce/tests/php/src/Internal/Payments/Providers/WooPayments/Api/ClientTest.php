@@ -1924,8 +1924,9 @@ class ClientTest extends WC_Unit_Test_Case {
 	 * @param string|null         $caller_key    Idempotency key the caller passed; null when the client mints one.
 	 * @param array<string,mixed> $mutable       Mutable key and the value the callback gave it.
 	 * @param array<int,string>   $callback_values Values the callback set, which the warning must not show.
+	 * @param string|null         $printed_path    API path the warning prints, when it is not the path sent.
 	 */
-	public function test_a_request_params_callback_cannot_change_a_locked_key( callable $send, callable $callback, string $path, array $changed_keys, ?string $caller_key, array $mutable, array $callback_values ): void {
+	public function test_a_request_params_callback_cannot_change_a_locked_key( callable $send, callable $callback, string $path, array $changed_keys, ?string $caller_key, array $mutable, array $callback_values, ?string $printed_path = null ): void {
 		list( $sut, $http_client ) = $this->make_sut( false );
 		$send( $sut );
 		$logger = RecordingWcLogger::install();
@@ -1951,7 +1952,7 @@ class ClientTest extends WC_Unit_Test_Case {
 		$warnings = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] ) );
 		$this->assertCount( 1, $warnings, 'One warning per request.' );
 		$this->assertSame(
-			'A callback changed values the store locks on the WooPayments POST ' . $path . ' request (wcpay_api_request_params changed ' . implode( ', ', $changed_keys ) . '). The values the store built were sent instead.',
+			'A callback changed values the store locks on the WooPayments POST ' . ( $printed_path ?? $path ) . ' request (wcpay_api_request_params changed ' . implode( ', ', $changed_keys ) . '). The values the store built were sent instead.',
 			$warnings[0][1]
 		);
 		foreach ( $callback_values as $value ) {
@@ -2031,6 +2032,25 @@ class ClientTest extends WC_Unit_Test_Case {
 					'value' => array( 'merchant_reference' => 'callback' ),
 				),
 				array( 'wc_order_callback', 'idem_callback' ),
+			),
+			// The order screen captures on the transaction ID, which a merchant can type: the request keeps it, the warning does not.
+			'typed capture ID'  => array(
+				static function ( Client $sut ) use ( $order_metadata ): void {
+					$sut->capture_intention( 'Paid-ORDER-123', 500, $order_metadata );
+				},
+				static function ( array $params ): array {
+					$params['amount_to_capture'] = 1;
+					return $params;
+				},
+				'intentions/Paid-ORDER-123/capture',
+				array( 'amount_to_capture' ),
+				null,
+				array(
+					'key'   => 'level3',
+					'value' => array(),
+				),
+				array( 'Paid-ORDER-123' ),
+				'intentions/another value/capture',
 			),
 			'refund'            => array(
 				static function ( Client $sut ): void {

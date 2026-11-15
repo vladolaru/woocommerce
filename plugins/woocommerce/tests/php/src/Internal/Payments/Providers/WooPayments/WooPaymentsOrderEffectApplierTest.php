@@ -1060,15 +1060,21 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	 * a PHP Error, which fatals there, is written at error level whatever the setting (review 34 F3). Native leaves the
 	 * message out (a platform error's text can hold an email or a URL).
 	 *
+	 * The payment method ID can be the credential the shopper submitted, so the line prints it only in a provider object
+	 * ID's form.
+	 *
 	 * @testWith ["ApiException", "yes", "info"]
 	 *           ["ApiException", "no", ""]
 	 *           ["TypeError", "no", "error"]
+	 *           ["TypeError", "no", "error", "pm_paid for shopper@example.com", "another value"]
 	 *
-	 * @param string $throwable_class Short name of the class thrown by the token save.
-	 * @param string $logging         Gateway `enable_logging` setting.
-	 * @param string $level           Expected level, or '' for no line.
+	 * @param string $throwable_class   Short name of the class thrown by the token save.
+	 * @param string $logging           Gateway `enable_logging` setting.
+	 * @param string $level             Expected level, or '' for no line.
+	 * @param string $payment_method_id Payment method ID of the outcome.
+	 * @param string $printed           What the line prints for it.
 	 */
-	public function test_checkout_token_save_failure_log_line( string $throwable_class, string $logging, string $level ): void {
+	public function test_checkout_token_save_failure_log_line( string $throwable_class, string $logging, string $level, string $payment_method_id = 'pm_paid', string $printed = 'pm_paid' ): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => $logging ) );
 		add_filter( 'wcpay_dev_mode', '__return_false' );
 		$user_id = $this->factory()->user->create();
@@ -1085,12 +1091,12 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$this->apply_charge(
 			$this->create_applier( $token_service ),
 			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_submitted' ),
-			new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_paid', '', 'pm_paid', 'cus_paid' ),
+			new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_paid', '', $payment_method_id, 'cus_paid' ),
 			WooPaymentsOrderEffectPlan::for_payment_intent(
 				array(
 					'id'             => 'pi_paid',
 					'status'         => 'succeeded',
-					'payment_method' => 'pm_paid',
+					'payment_method' => $payment_method_id,
 				),
 				true
 			)
@@ -1104,6 +1110,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $lines );
 		$this->assertSame( array( $level, 'Error when saving payment method.', 'woopayments' ), $logger->lines[ $lines[0] ] );
 		$this->assertSame( $order->get_id(), $logger->contexts[ $lines[0] ]['order_id'] ?? null );
+		$this->assertSame( $printed, $logger->contexts[ $lines[0] ]['payment_method_id'] ?? null );
 		$this->assertSame( $throwable_class, substr( (string) strrchr( '\\' . ( $logger->contexts[ $lines[0] ]['exception'] ?? '' ), '\\' ), 1 ) );
 		$this->assert_log_holds_no_provider_text( $logger );
 		$this->assertStringNotContainsString( 'Token storage failed', (string) wp_json_encode( $logger->lines ) );

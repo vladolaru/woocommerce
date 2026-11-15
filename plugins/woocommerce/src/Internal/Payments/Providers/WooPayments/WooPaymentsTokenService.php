@@ -717,10 +717,12 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 					throw $exception;
 				}
 
+				// A zero-total checkout's display read can carry the credential the shopper submitted.
+				$printed_payment_method_id = WooPaymentsLogger::get_loggable_provider_id( $payment_method_id );
 				wc_get_container()->get( WooPaymentsLogger::class )->log_throwable(
-					'Error retrieving WooPayments payment method details for ' . $payment_method_id . '.',
+					'Error retrieving WooPayments payment method details for ' . $printed_payment_method_id . '.',
 					$exception,
-					array( 'payment_method_id' => $payment_method_id )
+					array( 'payment_method_id' => $printed_payment_method_id )
 				);
 			}
 
@@ -940,7 +942,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 			$exception,
 			array(
 				'order_id'          => $order->get_id(),
-				'payment_method_id' => $payment_method_id,
+				'payment_method_id' => WooPaymentsLogger::get_loggable_provider_id( $payment_method_id ),
 			),
 			'info'
 		);

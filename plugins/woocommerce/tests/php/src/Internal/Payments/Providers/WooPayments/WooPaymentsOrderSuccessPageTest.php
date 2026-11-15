@@ -824,9 +824,22 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	 * Client 11.2.0 makes the same call unguarded (class-wc-payments-order-success-page.php:445-457), so its failure shows;
 	 * native keeps the page and logs the failure whatever the logging setting.
 	 *
-	 * @testdox Should keep the default copy and log a warning naming the order when the live intent cannot be fetched.
+	 * @testdox Should keep the default copy and log a warning naming the order when the live intent cannot be fetched, with the $_dataName printed as $printed.
+	 *
+	 * The re-check falls back to the transaction ID, which a merchant can type, so the line prints it only in a provider
+	 * object ID's form.
+	 *
+	 * @testWith ["stored intent", "pi_wechat", "", "pi_wechat"]
+	 *           ["typed transaction ID", "", "ORDER-123 for shopper@example.com", "another value"]
+	 *
+	 * @param string $kind           What the re-check reads, for the case label.
+	 * @param string $intent_id      Stored intent.
+	 * @param string $transaction_id Transaction ID.
+	 * @param string $printed        What the line prints.
 	 */
-	public function test_keeps_order_received_text_when_intent_fetch_fails(): void {
+	public function test_keeps_order_received_text_when_intent_fetch_fails( string $kind, string $intent_id, string $transaction_id, string $printed ): void {
+		unset( $kind );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
 		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'get_payment_intention' ) )
@@ -834,7 +847,9 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 		$api_client->method( 'is_available' )->willReturn( true );
 		$api_client->method( 'get_payment_intention' )->willThrowException( new ApiException( 'Nope.', 'wcpay_error', 500 ) );
 		$page  = $this->create_page( null, $api_client );
-		$order = $this->create_thankyou_order( 'pending', WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'wechat_pay', 'pi_wechat' );
+		$order = $this->create_thankyou_order( 'pending', WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'wechat_pay', $intent_id );
+		$order->set_transaction_id( $transaction_id );
+		$order->save();
 		$lines = array();
 		add_filter(
 			'woocommerce_logger_log_message',
@@ -857,10 +872,11 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'warning', $level );
 		$this->assertSame( 'The payment re-check on the order received page failed, so the order received text stays.', $message );
 		$this->assertSame( $order->get_id(), $context['order_id'] ?? null );
-		$this->assertSame( 'pi_wechat', $context['intent_id'] ?? null );
+		$this->assertSame( $printed, $context['intent_id'] ?? null );
 		$this->assertSame( ApiException::class, $context['exception'] ?? null );
 		$this->assertSame( 500, $context['http_status'] ?? null );
 		$this->assertStringNotContainsString( 'Nope.', (string) wp_json_encode( $lines ), 'The platform message stays out of the log.' );
+		$this->assertStringNotContainsString( 'shopper@example.com', (string) wp_json_encode( $lines ) );
 	}
 
 	/**

@@ -444,6 +444,30 @@ class StripeBillingMigratorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The migration log names a subscription paid with $payment_method as $printed when it skips the token check.
+	 * @testWith ["bacs", "bacs"]
+	 *           ["paid by cheque, ask shopper@example.com", "another value"]
+	 *
+	 * The REST API can set a subscription's payment method to any text, so the line prints it only in a gateway ID's form.
+	 *
+	 * @param string $payment_method Subscription payment method.
+	 * @param string $printed        What the line prints for it.
+	 */
+	public function test_migration_log_names_another_payment_method_only_in_a_gateway_id_form( string $payment_method, string $printed ): void {
+		list( $sut, $api ) = $this->build_migrator();
+		$subscription      = $this->create_stripe_billed_subscription( self::MAIN_SUBSCRIPTION_ID );
+		$subscription->set_payment_method( $payment_method );
+		$subscription->save();
+		$api->method( 'get_subscription' )->willReturn( $this->active_wcpay_subscription );
+		$logger = RecordingWcLogger::install();
+
+		$sut->migrate_wcpay_subscription( $subscription->get_id() );
+
+		$this->get_logged_context( $logger, sprintf( '---- Skipped verifying the payment token. Subscription #%1$d has "%2$s" as the payment method.', $subscription->get_id(), $printed ) );
+		$this->assertStringNotContainsString( 'shopper@example.com', (string) wp_json_encode( array( $logger->lines, $logger->contexts ) ) );
+	}
+
+	/**
 	 * @testdox Should retry a failed migration with a growing delay, and fail it after the seventh retry; a skipped migration is not retried.
 	 */
 	public function test_retries_a_failed_migration(): void {

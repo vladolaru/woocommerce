@@ -2090,8 +2090,9 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 * @param string $transaction_id      The order's transaction ID: the other payment's, or the attempt's own from its checkout.
 	 * @param string $intent_status       The abandoned attempt's status when its callback arrives.
 	 * @param bool   $is_changing_payment Whether the request says it changes a payment method.
+	 * @param string $printed             The payment method as the refusal line prints it.
 	 */
-	public function test_update_order_status_refuses_an_order_another_payment_method_holds( string $gateway, string $status, string $transaction_id, string $intent_status, bool $is_changing_payment ): void {
+	public function test_update_order_status_refuses_an_order_another_payment_method_holds( string $gateway, string $status, string $transaction_id, string $intent_status, bool $is_changing_payment, string $printed ): void {
 		$order = $this->create_woopayments_order( '50.00' );
 		$order->set_payment_method( $gateway );
 		$order->set_payment_method_title( 'Other payment' );
@@ -2151,20 +2152,39 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( "We're not able to process this payment. Please try again later.", $response['error']['message'] ?? null );
 		$this->assertArrayNotHasKey( 'return_url', $response );
 		$this->assertSame( 1, $this->count_callback_refusal_lines( $logger, $order ) );
+		// The REST API can set any payment method, so the line prints it only in a gateway ID's form.
+		$context = $this->get_logged_context_of( $logger, sprintf( 'order-status callback refused: order %d has payment method "%s", so payment pi_abandoned was not applied', $order->get_id(), $printed ) );
+		$this->assertSame( array( 'pi_abandoned', $printed ), array( $context['intent_id'] ?? '', $context['payment_method'] ?? '' ) );
+		$this->assertStringNotContainsString( 'shopper@example.com', (string) wp_json_encode( array( $logger->lines, $logger->contexts ) ) );
+	}
+
+	/**
+	 * Get the context of the one recorded line with this message.
+	 *
+	 * @param RecordingWcLogger $logger  Recording logger.
+	 * @param string            $message Exact message.
+	 * @return array<string,mixed>
+	 */
+	private function get_logged_context_of( RecordingWcLogger $logger, string $message ): array {
+		$found = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => $message === $line[1] ) );
+		$this->assertCount( 1, $found, 'Recorded: ' . (string) wp_json_encode( array_column( $logger->lines, 1 ) ) );
+
+		return $logger->contexts[ $found[0] ];
 	}
 
 	/**
 	 * Orders another payment method holds while they store an abandoned WooPayments attempt.
 	 *
-	 * @return array<string,array{string,string,string,string,bool}>
+	 * @return array<string,array{string,string,string,string,bool,string}>
 	 */
 	public function provider_orders_another_payment_method_holds(): array {
 		return array(
-			'an online gateway paid it, the attempt then succeeded' => array( 'stripe', OrderStatus::PROCESSING, 'ch_other_payment', 'succeeded', false ),
-			'bank transfer holds it, the attempt then failed'       => array( 'bacs', OrderStatus::ON_HOLD, 'pi_abandoned', 'requires_payment_method', false ),
-			'bank transfer holds it, the attempt then authorized'   => array( 'bacs', OrderStatus::ON_HOLD, 'pi_abandoned', 'requires_capture', false ),
-			'a cheque holds it, the attempt then succeeded'         => array( 'cheque', OrderStatus::ON_HOLD, 'pi_abandoned', 'succeeded', false ),
-			'bank transfer holds it, the request says it changes a payment method' => array( 'bacs', OrderStatus::ON_HOLD, 'pi_abandoned', 'succeeded', true ),
+			'an online gateway paid it, the attempt then succeeded' => array( 'stripe', OrderStatus::PROCESSING, 'ch_other_payment', 'succeeded', false, 'stripe' ),
+			'bank transfer holds it, the attempt then failed' => array( 'bacs', OrderStatus::ON_HOLD, 'pi_abandoned', 'requires_payment_method', false, 'bacs' ),
+			'bank transfer holds it, the attempt then authorized' => array( 'bacs', OrderStatus::ON_HOLD, 'pi_abandoned', 'requires_capture', false, 'bacs' ),
+			'a cheque holds it, the attempt then succeeded' => array( 'cheque', OrderStatus::ON_HOLD, 'pi_abandoned', 'succeeded', false, 'cheque' ),
+			'bank transfer holds it, the request says it changes a payment method' => array( 'bacs', OrderStatus::ON_HOLD, 'pi_abandoned', 'succeeded', true, 'bacs' ),
+			'a payment method set to free text holds it' => array( 'paid by cheque, ask shopper@example.com', OrderStatus::ON_HOLD, 'pi_abandoned', 'succeeded', false, 'another value' ),
 		);
 	}
 

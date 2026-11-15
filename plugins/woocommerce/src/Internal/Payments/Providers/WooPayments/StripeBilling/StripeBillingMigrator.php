@@ -630,7 +630,7 @@ class StripeBillingMigrator extends \WCS_Background_Repairer {
 	 */
 	private function verify_subscription_payment_token( WC_Order $subscription, array $wcpay_subscription ): void {
 		if ( WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $subscription->get_payment_method() ) {
-			$this->migration_log->log( sprintf( '---- Skipped verifying the payment token. Subscription #%1$d has "%2$s" as the payment method.', $subscription->get_id(), $subscription->get_payment_method() ) );
+			$this->migration_log->log( sprintf( '---- Skipped verifying the payment token. Subscription #%1$d has "%2$s" as the payment method.', $subscription->get_id(), WooPaymentsLogger::get_loggable_payment_method( (string) $subscription->get_payment_method() ) ) );
 			return;
 		}
 

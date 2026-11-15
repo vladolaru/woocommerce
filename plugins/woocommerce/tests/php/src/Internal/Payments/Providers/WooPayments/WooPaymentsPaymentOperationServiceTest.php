@@ -6295,11 +6295,14 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * Driven through the gateway, which must not record the refusal as a failed refund: no failure note, and the order's
 	 * refund status stays as it was.
 	 *
+	 * The refusal line is written whatever the logging setting and names a platform code only from the logger's list.
+	 *
 	 * @dataProvider failed_refund_lookup_data
 	 *
-	 * @param mixed $answer Platform answer to the list read.
+	 * @param mixed  $answer Platform answer to the list read.
+	 * @param string $why    Why the refusal line says the earlier attempt is unsettled.
 	 */
-	public function test_refund_lookup_failure_refuses_and_keeps_the_hold( $answer ): void {
+	public function test_refund_lookup_failure_refuses_and_keeps_the_hold( $answer, string $why ): void {
 		$order = $this->create_refund_hold_order();
 		$order->update_meta_data( '_wcpay_refund_status', 'successful' );
 		$order->save();
@@ -6307,8 +6310,15 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( $answer );
 		$provider               = $this->create_refund_hold_provider( $http_client );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$logger = RecordingWcLogger::install();
 
 		list( $result ) = $this->run_gateway_refund( $provider, $order, 5.55 );
+
+		$refusals = array_values( array_filter( $logger->lines, static fn( array $line ): bool => false !== strpos( $line[1], 'was refused with ' . WooPaymentsRefundAmbiguityService::REFUSAL_CHECK_FAILED ) ) );
+		$this->assertCount( 1, $refusals );
+		$this->assertStringEndsWith( ' is unsettled because ' . $why . '.', $refusals[0][1] );
+		$this->assertStringNotContainsString( 'shopper@example.com', (string) wp_json_encode( array( $logger->lines, $logger->contexts ) ) );
 
 		$this->assertWPError( $result );
 		$this->assertSame( WooPaymentsRefundAmbiguityService::REFUSAL_CHECK_FAILED, $result->get_error_code() );
@@ -6329,23 +6339,35 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Failed reads of the charge's refunds: a transport failure (a GET is never retried), an error status (the recorded
-	 * refund error envelope, `Fixtures/platform-refund-errors.json`), and an answer with no list.
+	 * refund error envelope, `Fixtures/platform-refund-errors.json`, as recorded and with free text in its code), and an answer
+	 * with no list, each with what the refusal line says.
 	 *
-	 * @return array<string,array{mixed}>
+	 * @return array<string,array{0:mixed,1:string}>
 	 */
 	public function failed_refund_lookup_data(): array {
-		$error = $this->load_recorded_refund_error( 'refund_exceeds_charge' );
+		$error             = $this->load_recorded_refund_error( 'refund_exceeds_charge' );
+		$free_text         = json_decode( $error['response']['raw_body'], true );
+		$free_text['code'] = 'refund_blocked_for_shopper@example.com';
 
 		return array(
-			'transport failure' => array( new WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out after 70001 milliseconds' ) ),
+			'transport failure' => array( new WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out after 70001 milliseconds' ), 'the charge\'s refunds could not be listed (wcpay_http_request_failed)' ),
 			'error status'      => array(
 				array(
 					'response' => array( 'code' => $error['response']['http_status'] ),
 					'headers'  => array( 'content-type' => $error['response']['content_type'] ),
 					'body'     => $error['response']['raw_body'],
 				),
+				'the charge\'s refunds could not be listed (wcpay_bad_request)',
 			),
-			'no list'           => array( self::http_json( 200, array( 'object' => 'list' ) ) ),
+			'unlisted code'     => array(
+				array(
+					'response' => array( 'code' => $error['response']['http_status'] ),
+					'headers'  => array( 'content-type' => $error['response']['content_type'] ),
+					'body'     => (string) wp_json_encode( $free_text ),
+				),
+				'the charge\'s refunds could not be listed (unknown_error)',
+			),
+			'no list'           => array( self::http_json( 200, array( 'object' => 'list' ) ), 'the platform answered without a refund list' ),
 		);
 	}
 

@@ -204,18 +204,24 @@ final class WooPaymentsSetupTier {
 	}
 
 	/**
-	 * Log a setup tier write whose readback did not match, with the requested and stored values.
+	 * Log a setup tier write whose readback did not match, with the requested tier and what was read back: a tier, `none`
+	 * when the option is missing, or the PHP type of anything else, since a filter or another writer can put any value there.
 	 *
 	 * @param string $requested_tier Setup tier that was written.
 	 * @param mixed  $stored_tier    Value read back from the option.
 	 * @param bool   $autoloaded      Whether the option is autoloaded.
 	 */
 	private function log_write_failure( string $requested_tier, $stored_tier, bool $autoloaded ): void {
+		if ( null === $stored_tier ) {
+			$printed_tier = 'none';
+		} else {
+			$printed_tier = $this->is_valid_tier( $stored_tier ) ? $stored_tier : gettype( $stored_tier );
+		}
 		wc_get_logger()->error(
 			sprintf(
 				'WooPayments setup tier write failed: requested %1$s, stored %2$s, autoloaded %3$s.',
 				$requested_tier,
-				(string) wp_json_encode( $stored_tier ),
+				$printed_tier,
 				$autoloaded ? 'yes' : 'no'
 			),
 			array( 'source' => WooPaymentsLogger::SOURCE )

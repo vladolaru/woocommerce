@@ -74,23 +74,37 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox State persistence accepts exact tiers, rejects unknown values, and verifies readback; a write that does not read back logs one error with the requested and stored values.
+	 * @testdox State persistence accepts exact tiers, rejects unknown values, and verifies readback; a write that reads back $_dataName logs one error naming it as $printed.
+	 *
+	 * A filter or another writer can put any value in the option, so the line names a tier as it is and anything else by
+	 * its PHP type.
+	 *
+	 * @testWith ["false", "pre_update_option_", false, "boolean"]
+	 *           ["another tier", "option_", "available", "available"]
+	 *           ["no value", "option_", null, "none"]
+	 *           ["an array holding free text", "option_", {"note": "shopper@example.com"}, "array"]
+	 *
+	 * @param string $read_back What the filter makes the option read back, for the case label.
+	 * @param string $filter    Filter prefix that changes the value.
+	 * @param mixed  $value     Value the filter returns.
+	 * @param string $printed   What the line prints for the stored value.
 	 */
-	public function test_write_tier_validates_and_verifies_persistence(): void {
+	public function test_write_tier_validates_and_verifies_persistence( string $read_back, string $filter, $value, string $printed ): void {
+		unset( $read_back );
 		$logger = RecordingWcLogger::install();
 		$this->assertTrue( $this->state->write_tier( WooPaymentsSetupTier::CONNECTED ) );
 		$this->assertSame( WooPaymentsSetupTier::CONNECTED, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
 		$this->assertFalse( $this->state->write_tier( 'CONNECTED' ) );
 
-		// The filter turns the written value into false, so false is what reads back.
-		add_filter( 'pre_update_option_' . WooPaymentsSetupTier::OPTION_NAME, '__return_false' );
+		add_filter( $filter . WooPaymentsSetupTier::OPTION_NAME, static fn() => $value );
 		$this->assertFalse( $this->state->write_tier( WooPaymentsSetupTier::ACTIVE ) );
 		$this->assertSame( WooPaymentsSetupTier::CONNECTED, $this->state->get_effective_tier() );
 
 		$this->assertSame(
-			array( array( 'error', 'WooPayments setup tier write failed: requested active, stored false, autoloaded yes.', 'woopayments' ) ),
+			array( array( 'error', 'WooPayments setup tier write failed: requested active, stored ' . $printed . ', autoloaded yes.', 'woopayments' ) ),
 			$logger->lines
 		);
+		$this->assertStringNotContainsString( 'shopper@example.com', (string) wp_json_encode( $logger->contexts ) );
 	}
 
 	/**

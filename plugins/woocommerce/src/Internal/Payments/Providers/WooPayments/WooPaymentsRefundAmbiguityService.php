@@ -156,7 +156,7 @@ class WooPaymentsRefundAmbiguityService {
 		try {
 			$list = $this->api_client->list_charge_refunds( $request['charge'], self::LIST_LIMIT );
 		} catch ( ApiException $exception ) {
-			return $this->refuse_check_failed( $order, $record, 'the charge\'s refunds could not be listed (' . $exception->get_error_code() . ')' );
+			return $this->refuse_check_failed( $order, $record, 'the charge\'s refunds could not be listed (' . WooPaymentsLogger::get_loggable_error_code( $exception->get_error_code() ) . ')' );
 		}
 
 		if ( ! isset( $list['data'] ) || ! is_array( $list['data'] ) ) {

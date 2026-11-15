@@ -212,13 +212,15 @@ class WooPaymentsIntentConfirmationService {
 	 * @param string   $entry_point `order-status callback` or `redirect return`.
 	 */
 	public function log_refusal_of_another_payment_method( WC_Order $order, string $intent_id, string $entry_point ): void {
-		$payment_method = (string) $order->get_payment_method();
+		// A redirect return names its intent before the stored check, and the REST API can set any payment method.
+		$payment_method = WooPaymentsLogger::get_loggable_payment_method( (string) $order->get_payment_method() );
+		$printed_intent = WooPaymentsLogger::get_loggable_provider_id( $intent_id );
 		wc_get_logger()->warning(
-			sprintf( '%1$s refused: order %2$d has payment method "%3$s", so payment %4$s was not applied', $entry_point, $order->get_id(), $payment_method, $intent_id ),
+			sprintf( '%1$s refused: order %2$d has payment method "%3$s", so payment %4$s was not applied', $entry_point, $order->get_id(), $payment_method, $printed_intent ),
 			array(
 				'source'         => WooPaymentsLogger::SOURCE,
 				'order_id'       => $order->get_id(),
-				'intent_id'      => $intent_id,
+				'intent_id'      => $printed_intent,
 				'payment_method' => $payment_method,
 			)
 		);

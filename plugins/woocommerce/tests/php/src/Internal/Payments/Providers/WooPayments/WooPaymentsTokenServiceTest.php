@@ -2386,9 +2386,16 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 * Client 11.1.0 add_payment_method_to_user() does not catch the fetch (`class-wc-payments-token-service.php:136`), so a
 	 * PHP error stops the token, and every client caller catches only Exception (review 34 F1). Native keeps a display read
 	 * going without the details, as it does for an Exception, and logs the error with its class. The token path rethrows
-	 * without logging, so its caller writes the only line (review 35 F8).
+	 * without logging, so its caller writes the only line (review 35 F8). A zero-total checkout's display read can carry the
+	 * credential the shopper submitted, so the line prints the ID only in a provider object ID's form.
+	 *
+	 * @testWith ["pm_display", "pm_display"]
+	 *           ["pm_display for shopper@example.com", "another value"]
+	 *
+	 * @param string $display_id Payment method ID the display read names.
+	 * @param string $printed    What the line prints for it.
 	 */
-	public function test_php_error_fetching_payment_method_stops_new_token_only(): void {
+	public function test_php_error_fetching_payment_method_stops_new_token_only( string $display_id, string $printed ): void {
 		$user_id = self::factory()->user->create();
 		$error   = new \TypeError( 'Return value must be of type array, null returned' );
 		$sut     = new WooPaymentsTokenService();
@@ -2434,7 +2441,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		add_filter( 'wcpay_dev_mode', '__return_false' );
 		$logger = RecordingWcLogger::install();
 
-		$this->assertSame( array(), $sut->get_payment_method_details_for_display( 'pm_display' ) );
+		$this->assertSame( array(), $sut->get_payment_method_details_for_display( $display_id ) );
 		$thrown = null;
 		try {
 			$sut->get_or_create_token_for_user( 'pm_new_token', $user_id );
@@ -2445,11 +2452,12 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( $error, $thrown );
 		$this->assertSame( array(), WC_Payment_Tokens::get_customer_tokens( $user_id ) );
 		$context = $this->get_logged_context_at_level( $logger, 'error' );
-		$this->assertSame( array( 'TypeError', 'pm_display' ), array( $context['exception'] ?? '', $context['payment_method_id'] ?? '' ), 'The display read logs the PHP error with debug logging off; the token path leaves it to its caller.' );
-		$this->assertSame( array( 'error', 'Error retrieving WooPayments payment method details for pm_display.', 'woopayments' ), $logger->get_errors()[0] );
+		$this->assertSame( array( 'TypeError', $printed ), array( $context['exception'] ?? '', $context['payment_method_id'] ?? '' ), 'The display read logs the PHP error with debug logging off; the token path leaves it to its caller.' );
+		$this->assertSame( array( 'error', 'Error retrieving WooPayments payment method details for ' . $printed . '.', 'woopayments' ), $logger->get_errors()[0] );
 		$this->assertSame( 0, $context['code'] ?? null );
 		$this->assertNotSame( '', $context['trace'] ?? '' );
 		$this->assertStringNotContainsString( 'Return value must be of type array', (string) wp_json_encode( array( $logger->lines, $logger->contexts ) ) );
+		$this->assertStringNotContainsString( 'shopper@example.com', (string) wp_json_encode( array( $logger->lines, $logger->contexts ) ) );
 	}
 
 	/**

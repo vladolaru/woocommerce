@@ -11,6 +11,7 @@ use Automattic\Jetpack\Connection\Client as Jetpack_Connection_Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCompatibilityData;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use WP_Error;
 use WP_REST_Request;
 
@@ -2367,7 +2368,16 @@ class Client {
 			return;
 		}
 
-		$this->transport_log->warning( sprintf( 'A callback changed values the store locks on the WooPayments %1$s %2$s request (%3$s). The values the store built were sent instead.', $method, $api, implode( '; ', $changes ) ) );
+		// The path's own words print as they are; any other segment, such as an intent ID the order stores or a merchant
+		// typed as its transaction ID, prints through the provider ID helper. The request itself keeps the path it was sent with.
+		$printed_api = implode(
+			'/',
+			array_map(
+				static fn( string $segment ): string => 1 === preg_match( '/\A[a-z]+(?:[_-][a-z]+)*\z/', $segment ) ? $segment : WooPaymentsLogger::get_loggable_provider_id( $segment ),
+				explode( '/', $api )
+			)
+		);
+		$this->transport_log->warning( sprintf( 'A callback changed values the store locks on the WooPayments %1$s %2$s request (%3$s). The values the store built were sent instead.', $method, $printed_api, implode( '; ', $changes ) ) );
 	}
 
 	/**
