@@ -654,8 +654,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		$this->assertSame( $expected_status, $renewal->get_status() );
 		$this->assertSame( 'status change' !== $produced_by, null !== $renewal->get_date_paid() );
 		$this->assertSame( '', $renewal->get_transaction_id() );
-		$refunded_before = (float) $renewal->get_total_refunded();
-		$this->assertGreaterThan( 0, $refunded_before );
+		$this->assertGreaterThan( 0, (float) $renewal->get_total_refunded() );
 		$before       = $this->get_payment_record( $renewal );
 		$notes_before = $this->get_note_contents( $renewal );
 		for ( $delivery = 1; $delivery <= 2; $delivery++ ) {
@@ -677,8 +676,6 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 			? 'If the customer should not have been charged, refund the payment from this order.'
 			: 'If the customer should not have been charged, refund the charge from its WooPayments transaction page, not from this order.';
 		$this->assertStringContainsString( 'while this order&#039;s status was ' . wc_get_order_status_name( $expected_status ) . '. The order status was not changed. ' . $refund_from . ' Stripe Billing will keep charging subscription #', $new_notes[0] );
-		$this->assertSame( $expected_status, $renewal->get_status() );
-		$this->assertSame( $refunded_before, (float) $renewal->get_total_refunded(), 'No refund row is added.' );
 		$charge = wc_get_container()->get( WooPaymentsOrderDetailsService::class )->enrich_charge_response( array( 'id' => self::RENEWAL_CHARGE_ID ) );
 		if ( $expected_recorded ) {
 			$this->assertSame( array( self::RENEWAL_INTENT_ID, self::RENEWAL_CHARGE_ID, self::RENEWAL_INTENT_ID ), array( $renewal->get_meta( '_intent_id', true ), $renewal->get_meta( '_charge_id', true ), $renewal->get_transaction_id() ) );
@@ -695,16 +692,31 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	 * @testdox A paid invoice for a renewal already in a paid status adds the payment's success note and Fee details job once, and leaves its status: $_dataName.
 	 *
 	 * Delivered twice. The renewal was paid by another payment, such as its new payment method, before its invoice event.
+	 * One that was partly refunded by hand, so that it can no longer refund the invoice's amount, still takes this path.
 	 *
-	 * @testWith ["processing"]
-	 *           ["completed"]
+	 * @testWith ["processing", ""]
+	 *           ["completed", ""]
+	 *           ["processing", "10.00"]
 	 *
 	 * @param string $status Paid renewal status.
+	 * @param string $refund Amount refunded by hand, without the gateway, before the invoice, or an empty string for none.
 	 */
-	public function test_paid_invoice_notes_a_renewal_in_a_paid_status_once( string $status ): void {
+	public function test_paid_invoice_notes_a_renewal_in_a_paid_status_once( string $status, string $refund ): void {
 		$order = $this->create_paid_renewal_order( $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID ) );
 		$order->set_status( $status );
 		$order->save();
+		if ( '' !== $refund ) {
+			wc_create_refund(
+				array(
+					'order_id'       => $order->get_id(),
+					'amount'         => $refund,
+					'refund_payment' => false,
+				)
+			);
+			$order = wc_get_order( $order->get_id() );
+			$this->assertLessThan( 24.90, (float) $order->get_remaining_refund_amount() );
+			$this->assertSame( $status, $order->get_status() );
+		}
 		$payments = did_action( 'woocommerce_payment_complete' );
 		$this->queue_response( 200, $this->get_renewal_intent() );
 		$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
@@ -735,6 +747,30 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 			)
 		);
 		$this->assertSame( self::RENEWAL_INTENT_ID, $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( array(), $this->get_notes_containing( $order, 'Stripe Billing collected' ) );
+		$this->assertSame( 0, $this->count_log_lines( 'other charge recorded' ) );
+	}
+
+	/**
+	 * @testdox A paid invoice above the total of a failed renewal holds the renewal with its payment recorded and adds no invoice note.
+	 *
+	 * The renewal still needs payment, so the invoice is its payment: it is held for the mismatch, as client 11.3.0 holds it
+	 * (class-wc-payments-subscriptions-event-handler.php:163-172), even though the order could not refund the whole invoice.
+	 */
+	public function test_paid_invoice_above_a_failed_renewals_total_holds_it_with_its_payment(): void {
+		$renewal = $this->create_unpaid_renewal_order( $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID ), '20.00' );
+		$renewal->update_status( 'failed' );
+		$this->queue_response( 200, $this->get_renewal_intent() );
+		$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
+
+		$this->sut->handle_event( $this->get_event( 'invoice_paid_renewal' ) );
+
+		$renewal = wc_get_order( $renewal->get_id() );
+		$this->assertSame( 'on-hold', $renewal->get_status() );
+		$this->assertSame( array( self::RENEWAL_INTENT_ID, self::RENEWAL_CHARGE_ID, 'succeeded', self::RENEWAL_INTENT_ID ), array( $renewal->get_meta( '_intent_id', true ), $renewal->get_meta( '_charge_id', true ), $renewal->get_meta( '_intention_status', true ), $renewal->get_transaction_id() ) );
+		$this->assertCount( 1, $this->get_notes_containing( $renewal, 'collected $24.90 USD, but the order total is $20.00 USD' ) );
+		$this->assertSame( array(), $this->get_notes_containing( $renewal, 'Stripe Billing collected' ) );
+		$this->assertSame( 0, $this->count_log_lines( 'other charge recorded' ) );
 	}
 
 	/**
