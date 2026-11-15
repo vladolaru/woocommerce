@@ -864,6 +864,159 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Under Switch in progress, a switch waiting for scheduled WooPayments tasks past the short retry says so, with a link to them ($_dataName).
+	 * @dataProvider provide_queued_action_waits
+	 *
+	 * @param string[]    $codes     The deferral's codes.
+	 * @param int         $delay     Seconds from the deferral to the next attempt.
+	 * @param string[]    $hooks     Queued WooPayments hooks the built-in does not handle.
+	 * @param string|null $link_hook The hook the link filters on; null for no line, '' for an unfiltered link.
+	 */
+	public function test_switch_waiting_for_queued_tasks_says_so_past_the_short_retry( array $codes, int $delay, array $hooks, ?string $link_hook ): void {
+		$this->fake_plugin_active();
+		$this->fake_current_user_caps( true );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		foreach ( $hooks as $hook ) {
+			$this->assertIsInt( as_schedule_single_action( time() + HOUR_IN_SECONDS, $hook, array(), 'woocommerce-payments' ) );
+		}
+		$deferred_at = time() - 30;
+		$record      = array(
+			'state'                  => StateStore::STATE_DEFERRED,
+			'deferred_codes'         => $codes,
+			'informational_outcomes' => array(),
+			'next_attempt_at'        => $deferred_at + $delay,
+			// An earlier deferral at the cadence comes first; the last one decides.
+			'step_log'               => array(
+				array(
+					'step'    => 'deferred',
+					'at'      => $deferred_at - 15 * MINUTE_IN_SECONDS,
+					'context' => array( 'codes' => $codes ),
+				),
+				array(
+					'step' => 'running',
+					'at'   => $deferred_at,
+				),
+				array(
+					'step'    => 'deferred',
+					'at'      => $deferred_at,
+					'context' => array( 'codes' => $codes ),
+				),
+			),
+		);
+		$job = new class( $record ) extends ReconciliationJob {
+			/** @var array<string,mixed> */
+			private array $record;
+
+			/**
+			 * @param array<string,mixed> $record The record the notice renders.
+			 */
+			public function __construct( array $record ) {
+				$this->record = $record;
+			}
+
+			/** @return array<string,mixed>|null */
+			public function refresh_notice_record(): ?array {
+				return $this->record;
+			}
+		};
+
+		try {
+			$notice = $this->render_admin_notices( $this->create_cutover_controller( $job ) );
+		} finally {
+			foreach ( $hooks as $hook ) {
+				as_unschedule_all_actions( $hook );
+			}
+		}
+
+		$this->assertStringContainsString( 'Switch in progress', $notice );
+		$sentence = 'The switch is waiting for scheduled WooPayments tasks to finish. It continues on its own once they have run.';
+		if ( null === $link_hook ) {
+			$this->assertStringNotContainsString( $sentence, $notice );
+			return;
+		}
+		$this->assertStringContainsString( $sentence, $notice );
+		$this->assertSame( 1, preg_match( '/<a href="([^"]*)">View scheduled tasks<\/a>/', $notice, $matches ) );
+		wp_parse_str( (string) wp_parse_url( html_entity_decode( $matches[1] ), PHP_URL_QUERY ), $query );
+		$this->assertSame( 'wc-status', $query['page'] ?? null );
+		$this->assertSame( 'action-scheduler', $query['tab'] ?? null );
+		$this->assertSame( 'pending', $query['status'] ?? null );
+		$this->assertSame( $link_hook, $query['s'] ?? '' );
+	}
+
+	/**
+	 * @testdox A switch waiting for scheduled WooPayments tasks on a queue that could not be read links to every pending task.
+	 */
+	public function test_queued_tasks_link_is_unfiltered_when_the_queue_could_not_be_read(): void {
+		$this->fake_plugin_active();
+		$this->fake_current_user_caps( true );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$deferred_at = time();
+		$job         = new class( $deferred_at ) extends ReconciliationJob {
+			/** @var int */
+			private int $deferred_at;
+
+			/**
+			 * @param int $deferred_at When the switch deferred.
+			 */
+			public function __construct( int $deferred_at ) {
+				$this->deferred_at = $deferred_at;
+			}
+
+			/** @return array<string,mixed>|null */
+			public function refresh_notice_record(): ?array {
+				return array(
+					'state'                  => StateStore::STATE_DEFERRED,
+					'deferred_codes'         => array( PreflightService::FAILURE_QUEUE_HOOKS_UNHANDLED ),
+					'informational_outcomes' => array(),
+					'next_attempt_at'        => $this->deferred_at + 15 * MINUTE_IN_SECONDS,
+					'step_log'               => array(
+						array(
+							'step' => 'deferred',
+							'at'   => $this->deferred_at,
+						),
+					),
+				);
+			}
+		};
+		$preflight   = $this->create_preflight_service(
+			new class() extends PreflightService {
+				/** @return array<int,array{action_id:int,hook:string,group:string,due_at:int|null}> */
+				public function get_unhandled_queue_actions(): array {
+					return array(
+						array(
+							'action_id' => 0,
+							'hook'      => 'woocommerce_woopayments_operational_queue_query_failed',
+							'group'     => '',
+							'due_at'    => null,
+						),
+					);
+				}
+			}
+		);
+
+		$notice = $this->render_admin_notices( $this->create_cutover_controller( $job, $preflight ) );
+
+		$this->assertSame( 1, preg_match( '/<a href="([^"]*)">View scheduled tasks<\/a>/', $notice, $matches ) );
+		wp_parse_str( (string) wp_parse_url( html_entity_decode( $matches[1] ), PHP_URL_QUERY ), $query );
+		$this->assertSame( 'pending', $query['status'] ?? null );
+		$this->assertArrayNotHasKey( 's', $query );
+	}
+
+	/**
+	 * @return array<string,array{string[],int,string[],string|null}>
+	 */
+	public function provide_queued_action_waits(): array {
+		$code = PreflightService::FAILURE_QUEUE_HOOKS_UNHANDLED;
+		return array(
+			'past the short retry, one hook'  => array( array( $code ), 15 * MINUTE_IN_SECONDS, array( 'wcpay_check_affected_auth_fee_orders' ), 'wcpay_check_affected_auth_fee_orders' ),
+			'past the short retry, two hooks' => array( array( $code ), 15 * MINUTE_IN_SECONDS, array( 'wcpay_check_affected_auth_fee_orders', 'wcpay_controller_test_other' ), '' ),
+			'within the short retry'          => array( array( $code ), MINUTE_IN_SECONDS, array( 'wcpay_check_affected_auth_fee_orders' ), null ),
+			'deferred for another reason'     => array( array( PreflightService::FAILURE_BUILTIN_TRANSPORT_UNAVAILABLE ), 15 * MINUTE_IN_SECONDS, array( 'wcpay_check_affected_auth_fee_orders' ), null ),
+			'queued tasks and another reason' => array( array( $code, PreflightService::FAILURE_BUILTIN_TRANSPORT_UNAVAILABLE ), 15 * MINUTE_IN_SECONDS, array( 'wcpay_check_affected_auth_fee_orders' ), 'wcpay_check_affected_auth_fee_orders' ),
+		);
+	}
+
+	/**
 	 * @testdox A plugin deactivation brings forward a switch held back by a renewal plugin, and a WooPayments update one waiting for a newer extension.
 	 */
 	public function test_plugin_events_bring_the_waiting_switch_forward(): void {

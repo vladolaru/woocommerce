@@ -620,7 +620,12 @@ class CutoverController implements RegisterHooksInterface {
 				return;
 			}
 			if ( in_array( $record['state'], array( StateStore::STATE_PENDING, StateStore::STATE_RUNNING, StateStore::STATE_DEFERRED ), true ) ) {
-				echo '<div class="notice notice-info"><p>' . esc_html__( 'Switch in progress', 'woocommerce' ) . '</p></div>';
+				echo '<div class="notice notice-info"><p>' . esc_html__( 'Switch in progress', 'woocommerce' ) . '</p>';
+				// Past the short retry, a switch waiting for queued extension tasks says what it waits for.
+				if ( $this->reconciliation_job->is_waiting_for_queued_actions( $record ) ) {
+					$this->output_queued_actions_line();
+				}
+				echo '</div>';
 				// A switch held back because the extension is loaded from outside Plugins says so, as does one past its hand-over
 				// whose extension still runs in this request with the stored lists clear: there it does not end by itself. This
 				// request's own reading, so a stale queue process elsewhere never shows it. Past the hand-over only once it is a
@@ -688,6 +693,30 @@ class CutoverController implements RegisterHooksInterface {
 			echo '</p>';
 		}
 		echo '</div>';
+	}
+
+	/**
+	 * Output the line telling a store that the switch waits for scheduled WooPayments tasks, with a link to them: the
+	 * pending actions on the one hook it waits for, or every pending action when it waits for several or the queue could
+	 * not be read.
+	 */
+	private function output_queued_actions_line(): void {
+		$actions = $this->preflight_service->get_unhandled_queue_actions();
+		$hooks   = array_unique( array_column( $actions, 'hook' ) );
+		$query   = array(
+			'page'   => 'wc-status',
+			'tab'    => 'action-scheduler',
+			'status' => 'pending',
+		);
+		if ( 1 === count( $hooks ) && ! in_array( 0, array_column( $actions, 'action_id' ), true ) ) {
+			$query['s'] = rawurlencode( (string) reset( $hooks ) );
+		}
+		?>
+		<p>
+			<?php esc_html_e( 'The switch is waiting for scheduled WooPayments tasks to finish. It continues on its own once they have run.', 'woocommerce' ); ?>
+			<a href="<?php echo esc_url( add_query_arg( $query, admin_url( 'admin.php' ) ) ); ?>"><?php esc_html_e( 'View scheduled tasks', 'woocommerce' ); ?></a>
+		</p>
+		<?php
 	}
 
 	/**

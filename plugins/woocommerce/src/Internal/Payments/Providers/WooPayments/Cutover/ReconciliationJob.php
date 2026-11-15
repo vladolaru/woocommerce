@@ -891,6 +891,28 @@ class ReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Tell whether a switch waits for queued WooPayments actions past the short retry: it is deferred with the queued
+	 * action code, and its last deferral set the next attempt by the retry cadence, not by QUEUED_ACTION_RETRY_DELAY.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param array<string,mixed> $record Cutover record.
+	 * @return bool
+	 */
+	public function is_waiting_for_queued_actions( array $record ): bool {
+		if ( ! $this->is_deferred_for( $record, PreflightService::FAILURE_QUEUE_HOOKS_UNHANDLED ) || ! is_int( $record['next_attempt_at'] ?? null ) ) {
+			return false;
+		}
+		foreach ( array_reverse( (array) ( $record['step_log'] ?? array() ) ) as $entry ) {
+			if ( is_array( $entry ) && self::STEP_DEFERRED === ( $entry['step'] ?? null ) ) {
+				return is_int( $entry['at'] ?? null ) && $record['next_attempt_at'] - $entry['at'] > self::QUEUED_ACTION_RETRY_DELAY;
+			}
+		}
+
+		return false;
+	}
+
+	/**
 	 * Tell whether a record is a deferred switch held back by a code.
 	 *
 	 * @param array<string,mixed>|null $record Cutover record.
