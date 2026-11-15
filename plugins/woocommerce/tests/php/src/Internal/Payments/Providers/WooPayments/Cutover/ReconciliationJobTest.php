@@ -93,13 +93,6 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	private array $finalize_errors = array();
 
 	/**
-	 * Warning lines the last run_first_attempt_with_stored_list_preflight() call logged.
-	 *
-	 * @var array<int,array{message:string,context:array<string,mixed>}>
-	 */
-	private array $finalize_warnings = array();
-
-	/**
 	 * Job instances whose callbacks must be removed.
 	 *
 	 * @var array<int,ReconciliationJob>
@@ -4388,8 +4381,6 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'verify_builtin_ownership', $verification['current_step'], 'No plugin_deactivation_failed deferral.' );
 		$this->assertNotNull( $verification['request_origin_token'], 'The hand-over is recorded.' );
 		$this->assertSame( array(), $this->finalize_errors, 'Lists that were read log nothing.' );
-		$this->assertSame( array(), $this->finalize_warnings, 'Only WooPayments left the stored list, so no warning.' );
-		$this->assertNotContains( array( 'code' => 'other_plugins_changed_at_deactivation' ), $verification['informational_outcomes'] );
 	}
 
 	/**
@@ -4412,117 +4403,6 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'verify_builtin_ownership', $verification['current_step'], 'No plugin_deactivation_failed deferral.' );
 		$this->assertNotNull( $verification['request_origin_token'] );
 		$this->assertSame( array( 'WooPayments cutover extension deactivation failed.' ), array_column( $this->finalize_errors, 'message' ), 'A recheck that read both lists adds no line.' );
-	}
-
-	/**
-	 * No read inside WordPress's deactivation can be made equal to the stored list against every other plugin, so after the
-	 * call finalize compares the stored site list with the list read before it less WooPayments, and makes a difference
-	 * visible without deciding anything with it.
-	 *
-	 * @dataProvider provide_outcomes_before_the_attempt
-	 * @testdox A plugin a later read filter hid from the deactivation, so WordPress's write dropped it, is named in one warning and one outcome on the record, and the hand-over goes on: $_dataName.
-	 *
-	 * @param array<int,mixed> $earlier_outcomes Informational outcomes the record holds before the attempt.
-	 */
-	public function test_finalize_warns_when_the_deactivation_drops_another_plugin( array $earlier_outcomes ): void {
-		$this->arrange_extension_era_store();
-		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, 'hello-dolly/hello.php', 'other-plugin/other-plugin.php' ) );
-		$hide = static fn( $pre, $option ) => 'active_plugins' === $option && is_array( $pre ) ? array_values( array_diff( $pre, array( 'hello-dolly/hello.php' ) ) ) : $pre;
-		// Registered on the generic pre_option filter at the last priority once the switch's own callback is there, so it runs after it.
-		add_filter(
-			'pre_option_active_plugins',
-			static function ( $pre ) use ( $hide ) {
-				if ( ! empty( $GLOBALS['wp_filter']['pre_option']->callbacks[ PHP_INT_MAX ] ) && ! has_filter( 'pre_option', $hide ) ) {
-					add_filter( 'pre_option', $hide, PHP_INT_MAX, 2 );
-				}
-				return $pre;
-			}
-		);
-
-		$verification = $this->run_first_attempt_with_stored_list_preflight( null, $earlier_outcomes );
-
-		$this->assertSame( array( 'other-plugin/other-plugin.php' ), $this->read_stored_active_plugins(), 'WordPress wrote the filtered list.' );
-		$this->assertSame( 'verify_builtin_ownership', $verification['current_step'], 'The hand-over is unchanged.' );
-		$this->assertNotNull( $verification['request_origin_token'] );
-		$this->assertSame(
-			array(
-				array(
-					'message' => sprintf( 'WooPayments cutover: generation %d deactivated WooPayments and the stored site plugin list changed in other plugins too. Removed: hello-dolly/hello.php. Added: none.', $verification['generation'] ),
-					'context' => array(
-						'source'     => 'woopayments-cutover',
-						'generation' => $verification['generation'],
-						'removed'    => array( 'hello-dolly/hello.php' ),
-						'added'      => array(),
-					),
-				),
-			),
-			$this->finalize_warnings
-		);
-		$this->assertCount( 1, array_keys( $verification['informational_outcomes'], array( 'code' => 'other_plugins_changed_at_deactivation' ), true ), 'One outcome on the record.' );
-		$this->assertSame( array(), $this->finalize_errors );
-	}
-
-	/**
-	 * @return array<string,array{array<int,mixed>}>
-	 */
-	public function provide_outcomes_before_the_attempt(): array {
-		return array(
-			'a first attempt' => array( array() ),
-			'the outcome already on the record from an earlier attempt' => array( array( array( 'code' => 'other_plugins_changed_at_deactivation' ) ) ),
-		);
-	}
-
-	/**
-	 * @testdox A plugin list entry that is not in a plugin file's form under the plugins folder is logged as a fixed text, in the message and the context.
-	 */
-	public function test_finalize_logs_a_fixed_text_for_an_entry_not_in_plugin_file_form(): void {
-		$this->arrange_extension_era_store();
-		add_filter(
-			'pre_update_option',
-			static fn( $value, $option ) => 'active_plugins' === $option && array() === (array) $value
-				? array( 'hello.php', 'guarded/guarded.php', '../outside.php', 'a/b/c.php', 'hello.php.bak', 'Plugin Name', 42 )
-				: $value,
-			1000,
-			2
-		);
-
-		$verification = $this->run_first_attempt_with_stored_list_preflight();
-
-		$this->assertSame( 'verify_builtin_ownership', $verification['current_step'], 'The hand-over is unchanged.' );
-		$this->assertCount( 1, $this->finalize_warnings );
-		$this->assertStringEndsWith( 'Removed: none. Added: hello.php, guarded/guarded.php, another value.', $this->finalize_warnings[0]['message'] );
-		$this->assertSame( array(), $this->finalize_warnings[0]['context']['removed'] );
-		$this->assertSame( array( 'hello.php', 'guarded/guarded.php', 'another value' ), $this->finalize_warnings[0]['context']['added'] );
-	}
-
-	/**
-	 * @testdox A stored list that cannot be read after the deactivation is not compared: no warning and no outcome, and the recheck decides as before.
-	 */
-	public function test_finalize_compares_nothing_when_the_list_after_the_deactivation_cannot_be_read(): void {
-		$this->arrange_extension_era_store();
-		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, 'hello-dolly/hello.php' ) );
-		add_filter(
-			'pre_update_option',
-			static fn( $value, $option ) => 'active_plugins' === $option && ! in_array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, (array) $value, true ) ? array_merge( (array) $value, array( 'guarded/guarded.php' ) ) : $value,
-			1000,
-			2
-		);
-		$this->read_failure = new StoredPluginListReadFailure();
-		$read_failure       = $this->read_failure;
-		add_action(
-			'update_option_active_plugins',
-			static function () use ( $read_failure ): void {
-				$read_failure->site_failures = 1;
-			}
-		);
-
-		$verification = $this->run_first_attempt_with_stored_list_preflight();
-
-		$this->assertSame( 0, $this->read_failure->site_failures, 'The read after the call failed.' );
-		$this->assertSame( array( 'hello-dolly/hello.php', 'guarded/guarded.php' ), $this->read_stored_active_plugins() );
-		$this->assertSame( 'verify_builtin_ownership', $verification['current_step'], 'The recheck read both lists without the extension.' );
-		$this->assertSame( array(), $this->finalize_warnings );
-		$this->assertNotContains( array( 'code' => 'other_plugins_changed_at_deactivation' ), $verification['informational_outcomes'] );
 	}
 
 	/**
@@ -6029,15 +5909,12 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Start a merchant switch and run its first attempt with a preflight whose plugin-list reads and deactivation are the
-	 * real ones, then return the record. The error and warning lines it logged are kept in $this->finalize_errors and
-	 * $this->finalize_warnings.
+	 * real ones, then return the record. The error lines it logged are kept in $this->finalize_errors.
 	 *
-	 * @param PreflightService|null $preflight        Preflight to use instead; its stored-list reads should stay the real ones.
-	 * @param array<int,mixed>      $earlier_outcomes Informational outcomes the record already holds, as an earlier attempt
-	 *                                                of the same generation leaves them.
+	 * @param PreflightService|null $preflight Preflight to use instead; its stored-list reads should stay the real ones.
 	 * @return array<string,mixed>
 	 */
-	private function run_first_attempt_with_stored_list_preflight( ?PreflightService $preflight = null, array $earlier_outcomes = array() ): array {
+	private function run_first_attempt_with_stored_list_preflight( ?PreflightService $preflight = null ): array {
 		$preflight = $preflight ?? new class() extends PreflightService {
 			/** @return string[] */
 			public function get_failures(): array {
@@ -6070,41 +5947,17 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 					'context' => $context,
 				);
 			}
-
-			/** @var array<int,array{message:string,context:array<string,mixed>}> */
-			public array $warnings = array();
-
-			/**
-			 * Record the line instead of logging it.
-			 *
-			 * @param string              $message Message.
-			 * @param array<string,mixed> $context Context.
-			 */
-			protected function write_log_warning( string $message, array $context ): void {
-				$this->warnings[] = array(
-					'message' => $message,
-					'context' => $context,
-				);
-			}
 		};
 		$sut = $this->create_job( true, $preflight, $job, true, $this->create_noop_normalization() );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
 		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
 		$this->scheduler->cancel( $pending['generation'], 1 );
-		if ( array() !== $earlier_outcomes ) {
-			$seeded                           = $pending;
-			$seeded['revision']               = $pending['revision'] + 1;
-			$seeded['informational_outcomes'] = $earlier_outcomes;
-			$this->assertTrue( $this->state_store->compare_and_set_record( $pending, $seeded ) );
-			$pending = $seeded;
-		}
 
 		$sut->handle_reconcile( $pending['generation'], 1 );
 
-		$this->finalize_errors   = $job->errors;
-		$this->finalize_warnings = $job->warnings;
-		$record                  = $this->state_store->get_record();
+		$this->finalize_errors = $job->errors;
+		$record                = $this->state_store->get_record();
 		$this->assertIsArray( $record );
 		return $record;
 	}

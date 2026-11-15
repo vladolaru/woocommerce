@@ -176,13 +176,6 @@ class PreflightService {
 	private array $installed_plugin_versions = array();
 
 	/**
-	 * What the last deactivate_woopayments_plugin() call left changed in this site's stored list besides WooPayments.
-	 *
-	 * @var array{removed:array<int,mixed>,added:array<int,mixed>}|null
-	 */
-	private ?array $deactivation_list_change = null;
-
-	/**
 	 * Initialize the service instance.
 	 *
 	 * The check collaborators are resolved when a preflight runs, so registering the cutover surfaces loads none of them.
@@ -476,12 +469,8 @@ class PreflightService {
 	 * An extension that is not active counts as deactivated: a retry after a crash that followed a successful deactivation
 	 * finds nothing to deactivate. An extension active for every site stays active, and this reports false. So does a stored
 	 * list that could not be read, before or after the call.
-	 *
-	 * After the call, the stored site list is compared with the one read before it less WooPayments; any other difference is
-	 * kept for get_deactivation_list_change(). It decides nothing here.
 	 */
 	public function deactivate_woopayments_plugin(): bool {
-		$this->deactivation_list_change = null;
 		// WordPress 6.8+ loads this file on every request (#62244); kept as WooCommerce's own pattern (see src/Admin/PluginsHelper.php).
 		if ( ! function_exists( 'deactivate_plugins' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/plugin.php';
@@ -529,48 +518,7 @@ class PreflightService {
 			remove_filter( 'pre_option', $stored_view, PHP_INT_MAX );
 		}
 		// A write that failed, or that a guard turned back, leaves the extension in the stored list, which these reads find.
-		$stored_site_plugins = $this->read_stored_site_plugins();
-		if ( null !== $stored_site_plugins ) {
-			$this->deactivation_list_change = self::get_plugin_list_change( $site_plugins, $stored_site_plugins, $plugin_file );
-		}
-		return false === $this->holds_woopayments( $stored_site_plugins ) && false === $this->is_woopayments_stored_network_active();
-	}
-
-	/**
-	 * Get what the last deactivate_woopayments_plugin() call in this request left changed in this site's stored active plugin
-	 * list besides WooPayments: entries of the list read before the call, less WooPayments, that the list read after it lacks
-	 * (removed), and entries it holds that the list before did not (added).
-	 *
-	 * @since 11.4.0
-	 *
-	 * @return array{removed:array<int,mixed>,added:array<int,mixed>}|null The change, or null when nothing else changed, the
-	 *                                                                     call ended before WordPress's deactivation, or the
-	 *                                                                     list after it could not be read.
-	 */
-	public function get_deactivation_list_change(): ?array {
-		return $this->deactivation_list_change;
-	}
-
-	/**
-	 * Compare a stored plugin list after the deactivation with the list before it less the deactivated plugin file.
-	 *
-	 * @param array<int|string,mixed> $before      The stored list before the deactivation.
-	 * @param array<int|string,mixed> $after       The stored list after it.
-	 * @param string                  $plugin_file The deactivated plugin file.
-	 * @return array{removed:array<int,mixed>,added:array<int,mixed>}|null The difference, or null when there is none.
-	 */
-	private static function get_plugin_list_change( array $before, array $after, string $plugin_file ): ?array {
-		$expected = array_filter( $before, static fn( $entry ) => $plugin_file !== $entry );
-		$removed  = array_values( array_filter( $expected, static fn( $entry ) => ! in_array( $entry, $after, true ) ) );
-		$added    = array_values( array_filter( $after, static fn( $entry ) => ! in_array( $entry, $expected, true ) ) );
-		if ( array() === $removed && array() === $added ) {
-			return null;
-		}
-
-		return array(
-			'removed' => $removed,
-			'added'   => $added,
-		);
+		return false === $this->is_woopayments_stored_site_active() && false === $this->is_woopayments_stored_network_active();
 	}
 
 	/**

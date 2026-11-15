@@ -148,12 +148,6 @@ class ReconciliationJob implements RegisterHooksInterface {
 	/** Informational outcome of a check that could not read ownership in its process. */
 	private const OUTCOME_OWNERSHIP_READING_UNAVAILABLE = 'ownership_reading_unavailable';
 
-	/** Informational outcome of a deactivation after which the stored site list changed in more than WooPayments. */
-	private const OUTCOME_OTHER_PLUGINS_CHANGED = 'other_plugins_changed_at_deactivation';
-
-	/** Logged in place of a plugin list entry that does not have a plugin file's form. */
-	private const UNLOGGABLE_PLUGIN_FILE = 'another value';
-
 	/**
 	 * Retry delay after the job updated the extension to a supported version, which it records on its next request.
 	 *
@@ -1065,7 +1059,6 @@ class ReconciliationJob implements RegisterHooksInterface {
 			return;
 		}
 		$deactivated = false;
-		$list_change = null;
 		try {
 			// An extension the merchant already deactivated, or a retry whose earlier finalize did, has nothing to deactivate.
 			// A list that could not be read may still hold it, so the deactivation runs, reads it again and fails closed.
@@ -1076,17 +1069,10 @@ class ReconciliationJob implements RegisterHooksInterface {
 			$deactivated = false === $site_active;
 			if ( ! $deactivated ) {
 				$deactivated = $this->run_while_changing_plugins( fn() => $this->preflight_service->deactivate_woopayments_plugin() );
-				$list_change = $this->preflight_service->get_deactivation_list_change();
 			}
 		} catch ( \Throwable $error ) {
 			$this->log_error( 'WooPayments cutover extension deactivation failed.', array( 'error' => $error->getMessage() ) );
 			$deactivated = false;
-		}
-		// Only visible: no read inside WordPress's deactivation can be made equal to the stored list against every other
-		// plugin, so a loss there is logged and noted on the record. WooPayments' absence alone still decides below.
-		if ( null !== $list_change ) {
-			$this->log_plugin_list_change( $claimed, $list_change );
-			$outcomes[] = array( 'code' => self::OUTCOME_OTHER_PLUGINS_CHANGED );
 		}
 		if ( ! $deactivated ) {
 			// A hook that threw after WordPress wrote the active plugins still left the extension inactive. Only both lists read
@@ -1625,44 +1611,6 @@ class ReconciliationJob implements RegisterHooksInterface {
 				'delay_seconds' => $delay_seconds,
 			)
 		);
-	}
-
-	/**
-	 * Warn that the stored site list changed in more than WooPayments across the deactivation, naming what was removed and
-	 * what was added. Written as every cutover line is, whatever the WooPayments logging setting.
-	 *
-	 * @param array<string,mixed>                                    $claimed     Exact running state owned by this worker.
-	 * @param array{removed:array<int,mixed>,added:array<int,mixed>} $list_change The change PreflightService found.
-	 */
-	private function log_plugin_list_change( array $claimed, array $list_change ): void {
-		$removed = array_values( array_unique( array_map( array( self::class, 'get_loggable_plugin_file' ), $list_change['removed'] ) ) );
-		$added   = array_values( array_unique( array_map( array( self::class, 'get_loggable_plugin_file' ), $list_change['added'] ) ) );
-		$this->write_log_warning(
-			sprintf(
-				'WooPayments cutover: generation %1$d deactivated WooPayments and the stored site plugin list changed in other plugins too. Removed: %2$s. Added: %3$s.',
-				(int) $claimed['generation'],
-				array() === $removed ? 'none' : implode( ', ', $removed ),
-				array() === $added ? 'none' : implode( ', ', $added )
-			),
-			array(
-				'source'     => self::LOG_SOURCE,
-				'generation' => (int) $claimed['generation'],
-				'removed'    => $removed,
-				'added'      => $added,
-			)
-		);
-	}
-
-	/**
-	 * Get a plugin list entry as a log line may carry it: a value that wholly has a plugin file's form under the plugins
-	 * folder (a folder and a file name, or a file name alone, of letters, digits, underscores, hyphens and dots, not starting
-	 * with a dot, ending in .php) as it is, and a fixed text for anything else.
-	 *
-	 * @param mixed $plugin_file Plugin list entry.
-	 * @return string
-	 */
-	private static function get_loggable_plugin_file( $plugin_file ): string {
-		return is_string( $plugin_file ) && 1 === preg_match( '/\A(?:[A-Za-z0-9_][A-Za-z0-9_.-]*\/)?[A-Za-z0-9_][A-Za-z0-9_.-]*\.php\z/', $plugin_file ) ? $plugin_file : self::UNLOGGABLE_PLUGIN_FILE;
 	}
 
 	/**
