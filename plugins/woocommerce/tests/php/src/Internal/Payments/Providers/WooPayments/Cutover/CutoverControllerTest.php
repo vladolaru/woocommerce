@@ -41,6 +41,17 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	private const LOADED_OUTSIDE_PLUGIN_LISTS_SENTENCE = "WooPayments is now part of WooCommerce, but this store can't switch yet. The WooPayments extension is loaded by this site's setup, not activated in Plugins, so the switch can't turn it off. WooPayments keeps running from the extension.";
 
 	/**
+	 * The sentences telling a store that the switch waits for the WooPayments extension to be updated.
+	 *
+	 * @var array<string,string>
+	 */
+	private const EXTENSION_UPDATE_SENTENCES = array(
+		'file changes blocked' => 'The switch needs a newer version of the WooPayments extension, but this site does not allow automatic plugin updates. Update WooPayments to continue the switch.',
+		'update failed'        => 'The switch needs a newer version of the WooPayments extension, but it could not be updated automatically. Update WooPayments to continue the switch.',
+		'extension inactive'   => 'The switch needs a newer version of the WooPayments extension. Activate WooPayments in Plugins, then update it to continue the switch.',
+	);
+
+	/**
 	 * The System Under Test.
 	 *
 	 * @var CutoverController
@@ -625,21 +636,24 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * The job tries to update the extension itself, and the update can fail where file changes are allowed too (a host that
 	 * asks for FTP credentials, no update offered, a release that needs a newer WordPress or PHP). The warning follows the
-	 * installed files, not the reason.
+	 * installed files, not the reason. An inactive extension cannot be updated into the switch, so it is asked to be activated first.
 	 *
 	 * @testdox A switch deferred on the WooPayments version tells the merchant to update WooPayments while the installed extension is below the supported version ($_dataName).
 	 * @dataProvider provide_extension_update_warnings
 	 *
+	 * @param bool        $extension_active  Whether the WooPayments extension is active on this site.
+	 * @param string      $hold_code         The code that holds the switch.
 	 * @param bool        $file_mods_blocked Whether the site disallows automatic file changes.
 	 * @param bool        $installed_current Whether the installed extension files carry a supported version.
-	 * @param string|null $warning           The reason the warning gives, or null when none shows.
+	 * @param string|null $warning           The sentence the warning shows, or null when none shows.
 	 */
-	public function test_deferred_extension_update_explains_the_waiting_switch( bool $file_mods_blocked, bool $installed_current, ?string $warning ): void {
-		// The active extension last recorded a version below the floor; an update by hand records the new one only once it runs.
+	public function test_deferred_extension_update_explains_the_waiting_switch( bool $extension_active, string $hold_code, bool $file_mods_blocked, bool $installed_current, ?string $warning ): void {
+		// The extension last recorded a version below the floor; an update by hand records the new one only once it runs.
 		update_option( WooPaymentsRuntimeArbiter::EXTENSION_VERSION_OPTION, '10.5.2' );
-		$this->fake_plugin_active();
+		$this->fake_plugin_active( $extension_active );
 		$this->fake_current_user_caps( true );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		add_filter(
 			'file_mod_allowed',
 			static function ( $allowed, $context ) use ( $file_mods_blocked ) {
@@ -648,14 +662,19 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 			10,
 			2
 		);
-		$job = new class( $installed_current ) extends ReconciliationJob {
+		$job = new class( $hold_code, $installed_current ) extends ReconciliationJob {
+			/** @var string */
+			private string $hold_code;
+
 			/** @var bool */
 			private bool $installed_current;
 
 			/**
-			 * @param bool $installed_current Whether the installed extension files carry a supported version.
+			 * @param string $hold_code         The code that holds the switch.
+			 * @param bool   $installed_current Whether the installed extension files carry a supported version.
 			 */
-			public function __construct( bool $installed_current ) {
+			public function __construct( string $hold_code, bool $installed_current ) {
+				$this->hold_code         = $hold_code;
 				$this->installed_current = $installed_current;
 			}
 
@@ -663,7 +682,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 			public function refresh_notice_record(): ?array {
 				return array(
 					'state'                  => StateStore::STATE_DEFERRED,
-					'deferred_codes'         => array( 'woopayments_plugin_version_unsupported' ),
+					'deferred_codes'         => array( $this->hold_code ),
 					'informational_outcomes' => array(),
 				);
 			}
@@ -677,22 +696,34 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 		$notice = $this->render_admin_notices( $this->create_cutover_controller( $job ) );
 
 		$this->assertStringContainsString( 'Switch in progress', $notice );
-		if ( null === $warning ) {
-			$this->assertStringNotContainsString( 'Update WooPayments', $notice );
-		} else {
-			$this->assertStringContainsString( 'The switch needs a newer version of the WooPayments extension, but ' . $warning . '. Update WooPayments to continue the switch.', $notice );
+		foreach ( self::EXTENSION_UPDATE_SENTENCES as $sentence ) {
+			if ( $sentence === $warning ) {
+				$this->assertStringContainsString( '<div class="notice notice-warning"><p>' . esc_html( $sentence ) . '</p></div>', $notice );
+			} else {
+				$this->assertStringNotContainsString( esc_html( $sentence ), $notice );
+			}
 		}
 	}
 
 	/**
-	 * @return array<string,array{bool,bool,string|null}>
+	 * @return array<string,array{bool,string,bool,bool,string|null}>
 	 */
 	public function provide_extension_update_warnings(): array {
+		$version  = PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED;
+		$renewal  = PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE;
+		$blocked  = self::EXTENSION_UPDATE_SENTENCES['file changes blocked'];
+		$failed   = self::EXTENSION_UPDATE_SENTENCES['update failed'];
+		$activate = self::EXTENSION_UPDATE_SENTENCES['extension inactive'];
+
 		return array(
-			'file changes disallowed, extension below the floor' => array( true, false, 'this site does not allow automatic plugin updates' ),
-			'file changes allowed but the update failed'   => array( false, false, 'it could not be updated automatically' ),
-			'file changes allowed, extension at the floor' => array( false, true, null ),
-			'file changes disallowed, extension updated by hand' => array( true, true, null ),
+			'file changes disallowed, extension below the floor' => array( true, $version, true, false, $blocked ),
+			'file changes allowed but the update failed'   => array( true, $version, false, false, $failed ),
+			'file changes allowed, extension at the floor' => array( true, $version, false, true, null ),
+			'file changes disallowed, extension updated by hand' => array( true, $version, true, true, null ),
+			'extension inactive, file changes allowed'     => array( false, $version, false, false, $activate ),
+			'extension inactive, file changes disallowed'  => array( false, $version, true, false, $activate ),
+			'another hold code, extension active'          => array( true, $renewal, false, false, null ),
+			'another hold code, extension inactive'        => array( false, $renewal, false, false, null ),
 		);
 	}
 

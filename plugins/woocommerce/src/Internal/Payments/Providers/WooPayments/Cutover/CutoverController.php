@@ -733,11 +733,16 @@ class CutoverController implements RegisterHooksInterface {
 
 	/**
 	 * Output the warning telling a store that the switch waits for the merchant to update the WooPayments extension.
+	 * With the extension inactive on this site, it asks the merchant to activate WooPayments before updating it.
 	 */
 	private function output_extension_update_warning(): void {
-		$message = wp_is_file_mod_allowed( 'automatic_updater' )
-			? __( 'The switch needs a newer version of the WooPayments extension, but it could not be updated automatically. Update WooPayments to continue the switch.', 'woocommerce' )
-			: __( 'The switch needs a newer version of the WooPayments extension, but this site does not allow automatic plugin updates. Update WooPayments to continue the switch.', 'woocommerce' );
+		if ( ! $this->arbiter->is_extension_owner() ) {
+			$message = __( 'The switch needs a newer version of the WooPayments extension. Activate WooPayments in Plugins, then update it to continue the switch.', 'woocommerce' );
+		} elseif ( wp_is_file_mod_allowed( 'automatic_updater' ) ) {
+			$message = __( 'The switch needs a newer version of the WooPayments extension, but it could not be updated automatically. Update WooPayments to continue the switch.', 'woocommerce' );
+		} else {
+			$message = __( 'The switch needs a newer version of the WooPayments extension, but this site does not allow automatic plugin updates. Update WooPayments to continue the switch.', 'woocommerce' );
+		}
 		echo '<div class="notice notice-warning"><p>' . esc_html( $message ) . '</p></div>';
 	}
 
