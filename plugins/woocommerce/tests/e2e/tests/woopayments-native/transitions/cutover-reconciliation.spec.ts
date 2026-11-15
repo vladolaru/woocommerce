@@ -518,7 +518,10 @@ const QUEUE_RUNNER_HOLD_HOOK = 'woocommerce_e2e_queue_runner_hold';
  * (`DISABLE_WP_CRON` and the async runner's lock) does not stop that chain.
  * The claim carries a fresh last-attempt time, so
  * `ActionScheduler_QueueCleaner::reset_timeouts()` leaves it for five
- * minutes. Pair with `releaseQueueRunners()` in a `finally`.
+ * minutes; `refreshQueueRunnerHold()` renews that time. If a release is ever
+ * missed, Action Scheduler frees the leaked claim after those five minutes.
+ * A runner admitted before the hold keeps looping; `waitForIdleQueueRunners()`
+ * waits it out. Pair with `releaseQueueRunners()` in a `finally`.
  */
 async function holdQueueRunners(): Promise< void > {
 	const held = await wpEvalJson< boolean >( `
@@ -537,6 +540,63 @@ async function holdQueueRunners(): Promise< void > {
 		return ActionScheduler::runner()->has_maximum_concurrent_batches();
 	` );
 	expect( held, 'no queue runner may claim an action' ).toBe( true );
+}
+
+/**
+ * Renews the hold's last-attempt time, so `reset_timeouts()` leaves the claim
+ * five more minutes, and asserts the hold is still in place.
+ */
+async function refreshQueueRunnerHold(): Promise< void > {
+	const held = await wpEvalJson< boolean >( `
+		global $wpdb;
+		$wpdb->query( $wpdb->prepare(
+			"UPDATE {$wpdb->actionscheduler_actions} SET last_attempt_gmt = %s, last_attempt_local = %s WHERE hook = %s AND claim_id > 0",
+			current_time( 'mysql', true ),
+			current_time( 'mysql' ),
+			'${ QUEUE_RUNNER_HOLD_HOOK }'
+		) );
+		return 1 === (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$wpdb->actionscheduler_actions} WHERE hook = %s AND claim_id > 0", '${ QUEUE_RUNNER_HOLD_HOOK }' ) )
+			&& ActionScheduler::runner()->has_maximum_concurrent_batches();
+	` );
+	expect( held, 'the hold still has its claim' ).toBe( true );
+}
+
+/**
+ * Counts the queue work the hold does not cover: actions claimed by another
+ * runner, and actions running.
+ */
+async function countOtherQueueWork(): Promise< number > {
+	return wpEvalJson< number >( `
+		global $wpdb;
+		return (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$wpdb->actionscheduler_actions} WHERE ( ( claim_id > 0 AND hook <> %s ) OR status = %s )",
+			'${ QUEUE_RUNNER_HOLD_HOOK }',
+			ActionScheduler_Store::STATUS_RUNNING
+		) );
+	` );
+}
+
+/**
+ * The barrier behind `holdQueueRunners()`. The hold stops new runners, but a
+ * runner admitted before it checks the concurrency limit only once and keeps
+ * claiming batches while they hold due actions
+ * (`ActionScheduler_QueueRunner::run()`). Between batches it holds a claim
+ * only for an instant, and a batch that finds nothing due ends it. So two
+ * reads a second apart with no other claimed or running action mean no such
+ * runner is left to claim the ownership check the held section schedules.
+ */
+async function waitForIdleQueueRunners(): Promise< void > {
+	let idleReads = 0;
+	await expect
+		.poll(
+			async () => {
+				idleReads =
+					( await countOtherQueueWork() ) === 0 ? idleReads + 1 : 0;
+				return idleReads;
+			},
+			{ timeout: 60_000, intervals: [ 1000 ] }
+		)
+		.toBeGreaterThanOrEqual( 2 );
 }
 
 /**
@@ -1133,6 +1193,21 @@ const PENDING_RECONCILE_ACTIONS_PHP = String.raw`
 return (int) count( as_get_scheduled_actions( array( 'hook' => 'woocommerce_woopayments_cutover_reconcile', 'status' => ActionScheduler_Store::STATUS_PENDING, 'per_page' => -1 ), 'ids' ) );
 `;
 
+const PENDING_RECONCILE_ACTION_IDS_PHP = String.raw`
+return array_map( 'intval', array_values( as_get_scheduled_actions( array( 'hook' => 'woocommerce_woopayments_cutover_reconcile', 'status' => ActionScheduler_Store::STATUS_PENDING, 'per_page' => -1 ), 'ids' ) ) );
+`;
+
+/**
+ * Reads one Action Scheduler action's status.
+ */
+async function readActionStatus( actionId: number ): Promise< string > {
+	return wpEvalJson< string >(
+		`return (string) ActionScheduler::store()->get_status( ${ Number(
+			actionId
+		) } );`
+	);
+}
+
 /**
  * Reads the extension's first queued order check: its status, and when the queue started it.
  */
@@ -1294,11 +1369,14 @@ test.describe( 'WooPayments transition: extension activation during an open cuto
 			).toBe( 'complete' );
 
 			// The ownership check is due 5 s after the hand-over, so hold the
-			// queue's runners before the hand-over: the extension then comes
-			// back while the switch is still open, every time.
+			// queue's runners before the hand-over, and wait out any runner
+			// admitted before the hold: the extension then comes back while
+			// the switch is still open, every time.
 			let rollback: CutoverRecord;
 			await holdQueueRunners();
 			try {
+				await waitForIdleQueueRunners();
+				await refreshQueueRunnerHold();
 				expect(
 					await runDeferredAttemptNow(),
 					'the deferred attempt runs here'
@@ -1312,10 +1390,13 @@ test.describe( 'WooPayments transition: extension activation during an open cuto
 				expect( ( await readCutoverStatus( 0 ) ).plugin_active ).toBe(
 					false
 				);
+				const heldChecks = await wpEvalJson< number[] >(
+					PENDING_RECONCILE_ACTION_IDS_PHP
+				);
 				expect(
-					await wpEvalJson< number >( PENDING_RECONCILE_ACTIONS_PHP ),
+					heldChecks,
 					'the ownership check waits, held'
-				).toBe( 1 );
+				).toHaveLength( 1 );
 
 				const steps = open.step_log ?? [];
 				const deferral = steps.find(
@@ -1337,6 +1418,7 @@ test.describe( 'WooPayments transition: extension activation during an open cuto
 					'the hand-over must follow once the check has run'
 				).toBeGreaterThanOrEqual( check!.started_at );
 
+				await refreshQueueRunnerHold();
 				await wpCLI( [
 					'wp',
 					'plugin',
@@ -1344,8 +1426,14 @@ test.describe( 'WooPayments transition: extension activation during an open cuto
 					'woocommerce-payments',
 				] );
 
-				// The open generation's rollback cancels the held ownership check.
+				// The open generation's rollback cancels the held ownership
+				// check; a check that ran would read complete instead.
 				rollback = await expectRolledBack( restApi, open );
+				expect(
+					await readActionStatus( heldChecks[ 0 ] ),
+					'the open generation was rolled back, not a completed switch'
+				).toBe( 'canceled' );
+				await refreshQueueRunnerHold();
 			} finally {
 				await releaseQueueRunners();
 			}

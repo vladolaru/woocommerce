@@ -407,7 +407,7 @@ class PreflightService {
 	 * WordPress's deactivate_plugins() reads active_plugins through get_option() and writes back what it read. In a queue
 	 * request a plugin load manager can filter that list, so the call would skip a hidden extension, or write the list back
 	 * without the plugins hidden in that request and so deactivate them for the whole store. For this one call the stored
-	 * list answers every read of active_plugins.
+	 * list, read once before it, answers every read of active_plugins.
 	 *
 	 * An extension that is not active counts as deactivated: a retry after a crash that followed a successful deactivation
 	 * finds nothing to deactivate. An extension active for every site stays active, and this reports false. So does a stored
@@ -435,9 +435,10 @@ class PreflightService {
 		}
 		// get_option() runs the pre_option_{$option} filter and then the generic pre_option filter (WordPress 6.1+), and a value
 		// from it skips every option_active_plugins callback. Write-side filters stay, so a tool that guards its own writes still does.
-		// A read that fails here answers an empty list: deactivate_plugins() then finds nothing active and writes nothing.
-		$stored_view = function ( $pre, $option ) {
-			return 'active_plugins' === $option ? ( $this->read_stored_site_plugins() ?? array() ) : $pre;
+		// Every read answers from the one list read above: deactivate_plugins() fires its hooks and reads the old value before
+		// its one write, so that snapshot is right for the whole call, and no read inside it goes to the database.
+		$stored_view = static function ( $pre, $option ) use ( $site_plugins ) {
+			return 'active_plugins' === $option ? $site_plugins : $pre;
 		};
 		add_filter( 'pre_option', $stored_view, PHP_INT_MAX, 2 );
 		try {

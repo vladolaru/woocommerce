@@ -85,6 +85,13 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	private ?StoredPluginListReadFailure $read_failure = null;
 
 	/**
+	 * Error lines the last run_first_attempt_with_stored_list_preflight() call logged.
+	 *
+	 * @var array<int,array{message:string,context:array<string,mixed>}>
+	 */
+	private array $finalize_errors = array();
+
+	/**
 	 * Job instances whose callbacks must be removed.
 	 *
 	 * @var array<int,ReconciliationJob>
@@ -2582,6 +2589,11 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			public function is_woopayments_stored_site_active(): bool {
 				return ! $this->is_woopayments_network_active();
 			}
+
+			/** The failed deactivation left the extension in the site's list. */
+			public function is_woopayments_in_stored_lists(): bool {
+				return true;
+			}
 		};
 		$sync_calls         = 0;
 		$account_service    = new class( $sync_calls ) extends WooPaymentsAccountService {
@@ -4006,6 +4018,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'hello-dolly/hello.php' ), $this->read_stored_active_plugins(), 'The hidden plugin stays stored and the extension is gone.' );
 		$this->assertSame( 'verify_builtin_ownership', $verification['current_step'], 'No plugin_deactivation_failed deferral.' );
 		$this->assertNotNull( $verification['request_origin_token'], 'The hand-over is recorded.' );
+		$this->assertSame( array(), $this->finalize_errors, 'Lists that were read log nothing.' );
 	}
 
 	/**
@@ -4027,6 +4040,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'hello-dolly/hello.php' ), $this->read_stored_active_plugins() );
 		$this->assertSame( 'verify_builtin_ownership', $verification['current_step'], 'No plugin_deactivation_failed deferral.' );
 		$this->assertNotNull( $verification['request_origin_token'] );
+		$this->assertSame( array( 'WooPayments cutover extension deactivation failed.' ), array_column( $this->finalize_errors, 'message' ), 'A recheck that read both lists adds no line.' );
 	}
 
 	/**
@@ -4061,6 +4075,21 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'reconciliation_resolver_failed' ), $deferred['deferred_codes'] );
 		$this->assertNull( $deferred['request_origin_token'], 'No token, so the extension keeps payments.' );
 		$this->assertSame( array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ), $this->read_stored_active_plugins() );
+		$this->assert_one_unknown_list_line( 'network plugin list could not be read before the switch', $deferred, 'reconciliation_resolver_failed' );
+	}
+
+	/**
+	 * @testdox A stored list read without the extension before the deactivation hands over without a deactivation or a log line.
+	 */
+	public function test_finalize_hands_over_without_a_line_when_the_check_before_reads_the_extension_gone(): void {
+		$this->arrange_extension_era_store();
+		update_option( 'active_plugins', array( 'hello-dolly/hello.php' ) );
+
+		$verification = $this->run_first_attempt_with_stored_list_preflight();
+
+		$this->assertSame( array( 'hello-dolly/hello.php' ), $this->read_stored_active_plugins() );
+		$this->assertSame( 'verify_builtin_ownership', $verification['current_step'] );
+		$this->assertSame( array(), $this->finalize_errors );
 	}
 
 	/**
@@ -4077,6 +4106,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( array(), $this->read_stored_active_plugins(), 'The extension left the stored list.' );
 		$this->assertSame( 'verify_builtin_ownership', $verification['current_step'] );
 		$this->assertNotNull( $verification['request_origin_token'] );
+		$this->assert_one_unknown_list_line( 'site plugin list could not be read before the deactivation', $verification, null );
 	}
 
 	/**
@@ -4100,6 +4130,63 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ), $this->read_stored_active_plugins(), 'The extension is still active.' );
 		$this->assertSame( StateStore::STATE_DEFERRED, $deferred['state'] );
 		$this->assertSame( array( 'plugin_deactivation_failed' ), $deferred['deferred_codes'] );
+		$this->assertSame( 'WooPayments cutover extension deactivation failed.', $this->finalize_errors[0]['message'] ?? null, 'The throw is logged first.' );
+		$this->finalize_errors = array_slice( $this->finalize_errors, 1 );
+		$this->assert_one_unknown_list_line( 'plugin lists could not be read after the deactivation', $deferred, 'plugin_deactivation_failed' );
+	}
+
+	/**
+	 * A deactivation that reports false hands over only when both stored lists read without the extension.
+	 *
+	 * @testdox On a multisite, a network list that cannot be read after the deactivation, nor in the recheck, defers and schedules no ownership check.
+	 * @group multisite
+	 */
+	public function test_finalize_defers_when_the_network_list_cannot_be_read_after_the_deactivation(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+		$this->arrange_extension_era_store();
+		update_site_option( 'active_sitewide_plugins', array() );
+		$this->read_failure = new StoredPluginListReadFailure();
+		$read_failure       = $this->read_failure;
+		// The network list reads clear before the fence; from WordPress's write on, its reads fail.
+		add_action(
+			'update_option_active_plugins',
+			static function () use ( $read_failure ): void {
+				$read_failure->network_failures = 2;
+			}
+		);
+
+		$deferred = $this->run_first_attempt_with_stored_list_preflight();
+
+		$this->assertSame( 0, $this->read_failure->network_failures, 'The check after the call and the recheck both read the network list.' );
+		$this->assertSame( array(), $this->read_stored_active_plugins(), 'WordPress did deactivate it on the site.' );
+		$this->assertSame( StateStore::STATE_DEFERRED, $deferred['state'] );
+		$this->assertSame( array( 'plugin_deactivation_failed' ), $deferred['deferred_codes'] );
+		$this->assertNotSame( 'verify_builtin_ownership', $deferred['current_step'], 'No ownership check is scheduled.' );
+		$this->assertNull( $deferred[ StateStore::HANDED_OVER_AT_KEY ] ?? null, 'No hand-over is recorded.' );
+		$this->assert_one_unknown_list_line( 'plugin lists could not be read after the deactivation', $deferred, 'plugin_deactivation_failed' );
+	}
+
+	/**
+	 * Assert that finalize logged exactly one line for a stored list it could not read, with integers and codes only.
+	 *
+	 * @param string              $message_part Part of the expected message.
+	 * @param array<string,mixed> $record       The record after the attempt.
+	 * @param string|null         $code         The deferral code the line names, if any.
+	 */
+	private function assert_one_unknown_list_line( string $message_part, array $record, ?string $code ): void {
+		$this->assertCount( 1, $this->finalize_errors, 'One line for the list that could not be read.' );
+		$this->assertStringContainsString( $message_part, $this->finalize_errors[0]['message'] );
+		$expected = array(
+			'generation' => $record['generation'],
+			'attempt'    => 1,
+		);
+		if ( null !== $code ) {
+			$expected['code'] = $code;
+		}
+		$expected['source'] = 'woopayments-cutover';
+		$this->assertSame( $expected, $this->finalize_errors[0]['context'] );
 	}
 
 	/**
@@ -5436,7 +5523,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Start a merchant switch and run its first attempt with a preflight whose plugin-list reads and deactivation are the
-	 * real ones, then return the record.
+	 * real ones, then return the record. The error lines it logged are kept in $this->finalize_errors.
 	 *
 	 * @param PreflightService|null $preflight Preflight to use instead; its stored-list reads should stay the real ones.
 	 * @return array<string,mixed>
@@ -5458,7 +5545,24 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 		};
 		$preflight->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ) );
-		$sut = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization() );
+		$job = new class() extends ReconciliationJob {
+			/** @var array<int,array{message:string,context:array<string,mixed>}> */
+			public array $errors = array();
+
+			/**
+			 * Record the line instead of logging it.
+			 *
+			 * @param string              $message Message.
+			 * @param array<string,mixed> $context Context.
+			 */
+			protected function write_log_error( string $message, array $context ): void {
+				$this->errors[] = array(
+					'message' => $message,
+					'context' => $context,
+				);
+			}
+		};
+		$sut = $this->create_job( true, $preflight, $job, true, $this->create_noop_normalization() );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
 		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
@@ -5466,7 +5570,8 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 
 		$sut->handle_reconcile( $pending['generation'], 1 );
 
-		$record = $this->state_store->get_record();
+		$this->finalize_errors = $job->errors;
+		$record                = $this->state_store->get_record();
 		$this->assertIsArray( $record );
 		return $record;
 	}

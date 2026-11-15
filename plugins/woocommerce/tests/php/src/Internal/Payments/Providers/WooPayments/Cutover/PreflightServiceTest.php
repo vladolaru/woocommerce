@@ -547,17 +547,16 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Deactivation reports false and deactivates nothing when the stored list cannot be read to find WooPayments.
+	 * @testdox Deactivation reports false, deactivates nothing and runs none of the extension's deactivation callbacks when the stored list cannot be read to find WooPayments.
 	 */
 	public function test_deactivation_fails_closed_when_the_stored_list_cannot_be_read(): void {
 		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
 		$deactivations = 0;
-		add_action(
-			'deactivate_plugin',
-			static function () use ( &$deactivations ): void {
-				++$deactivations;
-			}
-		);
+		$count         = static function () use ( &$deactivations ): void {
+			++$deactivations;
+		};
+		add_action( 'deactivate_plugin', $count );
+		add_action( 'deactivate_' . WooPaymentsRuntimeArbiter::PLUGIN_FILE, $count );
 		$sut                               = $this->create_sut();
 		$this->read_failure                = new StoredPluginListReadFailure();
 		$this->read_failure->site_failures = 1;
@@ -587,28 +586,49 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * WordPress's deactivate_plugins() writes back the list it read, so a failed read inside the call must not be a list
-	 * WordPress could write.
+	 * WordPress's deactivate_plugins() reads active_plugins for the list it writes and again for each plugin's activity, so
+	 * a failed first read followed by a working one would run the extension's deactivation callbacks without the write.
 	 *
-	 * @testdox When the stored list cannot be read inside the deactivation, WordPress writes nothing and deactivation reports false.
+	 * @testdox Inside the deactivation every read answers from the one stored list read before it: a stored read that fails during the call's reads changes nothing, and the extension's callbacks run with the write.
 	 */
-	public function test_a_failed_read_inside_the_deactivation_writes_nothing(): void {
+	public function test_the_deactivation_answers_from_the_list_read_before_it(): void {
 		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, 'hello-dolly/hello.php' ) );
+		$extension_callbacks = 0;
+		add_action(
+			'deactivate_' . WooPaymentsRuntimeArbiter::PLUGIN_FILE,
+			static function () use ( &$extension_callbacks ): void {
+				++$extension_callbacks;
+			}
+		);
 		$sut                = $this->create_sut();
 		$this->read_failure = new StoredPluginListReadFailure();
 		$read_failure       = $this->read_failure;
-		// The first read of the option inside the call: every stored read from here on fails.
+		$armed              = false;
+		$left_unconsumed    = null;
+		// From the call's first read of the option to its last hook before the write, the next stored read fails once.
 		add_filter(
 			'pre_option_active_plugins',
-			static function ( $pre ) use ( $read_failure ) {
-				$read_failure->site_failures = PHP_INT_MAX;
+			static function ( $pre ) use ( $read_failure, &$armed ) {
+				if ( ! $armed ) {
+					$armed                       = true;
+					$read_failure->site_failures = 1;
+				}
 				return $pre;
 			}
 		);
+		add_action(
+			'deactivated_plugin',
+			static function () use ( $read_failure, &$left_unconsumed ): void {
+				$left_unconsumed             = $read_failure->site_failures;
+				$read_failure->site_failures = 0;
+			}
+		);
 
-		$this->assertFalse( $sut->deactivate_woopayments_plugin() );
-		$this->read_failure->site_failures = 0;
-		$this->assertTrue( $sut->is_woopayments_stored_site_active(), 'The extension stays stored.' );
+		$this->assertTrue( $sut->deactivate_woopayments_plugin() );
+		$this->assertSame( 1, $left_unconsumed, 'No read inside the call went to the database.' );
+		$this->assertSame( 1, $extension_callbacks );
+		$this->assertFalse( $sut->is_woopayments_stored_site_active(), 'WordPress wrote the list without the extension.' );
+		$this->assertSame( array( 'hello-dolly/hello.php' ), array_values( (array) get_option( 'active_plugins' ) ), 'The other plugin stays.' );
 	}
 
 	/**

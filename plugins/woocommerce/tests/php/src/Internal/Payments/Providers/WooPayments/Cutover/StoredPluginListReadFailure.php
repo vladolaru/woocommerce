@@ -5,7 +5,12 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\C
 
 /**
  * Makes the switch's stored plugin-list reads fail as a database error does: WordPress's query filter points each one at
- * a missing table, so the real wpdb sets its last error. Only the switch's own queries match.
+ * a missing table, so the real wpdb sets its last error.
+ *
+ * The match is by query text, not by caller. The site read's text is also WordPress's uncached get_option() read, which
+ * this suite never issues because active_plugins is autoloaded and so cached, and update_option()'s autoload read, which
+ * every write of active_plugins issues. A count set before such a read is consumed by it. The network read does not
+ * collide: WordPress puts meta_key before site_id.
  */
 class StoredPluginListReadFailure {
 

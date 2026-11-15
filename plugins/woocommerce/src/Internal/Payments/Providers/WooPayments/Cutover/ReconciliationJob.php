@@ -890,9 +890,11 @@ class ReconciliationJob implements RegisterHooksInterface {
 		// with no payments, so the switch waits until a super admin activates WooPayments per site. Finalize reads the stored
 		// lists: a plugin load manager can filter them in the queue request it runs in.
 		$network_active = $this->preflight_service->is_woopayments_stored_network_active();
-		// A network list that could not be read decides nothing. Before the fence a deferral leaves the extension with
-		// payments, and the next attempt runs the whole check again.
+		// A network list that could not be read decides nothing. No token is stored yet, so the deferral leaves the extension
+		// with payments, and the next attempt runs the whole check again. It waits the usual cadence, not a shorter one: a
+		// failed query is not known to clear in seconds, the extension keeps payments meanwhile, and nothing is lost by waiting.
 		if ( null === $network_active ) {
+			$this->log_unknown_stored_list( 'WooPayments cutover: the stored network plugin list could not be read before the switch, so the switch waits.', $claimed, self::CODE_RECONCILIATION_RESOLVER_FAILED );
 			$this->defer( $claimed, array( self::CODE_RECONCILIATION_RESOLVER_FAILED ), $outcomes );
 			return;
 		}
@@ -921,7 +923,11 @@ class ReconciliationJob implements RegisterHooksInterface {
 		try {
 			// An extension the merchant already deactivated, or a retry whose earlier finalize did, has nothing to deactivate.
 			// A list that could not be read may still hold it, so the deactivation runs, reads it again and fails closed.
-			$deactivated = false === $this->preflight_service->is_woopayments_stored_site_active();
+			$site_active = $this->preflight_service->is_woopayments_stored_site_active();
+			if ( null === $site_active ) {
+				$this->log_unknown_stored_list( 'WooPayments cutover: the stored site plugin list could not be read before the deactivation, so the deactivation reads it again.', $claimed );
+			}
+			$deactivated = false === $site_active;
 			if ( ! $deactivated ) {
 				$deactivated = $this->run_while_changing_plugins( fn() => $this->preflight_service->deactivate_woopayments_plugin() );
 			}
@@ -930,9 +936,13 @@ class ReconciliationJob implements RegisterHooksInterface {
 			$deactivated = false;
 		}
 		if ( ! $deactivated ) {
-			// A hook that threw after WordPress wrote the active plugins still left the extension inactive; a list that could
-			// not be read counts as still holding it.
-			$deactivated = false === $this->preflight_service->is_woopayments_stored_site_active();
+			// A hook that threw after WordPress wrote the active plugins still left the extension inactive. Only both lists read
+			// without it count: a list that could not be read may still hold it.
+			$in_stored_lists = $this->preflight_service->is_woopayments_in_stored_lists();
+			if ( null === $in_stored_lists ) {
+				$this->log_unknown_stored_list( 'WooPayments cutover: the stored plugin lists could not be read after the deactivation, so the switch waits.', $claimed, 'plugin_deactivation_failed' );
+			}
+			$deactivated = false === $in_stored_lists;
 		}
 		if ( ! $deactivated ) {
 			// The token stays, so the next attempt finds the extension active and rolls the switch back to it.
@@ -1421,6 +1431,24 @@ class ReconciliationJob implements RegisterHooksInterface {
 	 */
 	private function log_error( string $message, array $context = array() ): void {
 		$this->write_log_error( $message, array_merge( $context, array( 'source' => self::LOG_SOURCE ) ) );
+	}
+
+	/**
+	 * Log a stored plugin list that finalize could not read, with integers and codes only.
+	 *
+	 * @param string              $message What finalize does about it.
+	 * @param array<string,mixed> $claimed Exact running state owned by this worker.
+	 * @param string|null         $code    The deferral code finalize writes, when it defers.
+	 */
+	private function log_unknown_stored_list( string $message, array $claimed, ?string $code = null ): void {
+		$context = array(
+			'generation' => (int) $claimed['generation'],
+			'attempt'    => (int) $claimed['attempt'],
+		);
+		if ( null !== $code ) {
+			$context['code'] = $code;
+		}
+		$this->log_error( $message, $context );
 	}
 
 	/**
