@@ -89,6 +89,9 @@ class ReconciliationJob implements RegisterHooksInterface {
 	/** Condition code of a data migration that failed; the stored code keeps its first name. */
 	private const CODE_DATA_MIGRATION_FAILED = 'normalization_failed';
 
+	/** Condition code of an attempt that could not work out what to do: the resolver threw, or a stored plugin list could not be read. */
+	private const CODE_RECONCILIATION_RESOLVER_FAILED = 'reconciliation_resolver_failed';
+
 	/** Condition code of a finalize that waits because the WooPayments extension is active for every site. */
 	public const CODE_PLUGIN_ACTIVE_SITEWIDE = 'plugin_active_sitewide';
 
@@ -121,18 +124,24 @@ class ReconciliationJob implements RegisterHooksInterface {
 	 * Time after the hand-over until which a check that cannot read ownership retries every UNREADABLE_OWNERSHIP_SLOW_DELAY;
 	 * later it takes the retry cadence.
 	 *
-	 * Past the web runner's limit, the process is a WP-Cron or command-line queue run that started before the hand-over, or
-	 * one that booted on a lagging database read; such runs end or catch up within minutes. Fifteen minutes is the time
-	 * the job already gives a claimed attempt before it treats its worker as gone (RUNNING_TIMEOUT). A process that still
-	 * cannot read after that has a lasting reason, such as a worker that keeps the extension loaded.
+	 * Action Scheduler's WP-Cron and async runs start no new batch past the 30 s limit
+	 * (ActionScheduler_QueueRunner::run() with get_time_limit()), so past the first minute the process is an action still
+	 * running past that limit, a command-line queue run (which has no such limit), a process that booted on a lagging
+	 * database read, or a worker that keeps the extension loaded. All but the last end or catch up within minutes. Not
+	 * shorter: a command-line run over a long queue often takes several minutes, and a switch waiting for it would then wait
+	 * the cadence instead of ending within a minute of it. Fifteen minutes is the time the job already gives a claimed
+	 * attempt before it treats its worker as gone (RUNNING_TIMEOUT); a process that still cannot read after that has a
+	 * lasting reason.
 	 */
 	private const UNREADABLE_OWNERSHIP_SLOW_WINDOW = 15 * MINUTE_IN_SECONDS;
 
 	/**
 	 * Retry delay for a check that cannot read ownership, from one to fifteen minutes after the hand-over.
 	 *
-	 * The usual cause is a queue run that started before the hand-over. Checking once a minute ends the switch within a
-	 * minute of that run's end, at 14 retries at most.
+	 * The causes left past the first minute (UNREADABLE_OWNERSHIP_SLOW_WINDOW) end in minutes, not seconds. Checking once a
+	 * minute ends the switch within a minute of their end, at 14 retries at most. Not shorter: each retry costs two record
+	 * writes, a delete of the shared autoloaded-options cache entry, an Action Scheduler action and a log line, and a 5 s
+	 * delay would spend twelve times that to end the switch at most 55 s sooner.
 	 */
 	private const UNREADABLE_OWNERSHIP_SLOW_DELAY = MINUTE_IN_SECONDS;
 
@@ -658,11 +667,17 @@ class ReconciliationJob implements RegisterHooksInterface {
 				}
 				// Past the hand-over, who owns payments is read from the stored plugin lists, which no per-request filter
 				// changes. Lists without the extension are a reading only in a process that has not loaded its code: one that
-				// has, the finalizing request included, keeps running the extension and decides nothing.
+				// has, the finalizing request included, keeps running the extension and decides nothing. Neither does a list
+				// that could not be read.
 				if ( null !== ( $record['request_origin_token'] ?? null ) ) {
-					$lists_hold = $this->preflight_service->is_woopayments_in_stored_lists();
+					$stored_lists_hold = $this->preflight_service->is_woopayments_in_stored_lists();
+					if ( null === $stored_lists_hold ) {
+						$this->reschedule_unreadable_attempt( $record, $attempt, $now, 'WooPayments cutover: the stored plugin lists could not be read, so who owns payments is unknown; the next attempt is rescheduled.' );
+						return;
+					}
+					$lists_hold = $stored_lists_hold;
 					if ( ! $lists_hold && $this->arbiter->is_extension_code_loaded() ) {
-						$this->reschedule_unreadable_attempt( $record, $attempt, $now );
+						$this->reschedule_unreadable_attempt( $record, $attempt, $now, 'WooPayments cutover: this process still runs the extension\'s code, so it cannot read who owns payments; the next attempt is rescheduled.' );
 						return;
 					}
 				}
@@ -697,14 +712,16 @@ class ReconciliationJob implements RegisterHooksInterface {
 	/**
 	 * Move an attempt that cannot read ownership to a later one, deciding nothing; call with the write lock held.
 	 *
-	 * One compare-and-set keeps the state, step and claim fields, takes the attempt and raises the revision, and sets the
-	 * next attempt by the time since the hand-over; then the next attempt is scheduled.
+	 * One compare-and-set keeps the state, step, claim fields and updated_at, takes the attempt and raises the revision, and
+	 * sets the next attempt by the time since the hand-over; then the scheduling write records the next attempt's action and
+	 * moves updated_at.
 	 *
 	 * @param array<string,mixed> $record  Current record, carrying the hand-over token.
 	 * @param int                 $attempt The attempt this process was handed.
 	 * @param int                 $now     Current UTC timestamp.
+	 * @param string              $message Log line saying why ownership could not be read.
 	 */
-	private function reschedule_unreadable_attempt( array $record, int $attempt, int $now ): void {
+	private function reschedule_unreadable_attempt( array $record, int $attempt, int $now, string $message ): void {
 		$rescheduled                           = $record;
 		$rescheduled['revision']               = $record['revision'] + 1;
 		$rescheduled['attempt']                = $attempt;
@@ -715,7 +732,7 @@ class ReconciliationJob implements RegisterHooksInterface {
 			return;
 		}
 		$this->write_log_info(
-			'WooPayments cutover: this process still runs the extension\'s code, so it cannot read who owns payments; the next attempt is rescheduled.',
+			$message,
 			array(
 				'source'          => self::LOG_SOURCE,
 				'generation'      => (int) $record['generation'],
@@ -858,7 +875,7 @@ class ReconciliationJob implements RegisterHooksInterface {
 			$this->finalize_site_claim( $claimed, $outcomes );
 		} catch ( \Throwable $error ) {
 			$this->log_error( 'WooPayments cutover reconciliation resolver failed.', array( 'error' => $error->getMessage() ) );
-			$this->defer( $claimed, array( 'reconciliation_resolver_failed' ) );
+			$this->defer( $claimed, array( self::CODE_RECONCILIATION_RESOLVER_FAILED ) );
 		}
 	}
 
@@ -872,7 +889,14 @@ class ReconciliationJob implements RegisterHooksInterface {
 		// Deactivating an extension that is active sitewide would take it from every site, leaving the sites that still run it
 		// with no payments, so the switch waits until a super admin activates WooPayments per site. Finalize reads the stored
 		// lists: a plugin load manager can filter them in the queue request it runs in.
-		if ( $this->preflight_service->is_woopayments_stored_network_active() ) {
+		$network_active = $this->preflight_service->is_woopayments_stored_network_active();
+		// A network list that could not be read decides nothing. Before the fence a deferral leaves the extension with
+		// payments, and the next attempt runs the whole check again.
+		if ( null === $network_active ) {
+			$this->defer( $claimed, array( self::CODE_RECONCILIATION_RESOLVER_FAILED ), $outcomes );
+			return;
+		}
+		if ( $network_active ) {
 			$this->defer( $claimed, array( self::CODE_PLUGIN_ACTIVE_SITEWIDE ), $outcomes );
 			return;
 		}
@@ -893,10 +917,12 @@ class ReconciliationJob implements RegisterHooksInterface {
 		if ( null === $claimed ) {
 			return;
 		}
-		$deactivated = true;
+		$deactivated = false;
 		try {
 			// An extension the merchant already deactivated, or a retry whose earlier finalize did, has nothing to deactivate.
-			if ( $this->preflight_service->is_woopayments_stored_site_active() ) {
+			// A list that could not be read may still hold it, so the deactivation runs, reads it again and fails closed.
+			$deactivated = false === $this->preflight_service->is_woopayments_stored_site_active();
+			if ( ! $deactivated ) {
 				$deactivated = $this->run_while_changing_plugins( fn() => $this->preflight_service->deactivate_woopayments_plugin() );
 			}
 		} catch ( \Throwable $error ) {
@@ -904,8 +930,9 @@ class ReconciliationJob implements RegisterHooksInterface {
 			$deactivated = false;
 		}
 		if ( ! $deactivated ) {
-			// A hook that threw after WordPress wrote the active plugins still left the extension inactive.
-			$deactivated = ! $this->preflight_service->is_woopayments_stored_site_active();
+			// A hook that threw after WordPress wrote the active plugins still left the extension inactive; a list that could
+			// not be read counts as still holding it.
+			$deactivated = false === $this->preflight_service->is_woopayments_stored_site_active();
 		}
 		if ( ! $deactivated ) {
 			// The token stays, so the next attempt finds the extension active and rolls the switch back to it.
@@ -1419,6 +1446,8 @@ class ReconciliationJob implements RegisterHooksInterface {
 
 	/**
 	 * Write a cutover informational line to the WooCommerce logger.
+	 *
+	 * @since 11.4.0
 	 *
 	 * @param string              $message Message.
 	 * @param array<string,mixed> $context Context.

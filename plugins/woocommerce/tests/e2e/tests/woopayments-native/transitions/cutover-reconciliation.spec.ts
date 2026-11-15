@@ -451,20 +451,50 @@ async function triggerActionSchedulerQueue( baseURL: string ): Promise< void > {
 }
 
 /**
- * Test-time shortcut, not a product finding: reschedules any pending
- * cutover reconciliation Action Scheduler action to run immediately, a
- * direct DB time-shortcut (the same category as WooCommerce Subscriptions
- * never scheduling past dates) instead of idling the run through the
- * product's own real ~15-minute backoff between attempts. It leaves the
- * ownership check alone: that check is due 5 s after the hand-over, and the
- * cases exercise that delay as the product schedules it.
+ * Test-time shortcut, not a product finding: moves the next attempt of a
+ * switch deferred before its hand-over to now, a direct DB time-shortcut
+ * (the same category as WooCommerce Subscriptions never scheduling past
+ * dates) instead of idling the run through the product's own real ~15-minute
+ * backoff between attempts. It moves only the one action the deferral
+ * scheduled, by the ID the record holds, and only while that action is still
+ * pending, so an attempt a runner schedules meanwhile keeps its own time: the
+ * ownership check, due 5 s after the hand-over, runs as the product
+ * schedules it.
  */
-async function rescheduleReconciliationActionsToNow(): Promise< void > {
-	await wpEvalJson< true >( `
+async function rescheduleDeferredAttemptToNow(): Promise< void > {
+	await wpEvalJson< number >( `
 		global $wpdb;
 		$record = get_option( 'woocommerce_woopayments_cutover_state' );
-		if ( is_array( $record ) && 'verify_builtin_ownership' === ( $record['current_step'] ?? '' ) ) {
-			return true;
+		if ( ! is_array( $record ) || 'deferred' !== ( $record['state'] ?? '' ) || null !== ( $record['request_origin_token'] ?? null ) ) {
+			return 0;
+		}
+		$action_id = (int) ( $record['action_id'] ?? 0 );
+		if ( $action_id < 1 ) {
+			return 0;
+		}
+		return (int) $wpdb->query( $wpdb->prepare(
+			"UPDATE {$wpdb->prefix}actionscheduler_actions SET scheduled_date_gmt = %s, scheduled_date_local = %s WHERE action_id = %d AND hook = %s AND status = 'pending'",
+			current_time( 'mysql', true ),
+			current_time( 'mysql' ),
+			$action_id,
+			'woocommerce_woopayments_cutover_reconcile'
+		) );
+	` );
+}
+
+/**
+ * Moves every pending reconciliation action to now, only while the record
+ * waits for the merchant's start, the state a rollback leaves: then no
+ * pending action is an attempt of a running switch, and any that runs would
+ * claim the rolled-back generation. Returns false, moving nothing, in any
+ * other state.
+ */
+async function forceObsoleteReconcileActionsDue(): Promise< boolean > {
+	return wpEvalJson< boolean >( `
+		global $wpdb;
+		$record = get_option( 'woocommerce_woopayments_cutover_state' );
+		if ( ! is_array( $record ) || 'pending' !== ( $record['state'] ?? '' ) || 'awaiting_merchant_start' !== ( $record['current_step'] ?? '' ) ) {
+			return false;
 		}
 		$wpdb->query( $wpdb->prepare(
 			"UPDATE {$wpdb->prefix}actionscheduler_actions SET scheduled_date_gmt = %s, scheduled_date_local = %s WHERE hook = %s AND status = 'pending'",
@@ -473,6 +503,74 @@ async function rescheduleReconciliationActionsToNow(): Promise< void > {
 			'woocommerce_woopayments_cutover_reconcile'
 		) );
 		return true;
+	` );
+}
+
+const QUEUE_RUNNER_HOLD_HOOK = 'woocommerce_e2e_queue_runner_hold';
+
+/**
+ * Holds the store's queue runners off from the spec's side, through Action
+ * Scheduler's own concurrency limit: a claim on a placeholder action fills
+ * its one concurrent batch, so no WP-Cron, async request or admin-dispatched
+ * runner claims anything (`ActionScheduler_QueueRunner::run()`), and the
+ * async request chain the click started stops at its next dispatch
+ * (`ActionScheduler_AsyncRequest_QueueRunner::allow()`). The live rows' hold
+ * (`DISABLE_WP_CRON` and the async runner's lock) does not stop that chain.
+ * The claim carries a fresh last-attempt time, so
+ * `ActionScheduler_QueueCleaner::reset_timeouts()` leaves it for five
+ * minutes. Pair with `releaseQueueRunners()` in a `finally`.
+ */
+async function holdQueueRunners(): Promise< void > {
+	const held = await wpEvalJson< boolean >( `
+		global $wpdb;
+		$action_id = as_schedule_single_action( time() + DAY_IN_SECONDS, '${ QUEUE_RUNNER_HOLD_HOOK }', array(), 'woocommerce-e2e' );
+		$wpdb->insert( $wpdb->actionscheduler_claims, array( 'date_created_gmt' => current_time( 'mysql', true ) ) );
+		$wpdb->update(
+			$wpdb->actionscheduler_actions,
+			array(
+				'claim_id'           => (int) $wpdb->insert_id,
+				'last_attempt_gmt'   => current_time( 'mysql', true ),
+				'last_attempt_local' => current_time( 'mysql' ),
+			),
+			array( 'action_id' => $action_id )
+		);
+		return ActionScheduler::runner()->has_maximum_concurrent_batches();
+	` );
+	expect( held, 'no queue runner may claim an action' ).toBe( true );
+}
+
+/**
+ * Releases `holdQueueRunners()`: the placeholder actions and their claims go.
+ * Safe to run when nothing is held.
+ */
+async function releaseQueueRunners(): Promise< void > {
+	await wpEvalJson< true >( `
+		global $wpdb;
+		$claims = $wpdb->get_col( $wpdb->prepare( "SELECT claim_id FROM {$wpdb->actionscheduler_actions} WHERE hook = %s AND claim_id > 0", '${ QUEUE_RUNNER_HOLD_HOOK }' ) );
+		foreach ( as_get_scheduled_actions( array( 'hook' => '${ QUEUE_RUNNER_HOLD_HOOK }', 'status' => '', 'per_page' => -1 ), 'ids' ) as $action_id ) {
+			ActionScheduler::store()->delete_action( $action_id );
+		}
+		foreach ( $claims as $claim_id ) {
+			$wpdb->delete( $wpdb->actionscheduler_claims, array( 'claim_id' => (int) $claim_id ) );
+		}
+		return true;
+	` );
+}
+
+/**
+ * Runs the deferred switch's next attempt in one WP-CLI process, by the
+ * action ID the record holds. Returns the action ID, or 0 when the record is
+ * not deferred or the action is no longer pending.
+ */
+async function runDeferredAttemptNow(): Promise< number > {
+	return wpEvalJson< number >( `
+		$record = get_option( 'woocommerce_woopayments_cutover_state' );
+		$action_id = is_array( $record ) && 'deferred' === ( $record['state'] ?? '' ) ? (int) ( $record['action_id'] ?? 0 ) : 0;
+		if ( $action_id < 1 || ActionScheduler_Store::STATUS_PENDING !== ActionScheduler::store()->get_status( $action_id ) ) {
+			return 0;
+		}
+		ActionScheduler::runner()->process_action( $action_id, 'WP CLI' );
+		return $action_id;
 	` );
 }
 
@@ -624,12 +722,12 @@ test.describe( 'WooPayments transition: old plugin cutover advancement', () => {
 			// Step 2: zero merchant action. The merchant's one click already
 			// happened above; every later attempt is the product's own retry
 			// cycle, driven here without waiting on its real ~15-minute
-			// cadence (rescheduleReconciliationActionsToNow, a test-time
-			// shortcut, not a product finding).
+			// cadence (rescheduleDeferredAttemptToNow, a test-time shortcut,
+			// not a product finding).
 			await expect
 				.poll(
 					async () => {
-						await rescheduleReconciliationActionsToNow();
+						await rescheduleDeferredAttemptToNow();
 						await triggerActionSchedulerQueue( baseURL! );
 						try {
 							owner = await readRuntimeOwner( restApi );
@@ -906,7 +1004,7 @@ test.describe( 'WooPayments transition: rollback round trip', () => {
 			await expect
 				.poll(
 					async () => {
-						await rescheduleReconciliationActionsToNow();
+						await rescheduleDeferredAttemptToNow();
 						await triggerActionSchedulerQueue( baseURL! );
 						status = await readCutoverStatus( 0 );
 						return status.record?.state ?? null;
@@ -1005,7 +1103,7 @@ test.describe( 'WooPayments transition: rollback round trip', () => {
 			await expect
 				.poll(
 					async () => {
-						await rescheduleReconciliationActionsToNow();
+						await rescheduleDeferredAttemptToNow();
 						await triggerActionSchedulerQueue( baseURL! );
 						const record = ( await readCutoverStatus( 0 ) ).record;
 						return record?.generation === reopened?.generation
@@ -1060,7 +1158,10 @@ async function expectRollbackStaysPut(
 	rollback: CutoverRecord
 ): Promise< void > {
 	for ( let tick = 0; tick < 3; tick++ ) {
-		await rescheduleReconciliationActionsToNow();
+		expect(
+			await forceObsoleteReconcileActionsDue(),
+			"the record still waits for the merchant's start"
+		).toBe( true );
 		await triggerActionSchedulerQueue( baseURL );
 	}
 	const settled = await readCutoverStatus( 0 );
@@ -1133,6 +1234,11 @@ test.describe( 'WooPayments transition: extension activation during an open cuto
 		expect( identity.native_state ).toBe( 'available' );
 	} );
 
+	test.afterEach( async () => {
+		// A test that timed out never reached its own release.
+		await releaseQueueRunners();
+	} );
+
 	test.afterAll( async () => {
 		await wpCLI( [ 'wp', 'woopayments-e2e-transition', 'reset' ] );
 	} );
@@ -1160,66 +1266,89 @@ test.describe( 'WooPayments transition: extension activation during an open cuto
 			validateCutoverActionURL( href ?? '', baseURL! );
 			await link.click( { timeout: 30_000 } );
 
-			// Drive the queue only until the job has finalized: the extension
-			// is off and the ownership check waits for its own attempt.
-			let status = await readCutoverStatus( 0 );
+			// This case keeps the fresh store on purpose: the admin page above
+			// queued the extension's order check 10 s ahead and the click came
+			// first, so the switch defers for that check. Drive the queue until
+			// the check has run, moving no attempt.
 			await expect
 				.poll(
 					async () => {
-						status = await readCutoverStatus( 0 );
+						const record = ( await readCutoverStatus( 0 ) ).record;
+						const polled = await readExtensionOrderCheck();
 						if (
-							status.record?.current_step ===
-								'verify_builtin_ownership' &&
-							! status.plugin_active
+							record?.state === 'deferred' &&
+							polled?.status === 'complete'
 						) {
 							return true;
 						}
-						await rescheduleReconciliationActionsToNow();
 						await triggerActionSchedulerQueue( baseURL! );
 						return false;
 					},
 					{ timeout: 3 * 60_000, intervals: [ 1000, 3000, 5000 ] }
 				)
 				.toBe( true );
-			const open = status.record!;
-			expect( open.state ).toBe( 'pending' );
-
-			// This case keeps the fresh store on purpose: the admin page above
-			// queued the extension's order check 10 s ahead and the click came
-			// first, so the switch waits for that check, then hands over.
 			const check = await readExtensionOrderCheck();
 			expect(
 				check?.status,
 				"the extension's order check must have run through the queue"
 			).toBe( 'complete' );
-			const steps = open.step_log ?? [];
-			const deferral = steps.find(
-				( entry ) =>
-					entry.step === 'deferred' &&
-					( entry.context?.codes ?? [] ).includes(
-						'operational_queue_hooks_unhandled'
-					)
-			);
-			expect(
-				deferral?.at,
-				'the switch must defer while the check is pending'
-			).toBeLessThanOrEqual( check!.started_at );
-			const handOver = steps.find(
-				( entry ) => entry.step === 'verify_builtin_ownership'
-			);
-			expect(
-				handOver?.at,
-				'the hand-over must follow once the check has run'
-			).toBeGreaterThanOrEqual( check!.started_at );
 
-			await wpCLI( [
-				'wp',
-				'plugin',
-				'activate',
-				'woocommerce-payments',
-			] );
+			// The ownership check is due 5 s after the hand-over, so hold the
+			// queue's runners before the hand-over: the extension then comes
+			// back while the switch is still open, every time.
+			let rollback: CutoverRecord;
+			await holdQueueRunners();
+			try {
+				expect(
+					await runDeferredAttemptNow(),
+					'the deferred attempt runs here'
+				).toBeGreaterThan( 0 );
+				const open = ( await readCutoverStatus( 0 ) ).record!;
+				expect(
+					open.state,
+					'the switch is still open when the extension comes back'
+				).toBe( 'pending' );
+				expect( open.current_step ).toBe( 'verify_builtin_ownership' );
+				expect( ( await readCutoverStatus( 0 ) ).plugin_active ).toBe(
+					false
+				);
+				expect(
+					await wpEvalJson< number >( PENDING_RECONCILE_ACTIONS_PHP ),
+					'the ownership check waits, held'
+				).toBe( 1 );
 
-			const rollback = await expectRolledBack( restApi, open );
+				const steps = open.step_log ?? [];
+				const deferral = steps.find(
+					( entry ) =>
+						entry.step === 'deferred' &&
+						( entry.context?.codes ?? [] ).includes(
+							'operational_queue_hooks_unhandled'
+						)
+				);
+				expect(
+					deferral?.at,
+					'the switch must defer while the check is pending'
+				).toBeLessThanOrEqual( check!.started_at );
+				const handOver = steps.find(
+					( entry ) => entry.step === 'verify_builtin_ownership'
+				);
+				expect(
+					handOver?.at,
+					'the hand-over must follow once the check has run'
+				).toBeGreaterThanOrEqual( check!.started_at );
+
+				await wpCLI( [
+					'wp',
+					'plugin',
+					'activate',
+					'woocommerce-payments',
+				] );
+
+				// The open generation's rollback cancels the held ownership check.
+				rollback = await expectRolledBack( restApi, open );
+			} finally {
+				await releaseQueueRunners();
+			}
 			await expectRollbackStaysPut( restApi, baseURL!, rollback );
 		}
 	);
@@ -1271,7 +1400,7 @@ test.describe( 'WooPayments transition: extension activation during an open cuto
 			await expect
 				.poll(
 					async () => {
-						await rescheduleReconciliationActionsToNow();
+						await rescheduleDeferredAttemptToNow();
 						await triggerActionSchedulerQueue( baseURL! );
 						status = await readCutoverStatus( 0 );
 						return status.record?.state ?? null;

@@ -362,10 +362,10 @@ class PreflightService {
 	 *
 	 * @since 11.4.0
 	 *
-	 * @return bool
+	 * @return bool|null Whether the stored list holds WooPayments, or null when it could not be read.
 	 */
-	public function is_woopayments_stored_site_active(): bool {
-		return '' !== $this->find_woopayments_plugin_file( $this->read_stored_site_plugins() );
+	public function is_woopayments_stored_site_active(): ?bool {
+		return $this->holds_woopayments( $this->read_stored_site_plugins() );
 	}
 
 	/**
@@ -373,10 +373,10 @@ class PreflightService {
 	 *
 	 * @since 11.4.0
 	 *
-	 * @return bool
+	 * @return bool|null Whether the stored list holds WooPayments, or null when it could not be read.
 	 */
-	public function is_woopayments_stored_network_active(): bool {
-		return '' !== $this->find_woopayments_plugin_file( $this->read_stored_network_plugins() );
+	public function is_woopayments_stored_network_active(): ?bool {
+		return $this->holds_woopayments( $this->read_stored_network_plugins() );
 	}
 
 	/**
@@ -385,11 +385,20 @@ class PreflightService {
 	 *
 	 * @since 11.4.0
 	 *
-	 * @return bool
+	 * @return bool|null True when either list holds WooPayments, false when both were read without it, or null when a list
+	 *                   that could hold it could not be read.
 	 */
-	public function is_woopayments_in_stored_lists(): bool {
-		return '' !== $this->find_woopayments_plugin_file( $this->read_stored_site_plugins() )
-			|| '' !== $this->find_woopayments_plugin_file( $this->read_stored_network_plugins() );
+	public function is_woopayments_in_stored_lists(): ?bool {
+		$site = $this->holds_woopayments( $this->read_stored_site_plugins() );
+		if ( true === $site ) {
+			return true;
+		}
+		$network = $this->holds_woopayments( $this->read_stored_network_plugins() );
+		if ( true === $network ) {
+			return true;
+		}
+
+		return null === $site || null === $network ? null : false;
 	}
 
 	/**
@@ -401,24 +410,34 @@ class PreflightService {
 	 * list answers every read of active_plugins.
 	 *
 	 * An extension that is not active counts as deactivated: a retry after a crash that followed a successful deactivation
-	 * finds nothing to deactivate. An extension active for every site stays active, and this reports false.
+	 * finds nothing to deactivate. An extension active for every site stays active, and this reports false. So does a stored
+	 * list that could not be read, before or after the call.
 	 */
 	public function deactivate_woopayments_plugin(): bool {
 		// WordPress 6.8+ loads this file on every request (#62244); kept as WooCommerce's own pattern (see src/Admin/PluginsHelper.php).
 		if ( ! function_exists( 'deactivate_plugins' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		}
-		$plugin_file = $this->find_woopayments_plugin_file( $this->read_stored_site_plugins() );
+		$site_plugins = $this->read_stored_site_plugins();
+		if ( null === $site_plugins ) {
+			return false;
+		}
+		$plugin_file = $this->find_woopayments_plugin_file( $site_plugins );
 		if ( '' === $plugin_file ) {
-			$plugin_file = $this->find_woopayments_plugin_file( $this->read_stored_network_plugins() );
+			$network_plugins = $this->read_stored_network_plugins();
+			if ( null === $network_plugins ) {
+				return false;
+			}
+			$plugin_file = $this->find_woopayments_plugin_file( $network_plugins );
 		}
 		if ( '' === $plugin_file ) {
 			return true;
 		}
 		// get_option() runs the pre_option_{$option} filter and then the generic pre_option filter (WordPress 6.1+), and a value
 		// from it skips every option_active_plugins callback. Write-side filters stay, so a tool that guards its own writes still does.
+		// A read that fails here answers an empty list: deactivate_plugins() then finds nothing active and writes nothing.
 		$stored_view = function ( $pre, $option ) {
-			return 'active_plugins' === $option ? $this->read_stored_site_plugins() : $pre;
+			return 'active_plugins' === $option ? ( $this->read_stored_site_plugins() ?? array() ) : $pre;
 		};
 		add_filter( 'pre_option', $stored_view, PHP_INT_MAX, 2 );
 		try {
@@ -426,7 +445,7 @@ class PreflightService {
 		} finally {
 			remove_filter( 'pre_option', $stored_view, PHP_INT_MAX );
 		}
-		return ! $this->is_woopayments_stored_site_active() && ! $this->is_woopayments_stored_network_active();
+		return false === $this->is_woopayments_stored_site_active() && false === $this->is_woopayments_stored_network_active();
 	}
 
 	/**
@@ -445,15 +464,28 @@ class PreflightService {
 	}
 
 	/**
+	 * Tell whether a stored plugin list holds WooPayments.
+	 *
+	 * @param array<int|string,mixed>|null $plugin_files Plugin files, or null for a list that could not be read.
+	 * @return bool|null Whether the list holds WooPayments, or null when it could not be read.
+	 */
+	private function holds_woopayments( ?array $plugin_files ): ?bool {
+		return null === $plugin_files ? null : '' !== $this->find_woopayments_plugin_file( $plugin_files );
+	}
+
+	/**
 	 * Read this site's active plugin list as stored, by SQL, so no filter or cache answers.
 	 *
-	 * Always an array, since the stored-view filter returns it and false there would mean "no early value".
+	 * A failed query is told apart from an empty list by the database's last error, as get_queued_woopayments_actions() does.
 	 *
-	 * @return array<int|string,mixed> The stored list; empty when the row is missing or unreadable.
+	 * @return array<int|string,mixed>|null The stored list, empty when the row is missing; null when the query failed.
 	 */
-	private function read_stored_site_plugins(): array {
+	private function read_stored_site_plugins(): ?array {
 		$wpdb  = $this->get_database();
 		$value = $wpdb->get_var( "SELECT option_value FROM {$wpdb->options} WHERE option_name = 'active_plugins' LIMIT 1" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- The stored value is the point: filters and caches can differ from it.
+		if ( '' !== $wpdb->last_error ) {
+			return null;
+		}
 		$value = is_string( $value ) ? maybe_unserialize( $value ) : array();
 		return is_array( $value ) ? $value : array();
 	}
@@ -461,15 +493,19 @@ class PreflightService {
 	/**
 	 * Read this network's active plugin list as stored, by SQL; WordPress keys it by plugin file.
 	 *
-	 * @return array<int|string,mixed> Plugin files; empty on a single site, or when the row is missing or unreadable.
+	 * @return array<int|string,mixed>|null Plugin files, empty on a single site or when the row is missing; null when the
+	 *                                      query failed.
 	 */
-	private function read_stored_network_plugins(): array {
+	private function read_stored_network_plugins(): ?array {
 		// A single site has no sitemeta table. Not read through the legacy proxy: a stand-in answer would point the query at a table the install lacks.
 		if ( ! is_multisite() ) {
 			return array();
 		}
 		$wpdb  = $this->get_database();
 		$value = $wpdb->get_var( "SELECT meta_value FROM {$wpdb->sitemeta} WHERE site_id = " . absint( get_current_network_id() ) . " AND meta_key = 'active_sitewide_plugins' LIMIT 1" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- The stored value is the point: filters and caches can differ from it.
+		if ( '' !== $wpdb->last_error ) {
+			return null;
+		}
 		$value = is_string( $value ) ? maybe_unserialize( $value ) : array();
 		return is_array( $value ) ? array_keys( $value ) : array();
 	}

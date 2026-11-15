@@ -78,6 +78,13 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	private ?PreflightService $preflight_service = null;
 
 	/**
+	 * Failing stored plugin-list reads, when a test sets them up.
+	 *
+	 * @var StoredPluginListReadFailure|null
+	 */
+	private ?StoredPluginListReadFailure $read_failure = null;
+
+	/**
 	 * Job instances whose callbacks must be removed.
 	 *
 	 * @var array<int,ReconciliationJob>
@@ -120,6 +127,10 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			remove_action( 'action_scheduler_init', array( $job, 'repair_schedule' ), 10 );
 		}
 
+		if ( null !== $this->read_failure ) {
+			$this->read_failure->remove();
+			$this->read_failure = null;
+		}
 		if ( $this->state_store instanceof StateStore ) {
 			$this->cleanup_state();
 		}
@@ -1836,37 +1847,11 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	 * extension's code, so it cannot tell who owns payments. Its attempt decides nothing and comes back by the time since
 	 * the hand-over; a request without the code then completes the switch.
 	 *
-	 * @testdox A check in a process that still runs the extension's code decides nothing and retries after $expected_delay s ($_dataName); a process without the code completes the switch.
-	 * @dataProvider provide_unreadable_ownership_retry_delays
-	 *
-	 * @param int|null $since_hand_over Seconds since the hand-over, or null when the record carries no hand-over time.
-	 * @param int      $expected_delay  Expected seconds until the next attempt.
+	 * @testdox A check in a process that still runs the extension's code decides nothing and retries; a process without the code completes the switch.
 	 */
-	public function test_check_in_a_process_running_the_extension_decides_nothing( ?int $since_hand_over, int $expected_delay ): void {
-		$verification = $this->open_ownership_check( null === $since_hand_over ? null : time() - $since_hand_over );
-		$info_lines   = 0;
-		$job          = new class( $info_lines ) extends ReconciliationJob {
-			/** @var int */
-			private int $info_lines;
-
-			/**
-			 * @param int $info_lines Count of informational log lines.
-			 */
-			public function __construct( int &$info_lines ) {
-				$this->info_lines =& $info_lines;
-			}
-
-			/**
-			 * Count the informational lines instead of logging them.
-			 *
-			 * @param string              $message Message.
-			 * @param array<string,mixed> $context Context.
-			 */
-			protected function write_log_info( string $message, array $context ): void {
-				unset( $message, $context );
-				++$this->info_lines;
-			}
-		};
+	public function test_check_in_a_process_running_the_extension_decides_nothing(): void {
+		$verification = $this->open_ownership_check( time() - 10 );
+		$job          = $this->create_info_recording_job();
 		$before       = time();
 
 		$this->create_job( true, $this->create_all_clear_site_preflight(), $job, true )->handle_reconcile( $verification['generation'], 2 );
@@ -1879,13 +1864,15 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( StateStore::STATE_PENDING, $rescheduled['state'] );
 		$this->assertSame( 'verify_builtin_ownership', $rescheduled['current_step'] );
 		$this->assertSame( $verification['step_log'], $rescheduled['step_log'], 'No step entry.' );
-		$this->assertSame( $verification['updated_at'], $rescheduled['updated_at'] );
 		$this->assertSame( $verification['request_origin_token'], $rescheduled['request_origin_token'], 'The hand-over stands.' );
-		$this->assertSame( $verification[ StateStore::HANDED_OVER_AT_KEY ] ?? null, $rescheduled[ StateStore::HANDED_OVER_AT_KEY ] ?? null );
+		$this->assertSame( $verification[ StateStore::HANDED_OVER_AT_KEY ], $rescheduled[ StateStore::HANDED_OVER_AT_KEY ] );
 		$this->assertContains( array( 'code' => 'ownership_reading_unavailable' ), $rescheduled['informational_outcomes'] );
-		$this->assertSame( 1, $info_lines );
-		$this->assertGreaterThanOrEqual( $before + $expected_delay, $rescheduled['next_attempt_at'] );
-		$this->assertLessThanOrEqual( $after + $expected_delay, $rescheduled['next_attempt_at'] );
+		$this->assertCount( 1, $job->info_messages );
+		$this->assertStringContainsString( "still runs the extension's code", $job->info_messages[0] );
+		// The scheduling write that follows the non-reading's compare-and-set moves updated_at to the claim's time.
+		$this->assertGreaterThanOrEqual( $before, $rescheduled['updated_at'] );
+		$this->assertLessThanOrEqual( $after, $rescheduled['updated_at'] );
+		$this->assertSame( $rescheduled['updated_at'] + 5, $rescheduled['next_attempt_at'], 'Within the first minute the next attempt is 5 s away.' );
 		$this->assertSame( $rescheduled['action_id'], $this->scheduler->get_scheduled_action_id( $rescheduled['generation'], 3 ) );
 
 		$this->start_fresh_request();
@@ -1897,6 +1884,27 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( StateStore::STATE_DONE, $done['state'] );
 		$this->assertNull( $done['request_origin_token'] );
 		$this->assertArrayNotHasKey( StateStore::HANDED_OVER_AT_KEY, $done, 'Done clears the hand-over time.' );
+	}
+
+	/**
+	 * Explicit timestamps, so no row depends on the wall clock staying within one second.
+	 *
+	 * @testdox A check that cannot read ownership retries after $expected_delay s ($_dataName).
+	 * @dataProvider provide_unreadable_ownership_retry_delays
+	 *
+	 * @param int|null $since_hand_over Seconds since the hand-over, or null when the record carries no hand-over time.
+	 * @param int      $expected_delay  Expected seconds until the next attempt.
+	 */
+	public function test_unreadable_ownership_retry_delay_counts_from_the_hand_over( ?int $since_hand_over, int $expected_delay ): void {
+		$now    = 1800000000;
+		$record = array( 'started_at' => $now - HOUR_IN_SECONDS );
+		if ( null !== $since_hand_over ) {
+			$record[ StateStore::HANDED_OVER_AT_KEY ] = $now - $since_hand_over;
+		}
+		$delay = new \ReflectionMethod( ReconciliationJob::class, 'get_unreadable_ownership_retry_delay' );
+		$delay->setAccessible( true );
+
+		$this->assertSame( $expected_delay, $delay->invoke( $this->sut, $record, $now ) );
 	}
 
 	/**
@@ -1913,6 +1921,57 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			'before fifteen minutes'   => array( 15 * MINUTE_IN_SECONDS - 1, MINUTE_IN_SECONDS ),
 			'at fifteen minutes'       => array( 15 * MINUTE_IN_SECONDS, 15 * MINUTE_IN_SECONDS ),
 		);
+	}
+
+	/**
+	 * A failed query is not a list without the extension: read as one, a process without the code would complete the switch.
+	 *
+	 * @testdox Past the hand-over, a stored list that cannot be read decides nothing: no rollback, no completion, a retry by the time since the hand-over.
+	 */
+	public function test_check_that_cannot_read_the_stored_lists_decides_nothing(): void {
+		$check = $this->open_ownership_check( time() - 10 );
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
+		$job                               = $this->create_info_recording_job();
+		$this->read_failure                = new StoredPluginListReadFailure();
+		$this->read_failure->site_failures = 1;
+
+		$this->create_job( true, $this->create_all_clear_site_preflight(), $job, false )->handle_reconcile( $check['generation'], 2 );
+
+		$this->assertSame( 0, $this->read_failure->site_failures, 'The claim read the stored list.' );
+		$after = $this->state_store->get_record();
+		$this->assertIsArray( $after );
+		$this->assertSame( $check['generation'], $after['generation'], 'No rollback.' );
+		$this->assertSame( StateStore::STATE_PENDING, $after['state'], 'No deferral and no completion.' );
+		$this->assertSame( 'verify_builtin_ownership', $after['current_step'] );
+		$this->assertSame( 2, $after['attempt'] );
+		$this->assertSame( $check['step_log'], $after['step_log'] );
+		$this->assertContains( array( 'code' => 'ownership_reading_unavailable' ), $after['informational_outcomes'] );
+		$this->assertSame( $after['updated_at'] + 5, $after['next_attempt_at'] );
+		$this->assertCount( 1, $job->info_messages );
+		$this->assertStringContainsString( 'could not be read', $job->info_messages[0] );
+	}
+
+	/**
+	 * Create a job that records its informational log lines instead of writing them.
+	 *
+	 * @return ReconciliationJob A job with a public `info_messages` list.
+	 */
+	private function create_info_recording_job(): ReconciliationJob {
+		return new class() extends ReconciliationJob {
+			/** @var string[] */
+			public array $info_messages = array();
+
+			/**
+			 * Record the line instead of logging it.
+			 *
+			 * @param string              $message Message.
+			 * @param array<string,mixed> $context Context.
+			 */
+			protected function write_log_info( string $message, array $context ): void {
+				unset( $context );
+				$this->info_messages[] = $message;
+			}
+		};
 	}
 
 	/**
@@ -3971,6 +4030,79 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Finalize defers before the fence, deactivating nothing, when the stored network list cannot be read.
+	 */
+	public function test_finalize_defers_when_the_stored_network_list_cannot_be_read(): void {
+		$this->arrange_extension_era_store();
+		$preflight = new class() extends PreflightService {
+			/** @return string[] */
+			public function get_failures(): array {
+				return array();
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** The network list could not be read. */
+			public function is_woopayments_stored_network_active(): ?bool {
+				return null;
+			}
+		};
+
+		$deferred = $this->run_first_attempt_with_stored_list_preflight( $preflight );
+
+		$this->assertSame( StateStore::STATE_DEFERRED, $deferred['state'] );
+		$this->assertSame( array( 'reconciliation_resolver_failed' ), $deferred['deferred_codes'] );
+		$this->assertNull( $deferred['request_origin_token'], 'No token, so the extension keeps payments.' );
+		$this->assertSame( array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ), $this->read_stored_active_plugins() );
+	}
+
+	/**
+	 * @testdox A stored list that cannot be read before the deactivation still deactivates the extension, read again inside the call.
+	 */
+	public function test_finalize_deactivates_when_the_check_before_cannot_read(): void {
+		$this->arrange_extension_era_store();
+		$this->read_failure                = new StoredPluginListReadFailure();
+		$this->read_failure->site_failures = 1;
+
+		$verification = $this->run_first_attempt_with_stored_list_preflight();
+
+		$this->assertSame( 0, $this->read_failure->site_failures, 'The check before read the stored list.' );
+		$this->assertSame( array(), $this->read_stored_active_plugins(), 'The extension left the stored list.' );
+		$this->assertSame( 'verify_builtin_ownership', $verification['current_step'] );
+		$this->assertNotNull( $verification['request_origin_token'] );
+	}
+
+	/**
+	 * @testdox After a deactivation hook throws, a recheck that cannot read the stored list defers instead of handing over.
+	 */
+	public function test_finalize_defers_when_the_recheck_after_a_throw_cannot_read(): void {
+		$this->arrange_extension_era_store();
+		$this->read_failure = new StoredPluginListReadFailure();
+		$read_failure       = $this->read_failure;
+		add_action(
+			'deactivate_plugin',
+			static function () use ( $read_failure ): void {
+				$read_failure->site_failures = 1;
+				throw new \RuntimeException( 'A hook before the write failed.' );
+			}
+		);
+
+		$deferred = $this->run_first_attempt_with_stored_list_preflight();
+
+		$this->assertSame( 0, $this->read_failure->site_failures, 'The recheck read the stored list.' );
+		$this->assertSame( array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ), $this->read_stored_active_plugins(), 'The extension is still active.' );
+		$this->assertSame( StateStore::STATE_DEFERRED, $deferred['state'] );
+		$this->assertSame( array( 'plugin_deactivation_failed' ), $deferred['deferred_codes'] );
+	}
+
+	/**
 	 * @testdox On a multisite, finalize defers while the stored network list holds WooPayments, even when a filter hides it from the finalizing request.
 	 * @group multisite
 	 */
@@ -5306,10 +5438,11 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	 * Start a merchant switch and run its first attempt with a preflight whose plugin-list reads and deactivation are the
 	 * real ones, then return the record.
 	 *
+	 * @param PreflightService|null $preflight Preflight to use instead; its stored-list reads should stay the real ones.
 	 * @return array<string,mixed>
 	 */
-	private function run_first_attempt_with_stored_list_preflight(): array {
-		$preflight = new class() extends PreflightService {
+	private function run_first_attempt_with_stored_list_preflight( ?PreflightService $preflight = null ): array {
+		$preflight = $preflight ?? new class() extends PreflightService {
 			/** @return string[] */
 			public function get_failures(): array {
 				return array();

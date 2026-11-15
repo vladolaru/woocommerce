@@ -84,6 +84,13 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	private bool $captured_hpos_tables_created_option = false;
 
 	/**
+	 * Failing stored plugin-list reads, when a test sets them up.
+	 *
+	 * @var StoredPluginListReadFailure|null
+	 */
+	private ?StoredPluginListReadFailure $read_failure = null;
+
+	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
@@ -116,6 +123,10 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 		}
 		$this->delete_raw_hpos_orders();
 		$this->clean_up_disabled_hpos_fixture();
+		if ( null !== $this->read_failure ) {
+			$this->read_failure->remove();
+			$this->read_failure = null;
+		}
 		parent::tearDown();
 	}
 
@@ -494,6 +505,129 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( $this->create_sut()->deactivate_woopayments_plugin() );
 		$this->assertSame( array( 'from another pre_option callback', 'Stored store name' ), $seen_during_call );
+	}
+
+	/**
+	 * The switch decides from the stored lists, so a read that failed must not look like a list without the extension.
+	 *
+	 * @testdox A stored site list that cannot be read is unknown, not empty, and the next read that works answers again.
+	 */
+	public function test_a_stored_site_list_that_cannot_be_read_is_unknown(): void {
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
+		$sut                               = $this->create_sut();
+		$this->read_failure                = new StoredPluginListReadFailure();
+		$this->read_failure->site_failures = 2;
+
+		$this->assertNull( $sut->is_woopayments_stored_site_active() );
+		$this->assertNull( $sut->is_woopayments_in_stored_lists() );
+		$this->assertTrue( $sut->is_woopayments_stored_site_active() );
+	}
+
+	/**
+	 * @testdox On a multisite, a stored network list that cannot be read is unknown, unless the site list holds WooPayments.
+	 * @group multisite
+	 */
+	public function test_a_stored_network_list_that_cannot_be_read_is_unknown(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+		update_option( 'active_plugins', array() );
+		update_site_option( 'active_sitewide_plugins', array() );
+		$sut                                  = $this->create_sut();
+		$this->read_failure                   = new StoredPluginListReadFailure();
+		$this->read_failure->network_failures = 2;
+
+		$this->assertNull( $sut->is_woopayments_stored_network_active() );
+		$this->assertNull( $sut->is_woopayments_in_stored_lists(), 'A clear site list says nothing about the network list.' );
+
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
+		$this->read_failure->network_failures = 1;
+
+		$this->assertTrue( $sut->is_woopayments_in_stored_lists(), 'The site list holding WooPayments is a reading.' );
+	}
+
+	/**
+	 * @testdox Deactivation reports false and deactivates nothing when the stored list cannot be read to find WooPayments.
+	 */
+	public function test_deactivation_fails_closed_when_the_stored_list_cannot_be_read(): void {
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
+		$deactivations = 0;
+		add_action(
+			'deactivate_plugin',
+			static function () use ( &$deactivations ): void {
+				++$deactivations;
+			}
+		);
+		$sut                               = $this->create_sut();
+		$this->read_failure                = new StoredPluginListReadFailure();
+		$this->read_failure->site_failures = 1;
+
+		$this->assertFalse( $sut->deactivate_woopayments_plugin() );
+		$this->assertSame( 0, $deactivations );
+		$this->assertTrue( $sut->is_woopayments_stored_site_active(), 'The extension stays stored.' );
+	}
+
+	/**
+	 * @testdox On a multisite, deactivation reports false when the site list is clear and the network list cannot be read.
+	 * @group multisite
+	 */
+	public function test_deactivation_fails_closed_when_the_stored_network_list_cannot_be_read(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+		update_option( 'active_plugins', array() );
+		// WordPress stores active_sitewide_plugins as a plugin-file => activation-timestamp map (wp-admin/includes/plugin.php:712-715).
+		update_site_option( 'active_sitewide_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE => 1 ) );
+		$sut                                  = $this->create_sut();
+		$this->read_failure                   = new StoredPluginListReadFailure();
+		$this->read_failure->network_failures = 1;
+
+		$this->assertFalse( $sut->deactivate_woopayments_plugin(), 'Not "nothing to deactivate".' );
+		$this->assertSame( 0, $this->read_failure->network_failures );
+	}
+
+	/**
+	 * WordPress's deactivate_plugins() writes back the list it read, so a failed read inside the call must not be a list
+	 * WordPress could write.
+	 *
+	 * @testdox When the stored list cannot be read inside the deactivation, WordPress writes nothing and deactivation reports false.
+	 */
+	public function test_a_failed_read_inside_the_deactivation_writes_nothing(): void {
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, 'hello-dolly/hello.php' ) );
+		$sut                = $this->create_sut();
+		$this->read_failure = new StoredPluginListReadFailure();
+		$read_failure       = $this->read_failure;
+		// The first read of the option inside the call: every stored read from here on fails.
+		add_filter(
+			'pre_option_active_plugins',
+			static function ( $pre ) use ( $read_failure ) {
+				$read_failure->site_failures = PHP_INT_MAX;
+				return $pre;
+			}
+		);
+
+		$this->assertFalse( $sut->deactivate_woopayments_plugin() );
+		$this->read_failure->site_failures = 0;
+		$this->assertTrue( $sut->is_woopayments_stored_site_active(), 'The extension stays stored.' );
+	}
+
+	/**
+	 * @testdox Deactivation reports false when the stored list cannot be read after WordPress wrote it.
+	 */
+	public function test_deactivation_reports_false_when_the_check_after_cannot_read(): void {
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
+		$sut                = $this->create_sut();
+		$this->read_failure = new StoredPluginListReadFailure();
+		$read_failure       = $this->read_failure;
+		add_action(
+			'update_option_active_plugins',
+			static function () use ( $read_failure ): void {
+				$read_failure->site_failures = 1;
+			}
+		);
+
+		$this->assertFalse( $sut->deactivate_woopayments_plugin() );
+		$this->assertFalse( $sut->is_woopayments_stored_site_active(), 'WordPress did deactivate it; the check could not tell.' );
 	}
 
 	/**
