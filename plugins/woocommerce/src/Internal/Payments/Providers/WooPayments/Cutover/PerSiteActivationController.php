@@ -376,10 +376,7 @@ class PerSiteActivationController implements RegisterHooksInterface {
 				$this->log(
 					'error',
 					'WooPayments per-site activation failed on a site.',
-					array(
-						'site_id' => $site_id,
-						'error'   => $error->getMessage(),
-					)
+					array_merge( array( 'site_id' => $site_id ), WooPaymentsLogger::get_failure_context( $error ) )
 				);
 				$outcome = 'failed';
 			} finally {
@@ -557,7 +554,8 @@ class PerSiteActivationController implements RegisterHooksInterface {
 			fn() => $this->legacy_proxy->call_function( 'activate_plugin', $plugin_file )
 		);
 		if ( is_wp_error( $activated ) ) {
-			$this->log( 'error', 'WooPayments per-site activation could not activate the WooPayments extension on this site.', array_merge( $context, array( 'error' => $activated->get_error_message() ) ) );
+			// activate_plugin() and the checks it runs return codes from a fixed set; the message can carry plugin header text.
+			$this->log( 'error', 'WooPayments per-site activation could not activate the WooPayments extension on this site.', array_merge( $context, array( 'error_code' => $activated->get_error_code() ) ) );
 			return 'failed';
 		}
 		$this->log( 'info', 'WooPayments per-site activation activated the WooPayments extension on this site.', $context );
@@ -585,7 +583,7 @@ class PerSiteActivationController implements RegisterHooksInterface {
 			}
 			$this->reconciliation_job->record_plugin_activation();
 		} catch ( \Throwable $error ) {
-			$this->log( 'error', 'WooPayments per-site activation could not record the rollback of this site\'s switch.', array_merge( $context, array( 'error' => $error->getMessage() ) ) );
+			$this->log( 'error', 'WooPayments per-site activation could not record the rollback of this site\'s switch.', array_merge( $context, WooPaymentsLogger::get_failure_context( $error ) ) );
 		}
 	}
 

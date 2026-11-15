@@ -2431,7 +2431,8 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( PaymentMethodRegistry::class )
 		);
 		$this->created_services[] = $sut;
-		$logger                   = RecordingWcLogger::install();
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$logger = RecordingWcLogger::install();
 
 		$this->assertSame( array(), $sut->get_payment_method_details_for_display( 'pm_display' ) );
 		$thrown = null;
@@ -2445,6 +2446,10 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array(), WC_Payment_Tokens::get_customer_tokens( $user_id ) );
 		$context = $this->get_logged_context_at_level( $logger, 'error' );
 		$this->assertSame( array( 'TypeError', 'pm_display' ), array( $context['exception'] ?? '', $context['payment_method_id'] ?? '' ), 'The display read logs the PHP error with debug logging off; the token path leaves it to its caller.' );
+		$this->assertSame( array( 'error', 'Error retrieving WooPayments payment method details for pm_display.', 'woopayments' ), $logger->get_errors()[0] );
+		$this->assertSame( 0, $context['code'] ?? null );
+		$this->assertNotSame( '', $context['trace'] ?? '' );
+		$this->assertStringNotContainsString( 'Return value must be of type array', (string) wp_json_encode( array( $logger->lines, $logger->contexts ) ) );
 	}
 
 	/**

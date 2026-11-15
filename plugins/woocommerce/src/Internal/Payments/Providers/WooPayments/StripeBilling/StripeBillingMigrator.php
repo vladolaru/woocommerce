@@ -13,7 +13,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
-use RuntimeException;
 use WC_Order;
 use WC_Payment_Token;
 use WC_Payment_Tokens;
@@ -168,7 +167,9 @@ class StripeBillingMigrator extends \WCS_Background_Repairer {
 
 			$this->migration_log->log( sprintf( '---- Subscription #%d migration complete.', $subscription_id ) );
 		} catch ( \Exception $e ) {
-			$this->migration_log->log( $e->getMessage() );
+			// The migrator's own failures compose their message from the subscription and stored IDs, and the reschedule check
+			// reads it; any other failure is named by its class, or a platform error by its status and listed code.
+			$this->migration_log->log( $e instanceof StripeBillingMigrationException ? $e->getMessage() : sprintf( '---- ERROR: Failed to migrate subscription #%1$d. %2$s', $subscription_id, $this->describe_failure( $e ) ) );
 
 			$this->maybe_reschedule_migration( $subscription_id, $attempt, $e );
 		}
@@ -234,7 +235,7 @@ class StripeBillingMigrator extends \WCS_Background_Repairer {
 			return;
 		}
 
-		$this->migration_log->log( sprintf( '---- ERROR: Unexpected failure while migrating subscription #%1$d: %2$s', $migration_args['migrate_subscription'], $exception instanceof \Throwable ? $exception->getMessage() : '' ) );
+		$this->migration_log->log( sprintf( '---- ERROR: Unexpected failure while migrating subscription #%1$d.%2$s', $migration_args['migrate_subscription'], $exception instanceof \Throwable ? ' ' . $this->describe_failure( $exception ) : '' ) );
 		$this->maybe_reschedule_migration( $migration_args['migrate_subscription'], $migration_args['attempt'] );
 	}
 
@@ -419,26 +420,26 @@ class StripeBillingMigrator extends \WCS_Background_Repairer {
 	 *
 	 * @param int $subscription_id Subscription ID.
 	 * @return WC_Order
-	 * @throws RuntimeException When the migration is skipped.
+	 * @throws StripeBillingMigrationException When the migration is skipped.
 	 */
 	private function validate_subscription_to_migrate( int $subscription_id ): WC_Order {
 		// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Messages go to the migration log, not to output.
 		if ( ! SubscriptionMethodPolicy::is_woocommerce_subscriptions_active() || ! function_exists( 'wcs_get_subscription' ) ) {
-			throw new RuntimeException( sprintf( '---- Skipping migration of subscription #%d. The WooCommerce Subscriptions extension is not active.', $subscription_id ) );
+			throw new StripeBillingMigrationException( sprintf( '---- Skipping migration of subscription #%d. The WooCommerce Subscriptions extension is not active.', $subscription_id ) );
 		}
 
 		if ( SubscriptionMethodPolicy::is_duplicate_site() ) {
-			throw new RuntimeException( sprintf( '---- Skipping migration of subscription #%d. Site is in staging mode.', $subscription_id ) );
+			throw new StripeBillingMigrationException( sprintf( '---- Skipping migration of subscription #%d. Site is in staging mode.', $subscription_id ) );
 		}
 
 		$subscription = wcs_get_subscription( $subscription_id );
 		if ( ! $subscription instanceof WC_Order ) {
-			throw new RuntimeException( sprintf( '---- Skipping migration of subscription #%d. Subscription not found.', $subscription_id ) );
+			throw new StripeBillingMigrationException( sprintf( '---- Skipping migration of subscription #%d. Subscription not found.', $subscription_id ) );
 		}
 
 		$migrated_wcpay_subscription_id = $subscription->get_meta( StripeBillingSubscriptionService::MIGRATED_SUBSCRIPTION_ID_META_KEY, true );
 		if ( ! empty( $migrated_wcpay_subscription_id ) ) {
-			throw new RuntimeException( sprintf( '---- Skipping migration of subscription #%1$d (%2$s). Subscription has already been migrated.', $subscription_id, $migrated_wcpay_subscription_id ) );
+			throw new StripeBillingMigrationException( sprintf( '---- Skipping migration of subscription #%1$d (%2$s). Subscription has already been migrated.', $subscription_id, $migrated_wcpay_subscription_id ) );
 		}
 		// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
@@ -450,26 +451,26 @@ class StripeBillingMigrator extends \WCS_Background_Repairer {
 	 *
 	 * @param WC_Order $subscription Subscription.
 	 * @return array<string,mixed>
-	 * @throws RuntimeException When the subscription has no Stripe subscription, or it cannot be fetched or is invalid.
+	 * @throws StripeBillingMigrationException When the subscription has no Stripe subscription, or it cannot be fetched or is invalid.
 	 */
 	private function fetch_wcpay_subscription( WC_Order $subscription ): array {
 		// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Messages go to the migration log, not to output.
 		$wcpay_subscription_id = $this->get_subscription_service()->get_wcpay_subscription_id( $subscription );
 		if ( ! $wcpay_subscription_id ) {
-			throw new RuntimeException( sprintf( '---- Skipping migration of subscription #%d. Subscription is not billed through Stripe Billing.', $subscription->get_id() ) );
+			throw new StripeBillingMigrationException( sprintf( '---- Skipping migration of subscription #%d. Subscription is not billed through Stripe Billing.', $subscription->get_id() ) );
 		}
 
 		try {
 			$wcpay_subscription = $this->get_api()->get_subscription( $wcpay_subscription_id );
 		} catch ( ApiException | StripeBillingException $e ) {
 			// StripeBillingApi maps some platform errors to a StripeBillingException that keeps the platform's message.
-			throw new RuntimeException( sprintf( '---- ERROR: Failed to fetch subscription #%1$d (%2$s) from Stripe. %3$s', $subscription->get_id(), $wcpay_subscription_id, $this->describe_failure( $e ) ) );
+			throw new StripeBillingMigrationException( sprintf( '---- ERROR: Failed to fetch subscription #%1$d (%2$s) from Stripe. %3$s', $subscription->get_id(), $wcpay_subscription_id, $this->describe_failure( $e ) ) );
 		}
 
 		if ( empty( $wcpay_subscription['id'] ) || empty( $wcpay_subscription['status'] ) ) {
 			// Client 11.1.0 logs the whole fetched subscription (class-wc-payments-subscriptions-migrator.php:226); this line
 			// leaves the platform's body out of the log.
-			throw new RuntimeException( sprintf( '---- ERROR: Cannot migrate subscription #%1$d (%2$s). Invalid data fetched from Stripe: the subscription has no ID or status.', $subscription->get_id(), $wcpay_subscription_id ) );
+			throw new StripeBillingMigrationException( sprintf( '---- ERROR: Cannot migrate subscription #%1$d (%2$s). Invalid data fetched from Stripe: the subscription has no ID or status.', $subscription->get_id(), $wcpay_subscription_id ) );
 		}
 		// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
@@ -480,7 +481,7 @@ class StripeBillingMigrator extends \WCS_Background_Repairer {
 	 * Cancel the Stripe subscription when it can still bill: active, past due, trialing or paused.
 	 *
 	 * @param array<string,mixed> $wcpay_subscription Stripe subscription.
-	 * @throws RuntimeException When the cancellation fails.
+	 * @throws StripeBillingMigrationException When the cancellation fails.
 	 */
 	private function maybe_cancel_wcpay_subscription( array $wcpay_subscription ): void {
 		if ( ! in_array( $wcpay_subscription['status'], self::ACTIVE_STATUSES, true ) ) {
@@ -494,7 +495,7 @@ class StripeBillingMigrator extends \WCS_Background_Repairer {
 			$wcpay_subscription = $this->get_api()->cancel_subscription( (string) $wcpay_subscription['id'] );
 		} catch ( ApiException | StripeBillingException $e ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message goes to the migration log, not to output.
-			throw new RuntimeException( sprintf( '---- ERROR: Failed to cancel the Stripe subscription (%1$s). %2$s', $wcpay_subscription['id'], $this->describe_failure( $e ) ) );
+			throw new StripeBillingMigrationException( sprintf( '---- ERROR: Failed to cancel the Stripe subscription (%1$s). %2$s', $wcpay_subscription['id'], $this->describe_failure( $e ) ) );
 		}
 
 		$this->migration_log->log( sprintf( '---- Stripe subscription (%1$s) successfully canceled.', $wcpay_subscription['id'] ?? '' ) );
@@ -579,7 +580,7 @@ class StripeBillingMigrator extends \WCS_Background_Repairer {
 				)
 			);
 		} catch ( \Exception $e ) {
-			$this->migration_log->log( sprintf( '---- ERROR: Failed to update subscription #%1$d next payment date. %2$s', $subscription->get_id(), $e->getMessage() ) );
+			$this->migration_log->log( sprintf( '---- ERROR: Failed to update subscription #%1$d next payment date. %2$s', $subscription->get_id(), $this->describe_failure( $e ) ) );
 		}
 	}
 

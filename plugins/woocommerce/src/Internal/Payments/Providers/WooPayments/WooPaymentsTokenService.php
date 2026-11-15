@@ -718,7 +718,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 				}
 
 				wc_get_container()->get( WooPaymentsLogger::class )->log_throwable(
-					'Error retrieving WooPayments payment method details for ' . $payment_method_id . ': ' . $exception->getMessage(),
+					'Error retrieving WooPayments payment method details for ' . $payment_method_id . '.',
 					$exception,
 					array( 'payment_method_id' => $payment_method_id )
 				);

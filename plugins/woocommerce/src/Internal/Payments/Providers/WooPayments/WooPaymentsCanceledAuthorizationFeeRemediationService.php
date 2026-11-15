@@ -457,8 +457,8 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 					);
 				} catch ( Exception $exception ) {
 					wc_get_logger()->warning(
-						sprintf( 'Failed to delete stats for order %d: %s', $refund_id, $exception->getMessage() ),
-						array( 'source' => 'wcpay-fee-remediation' )
+						sprintf( 'Failed to delete stats for order %d.', $refund_id ),
+						array_merge( array( 'source' => 'wcpay-fee-remediation' ), WooPaymentsLogger::get_failure_context( $exception ) )
 					);
 				}
 				if ( true !== $refund->delete( true ) ) {
@@ -494,8 +494,8 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 			return true;
 		} catch ( Exception $exception ) {
 			wc_get_logger()->error(
-				sprintf( 'Failed to remediate order %d: %s', $order->get_id(), $exception->getMessage() ),
-				array( 'source' => 'wcpay-fee-remediation' )
+				sprintf( 'Failed to remediate order %d.', $order->get_id() ),
+				array_merge( array( 'source' => 'wcpay-fee-remediation' ), WooPaymentsLogger::get_failure_context( $exception ) )
 			);
 			return false;
 		}
@@ -820,8 +820,8 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 			\Automattic\WooCommerce\Admin\API\Reports\Orders\Stats\DataStore::sync_order( $order_id );
 		} catch ( Exception $exception ) {
 			wc_get_logger()->warning(
-				sprintf( 'Failed to sync order %d to analytics: %s', $order_id, $exception->getMessage() ),
-				array( 'source' => 'wcpay-fee-remediation' )
+				sprintf( 'Failed to sync order %d to analytics.', $order_id ),
+				array_merge( array( 'source' => 'wcpay-fee-remediation' ), WooPaymentsLogger::get_failure_context( $exception ) )
 			);
 		}
 	}

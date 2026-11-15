@@ -2323,9 +2323,20 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A platform error while adding a payment method is logged with its status and code, never its message.
+	 * @testdox A $failure while adding a payment method, with logging on: $logging, is logged at $level with its class, code and frames, never its message.
+	 *
+	 * A platform error follows the logging setting and adds its status and code; a PHP Error is written whatever the
+	 * setting.
+	 *
+	 * @testWith ["platform error", true, "info"]
+	 *           ["platform error", false, ""]
+	 *           ["PHP Error", false, "error"]
+	 *
+	 * @param string $failure `platform error` or `PHP Error`.
+	 * @param bool   $logging Whether WooPayments logging is on.
+	 * @param string $level   Expected level, or '' for no line.
 	 */
-	public function test_add_payment_method_log_leaves_out_platform_text(): void {
+	public function test_add_payment_method_log_leaves_out_platform_text( string $failure, bool $logging, string $level ): void {
 		wc_clear_notices();
 		$user_id = self::factory()->user->create();
 		wp_set_current_user( $user_id );
@@ -2334,18 +2345,31 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_setup_intention' ) )
 			->getMock();
-		$api_client->method( 'get_setup_intention' )->willThrowException( self::make_provider_error() );
-		$this->enable_debug_logging();
+		$api_client->method( 'get_setup_intention' )->willThrowException( 'PHP Error' === $failure ? new \Error( 'Undefined index: shopper@example.com' ) : self::make_provider_error() );
+		if ( $logging ) {
+			$this->enable_debug_logging();
+		} else {
+			add_filter( 'wcpay_dev_mode', '__return_false' );
+		}
 		$logger  = RecordingWcLogger::install();
 		$gateway = new WooPaymentsGateway();
 		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, null, $this->create_customer_service_for_user( $user_id, 'cus_me' ) );
 
 		$gateway->add_payment_method();
 
-		$info_lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'info' === $line[0] && 'woopayments' === $line[2] ) );
-		$this->assertCount( 1, $info_lines, 'One info line under woopayments. Recorded: ' . (string) wp_json_encode( $logger->lines ) );
-		$context = $logger->contexts[ $info_lines[0] ];
-		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
+		$lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'Error when adding payment method.' === $line[1] && 'woopayments' === $line[2] ) );
+		$this->assertCount( '' === $level ? 0 : 1, $lines, 'Recorded: ' . (string) wp_json_encode( $logger->lines ) );
+		if ( '' === $level ) {
+			return;
+		}
+		$context = $logger->contexts[ $lines[0] ];
+		$this->assertSame( $level, $logger->lines[ $lines[0] ][0] );
+		$this->assertNotSame( '', $context['trace'] ?? '' );
+		if ( 'PHP Error' === $failure ) {
+			$this->assertSame( array( 'Error', 0 ), array( $context['exception'] ?? '', $context['code'] ?? null ) );
+		} else {
+			$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
+		}
 		$this->assert_log_holds_no_provider_text( $logger );
 	}
 
@@ -6570,22 +6594,27 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				}
 			);
 		} else {
-			$provider = $this->create_provider_failing_after_charge( $outcome, 'operation_effects', new \RuntimeException( 'Provider effect write failed' ) );
+			// The write failure wraps a platform error, so the line also carries the platform's status and listed code.
+			$provider = $this->create_provider_failing_after_charge( $outcome, 'operation_effects', new \RuntimeException( 'Provider effect write failed', 0, self::make_provider_error() ) );
 		}
 		$gateway = new WooPaymentsGateway();
 		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
 		$_POST['wcpay-payment-method'] = 'pm_card_visa';
-		$logger                        = RecordingWcLogger::install();
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$logger = RecordingWcLogger::install();
 
 		$checkout = $gateway->process_payment( $order->get_id() );
 
 		$this->assertSame( $result, $checkout['result'] ?? '' );
 		$this->assertSame( $order_status, wc_get_order( $order->get_id() )->get_status() );
-		$this->assertCount(
-			1,
-			array_filter( $logger->lines, static fn( array $line ): bool => 'woopayments' === $line[2] && str_contains( $line[1], 'Applying the authorized payment to order #' . $order->get_id() . ' raised' ) ),
-			'The failure is logged whatever the logging setting.'
-		);
+		// Written with logging off: the failure's class, code and frames, never its message.
+		$failure_class = 'note hook' === $where ? \Exception::class : \RuntimeException::class;
+		$context       = $this->get_logged_context( $logger, sprintf( 'Applying the authorized payment to order #%1$d raised %2$s.', $order->get_id(), $failure_class ) );
+		$this->assertSame( array( $order->get_id(), $failure_class, 0 ), array( $context['order_id'] ?? null, $context['exception'] ?? '', $context['code'] ?? null ) );
+		$this->assertNotSame( '', $context['trace'] ?? '' );
+		$this->assertSame( 'note hook' === $where ? array( null, null ) : array( 404, 'resource_missing' ), array( $context['http_status'] ?? null, $context['error_code'] ?? null ) );
+		$this->assertStringNotContainsString( 'note hook' === $where ? 'A note listener failed' : 'Provider effect write failed', (string) wp_json_encode( array( $logger->lines, $logger->contexts ) ) );
+		$this->assert_log_holds_no_provider_text( $logger );
 		$this->assertSame( 'success' === $result ? array() : array( WooPaymentsErrorMessages::get_generic_message() ), array_column( wc_get_notices( 'error' ), 'notice' ) );
 		$this->assertSame( $intention_status, (string) wc_get_order( $order->get_id() )->get_meta( '_intention_status', true ) );
 	}
@@ -6809,7 +6838,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$gateway  = new WooPaymentsGateway();
 		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider, null, null, null, null, null, null, null, null, $gateway_lifecycle );
 		$_POST['wcpay-payment-method'] = 'pm_card_visa';
-		$logger                        = RecordingWcLogger::install();
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$logger = RecordingWcLogger::install();
 
 		$checkout = $gateway->process_payment( $order->get_id() );
 
@@ -6819,6 +6849,16 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'on-hold', $reloaded->get_status() );
 		$error_lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'woopayments' === $line[2] && str_contains( $line[1], 'raised TypeError' ) ) );
 		$this->assertCount( 1, $error_lines, 'The PHP error is logged whatever the logging setting.' );
+		$this->assertSame( sprintf( 'Applying the authorized payment to order #%d raised TypeError.', $order->get_id() ), $logger->lines[ $error_lines[0] ][1] );
+		$this->assertSame( array( 'TypeError', 0 ), array( $logger->contexts[ $error_lines[0] ]['exception'] ?? '', $logger->contexts[ $error_lines[0] ]['code'] ?? null ) );
+		$written = (string) wp_json_encode( array( $logger->lines, $logger->contexts ) );
+		$this->assertStringNotContainsString( 'Argument #1 must be of type array', $written );
+		if ( 'its intent, on an order that cannot be read again' === $intent ) {
+			$context = $this->get_logged_context( $logger, sprintf( 'Reading order #%d again after applying the authorized payment failed raised Exception.', $order->get_id() ) );
+			$this->assertSame( array( $order->get_id(), 'Exception', 0 ), array( $context['order_id'] ?? null, $context['exception'] ?? '', $context['code'] ?? null ) );
+			$this->assertNotSame( '', $context['trace'] ?? '' );
+			$this->assertStringNotContainsString( 'Invalid order.', $written );
+		}
 		if ( 'failure' === $result ) {
 			$this->assertSame( array( WooPaymentsErrorMessages::get_generic_message() ), array_column( wc_get_notices( 'error' ), 'notice' ) );
 			return;

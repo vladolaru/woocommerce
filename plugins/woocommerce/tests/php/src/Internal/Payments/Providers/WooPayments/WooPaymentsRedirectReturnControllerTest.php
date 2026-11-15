@@ -1829,7 +1829,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			),
 		);
 		$lifecycle                  = $this->getMockBuilder( OrderPaymentLifecycleService::class )->onlyMethods( array( 'apply_under_lock' ) )->getMock();
-		$lifecycle->method( 'apply_under_lock' )->willThrowException( new \RuntimeException( 'Database write failed.' ) );
+		$lifecycle->method( 'apply_under_lock' )->willThrowException( new \RuntimeException( 'Database write failed.', 0, self::make_provider_error() ) );
 		$logger = new RedirectReturnRecordingLogger();
 		add_filter( 'woocommerce_logging_class', static fn() => $logger );
 		$this->sut = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client, null, null, $lifecycle );
@@ -1850,7 +1850,13 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $write_failures, 'One line, written with debug logging off.' );
 		$this->assertSame( WooPaymentsLogger::SOURCE, $write_failures[0]['context']['source'] ?? '' );
 		$this->assertSame( $order->get_id(), $write_failures[0]['context']['order_id'] ?? null );
-		$this->assertStringContainsString( 'raised RuntimeException: Database write failed.', (string) $write_failures[0]['message'] );
+		$this->assertSame( sprintf( 'Failing order #%d after its redirect return raised RuntimeException. The order may not show the failure.', $order->get_id() ), $write_failures[0]['message'] );
+		$this->assertSame( array( 0, 404, 'resource_missing' ), array( $write_failures[0]['context']['code'] ?? null, $write_failures[0]['context']['http_status'] ?? null, $write_failures[0]['context']['error_code'] ?? null ) );
+		$this->assertNotSame( '', $write_failures[0]['context']['trace'] ?? '' );
+		$written = (string) wp_json_encode( $write_failures[0] );
+		foreach ( array_merge( array( 'Database write failed' ), self::$provider_leak_fragments ) as $fragment ) {
+			$this->assertStringNotContainsString( $fragment, $written );
+		}
 	}
 
 	/**

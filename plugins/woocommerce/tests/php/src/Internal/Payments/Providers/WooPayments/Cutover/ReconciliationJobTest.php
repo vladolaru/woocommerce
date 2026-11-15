@@ -28,6 +28,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\Recon
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\StateStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Unit_Test_Case;
 
@@ -436,11 +437,21 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertIsArray( $pending );
 		$this->scheduler->cancel( $pending['generation'], 1 );
 		$before = time();
+		$logger = RecordingWcLogger::install();
 
 		try {
 			$sut->handle_reconcile( $pending['generation'], 1 );
 		} finally {
 			wc_get_container()->reset_all_replacements();
+		}
+
+		$capture_lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'WooPayments cutover: the order note wordings capture failed.' === $line[1] ) );
+		$this->assertCount( $capture_throws ? 1 : 0, $capture_lines );
+		if ( $capture_throws ) {
+			$capture_failure = $logger->contexts[ $capture_lines[0] ];
+			$this->assertSame( array( 'warning', \RuntimeException::class, 0 ), array( $logger->lines[ $capture_lines[0] ][0], $capture_failure['exception'] ?? '', $capture_failure['code'] ?? null ) );
+			$this->assertNotSame( '', $capture_failure['trace'] ?? '' );
+			$this->assertStringNotContainsString( 'A change_locale callback failed', (string) wp_json_encode( $capture_failure ) );
 		}
 
 		$verification = $this->state_store->get_record();
@@ -4246,6 +4257,61 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A switch failure in the $step step is logged with the failure's class, code and frames, never its message.
+	 *
+	 * The failure can come from another plugin's hook, so its text stays out of the switch's log, as the per-site bring-forward
+	 * line already writes it.
+	 *
+	 * @testWith ["resolver", "WooPayments cutover reconciliation resolver failed."]
+	 *           ["data migration", "WooPayments cutover data migration failed."]
+	 *           ["admin notice", "WooPayments cutover could not classify the admin notice."]
+	 *
+	 * @param string $step    Step that throws.
+	 * @param string $message Line the step writes.
+	 */
+	public function test_switch_failure_lines_print_the_failure_context_not_its_message( string $step, string $message ): void {
+		$throwing_migration = new class() extends DataMigration {
+			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- Test double always throws.
+			/**
+			 * Fail as a third-party settings hook can.
+			 *
+			 * @return array{changes:string[]}
+			 * @throws \RuntimeException Always.
+			 */
+			public function run_for_switch(): array {
+				throw new \RuntimeException( 'A settings hook failed for shopper@example.com.' );
+			}
+			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
+		};
+		$sut                = 'data migration' === $step
+			? $this->create_job( true, $this->create_preflight_with_failures( array() ), null, true, $throwing_migration )
+			: $this->create_job_with_preflight( true, $this->create_preflight_with_failures( array(), true ) );
+		$logger             = RecordingWcLogger::install();
+
+		if ( 'admin notice' === $step ) {
+			$this->assertNull( $sut->refresh_notice_record() );
+		} else {
+			$sut->enqueue( 'merchant' );
+			$pending = $this->state_store->get_record();
+			$this->assertIsArray( $pending );
+			$this->scheduler->cancel( $pending['generation'], 1 );
+			$sut->register();
+			$sut->handle_reconcile( $pending['generation'], 1 );
+		}
+
+		$found = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => $message === $line[1] ) );
+		$this->assertCount( 1, $found, 'Recorded: ' . (string) wp_json_encode( $logger->lines ) );
+		$context = $logger->contexts[ $found[0] ];
+		$this->assertSame( array( 'error', 'woopayments-cutover' ), array( $logger->lines[ $found[0] ][0], $context['source'] ?? '' ) );
+		$this->assertSame( array( \RuntimeException::class, 0 ), array( $context['exception'] ?? '', $context['code'] ?? null ) );
+		$this->assertNotSame( '', $context['trace'] ?? '' );
+		$this->assertArrayNotHasKey( 'error', $context );
+		$written = (string) wp_json_encode( array( $logger->lines, $logger->contexts ) );
+		$this->assertStringNotContainsString( 'Expected resolver failure', $written );
+		$this->assertStringNotContainsString( 'shopper@example.com', $written );
+	}
+
+	/**
 	 * @testdox Reconciliation adopts the built-in WooPayments' queue callbacks, Stripe Billing migrations included: a pending migration stays queued for the built-in migrator.
 	 */
 	public function test_reconciliation_adopts_builtin_handled_queue_callbacks_and_stripe_billing_migrations(): void {
@@ -4578,6 +4644,10 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			$this->assertSame( $subsite_id, get_current_blog_id() );
 			$this->assertCount( 2, $job->get_errors() );
 			$this->assertSame( 'WooPayments cutover extension update failed.', $job->get_errors()[1]['message'] );
+			$update_failure = $job->get_errors()[1]['context'];
+			$this->assertSame( array( 'woocommerce-payments/woocommerce-payments.php', \RuntimeException::class, 0 ), array( $update_failure['plugin_file'] ?? '', $update_failure['exception'] ?? '', $update_failure['code'] ?? null ) );
+			$this->assertNotSame( '', $update_failure['trace'] ?? '' );
+			$this->assertStringNotContainsString( 'Expected core lock release failure', (string) wp_json_encode( $update_failure ) );
 		} finally {
 			remove_action( $delete_hook, $thrower );
 			if ( get_current_blog_id() !== $main_site_id ) {
@@ -4870,6 +4940,9 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( StateStore::STATE_DEFERRED, $deferred['state'] );
 		$this->assertSame( array( 'plugin_deactivation_failed' ), $deferred['deferred_codes'] );
 		$this->assertSame( 'WooPayments cutover extension deactivation failed.', $this->finalize_errors[0]['message'] ?? null, 'The throw is logged first.' );
+		$this->assertSame( array( \RuntimeException::class, 0 ), array( $this->finalize_errors[0]['context']['exception'] ?? '', $this->finalize_errors[0]['context']['code'] ?? null ) );
+		$this->assertNotSame( '', $this->finalize_errors[0]['context']['trace'] ?? '' );
+		$this->assertStringNotContainsString( 'A hook before the write failed', (string) wp_json_encode( $this->finalize_errors[0] ) );
 		$this->finalize_errors = array_slice( $this->finalize_errors, 1 );
 		$this->assert_one_unknown_list_line( 'plugin lists could not be read after the deactivation', $deferred, 'plugin_deactivation_failed' );
 	}

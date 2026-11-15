@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountMilestonesController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteWordingSnapshot;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStoreSetupReportController;
@@ -1143,7 +1144,7 @@ class ReconciliationJob implements RegisterHooksInterface {
 
 			$this->finalize_site_claim( $claimed, $outcomes );
 		} catch ( \Throwable $error ) {
-			$this->log_error( 'WooPayments cutover reconciliation resolver failed.', array( 'error' => $error->getMessage() ) );
+			$this->log_error( 'WooPayments cutover reconciliation resolver failed.', WooPaymentsLogger::get_failure_context( $error ) );
 			$this->defer( $claimed, array( self::CODE_RECONCILIATION_RESOLVER_FAILED ) );
 		}
 	}
@@ -1209,7 +1210,7 @@ class ReconciliationJob implements RegisterHooksInterface {
 				$deactivated = $this->run_while_changing_plugins( fn() => $this->preflight_service->deactivate_woopayments_plugin() );
 			}
 		} catch ( \Throwable $error ) {
-			$this->log_error( 'WooPayments cutover extension deactivation failed.', array( 'error' => $error->getMessage() ) );
+			$this->log_error( 'WooPayments cutover extension deactivation failed.', WooPaymentsLogger::get_failure_context( $error ) );
 			$deactivated = false;
 		}
 		if ( ! $deactivated ) {
@@ -1315,7 +1316,7 @@ class ReconciliationJob implements RegisterHooksInterface {
 		try {
 			$result = $this->data_migration->run_for_switch();
 		} catch ( \Throwable $error ) {
-			$this->log_error( 'WooPayments cutover data migration failed.', array( 'error' => $error->getMessage() ) );
+			$this->log_error( 'WooPayments cutover data migration failed.', WooPaymentsLogger::get_failure_context( $error ) );
 			$this->defer( $claimed, array( self::CODE_DATA_MIGRATION_FAILED ), $outcomes );
 			return null;
 		}
@@ -1338,10 +1339,7 @@ class ReconciliationJob implements RegisterHooksInterface {
 			// Switching locales runs other plugins' hooks.
 			$this->write_log_warning(
 				'WooPayments cutover: the order note wordings capture failed.',
-				array(
-					'source' => self::LOG_SOURCE,
-					'error'  => $error->getMessage(),
-				)
+				array_merge( array( 'source' => self::LOG_SOURCE ), WooPaymentsLogger::get_failure_context( $error ) )
 			);
 		}
 	}
@@ -1580,10 +1578,7 @@ class ReconciliationJob implements RegisterHooksInterface {
 		} catch ( \Throwable $error ) {
 			$this->log_error(
 				'WooPayments cutover extension update failed.',
-				array(
-					'plugin_file' => $plugin_file,
-					'error'       => $error->getMessage(),
-				)
+				array_merge( array( 'plugin_file' => $plugin_file ), WooPaymentsLogger::get_failure_context( $error ) )
 			);
 			return false;
 		}
@@ -1978,7 +1973,7 @@ class ReconciliationJob implements RegisterHooksInterface {
 		try {
 			$present = in_array( PreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $this->preflight_service->get_failures(), true );
 		} catch ( \Throwable $error ) {
-			$this->log_error( 'WooPayments cutover could not classify the admin notice.', array( 'error' => $error->getMessage() ) );
+			$this->log_error( 'WooPayments cutover could not classify the admin notice.', WooPaymentsLogger::get_failure_context( $error ) );
 			return null;
 		}
 		update_option(

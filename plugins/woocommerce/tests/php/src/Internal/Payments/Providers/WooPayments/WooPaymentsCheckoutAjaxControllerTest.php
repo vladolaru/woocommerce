@@ -613,9 +613,15 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An unrelated runtime exception with code 409 should retain the generic 500 response.
+	 * @testdox An unrelated $throwable_class with code 409 should retain the generic 500 response, and with logging off is logged only as a PHP Error, without its message.
+	 *
+	 * @testWith ["RuntimeException", false]
+	 *           ["Error", true]
+	 *
+	 * @param string $throwable_class Class the fee step throws.
+	 * @param bool   $logged          Whether the failure is written with logging off.
 	 */
-	public function test_unrelated_runtime_exception_with_409_code_returns_generic_error(): void {
+	public function test_unrelated_runtime_exception_with_409_code_returns_generic_error( string $throwable_class, bool $logged ): void {
 		$order = $this->create_woopayments_order( '50.00' );
 		$order->update_meta_data( '_intent_id', 'pi_runtime_conflict' );
 		$order->save();
@@ -649,7 +655,9 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			->getMock();
 		$fee_details_note_controller->expects( $this->once() )
 			->method( 'apply_and_schedule_fee_details_with_lock' )
-			->willThrowException( new \RuntimeException( 'Unrelated lifecycle conflict.', 409 ) );
+			->willThrowException( new $throwable_class( 'Unrelated lifecycle conflict for shopper@example.com.', 409 ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$logger = RecordingWcLogger::install();
 
 		$response = $this->create_controller( $this->bind_intents_to_order( $api_client, $order ), null, null, null, $fee_details_note_controller )
 			->confirm_order_payment(
@@ -665,6 +673,15 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			__( "We're not able to process this payment. Please try again later.", 'woocommerce' ),
 			$response['error']['message']
 		);
+		$lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'Error completing WooPayments authenticated payment' ) ) );
+		$this->assertCount( $logged ? 1 : 0, $lines );
+		if ( $logged ) {
+			$context = $logger->contexts[ $lines[0] ];
+			$this->assertSame( array( 'error', 'Error completing WooPayments authenticated payment.', 'woopayments' ), $logger->lines[ $lines[0] ] );
+			$this->assertSame( array( $order->get_id(), 'pi_runtime_conflict', 'Error', 409 ), array( $context['order_id'] ?? null, $context['intent_id'] ?? '', $context['exception'] ?? '', $context['code'] ?? null ) );
+			$this->assertNotSame( '', $context['trace'] ?? '' );
+		}
+		$this->assertStringNotContainsString( 'shopper@example.com', (string) wp_json_encode( array( $logger->lines, $logger->contexts ) ) );
 	}
 
 	/**
@@ -5305,24 +5322,32 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Setup-intent requests that fail outside the platform call answer 400.
+	 * @testdox Setup-intent requests that fail outside the platform call with a $throwable_class answer 400, and with logging off are logged only for a PHP Error, without its message.
 	 *
 	 * Source: client 11.1.0 `utils:878-891` (a non-API exception answers the default 400).
+	 *
+	 * @testWith ["RuntimeException", false]
+	 *           ["Error", true]
+	 *
+	 * @param string $throwable_class Class the customer lookup throws.
+	 * @param bool   $logged          Whether the failure is written with logging off.
 	 */
-	public function test_create_setup_intent_answers_400_for_non_api_failures(): void {
+	public function test_create_setup_intent_answers_400_for_non_api_failures( string $throwable_class, bool $logged ): void {
 		wp_set_current_user( $this->factory()->user->create() );
 
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_or_create_customer_id_for_user' ) )
 			->getMock();
-		$customer_service->method( 'get_or_create_customer_id_for_user' )->willThrowException( new \RuntimeException( 'Customer store unavailable.' ) );
+		$customer_service->method( 'get_or_create_customer_id_for_user' )->willThrowException( new $throwable_class( 'Customer store unavailable for shopper@example.com.' ) );
 
 		$api_client = $this->createMock( Client::class );
 		$api_client->method( 'is_available' )->willReturn( true );
 
 		$sut = $this->create_controller( $api_client, $customer_service );
 		$this->use_card_gateway_settings( 'yes', 'yes' );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$logger   = RecordingWcLogger::install();
 		$response = $sut->create_setup_intent_for_request(
 			array(
 				'_ajax_nonce'          => wp_create_nonce( 'wcpay_create_setup_intent_nonce' ),
@@ -5332,6 +5357,14 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertFalse( $response['success'] );
 		$this->assertSame( 400, $response['status_code'] );
+		$lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'Error creating WooPayments setup intent' ) ) );
+		$this->assertCount( $logged ? 1 : 0, $lines );
+		if ( $logged ) {
+			$this->assertSame( array( 'error', 'Error creating WooPayments setup intent.', 'woopayments' ), $logger->lines[ $lines[0] ] );
+			$this->assertSame( array( 'Error', 0 ), array( $logger->contexts[ $lines[0] ]['exception'] ?? '', $logger->contexts[ $lines[0] ]['code'] ?? null ) );
+			$this->assertNotSame( '', $logger->contexts[ $lines[0] ]['trace'] ?? '' );
+		}
+		$this->assertStringNotContainsString( 'shopper@example.com', (string) wp_json_encode( array( $logger->lines, $logger->contexts ) ) );
 	}
 
 	/**

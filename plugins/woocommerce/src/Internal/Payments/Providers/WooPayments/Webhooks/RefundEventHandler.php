@@ -330,7 +330,8 @@ class RefundEventHandler {
 
 		$refund = wc_create_refund( $refund_args );
 		if ( is_wp_error( $refund ) ) {
-			$this->log_refund_failure( $order, 'Failed to create local refund: ' . $refund->get_error_message() );
+			// wc_create_refund() sets every error's code to `error`; its message can be a refund hook's text.
+			$this->log_refund_failure( $order, 'Failed to create local refund.', array( 'error_code' => (string) $refund->get_error_code() ) );
 			throw new RuntimeException( esc_html( sprintf( 'Could not create local refund for order %1$d: %2$s', $order->get_id(), $refund->get_error_message() ) ) );
 		}
 
@@ -858,15 +859,19 @@ class RefundEventHandler {
 	/**
 	 * Log a local refund side-effect failure.
 	 *
-	 * @param WC_Order $order   Order object.
-	 * @param string   $message Error message.
+	 * @param WC_Order            $order   Order object.
+	 * @param string              $message Error message.
+	 * @param array<string,mixed> $context More context, such as the error code.
 	 */
-	private function log_refund_failure( WC_Order $order, string $message ): void {
+	private function log_refund_failure( WC_Order $order, string $message, array $context = array() ): void {
 		wc_get_logger()->error(
 			$message,
-			array(
-				'source'   => WooPaymentsLogger::SOURCE,
-				'order_id' => $order->get_id(),
+			array_merge(
+				array(
+					'source'   => WooPaymentsLogger::SOURCE,
+					'order_id' => $order->get_id(),
+				),
+				$context
 			)
 		);
 	}

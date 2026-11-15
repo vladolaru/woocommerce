@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\DataStores\Orders\DataSynchronizer;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\StateStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
@@ -254,36 +255,66 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 
 	/**
 	 * Client 11.1.0 logs a failed stats deletion and goes on with the order (includes/migrations/
-	 * class-wc-payments-remediate-canceled-auth-fees.php:826-840). Fails when the stats deletion is not caught.
+	 * class-wc-payments-remediate-canceled-auth-fees.php:826-840), and logs a failed remediation or analytics sync with the
+	 * order (:796-804, :832-840). The merchant reads this log as the tool's report, so each line names the order and the
+	 * failure's class, code and frames (and a platform error's status and listed code), never the exception's text, which
+	 * analytics code or another plugin's callback writes.
 	 *
-	 * @testdox Remediation logs an Analytics callback that throws while it deletes a refund's stats and still remediates the order.
+	 * @testdox Remediation logs a $step failure with its order and the failure's class, never its message, and $outcome.
+	 * @testWith ["stats deletion", "still remediates the order"]
+	 *           ["remediation", "leaves the order for the next run"]
+	 *           ["analytics sync", "still remediates the order"]
+	 *
+	 * @param string $step    Step whose callback throws.
+	 * @param string $outcome What happens to the order.
 	 */
-	public function test_remediate_order_goes_on_when_an_analytics_callback_throws(): void {
+	public function test_remediate_order_goes_on_when_an_analytics_callback_throws( string $step, string $outcome ): void {
 		$order  = $this->create_order_fixture( array( 'status' => 'cancelled' ) );
 		$refund = $this->create_refund( $order, 'WooPayments refund', 're_wcpay' );
 		$this->create_order_stats_row( $refund->get_id(), $order->get_id() );
-		$thrown = false;
-		add_action(
-			'woocommerce_analytics_delete_order_stats',
-			static function () use ( &$thrown ): void {
-				if ( ! $thrown ) {
-					$thrown = true;
-					throw new \Exception( 'Analytics callback failed.' );
-				}
+		$hook      = array(
+			'stats deletion' => 'woocommerce_analytics_delete_order_stats',
+			'remediation'    => 'woocommerce_refund_deleted',
+			'analytics sync' => 'woocommerce_analytics_update_order_stats_data',
+		)[ $step ];
+		$failure   = 'remediation' === $step
+			? new \Exception( 'Remediation failed for shopper@example.com.', 0, new ApiException( 'Error: No such charge.', 'resource_missing', 404 ) )
+			: new \Exception( 'Analytics callback failed for shopper@example.com.' );
+		$thrown    = false;
+		$throw_one = static function ( $value = null ) use ( &$thrown, $failure ) {
+			if ( ! $thrown ) {
+				$thrown = true;
+				throw $failure;
 			}
-		);
+			return $value;
+		};
+		add_filter( $hook, $throw_one );
 		$logger = RecordingWcLogger::install();
 
-		$result = $this->sut->remediate_order( wc_get_order( $order->get_id() ) );
+		try {
+			$result = $this->sut->remediate_order( wc_get_order( $order->get_id() ) );
+		} finally {
+			remove_filter( $hook, $throw_one );
+		}
 
 		$order = wc_get_order( $order->get_id() );
-		$this->assertTrue( $result );
+		$this->assertTrue( $thrown );
+		$this->assertSame( 'remediation' !== $step, $result, $outcome );
 		$this->assertFalse( (bool) wc_get_order( $refund->get_id() ) );
-		$this->assertSame( '', $order->get_meta( '_wcpay_transaction_fee', true ) );
-		$this->assertContains(
-			array( 'warning', sprintf( 'Failed to delete stats for order %d: Analytics callback failed.', $refund->get_id() ), 'wcpay-fee-remediation' ),
-			$logger->lines
-		);
+		$this->assertSame( 'remediation' === $step ? '1.50' : '', $order->get_meta( '_wcpay_transaction_fee', true ) );
+		$expected = array(
+			'stats deletion' => array( 'warning', sprintf( 'Failed to delete stats for order %d.', $refund->get_id() ) ),
+			'remediation'    => array( 'error', sprintf( 'Failed to remediate order %d.', $order->get_id() ) ),
+			'analytics sync' => array( 'warning', sprintf( 'Failed to sync order %d to analytics.', $order->get_id() ) ),
+		)[ $step ];
+		$lines    = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => $expected[1] === $line[1] ) );
+		$this->assertCount( 1, $lines, 'Recorded: ' . (string) wp_json_encode( $logger->lines ) );
+		$context = $logger->contexts[ $lines[0] ];
+		$this->assertSame( array( $expected[0], 'wcpay-fee-remediation' ), array( $logger->lines[ $lines[0] ][0], $logger->lines[ $lines[0] ][2] ) );
+		$this->assertSame( array( \Exception::class, 0 ), array( $context['exception'] ?? '', $context['code'] ?? null ) );
+		$this->assertNotSame( '', $context['trace'] ?? '' );
+		$this->assertSame( 'remediation' === $step ? array( 404, 'resource_missing' ) : array( null, null ), array( $context['http_status'] ?? null, $context['error_code'] ?? null ) );
+		$this->assertStringNotContainsString( 'shopper@example.com', (string) wp_json_encode( array( $logger->lines, $logger->contexts ) ) );
 	}
 
 	/**

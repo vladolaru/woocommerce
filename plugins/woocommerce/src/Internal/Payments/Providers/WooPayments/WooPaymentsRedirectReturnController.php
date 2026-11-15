@@ -444,12 +444,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 			// The order should be failed but is not, so support needs this line whatever the logging setting. Client 11.1.0's
 			// mark_payment_failed() in its catch (gw:2440) has no catch of its own, so the same failure is visible there.
 			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable_always(
-				sprintf(
-					'Failing order #%1$d after its redirect return raised %2$s: %3$s. The order may not show the failure.',
-					$order->get_id(),
-					get_class( $failure ),
-					$failure->getMessage()
-				),
+				sprintf( 'Failing order #%1$d after its redirect return raised %2$s. The order may not show the failure.', $order->get_id(), get_class( $failure ) ),
 				$failure,
 				array(
 					'order_id'  => $order->get_id(),

@@ -21,6 +21,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use WC_Unit_Test_Case;
 
 /**
@@ -74,6 +75,13 @@ class PerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	 * @var int[]
 	 */
 	private array $failing_sites = array();
+
+	/**
+	 * Whether activate_plugin() throws on a failing site instead of returning its error.
+	 *
+	 * @var bool
+	 */
+	private bool $failing_sites_throw = false;
 
 	/**
 	 * Sites where WooCommerce is not active.
@@ -155,20 +163,40 @@ class PerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A site whose activation fails keeps the extension: the network activation stays, the result lists the site with the button, and a run after the failure activates only that site, then removes the network activation.
+	 * @testdox A site whose activation $failure keeps the extension: the network activation stays, the result lists the site with the button, the line names the failure without its text, and a run after the failure activates only that site, then removes the network activation.
 	 * @group multisite
+	 *
+	 * @testWith ["returns an error"]
+	 *           ["throws"]
+	 *
+	 * @param string $failure How activate_plugin() fails on the site.
 	 */
-	public function test_a_failed_site_keeps_the_network_activation(): void {
+	public function test_a_failed_site_keeps_the_network_activation( string $failure ): void {
 		$this->skip_unless_multisite();
 		$main  = get_current_blog_id();
 		$other = $this->create_site( 'other', true, true );
 		$this->arrange_site( $main, true, true );
 		$this->activate_for_every_site();
-		$this->failing_sites = array( $other );
+		$this->failing_sites       = array( $other );
+		$this->failing_sites_throw = 'throws' === $failure;
+		$logger                    = RecordingWcLogger::install();
 
 		$result = $this->create_sut()->convert();
 
 		$this->assertSame( array( $other ), $result['failed'] );
+		$message = 'throws' === $failure ? 'WooPayments per-site activation failed on a site.' : 'WooPayments per-site activation could not activate the WooPayments extension on this site.';
+		$lines   = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => $message === $line[1] ) );
+		$this->assertCount( 1, $lines );
+		$context = $logger->contexts[ $lines[0] ];
+		$this->assertSame( array( 'error', $other, 'woopayments-cutover' ), array( $logger->lines[ $lines[0] ][0], $context['site_id'] ?? null, $context['source'] ?? '' ) );
+		if ( 'throws' === $failure ) {
+			$this->assertSame( array( \RuntimeException::class, 0 ), array( $context['exception'] ?? '', $context['code'] ?? null ) );
+			$this->assertNotSame( '', $context['trace'] ?? '' );
+		} else {
+			$this->assertSame( 'plugin_missing_dependencies', $context['error_code'] ?? '' );
+		}
+		$this->assertArrayNotHasKey( 'error', $context );
+		$this->assertStringNotContainsString( 'shopper@example.com', (string) wp_json_encode( array( $logger->lines, $logger->contexts ) ) );
 		$this->assertSame( array(), $this->deactivations, 'No network deactivation while a site failed.' );
 		$this->assertArrayHasKey( WooPaymentsRuntimeArbiter::PLUGIN_FILE, (array) get_site_option( 'active_sitewide_plugins', array() ) );
 		$_GET[ PerSiteActivationController::QUERY_DONE ]   = '1';
@@ -549,12 +577,21 @@ class PerSiteActivationControllerTest extends WC_Unit_Test_Case {
 		$sut = new PerSiteActivationController();
 		$sut->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( PreflightService::class ), $job, wc_get_container()->get( LegacyProxy::class ), wc_get_container()->get( WooPaymentsSetupTier::class ) );
 
+		$logger = RecordingWcLogger::install();
+
 		$sut->record_network_activation_rollbacks();
 
 		$this->assertSame( $main, get_current_blog_id() );
 		$this->assertFalse( ms_is_switched(), 'No site switch is left open.' );
 		$this->assertSame( StateStore::STATE_DONE, $this->read_record( $failing )['state'] );
 		$this->assertSame( 4, $this->read_record( $next )['generation'], 'The site after the failing one rolls back.' );
+		$lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'WooPayments per-site activation could not record the rollback of this site\'s switch.' === $line[1] ) );
+		$this->assertCount( 1, $lines );
+		$context = $logger->contexts[ $lines[0] ];
+		$this->assertSame( array( $failing, \RuntimeException::class, 0 ), array( $context['site_id'] ?? null, $context['exception'] ?? '', $context['code'] ?? null ) );
+		$this->assertNotSame( '', $context['trace'] ?? '' );
+		$this->assertArrayNotHasKey( 'error', $context );
+		$this->assertStringNotContainsString( 'Unreadable record', (string) wp_json_encode( $context ) );
 	}
 
 	/**
@@ -1189,7 +1226,11 @@ class PerSiteActivationControllerTest extends WC_Unit_Test_Case {
 					$sitewide                = array_key_exists( $plugin, (array) get_site_option( 'active_sitewide_plugins', array() ) ) ? 'yes' : 'no';
 					$this->calls[]           = "activate:$site_id:$sitewide";
 					if ( in_array( $site_id, $this->failing_sites, true ) ) {
-						return new \WP_Error( 'activation_failed', 'Activation failed.' );
+						if ( $this->failing_sites_throw ) {
+							throw new \RuntimeException( 'An activation hook failed for shopper@example.com.' );
+						}
+						// The unmet-dependencies error names plugins by their headers, which their authors write (plugin.php:1225-1259).
+						return new \WP_Error( 'plugin_missing_dependencies', '<p><strong>Error:</strong> WooPayments requires 1 plugin to be installed and activated: Notes by shopper@example.com.</p>' );
 					}
 					if ( ! $silent ) {
 						do_action( 'activate_plugin', $plugin, false ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- WordPress's own hook, fired as the core function does.

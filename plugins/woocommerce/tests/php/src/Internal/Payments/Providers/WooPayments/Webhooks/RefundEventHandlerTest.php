@@ -1413,6 +1413,10 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 			}
 			$this->assertInstanceOf( \RuntimeException::class, $caught, 'The first delivery fails creating the refund row.' );
 			$this->assertCount( 0, wc_get_order( $order->get_id() )->get_refunds(), 'The failed delivery leaves no refund row.' );
+			// Written whatever the setting: the order and wc_create_refund()'s fixed code, never the WP_Error's message.
+			$failure = $this->get_logged_context( $logger, 'Failed to create local refund.' );
+			$this->assertSame( array( $order->get_id(), 'error' ), array( $failure['order_id'] ?? null, $failure['error_code'] ?? '' ) );
+			$this->assertStringNotContainsString( 'Refund hook refused', (string) wp_json_encode( $failure ) );
 		}
 
 		for ( $delivery = 0; $delivery < $deliveries; $delivery++ ) {

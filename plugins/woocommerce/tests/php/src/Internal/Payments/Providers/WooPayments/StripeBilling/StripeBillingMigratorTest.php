@@ -368,6 +368,82 @@ class StripeBillingMigratorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The migration log names a failure from $where by its class or the platform's status and code, never its message: $expected.
+	 * @testWith ["the Stripe subscription read", false, "---- ERROR: Failed to migrate subscription #%1$d. Failure: RuntimeException."]
+	 *           ["the Stripe subscription read", true, "---- ERROR: Failed to migrate subscription #%1$d. Platform error: HTTP status 404, error code resource_missing."]
+	 *           ["a next payment date callback", false, "---- ERROR: Failed to update subscription #%1$d next payment date. Failure: RuntimeException."]
+	 *
+	 * Client 11.1.0 logs the exception's message (class-wc-payments-subscriptions-migrator.php:154, :460). Only a failure the
+	 * migrator throws itself keeps its message, which it composes from the subscription and stored IDs. A failure in the
+	 * run is still retried.
+	 *
+	 * @param string $where    What throws.
+	 * @param bool   $platform Whether the failure wraps a platform error.
+	 * @param string $expected Expected migration log line, with the subscription ID.
+	 */
+	public function test_migration_log_names_a_failure_the_migrator_did_not_throw_by_its_class( string $where, bool $platform, string $expected ): void {
+		list( $sut, $api ) = $this->build_migrator();
+		$subscription      = $this->create_stripe_billed_subscription( self::MAIN_SUBSCRIPTION_ID, array( 'next_payment' => gmdate( 'Y-m-d H:i:s', time() + DAY_IN_SECONDS ) ) );
+		$failure           = new \RuntimeException( 'A callback failed for shopper@example.com.', 0, $platform ? self::make_provider_error() : null );
+		$throw             = static function () use ( $failure ): void {
+			throw $failure;
+		};
+		if ( 'the Stripe subscription read' === $where ) {
+			$api->method( 'get_subscription' )->willThrowException( $failure );
+		} else {
+			$api->method( 'get_subscription' )->willReturn( $this->active_wcpay_subscription );
+			add_action( 'woocommerce_subscription_date_updated', $throw );
+		}
+		$logger = RecordingWcLogger::install();
+
+		try {
+			$sut->migrate_wcpay_subscription( $subscription->get_id() );
+		} finally {
+			remove_action( 'woocommerce_subscription_date_updated', $throw );
+		}
+
+		$this->get_logged_context( $logger, sprintf( $expected, $subscription->get_id() ) );
+		$this->assert_log_holds_no_provider_text( $logger );
+		$this->assertSame( 'the Stripe subscription read' === $where, (bool) as_next_scheduled_action( StripeBillingMigrator::MIGRATE_HOOK . '_retry' ), 'A failed run is retried.' );
+	}
+
+	/**
+	 * @testdox The migration log names an action failure with $failure by its class or the platform's status and code, never its message.
+	 * @testWith ["a platform error", "---- ERROR: Unexpected failure while migrating subscription #42. Platform error: HTTP status 404, error code resource_missing."]
+	 *           ["a PHP Error", "---- ERROR: Unexpected failure while migrating subscription #42. Failure: Error."]
+	 *           ["no throwable", "---- ERROR: Unexpected failure while migrating subscription #42."]
+	 *
+	 * Client 11.1.0 logs the message (class-wc-payments-subscriptions-migrator.php:524).
+	 *
+	 * @param string $failure  What Action Scheduler passes.
+	 * @param string $expected Expected migration log line.
+	 */
+	public function test_migration_log_names_an_unexpected_action_failure_by_its_class( string $failure, string $expected ): void {
+		list( $sut ) = $this->build_migrator();
+		$action_id   = as_schedule_single_action(
+			time(),
+			StripeBillingMigrator::MIGRATE_HOOK,
+			array(
+				'migrate_subscription' => 42,
+				'attempt'              => 0,
+			)
+		);
+		$logger      = RecordingWcLogger::install();
+
+		$sut->handle_unexpected_action_failure(
+			$action_id,
+			array(
+				'a platform error' => self::make_provider_error(),
+				'a PHP Error'      => new \Error( 'Undefined index: shopper@example.com' ),
+				'no throwable'     => null,
+			)[ $failure ]
+		);
+
+		$this->get_logged_context( $logger, $expected );
+		$this->assert_log_holds_no_provider_text( $logger );
+	}
+
+	/**
 	 * @testdox Should retry a failed migration with a growing delay, and fail it after the seventh retry; a skipped migration is not retried.
 	 */
 	public function test_retries_a_failed_migration(): void {
@@ -412,10 +488,18 @@ class StripeBillingMigratorTest extends WC_Unit_Test_Case {
 		$subscription->update_meta_data( '_migrated_wcpay_subscription_id', $migrated_subscription );
 		$subscription->save();
 		$api->expects( $this->never() )->method( 'get_subscription' );
+		$logger = RecordingWcLogger::install();
 
 		$sut->migrate_wcpay_subscription( $subscription->get_id() );
 
 		$this->assertFalse( as_next_scheduled_action( StripeBillingMigrator::MIGRATE_HOOK . '_retry' ) );
+		// The migrator's own skip keeps its message, which the reschedule check reads.
+		$this->get_logged_context(
+			$logger,
+			'' === $migrated_subscription
+				? sprintf( '---- Skipping migration of subscription #%d. Subscription is not billed through Stripe Billing.', $subscription->get_id() )
+				: sprintf( '---- Skipping migration of subscription #%1$d (%2$s). Subscription has already been migrated.', $subscription->get_id(), $migrated_subscription )
+		);
 	}
 
 	/**

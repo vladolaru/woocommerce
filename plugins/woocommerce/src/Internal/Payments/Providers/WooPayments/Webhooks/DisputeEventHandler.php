@@ -420,29 +420,24 @@ class DisputeEventHandler {
 		);
 
 		if ( is_wp_error( $refund ) ) {
-			$this->log_dispute_refund_failure( $order, $charge_id, $dispute_id, $status, $refund_amount, $refund->get_error_message() );
+			$this->log_dispute_refund_failure( $order, $charge_id, $dispute_id, $status, $refund_amount, (string) $refund->get_error_code() );
 			throw new RuntimeException( esc_html( sprintf( 'Could not create local dispute refund for order %1$d and dispute %2$s: %3$s', $order->get_id(), $dispute_id, $refund->get_error_message() ) ) );
 		}
 	}
 
 	/**
-	 * Log a failed dispute refund.
+	 * Log a failed dispute refund with wc_create_refund()'s error code, which it always sets to `error`, never its message.
 	 *
 	 * @param WC_Order $order         Order object.
 	 * @param string   $charge_id     Charge ID.
 	 * @param string   $dispute_id    Dispute ID.
 	 * @param string   $status        Dispute status.
 	 * @param float    $refund_amount Refund amount.
-	 * @param string   $error_message Error message.
+	 * @param string   $error_code    Error code.
 	 */
-	private function log_dispute_refund_failure( WC_Order $order, string $charge_id, string $dispute_id, string $status, float $refund_amount, string $error_message ): void {
+	private function log_dispute_refund_failure( WC_Order $order, string $charge_id, string $dispute_id, string $status, float $refund_amount, string $error_code ): void {
 		wc_get_logger()->error(
-			sprintf(
-				'Failed to create local refund for lost dispute %1$s on charge %2$s: %3$s',
-				$dispute_id,
-				$charge_id,
-				$error_message
-			),
+			sprintf( 'Failed to create local refund for lost dispute %1$s on charge %2$s.', $dispute_id, $charge_id ),
 			array(
 				'source'         => WooPaymentsLogger::SOURCE,
 				'order_id'       => $order->get_id(),
@@ -450,6 +445,7 @@ class DisputeEventHandler {
 				'dispute_id'     => $dispute_id,
 				'dispute_status' => $status,
 				'refund_amount'  => $refund_amount,
+				'error_code'     => $error_code,
 			)
 		);
 	}

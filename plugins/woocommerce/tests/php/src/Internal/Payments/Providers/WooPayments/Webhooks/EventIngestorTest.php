@@ -4669,6 +4669,8 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		);
 
 		add_action( 'woocommerce_create_refund', $refund_blocker );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$logger    = RecordingWcLogger::install();
 		$exception = null;
 		try {
 			$sut->process( $this->create_dispute_event( 'charge.dispute.closed', 'lost' ) );
@@ -4680,6 +4682,13 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( RuntimeException::class, $exception, 'Expected lost dispute processing to fail when local refund creation fails.' );
 		$this->assertStringContainsString( 'Could not create local dispute refund', $exception->getMessage() );
+		// Written with logging off: the IDs and wc_create_refund()'s fixed code, never the WP_Error's message.
+		$context = $this->get_logged_context( $logger, 'Failed to create local refund for lost dispute du_123 on charge ch_123.' );
+		$this->assertSame(
+			array( $order->get_id(), 'ch_123', 'du_123', 'error' ),
+			array( $context['order_id'] ?? null, $context['charge_id'] ?? '', $context['dispute_id'] ?? '', $context['error_code'] ?? '' )
+		);
+		$this->assertStringNotContainsString( 'Refund creation blocked', (string) wp_json_encode( $context ) );
 
 		$order   = wc_get_order( $order->get_id() );
 		$refunds = $order instanceof WC_Order ? $order->get_refunds() : array();

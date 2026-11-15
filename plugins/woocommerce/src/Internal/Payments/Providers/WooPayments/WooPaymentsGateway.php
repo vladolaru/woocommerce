@@ -987,7 +987,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 				WooPaymentsErrorMessages::get_shopper_message( $exception->get_error_type(), $exception->get_error_code(), $exception->get_decline_code(), $exception->getMessage() )
 			);
 		} catch ( Throwable $exception ) {
-			$this->get_logger()->log_throwable( 'Error when adding payment method: ' . $exception->getMessage(), $exception, array(), 'info' );
+			$this->get_logger()->log_throwable( 'Error when adding payment method.', $exception, array(), 'info' );
 
 			return $this->add_payment_method_error( __( "We're not able to add this payment method. Please try again later.", 'woocommerce' ) );
 		}
@@ -2657,12 +2657,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		);
 		// Logged before the order is read again, so a failing read cannot lose the original error.
 		$this->get_logger()->log_throwable_always(
-			sprintf(
-				'Applying the authorized payment to order #%1$d raised %2$s: %3$s.',
-				$order->get_id(),
-				get_class( $failure ),
-				$failure->getMessage()
-			),
+			sprintf( 'Applying the authorized payment to order #%1$d raised %2$s.', $order->get_id(), get_class( $failure ) ),
 			$failure,
 			$context
 		);
@@ -2718,7 +2713,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		} catch ( Throwable $read_failure ) {
 			// The order cannot be read, so it is not shown as authorized and checkout keeps the refusal.
 			$this->get_logger()->log_throwable_always(
-				sprintf( 'Reading order #%1$d again after applying the authorized payment failed raised %2$s: %3$s.', $order->get_id(), get_class( $read_failure ), $read_failure->getMessage() ),
+				sprintf( 'Reading order #%1$d again after applying the authorized payment failed raised %2$s.', $order->get_id(), get_class( $read_failure ) ),
 				$read_failure,
 				array( 'order_id' => $order->get_id() )
 			);
