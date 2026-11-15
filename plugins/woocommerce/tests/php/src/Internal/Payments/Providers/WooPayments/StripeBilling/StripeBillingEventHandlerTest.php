@@ -314,6 +314,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 			$this->get_requests(),
 			'Neither the on-hold step nor the reactivation reaches the Stripe subscription.'
 		);
+		$this->assertSame( array(), $this->get_pending_cancel_attempts( $subscription ), 'A subscription WooPayments still bills asks for no cancel.' );
 	}
 
 	/**
@@ -884,18 +885,20 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	 * The hold is only for a subscription WooPayments bills that WooCommerce Subscriptions lets be held. A cancelled one
 	 * is refused by Subscriptions (class-wc-subscription.php:373-379), which throws (:490-507); one moved to another
 	 * payment method is not WooPayments' to hold, even when its gateway supports suspension. The renewal records the
-	 * payment, and its note says where to refund it.
+	 * payment, and its note says where to refund it. A subscription that should no longer be billed by Stripe asks the
+	 * cancel job for its first attempt, and the webhook itself sends no cancel; one still billed by WooPayments asks nothing.
 	 *
-	 * @testWith ["cancelled, its Stripe cancel failed", "cancelled", "woocommerce_payments", false]
-	 *           ["active, Subscriptions refuses the hold", "active", "woocommerce_payments", true]
-	 *           ["active, moved to a gateway that supports suspension", "active", "stripe", false]
+	 * @testWith ["cancelled, its Stripe cancel failed", "cancelled", "woocommerce_payments", false, true]
+	 *           ["active, Subscriptions refuses the hold", "active", "woocommerce_payments", true, false]
+	 *           ["active, moved to a gateway that supports suspension", "active", "stripe", false, true]
 	 *
 	 * @param string $name           Case name.
 	 * @param string $status         Subscription status.
 	 * @param string $payment_method Subscription payment method.
 	 * @param bool   $refuse_hold    Whether Subscriptions' on-hold filter refuses the hold.
+	 * @param bool   $expect_cancel  Whether the cancel job is asked for.
 	 */
-	public function test_paid_invoice_for_a_subscription_that_is_not_held_records_the_payment_with_a_note( string $name, string $status, string $payment_method, bool $refuse_hold ): void {
+	public function test_paid_invoice_for_a_subscription_that_is_not_held_records_the_payment_with_a_note( string $name, string $status, string $payment_method, bool $refuse_hold, bool $expect_cancel ): void {
 		unset( $name );
 		$subscription = $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID, array(), $status );
 		$subscription->set_payment_method( $payment_method );
@@ -920,6 +923,8 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		$this->assertSame( array(), $transitions->list, 'Not put on hold, so no status hook fires at the other gateway.' );
 		$this->assertSame( array(), $this->get_notes_containing( $subscription, 'Unable to change subscription status' ) );
 		$this->assertSame( array( $this->get_not_held_note( $subscription, wc_get_order_status_name( $status ) ) ), $this->get_notes_containing( $orders[0], 'Stripe Billing collected renewal invoice' ) );
+		$this->assertSame( $expect_cancel ? array( 0 ) : array(), $this->get_pending_cancel_attempts( $subscription ) );
+		$this->assertSame( array(), array_filter( $this->get_requests(), static fn( array $request ): bool => false !== strpos( $request[1], '/wcpay/subscriptions/' ) ), 'No Stripe subscription request inside the webhook.' );
 	}
 
 	/**
@@ -2462,6 +2467,32 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 			static fn( array $request ) => array( $request['method'], $request['path'], null === $request['body'] ? null : json_decode( (string) $request['body'], true ) ),
 			$this->http_client->requests
 		);
+	}
+
+	/**
+	 * Get the attempts of a subscription's pending Stripe cancel jobs.
+	 *
+	 * @param WC_Order $subscription Subscription.
+	 * @return int[]
+	 */
+	private function get_pending_cancel_attempts( WC_Order $subscription ): array {
+		$attempts = array();
+		foreach ( as_get_scheduled_actions(
+			array(
+				'hook'     => StripeBillingSubscriptionService::RETRY_CANCEL_ACTION,
+				'group'    => 'woocommerce_payments',
+				'status'   => \ActionScheduler_Store::STATUS_PENDING,
+				'per_page' => -1,
+			)
+		) as $action ) {
+			$args = $action->get_args();
+			if ( $subscription->get_id() === ( $args['subscription_id'] ?? null ) ) {
+				$attempts[] = (int) $args['retry'];
+			}
+		}
+		sort( $attempts );
+
+		return $attempts;
 	}
 
 	/**

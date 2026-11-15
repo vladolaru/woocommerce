@@ -459,6 +459,9 @@ class StripeBillingEventHandler {
 				// The status the invoice found: Subscriptions may change it as the payment is recorded.
 				$facts = $invoice_facts + array( 'subscription_status' => $subscription_status ) + $this->get_collected_invoice_note_facts( $subscription, $order );
 				$this->add_invoice_note_once( $order, WooPaymentsOrderNoteService::INVOICE_NOTE_SUBSCRIPTION_NOT_HELD, $facts, 'stripe_billing_invoice_collected|' . $wcpay_invoice_id );
+
+				// Stripe still charges a subscription it may no longer bill: the cancel job decides, so no request goes out here.
+				$this->subscription_service->request_stripe_subscription_cancel( $subscription );
 			}
 		}
 
