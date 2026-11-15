@@ -1009,6 +1009,7 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 				'{charge}'        => $charge,
 				'{authorization}' => $link( $sut->transaction_url( 'pi_authorized', 'ch_authorized' ), 'pi_authorized' ),
 				'{subscription}'  => sprintf( 'Stripe Billing will keep charging subscription #%s at each renewal until the subscription is cancelled.', '742' ),
+				'{number}'        => sprintf( '#%s', '742' ),
 			)
 		);
 
@@ -1092,6 +1093,14 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 				WooPaymentsOrderNoteService::INVOICE_NOTE_AUTHORIZATION_REPLACED,
 				$authorization + array( 'billing_continues' => false ) + $renewal,
 				'This order held WooPayments authorization {authorization}, which was not captured. Stripe Billing collected renewal invoice <code>in_collected</code> for {amount} (WooPayments charge {charge}) in its place, and this order now records that payment. This store can no longer capture or cancel the authorization, so it expires on its own and the customer is not charged for it. If it was captured after all, refund it from its WooPayments transaction page.',
+			),
+			'5, subscription not held'            => array(
+				WooPaymentsOrderNoteService::INVOICE_NOTE_SUBSCRIPTION_NOT_HELD,
+				array(
+					'subscription_status' => 'cancelled',
+					'billing_continues'   => false,
+				) + $renewal,
+				'Stripe Billing collected renewal invoice <code>in_collected</code> for {amount} (WooPayments charge {charge}) while subscription {number} was Cancelled, and this order now records that payment. The subscription status was not changed. If the customer should not have been charged, refund the payment from this order.',
 			),
 			'4u, payment not read'                => array(
 				WooPaymentsOrderNoteService::INVOICE_NOTE_PAYMENT_NOT_READ,

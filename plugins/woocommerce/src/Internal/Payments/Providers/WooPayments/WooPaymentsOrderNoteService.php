@@ -75,6 +75,11 @@ class WooPaymentsOrderNoteService {
 	public const INVOICE_NOTE_PAYMENT_NOT_READ = 'payment_not_read';
 
 	/**
+	 * Stripe Billing invoice note: collected on a payable renewal whose subscription could not be put on hold; the renewal records it.
+	 */
+	public const INVOICE_NOTE_SUBSCRIPTION_NOT_HELD = 'subscription_not_held';
+
+	/**
 	 * Build the payment-success note in each wording that counts as the same note.
 	 *
 	 * @param WC_Order $order                  Order object.
@@ -650,8 +655,8 @@ class WooPaymentsOrderNoteService {
 	 *
 	 * @since 11.4.0
 	 *
-	 * @param string                                                                                                                                                                                                                                                 $wording One of the `INVOICE_NOTE_*` wordings.
-	 * @param array{object_id?:string,intent_id?:string,charge_id?:string,amount?:float,currency?:string,paid_with?:string,order_status?:string,subscription_number?:string,billing_continues?:bool,authorization_intent_id?:string,authorization_charge_id?:string} $facts   The invoice ID, its intent and charge, the amount it collected and its currency; the payment, payment method title or reference the renewal recorded; the renewal's status; the subscription's number and whether Stripe Billing keeps charging it; the authorization the renewal held.
+	 * @param string                                                                                                                                                                                                                                                                             $wording One of the `INVOICE_NOTE_*` wordings.
+	 * @param array{object_id?:string,intent_id?:string,charge_id?:string,amount?:float,currency?:string,paid_with?:string,order_status?:string,subscription_number?:string,subscription_status?:string,billing_continues?:bool,authorization_intent_id?:string,authorization_charge_id?:string} $facts   The invoice ID, its intent and charge, the amount it collected and its currency; the payment, payment method title or reference the renewal recorded; the renewal's status; the subscription's number, status and whether Stripe Billing keeps charging it; the authorization the renewal held.
 	 * @return string
 	 * @throws \InvalidArgumentException When the wording is not one of the `INVOICE_NOTE_*` wordings.
 	 */
@@ -708,6 +713,27 @@ class WooPaymentsOrderNoteService {
 					'charge' => $link( $charge_url, '%6$s' ),
 				);
 				$note     = sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, $elements ), esc_html( $authorization_id ), $invoice_id, $amount, $charge, $authorization_url, $charge_url );
+				return $this->append_continued_billing_sentence( $note, $facts );
+
+			case self::INVOICE_NOTE_SUBSCRIPTION_NOT_HELD:
+				$subscription_status = $facts['subscription_status'] ?? '';
+				/* translators: %1$s: Stripe Billing invoice ID, %2$s: amount the invoice collected, %3$s: WooPayments charge ID, %4$s: subscription number, %5$s: subscription status, such as "Cancelled", %6$s: transaction URL. */
+				$format = __( 'Stripe Billing collected renewal invoice <code>%1$s</code> for %2$s (WooPayments charge <a>%3$s</a>) while subscription #%4$s was %5$s, and this order now records that payment. The subscription status was not changed. If the customer should not have been charged, refund the payment from this order.', 'woocommerce' );
+				$note   = sprintf(
+					WooPaymentsHtmlUtils::escape_interpolated_html(
+						$format,
+						array(
+							'code' => '<code>',
+							'a'    => $link( $charge_url, '%6$s' ),
+						)
+					),
+					$invoice_id,
+					$amount,
+					$charge,
+					esc_html( $facts['subscription_number'] ?? '' ),
+					esc_html( function_exists( 'wcs_get_subscription_status_name' ) ? wcs_get_subscription_status_name( $subscription_status ) : wc_get_order_status_name( $subscription_status ) ),
+					$charge_url
+				);
 				return $this->append_continued_billing_sentence( $note, $facts );
 
 			case self::INVOICE_NOTE_PAYMENT_NOT_READ:

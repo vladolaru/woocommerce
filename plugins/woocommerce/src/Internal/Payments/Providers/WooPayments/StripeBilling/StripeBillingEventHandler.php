@@ -184,6 +184,13 @@ class StripeBillingEventHandler {
 			throw new StripeBillingException( __( 'Cannot find subscription to handle the "invoice.upcoming" event.', 'woocommerce' ), StripeBillingException::INVALID_EVENT_DATA );
 		}
 
+		// A subscription moved off WooPayments keeps its Stripe ID until Stripe confirms the cancel: try the cancel again, and
+		// leave the other payment method's schedule and Stripe's items as they are.
+		if ( ! $this->subscription_service->is_wcpay_subscription( $subscription ) ) {
+			$this->subscription_service->maybe_cancel_subscription( $subscription, $subscription->get_payment_method() );
+			return;
+		}
+
 		$wcpay_subscription = $this->subscription_service->get_wcpay_subscription( $subscription );
 
 		// No next payment is expected, so Stripe must not bill.
@@ -419,10 +426,14 @@ class StripeBillingEventHandler {
 			}
 		} else {
 			// Put the subscription on hold first, as a renewal does, so WooCommerce Subscriptions records the payment on it. Stripe already billed it, so neither change reaches Stripe.
+			// One Subscriptions will not put on hold, such as a cancelled one whose Stripe cancel failed, only gets the payment and a note.
+			$can_hold = $this->can_be_put_on_hold( $subscription );
 			try {
 				$this->subscription_service->run_without_stripe_sync(
-					function () use ( $subscription, $order, $intent, $intent_id, $event_object ): void {
-						$subscription->update_status( 'on-hold' );
+					function () use ( $subscription, $order, $intent, $intent_id, $event_object, $can_hold ): void {
+						if ( $can_hold ) {
+							$subscription->update_status( 'on-hold' );
+						}
 
 						if ( null !== $intent ) {
 							$this->payment_intent_event_handler->apply_succeeded_payment_intent_under_lock( $order, $intent );
@@ -440,6 +451,11 @@ class StripeBillingEventHandler {
 			if ( $order->needs_payment() ) {
 				// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
 				throw new RuntimeException( sprintf( 'Renewal order #%1$d is still unpaid after applying invoice %2$s.', $order->get_id(), $wcpay_invoice_id ) );
+			}
+
+			if ( ! $can_hold ) {
+				$facts = $invoice_facts + array( 'subscription_status' => $subscription->get_status() ) + $this->get_collected_invoice_note_facts( $subscription, $order );
+				$this->add_invoice_note_once( $order, WooPaymentsOrderNoteService::INVOICE_NOTE_SUBSCRIPTION_NOT_HELD, $facts, 'stripe_billing_invoice_collected|' . $wcpay_invoice_id );
 			}
 		}
 
@@ -466,6 +482,20 @@ class StripeBillingEventHandler {
 		}
 
 		return $subscription;
+	}
+
+	/**
+	 * Tell whether WooCommerce Subscriptions lets a subscription be put on hold: it is on hold already, which its status
+	 * update skips, or its own status check allows the move. A cancelled or expired subscription, or one on a payment
+	 * method without suspension support, is refused.
+	 *
+	 * @param WC_Order $subscription Subscription.
+	 * @return bool
+	 */
+	private function can_be_put_on_hold( WC_Order $subscription ): bool {
+		return $subscription->has_status( 'on-hold' )
+			|| ! is_callable( array( $subscription, 'can_be_updated_to' ) )
+			|| $subscription->can_be_updated_to( 'on-hold' );
 	}
 
 	/**

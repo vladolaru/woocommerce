@@ -877,6 +877,73 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A paid invoice for a subscription that WooCommerce Subscriptions will not put on hold records the payment on its new renewal with a note, and leaves the subscription as it is: $_dataName.
+	 *
+	 * Subscriptions refuses the hold for a subscription that is not active, or whose payment method has no suspension
+	 * support (class-wc-subscription.php:373-379), and throws (:490-507); the event used to fail four times and be dropped
+	 * with the money taken. The renewal now records the payment, and its note says where to refund it.
+	 *
+	 * @testWith ["cancelled, its Stripe cancel failed", "cancelled", false, false]
+	 *           ["active, Subscriptions refuses the hold", "active", true, true]
+	 *
+	 * @param string $name              Case name.
+	 * @param string $status            Subscription status.
+	 * @param bool   $refuse_hold       Whether Subscriptions' on-hold filter refuses the hold.
+	 * @param bool   $expected_sentence Whether the note says Stripe Billing keeps charging.
+	 */
+	public function test_paid_invoice_for_a_subscription_that_cannot_be_held_records_the_payment_with_a_note( string $name, string $status, bool $refuse_hold, bool $expected_sentence ): void {
+		unset( $name );
+		$subscription = $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID, array(), $status );
+		if ( $refuse_hold ) {
+			add_filter( 'woocommerce_can_subscription_be_updated_to_on-hold', '__return_false' );
+		}
+		$transitions = $this->record_subscription_transitions();
+		$this->queue_response( 200, $this->get_renewal_intent() );
+		$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
+
+		$this->sut->handle_event( $this->get_event( 'invoice_paid_renewal' ) );
+
+		$orders = $this->get_renewal_orders( self::RENEWAL_INVOICE_ID );
+		$this->assertCount( 1, $orders );
+		$this->assertSame( 'processing', $orders[0]->get_status() );
+		$this->assertSame( self::RENEWAL_INTENT_ID, $orders[0]->get_transaction_id() );
+		$this->assertSame( self::RENEWAL_CHARGE_ID, $orders[0]->get_meta( '_charge_id', true ), 'A refund from the order reaches the invoice\'s charge.' );
+		$subscription = wc_get_order( $subscription->get_id() );
+		$this->assertSame( $status, $subscription->get_status() );
+		$this->assertSame( array(), $transitions->list );
+		$this->assertSame( array(), $this->get_notes_containing( $subscription, 'Unable to change subscription status' ) );
+		$notes = $this->get_notes_containing( $orders[0], 'Stripe Billing collected renewal invoice' );
+		$this->assertCount( 1, $notes );
+		$this->assertStringStartsWith( 'Stripe Billing collected renewal invoice <code>' . self::RENEWAL_INVOICE_ID . '</code> for ', $notes[0] );
+		$this->assertStringContainsString( '>' . self::RENEWAL_CHARGE_ID . '</a>) while subscription #' . $subscription->get_order_number() . ' was ' . wc_get_order_status_name( $status ) . ', and this order now records that payment. The subscription status was not changed. If the customer should not have been charged, refund the payment from this order.', $notes[0] );
+		$this->assertSame( $expected_sentence, str_contains( $notes[0], 'Stripe Billing will keep charging subscription #' ) );
+	}
+
+	/**
+	 * @testdox A paid invoice for the failed renewal of a subscription already on hold takes the hold path: the subscription is active again and the renewal gets no not-held note.
+	 *
+	 * Subscriptions skips a move to the status the subscription already has (class-wc-subscription.php:490), so an on-hold
+	 * subscription counts as one that can be put on hold, although its own check allows the move only from active.
+	 */
+	public function test_paid_invoice_for_a_failed_renewal_of_a_subscription_on_hold_reactivates_it_without_a_note(): void {
+		$subscription = $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID, array(), 'on-hold' );
+		$renewal      = $this->create_unpaid_renewal_order( $subscription, '24.90' );
+		$renewal->set_status( 'failed' );
+		$renewal->save();
+		$this->queue_response( 200, $this->get_renewal_intent() );
+		$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
+
+		$this->sut->handle_event( $this->get_event( 'invoice_paid_renewal' ) );
+
+		$renewal = wc_get_order( $renewal->get_id() );
+		$this->assertSame( 'processing', $renewal->get_status() );
+		$this->assertSame( array(), $this->get_notes_containing( $renewal, 'while subscription #' ) );
+		$subscription = wc_get_order( $subscription->get_id() );
+		$this->assertSame( 'active', $subscription->get_status() );
+		$this->assertSame( array(), $this->get_notes_containing( $subscription, 'Unable to change subscription status' ) );
+	}
+
+	/**
 	 * @testdox A paid invoice for a renewal that already records the invoice's payment, or names no payment intent, adds no invoice note: $_dataName.
 	 *
 	 * @testWith ["the invoice's intent", "pi_3UM1YABzWlxcwgpP0GYqv6LC", true]
@@ -1969,6 +2036,24 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 			'suspend' === $action ? 1 : 0,
 			$this->get_notes_containing( wc_get_order( $subscription->get_id() ), 'Suspended WooPayments Subscription in invoice.upcoming webhook handler because subscription next_payment date is 0.' )
 		);
+	}
+
+	/**
+	 * @testdox An upcoming invoice for a subscription moved off WooPayments that still holds its Stripe ID cancels it again and leaves its schedule alone.
+	 */
+	public function test_upcoming_invoice_for_a_subscription_moved_off_woopayments_cancels_it_again(): void {
+		$subscription = $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID, array( '_schedule_next_payment' => '2026-10-30 00:00:00' ) );
+		$subscription->set_payment_method( 'stripe' );
+		$subscription->save();
+		$this->queue_billing( 'cancel_subscription' );
+
+		$this->sut->handle_event( $this->get_event( 'invoice_upcoming' ) );
+
+		$this->assertSame( array( array( 'DELETE', '/sites/4/wcpay/subscriptions/' . self::CLOCK_SUBSCRIPTION_ID . '?test_mode=1', null ) ), $this->get_requests(), 'No read of the Stripe subscription and no item repair.' );
+		$subscription = wc_get_order( $subscription->get_id() );
+		$this->assertSame( self::CLOCK_SUBSCRIPTION_ID, $subscription->get_meta( '_cancelled_wcpay_subscription_id', true ) );
+		$this->assertSame( '2026-10-30 00:00:00', $subscription->get_meta( '_schedule_next_payment', true ), 'Stripe\'s period end is not written onto the other payment method\'s schedule.' );
+		$this->assertSame( array(), $this->get_notes_containing( $subscription, 'Next automatic payment scheduled for' ) );
 	}
 
 	/**

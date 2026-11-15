@@ -84,15 +84,43 @@ class SubscriptionDouble extends \WC_Order {
 	}
 
 	/**
+	 * Tell whether the subscription can move to a status. Only on-hold is checked, as WooCommerce Subscriptions 9.4.1 does
+	 * it: from active only, then its filter, which a test uses for a payment method without suspension support
+	 * (includes/core/class-wc-subscription.php:373-379, :428). Every other move is allowed.
+	 *
+	 * @param string $new_status New status.
+	 * @return bool
+	 */
+	public function can_be_updated_to( $new_status ) {
+		$new_status = 0 === strpos( $new_status, 'wc-' ) ? substr( $new_status, 3 ) : $new_status;
+		if ( 'on-hold' !== $new_status ) {
+			return true;
+		}
+
+		return (bool) apply_filters( 'woocommerce_can_subscription_be_updated_to_on-hold', $this->has_status( 'active' ), $this );
+	}
+
+	/**
 	 * Update the status, firing the subscription status hooks WooCommerce Subscriptions fires on a change.
+	 *
+	 * A change can_be_updated_to() refuses adds WooCommerce Subscriptions' note and throws, as its update_status() does
+	 * (includes/core/class-wc-subscription.php:490-507).
 	 *
 	 * @param string $new_status New status.
 	 * @param string $note       Note added with the change.
 	 * @param bool   $manual     Whether the change was made by a user.
 	 * @return bool
+	 * @throws \Exception When the subscription cannot move to the new status.
 	 */
 	public function update_status( $new_status, $note = '', $manual = false ) {
 		$old_status = $this->get_status();
+		if ( $old_status !== $new_status && ! $this->can_be_updated_to( $new_status ) ) {
+			$message = sprintf( 'Unable to change subscription status to "%s".', $new_status );
+			$this->add_order_note( $message );
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Test double message, not HTML output.
+			throw new \Exception( $message );
+		}
+
 		$result     = parent::update_status( $new_status, $note, $manual );
 		$new_status = $this->get_status();
 

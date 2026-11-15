@@ -108,6 +108,11 @@ final class WooCommerceSubscriptionsDoubles {
 			eval( 'namespace { function wcs_get_subscription( $subscription_id ) { $subscription_id = is_object( $subscription_id ) && method_exists( $subscription_id, "get_id" ) ? $subscription_id->get_id() : absint( $subscription_id ); return in_array( $subscription_id, $GLOBALS["' . self::SUBSCRIPTION_IDS . '"] ?? array(), true ) ? wc_get_order( $subscription_id ) : false; } }' );
 		}
 
+		if ( ! function_exists( 'wcs_get_subscription_ended_statuses' ) ) {
+			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; stands in for 9.4.1 `includes/core/wcs-functions.php:869-871`.
+			eval( 'namespace { function wcs_get_subscription_ended_statuses() { return apply_filters( "wcs_subscription_ended_statuses", array( "cancelled", "trash", "expired", "switched", "pending-cancel" ) ); } }' );
+		}
+
 		if ( ! class_exists( 'WC_Subscriptions_Synchroniser' ) ) {
 			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; renewal synchronisation stays off, its default.
 			eval( 'namespace { class WC_Subscriptions_Synchroniser { public static function is_syncing_enabled() { return false; } } }' );
@@ -504,9 +509,9 @@ final class WooCommerceSubscriptionsDoubles {
 
 		foreach ( $GLOBALS[ self::RENEWAL_SUBSCRIPTIONS ][ absint( $order_id ) ] ?? array() as $subscription_id ) {
 			$subscription = wc_get_order( $subscription_id );
-			// WooCommerce Subscriptions activates only for the subscription's last renewal (includes/core/class-wc-subscriptions-renewal-order.php:111-119).
+			// WooCommerce Subscriptions activates only a subscription that has not ended, for its last renewal (includes/core/class-wc-subscriptions-renewal-order.php:111-119).
 			$order = wc_get_order( $order_id );
-			if ( $subscription instanceof SubscriptionDouble && ! $subscription->has_status( 'active' ) && $order instanceof \WC_Order && wcs_is_order_last_renewal_of_subscription( $order, $subscription ) ) {
+			if ( $subscription instanceof SubscriptionDouble && ! $subscription->has_status( 'active' ) && ! $subscription->has_status( wcs_get_subscription_ended_statuses() ) && $order instanceof \WC_Order && wcs_is_order_last_renewal_of_subscription( $order, $subscription ) ) {
 				$subscription->payment_complete_for_order( $order );
 			}
 		}
