@@ -378,7 +378,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** Active on the site until the job deactivates it. */
-			public function is_woopayments_site_active(): bool {
+			public function is_woopayments_stored_site_active(): bool {
 				return ! $this->is_woopayments_network_active();
 			}
 		};
@@ -488,7 +488,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** Active on the site until the job deactivates it. */
-			public function is_woopayments_site_active(): bool {
+			public function is_woopayments_stored_site_active(): bool {
 				return ! $this->is_woopayments_network_active();
 			}
 		};
@@ -564,7 +564,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** Active on the site until the job deactivates it. */
-			public function is_woopayments_site_active(): bool {
+			public function is_woopayments_stored_site_active(): bool {
 				return 0 === $this->deactivations;
 			}
 		};
@@ -659,7 +659,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** Active while the extension is in the site's active plugins. */
-			public function is_woopayments_site_active(): bool {
+			public function is_woopayments_stored_site_active(): bool {
 				return in_array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, (array) get_option( 'active_plugins', array() ), true );
 			}
 		};
@@ -730,7 +730,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** Active on the site until the job deactivates it. */
-			public function is_woopayments_site_active(): bool {
+			public function is_woopayments_stored_site_active(): bool {
 				return ! $this->is_woopayments_network_active();
 			}
 		};
@@ -819,7 +819,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** Active on the site until the job deactivates it. */
-			public function is_woopayments_site_active(): bool {
+			public function is_woopayments_stored_site_active(): bool {
 				return ! $this->is_woopayments_network_active();
 			}
 		};
@@ -1009,7 +1009,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** Active on the site until the job deactivates it. */
-			public function is_woopayments_site_active(): bool {
+			public function is_woopayments_stored_site_active(): bool {
 				return ! $this->is_woopayments_network_active();
 			}
 		};
@@ -1262,7 +1262,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** Active on the site until the job deactivates it. */
-			public function is_woopayments_site_active(): bool {
+			public function is_woopayments_stored_site_active(): bool {
 				return ! $this->is_woopayments_network_active();
 			}
 		};
@@ -1311,7 +1311,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** Active on the site until the job deactivates it. */
-			public function is_woopayments_site_active(): bool {
+			public function is_woopayments_stored_site_active(): bool {
 				return ! $this->is_woopayments_network_active();
 			}
 		};
@@ -1955,7 +1955,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** The merchant already deactivated the extension. */
-			public function is_woopayments_site_active(): bool {
+			public function is_woopayments_stored_site_active(): bool {
 				return false;
 			}
 
@@ -2337,7 +2337,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** Active on the site until the job deactivates it. */
-			public function is_woopayments_site_active(): bool {
+			public function is_woopayments_stored_site_active(): bool {
 				return ! $this->is_woopayments_network_active();
 			}
 		};
@@ -2437,7 +2437,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** The plugin is already inactive in these scenarios. */
-			public function is_woopayments_site_active(): bool {
+			public function is_woopayments_stored_site_active(): bool {
 				return false;
 			}
 		};
@@ -2664,7 +2664,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** Active on the site until the job deactivates it. */
-			public function is_woopayments_site_active(): bool {
+			public function is_woopayments_stored_site_active(): bool {
 				return $this->plugin_active;
 			}
 		};
@@ -3673,8 +3673,13 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 				return $this->sitewide;
 			}
 
+			/** Whether the stored network list holds the extension. */
+			public function is_woopayments_stored_network_active(): bool {
+				return $this->sitewide;
+			}
+
 			/** Active on the site. */
-			public function is_woopayments_site_active(): bool {
+			public function is_woopayments_stored_site_active(): bool {
 				return true;
 			}
 		};
@@ -3712,6 +3717,92 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( 0, $migrations, 'The data migration waits too.' );
 		$deferred = $this->state_store->get_record();
 		$this->assertIsArray( $deferred );
+		$this->assertSame( StateStore::STATE_DEFERRED, $deferred['state'] );
+		$this->assertSame( array( 'plugin_active_sitewide' ), $deferred['deferred_codes'] );
+		$this->assertNull( $deferred['request_origin_token'], 'No token, so the extension keeps payments.' );
+	}
+
+	/**
+	 * Plugin load managers filter the active plugin list in AJAX and cron requests, the requests the switch finalizes in.
+	 *
+	 * @testdox The switch hands over for real when a filter on $hook hides WooPayments in the finalizing request: the stored list loses it and the record carries the token.
+	 * @testWith ["option_active_plugins"]
+	 *           ["pre_option"]
+	 *
+	 * @param string $hook The filter that hides the extension.
+	 */
+	public function test_finalize_deactivates_from_the_stored_list_when_a_filter_hides_the_extension( string $hook ): void {
+		$this->arrange_extension_era_store();
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, 'hello-dolly/hello.php' ) );
+		$hidden_view = array( 'hello-dolly/hello.php' );
+		if ( 'pre_option' === $hook ) {
+			add_filter( 'pre_option', static fn( $pre, $option ) => 'active_plugins' === $option ? $hidden_view : $pre, 10, 2 );
+		} else {
+			add_filter( 'option_active_plugins', static fn() => $hidden_view );
+		}
+
+		$verification = $this->run_first_attempt_with_stored_list_preflight();
+
+		$this->assertSame( array( 'hello-dolly/hello.php' ), $this->read_stored_active_plugins(), 'The extension left the stored list, and nothing else did.' );
+		$this->assertSame( 'verify_builtin_ownership', $verification['current_step'] );
+		$this->assertNotNull( $verification['request_origin_token'], 'The hand-over is recorded.' );
+	}
+
+	/**
+	 * Swift Performance Lite 2.3.7.6's Plugin Organizer answers option_active_plugins with a list it computed when it loaded,
+	 * without the plugins its rules disable in this request; WordPress then writes that list back.
+	 *
+	 * @testdox A filter that hides another plugin in the finalizing request leaves that plugin stored, and the switch hands over.
+	 */
+	public function test_finalize_keeps_a_plugin_a_filter_hides_in_the_finalizing_request(): void {
+		$this->arrange_extension_era_store();
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, 'hello-dolly/hello.php' ) );
+		add_filter( 'option_active_plugins', static fn() => array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
+
+		$verification = $this->run_first_attempt_with_stored_list_preflight();
+
+		$this->assertSame( array( 'hello-dolly/hello.php' ), $this->read_stored_active_plugins(), 'The hidden plugin stays stored and the extension is gone.' );
+		$this->assertSame( 'verify_builtin_ownership', $verification['current_step'], 'No plugin_deactivation_failed deferral.' );
+		$this->assertNotNull( $verification['request_origin_token'], 'The hand-over is recorded.' );
+	}
+
+	/**
+	 * @testdox A hook that throws after WordPress wrote the plugin list still hands over, read from the stored list while a filter shows the extension.
+	 */
+	public function test_finalize_reads_the_stored_list_after_a_hook_throws_past_the_write(): void {
+		$this->arrange_extension_era_store();
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, 'hello-dolly/hello.php' ) );
+		add_filter( 'option_active_plugins', static fn() => array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
+		add_action(
+			'update_option_active_plugins',
+			static function (): void {
+				throw new \RuntimeException( 'A hook after the write failed.' );
+			}
+		);
+
+		$verification = $this->run_first_attempt_with_stored_list_preflight();
+
+		$this->assertSame( array( 'hello-dolly/hello.php' ), $this->read_stored_active_plugins() );
+		$this->assertSame( 'verify_builtin_ownership', $verification['current_step'], 'No plugin_deactivation_failed deferral.' );
+		$this->assertNotNull( $verification['request_origin_token'] );
+	}
+
+	/**
+	 * @testdox On a multisite, finalize defers while the stored network list holds WooPayments, even when a filter hides it from the finalizing request.
+	 * @group multisite
+	 */
+	public function test_finalize_reads_the_stored_network_list_when_a_filter_hides_the_extension(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+		$this->arrange_extension_era_store();
+		update_option( 'active_plugins', array() );
+		// WordPress stores active_sitewide_plugins as a plugin-file => activation-timestamp map (wp-admin/includes/plugin.php:712-715).
+		update_site_option( 'active_sitewide_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE => 1 ) );
+		add_filter( 'site_option_active_sitewide_plugins', static fn() => array() );
+
+		$deferred = $this->run_first_attempt_with_stored_list_preflight();
+
 		$this->assertSame( StateStore::STATE_DEFERRED, $deferred['state'] );
 		$this->assertSame( array( 'plugin_active_sitewide' ), $deferred['deferred_codes'] );
 		$this->assertNull( $deferred['request_origin_token'], 'No token, so the extension keeps payments.' );
@@ -4033,7 +4124,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** Active on the site until the job deactivates it. */
-			public function is_woopayments_site_active(): bool {
+			public function is_woopayments_stored_site_active(): bool {
 				return ! $this->is_woopayments_network_active();
 			}
 		};
@@ -5022,10 +5113,58 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** Active on the site until the job deactivates it. */
-			public function is_woopayments_site_active(): bool {
+			public function is_woopayments_stored_site_active(): bool {
 				return ! $this->is_woopayments_network_active();
 			}
 		};
+	}
+
+	/**
+	 * Start a merchant switch and run its first attempt with a preflight whose plugin-list reads and deactivation are the
+	 * real ones, then return the record.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function run_first_attempt_with_stored_list_preflight(): array {
+		$preflight = new class() extends PreflightService {
+			/** @return string[] */
+			public function get_failures(): array {
+				return array();
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+		};
+		$preflight->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ) );
+		$sut = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization() );
+		$this->assertTrue( $sut->enqueue( 'merchant' ) );
+		$pending = $this->state_store->get_record();
+		$this->assertIsArray( $pending );
+		$this->scheduler->cancel( $pending['generation'], 1 );
+
+		$sut->handle_reconcile( $pending['generation'], 1 );
+
+		$record = $this->state_store->get_record();
+		$this->assertIsArray( $record );
+		return $record;
+	}
+
+	/**
+	 * Read the plugin files in this site's stored active plugin list, past every filter and cache. WordPress's
+	 * deactivate_plugins() keeps the remaining entries' keys, so only the values are compared.
+	 *
+	 * @return mixed
+	 */
+	private function read_stored_active_plugins() {
+		global $wpdb;
+		$stored = maybe_unserialize( $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", 'active_plugins' ) ) );
+		return is_array( $stored ) ? array_values( $stored ) : $stored;
 	}
 
 	/**
@@ -5066,7 +5205,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** Active on the site until the job deactivates it. */
-			public function is_woopayments_site_active(): bool {
+			public function is_woopayments_stored_site_active(): bool {
 				return ! $this->is_woopayments_network_active();
 			}
 		};
@@ -5330,7 +5469,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** Active on the site while a plugin file resolves. */
-			public function is_woopayments_site_active(): bool {
+			public function is_woopayments_stored_site_active(): bool {
 				return '' !== $this->get_active_woopayments_plugin_file();
 			}
 		};

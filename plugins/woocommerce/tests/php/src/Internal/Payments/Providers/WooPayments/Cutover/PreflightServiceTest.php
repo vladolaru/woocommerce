@@ -406,15 +406,22 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * The network list is read from the stored row, so a filter that hides the extension from it does not hide it here.
+	 *
 	 * @testdox Deactivation never reaches beyond the site: an extension active for every site stays active, and it reports false.
+	 * @group multisite
 	 */
 	public function test_deactivation_never_reaches_beyond_the_site(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+		update_option( 'active_plugins', array() );
+		// WordPress stores active_sitewide_plugins as a plugin-file => activation-timestamp map (wp-admin/includes/plugin.php:712-715).
+		update_site_option( 'active_sitewide_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE => 1 ) );
+		add_filter( 'site_option_active_sitewide_plugins', static fn() => array() );
 		$calls = array();
 		$this->register_legacy_proxy_function_mocks(
 			array(
-				'get_option'         => fn( $name, $default_value = false ) => 'active_plugins' === $name ? array() : get_option( $name, $default_value ),
-				'get_site_option'    => fn( $name, $default_value = false ) => 'active_sitewide_plugins' === $name ? array( WooPaymentsRuntimeArbiter::PLUGIN_FILE => 1 ) : get_site_option( $name, $default_value ),
-				'is_multisite'       => fn() => true,
 				// WordPress 7.1.3 wp-admin/includes/plugin.php:764 deactivate_plugins( $plugins, $silent = false, $network_wide = null ).
 				'deactivate_plugins' => function ( $plugin, $silent = false, $for_every_site = null ) use ( &$calls ): void {
 					$calls[] = array( $plugin, $silent, $for_every_site );
@@ -424,6 +431,69 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertFalse( $this->create_sut()->deactivate_woopayments_plugin(), 'The extension is still active for every site.' );
 		$this->assertSame( array( array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, false, false ) ), $calls );
+	}
+
+	/**
+	 * WordPress's deactivate_plugins() reads active_plugins through get_option() and writes back what it read
+	 * (wp-admin/includes/plugin.php:768, :851), so the hooks it runs during the call must read the stored list too.
+	 *
+	 * @testdox The deactivation's hooks read the stored plugin list, and the request's own filter applies again after the call, also when a hook throws.
+	 */
+	public function test_the_stored_view_ends_with_the_deactivation_even_when_a_hook_throws(): void {
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, 'hello-dolly/hello.php' ) );
+		add_filter( 'option_active_plugins', static fn( $plugins ) => array_values( array_diff( (array) $plugins, array( 'hello-dolly/hello.php' ) ) ) );
+		$seen_during_call = null;
+		add_action(
+			'deactivate_plugin',
+			static function () use ( &$seen_during_call ): void {
+				$seen_during_call = get_option( 'active_plugins' );
+				throw new \RuntimeException( 'A deactivation hook failed.' );
+			}
+		);
+
+		$thrown = null;
+		try {
+			$this->create_sut()->deactivate_woopayments_plugin();
+		} catch ( \RuntimeException $error ) {
+			$thrown = $error;
+		}
+
+		$this->assertInstanceOf( \RuntimeException::class, $thrown, 'The hook failure reaches the caller.' );
+		$this->assertSame( array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, 'hello-dolly/hello.php' ), $seen_during_call, 'A hook during the call reads the stored list.' );
+		$this->assertSame( array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ), get_option( 'active_plugins' ), "After the call this request's filter applies again." );
+		$this->assertSame( array(), $GLOBALS['wp_filter']['pre_option']->callbacks[ PHP_INT_MAX ] ?? array(), 'No callback is left on the generic pre_option filter.' );
+	}
+
+	/**
+	 * @testdox Deactivation reports success from the stored list while this request's filter still shows the extension.
+	 */
+	public function test_deactivation_reports_from_the_stored_list(): void {
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, 'hello-dolly/hello.php' ) );
+		add_filter( 'option_active_plugins', static fn() => array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
+		$sut = $this->create_sut();
+
+		$this->assertTrue( $sut->deactivate_woopayments_plugin() );
+		$this->assertFalse( $sut->is_woopayments_stored_site_active() );
+		$this->assertTrue( $sut->is_woopayments_site_active(), "This request's filtered list still shows the extension." );
+	}
+
+	/**
+	 * @testdox Every other option read during the deactivation comes back as it would without the switch's stored view.
+	 */
+	public function test_the_stored_view_leaves_every_other_option_untouched(): void {
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
+		update_option( 'blogname', 'Stored store name' );
+		add_filter( 'pre_option', static fn( $pre, $option ) => 'woocommerce_cutover_test_probe' === $option ? 'from another pre_option callback' : $pre, 10, 2 );
+		$seen_during_call = null;
+		add_action(
+			'deactivate_plugin',
+			static function () use ( &$seen_during_call ): void {
+				$seen_during_call = array( get_option( 'woocommerce_cutover_test_probe' ), get_option( 'blogname' ) );
+			}
+		);
+
+		$this->assertTrue( $this->create_sut()->deactivate_woopayments_plugin() );
+		$this->assertSame( array( 'from another pre_option callback', 'Stored store name' ), $seen_during_call );
 	}
 
 	/**

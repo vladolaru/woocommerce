@@ -355,7 +355,37 @@ class PreflightService {
 	}
 
 	/**
-	 * Deactivate WooPayments on the current site only.
+	 * Tell whether WooPayments is in this site's stored active plugin list.
+	 *
+	 * The switch's own checks read the stored lists: a plugin load manager can filter the list in the queue requests the
+	 * switch runs in, and the stored list is what every later request starts from.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return bool
+	 */
+	public function is_woopayments_stored_site_active(): bool {
+		return '' !== $this->find_woopayments_plugin_file( $this->read_stored_site_plugins() );
+	}
+
+	/**
+	 * Tell whether WooPayments is in this network's stored active plugin list. A single site has no network list.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return bool
+	 */
+	public function is_woopayments_stored_network_active(): bool {
+		return '' !== $this->find_woopayments_plugin_file( $this->read_stored_network_plugins() );
+	}
+
+	/**
+	 * Deactivate WooPayments on the current site only, against the stored active plugin list.
+	 *
+	 * WordPress's deactivate_plugins() reads active_plugins through get_option() and writes back what it read. In a queue
+	 * request a plugin load manager can filter that list, so the call would skip a hidden extension, or write the list back
+	 * without the plugins hidden in that request and so deactivate them for the whole store. For this one call the stored
+	 * list answers every read of active_plugins.
 	 *
 	 * An extension that is not active counts as deactivated: a retry after a crash that followed a successful deactivation
 	 * finds nothing to deactivate. An extension active for every site stays active, and this reports false.
@@ -365,13 +395,70 @@ class PreflightService {
 		if ( ! function_exists( 'deactivate_plugins' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		}
-		// The lookup scans the same active-plugins lists as the activity checks, so an empty result means inactive.
-		$plugin_file = $this->get_active_woopayments_plugin_file();
+		$plugin_file = $this->find_woopayments_plugin_file( $this->read_stored_site_plugins() );
+		if ( '' === $plugin_file ) {
+			$plugin_file = $this->find_woopayments_plugin_file( $this->read_stored_network_plugins() );
+		}
 		if ( '' === $plugin_file ) {
 			return true;
 		}
-		$this->legacy_proxy->call_function( 'deactivate_plugins', $plugin_file, false, false );
-		return ! $this->is_woopayments_site_active() && ! $this->is_woopayments_network_active();
+		// get_option() runs the pre_option_{$option} filter and then the generic pre_option filter (WordPress 6.1+), and a value
+		// from it skips every option_active_plugins callback. Write-side filters stay, so a tool that guards its own writes still does.
+		$stored_view = function ( $pre, $option ) {
+			return 'active_plugins' === $option ? $this->read_stored_site_plugins() : $pre;
+		};
+		add_filter( 'pre_option', $stored_view, PHP_INT_MAX, 2 );
+		try {
+			$this->legacy_proxy->call_function( 'deactivate_plugins', $plugin_file, false, false );
+		} finally {
+			remove_filter( 'pre_option', $stored_view, PHP_INT_MAX );
+		}
+		return ! $this->is_woopayments_stored_site_active() && ! $this->is_woopayments_stored_network_active();
+	}
+
+	/**
+	 * Find the WooPayments plugin file in a plugin list.
+	 *
+	 * @param array<int|string,mixed> $plugin_files Plugin files.
+	 * @return string The plugin file, or an empty string when the list does not hold it.
+	 */
+	private function find_woopayments_plugin_file( array $plugin_files ): string {
+		foreach ( $plugin_files as $plugin_file ) {
+			if ( is_string( $plugin_file ) && $this->is_woopayments_plugin_file( $plugin_file ) ) {
+				return $plugin_file;
+			}
+		}
+		return '';
+	}
+
+	/**
+	 * Read this site's active plugin list as stored, by SQL, so no filter or cache answers.
+	 *
+	 * Always an array, since the stored-view filter returns it and false there would mean "no early value".
+	 *
+	 * @return array<int|string,mixed> The stored list; empty when the row is missing or unreadable.
+	 */
+	private function read_stored_site_plugins(): array {
+		$wpdb  = $this->get_database();
+		$value = $wpdb->get_var( "SELECT option_value FROM {$wpdb->options} WHERE option_name = 'active_plugins' LIMIT 1" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- The stored value is the point: filters and caches can differ from it.
+		$value = is_string( $value ) ? maybe_unserialize( $value ) : array();
+		return is_array( $value ) ? $value : array();
+	}
+
+	/**
+	 * Read this network's active plugin list as stored, by SQL; WordPress keys it by plugin file.
+	 *
+	 * @return array<int|string,mixed> Plugin files; empty on a single site, or when the row is missing or unreadable.
+	 */
+	private function read_stored_network_plugins(): array {
+		// A single site has no sitemeta table. Not read through the legacy proxy: a stand-in answer would point the query at a table the install lacks.
+		if ( ! is_multisite() ) {
+			return array();
+		}
+		$wpdb  = $this->get_database();
+		$value = $wpdb->get_var( "SELECT meta_value FROM {$wpdb->sitemeta} WHERE site_id = " . absint( get_current_network_id() ) . " AND meta_key = 'active_sitewide_plugins' LIMIT 1" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- The stored value is the point: filters and caches can differ from it.
+		$value = is_string( $value ) ? maybe_unserialize( $value ) : array();
+		return is_array( $value ) ? array_keys( $value ) : array();
 	}
 
 	/**

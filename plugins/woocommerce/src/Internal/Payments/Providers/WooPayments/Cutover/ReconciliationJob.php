@@ -761,8 +761,9 @@ class ReconciliationJob implements RegisterHooksInterface {
 	 */
 	private function finalize_site_claim( array $claimed, array $outcomes ): void {
 		// Deactivating an extension that is active sitewide would take it from every site, leaving the sites that still run it
-		// with no payments, so the switch waits until a super admin activates WooPayments per site.
-		if ( $this->preflight_service->is_woopayments_network_active() ) {
+		// with no payments, so the switch waits until a super admin activates WooPayments per site. Finalize reads the stored
+		// lists: a plugin load manager can filter them in the queue request it runs in.
+		if ( $this->preflight_service->is_woopayments_stored_network_active() ) {
 			$this->defer( $claimed, array( self::CODE_PLUGIN_ACTIVE_SITEWIDE ), $outcomes );
 			return;
 		}
@@ -786,7 +787,7 @@ class ReconciliationJob implements RegisterHooksInterface {
 		$deactivated = true;
 		try {
 			// An extension the merchant already deactivated, or a retry whose earlier finalize did, has nothing to deactivate.
-			if ( $this->preflight_service->is_woopayments_site_active() ) {
+			if ( $this->preflight_service->is_woopayments_stored_site_active() ) {
 				$deactivated = $this->run_while_changing_plugins( fn() => $this->preflight_service->deactivate_woopayments_plugin() );
 			}
 		} catch ( \Throwable $error ) {
@@ -795,7 +796,7 @@ class ReconciliationJob implements RegisterHooksInterface {
 		}
 		if ( ! $deactivated ) {
 			// A hook that threw after WordPress wrote the active plugins still left the extension inactive.
-			$deactivated = ! $this->preflight_service->is_woopayments_site_active();
+			$deactivated = ! $this->preflight_service->is_woopayments_stored_site_active();
 		}
 		if ( ! $deactivated ) {
 			// The token stays, so the next attempt finds the extension active and rolls the switch back to it.
