@@ -99,6 +99,47 @@ class ReconciliationJob implements RegisterHooksInterface {
 	private const FAST_RETRY_DELAY = 15 * MINUTE_IN_SECONDS;
 
 	/**
+	 * Delay from the hand-over to the ownership check, and between checks that cannot read ownership in the first minute.
+	 *
+	 * The check needs a process that has not loaded the extension's code. Action Scheduler's async runner, which ran the
+	 * attempt that deactivated the extension, sleeps this long before it dispatches the next runner (the
+	 * `action_scheduler_async_request_sleep_seconds` filter, 5 s by default), and that runner is a request that started after
+	 * the hand-over. A shorter delay cannot be met sooner; a process that still has the code loaded reads nothing and retries.
+	 */
+	private const OWNERSHIP_CHECK_DELAY = 5;
+
+	/**
+	 * Time after the hand-over during which a check that cannot read ownership retries every OWNERSHIP_CHECK_DELAY.
+	 *
+	 * Here the process is normally the runner that deactivated the extension, still working through its batch within
+	 * Action Scheduler's 30 s limit for a web runner; the runner it dispatches next can read. One minute covers that limit,
+	 * at 12 retries at most.
+	 */
+	private const UNREADABLE_OWNERSHIP_FAST_WINDOW = MINUTE_IN_SECONDS;
+
+	/**
+	 * Time after the hand-over until which a check that cannot read ownership retries every UNREADABLE_OWNERSHIP_SLOW_DELAY;
+	 * later it takes the retry cadence.
+	 *
+	 * Past the web runner's limit, the process is a WP-Cron or command-line queue run that started before the hand-over, or
+	 * one that booted on a lagging database read; such runs end or catch up within minutes. Fifteen minutes is the time
+	 * the job already gives a claimed attempt before it treats its worker as gone (RUNNING_TIMEOUT). A process that still
+	 * cannot read after that has a lasting reason, such as a worker that keeps the extension loaded.
+	 */
+	private const UNREADABLE_OWNERSHIP_SLOW_WINDOW = 15 * MINUTE_IN_SECONDS;
+
+	/**
+	 * Retry delay for a check that cannot read ownership, from one to fifteen minutes after the hand-over.
+	 *
+	 * The usual cause is a queue run that started before the hand-over. Checking once a minute ends the switch within a
+	 * minute of that run's end, at 14 retries at most.
+	 */
+	private const UNREADABLE_OWNERSHIP_SLOW_DELAY = MINUTE_IN_SECONDS;
+
+	/** Informational outcome of a check that could not read ownership in its process. */
+	private const OUTCOME_OWNERSHIP_READING_UNAVAILABLE = 'ownership_reading_unavailable';
+
+	/**
 	 * Retry delay after the job updated the extension to a supported version, which it records on its next request.
 	 *
 	 * Not zero: Action Scheduler keeps claiming due actions in the same run, which still has the old extension loaded.
@@ -598,11 +639,14 @@ class ReconciliationJob implements RegisterHooksInterface {
 			return;
 		}
 
-		$now     = time();
-		$claimed = null;
+		$now        = time();
+		$claimed    = null;
+		$lists_hold = false;
 		$this->with_write_lock(
 			$now,
-			function ( string $token ) use ( $generation, $attempt, $now, &$claimed ): void {
+			function ( string $token ) use ( $generation, $attempt, $now, &$claimed, &$lists_hold ): void {
+				// A long-lived process can hold the autoloaded record from when it booted.
+				$this->state_store->invalidate_record_cache();
 				$record = $this->state_store->get_record();
 				if (
 					! is_array( $record )
@@ -612,8 +656,15 @@ class ReconciliationJob implements RegisterHooksInterface {
 				) {
 					return;
 				}
-				if ( self::STEP_VERIFY_BUILTIN_OWNERSHIP === $record['current_step'] && self::$request_token === $record['request_origin_token'] ) {
-					return;
+				// Past the hand-over, who owns payments is read from the stored plugin lists, which no per-request filter
+				// changes. Lists without the extension are a reading only in a process that has not loaded its code: one that
+				// has, the finalizing request included, keeps running the extension and decides nothing.
+				if ( null !== ( $record['request_origin_token'] ?? null ) ) {
+					$lists_hold = $this->preflight_service->is_woopayments_in_stored_lists();
+					if ( ! $lists_hold && $this->arbiter->is_extension_code_loaded() ) {
+						$this->reschedule_unreadable_attempt( $record, $attempt, $now );
+						return;
+					}
 				}
 
 				$resume_step                                 = $record['current_step'];
@@ -636,11 +687,68 @@ class ReconciliationJob implements RegisterHooksInterface {
 
 		if ( is_array( $claimed ) ) {
 			if ( self::STEP_VERIFY_BUILTIN_OWNERSHIP === $claimed['current_step'] ) {
-				$this->complete_verified_claim( $claimed );
+				$this->complete_verified_claim( $claimed, $lists_hold );
 			} else {
-				$this->reconcile_claim( $claimed );
+				$this->reconcile_claim( $claimed, $lists_hold );
 			}
 		}
+	}
+
+	/**
+	 * Move an attempt that cannot read ownership to a later one, deciding nothing; call with the write lock held.
+	 *
+	 * One compare-and-set keeps the state, step and claim fields, takes the attempt and raises the revision, and sets the
+	 * next attempt by the time since the hand-over; then the next attempt is scheduled.
+	 *
+	 * @param array<string,mixed> $record  Current record, carrying the hand-over token.
+	 * @param int                 $attempt The attempt this process was handed.
+	 * @param int                 $now     Current UTC timestamp.
+	 */
+	private function reschedule_unreadable_attempt( array $record, int $attempt, int $now ): void {
+		$rescheduled                           = $record;
+		$rescheduled['revision']               = $record['revision'] + 1;
+		$rescheduled['attempt']                = $attempt;
+		$rescheduled['action_id']              = 0;
+		$rescheduled['next_attempt_at']        = $now + $this->get_unreadable_ownership_retry_delay( $record, $now );
+		$rescheduled['informational_outcomes'] = $this->merge_information_outcomes( $record['informational_outcomes'], array( array( 'code' => self::OUTCOME_OWNERSHIP_READING_UNAVAILABLE ) ) );
+		if ( ! $this->state_store->compare_and_set_record( $record, $rescheduled ) ) {
+			return;
+		}
+		$this->write_log_info(
+			'WooPayments cutover: this process still runs the extension\'s code, so it cannot read who owns payments; the next attempt is rescheduled.',
+			array(
+				'source'          => self::LOG_SOURCE,
+				'generation'      => (int) $record['generation'],
+				'attempt'         => $attempt,
+				'next_attempt_at' => $rescheduled['next_attempt_at'],
+			)
+		);
+		$this->ensure_record_scheduled( $rescheduled, $now );
+	}
+
+	/**
+	 * Get the retry delay for an attempt that cannot read ownership, counted from the hand-over.
+	 *
+	 * A record whose hand-over time is missing, as after a deactivation that failed past the fence, takes the cadence.
+	 *
+	 * @param array<string,mixed> $record Current record.
+	 * @param int                 $now    Current UTC timestamp.
+	 * @return int Seconds.
+	 */
+	private function get_unreadable_ownership_retry_delay( array $record, int $now ): int {
+		$handed_over_at = $record[ StateStore::HANDED_OVER_AT_KEY ] ?? null;
+		if ( ! is_int( $handed_over_at ) ) {
+			return $this->get_retry_delay( $record, $now );
+		}
+		$since_hand_over = $now - $handed_over_at;
+		if ( $since_hand_over < self::UNREADABLE_OWNERSHIP_FAST_WINDOW ) {
+			return self::OWNERSHIP_CHECK_DELAY;
+		}
+		if ( $since_hand_over < self::UNREADABLE_OWNERSHIP_SLOW_WINDOW ) {
+			return self::UNREADABLE_OWNERSHIP_SLOW_DELAY;
+		}
+
+		return $this->get_retry_delay( $record, $now );
 	}
 
 	/**
@@ -696,21 +804,22 @@ class ReconciliationJob implements RegisterHooksInterface {
 	 *
 	 * Resolve, finalize, exclude, or defer a claimed attempt without leaving it running.
 	 *
-	 * @param array<string,mixed> $claimed Exact running state owned by this worker.
+	 * @param array<string,mixed> $claimed    Exact running state owned by this worker.
+	 * @param bool                $lists_hold Whether the stored plugin lists held the extension when the claim read them; read
+	 *                                        only past the hand-over.
 	 */
-	private function reconcile_claim( array $claimed ): void {
+	private function reconcile_claim( array $claimed, bool $lists_hold ): void {
 		try {
 			// A merchant who turned the extension back on after this generation's finalize deactivated it chose the extension:
-			// the rollback, not the switch (that finalize left its request token on the record). The request reads ownership
-			// once, so this sees an activation made before the request started.
-			if ( null !== ( $claimed['request_origin_token'] ?? null ) && $this->arbiter->is_extension_owner() ) {
+			// the rollback, not the switch (that finalize left its request token on the record).
+			if ( null !== ( $claimed['request_origin_token'] ?? null ) && $lists_hold ) {
 				$this->roll_back_claim( $claimed );
 				return;
 			}
 			$this->log_late_first_attempt( $claimed );
 			// Past finalize the extension is already off and the built-in WooPayments owns payments, so an exclusion would
 			// protect nothing and leave the store with no owner: the bundled failure defers the claim instead.
-			$past_finalize = null !== ( $claimed['request_origin_token'] ?? null ) && ! $this->arbiter->is_extension_owner();
+			$past_finalize = null !== ( $claimed['request_origin_token'] ?? null );
 			$this->preflight_service->invalidate_current_blog_memoization();
 			$failures = $this->preflight_service->get_failures();
 			// Past finalize the extension's classes never load again, so a plugin that renews through them has nothing left
@@ -922,15 +1031,16 @@ class ReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Complete one verification claim once a fresh request shows that the built-in WooPayments owns the site: fence the claim,
-	 * sync the setup tier and record the switch as done.
+	 * Complete one verification claim once a request without the extension's code reads the stored plugin lists clear:
+	 * fence the claim, sync the setup tier and record the switch as done.
 	 *
-	 * An extension that still owns the site defers the claim.
+	 * Lists that hold the extension again defer the claim; the next attempt rolls the switch back.
 	 *
-	 * @param array<string,mixed> $claimed Exact running state owned by this worker.
+	 * @param array<string,mixed> $claimed    Exact running state owned by this worker.
+	 * @param bool                $lists_hold Whether the stored plugin lists held the extension when the claim read them.
 	 */
-	private function complete_verified_claim( array $claimed ): void {
-		if ( $this->arbiter->is_extension_owner() ) {
+	private function complete_verified_claim( array $claimed, bool $lists_hold ): void {
+		if ( $lists_hold ) {
 			$this->defer( $claimed, array( 'builtin_ownership_unverified' ) );
 			return;
 		}
@@ -961,7 +1071,8 @@ class ReconciliationJob implements RegisterHooksInterface {
 				$done[ StateStore::CLAIM_TOKEN_KEY ]      = null;
 				$done[ StateStore::CLAIM_EXPIRES_AT_KEY ] = null;
 				$done['request_origin_token']             = null;
-				$done                                     = $this->append_step( $done, self::STEP_DONE, $now );
+				unset( $done[ StateStore::HANDED_OVER_AT_KEY ] );
+				$done = $this->append_step( $done, self::STEP_DONE, $now );
 				if ( $this->state_store->compare_and_set_record( $record, $done ) ) {
 					delete_option( self::START_NOTICE_SNOOZED_UNTIL_OPTION );
 				}
@@ -1023,10 +1134,11 @@ class ReconciliationJob implements RegisterHooksInterface {
 				$verification['updated_at']                       = $now;
 				$verification[ StateStore::BLOCKING_CODES_KEY ]   = array();
 				$verification['informational_outcomes']           = $this->merge_information_outcomes( $record['informational_outcomes'], $outcomes );
-				$verification['next_attempt_at']                  = $now + self::FAST_RETRY_DELAY;
+				$verification['next_attempt_at']                  = $now + self::OWNERSHIP_CHECK_DELAY;
 				$verification[ StateStore::CLAIM_TOKEN_KEY ]      = null;
 				$verification[ StateStore::CLAIM_EXPIRES_AT_KEY ] = null;
 				$verification['request_origin_token']             = self::$request_token;
+				$verification[ StateStore::HANDED_OVER_AT_KEY ]   = $now;
 				$verification                                     = $this->append_step( $verification, self::STEP_VERIFY_BUILTIN_OWNERSHIP, $now );
 				if ( ! $this->state_store->compare_and_set_record( $record, $verification ) ) {
 					return false;
@@ -1303,6 +1415,16 @@ class ReconciliationJob implements RegisterHooksInterface {
 				'delay_seconds' => $delay_seconds,
 			)
 		);
+	}
+
+	/**
+	 * Write a cutover informational line to the WooCommerce logger.
+	 *
+	 * @param string              $message Message.
+	 * @param array<string,mixed> $context Context.
+	 */
+	protected function write_log_info( string $message, array $context ): void {
+		wc_get_logger()->info( $message, $context );
 	}
 
 	/**

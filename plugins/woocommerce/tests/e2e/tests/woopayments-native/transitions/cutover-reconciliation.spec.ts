@@ -455,11 +455,17 @@ async function triggerActionSchedulerQueue( baseURL: string ): Promise< void > {
  * cutover reconciliation Action Scheduler action to run immediately, a
  * direct DB time-shortcut (the same category as WooCommerce Subscriptions
  * never scheduling past dates) instead of idling the run through the
- * product's own real ~15-minute backoff between attempts.
+ * product's own real ~15-minute backoff between attempts. It leaves the
+ * ownership check alone: that check is due 5 s after the hand-over, and the
+ * cases exercise that delay as the product schedules it.
  */
 async function rescheduleReconciliationActionsToNow(): Promise< void > {
 	await wpEvalJson< true >( `
 		global $wpdb;
+		$record = get_option( 'woocommerce_woopayments_cutover_state' );
+		if ( is_array( $record ) && 'verify_builtin_ownership' === ( $record['current_step'] ?? '' ) ) {
+			return true;
+		}
 		$wpdb->query( $wpdb->prepare(
 			"UPDATE {$wpdb->prefix}actionscheduler_actions SET scheduled_date_gmt = %s, scheduled_date_local = %s WHERE hook = %s AND status = 'pending'",
 			current_time( 'mysql', true ),

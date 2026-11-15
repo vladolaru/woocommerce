@@ -256,6 +256,18 @@ class WooPaymentsRuntimeArbiter {
 			return true;
 		}
 
+		return $this->is_extension_code_loaded();
+	}
+
+	/**
+	 * Tell whether this process loaded the WooPayments extension's code: its main file defines WCPAY_PLUGIN_FILE when
+	 * included. A process that loaded it runs it until the process ends, whatever the plugin lists say since.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return bool
+	 */
+	public function is_extension_code_loaded(): bool {
 		return (bool) $this->legacy_proxy->call_function( 'defined', 'WCPAY_PLUGIN_FILE' );
 	}
 

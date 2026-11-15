@@ -380,6 +380,19 @@ class PreflightService {
 	}
 
 	/**
+	 * Tell whether WooPayments is in this site's or this network's stored active plugin list: the switch's reading of
+	 * whether the extension is back after the hand-over.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return bool
+	 */
+	public function is_woopayments_in_stored_lists(): bool {
+		return '' !== $this->find_woopayments_plugin_file( $this->read_stored_site_plugins() )
+			|| '' !== $this->find_woopayments_plugin_file( $this->read_stored_network_plugins() );
+	}
+
+	/**
 	 * Deactivate WooPayments on the current site only, against the stored active plugin list.
 	 *
 	 * WordPress's deactivate_plugins() reads active_plugins through get_option() and writes back what it read. In a queue

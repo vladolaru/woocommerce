@@ -43,6 +43,14 @@ class StateStore {
 	/** Record key of the codes that block or closed the generation. */
 	public const BLOCKING_CODES_KEY = 'deferred_codes';
 
+	/**
+	 * Record key of the time, in integer seconds, finalize handed payments over to the built-in WooPayments.
+	 *
+	 * Optional: set by the write that schedules the ownership check, removed at done, and absent from every new generation.
+	 * The job counts the retries of an attempt that cannot read ownership from it.
+	 */
+	public const HANDED_OVER_AT_KEY = 'handed_over_at';
+
 	/** Maximum age of the write lock before another request may take it over. */
 	public const WRITE_LOCK_TTL = 5 * MINUTE_IN_SECONDS;
 
@@ -381,9 +389,13 @@ class StateStore {
 	}
 
 	/**
-	 * Clear every WordPress option cache that can hold the state record.
+	 * Clear every WordPress option cache that can hold the state record, so the next read of it queries the database.
+	 *
+	 * A long-lived process can hold an autoloaded copy from when it booted.
+	 *
+	 * @since 11.4.0
 	 */
-	private function invalidate_record_cache(): void {
+	public function invalidate_record_cache(): void {
 		wp_cache_delete( self::OPTION_NAME, 'options' );
 		wp_cache_delete( 'alloptions', 'options' );
 		wp_cache_delete( 'notoptions', 'options' );

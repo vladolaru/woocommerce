@@ -435,7 +435,8 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( 1, $verification['attempt'] );
 		$this->assertIsString( $verification['request_origin_token'] );
 		$this->assertNotSame( '', $verification['request_origin_token'] );
-		$this->assertGreaterThan( $before, $verification['next_attempt_at'] );
+		$this->assertGreaterThanOrEqual( $before, $verification[ StateStore::HANDED_OVER_AT_KEY ], 'The hand-over time is set.' );
+		$this->assertSame( $verification[ StateStore::HANDED_OVER_AT_KEY ] + 5, $verification['next_attempt_at'], "The ownership check is due when Action Scheduler's async runner dispatches the next runner." );
 		$this->assertSame( $verification['action_id'], $this->scheduler->get_scheduled_action_id( $verification['generation'], 2 ) );
 	}
 
@@ -958,23 +959,37 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$deactivations     = 0;
 		$migration_runs    = 0;
 		$preflight_reads   = 0;
-		$extension_owner   = true;
 		$during_run        = null;
 		$during_owner_read = null;
-		$preflight         = new class( $deactivations, $preflight_reads ) extends PreflightService {
+		$preflight         = new class( $deactivations, $preflight_reads, $during_owner_read ) extends PreflightService {
 			/** @var int */
 			private int $deactivations;
 
 			/** @var int */
 			private int $reads;
 
+			/** @var callable|null */
+			private $during_owner_read;
+
 			/**
-			 * @param int $deactivations Count of extension deactivations.
-			 * @param int $reads         Count of preflight reads.
+			 * @param int           $deactivations     Count of extension deactivations.
+			 * @param int           $reads             Count of preflight reads.
+			 * @param callable|null $during_owner_read What another request does just before the claim reads the stored lists.
 			 */
-			public function __construct( int &$deactivations, int &$reads ) {
-				$this->deactivations =& $deactivations;
-				$this->reads         =& $reads;
+			public function __construct( int &$deactivations, int &$reads, &$during_owner_read ) {
+				$this->deactivations     =& $deactivations;
+				$this->reads             =& $reads;
+				$this->during_owner_read =& $during_owner_read;
+			}
+
+			/** Let the other request act once, then read the stored lists. */
+			public function is_woopayments_in_stored_lists(): bool {
+				if ( is_callable( $this->during_owner_read ) ) {
+					$during_owner_read       = $this->during_owner_read;
+					$this->during_owner_read = null;
+					$during_owner_read();
+				}
+				return parent::is_woopayments_in_stored_lists();
 			}
 
 			/** @return string[] */
@@ -992,9 +1007,10 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 				return array();
 			}
 
-			/** Count the extension deactivations. */
+			/** Count the extension deactivations, which take it out of the stored list. */
 			public function deactivate_woopayments_plugin(): bool {
 				++$this->deactivations;
+				update_option( 'active_plugins', array() );
 				return true;
 			}
 
@@ -1043,42 +1059,16 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 		};
 		$account_service   = wc_get_container()->get( WooPaymentsAccountService::class );
-		$make_job          = function () use ( &$extension_owner, &$during_owner_read, $preflight, $migration, $account_service ): ReconciliationJob {
-			$arbiter = new class( $extension_owner, $during_owner_read ) extends WooPaymentsRuntimeArbiter {
-				/** @var bool */
-				private bool $extension_owner;
-
-				/** @var callable|null */
-				private $during_owner_read;
-
-				/** @var bool|null Ownership as this request first read it. */
-				private ?bool $read_owner = null;
-
-				/**
-				 * @param bool          $extension_owner   Whether the WooPayments extension owns payments when this request starts.
-				 * @param callable|null $during_owner_read What another request does right after this request reads ownership.
-				 */
-				public function __construct( bool &$extension_owner, &$during_owner_read ) {
-					$this->extension_owner   =& $extension_owner;
-					$this->during_owner_read =& $during_owner_read;
-				}
-
+		$make_job          = function () use ( $preflight, $migration, $account_service ): ReconciliationJob {
+			$arbiter = new class() extends WooPaymentsRuntimeArbiter {
 				/** The built-in WooPayments is enabled. */
 				public function is_builtin_enabled(): bool {
 					return true;
 				}
 
-				/** Read ownership once per request, as the real arbiter memoizes it, then let the other request act once. */
-				public function is_extension_owner(): bool {
-					if ( null === $this->read_owner ) {
-						$this->read_owner = $this->extension_owner;
-					}
-					if ( is_callable( $this->during_owner_read ) ) {
-						$during_owner_read       = $this->during_owner_read;
-						$this->during_owner_read = null;
-						$during_owner_read();
-					}
-					return $this->read_owner;
+				/** Every attempt runs in a request that has not loaded the extension's code. */
+				public function is_extension_code_loaded(): bool {
+					return false;
 				}
 			};
 			$job     = new ReconciliationJob();
@@ -1096,7 +1086,9 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 
 			return $after;
 		};
-		$activation        = function () use ( $make_job ): void {
+		// WordPress writes the stored list, then runs the activation hooks.
+		$activation = function () use ( $make_job ): void {
+			update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
 			$make_job()->record_plugin_activation();
 		};
 
@@ -1107,19 +1099,20 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$record = $run_attempt( $record );
 		$this->assertSame( 'verify_builtin_ownership', $record['current_step'] );
 		if ( in_array( $shape, array( 'an activation during the attempt after a deferred ownership check', 'a retry finalize whose activation lost the write lock' ), true ) ) {
-			// The ownership check still reads the extension as active, so it defers past finalize.
+			// The ownership check reads the extension back in the stored list, so it defers past finalize; then it is off again.
+			update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
 			$record = $run_attempt( $record );
 			$this->assertSame( array( 'builtin_ownership_unverified' ), $record['deferred_codes'] );
+			update_option( 'active_plugins', array() );
 		}
-		$extension_owner = false;
 		// The extension comes back before or during the attempt under test.
 		if ( 'an activation during the attempt after a deferred ownership check' === $shape ) {
 			$during_run = $activation;
-		} elseif ( 'an activation recorded while the ownership check ran' === $shape ) {
+		} elseif ( 'an activation while the ownership check holds the write lock' === $shape ) {
 			$during_owner_read = $activation;
 		} else {
 			// The merchant turns the extension back on, and the activation handler records nothing (it lost the write lock).
-			$extension_owner = true;
+			update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
 		}
 		// A tier the built-in WooPayments would write, so the rollback's re-sync for the extension shows.
 		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::ACTIVE );
@@ -1127,12 +1120,20 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$preflight_reads_before = $preflight_reads;
 
 		$after = $run_attempt( $record );
+		if ( 'an activation while the ownership check holds the write lock' === $shape ) {
+			// The activation could not record the rollback while the check held the lock, but the check read the extension in
+			// the stored list it had just written, so it defers and the next attempt rolls back.
+			$this->assertSame( array( 'builtin_ownership_unverified' ), $after['deferred_codes'] );
+			$record = $after;
+			$after  = $run_attempt( $record );
+		}
 
 		$this->assertSame( $expected_deactivations, $deactivations, 'No deactivation after the extension came back.' );
 		$this->assertSame( $record['generation'] + 1, $after['generation'], 'The switch is rolled back.' );
 		$this->assertSame( StateStore::STATE_PENDING, $after['state'] );
 		$this->assertSame( 'awaiting_merchant_start', $after['current_step'] );
 		$this->assertSame( array( 'source' => 'rollback' ), $after['step_log'][0]['context'] ?? null );
+		$this->assertArrayNotHasKey( StateStore::HANDED_OVER_AT_KEY, $after, 'A new generation has no hand-over time.' );
 		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, get_option( WooPaymentsSetupTier::OPTION_NAME ), 'The tier follows the extension, not the built-in WooPayments.' );
 		$this->assertSame( 0, $this->scheduler->get_scheduled_action_id( $record['generation'], $record['attempt'] + 2 ), 'No further attempt of the switch is scheduled.' );
 		$this->assertSame( 0, $this->scheduler->get_scheduled_action_id( $after['generation'], 1 ), 'The rollback waits for a fresh merchant start.' );
@@ -1159,7 +1160,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		return array(
 			'an activation during the attempt after a deferred ownership check' => array( 'an activation during the attempt after a deferred ownership check', 1 ),
 			'a retry finalize whose activation lost the write lock' => array( 'a retry finalize whose activation lost the write lock', 1 ),
-			'an activation recorded while the ownership check ran' => array( 'an activation recorded while the ownership check ran', 1 ),
+			'an activation while the ownership check holds the write lock' => array( 'an activation while the ownership check holds the write lock', 1 ),
 		);
 	}
 
@@ -1329,7 +1330,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$reconcile = new \ReflectionMethod( ReconciliationJob::class, 'reconcile_claim' );
 		$reconcile->setAccessible( true );
 
-		$reconcile->invoke( $sut, $expired );
+		$reconcile->invoke( $sut, $expired, false );
 
 		$this->assertSame( 0, $deactivations, 'A worker whose claim expired must not deactivate the extension.' );
 		$this->assertSame( $expired, $this->state_store->get_record(), 'The expired claim stays for repair_schedule() to recover.' );
@@ -1831,51 +1832,232 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Ownership verification cannot complete in its originating request and completes only after a fresh request the built-in WooPayments owns.
+	 * The finalizing request, a queue run older than the hand-over or a worker that loaded the extension keeps running the
+	 * extension's code, so it cannot tell who owns payments. Its attempt decides nothing and comes back by the time since
+	 * the hand-over; a request without the code then completes the switch.
+	 *
+	 * @testdox A check in a process that still runs the extension's code decides nothing and retries after $expected_delay s ($_dataName); a process without the code completes the switch.
+	 * @dataProvider provide_unreadable_ownership_retry_delays
+	 *
+	 * @param int|null $since_hand_over Seconds since the hand-over, or null when the record carries no hand-over time.
+	 * @param int      $expected_delay  Expected seconds until the next attempt.
 	 */
-	public function test_ownership_verification_requires_a_fresh_builtin_owned_request(): void {
-		// A store that ran the extension, which finalize deactivated.
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
-		$owner     = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
-		$preflight = $this->create_preflight_with_failures( array() );
-		$origin    = $this->create_job( true, $preflight );
-		$this->assertTrue( $origin->enqueue( 'merchant' ) );
-		$queued = $this->state_store->get_record();
-		$this->assertIsArray( $queued );
-		$this->scheduler->cancel( $queued['generation'], 1 );
-		$request_token = new \ReflectionProperty( ReconciliationJob::class, 'request_token' );
-		$request_token->setAccessible( true );
-		$verification                         = $queued;
-		$verification['revision']             = $queued['revision'] + 1;
-		$verification['attempt']              = 1;
-		$verification['action_id']            = 0;
-		$verification['current_step']         = 'verify_builtin_ownership';
-		$verification['next_attempt_at']      = time() + MINUTE_IN_SECONDS;
-		$verification['request_origin_token'] = $request_token->getValue();
-		$this->assertTrue( $this->state_store->compare_and_set_record( $queued, $verification ) );
-		$owner->invalidate();
-		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $owner->get_runtime_owner(), 'Past finalize, before done, the built-in WooPayments owns payments.' );
+	public function test_check_in_a_process_running_the_extension_decides_nothing( ?int $since_hand_over, int $expected_delay ): void {
+		$verification = $this->open_ownership_check( null === $since_hand_over ? null : time() - $since_hand_over );
+		$info_lines   = 0;
+		$job          = new class( $info_lines ) extends ReconciliationJob {
+			/** @var int */
+			private int $info_lines;
 
-		$origin->handle_reconcile( $verification['generation'], 2 );
+			/**
+			 * @param int $info_lines Count of informational log lines.
+			 */
+			public function __construct( int &$info_lines ) {
+				$this->info_lines =& $info_lines;
+			}
 
-		$this->assertSame( $verification, $this->state_store->get_record(), 'The request that scheduled verification must not claim or complete it.' );
-		$same_request = $this->create_job( true, $preflight, null, false );
-		$same_request->handle_reconcile( $verification['generation'], 2 );
-		$this->assertSame( $verification, $this->state_store->get_record(), 'A second job instance in the same request must share the origin fence.' );
+			/**
+			 * Count the informational lines instead of logging them.
+			 *
+			 * @param string              $message Message.
+			 * @param array<string,mixed> $context Context.
+			 */
+			protected function write_log_info( string $message, array $context ): void {
+				unset( $message, $context );
+				++$this->info_lines;
+			}
+		};
+		$before       = time();
 
-		$request_token->setValue( null );
-		$fresh_request = $this->create_job( true, $preflight, null, false );
-		$fresh_request->handle_reconcile( $verification['generation'], 2 );
+		$this->create_job( true, $this->create_all_clear_site_preflight(), $job, true )->handle_reconcile( $verification['generation'], 2 );
+
+		$after       = time();
+		$rescheduled = $this->state_store->get_record();
+		$this->assertIsArray( $rescheduled );
+		$this->assertSame( $verification['revision'] + 2, $rescheduled['revision'], 'One compare-and-set, then the scheduling write.' );
+		$this->assertSame( 2, $rescheduled['attempt'] );
+		$this->assertSame( StateStore::STATE_PENDING, $rescheduled['state'] );
+		$this->assertSame( 'verify_builtin_ownership', $rescheduled['current_step'] );
+		$this->assertSame( $verification['step_log'], $rescheduled['step_log'], 'No step entry.' );
+		$this->assertSame( $verification['updated_at'], $rescheduled['updated_at'] );
+		$this->assertSame( $verification['request_origin_token'], $rescheduled['request_origin_token'], 'The hand-over stands.' );
+		$this->assertSame( $verification[ StateStore::HANDED_OVER_AT_KEY ] ?? null, $rescheduled[ StateStore::HANDED_OVER_AT_KEY ] ?? null );
+		$this->assertContains( array( 'code' => 'ownership_reading_unavailable' ), $rescheduled['informational_outcomes'] );
+		$this->assertSame( 1, $info_lines );
+		$this->assertGreaterThanOrEqual( $before + $expected_delay, $rescheduled['next_attempt_at'] );
+		$this->assertLessThanOrEqual( $after + $expected_delay, $rescheduled['next_attempt_at'] );
+		$this->assertSame( $rescheduled['action_id'], $this->scheduler->get_scheduled_action_id( $rescheduled['generation'], 3 ) );
+
+		$this->start_fresh_request();
+		$this->scheduler->cancel( $rescheduled['generation'], 3 );
+		$this->create_job( true, $this->create_all_clear_site_preflight(), null, false )->handle_reconcile( $rescheduled['generation'], 3 );
 
 		$done = $this->state_store->get_record();
 		$this->assertIsArray( $done );
 		$this->assertSame( StateStore::STATE_DONE, $done['state'] );
-		$this->assertSame( 'done', $done['current_step'] );
-		$this->assertNull( $done['next_attempt_at'] );
 		$this->assertNull( $done['request_origin_token'] );
-		$owner->invalidate();
-		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $owner->get_runtime_owner(), 'The done record keeps the owner once the done write clears the token.' );
+		$this->assertArrayNotHasKey( StateStore::HANDED_OVER_AT_KEY, $done, 'Done clears the hand-over time.' );
+	}
+
+	/**
+	 * Seconds since the hand-over, and the retry delay of a check that cannot read ownership.
+	 *
+	 * @return array<string,array{0:int|null,1:int}>
+	 */
+	public function provide_unreadable_ownership_retry_delays(): array {
+		return array(
+			'no hand-over time, after a failed deactivation' => array( null, 15 * MINUTE_IN_SECONDS ),
+			'just after the hand-over' => array( 0, 5 ),
+			'within the first minute'  => array( 59, 5 ),
+			'at one minute'            => array( MINUTE_IN_SECONDS, MINUTE_IN_SECONDS ),
+			'before fifteen minutes'   => array( 15 * MINUTE_IN_SECONDS - 1, MINUTE_IN_SECONDS ),
+			'at fifteen minutes'       => array( 15 * MINUTE_IN_SECONDS, 15 * MINUTE_IN_SECONDS ),
+		);
+	}
+
+	/**
+	 * A plugin load manager can hide the extension in queue requests; the stored list is what every later request loads.
+	 *
+	 * @testdox Past the hand-over, a filter that hides WooPayments while the stored list holds it never completes the switch: $_dataName.
+	 * @dataProvider provide_attempts_past_the_hand_over
+	 *
+	 * @param string $state Record state the attempt claims.
+	 */
+	public function test_a_filter_hiding_the_extension_past_the_hand_over_never_completes_the_switch( string $state ): void {
+		$check = $this->open_ownership_check( time() - 10, $state );
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
+		add_filter( 'option_active_plugins', static fn() => array() );
+
+		$this->create_job( true, $this->create_all_clear_site_preflight(), null, false )->handle_reconcile( $check['generation'], 2 );
+
+		$after = $this->state_store->get_record();
+		$this->assertIsArray( $after );
+		$this->assertNotSame( StateStore::STATE_DONE, $after['state'] );
+		if ( StateStore::STATE_PENDING === $state ) {
+			$this->assertSame( StateStore::STATE_DEFERRED, $after['state'], 'The ownership check defers.' );
+			$this->assertSame( array( 'builtin_ownership_unverified' ), $after['deferred_codes'] );
+		} else {
+			$this->assertSame( $check['generation'] + 1, $after['generation'], 'The next attempt rolls the switch back.' );
+			$this->assertSame( 'awaiting_merchant_start', $after['current_step'] );
+		}
+	}
+
+	/**
+	 * A plugin load manager can also force the extension on; then the stored list no longer holds it.
+	 *
+	 * @testdox Past the hand-over, a filter that forces WooPayments on while the stored list is clear decides nothing in a process with its code, and completes in one without ($_dataName).
+	 * @testWith ["with the code loaded", true]
+	 *           ["without the code", false]
+	 *
+	 * @param string $name        Case label.
+	 * @param bool   $code_loaded Whether this process loaded the extension's code.
+	 */
+	public function test_a_filter_forcing_the_extension_past_the_hand_over_reads_the_stored_list( string $name, bool $code_loaded ): void {
+		unset( $name );
+		$check = $this->open_ownership_check( time() - 10 );
+		update_option( 'active_plugins', array() );
+		add_filter( 'option_active_plugins', static fn() => array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
+
+		$this->create_job( true, $this->create_all_clear_site_preflight(), null, $code_loaded )->handle_reconcile( $check['generation'], 2 );
+
+		$after = $this->state_store->get_record();
+		$this->assertIsArray( $after );
+		if ( $code_loaded ) {
+			$this->assertSame( StateStore::STATE_PENDING, $after['state'] );
+			$this->assertSame( 2, $after['attempt'] );
+			$this->assertSame( $check['step_log'], $after['step_log'] );
+			$this->assertSame( $check['deferred_codes'], $after['deferred_codes'] );
+		} else {
+			$this->assertSame( StateStore::STATE_DONE, $after['state'] );
+		}
+	}
+
+	/**
+	 * Attempts that read ownership past the hand-over: the scheduled ownership check, and the attempt after it deferred.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function provide_attempts_past_the_hand_over(): array {
+		return array(
+			'an ownership check'  => array( StateStore::STATE_PENDING ),
+			'a reconcile attempt' => array( StateStore::STATE_DEFERRED ),
+		);
+	}
+
+	/**
+	 * @testdox A claim reads the record from the database, not from a copy this process cached before another request wrote it.
+	 */
+	public function test_claim_reads_the_record_past_a_stale_option_cache(): void {
+		global $wpdb;
+		$check = $this->open_ownership_check( time() - 10 );
+		$this->assertSame( $check, get_option( StateStore::OPTION_NAME ), 'This process holds the record in its cache.' );
+		$advanced                    = $check;
+		$advanced['revision']        = $check['revision'] + 1;
+		$advanced['attempt']         = 2;
+		$advanced['next_attempt_at'] = time();
+		// Another request moved the record on.
+		$wpdb->update( $wpdb->options, array( 'option_value' => maybe_serialize( $advanced ) ), array( 'option_name' => StateStore::OPTION_NAME ) );
+
+		$this->create_job( true, $this->create_all_clear_site_preflight(), null, false )->handle_reconcile( $check['generation'], 3 );
+
+		$done = $this->state_store->get_record();
+		$this->assertIsArray( $done );
+		$this->assertSame( StateStore::STATE_DONE, $done['state'] );
+	}
+
+	/**
+	 * @testdox On a multisite, past the hand-over, WooPayments in the stored network list defers the ownership check, even when a filter hides it.
+	 * @group multisite
+	 */
+	public function test_the_stored_network_list_counts_past_the_hand_over(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+		$check = $this->open_ownership_check( time() - 10 );
+		// WordPress stores active_sitewide_plugins as a plugin-file => activation-timestamp map (wp-admin/includes/plugin.php:712-715).
+		update_site_option( 'active_sitewide_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE => 1 ) );
+		add_filter( 'site_option_active_sitewide_plugins', static fn() => array() );
+
+		$this->create_job( true, $this->create_all_clear_site_preflight(), null, false )->handle_reconcile( $check['generation'], 2 );
+
+		$after = $this->state_store->get_record();
+		$this->assertIsArray( $after );
+		$this->assertSame( StateStore::STATE_DEFERRED, $after['state'] );
+		$this->assertSame( array( 'builtin_ownership_unverified' ), $after['deferred_codes'] );
+	}
+
+	/**
+	 * Open a switch past its hand-over on a store that ran the extension: the stored list is clear, and the record carries
+	 * finalize's token, with its first attempt taken and the ownership check (or, deferred, its retry) as the next one.
+	 *
+	 * @param int|null $handed_over_at Hand-over time, or null for a record without one.
+	 * @param string   $state          StateStore::STATE_PENDING for the ownership check, or STATE_DEFERRED for a deferred one.
+	 * @return array<string,mixed> The stored record.
+	 */
+	private function open_ownership_check( ?int $handed_over_at, string $state = StateStore::STATE_PENDING ): array {
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
+		update_option( 'active_plugins', array() );
+		$this->assertTrue( $this->create_job( true, $this->create_all_clear_site_preflight() )->enqueue( 'merchant' ) );
+		$queued = $this->state_store->get_record();
+		$this->assertIsArray( $queued );
+		$this->scheduler->cancel( $queued['generation'], 1 );
+		$check                         = $queued;
+		$check['revision']             = $queued['revision'] + 1;
+		$check['state']                = $state;
+		$check['attempt']              = 1;
+		$check['action_id']            = 0;
+		$check['current_step']         = StateStore::STATE_PENDING === $state ? 'verify_builtin_ownership' : 'deferred';
+		$check['deferred_codes']       = StateStore::STATE_PENDING === $state ? array() : array( 'builtin_ownership_unverified' );
+		$check['next_attempt_at']      = time();
+		$check['request_origin_token'] = 'finalize-request-token';
+		if ( null !== $handed_over_at ) {
+			$check[ StateStore::HANDED_OVER_AT_KEY ] = $handed_over_at;
+		}
+		$this->assertTrue( $this->state_store->compare_and_set_record( $queued, $check ) );
+		$this->start_fresh_request();
+
+		return $check;
 	}
 
 	/**
@@ -2256,9 +2438,10 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Ownership verification from a fresh request defers while the extension still owns the runtime, without finishing.
+	 * @testdox Ownership verification from a fresh request defers while the stored plugin list holds the extension again, without finishing.
 	 */
 	public function test_ownership_verification_defers_while_the_extension_still_runs(): void {
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
 		$preflight = $this->create_all_clear_site_preflight();
 		$origin    = $this->create_job( true, $preflight );
 		$this->assertTrue( $origin->enqueue( 'merchant' ) );
@@ -5305,6 +5488,11 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 
 			/** Return the configured plugin ownership state. */
 			public function is_extension_owner(): bool {
+				return $this->extension_owns;
+			}
+
+			/** A process the extension owns has loaded its code. */
+			public function is_extension_code_loaded(): bool {
 				return $this->extension_owns;
 			}
 
