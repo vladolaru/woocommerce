@@ -313,21 +313,28 @@ for ( const clearOrder of [
 test( 'fillCardDetails fails at once when the click leaves another element focused', async ( {
 	page,
 } ) => {
-	// The field refuses focus, as a click that a layer above it swallows would leave it.
+	// The field hands focus to another frame on the page, as a frame mounting at the click could take it.
+	await page.route( 'https://captcha.example.test/**', ( route ) =>
+		route.fulfill( { contentType: 'text/html', body: '<p>captcha</p>' } )
+	);
 	await page.setContent(
 		`<div id="woopayments-blocks-payment-element">
 			<iframe name="__privateStripeFrame123" srcdoc="${ (
 				CARD_FIELDS_HTML +
-				"<script>document.getElementById( 'number' ).addEventListener( 'focus', ( e ) => e.target.blur() );</script>"
+				"<script>document.getElementById( 'number' ).addEventListener( 'focus', () => parent.document.querySelector( 'iframe[title=captcha]' ).focus() );</script>"
 			).replace( /"/g, '&quot;' ) }"></iframe>
-		</div>`
+		</div>
+		<iframe title="captcha" src="https://captcha.example.test/frame.html"></iframe>`
 	);
 
-	await expect(
-		fillCardDetails( page, TEST_CARDS.basic, 'blocks', {
-			stepTimeoutMs: SHORT_TIMEOUT_MS,
-		} )
-	).rejects.toThrow( /did not focus/ );
+	const entry = fillCardDetails( page, TEST_CARDS.basic, 'blocks', {
+		stepTimeoutMs: SHORT_TIMEOUT_MS,
+	} );
+
+	await expect( entry ).rejects.toThrow( /did not focus/ );
+	await expect( entry ).rejects.toThrow(
+		'\nFocus is on iframe "captcha" from captcha.example.test; document.hasFocus() is true.'
+	);
 } );
 
 // Answering hides the challenge body itself, the way the real Stripe

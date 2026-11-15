@@ -161,6 +161,53 @@ export async function expectCardKept(
 }
 
 /**
+ * Adds a line to a failed focus check's error naming what holds focus on the
+ * page: its active element (tag, name or id, and a frame's host) and whether
+ * the document has focus. A page that can no longer be read keeps the error.
+ */
+async function withFocusHolder(
+	page: Page,
+	error: unknown
+): Promise< unknown > {
+	if ( ! ( error instanceof Error ) ) {
+		return error;
+	}
+	const holder = await page
+		.evaluate( () => {
+			// eslint-disable-next-line @wordpress/no-global-active-element -- What the page itself focuses is the point.
+			const active = document.activeElement;
+			let element = 'no element';
+			if ( active ) {
+				const isFrame = active instanceof HTMLIFrameElement;
+				const label =
+					active.getAttribute( 'name' ) ||
+					active.id ||
+					( isFrame && active.getAttribute( 'title' ) ) ||
+					'';
+				element = active.tagName.toLowerCase();
+				element += label ? ` "${ label }"` : ' without a name or id';
+				if ( isFrame ) {
+					let host = '';
+					try {
+						host = new URL( active.src ).host;
+					} catch {
+						// No src: the frame's document is inline.
+					}
+					element += host ? ` from ${ host }` : ' without a src host';
+				}
+			}
+			return `Focus is on ${ element }; document.hasFocus() is ${ document.hasFocus() }.`;
+		} )
+		.catch( () => null );
+	if ( holder !== null ) {
+		const original = error.message;
+		error.message = `${ original }\n${ holder }`;
+		error.stack = error.stack?.replace( original, () => error.message );
+	}
+	return error;
+}
+
+/**
  * Types into a field inside a Stripe frame the way a shopper does: a click
  * into the field, then key events.
  *
@@ -171,8 +218,9 @@ export async function expectCardKept(
  *
  * The click must leave the field focused, or the keys would go elsewhere:
  * that is asserted once before typing, so a misrouted click fails naming the
- * field. It is a check, never a retry. `stepTimeoutMs` bounds the click and
- * that check, and defaults to the 5 s the specs use.
+ * field. It is a check, never a retry. A failed check also names what holds
+ * focus on the page then (withFocusHolder()). `stepTimeoutMs` bounds the click
+ * and that check, and defaults to the 5 s the specs use.
  */
 export async function typeIntoStripeField(
 	page: Page,
@@ -184,10 +232,14 @@ export async function typeIntoStripeField(
 	}: { replace?: boolean; stepTimeoutMs?: number } = {}
 ): Promise< void > {
 	await field.click( { timeout: stepTimeoutMs } );
-	await expect(
-		field,
-		`The click did not focus ${ field }, so typing would go elsewhere.`
-	).toBeFocused( { timeout: stepTimeoutMs } );
+	try {
+		await expect(
+			field,
+			`The click did not focus ${ field }, so typing would go elsewhere.`
+		).toBeFocused( { timeout: stepTimeoutMs } );
+	} catch ( error ) {
+		throw await withFocusHolder( page, error );
+	}
 	if ( replace ) {
 		await page.keyboard.press( 'ControlOrMeta+a' );
 	}
