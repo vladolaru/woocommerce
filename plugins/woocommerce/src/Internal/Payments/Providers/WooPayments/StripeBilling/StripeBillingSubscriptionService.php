@@ -611,11 +611,11 @@ class StripeBillingSubscriptionService {
 	}
 
 	/**
-	 * Cancel a subscription's Stripe subscription from the cancel job, while the subscription still holds the Stripe ID and
-	 * still wants the cancel: it is on another payment method, or WooCommerce Subscriptions counts its status as ended.
+	 * Cancel a subscription's Stripe subscription from the cancel job while it holds the Stripe ID and still wants the cancel.
 	 *
-	 * A Stripe subscription already canceled, or one Stripe does not have in live mode, counts as cancelled. A subscription
-	 * off WooPayments then moves its Stripe ID to `_cancelled_wcpay_subscription_id`, as maybe_cancel_subscription() does.
+	 * A canceled Stripe subscription, or one Stripe does not have in live mode, counts as cancelled, and a subscription off
+	 * WooPayments then moves its ID to `_cancelled_wcpay_subscription_id`. So does one back on WooPayments after a failed
+	 * attempt, when its Stripe subscription reads canceled.
 	 *
 	 * @internal
 	 *
@@ -633,7 +633,16 @@ class StripeBillingSubscriptionService {
 		}
 
 		$wcpay_subscription_id = $this->get_wcpay_subscription_id( $subscription );
-		if ( ! $wcpay_subscription_id || ! $this->wants_stripe_subscription_cancelled( $subscription ) ) {
+		if ( ! $wcpay_subscription_id ) {
+			return;
+		}
+
+		if ( ! $this->wants_stripe_subscription_cancelled( $subscription ) ) {
+			// Back on WooPayments after a failed attempt, which Stripe may have applied: one read tells. A canceled Stripe
+			// subscription releases the ID, so WooCommerce Subscriptions renews it with its saved token.
+			if ( 0 < absint( $retry ) && 'canceled' === ( $this->get_wcpay_subscription( $subscription )['status'] ?? '' ) ) {
+				$this->move_wcpay_subscription_id_to_cancelled( $subscription, $wcpay_subscription_id );
+			}
 			return;
 		}
 

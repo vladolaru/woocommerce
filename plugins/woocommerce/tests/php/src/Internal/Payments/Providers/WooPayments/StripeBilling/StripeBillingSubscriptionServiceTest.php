@@ -1147,22 +1147,52 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A cancel retry for a subscription back on WooPayments and $status drops: its Stripe subscription is wanted again.
-	 * @testWith ["active"]
-	 *           ["on-hold"]
+	 * @testdox A cancel job for a subscription back on WooPayments $_dataName.
 	 *
-	 * @param string $status Subscription status when the retry runs.
+	 * Its Stripe subscription is wanted again, so the job sends no cancel. After a failed attempt, which Stripe may have
+	 * applied with its answer lost, the job reads the Stripe subscription once: a canceled one releases the ID, and
+	 * WooCommerce Subscriptions then renews by token. A first attempt has no earlier one, so it reads nothing.
+	 *
+	 * @dataProvider provider_cancel_jobs_back_on_woopayments
+	 *
+	 * @param int         $retry           Attempt of the job.
+	 * @param string      $status          Subscription status when the job runs.
+	 * @param string|null $stripe_status   Status the Stripe subscription reads, or null when nothing is read.
+	 * @param string      $expected_id_key Meta key that holds the Stripe ID afterwards.
 	 */
-	public function test_a_cancel_retry_drops_for_a_subscription_back_on_woopayments( string $status ): void {
+	public function test_a_cancel_job_for_a_subscription_back_on_woopayments( int $retry, string $status, ?string $stripe_status, string $expected_id_key ): void {
 		$subscription = $this->create_subscription( array( '_wcpay_subscription_id' => self::MAIN_SUBSCRIPTION_ID ) );
 		$subscription->set_status( $status );
 		$subscription->save();
+		if ( null !== $stripe_status ) {
+			$entry                               = $this->get_entry( 'get_subscription' );
+			$entry['response']['body']['status'] = $stripe_status;
+			$this->queue_entry( $entry );
+		}
 
-		$this->sut->handle_retry_cancel_subscription( $subscription->get_id(), 1 );
+		$this->sut->handle_retry_cancel_subscription( $subscription->get_id(), $retry );
 
-		$this->assertSame( 0, $this->http_client->request_count );
-		$this->assertSame( self::MAIN_SUBSCRIPTION_ID, wc_get_order( $subscription->get_id() )->get_meta( '_wcpay_subscription_id', true ) );
-		$this->assertNull( $this->get_retry_cancel_delay( $subscription, 2 ) );
+		$this->assertSame( null === $stripe_status ? array() : array( array( 'GET', '/sites/4/wcpay/subscriptions/' . self::MAIN_SUBSCRIPTION_ID . '?test_mode=1', null ) ), $this->get_requests(), 'At most one read, and never a cancel.' );
+		$saved = wc_get_order( $subscription->get_id() );
+		$this->assertSame( self::MAIN_SUBSCRIPTION_ID, $saved->get_meta( $expected_id_key, true ) );
+		$this->assertSame( '_wcpay_subscription_id' === $expected_id_key, $saved->meta_exists( '_wcpay_subscription_id' ) );
+		$this->assertSame( 'woocommerce_payments', $saved->get_payment_method() );
+		$this->assertSame( $status, $saved->get_status() );
+		$this->assertNull( $this->get_retry_cancel_delay( $subscription, $retry + 1 ) );
+	}
+
+	/**
+	 * Cancel jobs for a subscription back on WooPayments: the attempt, the subscription status, what Stripe reads and where the ID ends.
+	 *
+	 * @return array<string,array{int,string,string|null,string}>
+	 */
+	public function provider_cancel_jobs_back_on_woopayments(): array {
+		return array(
+			'reads a live Stripe subscription after a failed attempt and keeps the ID' => array( 1, 'active', 'active', '_wcpay_subscription_id' ),
+			'reads the live Stripe subscription of one on hold and keeps the ID' => array( 1, 'on-hold', 'active', '_wcpay_subscription_id' ),
+			'reads a canceled Stripe subscription after a failed attempt and releases the ID' => array( 2, 'active', 'canceled', '_cancelled_wcpay_subscription_id' ),
+			'reads nothing on a first attempt' => array( 0, 'active', null, '_wcpay_subscription_id' ),
+		);
 	}
 
 	/**
