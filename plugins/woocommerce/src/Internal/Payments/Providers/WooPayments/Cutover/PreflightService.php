@@ -243,11 +243,12 @@ class PreflightService {
 	/**
 	 * Get pending or running WooPayments Action Scheduler actions (wcpay_ and woocommerce_woopayments_ hooks), one per hook and group.
 	 *
-	 * Callers only decide by hook and group, so a queue of thousands of same-hook actions is read as one row. On a database
-	 * without identifier placeholders or a failed query, returns one sentinel row (action_id 0) whose hook is one of the
-	 * *_HOOK constants, which blocks the switch.
+	 * Callers only decide by hook and group, so a queue of thousands of same-hook actions is read as one row. Its due time is
+	 * the latest of the group's pending and running actions, so one queued far ahead counts even when another is due now.
+	 * On a database without identifier placeholders or a failed query, returns one sentinel row (action_id 0, no due time)
+	 * whose hook is one of the *_HOOK constants, which blocks the switch.
 	 *
-	 * @return array<int,array{action_id:int,hook:string,group:string}> The lowest action ID of each hook and group, ordered by it.
+	 * @return array<int,array{action_id:int,hook:string,group:string,due_at:int|null}> One row per hook and group, ordered by action ID.
 	 */
 	public function get_queued_woopayments_actions(): array {
 		$wpdb = $this->get_database();
@@ -260,11 +261,12 @@ class PreflightService {
 					'action_id' => 0,
 					'hook'      => self::IDENTIFIER_PLACEHOLDERS_UNAVAILABLE_HOOK,
 					'group'     => '',
+					'due_at'    => null,
 				),
 			);
 		}
 		$query   = $wpdb->prepare(
-			'SELECT MIN( actions.action_id ) AS action_id, actions.hook, action_groups.slug AS action_group FROM %i AS actions LEFT JOIN %i AS action_groups ON actions.group_id = action_groups.group_id WHERE actions.status IN ( %s, %s ) AND ( actions.hook LIKE %s OR actions.hook LIKE %s ) GROUP BY actions.hook, action_groups.slug ORDER BY action_id ASC',
+			'SELECT MIN( actions.action_id ) AS action_id, actions.hook, action_groups.slug AS action_group, MAX( actions.scheduled_date_gmt ) AS due_gmt FROM %i AS actions LEFT JOIN %i AS action_groups ON actions.group_id = action_groups.group_id WHERE actions.status IN ( %s, %s ) AND ( actions.hook LIKE %s OR actions.hook LIKE %s ) GROUP BY actions.hook, action_groups.slug ORDER BY action_id ASC',
 			$wpdb->actionscheduler_actions,
 			$wpdb->actionscheduler_groups,
 			\ActionScheduler_Store::STATUS_PENDING,
@@ -279,6 +281,7 @@ class PreflightService {
 					'action_id' => 0,
 					'hook'      => self::OPERATIONAL_QUEUE_QUERY_FAILED_HOOK,
 					'group'     => '',
+					'due_at'    => null,
 				),
 			);
 		}
@@ -289,6 +292,7 @@ class PreflightService {
 					'action_id' => (int) $action['action_id'],
 					'hook'      => (string) $action['hook'],
 					'group'     => isset( $action['action_group'] ) ? (string) $action['action_group'] : '',
+					'due_at'    => self::parse_due_at( $action['due_gmt'] ?? null ),
 				);
 			},
 			$actions
@@ -296,9 +300,30 @@ class PreflightService {
 	}
 
 	/**
+	 * Read an Action Scheduler due date, stored in UTC as Y-m-d H:i:s.
+	 *
+	 * Rows written by an older Action Scheduler copy can carry a zero date for an async action. A date that does not read
+	 * back as itself, as a zero date does not, has no due time.
+	 *
+	 * @param mixed $value Stored due date.
+	 * @return int|null Unix timestamp, or null when the date is zero or unreadable.
+	 */
+	private static function parse_due_at( $value ): ?int {
+		if ( ! is_string( $value ) ) {
+			return null;
+		}
+		$date = \DateTimeImmutable::createFromFormat( '!Y-m-d H:i:s', $value, new \DateTimeZone( 'UTC' ) );
+		if ( false === $date || $date->format( 'Y-m-d H:i:s' ) !== $value ) {
+			return null;
+		}
+
+		return $date->getTimestamp();
+	}
+
+	/**
 	 * Get operational actions after excluding the cutover job itself.
 	 *
-	 * @return array<int,array{action_id:int,hook:string,group:string}> Actions ordered by ID.
+	 * @return array<int,array{action_id:int,hook:string,group:string,due_at:int|null}> Actions ordered by ID.
 	 */
 	public function get_queued_operational_actions(): array {
 		return array_values( array_filter( $this->get_queued_woopayments_actions(), array( $this, 'is_not_cutover_action' ) ) );
@@ -662,12 +687,24 @@ class PreflightService {
 	 * @return string[]
 	 */
 	public function get_unhandled_queue_hooks(): array {
-		$actions = $this->get_queued_operational_actions();
-		$hooks   = self::normalize_string_list( array_column( $actions, 'hook' ) );
-		if ( in_array( self::IDENTIFIER_PLACEHOLDERS_UNAVAILABLE_HOOK, $hooks, true ) ) {
-			return array( self::IDENTIFIER_PLACEHOLDERS_UNAVAILABLE_HOOK );
-		}
-		return array_values( array_diff( $hooks, self::BUILTIN_HANDLED_QUEUE_HOOKS ) );
+		return self::normalize_string_list( array_column( $this->get_unhandled_queue_actions(), 'hook' ) );
+	}
+
+	/**
+	 * Get the queued WooPayments actions the built-in WooPayments does not handle, one row per hook and group, with their
+	 * due times; a sentinel row when the queue could not be read.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return array<int,array{action_id:int,hook:string,group:string,due_at:int|null}>
+	 */
+	public function get_unhandled_queue_actions(): array {
+		return array_values(
+			array_filter(
+				$this->get_queued_operational_actions(),
+				static fn( array $action ): bool => '' !== trim( $action['hook'] ) && ! in_array( trim( $action['hook'] ), self::BUILTIN_HANDLED_QUEUE_HOOKS, true )
+			)
+		);
 	}
 
 	/**

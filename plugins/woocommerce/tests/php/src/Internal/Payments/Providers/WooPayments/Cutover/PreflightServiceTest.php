@@ -347,6 +347,82 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The operational queue scan gives each hook and group the latest due time of its pending and running actions.
+	 */
+	public function test_operational_action_discovery_reads_the_latest_due_time_of_each_hook_and_group(): void {
+		$now      = time();
+		$near_id  = as_schedule_single_action( $now + 10, 'wcpay_preflight_service_test', array( 'order_id' => 1 ), 'woocommerce-payments', true );
+		$later_id = as_schedule_single_action( $now + HOUR_IN_SECONDS, 'wcpay_preflight_service_test', array( 'order_id' => 2 ), 'woocommerce-payments', true );
+		$this->assertIsInt( $near_id );
+		$this->assertIsInt( $later_id );
+
+		$actions = $this->create_sut()->get_queued_woopayments_actions();
+
+		$this->assertSame(
+			array(
+				array(
+					'action_id' => $near_id,
+					'hook'      => 'wcpay_preflight_service_test',
+					'group'     => 'woocommerce-payments',
+					'due_at'    => $now + HOUR_IN_SECONDS,
+				),
+			),
+			$actions
+		);
+	}
+
+	/**
+	 * Rows written by an older Action Scheduler copy can carry a zero date for an async action.
+	 *
+	 * @testdox A queued action whose due date is $stored has no due time.
+	 * @testWith ["0000-00-00 00:00:00"]
+	 *           ["not a date"]
+	 *           ["2026-02-30 10:00:00"]
+	 *           [null]
+	 *
+	 * @param string|null $stored Stored due date.
+	 */
+	public function test_an_unreadable_due_date_reads_as_no_due_time( ?string $stored ): void {
+		$wpdb                          = $this->getMockBuilder( \wpdb::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'has_cap', 'prepare', 'esc_like', 'get_results' ) )
+			->getMock();
+		$wpdb->actionscheduler_actions = 'wp_actionscheduler_actions';
+		$wpdb->actionscheduler_groups  = 'wp_actionscheduler_groups';
+		$wpdb->last_error              = '';
+		$wpdb->method( 'has_cap' )->willReturn( true );
+		$wpdb->method( 'prepare' )->willReturnArgument( 0 );
+		$wpdb->method( 'esc_like' )->willReturnArgument( 0 );
+		$wpdb->method( 'get_results' )->willReturn(
+			array(
+				array(
+					'action_id'    => '7',
+					'hook'         => 'wcpay_preflight_service_test',
+					'action_group' => 'woocommerce-payments',
+					'due_gmt'      => $stored,
+				),
+			)
+		);
+
+		$this->assertSame( array( null ), array_column( $this->create_sut( $wpdb )->get_queued_woopayments_actions(), 'due_at' ) );
+	}
+
+	/**
+	 * @testdox The unhandled queued actions are the rows of the unhandled queue hooks, and the hooks list is unchanged.
+	 */
+	public function test_unhandled_queue_actions_back_the_unhandled_queue_hooks(): void {
+		$handled_id                     = as_schedule_single_action( time() + HOUR_IN_SECONDS, 'wcpay_track_new_order', array(), 'woocommerce-payments', true );
+		$unhandled_id                   = as_schedule_single_action( time() + HOUR_IN_SECONDS, 'wcpay_preflight_service_test', array(), 'woocommerce-payments', true );
+		$this->scheduled_action_hooks[] = 'wcpay_track_new_order';
+		$this->assertIsInt( $handled_id );
+		$this->assertIsInt( $unhandled_id );
+		$sut = $this->create_sut();
+
+		$this->assertSame( array( $unhandled_id ), array_column( $sut->get_unhandled_queue_actions(), 'action_id' ) );
+		$this->assertSame( array( 'wcpay_preflight_service_test' ), $sut->get_unhandled_queue_hooks() );
+	}
+
+	/**
 	 * @testdox An Action Scheduler query failure remains an operational cutover blocker.
 	 * @dataProvider operational_action_query_failure_provider
 	 *
@@ -380,6 +456,7 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 					'action_id' => 0,
 					'hook'      => 'woocommerce_woopayments_operational_queue_query_failed',
 					'group'     => '',
+					'due_at'    => null,
 				),
 			),
 			$sut->get_queued_woopayments_actions()

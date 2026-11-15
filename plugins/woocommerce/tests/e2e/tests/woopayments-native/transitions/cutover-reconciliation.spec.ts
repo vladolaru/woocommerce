@@ -39,6 +39,7 @@ interface CutoverRecord {
 	revision: number;
 	current_step: string;
 	deferred_codes?: string[];
+	next_attempt_at?: number | null;
 	step_log?: Array< {
 		step: string;
 		at: number;
@@ -304,6 +305,11 @@ test.describe( 'WooPayments transition: cutover reconciliation', () => {
 				'awaiting_merchant_start'
 			);
 
+			// Sized for the switch's own waits, nothing rescheduled: the update's
+			// one-minute retry, at most one one-minute retry for an extension
+			// action due within it, and the ownership check 5 s after the
+			// hand-over, each picked up within a queue cycle. A return of the
+			// 15-minute retry fails it.
 			let completed = started;
 			await expect
 				.poll(
@@ -311,7 +317,7 @@ test.describe( 'WooPayments transition: cutover reconciliation', () => {
 						completed = await readCutoverStatus( migratorActionId );
 						return completed.record?.state === 'done';
 					},
-					{ timeout: 20 * 60_000, intervals: [ 1000, 5000, 15000 ] }
+					{ timeout: 5 * 60_000, intervals: [ 1000, 5000 ] }
 				)
 				.toBe( true );
 			expect( completed.record!.generation ).toBe(
@@ -448,38 +454,6 @@ async function triggerActionSchedulerQueue( baseURL: string ): Promise< void > {
 			baseURL
 		)
 	).catch( () => undefined );
-}
-
-/**
- * Test-time shortcut, not a product finding: moves the next attempt of a
- * switch deferred before its hand-over to now, a direct DB time-shortcut
- * (the same category as WooCommerce Subscriptions never scheduling past
- * dates) instead of idling the run through the product's own real ~15-minute
- * backoff between attempts. It moves only the one action the deferral
- * scheduled, by the ID the record holds, and only while that action is still
- * pending, so an attempt a runner schedules meanwhile keeps its own time: the
- * ownership check, due 5 s after the hand-over, runs as the product
- * schedules it.
- */
-async function rescheduleDeferredAttemptToNow(): Promise< void > {
-	await wpEvalJson< number >( `
-		global $wpdb;
-		$record = get_option( 'woocommerce_woopayments_cutover_state' );
-		if ( ! is_array( $record ) || 'deferred' !== ( $record['state'] ?? '' ) || null !== ( $record['request_origin_token'] ?? null ) ) {
-			return 0;
-		}
-		$action_id = (int) ( $record['action_id'] ?? 0 );
-		if ( $action_id < 1 ) {
-			return 0;
-		}
-		return (int) $wpdb->query( $wpdb->prepare(
-			"UPDATE {$wpdb->prefix}actionscheduler_actions SET scheduled_date_gmt = %s, scheduled_date_local = %s WHERE action_id = %d AND hook = %s AND status = 'pending'",
-			current_time( 'mysql', true ),
-			current_time( 'mysql' ),
-			$action_id,
-			'woocommerce_woopayments_cutover_reconcile'
-		) );
-	` );
 }
 
 /**
@@ -790,13 +764,13 @@ test.describe( 'WooPayments transition: old plugin cutover advancement', () => {
 
 			// Step 2: zero merchant action. The merchant's one click already
 			// happened above; every later attempt is the product's own retry
-			// cycle, driven here without waiting on its real ~15-minute
-			// cadence (rescheduleDeferredAttemptToNow, a test-time shortcut,
+			// cycle at its own times, nothing rescheduled: the update's
+			// one-minute retry, then the ownership check 5 s after the hand-over
+			// (the queue triggered on each tick, a test-time shortcut,
 			// not a product finding).
 			await expect
 				.poll(
 					async () => {
-						await rescheduleDeferredAttemptToNow();
 						await triggerActionSchedulerQueue( baseURL! );
 						try {
 							owner = await readRuntimeOwner( restApi );
@@ -1057,8 +1031,8 @@ test.describe( 'WooPayments transition: rollback round trip', () => {
 			).toBeDefined();
 
 			// Cutover: the merchant's one click, then the product's own
-			// retry cycle driven without its real cadence (the same test-time
-			// shortcut as the 10.4.0 case above).
+			// retry cycle at its own times, the queue triggered on each tick
+			// (as in the 10.4.0 case above).
 			await page.goto( 'wp-login.php' );
 			await logIn( page, admin.username, admin.password, false );
 			await page.goto( 'wp-admin/' );
@@ -1073,7 +1047,6 @@ test.describe( 'WooPayments transition: rollback round trip', () => {
 			await expect
 				.poll(
 					async () => {
-						await rescheduleDeferredAttemptToNow();
 						await triggerActionSchedulerQueue( baseURL! );
 						status = await readCutoverStatus( 0 );
 						return status.record?.state ?? null;
@@ -1172,7 +1145,6 @@ test.describe( 'WooPayments transition: rollback round trip', () => {
 			await expect
 				.poll(
 					async () => {
-						await rescheduleDeferredAttemptToNow();
 						await triggerActionSchedulerQueue( baseURL! );
 						const record = ( await readCutoverStatus( 0 ) ).record;
 						return record?.generation === reopened?.generation
@@ -1352,8 +1324,10 @@ test.describe( 'WooPayments transition: extension activation during an open cuto
 
 			// This case keeps the fresh store on purpose: the admin page above
 			// queued the extension's order check 10 s ahead and the click came
-			// first, so the switch defers for that check. Drive the queue until
-			// the check has run, moving no attempt.
+			// first, so the switch defers for that check, and retries a minute
+			// later because the check is due within that minute. Drive the queue
+			// until the check has run, moving no attempt.
+			let deferredRecord: CutoverRecord | null = null;
 			await expect
 				.poll(
 					async () => {
@@ -1363,6 +1337,7 @@ test.describe( 'WooPayments transition: extension activation during an open cuto
 							record?.state === 'deferred' &&
 							polled?.status === 'complete'
 						) {
+							deferredRecord = record;
 							return true;
 						}
 						await triggerActionSchedulerQueue( baseURL! );
@@ -1419,6 +1394,13 @@ test.describe( 'WooPayments transition: extension activation during an open cuto
 					deferral?.at,
 					'the switch must defer while the check is pending'
 				).toBeLessThanOrEqual( check!.started_at );
+				const deferredNextAttempt =
+					( deferredRecord as CutoverRecord | null )
+						?.next_attempt_at ?? 0;
+				expect(
+					deferredNextAttempt - ( deferral?.at ?? 0 ),
+					'a switch waiting only for a check due within the minute retries a minute later'
+				).toBe( 60 );
 				const handOver = steps.find(
 					( entry ) => entry.step === 'verify_builtin_ownership'
 				);
@@ -1497,7 +1479,6 @@ test.describe( 'WooPayments transition: extension activation during an open cuto
 			await expect
 				.poll(
 					async () => {
-						await rescheduleDeferredAttemptToNow();
 						await triggerActionSchedulerQueue( baseURL! );
 						status = await readCutoverStatus( 0 );
 						return status.record?.state ?? null;

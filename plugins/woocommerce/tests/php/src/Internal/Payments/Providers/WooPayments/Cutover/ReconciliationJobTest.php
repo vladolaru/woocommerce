@@ -2411,6 +2411,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			$this->assertSame( StateStore::STATE_DEFERRED, $deferred['state'] );
 			$this->assertSame( array( PreflightService::FAILURE_QUEUE_HOOKS_UNHANDLED ), $deferred['deferred_codes'] );
 			$this->assertNull( $deferred['request_origin_token'] ?? null, 'The fence was not reached.' );
+			$this->assertSame( 60, $this->get_deferral_delay( $deferred ), 'The check is due within a minute, so the switch retries in a minute, after it.' );
 			$this->assertSame( 0, $deactivations );
 			$this->assertSame( 'scheduled', get_option( self::EXTENSION_CHECK_STATE_OPTION ) );
 
@@ -2484,6 +2485,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			$this->assertSame( StateStore::STATE_DEFERRED, $deferred['state'] );
 			$this->assertSame( array( PreflightService::FAILURE_QUEUE_HOOKS_UNHANDLED ), $deferred['deferred_codes'] );
 			$this->assertNull( $deferred['request_origin_token'] ?? null, 'The deferral comes before the fence.' );
+			$this->assertSame( 60, $this->get_deferral_delay( $deferred ), 'The check is due within a minute, so the switch retries in a minute, after it.' );
 			$this->assertTrue( $plugin_active, 'The extension stays active.' );
 			$this->assertSame( 0, $deactivations );
 			$this->assertSame( 'scheduled', get_option( self::EXTENSION_CHECK_STATE_OPTION ) );
@@ -2501,6 +2503,133 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			wc_get_container()->reset_all_replacements();
 			$this->cleanup_canceled_authorization_fix_state();
 		}
+	}
+
+	/**
+	 * A switch that waits only for queued extension actions about to run retries in a minute; any other wait keeps the
+	 * cadence. Each 900 s case fails when its own guard is removed.
+	 *
+	 * @testdox A switch waiting for queued extension actions retries after $expected_delay s when $shape.
+	 * @dataProvider queued_action_retry_delay_provider
+	 *
+	 * @param string $shape          Queue shape.
+	 * @param int    $expected_delay Expected retry delay.
+	 */
+	public function test_a_switch_waiting_for_queued_actions_retries_soon_only_when_they_are_about_to_run( string $shape, int $expected_delay ): void {
+		$plugin_active  = true;
+		$deactivations  = 0;
+		$other_failures = array();
+		$database       = null;
+		$now            = time();
+		$running        = array();
+		$queue          = static function ( int $due, string $hook = self::EXTENSION_CHECK_HOOK, array $args = array() ): int {
+			$action_id = as_schedule_single_action( $due, $hook, $args, 'woocommerce-payments' );
+			return (int) $action_id;
+		};
+		switch ( $shape ) {
+			case 'an action is running':
+				$running[] = $queue( $now - 30 );
+				ActionScheduler::store()->log_execution( $running[0] );
+				break;
+			case 'an action is four minutes overdue':
+				$queue( $now - 4 * MINUTE_IN_SECONDS );
+				break;
+			case 'an action is due in an hour':
+				$queue( $now + HOUR_IN_SECONDS );
+				break;
+			case 'one action is near and another far':
+				$queue( $now + 10 );
+				$queue( $now + HOUR_IN_SECONDS, 'wcpay_test_queued_retry_other' );
+				break;
+			case 'one hook is queued near and far':
+				$queue( $now + 10, self::EXTENSION_CHECK_HOOK, array( 'run' => 1 ) );
+				$queue( $now + HOUR_IN_SECONDS, self::EXTENSION_CHECK_HOOK, array( 'run' => 2 ) );
+				break;
+			case 'another code is alongside':
+				$queue( $now + 10 );
+				$other_failures = array( PreflightService::FAILURE_BUILTIN_TRANSPORT_UNAVAILABLE );
+				break;
+			case 'the database has no identifier placeholders':
+			case 'the queue query fails':
+				$database                          = $this->getMockBuilder( \wpdb::class )->disableOriginalConstructor()->onlyMethods( array( 'has_cap', 'prepare', 'esc_like', 'get_results' ) )->getMock();
+				$database->actionscheduler_actions = 'wp_actionscheduler_actions';
+				$database->actionscheduler_groups  = 'wp_actionscheduler_groups';
+				$database->last_error              = '';
+				$database->method( 'has_cap' )->willReturn( 'the queue query fails' === $shape );
+				$database->method( 'prepare' )->willReturnArgument( 0 );
+				$database->method( 'esc_like' )->willReturnArgument( 0 );
+				$database->method( 'get_results' )->willReturn( false );
+				break;
+			case 'an action is six minutes overdue':
+				$queue( $now - 6 * MINUTE_IN_SECONDS );
+				break;
+			case 'an action has a zero due date':
+				global $wpdb;
+				$action_id = $queue( $now + 10 );
+				$wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->prefix}actionscheduler_actions SET scheduled_date_gmt = '0000-00-00 00:00:00' WHERE action_id = %d", $action_id ) );
+				break;
+		}
+		$preflight = $this->create_queue_scanning_preflight( $plugin_active, $deactivations, $other_failures, $database );
+		try {
+			$sut = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization() );
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			$pending = $this->state_store->get_record();
+			$this->assertIsArray( $pending );
+			$this->scheduler->cancel( $pending['generation'], 1 );
+			$sut->handle_reconcile( $pending['generation'], 1 );
+
+			$deferred = $this->state_store->get_record();
+			$this->assertIsArray( $deferred );
+			$this->assertSame( StateStore::STATE_DEFERRED, $deferred['state'] );
+			$this->assertContains( PreflightService::FAILURE_QUEUE_HOOKS_UNHANDLED, $deferred['deferred_codes'] );
+			$this->assertSame( $expected_delay, $this->get_deferral_delay( $deferred ) );
+			$this->assertSame( 0, $deactivations );
+		} finally {
+			foreach ( $running as $action_id ) {
+				ActionScheduler::store()->mark_complete( $action_id );
+			}
+			as_unschedule_all_actions( 'wcpay_test_queued_retry_other' );
+			$this->cleanup_canceled_authorization_fix_state();
+		}
+	}
+
+	/**
+	 * Queue shapes and the retry delay each gives.
+	 *
+	 * @return array<string,array{0:string,1:int}>
+	 */
+	public function queued_action_retry_delay_provider(): array {
+		$cases = array(
+			'an action is running'                        => 60,
+			'an action is four minutes overdue'           => 60,
+			'an action is due in an hour'                 => 900,
+			'one action is near and another far'          => 900,
+			'one hook is queued near and far'             => 900,
+			'another code is alongside'                   => 900,
+			'the database has no identifier placeholders' => 900,
+			'the queue query fails'                       => 900,
+			'an action is six minutes overdue'            => 900,
+			'an action has a zero due date'               => 900,
+		);
+		$rows  = array();
+		foreach ( $cases as $case => $delay ) {
+			$rows[ $case ] = array( $case, $delay );
+		}
+
+		return $rows;
+	}
+
+	/**
+	 * Read the delay a deferral gave its next attempt, from its own step.
+	 *
+	 * @param array<string,mixed> $record Deferred record.
+	 * @return int Seconds.
+	 */
+	private function get_deferral_delay( array $record ): int {
+		$last = end( $record['step_log'] );
+		$this->assertSame( 'deferred', $last['step'] );
+
+		return $record['next_attempt_at'] - $last['at'];
 	}
 
 	/**
@@ -2875,30 +3004,47 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	 * Create a preflight whose only check is the real queue scan: it fails with the unhandled-hook code while a queued
 	 * WooPayments action has no built-in handler. The extension is active on the site until the job deactivates it.
 	 *
-	 * @param bool $plugin_active Whether the extension is active.
-	 * @param int  $deactivations Deactivation calls.
+	 * @param bool       $plugin_active  Whether the extension is active.
+	 * @param int        $deactivations  Deactivation calls.
+	 * @param string[]   $other_failures Failure codes reported beside the queue scan's.
+	 * @param \wpdb|null $database       Database the queue scan reads, or null for WordPress's own.
 	 * @return PreflightService
 	 */
-	private function create_queue_scanning_preflight( bool &$plugin_active, int &$deactivations ): PreflightService {
-		return new class( $plugin_active, $deactivations ) extends PreflightService {
+	private function create_queue_scanning_preflight( bool &$plugin_active, int &$deactivations, array $other_failures = array(), ?\wpdb $database = null ): PreflightService {
+		return new class( $plugin_active, $deactivations, $other_failures, $database ) extends PreflightService {
 			/** @var bool */
 			private bool $plugin_active;
 
 			/** @var int */
 			private int $deactivations;
 
+			/** @var string[] */
+			private array $other_failures;
+
+			/** @var \wpdb|null */
+			private ?\wpdb $database;
+
 			/**
-			 * @param bool $plugin_active Whether the extension is active.
-			 * @param int  $deactivations Deactivation calls.
+			 * @param bool       $plugin_active  Whether the extension is active.
+			 * @param int        $deactivations  Deactivation calls.
+			 * @param string[]   $other_failures Failure codes reported beside the queue scan's.
+			 * @param \wpdb|null $database       Database the queue scan reads, or null for WordPress's own.
 			 */
-			public function __construct( bool &$plugin_active, int &$deactivations ) {
-				$this->plugin_active =& $plugin_active;
-				$this->deactivations =& $deactivations;
+			public function __construct( bool &$plugin_active, int &$deactivations, array $other_failures, ?\wpdb $database ) {
+				$this->plugin_active  =& $plugin_active;
+				$this->deactivations  =& $deactivations;
+				$this->other_failures = $other_failures;
+				$this->database       = $database;
 			}
 
 			/** @return string[] */
 			public function get_failures(): array {
-				return array() === $this->get_unhandled_queue_hooks() ? array() : array( self::FAILURE_QUEUE_HOOKS_UNHANDLED );
+				return array_merge( array() === $this->get_unhandled_queue_hooks() ? array() : array( self::FAILURE_QUEUE_HOOKS_UNHANDLED ), $this->other_failures );
+			}
+
+			/** @return \wpdb */
+			protected function get_database(): \wpdb {
+				return $this->database ?? parent::get_database();
 			}
 
 			/** Invalidate controlled facts. */

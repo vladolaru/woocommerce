@@ -155,6 +155,27 @@ class ReconciliationJob implements RegisterHooksInterface {
 	 */
 	private const UPDATED_PLUGIN_RETRY_DELAY = MINUTE_IN_SECONDS;
 
+	/**
+	 * Retry delay for a switch that waits only for queued WooPayments actions that are due now or within this delay, such as
+	 * the extension's affected-orders check, which it queues 10 s ahead from an admin page.
+	 *
+	 * Not zero: Action Scheduler claims due actions oldest due first, so a retry due now is claimed in the same run, ahead
+	 * of an action due seconds later, and would defer again at once. A minute puts the retry behind every action it waits
+	 * for. It is also the upper edge of the due times this delay applies to, so the two move together.
+	 */
+	private const QUEUED_ACTION_RETRY_DELAY = MINUTE_IN_SECONDS;
+
+	/**
+	 * How long past its due time a queued WooPayments action still counts as about to run, for QUEUED_ACTION_RETRY_DELAY.
+	 *
+	 * The same five minutes Action Scheduler gives a claimed action before it unclaims or fails it
+	 * (ActionScheduler_QueueCleaner::reset_timeouts() and mark_failures()), so a stuck running action leaves the queue
+	 * within it. A queue runner can also be filtered to claim the switch's action and never the one it waits for; that one
+	 * stays pending and overdue for good, so past this limit the switch goes back to the retry cadence instead of retrying
+	 * every minute without end: about six short retries at most.
+	 */
+	private const QUEUED_ACTION_OVERDUE_LIMIT = 5 * MINUTE_IN_SECONDS;
+
 	/** Age at which retries become daily. */
 	private const FAST_RETRY_WINDOW = DAY_IN_SECONDS;
 
@@ -817,6 +838,32 @@ class ReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Get the retry delay for a deferral that waits only for queued WooPayments actions about to run.
+	 *
+	 * The short delay applies when the only code is the unhandled queued action one and every such action is due between
+	 * QUEUED_ACTION_OVERDUE_LIMIT ago and QUEUED_ACTION_RETRY_DELAY from now; a running action was due when it was claimed.
+	 * An action due later, an unreadable queue or due time, or any other code keeps the retry cadence.
+	 *
+	 * @param array<int,string>                   $codes             The deferral's codes.
+	 * @param array<int,array<string,mixed>>|null $unhandled_actions The unhandled queued actions already read, or null to read them now.
+	 * @return int|null Seconds until the next attempt, or null for the retry cadence.
+	 */
+	private function get_queued_action_retry_delay( array $codes, ?array $unhandled_actions ): ?int {
+		if ( array( PreflightService::FAILURE_QUEUE_HOOKS_UNHANDLED ) !== $codes ) {
+			return null;
+		}
+		$now = time();
+		foreach ( $unhandled_actions ?? $this->preflight_service->get_unhandled_queue_actions() as $action ) {
+			$due_at = $action['due_at'] ?? null;
+			if ( ! is_int( $due_at ) || $due_at < $now - self::QUEUED_ACTION_OVERDUE_LIMIT || $due_at > $now + self::QUEUED_ACTION_RETRY_DELAY ) {
+				return null;
+			}
+		}
+
+		return self::QUEUED_ACTION_RETRY_DELAY;
+	}
+
+	/**
 	 * Disposition one claimed reconciliation attempt.
 	 *
 	 * Resolve, finalize, exclude, or defer a claimed attempt without leaving it running.
@@ -868,7 +915,7 @@ class ReconciliationJob implements RegisterHooksInterface {
 			}
 
 			if ( array() !== $failures ) {
-				$this->defer( $claimed, $failures, $outcomes, $plugin_updated_to_supported ? self::UPDATED_PLUGIN_RETRY_DELAY : null );
+				$this->defer( $claimed, $failures, $outcomes, $plugin_updated_to_supported ? self::UPDATED_PLUGIN_RETRY_DELAY : $this->get_queued_action_retry_delay( $failures, null ) );
 				return;
 			}
 
@@ -909,8 +956,10 @@ class ReconciliationJob implements RegisterHooksInterface {
 		$this->capture_note_wordings();
 		// An extension action queued since the preflight ran, such as its affected-orders check from an admin page, would find
 		// no handler once the extension is off. Ask again before the fence: past it, a deferral would read as a rollback.
-		if ( array() !== $this->preflight_service->get_unhandled_queue_hooks() ) {
-			$this->defer( $claimed, array( PreflightService::FAILURE_QUEUE_HOOKS_UNHANDLED ), $outcomes );
+		$unhandled_actions = $this->preflight_service->get_unhandled_queue_actions();
+		if ( array() !== $unhandled_actions ) {
+			$codes = array( PreflightService::FAILURE_QUEUE_HOOKS_UNHANDLED );
+			$this->defer( $claimed, $codes, $outcomes, $this->get_queued_action_retry_delay( $codes, $unhandled_actions ) );
 			return;
 		}
 		// The fence stores this request's token, which makes the built-in WooPayments the owner once the extension is inactive
