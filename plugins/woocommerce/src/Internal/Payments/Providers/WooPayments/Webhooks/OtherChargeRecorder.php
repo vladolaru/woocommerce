@@ -62,7 +62,7 @@ class OtherChargeRecorder {
 			throw new RuntimeException( sprintf( 'Could not save the other-charge note for %1$s %2$s on order %3$d.', $event_type, $facts['object_id'], $order->get_id() ) );
 		}
 
-		$payment_method = (string) $order->get_payment_method();
+		$payment_method = WooPaymentsLogger::get_loggable_payment_method( (string) $order->get_payment_method() );
 		wc_get_logger()->warning(
 			sprintf( 'other charge recorded: order %d, %s, charge %s, order payment method %s', $order->get_id(), $event_type, $charge_id, $payment_method ),
 			array(

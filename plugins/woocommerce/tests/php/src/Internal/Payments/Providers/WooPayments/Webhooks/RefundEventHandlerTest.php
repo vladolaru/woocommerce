@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\W
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventOrderResolver;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
@@ -1465,6 +1466,127 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 			'a WooPayments payment kept on a bank transfer order, with logging off' => array( $kept, false, false, 1, 1 ),
 			'a WooPayments order' => array( static fn(): WC_Order => StoredPaymentRecords::payment(), true, false, 1, 0 ),
 		);
+	}
+
+	/**
+	 * @testdox A refund applied as the own payment of an order whose payment method is $_dataName names it as $printed in the line's message and context.
+	 * @dataProvider provider_printed_payment_methods
+	 *
+	 * The line is written whatever the logging setting, and an order's payment method is order data the REST API can set to
+	 * any text, so only a gateway ID's form is printed.
+	 *
+	 * @param string $payment_method Order payment method.
+	 * @param bool   $logging        Whether WooPayments logging is on.
+	 * @param string $printed        What the line prints for the payment method.
+	 */
+	public function test_own_payment_line_prints_the_payment_method_only_in_a_gateway_id_form( string $payment_method, bool $logging, string $printed ): void {
+		$this->set_woopayments_logging( $logging );
+		$order                                  = StoredPaymentRecords::payment_kept_on_an_order_of_another_method( OrderStatus::PROCESSING, $payment_method );
+		$charge                                 = $this->get_successful_refund_charge();
+		$charge['id']                           = 'ch_A';
+		$charge['payment_intent']               = 'pi_A';
+		$charge['amount']                       = 1099;
+		$charge['refunds']['data'][0]['id']     = 're_A';
+		$charge['refunds']['data'][0]['amount'] = 1099;
+		$logger                                 = RecordingWcLogger::install();
+
+		$this->sut->process( 'charge.refunded', $charge );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertCount( 1, $order->get_refunds() );
+		$this->assertSame( 'refunded', $order->get_status() );
+		$this->assertSame( $payment_method, $order->get_payment_method() );
+		$lines = $this->get_own_event_on_another_payment_method_lines( $logger );
+		$this->assertCount( 1, $lines );
+		$index = array_key_first( $lines );
+		$this->assertSame( 'own payment event applied on an order of another payment method: order ' . $order->get_id() . ', charge.refunded, charge ch_A, order payment method ' . $printed, $lines[ $index ][1] );
+		$this->assertSame( $printed, $logger->contexts[ $index ]['payment_method'] );
+		$this->assert_line_holds_no_free_text( $logger, $index, $payment_method, $printed );
+	}
+
+	/**
+	 * @testdox A refund recorded on another charge of an order whose payment method is $_dataName names it as $printed in the line's message and context.
+	 * @dataProvider provider_printed_payment_methods
+	 *
+	 * The other-charge line is counted beside the own-payment line, so it prints the payment method the same way.
+	 *
+	 * @param string $payment_method Order payment method.
+	 * @param bool   $logging        Whether WooPayments logging is on.
+	 * @param string $printed        What the line prints for the payment method.
+	 */
+	public function test_other_charge_line_prints_the_payment_method_only_in_a_gateway_id_form( string $payment_method, bool $logging, string $printed ): void {
+		$this->set_woopayments_logging( $logging );
+		$order                    = $this->create_order_paid_by_another_gateway( $payment_method, 'ch_other' );
+		$charge                   = $this->get_successful_refund_charge();
+		$charge['id']             = 'ch_other';
+		$charge['payment_intent'] = 'pi_other';
+		$logger                   = RecordingWcLogger::install();
+
+		$this->sut->process( 'charge.refunded', $charge );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertCount( 0, $order->get_refunds() );
+		$this->assertSame( $payment_method, $order->get_payment_method() );
+		$lines = array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'other charge recorded:' ) );
+		$this->assertCount( 1, $lines );
+		$index = array_key_first( $lines );
+		$this->assertSame( array( 'warning', 'other charge recorded: order ' . $order->get_id() . ', charge.refunded, charge ch_other, order payment method ' . $printed, 'woopayments' ), $lines[ $index ] );
+		$this->assertSame( $printed, $logger->contexts[ $index ]['payment_method'] );
+		$this->assert_line_holds_no_free_text( $logger, $index, $payment_method, $printed );
+	}
+
+	/**
+	 * Order payment methods, the logging setting, and what a line prints for each.
+	 *
+	 * @return array<string,array{0:string,1:bool,2:string}>
+	 */
+	public function provider_printed_payment_methods(): array {
+		return array(
+			'bank transfer'                                => array( 'bacs', true, 'bacs' ),
+			'bank transfer, with logging off'              => array( 'bacs', false, 'bacs' ),
+			'an unregistered gateway ID'                   => array( 'my_old_gateway', true, 'my_old_gateway' ),
+			'an unregistered gateway ID, with logging off' => array( 'my_old_gateway', false, 'my_old_gateway' ),
+			'free text'                                    => array( 'paid by cheque, see note', true, 'another value' ),
+			'free text, with logging off'                  => array( 'paid by cheque, see note', false, 'another value' ),
+			'an email address'                             => array( 'shopper@example.com', true, 'another value' ),
+			'an email address, with logging off'           => array( 'shopper@example.com', false, 'another value' ),
+		);
+	}
+
+	/**
+	 * Turn WooPayments logging on or off, and check the logger sees it.
+	 *
+	 * @param bool $logging Whether WooPayments logging is on.
+	 */
+	private function set_woopayments_logging( bool $logging ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		if ( $logging ) {
+			self::enable_woopayments_debug_logging();
+		} else {
+			add_filter( 'wcpay_dev_mode', '__return_false' );
+		}
+		$this->assertSame( $logging, wc_get_container()->get( WooPaymentsLogger::class )->can_log() );
+	}
+
+	/**
+	 * Assert a recorded line's message and context hold the order's payment method only when it is printed as it is.
+	 *
+	 * @param RecordingWcLogger $logger         Recording logger.
+	 * @param int               $index          The line's index in the recording.
+	 * @param string            $payment_method Order payment method.
+	 * @param string            $printed        What the line prints for the payment method.
+	 */
+	private function assert_line_holds_no_free_text( RecordingWcLogger $logger, int $index, string $payment_method, string $printed ): void {
+		if ( $printed === $payment_method ) {
+			return;
+		}
+		$this->assertStringNotContainsString( $payment_method, $logger->lines[ $index ][1] );
+		$this->assertStringNotContainsString( $payment_method, (string) wp_json_encode( $logger->contexts[ $index ] ) );
+		foreach ( array( 'cheque', 'shopper' ) as $fragment ) {
+			$this->assertStringNotContainsString( $fragment, $logger->lines[ $index ][1] . ' ' . (string) wp_json_encode( $logger->contexts[ $index ] ) );
+		}
 	}
 
 	/**

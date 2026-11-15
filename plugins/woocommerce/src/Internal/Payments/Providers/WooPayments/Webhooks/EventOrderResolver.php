@@ -13,7 +13,8 @@ use WC_Order;
 
 /**
  * Finds the order a WooPayments webhook event's charge or payment intent belongs to, and tells whether the event is the
- * order's own payment.
+ * order's own payment. It also writes the warning line for a refund or dispute applied as the payment of an order whose
+ * payment method is not a WooPayments one.
  *
  * When the event object carries an order key in its metadata, an order with another key is never returned. This keeps an
  * event meant for another site of a multisite network, whose order IDs can collide with this site's, off this site's orders.
@@ -189,14 +190,15 @@ class EventOrderResolver {
 			return;
 		}
 
+		$printed_payment_method = WooPaymentsLogger::get_loggable_payment_method( $payment_method );
 		wc_get_container()->get( WooPaymentsLogger::class )->log_always(
-			sprintf( 'own payment event applied on an order of another payment method: order %1$d, %2$s, charge %3$s, order payment method %4$s', $order->get_id(), $event_type, $charge_id, $payment_method ),
+			sprintf( 'own payment event applied on an order of another payment method: order %1$d, %2$s, charge %3$s, order payment method %4$s', $order->get_id(), $event_type, $charge_id, $printed_payment_method ),
 			'warning',
 			array(
 				'order_id'       => $order->get_id(),
 				'event_type'     => $event_type,
 				'charge_id'      => $charge_id,
-				'payment_method' => $payment_method,
+				'payment_method' => $printed_payment_method,
 				'reason'         => self::REASON_OWN_PAYMENT_EVENT_ON_ANOTHER_PAYMENT_METHOD,
 			)
 		);

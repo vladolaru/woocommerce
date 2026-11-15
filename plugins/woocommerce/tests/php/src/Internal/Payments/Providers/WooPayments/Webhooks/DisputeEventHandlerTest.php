@@ -1451,11 +1451,13 @@ class DisputeEventHandlerTest extends WC_Unit_Test_Case {
 	 * @param int                 $deliveries       How many times the event is delivered.
 	 * @param string              $expected_status  Order status after the event.
 	 * @param string              $expected_note    Fragment of the one note the event writes.
-	 * @param int                 $expected_refunds Refund rows after the event.
+	 * @param int                 $expected_refunds Refund rows after the event, each for the whole order and linked to the dispute.
 	 * @param int                 $expected_lines   Own-payment lines naming another payment method.
+	 * @param string[]|string     $expected_open    Open-dispute IDs after the event, or an empty string for none.
 	 */
-	public function test_dispute_on_a_kept_payment_logs_another_payment_method_once( callable $create_order, string $event_type, array $event, int $deliveries, string $expected_status, string $expected_note, int $expected_refunds, int $expected_lines ): void {
+	public function test_dispute_on_a_kept_payment_logs_another_payment_method_once( callable $create_order, string $event_type, array $event, int $deliveries, string $expected_status, string $expected_note, int $expected_refunds, int $expected_lines, $expected_open ): void {
 		self::enable_woopayments_debug_logging();
+		wc_get_container()->get( RefundRowCapture::class )->register();
 		$order   = $create_order();
 		$handler = new DisputeEventHandler();
 		$handler->init(
@@ -1497,7 +1499,13 @@ class DisputeEventHandlerTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( \WC_Order::class, $order );
 		$this->assertSame( $expected_status, $order->get_status() );
 		$this->assertCount( 1, $this->find_order_note( $order, $expected_note ) );
-		$this->assertCount( $expected_refunds, $order->get_refunds() );
+		$this->assertSame( $expected_open, $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$refunds = $order->get_refunds();
+		$this->assertCount( $expected_refunds, $refunds );
+		foreach ( $refunds as $refund ) {
+			$this->assertSame( '-10.99', $refund->get_total() );
+			$this->assertSame( 'dp_A', $refund->get_meta( '_wcpay_dispute_id', true ) );
+		}
 		$lines = $this->get_own_event_on_another_payment_method_lines( $logger );
 		$this->assertCount( $expected_lines, $lines );
 		if ( 0 === $expected_lines ) {
@@ -1523,7 +1531,7 @@ class DisputeEventHandlerTest extends WC_Unit_Test_Case {
 	/**
 	 * Dispute events on a payment, its order's payment method and the deliveries.
 	 *
-	 * @return array<string,array{0:callable,1:string,2:array<string,mixed>,3:int,4:string,5:string,6:int,7:int}>
+	 * @return array<string,array{0:callable,1:string,2:array<string,mixed>,3:int,4:string,5:string,6:int,7:int,8:string[]|string}>
 	 */
 	public function provider_dispute_on_a_kept_payment(): array {
 		$kept    = static fn(): \WC_Order => StoredPaymentRecords::payment_kept_on_an_order_of_another_method();
@@ -1540,11 +1548,11 @@ class DisputeEventHandlerTest extends WC_Unit_Test_Case {
 		);
 
 		return array(
-			'a WooPayments payment kept on a bank transfer order' => array( $kept, 'charge.dispute.created', $created, 1, 'on-hold', 'Payment has been disputed', 0, 1 ),
-			'a WooPayments payment kept on a bank transfer order, delivered twice' => array( $kept, 'charge.dispute.created', $created, 2, 'on-hold', 'Payment has been disputed', 0, 1 ),
-			'a WooPayments payment kept on a bank transfer order, lost' => array( $kept, 'charge.dispute.closed', $lost, 1, 'refunded', 'Dispute has been closed with status', 1, 1 ),
-			'a WooPayments payment kept on a bank transfer order, lost, delivered twice' => array( $kept, 'charge.dispute.closed', $lost, 2, 'refunded', 'Dispute has been closed with status', 1, 1 ),
-			'a WooPayments order' => array( static fn(): \WC_Order => StoredPaymentRecords::payment(), 'charge.dispute.created', $created, 1, 'on-hold', 'Payment has been disputed', 0, 0 ),
+			'a WooPayments payment kept on a bank transfer order' => array( $kept, 'charge.dispute.created', $created, 1, 'on-hold', 'Payment has been disputed', 0, 1, array( 'dp_A' ) ),
+			'a WooPayments payment kept on a bank transfer order, delivered twice' => array( $kept, 'charge.dispute.created', $created, 2, 'on-hold', 'Payment has been disputed', 0, 1, array( 'dp_A' ) ),
+			'a WooPayments payment kept on a bank transfer order, lost' => array( $kept, 'charge.dispute.closed', $lost, 1, 'refunded', 'Dispute has been closed with status', 1, 1, '' ),
+			'a WooPayments payment kept on a bank transfer order, lost, delivered twice' => array( $kept, 'charge.dispute.closed', $lost, 2, 'refunded', 'Dispute has been closed with status', 1, 1, '' ),
+			'a WooPayments order' => array( static fn(): \WC_Order => StoredPaymentRecords::payment(), 'charge.dispute.created', $created, 1, 'on-hold', 'Payment has been disputed', 0, 0, array( 'dp_A' ) ),
 		);
 	}
 

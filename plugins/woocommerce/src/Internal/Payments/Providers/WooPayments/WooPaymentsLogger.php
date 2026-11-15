@@ -330,6 +330,23 @@ class WooPaymentsLogger {
 	}
 
 	/**
+	 * Get an order's payment method as a log line may carry it: a value that has a gateway ID's form (only letters, digits,
+	 * underscores and hyphens) as it is, `none` for an empty one, `another value` for anything else, such as free text set
+	 * through the REST API. There is no check against registered gateways, so a deactivated or removed gateway still shows.
+	 * The lines that use it are written whatever the logging setting.
+	 *
+	 * @param string $payment_method Order payment method.
+	 * @return string
+	 */
+	public static function get_loggable_payment_method( string $payment_method ): string {
+		if ( '' === $payment_method ) {
+			return 'none';
+		}
+
+		return 1 === preg_match( '/\A[A-Za-z0-9_-]+\z/', $payment_method ) ? $payment_method : 'another value';
+	}
+
+	/**
 	 * Get a throwable's class, code and first stack frames, without its message or call arguments.
 	 *
 	 * Public for a line that logs a call trace with no failure (a Stripe Billing subscription put on hold).

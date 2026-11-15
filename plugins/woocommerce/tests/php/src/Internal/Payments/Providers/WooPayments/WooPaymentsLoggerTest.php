@@ -216,6 +216,40 @@ class WooPaymentsLoggerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox An order payment method that is $_dataName is logged as $expected.
+	 * @dataProvider order_payment_methods
+	 *
+	 * @param string $payment_method Order payment method.
+	 * @param string $expected       What a log line carries.
+	 */
+	public function test_loggable_payment_method_prints_only_a_gateway_id_form( string $payment_method, string $expected ): void {
+		$this->assertSame( $expected, WooPaymentsLogger::get_loggable_payment_method( $payment_method ) );
+	}
+
+	/**
+	 * Order payment methods and what a log line carries for each.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public function order_payment_methods(): array {
+		return array(
+			'empty'                                  => array( '', 'none' ),
+			'a core gateway ID'                      => array( 'bacs', 'bacs' ),
+			'a WooPayments split gateway ID'         => array( 'woocommerce_payments_sepa_debit', 'woocommerce_payments_sepa_debit' ),
+			'a gateway ID no gateway registers'      => array( 'my_old_gateway', 'my_old_gateway' ),
+			'a gateway ID with hyphens and capitals' => array( 'PPCP-Gateway-2', 'PPCP-Gateway-2' ),
+			'free text'                              => array( 'paid by cheque, see note', 'another value' ),
+			'an email address'                       => array( 'shopper@example.com', 'another value' ),
+			'a URL'                                  => array( 'https://pay.example.test/r?key=abc', 'another value' ),
+			'a gateway ID and a line break'          => array( "bacs\n", 'another value' ),
+			'a gateway ID after a space'             => array( ' bacs', 'another value' ),
+			'a gateway ID before a space'            => array( 'bacs ', 'another value' ),
+			'a gateway ID with a dot'                => array( 'gateway.v2', 'another value' ),
+			'a gateway ID with an accented letter'   => array( 'paiement_espèces', 'another value' ),
+		);
+	}
+
+	/**
 	 * @testdox A caught platform error is logged with the caller's message, its status and code, and none of its text.
 	 */
 	public function test_log_throwable_adds_the_platform_status_and_code(): void {
