@@ -77,6 +77,11 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	private const FEE_PRODUCT_ID      = 'prod_VMl1RecT63Fee';
 
 	/**
+	 * Line written when Stripe has no subscription with the ID, which counts as a confirmed cancel.
+	 */
+	private const NOT_FOUND_LINE = 'Stripe has no such subscription on this account and mode, so it is counted as cancelled.';
+
+	/**
 	 * The System Under Test.
 	 *
 	 * @var StripeBillingSubscriptionService
@@ -1018,6 +1023,109 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 			'cancellation, refused once'                => array( 'cancellation', 1, '_wcpay_subscription_id', 0 ),
 			'cancellation, refused four times'          => array( 'cancellation', 4, '_wcpay_subscription_id', 1 ),
 		);
+	}
+
+	/**
+	 * @testdox A cancel answered with $_dataName $expectation.
+	 *
+	 * The platform passes Stripe's answer for an ID Stripe does not have through unchanged: 404 with `resource_missing`. No
+	 * outage takes that shape. A not-found counts as a confirmed cancel with one always-written line and no retry; any
+	 * other answer, including the same code at another status or a 404 with another code, is retried.
+	 *
+	 * @dataProvider provider_cancel_answers
+	 *
+	 * @param int                 $http_status        HTTP status the platform answers.
+	 * @param array<string,mixed> $body               Body the platform answers.
+	 * @param bool                $expected_confirmed Whether the cancel counts as confirmed.
+	 * @param string              $expectation        What happens, for the test name.
+	 */
+	public function test_a_cancel_counts_only_a_stripe_not_found_as_confirmed( int $http_status, array $body, bool $expected_confirmed, string $expectation ): void {
+		unset( $expectation );
+		$subscription                   = $this->create_subscription( array( '_wcpay_subscription_id' => self::MAIN_SUBSCRIPTION_ID ) );
+		$this->http_client->responses[] = $this->make_response( $http_status, $body );
+		$logger                         = RecordingWcLogger::install();
+
+		$this->sut->maybe_cancel_subscription( $subscription, 'stripe' );
+
+		$saved = wc_get_order( $subscription->get_id() );
+		$this->assertSame( self::MAIN_SUBSCRIPTION_ID, $saved->get_meta( $expected_confirmed ? '_cancelled_wcpay_subscription_id' : '_wcpay_subscription_id', true ) );
+		$this->assertSame( ! $expected_confirmed, null !== $this->get_retry_cancel_delay( $subscription, 1 ), 'Only an unconfirmed cancel is retried.' );
+		$messages = array_column( $logger->lines, 1 );
+		$this->assertSame( $expected_confirmed ? 1 : 0, count( array_keys( $messages, self::NOT_FOUND_LINE, true ) ) );
+		$this->assertSame( $expected_confirmed ? 0 : 1, count( array_keys( $messages, 'There was a problem canceling the subscription on WooPayments server.', true ) ) );
+		if ( $expected_confirmed ) {
+			$context = $this->get_logged_context( $logger, self::NOT_FOUND_LINE );
+			$this->assertSame( array( $subscription->get_id(), self::MAIN_SUBSCRIPTION_ID, 1, 404, 'resource_missing' ), array( $context['subscription_id'], $context['wcpay_subscription_id'], $context['attempt'], $context['http_status'], $context['error_code'] ) );
+			$this->assert_log_holds_no_provider_text( $logger );
+		}
+	}
+
+	/**
+	 * Platform answers to a cancel: Stripe's not-found, a platform failure, Stripe's `resource_missing` for another object
+	 * (a 400), and a 404 from the platform's own routing.
+	 *
+	 * @return array<string,array{int,array<string,mixed>,bool,string}>
+	 */
+	public function provider_cancel_answers(): array {
+		$stripe_error = static fn( string $param ): array => array(
+			'error' => array(
+				'code'    => 'resource_missing',
+				'message' => "No such customer: 'cus_123'; ask shopper@example.com, see https://pay.example.test/r?key=sk_test_leak123",
+				'param'   => $param,
+				'type'    => 'invalid_request_error',
+			),
+		);
+
+		return array(
+			'404 resource_missing (Stripe has no such subscription)' => array( 404, $stripe_error( 'id' ), true, 'moves the ID, writes one line and schedules no retry' ),
+			'502 wcpay_request_failure (platform failure)' => array(
+				502,
+				array(
+					'code'    => 'wcpay_request_failure',
+					'message' => 'Platform failure',
+					'data'    => array( 'status' => 502 ),
+				),
+				false,
+				'keeps the ID and is retried',
+			),
+			'400 resource_missing (another object)'        => array( 400, $stripe_error( 'customer' ), false, 'keeps the ID and is retried' ),
+			'404 rest_no_route (platform routing)'         => array(
+				404,
+				array(
+					'code'    => 'rest_no_route',
+					'message' => 'No route was found matching the URL and request method.',
+					'data'    => array( 'status' => 404 ),
+				),
+				false,
+				'keeps the ID and is retried',
+			),
+		);
+	}
+
+	/**
+	 * @testdox A cancel retry that finds Stripe has no such subscription counts it as cancelled, with the same line and no further retry.
+	 */
+	public function test_a_cancel_retry_counts_a_stripe_not_found_as_confirmed(): void {
+		$subscription                   = $this->create_subscription( array( '_wcpay_subscription_id' => self::MAIN_SUBSCRIPTION_ID ), 2, '49.80', 'USD', 'stripe' );
+		$not_found                      = array(
+			'error' => array(
+				'code'    => 'resource_missing',
+				'message' => "No such subscription: '" . self::MAIN_SUBSCRIPTION_ID . "'",
+				'param'   => 'id',
+				'type'    => 'invalid_request_error',
+			),
+		);
+		$this->http_client->responses[] = $this->make_response( 404, $not_found );
+		$this->http_client->responses[] = $this->make_response( 404, $not_found );
+		$logger                         = RecordingWcLogger::install();
+
+		$this->sut->handle_retry_cancel_subscription( $subscription->get_id(), 2 );
+
+		$this->assertSame( self::MAIN_SUBSCRIPTION_ID, wc_get_order( $subscription->get_id() )->get_meta( '_cancelled_wcpay_subscription_id', true ) );
+		$this->assertNull( $this->get_retry_cancel_delay( $subscription, 3 ) );
+		$context = $this->get_logged_context( $logger, self::NOT_FOUND_LINE );
+		$this->assertSame( array( $subscription->get_id(), self::MAIN_SUBSCRIPTION_ID, 3 ), array( $context['subscription_id'], $context['wcpay_subscription_id'], $context['attempt'] ) );
+		$this->assertSame( array(), $this->get_notes_starting_with( wc_get_order( $subscription->get_id() ), 'WooPayments could not' ), 'No give-up note.' );
 	}
 
 	/**

@@ -426,8 +426,10 @@ class StripeBillingEventHandler {
 			}
 		} else {
 			// Put the subscription on hold first, as a renewal does, so WooCommerce Subscriptions records the payment on it. Stripe already billed it, so neither change reaches Stripe.
-			// One Subscriptions will not put on hold, such as a cancelled one whose Stripe cancel failed, only gets the payment and a note.
-			$can_hold = $this->can_be_put_on_hold( $subscription );
+			// The hold is for a subscription WooPayments bills that Subscriptions lets be held. Any other, such as one moved to
+			// another payment method or a cancelled one whose Stripe cancel failed, only gets the payment and a note.
+			$can_hold            = $this->subscription_service->is_wcpay_subscription( $subscription ) && $this->can_be_put_on_hold( $subscription );
+			$subscription_status = $subscription->get_status();
 			try {
 				$this->subscription_service->run_without_stripe_sync(
 					function () use ( $subscription, $order, $intent, $intent_id, $event_object, $can_hold ): void {
@@ -454,7 +456,8 @@ class StripeBillingEventHandler {
 			}
 
 			if ( ! $can_hold ) {
-				$facts = $invoice_facts + array( 'subscription_status' => $subscription->get_status() ) + $this->get_collected_invoice_note_facts( $subscription, $order );
+				// The status the invoice found: Subscriptions may change it as the payment is recorded.
+				$facts = $invoice_facts + array( 'subscription_status' => $subscription_status ) + $this->get_collected_invoice_note_facts( $subscription, $order );
 				$this->add_invoice_note_once( $order, WooPaymentsOrderNoteService::INVOICE_NOTE_SUBSCRIPTION_NOT_HELD, $facts, 'stripe_billing_invoice_collected|' . $wcpay_invoice_id );
 			}
 		}
@@ -667,7 +670,7 @@ class StripeBillingEventHandler {
 	 * Record a failed renewal attempt: note the decline, put the subscription on hold, or cancel it after the last attempt.
 	 *
 	 * A failure for an invoice whose renewal order no longer needs payment, such as one that arrives after the invoice
-	 * was paid, changes nothing.
+	 * was paid, changes nothing. One for a subscription moved off WooPayments only tries its Stripe cancel again.
 	 *
 	 * @param array<string,mixed> $event Event payload.
 	 * @throws StripeBillingException When the event has missing data or names no subscription of this store.
@@ -688,6 +691,13 @@ class StripeBillingEventHandler {
 		if ( null === $subscription ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
 			throw new StripeBillingException( __( 'Cannot find subscription for the incoming "invoice.payment_failed" event.', 'woocommerce' ), StripeBillingException::INVALID_EVENT_DATA );
+		}
+
+		// A subscription moved off WooPayments keeps its Stripe ID until Stripe confirms the cancel. The declined charge took
+		// nothing, so the cancel is tried again and the other payment method's subscription is left alone.
+		if ( ! $this->subscription_service->is_wcpay_subscription( $subscription ) ) {
+			$this->subscription_service->maybe_cancel_subscription( $subscription, $subscription->get_payment_method() );
+			return;
 		}
 
 		$charge = null;

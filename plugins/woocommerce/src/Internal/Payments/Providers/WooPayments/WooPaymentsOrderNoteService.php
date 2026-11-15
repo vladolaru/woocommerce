@@ -75,7 +75,7 @@ class WooPaymentsOrderNoteService {
 	public const INVOICE_NOTE_PAYMENT_NOT_READ = 'payment_not_read';
 
 	/**
-	 * Stripe Billing invoice note: collected on a payable renewal whose subscription could not be put on hold; the renewal records it.
+	 * Stripe Billing invoice note: collected on a payable renewal whose subscription was not put on hold; the renewal records it.
 	 */
 	public const INVOICE_NOTE_SUBSCRIPTION_NOT_HELD = 'subscription_not_held';
 
@@ -718,8 +718,8 @@ class WooPaymentsOrderNoteService {
 			case self::INVOICE_NOTE_SUBSCRIPTION_NOT_HELD:
 				$subscription_status = $facts['subscription_status'] ?? '';
 				/* translators: %1$s: Stripe Billing invoice ID, %2$s: amount the invoice collected, %3$s: WooPayments charge ID, %4$s: subscription number, %5$s: subscription status, such as "Cancelled", %6$s: transaction URL. */
-				$format = __( 'Stripe Billing collected renewal invoice <code>%1$s</code> for %2$s (WooPayments charge <a>%3$s</a>) while subscription #%4$s was %5$s, and this order now records that payment. The subscription status was not changed. If the customer should not have been charged, refund the payment from this order.', 'woocommerce' );
-				$note   = sprintf(
+				$format = __( 'Stripe Billing collected renewal invoice <code>%1$s</code> for %2$s (WooPayments charge <a>%3$s</a>) while subscription #%4$s was %5$s, and this order now records that payment. If the customer should not have been charged, refund the payment from this order. WooPayments has not confirmed that Stripe Billing stopped billing this subscription, so the customer may be charged again at a later renewal.', 'woocommerce' );
+				return sprintf(
 					WooPaymentsHtmlUtils::escape_interpolated_html(
 						$format,
 						array(
@@ -734,7 +734,6 @@ class WooPaymentsOrderNoteService {
 					esc_html( function_exists( 'wcs_get_subscription_status_name' ) ? wcs_get_subscription_status_name( $subscription_status ) : wc_get_order_status_name( $subscription_status ) ),
 					$charge_url
 				);
-				return $this->append_continued_billing_sentence( $note, $facts );
 
 			case self::INVOICE_NOTE_PAYMENT_NOT_READ:
 				/* translators: %1$s: Stripe Billing invoice ID, %2$s: WooPayments authorization (payment intent) ID, %3$s: the authorization's transaction URL. */

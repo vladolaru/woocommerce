@@ -555,7 +555,7 @@ class StripeBillingSubscriptionService {
 	 * @internal
 	 *
 	 * @param mixed $subscription Subscription.
-	 * @return bool Whether Stripe confirmed the cancel; false when it failed or there is no Stripe subscription.
+	 * @return bool Whether Stripe confirmed the cancel or has no such subscription; false when it failed or there is none to cancel.
 	 */
 	public function cancel_subscription( $subscription ): bool {
 		if ( ! $subscription instanceof WC_Order ) {
@@ -569,8 +569,8 @@ class StripeBillingSubscriptionService {
 	 * Retry a failed cancel of a subscription's Stripe subscription, while the subscription still holds the Stripe ID and
 	 * still wants the cancel: it is on another payment method, or WooCommerce Subscriptions counts its status as ended.
 	 *
-	 * A Stripe subscription already canceled counts as cancelled. A subscription off WooPayments then moves its Stripe ID
-	 * to `_cancelled_wcpay_subscription_id`, as maybe_cancel_subscription() does.
+	 * A Stripe subscription already canceled, or one Stripe does not have, counts as cancelled. A subscription off
+	 * WooPayments then moves its Stripe ID to `_cancelled_wcpay_subscription_id`, as maybe_cancel_subscription() does.
 	 *
 	 * @internal
 	 *
@@ -969,12 +969,13 @@ class StripeBillingSubscriptionService {
 	}
 
 	/**
-	 * Cancel a subscription's Stripe subscription. A failure writes the always-written line and schedules the next retry
-	 * on the webhook retry cadence; after the last one the merchant gets a note saying what to do.
+	 * Cancel a subscription's Stripe subscription; a Stripe answer that it has no such subscription counts as cancelled. A
+	 * failure writes the always-written line and schedules the next retry on the webhook retry cadence; after the last one
+	 * the merchant gets a note saying what to do.
 	 *
 	 * @param WC_Order $subscription Subscription.
 	 * @param int      $retry        Which retry this is, 0 for the first attempt.
-	 * @return bool Whether Stripe confirmed the cancel.
+	 * @return bool Whether Stripe confirmed the cancel or has no such subscription.
 	 */
 	private function cancel_stripe_subscription( WC_Order $subscription, int $retry ): bool {
 		$wcpay_subscription_id = $this->get_wcpay_subscription_id( $subscription );
@@ -986,6 +987,21 @@ class StripeBillingSubscriptionService {
 			$this->api->cancel_subscription( $wcpay_subscription_id );
 			return true;
 		} catch ( ApiException $exception ) {
+			if ( self::is_unknown_to_stripe( $exception ) ) {
+				// Stripe has no subscription with this ID for this account and mode, so nothing bills under it here. The same
+				// answer comes for one on another account or in the other mode, so this line is the trace of the release.
+				$this->logger->log_throwable_always(
+					'Stripe has no such subscription on this account and mode, so it is counted as cancelled.',
+					$exception,
+					array(
+						'subscription_id'       => $subscription->get_id(),
+						'wcpay_subscription_id' => $wcpay_subscription_id,
+						'attempt'               => $retry + 1,
+					)
+				);
+				return true;
+			}
+
 			// Client 11.1.0 logs this only when WooPayments logging is on (class-wc-payments-subscription-service.php:525-529); a
 			// cancellation that did not reach Stripe keeps billing, so this line is always written, once per attempt.
 			$this->logger->log_throwable_always(
@@ -1022,6 +1038,17 @@ class StripeBillingSubscriptionService {
 		);
 
 		return false;
+	}
+
+	/**
+	 * Tell whether a platform error says Stripe has no such subscription: a 404 with `resource_missing`, which the platform
+	 * passes through from Stripe unchanged. Its outages never take this shape: they answer 5xx, 401 or a transport error.
+	 *
+	 * @param ApiException $exception Platform error.
+	 * @return bool
+	 */
+	private static function is_unknown_to_stripe( ApiException $exception ): bool {
+		return 404 === $exception->get_http_code() && 'resource_missing' === $exception->get_error_code();
 	}
 
 	/**
