@@ -937,6 +937,61 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * WordPress runs the query log hook after a query runs and before it reads that query's result. Plain WordPress answers
+	 * the listener's read from its cache; a query of the switch's there would replace the other query's result. The listener
+	 * does not read inside itself, so a missing check cannot hang the suite. Query logging stays on for the whole process.
+	 *
+	 * @testdox With query logging on, a log listener that reads plugin activity leaves an uncached option read during the deactivation its own value.
+	 * @group multisite
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_query_log_listener_that_reads_plugin_activity_leaves_another_read_its_own_value(): void {
+		define( 'SAVEQUERIES', true );
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, 'hello-dolly/hello.php' ) );
+		$network_plugins = array( 'network-plugin/network-plugin.php' => 1 );
+		if ( is_multisite() ) {
+			update_site_option( 'active_sitewide_plugins', $network_plugins );
+		}
+		add_option( 'woocommerce_cutover_test_uncached', 'its own value', '', false );
+		wp_cache_delete( 'woocommerce_cutover_test_uncached', 'options' );
+		$sut  = $this->create_sut();
+		$seen = null;
+		add_action(
+			'deactivate_plugin',
+			static function () use ( &$seen ): void {
+				$seen = get_option( 'woocommerce_cutover_test_uncached' );
+			}
+		);
+		$listening = false;
+		add_filter(
+			'log_query_custom_data',
+			static function ( $query_data ) use ( &$listening ) {
+				if ( ! $listening ) {
+					$listening = true;
+					try {
+						is_plugin_active( 'hello-dolly/hello.php' );
+					} finally {
+						$listening = false;
+					}
+				}
+				return $query_data;
+			}
+		);
+
+		$this->assertTrue( $sut->deactivate_woopayments_plugin() );
+		$this->assertSame( 'its own value', $seen, 'The option read returns its own value.' );
+		$this->assertSame( 'its own value', wp_cache_get( 'woocommerce_cutover_test_uncached', 'options' ), 'The option caches its own value.' );
+		$this->assertSame( array( 1 => 'hello-dolly/hello.php' ), $this->read_stored_active_plugins() );
+		if ( is_multisite() ) {
+			global $wpdb;
+			$stored_network = $wpdb->get_var( $wpdb->prepare( "SELECT meta_value FROM {$wpdb->sitemeta} WHERE site_id = %d AND meta_key = 'active_sitewide_plugins'", get_current_network_id() ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- The stored row is what the row checks.
+			$this->assertSame( $network_plugins, maybe_unserialize( (string) $stored_network ) );
+		}
+		$this->assertSame( array(), $GLOBALS['wp_filter']['pre_option']->callbacks[ PHP_INT_MAX ] ?? array(), 'No callback is left on the generic pre_option filter.' );
+	}
+
+	/**
 	 * Each read queries the options table of the blog current at that moment.
 	 *
 	 * @testdox On a multisite, a plugin activated on another site by a listener inside the deactivation leaves both sites' stored lists exact.

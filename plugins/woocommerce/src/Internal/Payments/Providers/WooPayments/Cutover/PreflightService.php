@@ -465,8 +465,8 @@ class PreflightService {
 	 * without the plugins hidden in that request and so deactivate them for the whole store. For this one call each read of
 	 * active_plugins queries the current blog's stored row. Every read that works gives that row, unless a read filter that
 	 * runs after this one replaces the answer. WordPress's write is not atomic against a nested plugin change: it writes the
-	 * list it read before its hooks ran. When a read fails, or arrives while this filter's own query runs, WordPress answers
-	 * as if this filter were not there.
+	 * list it read before its hooks ran. When a read fails, arrives while this filter's own query runs, or arrives while
+	 * WordPress logs a query, WordPress answers as if this filter were not there.
 	 *
 	 * An extension that is not active counts as deactivated: a retry after a crash that followed a successful deactivation
 	 * finds nothing to deactivate. An extension active for every site stays active, and this reports false. So does a stored
@@ -502,9 +502,11 @@ class PreflightService {
 		// A read that fails returns the value this filter was given, so WordPress answers as it would without the filter.
 		// A listener on the database's query filter that reads plugin activity would re-enter this callback from inside its
 		// query, without end. The flag only marks that query as running; a read that arrives meanwhile gets the value it was given.
+		// WordPress runs its query log hook after a query runs and before it reads that query's result, so a query of ours there
+		// would replace the result; a read that arrives while that hook runs gets the value it was given too.
 		$stored_view = function ( $pre, $option ) {
 			static $querying = false;
-			if ( 'active_plugins' !== $option || $querying ) {
+			if ( 'active_plugins' !== $option || $querying || doing_filter( 'log_query_custom_data' ) ) {
 				return $pre;
 			}
 			$querying = true;
