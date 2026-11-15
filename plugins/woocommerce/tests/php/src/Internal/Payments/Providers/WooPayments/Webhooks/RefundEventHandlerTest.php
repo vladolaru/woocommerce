@@ -1468,6 +1468,7 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 			'a WooPayments payment kept on a bank transfer order, delivered twice' => array( $kept, true, false, 2, 1 ),
 			'a WooPayments payment kept on a bank transfer order, delivered again after a failed delivery' => array( $kept, true, true, 1, 1 ),
 			'a WooPayments payment kept on a bank transfer order, with logging off' => array( $kept, false, false, 1, 1 ),
+			'a WooPayments payment kept on a bank transfer order, delivered again after a failed delivery, with logging off' => array( $kept, false, true, 1, 1 ),
 			'a WooPayments order' => array( static fn(): WC_Order => StoredPaymentRecords::payment(), true, false, 1, 0 ),
 		);
 	}
