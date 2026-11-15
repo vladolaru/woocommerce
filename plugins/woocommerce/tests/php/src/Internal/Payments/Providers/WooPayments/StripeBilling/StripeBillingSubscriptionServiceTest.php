@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingSubscriptionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
@@ -156,7 +157,7 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 		}
 
 		$this->sut = new StripeBillingSubscriptionService();
-		$this->sut->init( $api, $this->customer_service, $product_service, $invoice_service, $logger );
+		$this->sut->init( $api, $this->customer_service, $product_service, $invoice_service, $logger, wc_get_container()->get( WooPaymentsActionSchedulerService::class ) );
 	}
 
 	/**

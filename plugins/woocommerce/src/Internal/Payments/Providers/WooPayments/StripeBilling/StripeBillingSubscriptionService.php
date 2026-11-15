@@ -114,6 +114,13 @@ class StripeBillingSubscriptionService {
 	private WooPaymentsLogger $logger;
 
 	/**
+	 * Action Scheduler service, for the retry of a failed cancel.
+	 *
+	 * @var WooPaymentsActionSchedulerService
+	 */
+	private WooPaymentsActionSchedulerService $scheduler;
+
+	/**
 	 * Stack frames the on-hold suspension line writes: enough to reach past the status hooks to the code that changed the status.
 	 */
 	private const STATUS_CHANGE_TRACE_FRAMES = 20;
@@ -144,18 +151,20 @@ class StripeBillingSubscriptionService {
 	 *
 	 * @internal
 	 *
-	 * @param StripeBillingApi            $api              Stripe Billing platform calls.
-	 * @param WooPaymentsCustomerService  $customer_service Customer service.
-	 * @param StripeBillingProductService $product_service  Product service.
-	 * @param StripeBillingInvoiceService $invoice_service  Invoice service.
-	 * @param WooPaymentsLogger           $logger           Module logger.
+	 * @param StripeBillingApi                  $api              Stripe Billing platform calls.
+	 * @param WooPaymentsCustomerService        $customer_service Customer service.
+	 * @param StripeBillingProductService       $product_service  Product service.
+	 * @param StripeBillingInvoiceService       $invoice_service  Invoice service.
+	 * @param WooPaymentsLogger                 $logger           Module logger.
+	 * @param WooPaymentsActionSchedulerService $scheduler        Action Scheduler service.
 	 */
-	final public function init( StripeBillingApi $api, WooPaymentsCustomerService $customer_service, StripeBillingProductService $product_service, StripeBillingInvoiceService $invoice_service, WooPaymentsLogger $logger ): void {
+	final public function init( StripeBillingApi $api, WooPaymentsCustomerService $customer_service, StripeBillingProductService $product_service, StripeBillingInvoiceService $invoice_service, WooPaymentsLogger $logger, WooPaymentsActionSchedulerService $scheduler ): void {
 		$this->api              = $api;
 		$this->customer_service = $customer_service;
 		$this->product_service  = $product_service;
 		$this->invoice_service  = $invoice_service;
 		$this->logger           = $logger;
+		$this->scheduler        = $scheduler;
 	}
 
 	/**
@@ -1016,7 +1025,7 @@ class StripeBillingSubscriptionService {
 
 		$delays = WebhookReliabilityService::RETRY_DELAYS_SECONDS;
 		if ( isset( $delays[ $retry ] ) ) {
-			wc_get_container()->get( WooPaymentsActionSchedulerService::class )->schedule_job(
+			$this->scheduler->schedule_job(
 				self::RETRY_CANCEL_ACTION,
 				array(
 					'subscription_id' => $subscription->get_id(),

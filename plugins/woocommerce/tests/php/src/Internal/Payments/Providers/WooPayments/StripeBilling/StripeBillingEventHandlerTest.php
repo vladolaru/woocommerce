@@ -35,6 +35,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingSubscriptionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\OtherChargeRecorder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\PaymentIntentEventHandler;
@@ -182,7 +183,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		$invoice_service->init( $api, $api_client, $module, $logger );
 
 		$this->subscription_service = new StripeBillingSubscriptionService();
-		$this->subscription_service->init( $api, $this->createMock( WooPaymentsCustomerService::class ), $product_service, $invoice_service, $logger );
+		$this->subscription_service->init( $api, $this->createMock( WooPaymentsCustomerService::class ), $product_service, $invoice_service, $logger, wc_get_container()->get( WooPaymentsActionSchedulerService::class ) );
 		wc_get_container()->replace( StripeBillingSubscriptionService::class, $this->subscription_service );
 
 		$this->sut = new StripeBillingEventHandler();

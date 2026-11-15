@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
@@ -127,7 +128,7 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 		$this->sut->init( $api, $api_client, $module, $logger );
 
 		$subscription_service = new StripeBillingSubscriptionService();
-		$subscription_service->init( $api, $this->createMock( WooPaymentsCustomerService::class ), $product_service, $this->sut, $logger );
+		$subscription_service->init( $api, $this->createMock( WooPaymentsCustomerService::class ), $product_service, $this->sut, $logger, wc_get_container()->get( WooPaymentsActionSchedulerService::class ) );
 		wc_get_container()->replace( StripeBillingSubscriptionService::class, $subscription_service );
 	}
 
