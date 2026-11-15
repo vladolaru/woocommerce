@@ -67,6 +67,12 @@ class PreflightService {
 	/** A plugin that charges renewals through the WooPayments extension's own classes is active; the switch waits while it is. */
 	public const FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE = 'extension_renewal_plugin_active';
 
+	/**
+	 * The WooPayments extension's code runs, but neither stored plugin list holds it: something outside Plugins loads it, such
+	 * as an mu-plugin or a host's loader, so the switch could not turn it off. The switch waits until that changes.
+	 */
+	public const FAILURE_LOADED_OUTSIDE_PLUGIN_LISTS = 'woopayments_loaded_outside_plugin_lists';
+
 	private const IDENTIFIER_PLACEHOLDERS_UNAVAILABLE_HOOK = 'woocommerce_woopayments_identifier_placeholders_unavailable';
 
 	private const OPERATIONAL_QUEUE_QUERY_FAILED_HOOK = 'woocommerce_woopayments_operational_queue_query_failed';
@@ -235,6 +241,9 @@ class PreflightService {
 		}
 		if ( array() !== $this->get_renewal_plugins()->get_active_plugin_files() ) {
 			$failures[] = self::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE;
+		}
+		if ( $this->is_woopayments_loaded_outside_plugin_lists() ) {
+			$failures[] = self::FAILURE_LOADED_OUTSIDE_PLUGIN_LISTS;
 		}
 
 		return self::normalize_string_list( $failures );
@@ -424,6 +433,21 @@ class PreflightService {
 		}
 
 		return null === $site || null === $network ? null : false;
+	}
+
+	/**
+	 * Tell whether this process runs the WooPayments extension's code while neither stored plugin list holds it, so the
+	 * switch's deactivation could not turn it off.
+	 *
+	 * The stored lists are read only when the code is loaded. A list that could not be read refuses nothing: finalize reads
+	 * the lists again before it deactivates anything.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return bool
+	 */
+	public function is_woopayments_loaded_outside_plugin_lists(): bool {
+		return $this->arbiter->is_extension_code_loaded() && false === $this->is_woopayments_in_stored_lists();
 	}
 
 	/**

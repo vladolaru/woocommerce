@@ -116,9 +116,10 @@ class ReconciliationJob implements RegisterHooksInterface {
 	 *
 	 * Here the process is normally the runner that deactivated the extension, still working through its batch within
 	 * Action Scheduler's 30 s limit for a web runner; the runner it dispatches next can read. One minute covers that limit,
-	 * at 12 retries at most.
+	 * at 12 retries at most. The in-progress notice waits as long after the hand-over before it says the extension runs from
+	 * outside Plugins, since a page that booted before the hand-over still runs the extension's code.
 	 */
-	private const UNREADABLE_OWNERSHIP_FAST_WINDOW = MINUTE_IN_SECONDS;
+	public const UNREADABLE_OWNERSHIP_FAST_WINDOW = MINUTE_IN_SECONDS;
 
 	/**
 	 * Time after the hand-over until which a check that cannot read ownership retries every UNREADABLE_OWNERSHIP_SLOW_DELAY;

@@ -34,6 +34,13 @@ use WC_Payment_Token_CC;
 class CutoverControllerTest extends WC_Unit_Test_Case {
 
 	/**
+	 * The sentence telling a store that the WooPayments extension runs from outside Plugins.
+	 *
+	 * @var string
+	 */
+	private const LOADED_OUTSIDE_PLUGIN_LISTS_SENTENCE = "WooPayments is now part of WooCommerce, but this store can't switch yet. The WooPayments extension is loaded by this site's setup, not activated in Plugins, so the switch can't turn it off. WooPayments keeps running from the extension.";
+
+	/**
 	 * The System Under Test.
 	 *
 	 * @var CutoverController
@@ -200,6 +207,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 		unset( $_GET[ CutoverController::QUERY_ACTION ], $_GET[ CutoverController::NONCE_NAME ], $_GET[ CutoverController::QUERY_NOTICE ], $_GET['page'], $_GET['tab'] );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( 'woocommerce_woocommerce_payments_version' );
+		delete_option( 'active_plugins' );
 
 		remove_all_filters( CutoverController::FILTER_MANDATORY_CUTOVER_ENABLED );
 		remove_all_filters( 'wp_die_handler' );
@@ -718,6 +726,141 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertStringContainsString( 'Switch in progress', $notice );
 		$this->assertStringNotContainsString( 'Update WooPayments', $notice );
+	}
+
+	/**
+	 * An mu-plugin or a host loader can include the extension with no entry in the plugin lists; the switch's deactivation
+	 * could not turn it off, so the switch is not offered there.
+	 *
+	 * @testdox A store whose WooPayments extension runs from outside Plugins is told why it cannot switch instead of being offered the switch, and a Start click queues nothing.
+	 */
+	public function test_extension_loaded_outside_the_plugin_lists_is_not_offered_the_switch(): void {
+		$this->arrange_switch_offer( 'extension active' );
+		update_option( 'active_plugins', array() );
+		$job = $this->create_start_recording_job();
+
+		$controller = $this->create_cutover_controller( $job );
+		$notices    = $this->render_admin_notices( $controller );
+
+		$this->assertStringContainsString( esc_html( self::LOADED_OUTSIDE_PLUGIN_LISTS_SENTENCE ), $notices );
+		$this->assertStringNotContainsString( 'Start the switch', $notices, 'The switch is not offered.' );
+		$this->assertStringContainsString( 'Not now', $notices, 'The notice can be hidden as the switch notice can.' );
+		$this->assertFalse( $controller->enqueue_merchant_start() );
+		$this->assertSame( array(), $job->sources, 'A hand-made Start link queues nothing.' );
+
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
+		$notices = $this->render_admin_notices( $controller );
+
+		$this->assertStringContainsString( 'Start the switch', $notices, 'An extension activated in Plugins is offered the switch.' );
+		$this->assertStringNotContainsString( esc_html( self::LOADED_OUTSIDE_PLUGIN_LISTS_SENTENCE ), $notices );
+	}
+
+	/**
+	 * @testdox Under Switch in progress, the store says the extension runs from outside Plugins only when this request runs its code with the stored lists clear, on a record a minute past its hand-over or held back for it ($_dataName).
+	 * @dataProvider provide_in_progress_loaded_outside_plugin_lists
+	 *
+	 * @param bool     $token           Whether the record carries the hand-over token.
+	 * @param int|null $since_hand_over Seconds since the hand-over time on the record, or null for none.
+	 * @param string[] $codes           The record's codes.
+	 * @param bool     $code_loaded     Whether this request runs the extension's code.
+	 * @param bool     $stored          Whether the stored site list holds the extension.
+	 * @param bool     $shown           Whether the sentence shows.
+	 */
+	public function test_switch_in_progress_says_when_the_extension_runs_from_outside_plugins( bool $token, ?int $since_hand_over, array $codes, bool $code_loaded, bool $stored, bool $shown ): void {
+		$this->fake_plugin_active();
+		$this->fake_current_user_caps( true );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		update_option( 'active_plugins', $stored ? array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) : array() );
+		$this->extension_class_loaded = $code_loaded;
+		$record                       = array(
+			'state'                  => $token ? StateStore::STATE_PENDING : StateStore::STATE_DEFERRED,
+			'deferred_codes'         => $codes,
+			'informational_outcomes' => array(),
+			'request_origin_token'   => $token ? 'token' : null,
+		);
+		if ( null !== $since_hand_over ) {
+			$record[ StateStore::HANDED_OVER_AT_KEY ] = time() - $since_hand_over;
+		}
+		$job = new class( $record ) extends ReconciliationJob {
+			/** @var array<string,mixed> */
+			private array $record;
+
+			/**
+			 * @param array<string,mixed> $record The record the notice renders.
+			 */
+			public function __construct( array $record ) {
+				$this->record = $record;
+			}
+
+			/** @return array<string,mixed>|null */
+			public function refresh_notice_record(): ?array {
+				return $this->record;
+			}
+		};
+
+		$notice = $this->render_admin_notices( $this->create_cutover_controller( $job ) );
+
+		$this->assertStringContainsString( 'Switch in progress', $notice );
+		if ( $shown ) {
+			$this->assertStringContainsString( esc_html( self::LOADED_OUTSIDE_PLUGIN_LISTS_SENTENCE ), $notice );
+			$this->assertStringNotContainsString( 'Not now', $notice );
+		} else {
+			$this->assertStringNotContainsString( esc_html( self::LOADED_OUTSIDE_PLUGIN_LISTS_SENTENCE ), $notice );
+		}
+	}
+
+	/**
+	 * @return array<string,array{bool,int|null,string[],bool,bool,bool}>
+	 */
+	public function provide_in_progress_loaded_outside_plugin_lists(): array {
+		$code = PreflightService::FAILURE_LOADED_OUTSIDE_PLUGIN_LISTS;
+		return array(
+			'the landing page two seconds after the hand-over' => array( true, 2, array(), true, false, false ),
+			'a minute after the hand-over'               => array( true, MINUTE_IN_SECONDS, array(), true, false, true ),
+			'past the hand-over with no hand-over time'  => array( true, null, array(), true, false, false ),
+			'a minute after, lists hold the extension'   => array( true, MINUTE_IN_SECONDS, array(), true, true, false ),
+			'a minute after, code not loaded'            => array( true, MINUTE_IN_SECONDS, array(), false, false, false ),
+			'held back for it, code loaded, lists clear' => array( false, null, array( $code ), true, false, true ),
+			'held back for it, the extension since activated' => array( false, null, array( $code ), true, true, false ),
+			'held back for another reason'               => array( false, null, array( 'operational_queue_hooks_unhandled' ), true, false, false ),
+		);
+	}
+
+	/**
+	 * Create a job double that offers the start and records each start it is asked for.
+	 *
+	 * @return ReconciliationJob&object{sources: string[]}
+	 */
+	private function create_start_recording_job(): ReconciliationJob {
+		return new class() extends ReconciliationJob {
+			/** @var string[] Sources of the starts asked for. */
+			public array $sources = array();
+
+			/** No durable record. */
+			public function refresh_notice_record(): ?array {
+				return null;
+			}
+
+			/** Offer a new generation. */
+			public function can_offer_start(): bool {
+				return true;
+			}
+
+			/**
+			 * Record a start.
+			 *
+			 * @param string $source Trigger source.
+			 */
+			public function enqueue( string $source ): bool {
+				$this->sources[] = $source;
+				return true;
+			}
+
+			/** An external lifecycle event. */
+			public function is_internal_plugin_lifecycle_change(): bool {
+				return false;
+			}
+		};
 	}
 
 	/**
@@ -1378,6 +1521,11 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 			public function is_woopayments_network_active(): bool {
 				return false;
 			}
+
+			/** The extension loads from the plugin list. */
+			public function is_woopayments_loaded_outside_plugin_lists(): bool {
+				return false;
+			}
 		};
 		$job          = new class() extends ReconciliationJob {
 			/** @var int Number of controller enqueue requests. */
@@ -1949,8 +2097,10 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	private function fake_plugin_active( bool $site_active = true, bool $sitewide_active = false, ?string $plugin_file = null ): void {
 		$this->plugin_active          = $site_active;
 		$this->plugin_sitewide_active = $sitewide_active;
-		$this->extension_class_loaded = $site_active || $sitewide_active;
+		// The extension's code loads where a stored list holds it; a single site has no network list to hold it.
+		$this->extension_class_loaded = $site_active || ( $sitewide_active && is_multisite() );
 		$entry                        = $plugin_file ?? WooPaymentsRuntimeArbiter::PLUGIN_FILE;
+		update_option( 'active_plugins', $site_active ? array( $entry ) : array() );
 
 		$this->register_legacy_proxy_function_mocks(
 			array(

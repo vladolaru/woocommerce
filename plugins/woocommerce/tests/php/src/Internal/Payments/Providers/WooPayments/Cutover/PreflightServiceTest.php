@@ -253,7 +253,7 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox The induced reconciliation vocabulary is exactly the 10 conditions a store can reach.
 	 */
-	public function test_induced_reconciliation_vocabulary_is_exactly_the_ten_reachable_conditions(): void {
+	public function test_induced_reconciliation_vocabulary_is_exactly_the_eleven_reachable_conditions(): void {
 		$codes = array();
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 		$codes = array_merge( $codes, $this->create_sut()->get_failures() );
@@ -265,13 +265,49 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
 		$this->create_bundled_stripe_billing_subscription( 'active' );
 		as_schedule_single_action( time() + HOUR_IN_SECONDS, 'wcpay_preflight_service_test', array(), 'test', true );
-		$this->fake_active_plugins( array( 'yith-woocommerce-subscription-premium/init.php' ), array(), false );
+		$this->fake_active_plugins( array( 'yith-woocommerce-subscription-premium/init.php' ), array(), false, true );
+		update_option( 'active_plugins', array() );
 		$codes = array_merge( $codes, $this->create_sut()->get_failures() );
 
 		$unique_codes = array_values( array_unique( $codes ) );
 
-		$this->assertSame( array( 'builtin_runtime_disabled', 'woopayments_plugin_version_unsupported', 'builtin_transport_unavailable', 'wpcom_connection_unavailable', 'wpcom_blog_id_unavailable', 'wpcom_connection_owner_unavailable', 'multi_currency_rates_unavailable', 'operational_queue_hooks_unhandled', 'bundled_stripe_billing_subscriptions_present', 'extension_renewal_plugin_active' ), $unique_codes );
-		$this->assertCount( 10, $unique_codes );
+		$this->assertSame( array( 'builtin_runtime_disabled', 'woopayments_plugin_version_unsupported', 'builtin_transport_unavailable', 'wpcom_connection_unavailable', 'wpcom_blog_id_unavailable', 'wpcom_connection_owner_unavailable', 'multi_currency_rates_unavailable', 'operational_queue_hooks_unhandled', 'bundled_stripe_billing_subscriptions_present', 'extension_renewal_plugin_active', 'woopayments_loaded_outside_plugin_lists' ), $unique_codes );
+		$this->assertCount( 11, $unique_codes );
+	}
+
+	/**
+	 * The switch's deactivation can only remove an extension that a stored plugin list holds.
+	 *
+	 * @testdox The preflight refuses the switch when the extension's code runs and $_dataName.
+	 * @dataProvider provide_loaded_outside_plugin_lists
+	 *
+	 * @param bool $code_loaded Whether this process runs the extension's code.
+	 * @param bool $stored      Whether the stored site list holds the extension.
+	 * @param bool $read_fails  Whether the stored site list cannot be read.
+	 * @param bool $refused     Whether the preflight refuses the switch.
+	 */
+	public function test_an_extension_loaded_outside_the_plugin_lists_refuses_the_switch( bool $code_loaded, bool $stored, bool $read_fails, bool $refused ): void {
+		$this->fake_active_plugins( array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ), array(), false, $code_loaded );
+		update_option( 'active_plugins', $stored ? array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) : array() );
+		$sut = $this->create_sut();
+		if ( $read_fails ) {
+			$this->read_failure                = new StoredPluginListReadFailure();
+			$this->read_failure->site_failures = 1;
+		}
+
+		$this->assertSame( $refused, in_array( PreflightService::FAILURE_LOADED_OUTSIDE_PLUGIN_LISTS, $sut->get_failures(), true ) );
+	}
+
+	/**
+	 * @return array<string,array{bool,bool,bool,bool}>
+	 */
+	public function provide_loaded_outside_plugin_lists(): array {
+		return array(
+			'no stored list holds it'                => array( true, false, false, true ),
+			'the stored site list holds it'          => array( true, true, false, false ),
+			'the stored list cannot be read'         => array( true, false, true, false ),
+			'its code is not loaded either (no run)' => array( false, false, false, false ),
+		);
 	}
 
 	/**
@@ -1400,13 +1436,15 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	 * @param string[] $site_plugins    Active plugin files of the site.
 	 * @param string[] $network_plugins Plugin files active for the whole network.
 	 * @param bool     $is_multisite    Whether the install is a multisite.
+	 * @param bool     $code_loaded     Whether this process runs the WooPayments extension's code (WCPAY_PLUGIN_FILE defined).
 	 */
-	private function fake_active_plugins( array $site_plugins, array $network_plugins, bool $is_multisite ): void {
+	private function fake_active_plugins( array $site_plugins, array $network_plugins, bool $is_multisite, bool $code_loaded = false ): void {
 		$this->register_legacy_proxy_function_mocks(
 			array(
 				'get_option'      => fn( $name, $default_value = false ) => 'active_plugins' === $name ? $site_plugins : get_option( $name, $default_value ),
 				'get_site_option' => fn( $name, $default_value = false ) => 'active_sitewide_plugins' === $name ? array_fill_keys( $network_plugins, 1 ) : get_site_option( $name, $default_value ),
 				'is_multisite'    => fn() => $is_multisite,
+				'defined'         => fn( $name ) => 'WCPAY_PLUGIN_FILE' === $name ? $code_loaded : defined( $name ),
 			)
 		);
 	}

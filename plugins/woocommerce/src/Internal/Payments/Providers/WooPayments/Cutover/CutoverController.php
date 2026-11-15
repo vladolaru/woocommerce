@@ -436,13 +436,17 @@ class CutoverController implements RegisterHooksInterface {
 
 	/**
 	 * Tell whether this request may start the switch: it may manage it, the WooPayments extension is not active for every
-	 * site (a switch deactivates it on its own site only), and the extension version the store last ran either supports the
-	 * switch or can be updated by the switch for this user.
+	 * site (a switch deactivates it on its own site only), the extension version the store last ran either supports the
+	 * switch or can be updated by the switch for this user, and the extension is not loaded from outside Plugins, where the
+	 * switch could not turn it off.
 	 *
 	 * @return bool
 	 */
 	private function can_start_cutover(): bool {
-		return $this->can_manage_switch() && ! $this->preflight_service->is_woopayments_network_active() && ! $this->needs_extension_update_first();
+		return $this->can_manage_switch()
+			&& ! $this->preflight_service->is_woopayments_network_active()
+			&& ! $this->needs_extension_update_first()
+			&& ! $this->preflight_service->is_woopayments_loaded_outside_plugin_lists();
 	}
 
 	/**
@@ -545,21 +549,25 @@ class CutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Offer the switch, or say what stands in the way: the WooPayments extension is active for every site, or the store last
-	 * ran an extension too old to switch from that the switch cannot update for this user.
+	 * Offer the switch, or say what stands in the way: the WooPayments extension is active for every site, the store last
+	 * ran an extension too old to switch from that the switch cannot update for this user, or the extension is loaded from
+	 * outside Plugins.
 	 */
 	private function output_start_notice(): void {
 		if ( $this->preflight_service->is_woopayments_network_active() ) {
 			$this->output_sitewide_refusal_notice();
 			return;
 		}
-		if ( $this->can_start_cutover() ) {
+		if ( $this->can_manage_switch() && ! $this->needs_extension_update_first() ) {
 			// Payments settings keeps the switch notice, with no "Not now"; every other admin page honours the snooze.
 			$on_payments_settings = $this->is_payments_settings_request();
 			if ( ( $on_payments_settings || ! $this->is_start_notice_snoozed() ) && $this->reconciliation_job->can_offer_start() ) {
-				// The preflight would hold the switch back, so the notice says why instead of offering it.
+				// The preflight would hold the switch back, so the notice says why instead of offering it. Read only when the
+				// notice shows: the check reads the stored plugin lists when the extension's code is loaded.
 				$plugin_names = $this->renewal_plugins->get_active_plugin_names();
-				if ( array() !== $plugin_names ) {
+				if ( $this->preflight_service->is_woopayments_loaded_outside_plugin_lists() ) {
+					$this->output_loaded_outside_plugin_lists_notice( ! $on_payments_settings );
+				} elseif ( array() !== $plugin_names ) {
 					$this->output_renewal_plugin_holdback_notice( $plugin_names, ! $on_payments_settings );
 				} else {
 					$this->output_start_switch_notice( ! $on_payments_settings );
@@ -599,6 +607,20 @@ class CutoverController implements RegisterHooksInterface {
 			}
 			if ( in_array( $record['state'], array( StateStore::STATE_PENDING, StateStore::STATE_RUNNING, StateStore::STATE_DEFERRED ), true ) ) {
 				echo '<div class="notice notice-info"><p>' . esc_html__( 'Switch in progress', 'woocommerce' ) . '</p></div>';
+				// A switch held back because the extension is loaded from outside Plugins says so, as does one past its hand-over
+				// whose extension still runs in this request with the stored lists clear: there it does not end by itself. This
+				// request's own reading, so a stale queue process elsewhere never shows it. Past the hand-over only once it is a
+				// minute old: the page the merchant lands on after the click can boot before the hand-over and render after it.
+				$handed_over_at = $record[ StateStore::HANDED_OVER_AT_KEY ] ?? null;
+				if (
+					(
+						in_array( PreflightService::FAILURE_LOADED_OUTSIDE_PLUGIN_LISTS, (array) ( $record[ StateStore::BLOCKING_CODES_KEY ] ?? array() ), true )
+						|| ( null !== ( $record['request_origin_token'] ?? null ) && is_int( $handed_over_at ) && (int) $this->legacy_proxy->call_function( 'time' ) - $handed_over_at >= ReconciliationJob::UNREADABLE_OWNERSHIP_FAST_WINDOW )
+					)
+					&& $this->preflight_service->is_woopayments_loaded_outside_plugin_lists()
+				) {
+					$this->output_loaded_outside_plugin_lists_notice( false );
+				}
 				// A switch whose extension became active for every site after its start waits for the per-site activation, and stops saying so once it no longer is.
 				if ( StateStore::STATE_DEFERRED === $record['state'] && $this->preflight_service->is_woopayments_network_active() && in_array( ReconciliationJob::CODE_PLUGIN_ACTIVE_SITEWIDE, (array) ( $record[ StateStore::BLOCKING_CODES_KEY ] ?? array() ), true ) ) {
 					$this->output_sitewide_refusal_notice();
@@ -652,6 +674,26 @@ class CutoverController implements RegisterHooksInterface {
 			echo '</p>';
 		}
 		echo '</div>';
+	}
+
+	/**
+	 * Output the notice telling a store that it cannot switch while the WooPayments extension is loaded from outside Plugins.
+	 *
+	 * @param bool $can_snooze Whether the notice offers "Not now", which hides the switch notice.
+	 */
+	private function output_loaded_outside_plugin_lists_notice( bool $can_snooze ): void {
+		?>
+		<div class="notice notice-info">
+			<p><?php esc_html_e( "WooPayments is now part of WooCommerce, but this store can't switch yet. The WooPayments extension is loaded by this site's setup, not activated in Plugins, so the switch can't turn it off. WooPayments keeps running from the extension.", 'woocommerce' ); ?></p>
+			<?php if ( $can_snooze ) : ?>
+				<p>
+					<a href="<?php echo esc_url( $this->get_dismiss_notice_url( self::NOTICE_START_SWITCH ) ); ?>">
+						<?php esc_html_e( 'Not now', 'woocommerce' ); ?>
+					</a>
+				</p>
+			<?php endif; ?>
+		</div>
+		<?php
 	}
 
 	/**

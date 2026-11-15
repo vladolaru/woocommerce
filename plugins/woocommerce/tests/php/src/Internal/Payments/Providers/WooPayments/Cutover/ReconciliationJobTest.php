@@ -3462,6 +3462,27 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox An extension loaded from outside Plugins holds the switch back at the retry cadence, before the fence, without deactivating anything.
+	 */
+	public function test_extension_loaded_outside_the_plugin_lists_defers_at_the_cadence(): void {
+		$preflight = $this->create_preflight_with_failures( array( PreflightService::FAILURE_LOADED_OUTSIDE_PLUGIN_LISTS ) );
+		$sut       = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization() );
+		$this->assertTrue( $sut->enqueue( 'merchant' ) );
+		$pending = $this->state_store->get_record();
+		$this->assertIsArray( $pending );
+		$this->scheduler->cancel( $pending['generation'], 1 );
+
+		$sut->handle_reconcile( $pending['generation'], 1 );
+
+		$held = $this->state_store->get_record();
+		$this->assertIsArray( $held );
+		$this->assertSame( StateStore::STATE_DEFERRED, $held['state'] );
+		$this->assertSame( array( PreflightService::FAILURE_LOADED_OUTSIDE_PLUGIN_LISTS ), $held['deferred_codes'] );
+		$this->assertSame( 900, $this->get_deferral_delay( $held ) );
+		$this->assertNull( $held['request_origin_token'] ?? null, 'The fence was not reached.' );
+	}
+
+	/**
 	 * Past finalize the extension is off and its classes never load again, so the holdback has nothing left to protect.
 	 *
 	 * @testdox A deferred claim past finalize whose re-run preflight finds a plugin that renews through the WooPayments extension goes on to the ownership check instead of retrying.
