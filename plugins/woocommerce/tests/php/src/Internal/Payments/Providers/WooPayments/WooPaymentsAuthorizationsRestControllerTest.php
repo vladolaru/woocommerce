@@ -1216,4 +1216,49 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 
 		return $order;
 	}
+
+	/**
+	 * @testdox A $action request for an authorization a paid Stripe Billing invoice replaced on its renewal is refused with 409 before payment processing.
+	 *
+	 * The renewal stored the authorization pi_authorized as its payment; the invoice's payment now is its transaction ID and
+	 * stored intent, succeeded (StripeBillingEventHandler). The platform still lists the authorization with the renewal in its
+	 * metadata, so the transaction page offers its capture and cancel; the route compares the requested intent with the
+	 * order's transaction ID. Client 11.1.0 checks only the live intent's metadata.order_id and status
+	 * (includes/admin/class-wc-rest-payments-orders-controller.php:389-406, :628-645).
+	 *
+	 * @testWith ["capture"]
+	 *           ["cancel"]
+	 *
+	 * @param string $action Capture or cancel.
+	 */
+	public function test_authorization_request_for_an_authorization_an_invoice_replaced_is_refused( string $action ): void {
+		$processing_service = $this->createMock( PaymentProcessingService::class );
+		$processing_service->expects( $this->never() )->method( 'capture' );
+		$processing_service->expects( $this->never() )->method( 'cancel' );
+		$this->create_authorizations_controller( $processing_service )->register_routes();
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->set_total( 24.90 );
+		$order->set_currency( 'USD' );
+		$order->set_payment_method( 'woocommerce_payments' );
+		$order->set_transaction_id( 'pi_invoice' );
+		$order->update_meta_data( '_intent_id', 'pi_invoice' );
+		$order->update_meta_data( '_charge_id', 'ch_invoice' );
+		$order->update_meta_data( '_intention_status', 'succeeded' );
+		$order->save();
+		$order->update_status( 'processing' );
+		$this->api_client->response = array(
+			'id'       => 'pi_authorized',
+			'status'   => 'requires_capture',
+			'metadata' => array( 'order_id' => (string) $order->get_id() ),
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/' . $action . '_authorization' );
+		$request->set_body_params( array( 'payment_intent_id' => 'pi_authorized' ) );
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 409, $response->get_status() );
+		$this->assertSame( 'wcpay_intent_order_mismatch', $response->get_data()['code'] );
+		$this->assertSame( array(), $this->api_client->last_call, 'The refusal comes before the live intent is fetched.' );
+	}
 }

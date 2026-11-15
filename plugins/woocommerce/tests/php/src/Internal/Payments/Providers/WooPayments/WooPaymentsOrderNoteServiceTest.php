@@ -975,4 +975,138 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 			'empty'                  => array( '', '' ),
 		);
 	}
+
+	/**
+	 * @testdox Should format the Stripe Billing invoice note "$_dataName" with its links, its codes and its last sentence only when billing continues.
+	 *
+	 * The wordings are the reviewed copy for an invoice collected on a renewal that no longer needs payment; the client
+	 * adds no such note (class-wc-payments-invoice-service.php:334-345). The charge links to its transaction page by the
+	 * invoice's intent, or by the charge when the intent is not known, as the other-charge notes link it.
+	 *
+	 * @dataProvider provider_collected_invoice_notes
+	 *
+	 * @param string              $wording  Wording.
+	 * @param array<string,mixed> $facts    Facts beside the invoice's.
+	 * @param string              $expected Expected note, with {amount}, {charge}, {authorization} and {subscription} for the amount, the linked charge, the linked authorization and the subscription sentence.
+	 */
+	public function test_formats_collected_invoice_notes( string $wording, array $facts, string $expected ): void {
+		$sut      = new WooPaymentsOrderNoteService();
+		$invoice  = array(
+			'object_id' => 'in_collected',
+			'status'    => 'paid',
+			'intent_id' => 'pi_invoice',
+			'charge_id' => 'ch_invoice',
+			'amount'    => 24.9,
+			'currency'  => 'usd',
+		);
+		$facts   += $invoice;
+		$link     = static fn( string $url, string $id ): string => '<a href="' . esc_url( $url ) . '" target="_blank" rel="noopener noreferrer">' . $id . '</a>';
+		$charge   = $link( $sut->transaction_url( $facts['intent_id'], 'ch_invoice' ), 'ch_invoice' );
+		$expected = strtr(
+			$expected,
+			array(
+				'{amount}'        => wc_price( 24.9, array( 'currency' => 'USD' ) ),
+				'{charge}'        => $charge,
+				'{authorization}' => $link( $sut->transaction_url( 'pi_authorized', 'ch_authorized' ), 'pi_authorized' ),
+				'{subscription}'  => sprintf( 'Stripe Billing will keep charging subscription #%s at each renewal until the subscription is cancelled.', '742' ),
+			)
+		);
+
+		$this->assertSame( $expected, $sut->format_collected_invoice_note( $wording, $facts ) );
+		if ( isset( $facts['wording'] ) ) {
+			$this->assertSame( $expected, $sut->format_other_charge_note( 'invoice.paid', $facts ), 'The other-charge recorder formats it from the same facts.' );
+		}
+	}
+
+	/**
+	 * Stripe Billing invoice notes and their facts.
+	 *
+	 * @return array<string,array{string,array<string,mixed>,string}>
+	 */
+	public function provider_collected_invoice_notes(): array {
+		$renewal       = array(
+			'order_status'        => 'cancelled',
+			'subscription_number' => '742',
+			'billing_continues'   => true,
+		);
+		$authorization = array(
+			'authorization_intent_id' => 'pi_authorized',
+			'authorization_charge_id' => 'ch_authorized',
+		);
+
+		return array(
+			'1, charged twice'                    => array(
+				WooPaymentsOrderNoteService::INVOICE_NOTE_CHARGED_TWICE,
+				array(
+					'wording'   => WooPaymentsOrderNoteService::INVOICE_NOTE_CHARGED_TWICE,
+					'paid_with' => 'pi_retry',
+				) + $renewal,
+				'Stripe Billing collected renewal invoice <code>in_collected</code> for {amount} (WooPayments charge {charge}) after this order was already paid by payment <code>pi_retry</code>, so the customer was charged twice. To refund the second charge, open it on its WooPayments transaction page. A refund from this order goes to the first payment.',
+			),
+			'2, paid another way'                 => array(
+				WooPaymentsOrderNoteService::INVOICE_NOTE_PAID_ANOTHER_WAY,
+				array(
+					'wording'   => WooPaymentsOrderNoteService::INVOICE_NOTE_PAID_ANOTHER_WAY,
+					'paid_with' => 'Check payments',
+				),
+				'Stripe Billing collected renewal invoice <code>in_collected</code> for {amount} (WooPayments charge {charge}) after this order was already paid with Check payments, so the customer may have paid twice. To refund the WooPayments charge, open it on its WooPayments transaction page, not from this order.',
+			),
+			'2, paid by a method without a title' => array(
+				WooPaymentsOrderNoteService::INVOICE_NOTE_PAID_ANOTHER_WAY,
+				array( 'paid_with' => '' ),
+				'Stripe Billing collected renewal invoice <code>in_collected</code> for {amount} (WooPayments charge {charge}) after this order was already paid with another payment method, so the customer may have paid twice. To refund the WooPayments charge, open it on its WooPayments transaction page, not from this order.',
+			),
+			'2r, marked paid with a reference'    => array(
+				WooPaymentsOrderNoteService::INVOICE_NOTE_MARKED_PAID_WITH_REFERENCE,
+				array(
+					'wording'   => WooPaymentsOrderNoteService::INVOICE_NOTE_MARKED_PAID_WITH_REFERENCE,
+					'paid_with' => 'bank-<123>',
+				),
+				'Stripe Billing collected renewal invoice <code>in_collected</code> for {amount} (WooPayments charge {charge}) after this order was already marked paid with reference <code>bank-&lt;123&gt;</code>, so the customer may have paid twice. To refund the WooPayments charge, open it on its WooPayments transaction page, not from this order.',
+			),
+			'3a, refund from this order'          => array(
+				WooPaymentsOrderNoteService::INVOICE_NOTE_REFUND_FROM_ORDER,
+				$renewal,
+				'Stripe Billing collected renewal invoice <code>in_collected</code> for {amount} (WooPayments charge {charge}) while this order&#039;s status was Cancelled. The order status was not changed. If the customer should not have been charged, refund the payment from this order. {subscription}',
+			),
+			'3a, billing stopped'                 => array(
+				WooPaymentsOrderNoteService::INVOICE_NOTE_REFUND_FROM_ORDER,
+				array( 'billing_continues' => false ) + $renewal,
+				'Stripe Billing collected renewal invoice <code>in_collected</code> for {amount} (WooPayments charge {charge}) while this order&#039;s status was Cancelled. The order status was not changed. If the customer should not have been charged, refund the payment from this order.',
+			),
+			'3b, refund from the transaction page, intent not known' => array(
+				WooPaymentsOrderNoteService::INVOICE_NOTE_REFUND_FROM_TRANSACTION_PAGE,
+				array(
+					'wording'      => WooPaymentsOrderNoteService::INVOICE_NOTE_REFUND_FROM_TRANSACTION_PAGE,
+					'intent_id'    => '',
+					'order_status' => 'on-hold',
+				) + $renewal,
+				'Stripe Billing collected renewal invoice <code>in_collected</code> for {amount} (WooPayments charge {charge}) while this order&#039;s status was On hold. The order status was not changed. If the customer should not have been charged, refund the charge from its WooPayments transaction page, not from this order. {subscription}',
+			),
+			'4, authorization replaced'           => array(
+				WooPaymentsOrderNoteService::INVOICE_NOTE_AUTHORIZATION_REPLACED,
+				$authorization + $renewal,
+				'This order held WooPayments authorization {authorization}, which was not captured. Stripe Billing collected renewal invoice <code>in_collected</code> for {amount} (WooPayments charge {charge}) in its place, and this order now records that payment. This store can no longer capture or cancel the authorization, so it expires on its own and the customer is not charged for it. If it was captured after all, refund it from its WooPayments transaction page. {subscription}',
+			),
+			'4, on a paid renewal'                => array(
+				WooPaymentsOrderNoteService::INVOICE_NOTE_AUTHORIZATION_REPLACED,
+				$authorization + array( 'billing_continues' => false ) + $renewal,
+				'This order held WooPayments authorization {authorization}, which was not captured. Stripe Billing collected renewal invoice <code>in_collected</code> for {amount} (WooPayments charge {charge}) in its place, and this order now records that payment. This store can no longer capture or cancel the authorization, so it expires on its own and the customer is not charged for it. If it was captured after all, refund it from its WooPayments transaction page.',
+			),
+			'4u, payment not read'                => array(
+				WooPaymentsOrderNoteService::INVOICE_NOTE_PAYMENT_NOT_READ,
+				$authorization + $renewal,
+				'The payment for Stripe Billing renewal invoice <code>in_collected</code> could not be read. Do not capture WooPayments authorization {authorization} on this order. If no later note follows this one, the payment was not recorded on this order.',
+			),
+		);
+	}
+
+	/**
+	 * @testdox Should refuse a Stripe Billing invoice note without a known wording, so the event is not acknowledged without its record.
+	 */
+	public function test_refuses_a_collected_invoice_note_without_a_known_wording(): void {
+		$this->expectException( \InvalidArgumentException::class );
+
+		( new WooPaymentsOrderNoteService() )->format_other_charge_note( 'invoice.paid', array( 'object_id' => 'in_collected' ) );
+	}
 }

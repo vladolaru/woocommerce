@@ -36,7 +36,11 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\OtherChargeRecorder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\PaymentIntentEventHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\RefundEventHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDetailsService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderAdminActionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Tests\Internal\MultiCurrency\ServiceFactories;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
@@ -118,11 +122,18 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	private StripeBillingSubscriptionService $subscription_service;
 
 	/**
-	 * Log lines written, as level, message and source.
+	 * Log lines written, as level, message and source, once for each log handler.
 	 *
 	 * @var array<int,array{0:string,1:string,2:string}>
 	 */
 	private array $log_lines = array();
+
+	/**
+	 * Log messages written, as message and the class of the log handler that received it.
+	 *
+	 * @var array<int,array{0:string,1:string}>
+	 */
+	private array $handled_log_messages = array();
 
 	/**
 	 * Multi-Currency controller whose frontend price hooks a test registered, removed on tear down.
@@ -174,7 +185,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		wc_get_container()->replace( StripeBillingSubscriptionService::class, $this->subscription_service );
 
 		$this->sut = new StripeBillingEventHandler();
-		$this->sut->init( $invoice_service, $this->subscription_service, $api_client, wc_get_container()->get( PaymentIntentEventHandler::class ), $account_service, $logger, wc_get_container()->get( OrderPaymentLifecycleService::class ) );
+		$this->sut->init( $invoice_service, $this->subscription_service, $api_client, wc_get_container()->get( PaymentIntentEventHandler::class ), $account_service, $logger, wc_get_container()->get( OrderPaymentLifecycleService::class ), wc_get_container()->get( OtherChargeRecorder::class ) );
 
 		add_action( 'woocommerce_subscription_status_on-hold', array( $this->subscription_service, 'handle_subscription_status_on_hold' ) );
 		add_action( 'woocommerce_subscription_status_on-hold_to_active', array( $this->subscription_service, 'reactivate_subscription' ) );
@@ -182,12 +193,13 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 
 		add_filter(
 			'woocommerce_logger_log_message',
-			function ( $message, $level, $context ) {
-				$this->log_lines[] = array( (string) $level, (string) $message, (string) ( $context['source'] ?? '' ) );
+			function ( $message, $level, $context, $handler = null ) {
+				$this->log_lines[]            = array( (string) $level, (string) $message, (string) ( $context['source'] ?? '' ) );
+				$this->handled_log_messages[] = array( (string) $message, is_object( $handler ) ? get_class( $handler ) : '' );
 				return $message;
 			},
 			10,
-			3
+			4
 		);
 	}
 
@@ -426,17 +438,20 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	 *
 	 * Client 11.3.0 holds it with the note (class-wc-payments-subscriptions-event-handler.php:163-172) and notes that the
 	 * payment info could not be added (class-wc-payments-invoice-service.php:334-343). The hold is the lifecycle's: the
-	 * transaction ID, one hold note however often the invoice arrives, and nothing on a renewal another request paid.
+	 * transaction ID, one hold note however often the invoice arrives, and nothing on a renewal another request paid. That
+	 * renewal records another WooPayments payment, so it gets one note that the customer was charged twice, built from the
+	 * invoice, in place of the payment-info notes.
 	 *
-	 * @testWith ["unpaid", "on-hold", 1, 2]
-	 *           ["paid by another request while the intent is read", "processing", 0, 2]
+	 * @testWith ["unpaid", "on-hold", 1, 2, 0]
+	 *           ["paid by another request while the intent is read", "processing", 0, 0, 1]
 	 *
-	 * @param string $renewal_state  Renewal state when the intent is read.
-	 * @param string $expected       Renewal status after two deliveries.
-	 * @param int    $expected_holds Hold notes.
-	 * @param int    $expected_info  Payment-info notes.
+	 * @param string $renewal_state         Renewal state when the intent is read.
+	 * @param string $expected              Renewal status after two deliveries.
+	 * @param int    $expected_holds        Hold notes.
+	 * @param int    $expected_info         Payment-info notes.
+	 * @param int    $expected_charged_twice Notes that the customer was charged twice.
 	 */
-	public function test_paid_invoice_with_an_unreadable_intent_holds_a_mismatched_renewal_through_the_lifecycle( string $renewal_state, string $expected, int $expected_holds, int $expected_info ): void {
+	public function test_paid_invoice_with_an_unreadable_intent_holds_a_mismatched_renewal_through_the_lifecycle( string $renewal_state, string $expected, int $expected_holds, int $expected_info, int $expected_charged_twice ): void {
 		$subscription = $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID );
 		$renewal      = $this->create_unpaid_renewal_order( $subscription, '30.00' );
 		if ( 'unpaid' !== $renewal_state ) {
@@ -455,6 +470,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		$this->assertSame( $expected, $renewal->get_status() );
 		$this->assertCount( $expected_holds, $this->get_notes_containing( $renewal, 'collected $24.90 USD, but the order total is $30.00 USD' ) );
 		$this->assertCount( $expected_info, $this->get_notes_containing( $renewal, "The payment info couldn't be added to the order." ) );
+		$this->assertCount( $expected_charged_twice, $this->get_notes_containing( $renewal, 'already paid by payment <code>pi_other_payment</code>, so the customer was charged twice' ) );
 		if ( 'unpaid' === $renewal_state ) {
 			$this->assertSame( self::RENEWAL_INTENT_ID, $renewal->get_transaction_id() );
 			$this->assertSame( self::RENEWAL_INTENT_ID, $renewal->get_meta( '_intent_id', true ) );
@@ -463,58 +479,117 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A paid invoice for a renewal that no longer needs payment and is not paid records the payment and completes nothing: $_dataName.
+	 * @testdox A paid invoice for a renewal that is neither paid nor payable records the payment, completes nothing, and notes the invoice once: $_dataName.
 	 *
 	 * Client 11.3.0 only attaches the intent once the renewal no longer needs payment
 	 * (class-wc-payments-subscriptions-event-handler.php:200-203; class-wc-payments-invoice-service.php:334-346), and its
-	 * attach writes nothing once the stored intent status is succeeded (class-wc-payments-order-service.php:1818-1822).
+	 * attach writes nothing once the stored intent status is succeeded (class-wc-payments-order-service.php:1818-1822). The
+	 * client adds no note; the note is the recorded departure for a renewal neither paid nor payable: it says where the
+	 * order screen's refund goes, read after the writes, and, while Stripe Billing keeps charging the subscription (on hold
+	 * or active), that it does until the subscription is cancelled. Delivered twice.
 	 *
 	 * @dataProvider provider_renewals_that_no_longer_need_payment
 	 *
-	 * @param string              $status Renewal status.
-	 * @param array<string,mixed> $meta   Renewal meta.
+	 * @param string              $status              Renewal status.
+	 * @param array<string,mixed> $meta                Renewal meta.
+	 * @param string              $transaction_id      Renewal transaction ID.
+	 * @param string              $subscription_status Subscription status.
+	 * @param string|null         $expected_refund     The note's refund instruction, or null for no note.
+	 * @param bool                $expected_sentence   Whether the note says Stripe Billing keeps charging.
+	 * @param string[]            $expected_record     Stored intent, stored charge and transaction ID after the event.
 	 */
-	public function test_paid_invoice_records_a_renewal_that_no_longer_needs_payment_and_completes_nothing( string $status, array $meta ): void {
-		$subscription = $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID );
+	public function test_paid_invoice_records_a_renewal_that_no_longer_needs_payment_and_completes_nothing( string $status, array $meta, string $transaction_id, string $subscription_status, ?string $expected_refund, bool $expected_sentence, array $expected_record ): void {
+		$subscription = $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID, array(), $subscription_status );
 		$renewal      = $this->create_unpaid_renewal_order( $subscription, '24.90' );
 		foreach ( $meta as $key => $value ) {
 			$renewal->update_meta_data( $key, $value );
 		}
+		$renewal->set_transaction_id( $transaction_id );
 		$renewal->set_status( $status );
 		$renewal->save();
+		$this->assertNull( $renewal->get_date_paid() );
 		$notes_before = $this->get_note_contents( $renewal );
 		$payments     = did_action( 'woocommerce_payment_complete' );
-		$this->queue_response( 200, $this->get_renewal_intent() );
-		$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
+		for ( $delivery = 1; $delivery <= 2; $delivery++ ) {
+			$this->queue_response( 200, $this->get_renewal_intent() );
+			$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
+		}
+		$event = $this->get_event( 'invoice_paid_renewal' );
 
-		$this->sut->handle_event( $this->get_event( 'invoice_paid_renewal' ) );
+		$this->sut->handle_event( $event );
+		$this->sut->handle_event( $event );
 
 		$renewal = wc_get_order( $renewal->get_id() );
 		$this->assertSame( $status, $renewal->get_status() );
 		$this->assertSame( 0, did_action( 'woocommerce_payment_complete' ) - $payments );
-		$this->assertSame( $notes_before, $this->get_note_contents( $renewal ) );
-		$this->assertSame( self::RENEWAL_INTENT_ID, $renewal->get_meta( '_intent_id', true ) );
-		$this->assertSame( self::RENEWAL_CHARGE_ID, $renewal->get_meta( '_charge_id', true ) );
+		$this->assertSame( $expected_record, array( $renewal->get_meta( '_intent_id', true ), $renewal->get_meta( '_charge_id', true ), $renewal->get_transaction_id() ) );
+		$new_notes = array_values( array_diff( $this->get_note_contents( $renewal ), $notes_before ) );
+		if ( null === $expected_refund ) {
+			$this->assertSame( array(), $new_notes );
+			return;
+		}
+		$this->assertCount( 1, $new_notes, 'One note however often the invoice arrives.' );
+		$this->assertStringStartsWith( 'Stripe Billing collected renewal invoice <code>' . self::RENEWAL_INVOICE_ID . '</code> for ', $new_notes[0] );
+		$this->assertStringContainsString( 'while this order&#039;s status was ' . wc_get_order_status_name( $status ) . '. The order status was not changed. ' . $expected_refund, $new_notes[0] );
+		$this->assertStringContainsString( self::RENEWAL_CHARGE_ID, $new_notes[0] );
+		$sentence = 'Stripe Billing will keep charging subscription #' . $subscription->get_id() . ' at each renewal until the subscription is cancelled.';
+		$this->assertSame( $expected_sentence, str_ends_with( $new_notes[0], ' ' . $sentence ) );
+		$this->assertSame( 0, $this->count_log_lines( 'other charge recorded' ), 'A renewal neither paid nor payable on WooPayments records the invoice as its payment.' );
 	}
 
 	/**
-	 * Renewals that no longer need payment when their invoice is paid.
+	 * Renewals that are neither paid nor payable when their invoice is paid.
 	 *
-	 * @return array<string,array{string,array<string,mixed>}>
+	 * @return array<string,array{string,array<string,mixed>,string,string,?string,bool,string[]}>
 	 */
 	public function provider_renewals_that_no_longer_need_payment(): array {
+		$from_order            = 'If the customer should not have been charged, refund the payment from this order.';
+		$from_transaction_page = 'If the customer should not have been charged, refund the charge from its WooPayments transaction page, not from this order.';
+		$invoice_recorded      = array( self::RENEWAL_INTENT_ID, self::RENEWAL_CHARGE_ID, self::RENEWAL_INTENT_ID );
+
 		return array(
-			'held for its invoice, now matching' => array(
+			'held for its invoice, now matching'           => array(
 				'on-hold',
 				array(
 					'_intention_status' => 'succeeded',
 					'_intent_id'        => self::RENEWAL_INTENT_ID,
 					'_charge_id'        => self::RENEWAL_CHARGE_ID,
 				),
+				'',
+				'active',
+				null,
+				false,
+				array( self::RENEWAL_INTENT_ID, self::RENEWAL_CHARGE_ID, '' ),
 			),
-			'on hold for another reason'         => array( 'on-hold', array() ),
-			'cancelled'                          => array( 'cancelled', array() ),
-			'refunded'                           => array( 'refunded', array() ),
+			'on hold for another reason'                   => array( 'on-hold', array(), '', 'on-hold', $from_order, true, $invoice_recorded ),
+			'cancelled'                                    => array( 'cancelled', array(), '', 'on-hold', $from_order, true, $invoice_recorded ),
+			'refunded'                                     => array( 'refunded', array(), '', 'active', $from_order, true, $invoice_recorded ),
+			'cancelled, subscription pending cancellation' => array( 'cancelled', array(), '', 'pending-cancel', $from_order, false, $invoice_recorded ),
+			'cancelled after a declined attempt'           => array(
+				'cancelled',
+				array(
+					'_intent_id'        => 'pi_declined',
+					'_intention_status' => 'requires_payment_method',
+				),
+				'pi_declined',
+				'on-hold',
+				$from_order,
+				true,
+				$invoice_recorded,
+			),
+			'on hold storing another payment'              => array(
+				'on-hold',
+				array(
+					'_intent_id'        => 'pi_held',
+					'_charge_id'        => 'ch_held',
+					'_intention_status' => 'succeeded',
+				),
+				'',
+				'on-hold',
+				$from_transaction_page,
+				true,
+				array( 'pi_held', 'ch_held', '' ),
+			),
 		);
 	}
 
@@ -562,6 +637,374 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 			)
 		);
 		$this->assertSame( self::RENEWAL_INTENT_ID, $order->get_meta( '_intent_id', true ) );
+	}
+
+	/**
+	 * @testdox A paid invoice for a renewal that records another payment writes nothing and adds one note naming both: $_dataName.
+	 *
+	 * Delivered twice. Client 11.3.0 attaches the invoice's intent to every renewal (class-wc-payments-subscriptions-event-handler.php:200-203,
+	 * class-wc-payments-invoice-service.php:334-345): it skips on a stored succeeded (class-wc-payments-order-service.php:1818-1822)
+	 * and otherwise writes the intent, charge and transaction ID over the order's (:1873-1884), with no note. Here the renewal
+	 * keeps what it recorded, and the note is the recorded departure: "charged twice" only when the transaction ID names a
+	 * WooPayments payment, "may have paid twice" for another payment method or a typed reference, and, on another
+	 * gateway's renewal never paid, where to refund the charge. The note is the other-charge record, with its warning line.
+	 *
+	 * @dataProvider provider_renewals_that_record_another_payment
+	 *
+	 * @param string              $status          Renewal status.
+	 * @param string              $payment_method  Renewal payment method.
+	 * @param string              $transaction_id  Renewal transaction ID.
+	 * @param array<string,mixed> $meta            Renewal meta.
+	 * @param bool                $paid_date       Whether the renewal has a paid date.
+	 * @param bool                $intent_readable Whether the invoice's intent can be read.
+	 * @param string              $expected        The note's text after the invoice's charge, amount and invoice.
+	 */
+	public function test_paid_invoice_on_a_renewal_that_records_another_payment_only_notes_it( string $status, string $payment_method, string $transaction_id, array $meta, bool $paid_date, bool $intent_readable, string $expected ): void {
+		$subscription = $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID, array(), 'on-hold' );
+		$renewal      = $this->create_unpaid_renewal_order( $subscription, '24.90' );
+		$renewal->set_payment_method( $payment_method );
+		$renewal->set_payment_method_title( 'woocommerce_payments' === $payment_method ? 'Card' : ( 'cheque' === $payment_method ? 'Check payments' : '' ) );
+		$renewal->set_transaction_id( $transaction_id );
+		foreach ( $meta as $key => $value ) {
+			$renewal->update_meta_data( $key, $value );
+		}
+		$renewal->set_status( $status );
+		$renewal->set_date_paid( $paid_date ? time() - DAY_IN_SECONDS : null );
+		$renewal->save();
+		$renewal = wc_get_order( $renewal->get_id() );
+		$this->assertSame( $paid_date, null !== $renewal->get_date_paid() );
+		$before         = $this->get_payment_record( $renewal );
+		$notes_before   = $this->get_note_contents( $renewal );
+		$hooks_before   = did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete_order_status_' . $status );
+		$actions_before = $this->count_fee_details_actions( $renewal );
+		for ( $delivery = 1; $delivery <= 2; $delivery++ ) {
+			if ( $intent_readable ) {
+				$this->queue_response( 200, $this->get_renewal_intent() );
+			} else {
+				$this->queue_platform_error();
+			}
+			$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
+		}
+		$event = $this->get_event( 'invoice_paid_renewal' );
+
+		$this->sut->handle_event( $event );
+		$this->sut->handle_event( $event );
+
+		$renewal   = wc_get_order( $renewal->get_id() );
+		$new_notes = array_values( array_diff( $this->get_note_contents( $renewal ), $notes_before ) );
+		$this->assertCount( 1, $new_notes, 'One note however often the invoice arrives, and no success or payment-info note.' );
+		$this->assertStringStartsWith( 'Stripe Billing collected renewal invoice <code>' . self::RENEWAL_INVOICE_ID . '</code> for ', $new_notes[0] );
+		$this->assertStringContainsString( '&#36;</span>24.90', $new_notes[0], 'The invoice amount.' );
+		$this->assertStringContainsString( '>' . self::RENEWAL_CHARGE_ID . '</a>)', $new_notes[0] );
+		$this->assertStringContainsString( $expected, $new_notes[0] );
+		$this->assertSame( $before, $this->get_payment_record( $renewal ), 'Nothing the renewal recorded is written over: no mode, customer, intent, charge, fee or transaction ID.' );
+		$this->assertSame( $status, $renewal->get_status() );
+		$this->assertSame( $hooks_before, did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete_order_status_' . $status ), 'Neither completion hook fires.' );
+		$this->assertSame( $actions_before, $this->count_fee_details_actions( $renewal ), 'No Fee details job.' );
+		$this->assertSame( 2, $this->count_log_lines( 'other charge recorded: order ' . $renewal->get_id() . ', invoice.paid, charge ' . self::RENEWAL_CHARGE_ID ), 'One warning line per delivery.' );
+		$charge = wc_get_container()->get( WooPaymentsOrderDetailsService::class )->enrich_charge_response( array( 'id' => self::RENEWAL_CHARGE_ID ) );
+		$this->assertSame( array(), $charge['order'], 'The invoice\'s charge links no order, so its transaction page refunds it at the platform.' );
+	}
+
+	/**
+	 * Renewals that record another payment than the invoice's, with the note each gets.
+	 *
+	 * @return array<string,array{string,string,string,array<string,mixed>,bool,bool,string}>
+	 */
+	public function provider_renewals_that_record_another_payment(): array {
+		$paid_by     = static fn( string $payment ): string => 'after this order was already paid by payment <code>' . $payment . '</code>, so the customer was charged twice. To refund the second charge, open it on its WooPayments transaction page. A refund from this order goes to the first payment.';
+		$reference   = static fn( string $reference ): string => 'after this order was already marked paid with reference <code>' . $reference . '</code>, so the customer may have paid twice. To refund the WooPayments charge, open it on its WooPayments transaction page, not from this order.';
+		$paid_with   = static fn( string $title ): string => 'after this order was already paid with ' . $title . ', so the customer may have paid twice. To refund the WooPayments charge, open it on its WooPayments transaction page, not from this order.';
+		$retry_paid  = array(
+			'_intent_id'             => 'pi_retry',
+			'_charge_id'             => 'ch_retry',
+			'_intention_status'      => 'succeeded',
+			'_wcpay_transaction_fee' => '1.02',
+			'_wcpay_net'             => '23.88',
+		);
+		$woopayments = 'woocommerce_payments';
+
+		return array(
+			'paid by a retry'                            => array( 'processing', $woopayments, 'pi_retry', $retry_paid, true, true, $paid_by( 'pi_retry' ) ),
+			'paid by a retry, storing a later declined status' => array( 'processing', $woopayments, 'pi_retry', array_merge( $retry_paid, array( '_intention_status' => 'requires_payment_method' ) ), true, true, $paid_by( 'pi_retry' ) ),
+			'storing an authorization beside another payment' => array( 'processing', $woopayments, 'pi_other', array_merge( $retry_paid, array( '_intention_status' => 'requires_capture' ) ), true, true, $paid_by( 'pi_other' ) ),
+			'paid by a retry, the invoice intent unread' => array( 'processing', $woopayments, 'pi_retry', $retry_paid, true, false, $paid_by( 'pi_retry' ) ),
+			'marked paid with a typed reference'         => array( 'processing', $woopayments, 'bank-123', array(), true, true, $reference( 'bank-123' ) ),
+			'transaction ID of a payment intent'         => array( 'processing', $woopayments, 'pi_unrecorded', array(), true, true, $paid_by( 'pi_unrecorded' ) ),
+			'transaction ID of a charge'                 => array( 'processing', $woopayments, 'ch_unrecorded', array(), true, true, $paid_by( 'ch_unrecorded' ) ),
+			'transaction ID of a payment method charge'  => array( 'processing', $woopayments, 'py_unrecorded', array(), true, true, $paid_by( 'py_unrecorded' ) ),
+			'transaction ID equal to the stored charge'  => array( 'completed', $woopayments, 'ch_retry', $retry_paid, true, true, $paid_by( 'ch_retry' ) ),
+			'transaction ID of a setup intent'           => array( 'processing', $woopayments, 'seti_unrecorded', array(), true, true, $reference( 'seti_unrecorded' ) ),
+			'paid another way, no transaction ID'        => array( 'processing', 'other', '', array(), true, true, $paid_with( 'another payment method' ) ),
+			'paid by check with its reference'           => array( 'processing', 'cheque', 'other-123', array(), true, true, $paid_with( 'Check payments' ) ),
+			'refunded after the retry paid it'           => array( 'refunded', $woopayments, 'pi_retry', $retry_paid, true, true, $paid_by( 'pi_retry' ) ),
+			'cancelled, never paid, on another gateway'  => array( 'cancelled', 'cheque', '', array(), false, true, 'while this order&#039;s status was Cancelled. The order status was not changed. If the customer should not have been charged, refund the charge from its WooPayments transaction page, not from this order. Stripe Billing will keep charging subscription #' ),
+		);
+	}
+
+	/**
+	 * @testdox A paid invoice for a renewal that already records the invoice's payment, or names no payment intent, adds no invoice note: $_dataName.
+	 *
+	 * @testWith ["the invoice's intent", "pi_3UM1YABzWlxcwgpP0GYqv6LC", true]
+	 *           ["the invoice's charge", "ch_3UM1YABzWlxcwgpP0Fazmyr5", true]
+	 *           ["another payment, invoice without a payment intent", "pi_retry", false]
+	 *
+	 * @param string $name           Case name.
+	 * @param string $transaction_id Renewal transaction ID.
+	 * @param bool   $has_intent     Whether the invoice names a payment intent.
+	 */
+	public function test_paid_invoice_on_a_renewal_recording_it_adds_no_invoice_note( string $name, string $transaction_id, bool $has_intent ): void {
+		unset( $name );
+		$renewal = $this->create_paid_renewal_order( $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID ) );
+		$renewal->set_transaction_id( $transaction_id );
+		$renewal->save();
+		if ( $has_intent ) {
+			$this->queue_response( 200, $this->get_renewal_intent() );
+		}
+		$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
+
+		$this->sut->handle_event( $this->get_event( 'invoice_paid_renewal', $has_intent ? array() : array( 'payment_intent' => null ) ) );
+
+		$renewal = wc_get_order( $renewal->get_id() );
+		$this->assertSame( array(), $this->get_notes_containing( $renewal, 'Stripe Billing collected' ) );
+		$this->assertSame( 0, $this->count_log_lines( 'other charge recorded' ) );
+		$this->assertSame( $has_intent ? self::RENEWAL_INTENT_ID : $transaction_id, $renewal->get_transaction_id() );
+	}
+
+	/**
+	 * @testdox A paid invoice for a renewal that stores its uncaptured authorization records the invoice's payment in its place and names the authorization once: $_dataName.
+	 *
+	 * Delivered twice. Today's writes stay, as client 11.3.0's attach overwrites a stored requires_capture
+	 * (class-wc-payments-order-service.php:1818-1822, :1873-1884): on a paid renewal the invoice's payment is its capture,
+	 * with the capture note and Fee details job. The note is the recorded departure; the sentence that Stripe Billing keeps
+	 * charging is added on a renewal neither paid nor payable. The capture over another intent's authorization writes its
+	 * warning line on the paid renewal only.
+	 *
+	 * @testWith ["paid by hand", "processing", "active", false, 1]
+	 *           ["on hold, never paid", "on-hold", "on-hold", true, 0]
+	 *
+	 * @param string $name                Case name.
+	 * @param string $status              Renewal status.
+	 * @param string $subscription_status Subscription status.
+	 * @param bool   $expected_sentence   Whether the note says Stripe Billing keeps charging.
+	 * @param int    $expected_captures   Capture notes, Fee details jobs and capture warning lines.
+	 */
+	public function test_paid_invoice_on_a_renewal_storing_its_authorization_records_the_invoice_and_names_the_authorization( string $name, string $status, string $subscription_status, bool $expected_sentence, int $expected_captures ): void {
+		unset( $name );
+		$subscription = $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID, array(), $subscription_status );
+		$renewal      = $this->create_renewal_storing_an_authorization( $subscription, $status );
+		for ( $delivery = 1; $delivery <= 2; $delivery++ ) {
+			$this->queue_response( 200, $this->get_renewal_intent() );
+			$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
+		}
+		$event = $this->get_event( 'invoice_paid_renewal' );
+
+		$this->sut->handle_event( $event );
+		$this->sut->handle_event( $event );
+
+		$renewal = wc_get_order( $renewal->get_id() );
+		$this->assertSame( $status, $renewal->get_status() );
+		$this->assertSame( self::RENEWAL_INTENT_ID, $renewal->get_transaction_id() );
+		$this->assertSame( self::RENEWAL_INTENT_ID, $renewal->get_meta( '_intent_id', true ) );
+		$this->assertSame( self::RENEWAL_CHARGE_ID, $renewal->get_meta( '_charge_id', true ) );
+		$this->assertSame( 'succeeded', $renewal->get_meta( '_intention_status', true ) );
+		$this->assertCount( $expected_captures, $this->get_notes_containing( $renewal, 'was <strong>successfully captured</strong>' ) );
+		$this->assertSame( $expected_captures, $this->count_fee_details_actions( $renewal ) );
+		$this->assertSame( $expected_captures, $this->count_log_lines( 'is treated as the capture of an authorization' ) );
+		$notes = $this->get_notes_containing( $renewal, 'Stripe Billing collected' );
+		$this->assertCount( 1, $notes );
+		$this->assertStringStartsWith( 'This order held WooPayments authorization <a href="', $notes[0] );
+		$this->assertStringContainsString( 'pi_authorized</a>, which was not captured. Stripe Billing collected renewal invoice <code>' . self::RENEWAL_INVOICE_ID . '</code> for ', $notes[0] );
+		$this->assertStringContainsString( '>' . self::RENEWAL_CHARGE_ID . '</a>) in its place, and this order now records that payment. This store can no longer capture or cancel the authorization', $notes[0] );
+		$this->assertSame( $expected_sentence, str_contains( $notes[0], 'Stripe Billing will keep charging subscription #' . $subscription->get_id() . ' at each renewal' ) );
+		$this->assertSame( array(), $this->get_notes_containing( $renewal, 'refund the payment from this order' ), 'The authorization note replaces the refund note.' );
+		$this->assertSame( 0, $this->count_log_lines( 'other charge recorded' ) );
+	}
+
+	/**
+	 * @testdox Completing a renewal whose authorization a collected invoice replaced captures nothing.
+	 *
+	 * The status-change listener finds a settled stored status and no target (WooPaymentsOrderAdminActionsController
+	 * get_status_change_target()), so the authorization is not captured on top of the invoice's payment.
+	 */
+	public function test_completing_a_renewal_whose_authorization_an_invoice_replaced_captures_nothing(): void {
+		$renewal = $this->create_renewal_storing_an_authorization( $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID ), 'processing' );
+		$this->queue_response( 200, $this->get_renewal_intent() );
+		$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
+		$this->sut->handle_event( $this->get_event( 'invoice_paid_renewal' ) );
+		wc_get_container()->get( WooPaymentsOrderAdminActionsController::class )->register();
+		$platform_requests = 0;
+		add_filter(
+			'pre_http_request',
+			static function ( $response ) use ( &$platform_requests ) {
+				++$platform_requests;
+				return $response;
+			}
+		);
+		$notes_before = $this->get_note_contents( wc_get_order( $renewal->get_id() ) );
+
+		wc_get_order( $renewal->get_id() )->update_status( 'completed' );
+
+		$renewal = wc_get_order( $renewal->get_id() );
+		$this->assertSame( 'completed', $renewal->get_status() );
+		$this->assertSame( 0, $platform_requests, 'No capture request.' );
+		$this->assertCount( 5, $this->get_requests(), 'Only the invoice event reached the platform.' );
+		$this->assertSame( 'succeeded', $renewal->get_meta( '_intention_status', true ) );
+		$this->assertSame( array( 'Order status changed from Processing to Completed.' ), array_values( array_diff( $this->get_note_contents( $renewal ), $notes_before ) ), 'No capture or failure note.' );
+	}
+
+	/**
+	 * @testdox A paid invoice whose intent cannot be read, for a renewal storing its uncaptured authorization, notes once not to capture it and fails for a retry; a retry that reads the intent records the payment.
+	 *
+	 * The note is saved before the failure, so it stays if no retry reads the intent; nothing else is written until then.
+	 * invoice.paid is retried while the Stripe Billing module is loaded (EventIngestor::is_retried_event()), three more
+	 * times at most (WebhookReliabilityService::RETRY_DELAYS_SECONDS).
+	 */
+	public function test_paid_invoice_with_an_unread_intent_on_a_renewal_storing_its_authorization_notes_it_and_fails_for_a_retry(): void {
+		$renewal = $this->create_renewal_storing_an_authorization( $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID ), 'processing' );
+		$event   = $this->get_event( 'invoice_paid_renewal' );
+		for ( $delivery = 1; $delivery <= 3; $delivery++ ) {
+			$this->queue_platform_error();
+			$failure = null;
+			try {
+				$this->sut->handle_event( $event );
+			} catch ( RuntimeException $exception ) {
+				$failure = $exception;
+			}
+			$this->assertInstanceOf( RuntimeException::class, $failure, 'The delivery fails, so it is retried.' );
+			$this->assertNotInstanceOf( OrderPaymentLockRefusedException::class, $failure );
+
+			$stored = wc_get_order( $renewal->get_id() );
+			$notes  = $this->get_notes_containing( $stored, 'could not be read' );
+			$this->assertCount( 1, $notes, 'One note, saved before the failure, however often the delivery fails.' );
+			$this->assertStringStartsWith( 'The payment for Stripe Billing renewal invoice <code>' . self::RENEWAL_INVOICE_ID . '</code> could not be read. Do not capture WooPayments authorization <a href="', $notes[0] );
+			$this->assertStringEndsWith( '>pi_authorized</a> on this order. If no later note follows this one, the payment was not recorded on this order.', $notes[0] );
+			$this->assertSame( 'pi_authorized', $stored->get_transaction_id() );
+			$this->assertSame( 'pi_authorized', $stored->get_meta( '_intent_id', true ) );
+			$this->assertSame( 'ch_authorized', $stored->get_meta( '_charge_id', true ) );
+			$this->assertSame( 'requires_capture', $stored->get_meta( '_intention_status', true ) );
+		}
+		$this->assertCount( 3, $this->get_requests(), 'Only the intent reads: nothing is reported to the platform.' );
+		$this->assertSame( 0, $this->count_log_lines( 'is treated as the capture of an authorization' ) );
+		$this->queue_response( 200, $this->get_renewal_intent() );
+		$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
+
+		$this->sut->handle_event( $event );
+
+		$renewal = wc_get_order( $renewal->get_id() );
+		$this->assertSame( self::RENEWAL_INTENT_ID, $renewal->get_transaction_id() );
+		$this->assertSame( self::RENEWAL_CHARGE_ID, $renewal->get_meta( '_charge_id', true ) );
+		$this->assertSame( 'succeeded', $renewal->get_meta( '_intention_status', true ) );
+		$this->assertCount( 1, $this->get_notes_containing( $renewal, 'was <strong>successfully captured</strong>' ) );
+		$this->assertCount( 1, $this->get_notes_containing( $renewal, 'This order held WooPayments authorization' ) );
+		$this->assertCount( 1, $this->get_notes_containing( $renewal, 'could not be read' ), 'The first note is not repeated.' );
+		$this->assertSame( 1, $this->count_log_lines( 'is treated as the capture of an authorization' ) );
+	}
+
+	/**
+	 * @testdox After a paid invoice, a refund of $_dataName is applied to the payment the renewal records.
+	 *
+	 * The order screen's refund goes to the stored charge, and its charge.refunded is the order's own when the renewal's
+	 * transaction ID names it (paid) or its stored intent does (unpaid); a charge found only by its metadata is recorded on
+	 * the order without a refund (RefundEventHandler, EventOrderResolver::is_own_payment()). The event carries the charge's
+	 * `payment_intent` and the store's `metadata` (https://docs.stripe.com/api/charges/object).
+	 *
+	 * @testWith ["the retry's charge, on a renewal a retry paid", "processing", "ch_retry", "pi_retry", 1, 0, "ch_retry"]
+	 *           ["the invoice's charge, on a renewal a retry paid", "processing", "ch_3UM1YABzWlxcwgpP0Fazmyr5", "pi_3UM1YABzWlxcwgpP0GYqv6LC", 0, 1, "ch_retry"]
+	 *           ["the invoice's charge, on a cancelled renewal", "cancelled", "ch_3UM1YABzWlxcwgpP0Fazmyr5", "pi_3UM1YABzWlxcwgpP0GYqv6LC", 1, 0, "ch_3UM1YABzWlxcwgpP0Fazmyr5"]
+	 *
+	 * @param string $name            Case name.
+	 * @param string $status          Renewal status; a processing renewal was paid by a retry.
+	 * @param string $charge_id       Refunded charge.
+	 * @param string $intent_id       The charge's payment intent.
+	 * @param int    $expected_rows   Refund rows on the renewal.
+	 * @param int    $expected_notes  Notes recording a refund on another charge.
+	 * @param string $expected_charge Stored charge after both events.
+	 */
+	public function test_a_refund_after_a_paid_invoice_follows_the_payment_the_renewal_records( string $name, string $status, string $charge_id, string $intent_id, int $expected_rows, int $expected_notes, string $expected_charge ): void {
+		unset( $name );
+		$renewal = $this->create_unpaid_renewal_order( $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID, array(), 'on-hold' ), '24.90' );
+		if ( 'processing' === $status ) {
+			$renewal->set_transaction_id( 'pi_retry' );
+			$renewal->update_meta_data( '_intent_id', 'pi_retry' );
+			$renewal->update_meta_data( '_charge_id', 'ch_retry' );
+			$renewal->update_meta_data( '_intention_status', 'succeeded' );
+			$renewal->set_date_paid( time() - DAY_IN_SECONDS );
+		}
+		$renewal->set_status( $status );
+		$renewal->save();
+		$this->queue_response( 200, $this->get_renewal_intent() );
+		$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
+		$this->sut->handle_event( $this->get_event( 'invoice_paid_renewal' ) );
+
+		wc_get_container()->get( RefundEventHandler::class )->process(
+			'charge.refunded',
+			array(
+				'id'             => $charge_id,
+				'payment_intent' => $intent_id,
+				'status'         => 'succeeded',
+				'captured'       => true,
+				'amount'         => 2490,
+				'currency'       => 'usd',
+				'metadata'       => array(
+					'order_id'  => (string) $renewal->get_id(),
+					'order_key' => $renewal->get_order_key(),
+				),
+				'refunds'        => array(
+					'data' => array(
+						array(
+							'id'                  => 're_after_invoice',
+							'amount'              => 1000,
+							'reason'              => 'requested_by_customer',
+							'status'              => 'succeeded',
+							'balance_transaction' => 'txn_after_invoice',
+						),
+					),
+				),
+			)
+		);
+
+		$renewal = wc_get_order( $renewal->get_id() );
+		$this->assertCount( $expected_rows, $renewal->get_refunds() );
+		$this->assertCount( $expected_notes, $this->get_notes_containing( $renewal, 'No refund was added to the order.' ) );
+		$this->assertSame( $expected_charge, $renewal->get_meta( '_charge_id', true ) );
+	}
+
+	/**
+	 * @testdox After a paid invoice replaced a renewal's uncaptured authorization, the authorization's expiry is recorded on the renewal and changes nothing else.
+	 *
+	 * The expired charge is no longer stored, so the event finds the renewal by the charge's metadata only and records it
+	 * (PaymentIntentEventHandler, OtherChargeRecorder); the event carries the charge's `payment_intent` and the store's
+	 * `metadata` (https://docs.stripe.com/api/charges/object).
+	 */
+	public function test_the_replaced_authorizations_expiry_is_only_recorded_on_the_renewal(): void {
+		$renewal = $this->create_renewal_storing_an_authorization( $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID ), 'processing' );
+		$this->queue_response( 200, $this->get_renewal_intent() );
+		$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
+		$this->sut->handle_event( $this->get_event( 'invoice_paid_renewal' ) );
+		$renewal      = wc_get_order( $renewal->get_id() );
+		$before       = $this->get_payment_record( $renewal );
+		$notes_before = $this->get_note_contents( $renewal );
+
+		wc_get_container()->get( PaymentIntentEventHandler::class )->process(
+			'charge.expired',
+			array(
+				'id'             => 'ch_authorized',
+				'payment_intent' => 'pi_authorized',
+				'metadata'       => array(
+					'order_id'  => (string) $renewal->get_id(),
+					'order_key' => $renewal->get_order_key(),
+				),
+			)
+		);
+
+		$renewal   = wc_get_order( $renewal->get_id() );
+		$new_notes = array_values( array_diff( $this->get_note_contents( $renewal ), $notes_before ) );
+		$this->assertCount( 1, $new_notes );
+		$this->assertStringContainsString( 'ch_authorized</a>, which does not pay this order, expired.', $new_notes[0] );
+		$this->assertSame( $before, $this->get_payment_record( $renewal ) );
+		$this->assertSame( 'processing', $renewal->get_status() );
+		$this->assertCount( 5, $this->get_requests(), 'The expiry reads nothing from the platform.' );
 	}
 
 	/**
@@ -1715,5 +2158,79 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	 */
 	private function get_notes_containing( WC_Order $order, string $text ): array {
 		return array_values( array_filter( $this->get_note_contents( $order ), static fn( string $note ) => false !== strpos( $note, $text ) ) );
+	}
+
+	/**
+	 * Create a renewal storing an uncaptured WooPayments authorization as its payment: the transaction ID is the stored
+	 * intent, whose stored status is requires_capture (an authorized order a merchant then moves on by hand).
+	 *
+	 * @param SubscriptionDouble $subscription Subscription.
+	 * @param string             $status       Renewal status.
+	 * @return WC_Order
+	 */
+	private function create_renewal_storing_an_authorization( SubscriptionDouble $subscription, string $status ): WC_Order {
+		$order = $this->create_unpaid_renewal_order( $subscription, '24.90' );
+		$order->set_transaction_id( 'pi_authorized' );
+		$order->update_meta_data( '_intent_id', 'pi_authorized' );
+		$order->update_meta_data( '_charge_id', 'ch_authorized' );
+		$order->update_meta_data( '_intention_status', 'requires_capture' );
+		$order->set_status( $status );
+		$order->save();
+
+		return wc_get_order( $order->get_id() );
+	}
+
+	/**
+	 * Get what a renewal records about its payment.
+	 *
+	 * @param WC_Order $order Renewal order.
+	 * @return array<string,string>
+	 */
+	private function get_payment_record( WC_Order $order ): array {
+		$record = array(
+			'transaction_id'       => $order->get_transaction_id(),
+			'payment_method'       => $order->get_payment_method(),
+			'payment_method_title' => $order->get_payment_method_title(),
+		);
+		foreach ( array( '_intent_id', '_charge_id', '_intention_status', '_payment_method_id', '_wcpay_mode', '_stripe_customer_id', '_wcpay_transaction_fee', '_wcpay_net', '_wcpay_intent_currency' ) as $key ) {
+			$record[ $key ] = (string) $order->get_meta( $key, true );
+		}
+
+		return $record;
+	}
+
+	/**
+	 * Count the Fee details jobs scheduled for an order.
+	 *
+	 * @param WC_Order $order Order.
+	 * @return int
+	 */
+	private function count_fee_details_actions( WC_Order $order ): int {
+		$actions = as_get_scheduled_actions(
+			array(
+				'hook'     => WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
+				'group'    => 'woocommerce_payments',
+				'per_page' => -1,
+			)
+		);
+
+		return count( array_filter( $actions, static fn( $action ): bool => $order->get_id() === ( $action->get_args()['order_id'] ?? null ) ) );
+	}
+
+	/**
+	 * Count the log lines written that contain a text. Each log handler receives every line, so the count is one handler's.
+	 *
+	 * @param string $text Text the lines contain.
+	 * @return int
+	 */
+	private function count_log_lines( string $text ): int {
+		$counts = array( 0 );
+		foreach ( $this->handled_log_messages as $line ) {
+			if ( false !== strpos( $line[0], $text ) ) {
+				$counts[ $line[1] ] = ( $counts[ $line[1] ] ?? 0 ) + 1;
+			}
+		}
+
+		return max( $counts );
 	}
 }

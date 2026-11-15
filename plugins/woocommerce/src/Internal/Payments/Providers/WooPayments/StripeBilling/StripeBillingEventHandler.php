@@ -16,7 +16,9 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\OtherChargeRecorder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\PaymentIntentEventHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
@@ -94,6 +96,13 @@ class StripeBillingEventHandler {
 	private OrderPaymentLifecycleService $lifecycle_service;
 
 	/**
+	 * Recorder of an invoice collected on a renewal that records another payment.
+	 *
+	 * @var OtherChargeRecorder
+	 */
+	private OtherChargeRecorder $other_charge_recorder;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -105,8 +114,9 @@ class StripeBillingEventHandler {
 	 * @param WooPaymentsAccountService        $account_service              Account service.
 	 * @param WooPaymentsLogger                $logger                       Module logger.
 	 * @param OrderPaymentLifecycleService     $lifecycle_service            Payment lifecycle service.
+	 * @param OtherChargeRecorder              $other_charge_recorder        Recorder of events on another charge.
 	 */
-	final public function init( StripeBillingInvoiceService $invoice_service, StripeBillingSubscriptionService $subscription_service, Client $api_client, PaymentIntentEventHandler $payment_intent_event_handler, WooPaymentsAccountService $account_service, WooPaymentsLogger $logger, OrderPaymentLifecycleService $lifecycle_service ): void {
+	final public function init( StripeBillingInvoiceService $invoice_service, StripeBillingSubscriptionService $subscription_service, Client $api_client, PaymentIntentEventHandler $payment_intent_event_handler, WooPaymentsAccountService $account_service, WooPaymentsLogger $logger, OrderPaymentLifecycleService $lifecycle_service, OtherChargeRecorder $other_charge_recorder ): void {
 		$this->invoice_service              = $invoice_service;
 		$this->subscription_service         = $subscription_service;
 		$this->api_client                   = $api_client;
@@ -114,6 +124,7 @@ class StripeBillingEventHandler {
 		$this->account_service              = $account_service;
 		$this->logger                       = $logger;
 		$this->lifecycle_service            = $lifecycle_service;
+		$this->other_charge_recorder        = $other_charge_recorder;
 	}
 
 	/**
@@ -255,8 +266,9 @@ class StripeBillingEventHandler {
 	 *
 	 * A renewal that needs payment completes when the invoice's amount and currency match its total
 	 * (StripeBillingInvoiceService::does_invoice_payment_match_order_total()) and is otherwise held with its payment recorded;
-	 * a renewal that no longer needs payment only gets its payment recorded. An invoice without its amount paid or currency
-	 * is refused as invalid event data before any renewal is found or created.
+	 * a renewal that no longer needs payment gets its payment recorded and a note, or only a note when it records another
+	 * payment (see apply_paid_invoice_under_lock()). An invoice without its amount paid or currency is refused as invalid
+	 * event data before any renewal is found or created.
 	 *
 	 * @param WC_Order            $subscription     Subscription.
 	 * @param string              $wcpay_invoice_id Invoice ID.
@@ -302,6 +314,15 @@ class StripeBillingEventHandler {
 	/**
 	 * Apply a paid invoice to its renewal read under the order payment lock the caller holds.
 	 *
+	 * A renewal that no longer needs payment is decided first, before anything is written:
+	 * - one that stores an uncaptured authorization as its payment gets the invoice's payment recorded in its place, as any
+	 *   such renewal does, and a note naming the authorization. When the invoice's intent cannot be read, a note says not to
+	 *   capture the authorization and the event fails, so it is retried and the payment recorded once it can be read;
+	 * - one that records another payment (another payment method, or a paid renewal whose transaction ID names another
+	 *   payment) gets only a note: the invoice's payment is not written over it;
+	 * - one that is neither paid nor payable, such as a cancelled renewal, gets its payment recorded and a note saying where
+	 *   to refund it, unless it already recorded this invoice.
+	 *
 	 * @param WC_Order                 $subscription     Subscription.
 	 * @param WC_Order                 $order            Renewal order, read under the lock.
 	 * @param string                   $wcpay_invoice_id Invoice ID.
@@ -311,10 +332,44 @@ class StripeBillingEventHandler {
 	 * @param mixed                    $amount_paid      The invoice's `amount_paid`.
 	 * @param mixed                    $invoice_currency The invoice's currency.
 	 * @return WC_Order The subscription, read again after a completed renewal.
-	 * @throws RuntimeException When the renewal order is still unpaid after applying its payment.
+	 * @throws RuntimeException When the renewal order is still unpaid after applying its payment, or when the payment of a renewal holding an uncaptured authorization cannot be read.
 	 */
 	private function apply_paid_invoice_under_lock( WC_Order $subscription, WC_Order $order, string $wcpay_invoice_id, array $event_object, string $intent_id, ?array $intent, $amount_paid, $invoice_currency ): WC_Order {
-		$was_succeeded = 'succeeded' === $order->get_meta( '_intention_status', true );
+		$charge_id     = $this->get_invoice_charge_id( $event_object, $intent );
+		$invoice_facts = array(
+			'object_id' => $wcpay_invoice_id,
+			'status'    => 'paid',
+			'intent_id' => $intent_id,
+			'charge_id' => $charge_id,
+			'amount'    => WooPaymentsCurrencyUtils::amount_from_minor_units( is_numeric( $amount_paid ) ? (int) $amount_paid : 0, is_string( $invoice_currency ) ? $invoice_currency : '' ),
+			'currency'  => is_string( $invoice_currency ) ? $invoice_currency : '',
+		);
+
+		$authorization = '' !== $intent_id && ! $order->needs_payment() && $this->stores_one_uncaptured_authorization( $order )
+			? array(
+				'authorization_intent_id' => (string) $order->get_meta( '_intent_id', true ),
+				'authorization_charge_id' => (string) $order->get_meta( '_charge_id', true ),
+			)
+			: null;
+
+		if ( null === $authorization && $this->records_another_payment( $order, $intent_id, $charge_id ) ) {
+			$this->other_charge_recorder->record( $order, 'invoice.paid', $invoice_facts + $this->get_another_payment_note_facts( $subscription, $order ) );
+			return $subscription;
+		}
+
+		if ( null !== $authorization && null === $intent ) {
+			// Today's writes need the intent; without them the authorization stays capturable beside the collected invoice.
+			// The note is saved before the throw, so it stays if no retry ever reads the intent.
+			$this->add_invoice_note_once( $order, WooPaymentsOrderNoteService::INVOICE_NOTE_PAYMENT_NOT_READ, $invoice_facts + $authorization, 'stripe_billing_invoice_unread|' . $wcpay_invoice_id );
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
+			throw new RuntimeException( sprintf( 'The payment of invoice %1$s could not be read for renewal order #%2$d, which holds an uncaptured authorization.', $wcpay_invoice_id, $order->get_id() ) );
+		}
+
+		$transaction_id   = (string) $order->get_transaction_id();
+		$already_recorded = $intent_id === (string) $order->get_meta( '_intent_id', true )
+			|| ( '' !== $transaction_id && in_array( $transaction_id, array( $intent_id, $charge_id ), true ) );
+		$recorded_unpaid  = false;
+		$was_succeeded    = 'succeeded' === $order->get_meta( '_intention_status', true );
 		if ( null !== $intent ) {
 			// Recording writes this mode too, after the success note reads it; a renewal has none stored, so it is set first.
 			$order->update_meta_data( '_wcpay_mode', $this->account_service->get_order_mode() );
@@ -325,8 +380,9 @@ class StripeBillingEventHandler {
 		}
 
 		if ( ! $order->needs_payment() && null !== $intent && $order->is_paid() ) {
-			// A renewal already paid, such as by its new payment method, gets the payment's success note and its Fee details job
-			// once; its status does not move, and a payment that differs from its total adds no note to a paid order.
+			// A paid renewal that records no other payment, such as one paid by its new payment method, gets the payment's
+			// success note and its Fee details job once; its status does not move, and a payment that differs from its total
+			// adds no note to a paid order. One that stored an uncaptured authorization gets the payment as its capture.
 			$this->payment_intent_event_handler->apply_succeeded_payment_intent_under_lock(
 				$order,
 				$intent,
@@ -339,6 +395,7 @@ class StripeBillingEventHandler {
 			// (class-wc-payments-subscriptions-event-handler.php:200-203): its status and notes stay as they are.
 			if ( null !== $intent ) {
 				$this->payment_intent_event_handler->record_succeeded_payment_intent_under_lock( $order, $intent );
+				$recorded_unpaid = true;
 			} elseif ( '' !== $intent_id ) {
 				$order->add_order_note( __( 'The payment info couldn\'t be added to the order.', 'woocommerce' ) );
 			}
@@ -377,15 +434,174 @@ class StripeBillingEventHandler {
 		}
 
 		if ( null !== $intent && ! $was_succeeded ) {
-			// Client 11.1.0 attaches the fetched intent here (class-wc-payments-invoice-service.php:289-301): the transaction id
-			// even on an order a retry already paid, where payment_complete() ignores it, and the currency upper case, where the
-			// webhook writes it lower case.
+			// Client 11.1.0 attaches the fetched intent here (class-wc-payments-invoice-service.php:289-301): the transaction id,
+			// which payment_complete() leaves alone on a paid order, and the currency upper case, where the webhook writes it
+			// lower case.
 			$order->set_transaction_id( $intent_id );
 			$order->update_meta_data( '_wcpay_intent_currency', strtoupper( isset( $intent['currency'] ) && is_string( $intent['currency'] ) ? $intent['currency'] : $order->get_currency() ) );
 			$order->save();
 		}
 
+		if ( null !== $authorization ) {
+			$facts = $invoice_facts + $authorization + $this->get_collected_invoice_note_facts( $subscription, $order );
+			// Said only of a renewal that is not paid: on a paid one the invoice completed it.
+			$facts['billing_continues'] = $facts['billing_continues'] && ! $this->has_paid_state( $order );
+			$this->add_invoice_note_once( $order, WooPaymentsOrderNoteService::INVOICE_NOTE_AUTHORIZATION_REPLACED, $facts, 'stripe_billing_invoice_collected|' . $wcpay_invoice_id );
+		} elseif ( $recorded_unpaid && ! $already_recorded ) {
+			// The order screen's refund goes to the stored charge, which is the invoice's only when nothing was stored before.
+			$wording = '' !== $charge_id && $charge_id === (string) $order->get_meta( '_charge_id', true )
+				? WooPaymentsOrderNoteService::INVOICE_NOTE_REFUND_FROM_ORDER
+				: WooPaymentsOrderNoteService::INVOICE_NOTE_REFUND_FROM_TRANSACTION_PAGE;
+			$this->add_invoice_note_once( $order, $wording, $invoice_facts + $this->get_collected_invoice_note_facts( $subscription, $order ), 'stripe_billing_invoice_collected|' . $wcpay_invoice_id );
+		}
+
 		return $subscription;
+	}
+
+	/**
+	 * Tell whether a renewal stores one uncaptured authorization as its payment: the stored status is requires_capture, and
+	 * the stored intent is set and is the transaction ID, so the three name one attempt.
+	 *
+	 * A stored status alone may belong to another attempt. When this answer is wrong because the authorization was captured
+	 * outside the store, the invoice's payment replaces it, and the note names the authorization so it can be refunded.
+	 *
+	 * @param WC_Order $order Renewal order, read under the lock.
+	 * @return bool
+	 */
+	private function stores_one_uncaptured_authorization( WC_Order $order ): bool {
+		$stored_intent_id = (string) $order->get_meta( '_intent_id', true );
+
+		return 'requires_capture' === (string) $order->get_meta( '_intention_status', true )
+			&& '' !== $stored_intent_id
+			&& $stored_intent_id === (string) $order->get_transaction_id();
+	}
+
+	/**
+	 * Tell whether a renewal that no longer needs payment records another payment than the invoice's.
+	 *
+	 * A renewal on another payment method does, whatever its status. A WooPayments renewal does once it has a paid status
+	 * or a paid date and its transaction ID names neither the invoice's intent nor its charge, as EventOrderResolver's
+	 * ownership rule reads a paid order; an empty transaction ID names no payment. An unpaid renewal's transaction ID may
+	 * name an attempt that took nothing, so it is not read. The stored intent status is never read.
+	 *
+	 * @param WC_Order $order     Renewal order, read under the lock.
+	 * @param string   $intent_id The invoice's payment intent ID.
+	 * @param string   $charge_id The invoice's charge ID.
+	 * @return bool
+	 */
+	private function records_another_payment( WC_Order $order, string $intent_id, string $charge_id ): bool {
+		if ( '' === $intent_id || $order->needs_payment() ) {
+			return false;
+		}
+
+		if ( ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) ) {
+			return true;
+		}
+
+		if ( ! $this->has_paid_state( $order ) ) {
+			return false;
+		}
+
+		$transaction_id = (string) $order->get_transaction_id();
+
+		return '' !== $transaction_id && $transaction_id !== $intent_id && $transaction_id !== $charge_id;
+	}
+
+	/**
+	 * Tell whether a transaction ID names a WooPayments payment: the renewal's stored intent or charge, or a payment intent
+	 * or charge ID by its form. A setup intent is not a payment. Read only to choose a note's wording.
+	 *
+	 * @param WC_Order $order          Renewal order.
+	 * @param string   $transaction_id The renewal's transaction ID.
+	 * @return bool
+	 */
+	private function names_a_woopayments_payment( WC_Order $order, string $transaction_id ): bool {
+		return $transaction_id === (string) $order->get_meta( '_intent_id', true )
+			|| $transaction_id === (string) $order->get_meta( '_charge_id', true )
+			|| 1 === preg_match( '/^(pi|ch|py)_\w+$/', $transaction_id );
+	}
+
+	/**
+	 * Tell whether an order has a paid status or a paid date.
+	 *
+	 * @param WC_Order $order Order.
+	 * @return bool
+	 */
+	private function has_paid_state( WC_Order $order ): bool {
+		return $order->is_paid() || null !== $order->get_date_paid();
+	}
+
+	/**
+	 * Get the invoice's charge ID: the read intent's charge, else the invoice's `charge`.
+	 *
+	 * @param array<string,mixed>      $event_object Invoice from the event.
+	 * @param array<string,mixed>|null $intent       The invoice's payment intent, or null when it was not read.
+	 * @return string
+	 */
+	private function get_invoice_charge_id( array $event_object, ?array $intent ): string {
+		$intent_charge_id = $intent['charges']['data'][0]['id'] ?? '';
+		if ( is_string( $intent_charge_id ) && '' !== $intent_charge_id ) {
+			return $intent_charge_id;
+		}
+
+		return isset( $event_object['charge'] ) && is_string( $event_object['charge'] ) ? $event_object['charge'] : '';
+	}
+
+	/**
+	 * Get the note facts for an invoice collected on a renewal that records another payment: the wording by what the
+	 * renewal recorded, and what it recorded.
+	 *
+	 * @param WC_Order $subscription Subscription.
+	 * @param WC_Order $order        Renewal order, read under the lock.
+	 * @return array<string,mixed>
+	 */
+	private function get_another_payment_note_facts( WC_Order $subscription, WC_Order $order ): array {
+		$transaction_id = (string) $order->get_transaction_id();
+		if ( ! $this->has_paid_state( $order ) ) {
+			$wording = WooPaymentsOrderNoteService::INVOICE_NOTE_REFUND_FROM_TRANSACTION_PAGE;
+		} elseif ( ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) ) {
+			$wording        = WooPaymentsOrderNoteService::INVOICE_NOTE_PAID_ANOTHER_WAY;
+			$transaction_id = (string) $order->get_payment_method_title();
+		} elseif ( $this->names_a_woopayments_payment( $order, $transaction_id ) ) {
+			$wording = WooPaymentsOrderNoteService::INVOICE_NOTE_CHARGED_TWICE;
+		} else {
+			$wording = WooPaymentsOrderNoteService::INVOICE_NOTE_MARKED_PAID_WITH_REFERENCE;
+		}
+
+		return array(
+			'wording'   => $wording,
+			'paid_with' => $transaction_id,
+		) + $this->get_collected_invoice_note_facts( $subscription, $order );
+	}
+
+	/**
+	 * Get the renewal's and the subscription's note facts: the renewal's status, the subscription's number, and whether
+	 * Stripe Billing keeps charging it. Nothing in invoice.paid changes an on-hold or active subscription's billing at
+	 * Stripe, so the next period is charged; a subscription pending cancellation, cancelled or expired is not.
+	 *
+	 * @param WC_Order $subscription Subscription.
+	 * @param WC_Order $order        Renewal order.
+	 * @return array{order_status:string,subscription_number:string,billing_continues:bool}
+	 */
+	private function get_collected_invoice_note_facts( WC_Order $subscription, WC_Order $order ): array {
+		return array(
+			'order_status'        => $order->get_status(),
+			'subscription_number' => (string) $subscription->get_order_number(),
+			'billing_continues'   => $subscription->has_status( array( 'on-hold', 'active' ) ),
+		);
+	}
+
+	/**
+	 * Add a Stripe Billing invoice note once, by its identity.
+	 *
+	 * @param WC_Order            $order    Renewal order.
+	 * @param string              $wording  One of WooPaymentsOrderNoteService's `INVOICE_NOTE_*` wordings.
+	 * @param array<string,mixed> $facts    The note's facts.
+	 * @param string              $identity The note's identity.
+	 */
+	private function add_invoice_note_once( WC_Order $order, string $wording, array $facts, string $identity ): void {
+		$note_service = wc_get_container()->get( WooPaymentsOrderNoteService::class );
+		$note_service->add_note_once( $order, $note_service->format_collected_invoice_note( $wording, $facts ), $identity );
 	}
 
 	/**
