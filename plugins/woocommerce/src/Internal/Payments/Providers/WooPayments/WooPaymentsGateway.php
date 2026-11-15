@@ -2614,7 +2614,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		$stored_intent_id = (string) $order->get_meta( '_intent_id', true );
 		if ( $on_stored_status_only && 0 !== strpos( $stored_intent_id, 'pi_' ) ) {
-			$stored = WooPaymentsLogger::get_loggable_intent_id( $stored_intent_id );
+			$stored = WooPaymentsLogger::get_loggable_provider_id( $stored_intent_id );
 			$this->get_logger()->log_always(
 				sprintf( 'Order #%1$d was kept as paid on a stored succeeded status whose stored intent is not a payment intent (%2$s).', $order->get_id(), $stored ),
 				'warning',

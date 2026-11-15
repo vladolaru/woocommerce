@@ -3149,8 +3149,8 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	 */
 	public function provider_capture_choices_over_a_stored_authorization(): array {
 		return array(
-			'an order storing another intent'      => array( 'pi_another_attempt', true, 'pi_another_attempt' ),
-			'an order storing another intent, with logging off' => array( 'pi_another_attempt', false, 'pi_another_attempt' ),
+			'an order storing another intent'      => array( 'pi_anotherAttempt', true, 'pi_anotherAttempt' ),
+			'an order storing another intent, with logging off' => array( 'pi_anotherAttempt', false, 'pi_anotherAttempt' ),
 			'an order storing no intent'           => array( '', true, 'none' ),
 			'an order storing the arriving intent' => array( 'arriving', true, '' ),
 		);
@@ -3169,7 +3169,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		add_filter( 'wcpay_dev_mode', '__return_false' );
 		$event      = RecordedPlatformEvents::body( 'platform-payment-intent-events.json', 'manual_capture_amount_capturable_updated' );
 		$intent_id  = (string) $event['data']['object']['id'];
-		$order      = StoredPaymentRecords::authorization_status_beside_another_intent( OrderStatus::PROCESSING, $intent_id, 'pi_another_attempt' );
+		$order      = StoredPaymentRecords::authorization_status_beside_another_intent( OrderStatus::PROCESSING, $intent_id, 'pi_anotherAttempt' );
 		$date_paid  = $order->get_date_paid();
 		$notes      = array(
 			'order_id' => $order->get_id(),
@@ -3190,7 +3190,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		$lines = array_values( array_filter( $logger->lines, static fn( array $line ): bool => false !== strpos( $line[1], 'the capture of an authorization, but the requires_capture status' ) ) );
 		$this->assertCount( 1, $lines );
 		$this->assertSame(
-			array( 'warning', sprintf( 'Payment %1$s on order #%2$d is treated as the capture of an authorization, but the requires_capture status the order stores is beside intent pi_another_attempt.', $intent_id, $order->get_id() ), 'woopayments' ),
+			array( 'warning', sprintf( 'Payment %1$s on order #%2$d is treated as the capture of an authorization, but the requires_capture status the order stores is beside intent pi_anotherAttempt.', $intent_id, $order->get_id() ), 'woopayments' ),
 			$lines[0]
 		);
 	}
@@ -3206,7 +3206,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		self::enable_woopayments_debug_logging();
 		$event     = RecordedPlatformEvents::body( 'platform-payment-intent-events.json', 'manual_capture_amount_capturable_updated' );
 		$intent_id = (string) $event['data']['object']['id'];
-		$order     = StoredPaymentRecords::authorization_status_beside_another_intent( OrderStatus::PENDING, $intent_id, 'pi_another_attempt' );
+		$order     = StoredPaymentRecords::authorization_status_beside_another_intent( OrderStatus::PENDING, $intent_id, 'pi_anotherAttempt' );
 		$intent    = $this->recorded_capture_event( $order )['data']['object'];
 		$logger    = RecordingWcLogger::install();
 

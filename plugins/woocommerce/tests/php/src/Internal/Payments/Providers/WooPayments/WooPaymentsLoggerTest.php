@@ -184,34 +184,48 @@ class WooPaymentsLoggerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A stored intent or transaction ID that is $_dataName is logged as $expected.
-	 * @dataProvider stored_intent_ids
+	 * @testdox A provider object ID that is $_dataName is logged as $expected.
+	 * @dataProvider provider_object_ids
 	 *
-	 * @param string $id       Stored intent or transaction ID.
+	 * @param string $id       Provider object ID, stored or received.
 	 * @param string $expected What a log line carries.
 	 */
-	public function test_loggable_intent_id_prints_only_a_whole_intent_id( string $id, string $expected ): void {
-		$this->assertSame( $expected, WooPaymentsLogger::get_loggable_intent_id( $id ) );
+	public function test_loggable_provider_id_prints_only_a_whole_provider_object_id( string $id, string $expected ): void {
+		$this->assertSame( $expected, WooPaymentsLogger::get_loggable_provider_id( $id ) );
 	}
 
 	/**
-	 * Stored intent or transaction IDs and what a log line carries for each.
+	 * Provider object IDs, and values outside their form, and what a log line carries for each.
 	 *
 	 * @return array<string,array{0:string,1:string}>
 	 */
-	public function stored_intent_ids(): array {
+	public function provider_object_ids(): array {
 		return array(
-			'empty'                                => array( '', 'none' ),
-			'a payment intent ID'                  => array( 'pi_3URphFBzWlxcwgpP0icvvDN4', 'pi_3URphFBzWlxcwgpP0icvvDN4' ),
-			'a setup intent ID'                    => array( 'seti_1QxYzAbCdEfGh2', 'seti_1QxYzAbCdEfGh2' ),
-			'a mock intent ID with underscores'    => array( 'pi_rollback_fixture', 'pi_rollback_fixture' ),
-			'a payment intent prefix and a hyphen' => array( 'pi_ORDER-123', 'another value' ),
-			'a payment intent prefix and a space'  => array( 'pi_abc def', 'another value' ),
-			'a setup intent prefix and a hyphen'   => array( 'seti_ORDER-123', 'another value' ),
-			'a payment intent ID and a line break' => array( "pi_abc\n", 'another value' ),
-			'the payment intent prefix alone'      => array( 'pi_', 'another value' ),
-			'a typed order number'                 => array( 'ORDER-123', 'another value' ),
-			'a payment intent ID not at the start' => array( 'ref pi_abc', 'another value' ),
+			'empty'                                     => array( '', 'none' ),
+			'a payment intent ID'                       => array( 'pi_3URphFBzWlxcwgpP0icvvDN4', 'pi_3URphFBzWlxcwgpP0icvvDN4' ),
+			'a setup intent ID'                         => array( 'seti_1QxYzAbCdEfGh2', 'seti_1QxYzAbCdEfGh2' ),
+			'a charge ID'                               => array( 'ch_3URphFBzWlxcwgpP0Ab12Cd', 'ch_3URphFBzWlxcwgpP0Ab12Cd' ),
+			'a payment ID'                              => array( 'py_3URphFBzWlxcwgpP1Ab12Cd', 'py_3URphFBzWlxcwgpP1Ab12Cd' ),
+			'a refund ID'                               => array( 're_3URphFBzWlxcwgpP0Ef34Gh', 're_3URphFBzWlxcwgpP0Ef34Gh' ),
+			'a payment refund ID'                       => array( 'pyr_1QxYzAbCdEfGh2', 'pyr_1QxYzAbCdEfGh2' ),
+			'a dispute ID'                              => array( 'dp_1QxYzAbCdEfGh2', 'dp_1QxYzAbCdEfGh2' ),
+			'a payment dispute ID'                      => array( 'du_1QxYzAbCdEfGh2', 'du_1QxYzAbCdEfGh2' ),
+			'an event ID'                               => array( 'evt_3URphFBzWlxcwgpP0Ij56Kl', 'evt_3URphFBzWlxcwgpP0Ij56Kl' ),
+			'a payment method ID'                       => array( 'pm_1QxYzAbCdEfGh2', 'pm_1QxYzAbCdEfGh2' ),
+			'a source ID'                               => array( 'src_1QxYzAbCdEfGh2', 'src_1QxYzAbCdEfGh2' ),
+			'a card ID'                                 => array( 'card_1QxYzAbCdEfGh2', 'card_1QxYzAbCdEfGh2' ),
+			'a customer ID'                             => array( 'cus_VdpHzGkGQqnWfF', 'cus_VdpHzGkGQqnWfF' ),
+			'an ID with an underscore after its prefix' => array( 'pi_rollback_fixture', 'another value' ),
+			'an intent client secret'                   => array( 'pi_3URphFBzWlxcwgpP0icvvDN4_secret_Xy12Ab34', 'another value' ),
+			'a payment intent prefix and a hyphen'      => array( 'pi_ORDER-123', 'another value' ),
+			'a payment intent prefix and a space'       => array( 'pi_abc def', 'another value' ),
+			'a setup intent prefix and a hyphen'        => array( 'seti_ORDER-123', 'another value' ),
+			'a payment intent ID and a line break'      => array( "pi_abc\n", 'another value' ),
+			'the payment intent prefix alone'           => array( 'pi_', 'another value' ),
+			'an unlisted prefix'                        => array( 'tok_1QxYzAbCdEfGh2', 'another value' ),
+			'a prefix in capitals'                      => array( 'PI_1QxYzAbCdEfGh2', 'another value' ),
+			'a typed order number'                      => array( 'ORDER-123', 'another value' ),
+			'a payment intent ID not at the start'      => array( 'ref pi_abc', 'another value' ),
 		);
 	}
 

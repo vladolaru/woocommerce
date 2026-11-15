@@ -1936,21 +1936,21 @@ class WooPaymentsPaymentOperationService {
 			return;
 		}
 
-		$target = WooPaymentsLogger::get_loggable_intent_id( $intent_id );
+		$target = WooPaymentsLogger::get_loggable_provider_id( $intent_id );
 		$this->logger->log_always(
 			sprintf(
 				'The %1$s of order #%2$d acts on intent %3$s, while the order stores requires_capture with transaction ID %4$s and stored intent %5$s.',
 				$operation,
 				$order->get_id(),
 				$target,
-				WooPaymentsLogger::get_loggable_intent_id( $transaction_id ),
-				WooPaymentsLogger::get_loggable_intent_id( $stored_intent_id )
+				WooPaymentsLogger::get_loggable_provider_id( $transaction_id ),
+				WooPaymentsLogger::get_loggable_provider_id( $stored_intent_id )
 			),
 			'warning',
 			array(
 				'order_id'        => $order->get_id(),
 				'intent_id'       => $target,
-				'other_intent_id' => WooPaymentsLogger::get_loggable_intent_id( $intent_id === $transaction_id ? $stored_intent_id : $transaction_id ),
+				'other_intent_id' => WooPaymentsLogger::get_loggable_provider_id( $intent_id === $transaction_id ? $stored_intent_id : $transaction_id ),
 				'operation'       => $operation,
 				'reason'          => self::REASON_OPERATION_ON_AN_ORDER_NAMING_TWO_INTENTS,
 			)

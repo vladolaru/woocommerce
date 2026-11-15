@@ -496,7 +496,7 @@ class PaymentIntentEventHandler {
 			return;
 		}
 
-		$stored = WooPaymentsLogger::get_loggable_intent_id( $stored_intent_id );
+		$stored = WooPaymentsLogger::get_loggable_provider_id( $stored_intent_id );
 		wc_get_container()->get( WooPaymentsLogger::class )->log_always(
 			sprintf( 'Payment %1$s on order #%2$d is treated as the capture of an authorization, but the requires_capture status the order stores is beside intent %3$s.', $intent_id, $order->get_id(), $stored ),
 			'warning',

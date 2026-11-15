@@ -17,9 +17,11 @@ defined( 'ABSPATH' ) || exit;
  * Writes WooPayments log lines under one source, when debug logging is on or in dev mode.
  *
  * As in client 11.1.0's logger (`src/Internal/Logger.php:22,64-91`), every level checks the setting, read from the
- * gateway settings option so no gateway needs to be initialized. Two kinds of line are written whatever the setting:
- * a PHP Error caught where client 11.1.0 catches only exceptions (log_throwable()), and an anomaly support needs to
- * see (log_always()).
+ * gateway settings option so no gateway needs to be initialized. Six kinds of line are written whatever the setting
+ * (log_always()): a money decision or disagreement, a silent failure of money, settings, onboarding or account state, an
+ * admin's irreversible money action, the switch, a merchant tool's report, and a PHP Error (log_throwable()). Such a line
+ * never prints a throwable's or WP_Error's message, and prints a value a shopper chooses or a merchant types only
+ * through a helper here or its allowed set.
  *
  * @since 11.2.0
  * @internal
@@ -209,8 +211,11 @@ class WooPaymentsLogger {
 	}
 
 	/**
-	 * Write a line whatever the logging setting, for an anomaly support needs to see: on the money path, or a failure that
-	 * leaves settings or onboarding silently wrong.
+	 * Write a line whatever the logging setting, for one of the class docblock's six kinds: a money decision the store took
+	 * alone or a disagreement it found, a failure that leaves money, settings, onboarding or account state wrong with
+	 * nothing on screen, an irreversible money action an admin asked for, the switch, a merchant tool's report, or a PHP
+	 * Error. Never a throwable's or WP_Error's message; a value a shopper chooses or a merchant types only through
+	 * get_loggable_provider_id(), get_loggable_payment_method() or an allowed set.
 	 *
 	 * @param string              $message Message.
 	 * @param string              $level   Log level.
@@ -314,19 +319,24 @@ class WooPaymentsLogger {
 	}
 
 	/**
-	 * Get a stored intent or transaction ID as a log line may carry it: a value that is wholly a payment or setup intent ID
-	 * (`pi_` or `seti_`, then only letters, digits and underscores) as it is, `none` for an empty one, `another value` for
-	 * anything else, such as a transaction ID a merchant typed. The lines that use it are written whatever the logging setting.
+	 * Get a provider object ID as a log line may carry it: a value that is wholly one provider object ID (one of the
+	 * prefixes below, an underscore, then only letters and digits) as it is, `none` for an empty one, `another value` for
+	 * anything else, such as a transaction ID a merchant typed or an intent's client secret. The lines that use it are
+	 * written whatever the logging setting.
 	 *
-	 * @param string $id Stored intent or transaction ID.
+	 * @since 11.4.0
+	 *
+	 * @param string $id Provider object ID, stored or received.
 	 * @return string
 	 */
-	public static function get_loggable_intent_id( string $id ): string {
+	public static function get_loggable_provider_id( string $id ): string {
 		if ( '' === $id ) {
 			return 'none';
 		}
 
-		return 1 === preg_match( '/\A(?:pi|seti)_[A-Za-z0-9_]+\z/', $id ) ? $id : 'another value';
+		// Intents (pi, seti), charges (ch, py), refunds (re, pyr), disputes (dp, du), events (evt), payment methods
+		// (pm, src, card) and customers (cus).
+		return 1 === preg_match( '/\A(?:pi|seti|ch|py|re|pyr|dp|du|evt|pm|src|card|cus)_[A-Za-z0-9]+\z/', $id ) ? $id : 'another value';
 	}
 
 	/**
@@ -334,6 +344,8 @@ class WooPaymentsLogger {
 	 * underscores and hyphens) as it is, `none` for an empty one, `another value` for anything else, such as free text set
 	 * through the REST API. There is no check against registered gateways, so a deactivated or removed gateway still shows.
 	 * The lines that use it are written whatever the logging setting.
+	 *
+	 * @since 11.4.0
 	 *
 	 * @param string $payment_method Order payment method.
 	 * @return string

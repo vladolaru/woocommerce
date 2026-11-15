@@ -1469,7 +1469,7 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A refund applied as the own payment of an order whose payment method is $_dataName names it as $printed in the line's message and context.
+	 * @testdox A refund applied as the own payment of an order whose payment method is $_dataName names it as $printed in the line's message and context, and writes no line when the stored value is a WooPayments one.
 	 * @dataProvider provider_printed_payment_methods
 	 *
 	 * The line is written whatever the logging setting, and an order's payment method is order data the REST API can set to
@@ -1495,9 +1495,14 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertCount( 1, $order->get_refunds() );
-		$this->assertSame( 'refunded', $order->get_status() );
+		$this->assertSame( OrderStatus::REFUNDED, $order->get_status() );
 		$this->assertSame( $payment_method, $order->get_payment_method() );
 		$lines = $this->get_own_event_on_another_payment_method_lines( $logger );
+		if ( WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( $payment_method ) ) {
+			// The check reads the stored payment method, not the printed one, so a WooPayments order writes no line.
+			$this->assertSame( array(), $lines );
+			return;
+		}
 		$this->assertCount( 1, $lines );
 		$index = array_key_first( $lines );
 		$this->assertSame( 'own payment event applied on an order of another payment method: order ' . $order->get_id() . ', charge.refunded, charge ch_A, order payment method ' . $printed, $lines[ $index ][1] );
@@ -1552,6 +1557,7 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 			'free text, with logging off'                  => array( 'paid by cheque, see note', false, 'another value' ),
 			'an email address'                             => array( 'shopper@example.com', true, 'another value' ),
 			'an email address, with logging off'           => array( 'shopper@example.com', false, 'another value' ),
+			'a WooPayments gateway ID followed by free text, with logging off' => array( 'woocommerce_payments_card, see note', false, 'another value' ),
 		);
 	}
 
