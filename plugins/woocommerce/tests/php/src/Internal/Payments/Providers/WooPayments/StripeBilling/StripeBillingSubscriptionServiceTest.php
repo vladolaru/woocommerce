@@ -52,6 +52,13 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	 */
 	private bool $logging_enabled = false;
 
+	/**
+	 * Whether the store is in test mode, for the requests' flag and the service alike.
+	 *
+	 * @var bool
+	 */
+	private bool $test_mode = true;
+
 	private const BILLING_FIXTURE = __DIR__ . '/../Fixtures/platform-stripe-billing-api.json';
 
 	/**
@@ -111,6 +118,7 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 		WooCommerceSubscriptionsDoubles::load();
 		$this->customer_user_ids = array();
 		$this->logging_enabled   = false;
+		$this->test_mode         = true;
 
 		$this->http_client          = new FakeHttpClient();
 		$this->http_client->blog_id = self::RECORDED_BLOG_ID;
@@ -119,7 +127,7 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_test_mode_enabled', 'is_test_mode_onboarding_enabled', 'get_account_id', 'is_dev_mode_enabled', 'get_gateway_setting' ) )
 			->getMock();
-		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+		$account_service->method( 'is_test_mode_enabled' )->willReturnCallback( fn(): bool => $this->test_mode );
 		$account_service->method( 'is_test_mode_onboarding_enabled' )->willReturn( true );
 		$account_service->method( 'get_account_id' )->willReturn( self::RECORDED_ACCOUNT_ID );
 		$account_service->method( 'get_gateway_setting' )->willReturnCallback( fn( string $key ) => 'enable_logging' === $key && $this->logging_enabled ? 'yes' : '' );
@@ -157,7 +165,7 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 		}
 
 		$this->sut = new StripeBillingSubscriptionService();
-		$this->sut->init( $api, $this->customer_service, $product_service, $invoice_service, $logger, wc_get_container()->get( WooPaymentsActionSchedulerService::class ) );
+		$this->sut->init( $api, $this->customer_service, $product_service, $invoice_service, $logger, wc_get_container()->get( WooPaymentsActionSchedulerService::class ), $account_service );
 	}
 
 	/**
@@ -1030,24 +1038,28 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A cancel answered with $_dataName $expectation.
 	 *
 	 * The platform passes Stripe's answer for an ID Stripe does not have through unchanged: 404 with `resource_missing`. No
-	 * outage takes that shape. A not-found counts as a confirmed cancel with one always-written line and no retry; any
-	 * other answer, including the same code at another status or a 404 with another code, is retried.
+	 * outage takes that shape. In live mode a not-found counts as a confirmed cancel with one always-written line and no
+	 * retry. In test mode the same answer is likely a live subscription that still bills, so it is retried, as is any other
+	 * answer, including the same code at another status or a 404 with another code.
 	 *
 	 * @dataProvider provider_cancel_answers
 	 *
 	 * @param int                 $http_status        HTTP status the platform answers.
 	 * @param array<string,mixed> $body               Body the platform answers.
+	 * @param bool                $test_mode          Whether the store, and so the request, is in test mode.
 	 * @param bool                $expected_confirmed Whether the cancel counts as confirmed.
 	 * @param string              $expectation        What happens, for the test name.
 	 */
-	public function test_a_cancel_counts_only_a_stripe_not_found_as_confirmed( int $http_status, array $body, bool $expected_confirmed, string $expectation ): void {
+	public function test_a_cancel_counts_only_a_live_stripe_not_found_as_confirmed( int $http_status, array $body, bool $test_mode, bool $expected_confirmed, string $expectation ): void {
 		unset( $expectation );
+		$this->test_mode                = $test_mode;
 		$subscription                   = $this->create_subscription( array( '_wcpay_subscription_id' => self::MAIN_SUBSCRIPTION_ID ) );
 		$this->http_client->responses[] = $this->make_response( $http_status, $body );
 		$logger                         = RecordingWcLogger::install();
 
 		$this->sut->maybe_cancel_subscription( $subscription, 'stripe' );
 
+		$this->assertSame( array( 'DELETE', '/sites/4/wcpay/subscriptions/' . self::MAIN_SUBSCRIPTION_ID . '?test_mode=' . ( $test_mode ? '1' : '0' ) ), array_slice( $this->get_requests()[0], 0, 2 ), 'The request carries the mode the service read.' );
 		$saved = wc_get_order( $subscription->get_id() );
 		$this->assertSame( self::MAIN_SUBSCRIPTION_ID, $saved->get_meta( $expected_confirmed ? '_cancelled_wcpay_subscription_id' : '_wcpay_subscription_id', true ) );
 		$this->assertSame( ! $expected_confirmed, null !== $this->get_retry_cancel_delay( $subscription, 1 ), 'Only an unconfirmed cancel is retried.' );
@@ -1062,10 +1074,10 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Platform answers to a cancel: Stripe's not-found, a platform failure, Stripe's `resource_missing` for another object
-	 * (a 400), and a 404 from the platform's own routing.
+	 * Platform answers to a cancel, in live mode unless named: Stripe's not-found, the same in test mode, a platform failure,
+	 * Stripe's `resource_missing` for another object (a 400), and a 404 from the platform's own routing.
 	 *
-	 * @return array<string,array{int,array<string,mixed>,bool,string}>
+	 * @return array<string,array{int,array<string,mixed>,bool,bool,string}>
 	 */
 	public function provider_cancel_answers(): array {
 		$stripe_error = static fn( string $param ): array => array(
@@ -1078,7 +1090,8 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 		);
 
 		return array(
-			'404 resource_missing (Stripe has no such subscription)' => array( 404, $stripe_error( 'id' ), true, 'moves the ID, writes one line and schedules no retry' ),
+			'404 resource_missing (Stripe has no such subscription)' => array( 404, $stripe_error( 'id' ), false, true, 'moves the ID, writes one line and schedules no retry' ),
+			'404 resource_missing in test mode (likely a live subscription)' => array( 404, $stripe_error( 'id' ), true, false, 'keeps the ID and is retried' ),
 			'502 wcpay_request_failure (platform failure)' => array(
 				502,
 				array(
@@ -1087,9 +1100,10 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 					'data'    => array( 'status' => 502 ),
 				),
 				false,
+				false,
 				'keeps the ID and is retried',
 			),
-			'400 resource_missing (another object)'        => array( 400, $stripe_error( 'customer' ), false, 'keeps the ID and is retried' ),
+			'400 resource_missing (another object)'        => array( 400, $stripe_error( 'customer' ), false, false, 'keeps the ID and is retried' ),
 			'404 rest_no_route (platform routing)'         => array(
 				404,
 				array(
@@ -1098,15 +1112,19 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 					'data'    => array( 'status' => 404 ),
 				),
 				false,
+				false,
 				'keeps the ID and is retried',
 			),
 		);
 	}
 
 	/**
-	 * @testdox A cancel retry that finds Stripe has no such subscription counts it as cancelled, with the same line and no further retry.
+	 * @testdox A live-mode last cancel retry that finds Stripe has no such subscription counts it as cancelled, with the same line and no give-up note.
+	 *
+	 * Retry 3 is the last attempt, where a failure would add the give-up note.
 	 */
-	public function test_a_cancel_retry_counts_a_stripe_not_found_as_confirmed(): void {
+	public function test_a_cancel_retry_counts_a_live_stripe_not_found_as_confirmed(): void {
+		$this->test_mode                = false;
 		$subscription                   = $this->create_subscription( array( '_wcpay_subscription_id' => self::MAIN_SUBSCRIPTION_ID ), 2, '49.80', 'USD', 'stripe' );
 		$not_found                      = array(
 			'error' => array(
@@ -1120,12 +1138,11 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 		$this->http_client->responses[] = $this->make_response( 404, $not_found );
 		$logger                         = RecordingWcLogger::install();
 
-		$this->sut->handle_retry_cancel_subscription( $subscription->get_id(), 2 );
+		$this->sut->handle_retry_cancel_subscription( $subscription->get_id(), 3 );
 
 		$this->assertSame( self::MAIN_SUBSCRIPTION_ID, wc_get_order( $subscription->get_id() )->get_meta( '_cancelled_wcpay_subscription_id', true ) );
-		$this->assertNull( $this->get_retry_cancel_delay( $subscription, 3 ) );
 		$context = $this->get_logged_context( $logger, self::NOT_FOUND_LINE );
-		$this->assertSame( array( $subscription->get_id(), self::MAIN_SUBSCRIPTION_ID, 3 ), array( $context['subscription_id'], $context['wcpay_subscription_id'], $context['attempt'] ) );
+		$this->assertSame( array( $subscription->get_id(), self::MAIN_SUBSCRIPTION_ID, 4 ), array( $context['subscription_id'], $context['wcpay_subscription_id'], $context['attempt'] ) );
 		$this->assertSame( array(), $this->get_notes_starting_with( wc_get_order( $subscription->get_id() ), 'WooPayments could not' ), 'No give-up note.' );
 	}
 

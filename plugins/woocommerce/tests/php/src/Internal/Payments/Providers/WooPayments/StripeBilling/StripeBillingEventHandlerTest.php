@@ -183,7 +183,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		$invoice_service->init( $api, $api_client, $module, $logger );
 
 		$this->subscription_service = new StripeBillingSubscriptionService();
-		$this->subscription_service->init( $api, $this->createMock( WooPaymentsCustomerService::class ), $product_service, $invoice_service, $logger, wc_get_container()->get( WooPaymentsActionSchedulerService::class ) );
+		$this->subscription_service->init( $api, $this->createMock( WooPaymentsCustomerService::class ), $product_service, $invoice_service, $logger, wc_get_container()->get( WooPaymentsActionSchedulerService::class ), $account_service );
 		wc_get_container()->replace( StripeBillingSubscriptionService::class, $this->subscription_service );
 
 		$this->sut = new StripeBillingEventHandler();
@@ -950,7 +950,8 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A declined invoice for a subscription moved off WooPayments only tries the Stripe cancel again; the cancel $answer: $_dataName.
 	 *
-	 * No renewal is created, the subscription is not put on hold or cancelled, and no pending invoice is kept for it.
+	 * No renewal is created, the subscription is not put on hold or cancelled, and no pending invoice is kept for it. Both
+	 * rows run in test mode: the cancel fails with a platform error or succeeds with Stripe's answer, never a not-found.
 	 *
 	 * @testWith ["fails", "_wcpay_subscription_id", true]
 	 *           ["succeeds", "_cancelled_wcpay_subscription_id", false]

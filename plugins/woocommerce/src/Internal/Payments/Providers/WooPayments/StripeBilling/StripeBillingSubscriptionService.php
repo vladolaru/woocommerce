@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiExcept
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
@@ -121,6 +122,13 @@ class StripeBillingSubscriptionService {
 	private WooPaymentsActionSchedulerService $scheduler;
 
 	/**
+	 * Account service, for the mode the platform requests are sent in.
+	 *
+	 * @var WooPaymentsAccountService
+	 */
+	private WooPaymentsAccountService $account_service;
+
+	/**
 	 * Stack frames the on-hold suspension line writes: enough to reach past the status hooks to the code that changed the status.
 	 */
 	private const STATUS_CHANGE_TRACE_FRAMES = 20;
@@ -157,14 +165,16 @@ class StripeBillingSubscriptionService {
 	 * @param StripeBillingInvoiceService       $invoice_service  Invoice service.
 	 * @param WooPaymentsLogger                 $logger           Module logger.
 	 * @param WooPaymentsActionSchedulerService $scheduler        Action Scheduler service.
+	 * @param WooPaymentsAccountService         $account_service  Account service.
 	 */
-	final public function init( StripeBillingApi $api, WooPaymentsCustomerService $customer_service, StripeBillingProductService $product_service, StripeBillingInvoiceService $invoice_service, WooPaymentsLogger $logger, WooPaymentsActionSchedulerService $scheduler ): void {
+	final public function init( StripeBillingApi $api, WooPaymentsCustomerService $customer_service, StripeBillingProductService $product_service, StripeBillingInvoiceService $invoice_service, WooPaymentsLogger $logger, WooPaymentsActionSchedulerService $scheduler, WooPaymentsAccountService $account_service ): void {
 		$this->api              = $api;
 		$this->customer_service = $customer_service;
 		$this->product_service  = $product_service;
 		$this->invoice_service  = $invoice_service;
 		$this->logger           = $logger;
 		$this->scheduler        = $scheduler;
+		$this->account_service  = $account_service;
 	}
 
 	/**
@@ -564,7 +574,7 @@ class StripeBillingSubscriptionService {
 	 * @internal
 	 *
 	 * @param mixed $subscription Subscription.
-	 * @return bool Whether Stripe confirmed the cancel or has no such subscription; false when it failed or there is none to cancel.
+	 * @return bool Whether Stripe confirmed the cancel or, in live mode, has no such subscription; false when it failed or there is none to cancel.
 	 */
 	public function cancel_subscription( $subscription ): bool {
 		if ( ! $subscription instanceof WC_Order ) {
@@ -578,8 +588,8 @@ class StripeBillingSubscriptionService {
 	 * Retry a failed cancel of a subscription's Stripe subscription, while the subscription still holds the Stripe ID and
 	 * still wants the cancel: it is on another payment method, or WooCommerce Subscriptions counts its status as ended.
 	 *
-	 * A Stripe subscription already canceled, or one Stripe does not have, counts as cancelled. A subscription off
-	 * WooPayments then moves its Stripe ID to `_cancelled_wcpay_subscription_id`, as maybe_cancel_subscription() does.
+	 * A Stripe subscription already canceled, or one Stripe does not have in live mode, counts as cancelled. A subscription
+	 * off WooPayments then moves its Stripe ID to `_cancelled_wcpay_subscription_id`, as maybe_cancel_subscription() does.
 	 *
 	 * @internal
 	 *
@@ -978,13 +988,13 @@ class StripeBillingSubscriptionService {
 	}
 
 	/**
-	 * Cancel a subscription's Stripe subscription; a Stripe answer that it has no such subscription counts as cancelled. A
-	 * failure writes the always-written line and schedules the next retry on the webhook retry cadence; after the last one
-	 * the merchant gets a note saying what to do.
+	 * Cancel a subscription's Stripe subscription; a live-mode answer that Stripe has no such subscription counts as
+	 * cancelled. A failure writes the always-written line and schedules the next retry on the webhook retry cadence; after
+	 * the last one the merchant gets a note saying what to do.
 	 *
 	 * @param WC_Order $subscription Subscription.
 	 * @param int      $retry        Which retry this is, 0 for the first attempt.
-	 * @return bool Whether Stripe confirmed the cancel or has no such subscription.
+	 * @return bool Whether Stripe confirmed the cancel or, in live mode, has no such subscription.
 	 */
 	private function cancel_stripe_subscription( WC_Order $subscription, int $retry ): bool {
 		$wcpay_subscription_id = $this->get_wcpay_subscription_id( $subscription );
@@ -996,9 +1006,9 @@ class StripeBillingSubscriptionService {
 			$this->api->cancel_subscription( $wcpay_subscription_id );
 			return true;
 		} catch ( ApiException $exception ) {
-			if ( self::is_unknown_to_stripe( $exception ) ) {
-				// Stripe has no subscription with this ID for this account and mode, so nothing bills under it here. The same
-				// answer comes for one on another account or in the other mode, so this line is the trace of the release.
+			if ( $this->is_unknown_to_stripe_in_live_mode( $exception ) ) {
+				// Stripe has no subscription with this ID for this live account, so nothing bills under it here. The same
+				// answer comes for one on another account or a test-mode leftover, so this line is the trace of the release.
 				$this->logger->log_throwable_always(
 					'Stripe has no such subscription on this account and mode, so it is counted as cancelled.',
 					$exception,
@@ -1050,14 +1060,18 @@ class StripeBillingSubscriptionService {
 	}
 
 	/**
-	 * Tell whether a platform error says Stripe has no such subscription: a 404 with `resource_missing`, which the platform
-	 * passes through from Stripe unchanged. Its outages never take this shape: they answer 5xx, 401 or a transport error.
+	 * Tell whether a live-mode request was answered that Stripe has no such subscription: a 404 with `resource_missing`,
+	 * passed through unchanged; outages answer 5xx, 401 or a transport error. In test mode the same answer is likely a live
+	 * subscription still billing, so it counts as a failure. The mode comes from is_test_mode_enabled(), where
+	 * Client::request_decoded() takes the request's `test_mode`.
 	 *
 	 * @param ApiException $exception Platform error.
 	 * @return bool
 	 */
-	private static function is_unknown_to_stripe( ApiException $exception ): bool {
-		return 404 === $exception->get_http_code() && 'resource_missing' === $exception->get_error_code();
+	private function is_unknown_to_stripe_in_live_mode( ApiException $exception ): bool {
+		return 404 === $exception->get_http_code()
+			&& 'resource_missing' === $exception->get_error_code()
+			&& ! $this->account_service->is_test_mode_enabled();
 	}
 
 	/**

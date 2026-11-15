@@ -128,7 +128,7 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 		$this->sut->init( $api, $api_client, $module, $logger );
 
 		$subscription_service = new StripeBillingSubscriptionService();
-		$subscription_service->init( $api, $this->createMock( WooPaymentsCustomerService::class ), $product_service, $this->sut, $logger, wc_get_container()->get( WooPaymentsActionSchedulerService::class ) );
+		$subscription_service->init( $api, $this->createMock( WooPaymentsCustomerService::class ), $product_service, $this->sut, $logger, wc_get_container()->get( WooPaymentsActionSchedulerService::class ), $account_service );
 		wc_get_container()->replace( StripeBillingSubscriptionService::class, $subscription_service );
 	}
 
