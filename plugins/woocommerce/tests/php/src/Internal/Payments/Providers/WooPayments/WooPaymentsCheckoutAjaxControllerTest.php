@@ -1756,6 +1756,9 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 * and its started writer returns on an order that is not Pending (:2229-2233).
 	 */
 	public function test_update_order_status_keeps_a_record_settled_during_the_fetch_and_saves_only_the_attach(): void {
+		// HPOS saves an order again after a meta write in a later second than its last save, to update its modified date
+		// (OrdersTableDataStore::after_meta_change()). That save carries no status, payment or note change, so it is not counted.
+		add_filter( 'woocommerce_orders_table_datastore_should_save_after_meta_change', '__return_false' );
 		$order = $this->create_order_for_intent_binding( 'payment' );
 		$order->update_meta_data( '_intent_id', 'pi_started' );
 		$order->save();
