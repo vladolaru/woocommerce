@@ -17,8 +17,8 @@ use WC_Order;
  * Builds saved orders whose stored payment values (status, transaction ID, `_intent_id`, `_intention_status`,
  * `_charge_id`) have a shape a store can hold, each method naming the code that writes it.
  *
- * Every order is a USD 10.99 WooPayments order. An empty ID argument leaves that value unwritten. A shape is added with
- * the first test that starts from it.
+ * Every order is a USD 10.99 order, a WooPayments one unless its shape says otherwise. An empty ID argument leaves that
+ * value unwritten. A shape is added with the first test that starts from it.
  */
 final class StoredPaymentRecords {
 
@@ -184,16 +184,46 @@ final class StoredPaymentRecords {
 	}
 
 	/**
-	 * Create and save a WooPayments order with the given status, transaction ID and stored values.
+	 * A WooPayments payment kept on an order whose payment method is another gateway's: the transaction ID and the stored
+	 * intent name the payment, which succeeded, with its charge, while the order's payment method names, for example,
+	 * bank transfer.
+	 *
+	 * Written by the checkout's attach (WooPaymentsOrderEffectApplier::attach_intent_info()), then a change of the order's
+	 * payment method that writes none of these values, such as a merchant's edit on the order screen. In the WooPayments
+	 * extension by attach_intent_info_to_order() (client 11.3.0 class-wc-payments-order-service.php:1875-1884), then its
+	 * cleanup for another gateway, which keeps a payment that went through (same file, :1284-1288).
+	 *
+	 * @param string $status         Order status; a paid status gets a paid date.
+	 * @param string $payment_method The other gateway's ID.
+	 * @param string $intent_id      Payment intent, also the transaction ID.
+	 * @param string $charge_id      Its charge.
+	 * @return WC_Order
+	 */
+	public static function payment_kept_on_an_order_of_another_method( string $status = OrderStatus::PROCESSING, string $payment_method = 'bacs', string $intent_id = 'pi_A', string $charge_id = 'ch_A' ): WC_Order {
+		return self::create_order(
+			$status,
+			$intent_id,
+			array(
+				'_intent_id'        => $intent_id,
+				'_intention_status' => 'succeeded',
+				'_charge_id'        => $charge_id,
+			),
+			$payment_method
+		);
+	}
+
+	/**
+	 * Create and save an order with the given status, transaction ID, stored values and payment method.
 	 *
 	 * @param string               $status         Order status; a paid status gets a paid date.
 	 * @param string               $transaction_id Transaction ID.
 	 * @param array<string,string> $meta           Stored values; an empty one is not written.
+	 * @param string               $payment_method Payment method; WooPayments unless a shape names another.
 	 * @return WC_Order
 	 */
-	private static function create_order( string $status, string $transaction_id, array $meta ): WC_Order {
+	private static function create_order( string $status, string $transaction_id, array $meta, string $payment_method = WooPaymentsPersistenceVocabulary::GATEWAY_ID ): WC_Order {
 		$order = new WC_Order();
-		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_payment_method( $payment_method );
 		$order->set_currency( 'USD' );
 		$order->set_total( self::TOTAL );
 		$order->set_status( $status );

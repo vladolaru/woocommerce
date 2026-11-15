@@ -801,7 +801,8 @@ class DisputeEventHandler {
 	 * Client 11.1.0 takes no lock in its dispute handlers.
 	 *
 	 * The change runs only when the disputed charge is the order's own payment; a dispute on another charge is recorded
-	 * instead, with one note and one warning line, and the order keeps its status.
+	 * instead, with one note and one warning line, and the order keeps its status. A change that applied on an order whose
+	 * payment method is not a WooPayments one is logged.
 	 *
 	 * @param WC_Order                $order        Order the event resolved to.
 	 * @param string                  $event_type   Event type.
@@ -837,7 +838,12 @@ class DisputeEventHandler {
 				return false;
 			}
 
-			return $change( $fresh_order );
+			$applied = $change( $fresh_order );
+			if ( $applied ) {
+				$resolver->log_own_event_on_another_payment_method( $fresh_order, $event_type, $charge_id );
+			}
+
+			return $applied;
 		} finally {
 			$this->order_payment_lock->release( $order, $this->persistence_vocabulary, $lock_token );
 		}

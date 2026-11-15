@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use WC_Order;
 
@@ -21,6 +22,12 @@ use WC_Order;
  * @internal
  */
 class EventOrderResolver {
+
+	/**
+	 * Reason code of the line written when a refund or dispute is applied as the payment of an order whose payment method
+	 * is not a WooPayments one.
+	 */
+	private const REASON_OWN_PAYMENT_EVENT_ON_ANOTHER_PAYMENT_METHOD = 'own_payment_event_on_another_payment_method';
 
 	/**
 	 * Find the order whose `_charge_id` is the charge ID.
@@ -160,6 +167,39 @@ class EventOrderResolver {
 		}
 
 		return WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() );
+	}
+
+	/**
+	 * Log a refund or dispute event applied as the order's own payment, when the order's payment method is not a
+	 * WooPayments one.
+	 *
+	 * Such an order names a WooPayments payment while its payment method names another gateway, for example after a
+	 * merchant changed the payment method or another payment method checked the order out. The line is written whatever
+	 * the logging setting, so the case can be counted; nothing else changes.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param WC_Order $order      Order the event changed, read under the order payment lock.
+	 * @param string   $event_type Provider event type.
+	 * @param string   $charge_id  The event's charge ID.
+	 */
+	public function log_own_event_on_another_payment_method( WC_Order $order, string $event_type, string $charge_id ): void {
+		$payment_method = (string) $order->get_payment_method();
+		if ( WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( $payment_method ) ) {
+			return;
+		}
+
+		wc_get_container()->get( WooPaymentsLogger::class )->log_always(
+			sprintf( 'own payment event applied on an order of another payment method: order %1$d, %2$s, charge %3$s, order payment method %4$s', $order->get_id(), $event_type, $charge_id, $payment_method ),
+			'warning',
+			array(
+				'order_id'       => $order->get_id(),
+				'event_type'     => $event_type,
+				'charge_id'      => $charge_id,
+				'payment_method' => $payment_method,
+				'reason'         => self::REASON_OWN_PAYMENT_EVENT_ON_ANOTHER_PAYMENT_METHOD,
+			)
+		);
 	}
 
 	/**

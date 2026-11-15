@@ -142,7 +142,8 @@ class RefundEventHandler {
 
 	/**
 	 * Process a charge.refunded event: create the local refund with its note and metadata. For a refund the order already
-	 * links, write the note and metadata only when its created note is missing.
+	 * links, write the note and metadata only when its created note is missing. A refund created on an order whose payment
+	 * method is not a WooPayments one is logged.
 	 *
 	 * @param array<string,mixed> $charge Charge object.
 	 * @throws InvalidArgumentException When the event is malformed or its refund amount is not valid.
@@ -228,6 +229,7 @@ class RefundEventHandler {
 			);
 
 			$this->add_note_and_metadata_for_created_refund( $order, $wc_refund, $refund_id, $balance_txn_id, $is_pending_refund );
+			$this->event_order_resolver->log_own_event_on_another_payment_method( $order, 'charge.refunded', $charge_id );
 		} finally {
 			$this->order_payment_lock->release( $order, $this->persistence_vocabulary, $lock_token );
 		}

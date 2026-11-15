@@ -20,6 +20,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\DisputeEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\StoredPaymentRecords;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use RuntimeException;
 use WC_Order;
@@ -31,6 +33,7 @@ use WC_Unit_Test_Case;
 class DisputeEventHandlerTest extends WC_Unit_Test_Case {
 
 	use OrderPaymentLockTestTrait;
+	use ProviderTextLogAssertions;
 	use RefundLinesTestTrait;
 
 	/**
@@ -958,6 +961,7 @@ class DisputeEventHandlerTest extends WC_Unit_Test_Case {
 		);
 		$this->assertCount( 1, $record_lines );
 		$this->assertSame( 'woopayments', $logger->contexts[ $record_lines[0] ]['source'] );
+		$this->assertSame( array(), $this->get_own_event_on_another_payment_method_lines( $logger ), 'A recorded dispute is not applied as the order\'s own.' );
 	}
 
 	/**
@@ -1429,6 +1433,129 @@ class DisputeEventHandlerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'on-hold', $order->get_status() );
 		$this->assertSame( array( 'dp_own_charge' ), $order->get_meta( '_wcpay_open_dispute_ids', true ) );
 		$this->assertCount( 1, $this->find_order_note( $order, 'Payment has been disputed' ) );
+	}
+
+	/**
+	 * @testdox A $event_type event on the payment of $_dataName changes the order as today and writes $expected_lines own-payment line(s) naming another payment method.
+	 * @dataProvider provider_dispute_on_a_kept_payment
+	 *
+	 * Client 11.3.0 holds or refunds the charge's order whatever its payment method, logging nothing of the kind
+	 * (class-wc-payments-webhook-processing-service.php:834-874, :883-920). The built-in store changes it the same way and writes
+	 * one warning, whatever the logging setting, once per change applied as the order's own when the order's payment
+	 * method is not a WooPayments one. The events are Stripe Disputes (https://docs.stripe.com/api/disputes/object); the
+	 * platform has no dispute summary, so a lost dispute refunds the event's amount.
+	 *
+	 * @param callable            $create_order     Creates the order the disputed charge pays.
+	 * @param string              $event_type       Dispute event type.
+	 * @param array<string,mixed> $event            Dispute object fields of the event.
+	 * @param int                 $deliveries       How many times the event is delivered.
+	 * @param string              $expected_status  Order status after the event.
+	 * @param string              $expected_note    Fragment of the one note the event writes.
+	 * @param int                 $expected_refunds Refund rows after the event.
+	 * @param int                 $expected_lines   Own-payment lines naming another payment method.
+	 */
+	public function test_dispute_on_a_kept_payment_logs_another_payment_method_once( callable $create_order, string $event_type, array $event, int $deliveries, string $expected_status, string $expected_note, int $expected_refunds, int $expected_lines ): void {
+		self::enable_woopayments_debug_logging();
+		$order   = $create_order();
+		$handler = new DisputeEventHandler();
+		$handler->init(
+			new class() extends Client {
+				/**
+				 * Answer with no summary, so a lost dispute refunds the event's own amount.
+				 *
+				 * @param string $dispute_id Dispute ID.
+				 * @return array<string,mixed>
+				 */
+				public function get_dispute_summary( string $dispute_id ): array {
+					unset( $dispute_id );
+
+					return array();
+				}
+			},
+			wc_get_container()->get( WooPaymentsDatabaseCache::class ),
+			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
+			wc_get_container()->get( OrderPaymentLock::class ),
+			wc_get_container()->get( WooPaymentsPersistenceVocabulary::class ),
+			wc_get_container()->get( EventOrderResolver::class ),
+			wc_get_container()->get( OtherChargeRecorder::class )
+		);
+		$event  = array_merge(
+			array(
+				'id'             => 'dp_A',
+				'charge'         => 'ch_A',
+				'payment_intent' => 'pi_A',
+			),
+			$event
+		);
+		$logger = RecordingWcLogger::install();
+
+		for ( $delivery = 0; $delivery < $deliveries; $delivery++ ) {
+			$handler->process( $event_type, $event );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( \WC_Order::class, $order );
+		$this->assertSame( $expected_status, $order->get_status() );
+		$this->assertCount( 1, $this->find_order_note( $order, $expected_note ) );
+		$this->assertCount( $expected_refunds, $order->get_refunds() );
+		$lines = $this->get_own_event_on_another_payment_method_lines( $logger );
+		$this->assertCount( $expected_lines, $lines );
+		if ( 0 === $expected_lines ) {
+			return;
+		}
+		$index = array_key_first( $lines );
+		$this->assertSame(
+			array( 'warning', 'own payment event applied on an order of another payment method: order ' . $order->get_id() . ', ' . $event_type . ', charge ch_A, order payment method bacs', 'woopayments' ),
+			$lines[ $index ]
+		);
+		$this->assertSame(
+			array(
+				'order_id'       => $order->get_id(),
+				'event_type'     => $event_type,
+				'charge_id'      => 'ch_A',
+				'payment_method' => 'bacs',
+				'reason'         => 'own_payment_event_on_another_payment_method',
+			),
+			array_intersect_key( $logger->contexts[ $index ], array_flip( array( 'order_id', 'event_type', 'charge_id', 'payment_method', 'reason' ) ) )
+		);
+	}
+
+	/**
+	 * Dispute events on a payment, its order's payment method and the deliveries.
+	 *
+	 * @return array<string,array{0:callable,1:string,2:array<string,mixed>,3:int,4:string,5:string,6:int,7:int}>
+	 */
+	public function provider_dispute_on_a_kept_payment(): array {
+		$kept    = static fn(): \WC_Order => StoredPaymentRecords::payment_kept_on_an_order_of_another_method();
+		$created = array(
+			'status'           => 'needs_response',
+			'amount'           => 1099,
+			'reason'           => 'fraudulent',
+			'evidence_details' => array( 'due_by' => 1893456000 ),
+		);
+		$lost    = array(
+			'status'   => 'lost',
+			'amount'   => 1099,
+			'currency' => 'usd',
+		);
+
+		return array(
+			'a WooPayments payment kept on a bank transfer order' => array( $kept, 'charge.dispute.created', $created, 1, 'on-hold', 'Payment has been disputed', 0, 1 ),
+			'a WooPayments payment kept on a bank transfer order, delivered twice' => array( $kept, 'charge.dispute.created', $created, 2, 'on-hold', 'Payment has been disputed', 0, 1 ),
+			'a WooPayments payment kept on a bank transfer order, lost' => array( $kept, 'charge.dispute.closed', $lost, 1, 'refunded', 'Dispute has been closed with status', 1, 1 ),
+			'a WooPayments payment kept on a bank transfer order, lost, delivered twice' => array( $kept, 'charge.dispute.closed', $lost, 2, 'refunded', 'Dispute has been closed with status', 1, 1 ),
+			'a WooPayments order' => array( static fn(): \WC_Order => StoredPaymentRecords::payment(), 'charge.dispute.created', $created, 1, 'on-hold', 'Payment has been disputed', 0, 0 ),
+		);
+	}
+
+	/**
+	 * Get the recorded lines saying a WooPayments event was applied as the payment of an order of another payment method.
+	 *
+	 * @param RecordingWcLogger $logger Recording logger.
+	 * @return array<int,array{0:string,1:string,2:string}> Lines by their index in the recording.
+	 */
+	private function get_own_event_on_another_payment_method_lines( RecordingWcLogger $logger ): array {
+		return array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'own payment event applied on an order of another payment method:' ) );
 	}
 
 	/**

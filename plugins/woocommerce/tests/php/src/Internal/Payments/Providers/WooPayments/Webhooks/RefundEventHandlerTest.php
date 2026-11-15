@@ -20,6 +20,7 @@ use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplierInter
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsHtmlUtils;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
@@ -28,6 +29,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\Othe
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockWithClaimHook;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPlatformEvents;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\StoredPaymentRecords;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\UncachedOrderWriter;
 use Automattic\WooCommerce\Tests\Internal\Payments\RecordingProvider;
@@ -41,6 +44,7 @@ use WC_Unit_Test_Case;
 class RefundEventHandlerTest extends WC_Unit_Test_Case {
 
 	use OrderPaymentLockTestTrait;
+	use ProviderTextLogAssertions;
 	use RefundLinesTestTrait;
 
 	/**
@@ -769,6 +773,7 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 		);
 		$this->assertCount( 1, $record_lines );
 		$this->assertSame( 'woopayments', $logger->contexts[ $record_lines[0] ]['source'] );
+		$this->assertSame( array(), $this->get_own_event_on_another_payment_method_lines( $logger ), 'A recorded refund is not applied as the order\'s own.' );
 	}
 
 	/**
@@ -820,6 +825,15 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 				400,
 				'ch_123',
 				$gateway_id,
+			),
+			'second charge, by metadata, on a WooPayments payment kept on a bank transfer order' => array(
+				static fn(): WC_Order => StoredPaymentRecords::payment_kept_on_an_order_of_another_method(),
+				'ch_X',
+				'pi_X',
+				true,
+				400,
+				'ch_A',
+				'bacs',
 			),
 		);
 	}
@@ -1347,6 +1361,120 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 			'payment method changed by the merchant' => array( 'cod', 'pi_123' ),
 			'transaction ID is the charge'           => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'ch_123' ),
 		);
+	}
+
+	/**
+	 * @testdox A full charge.refunded on the payment of $_dataName refunds the order as today and writes $expected_lines own-payment line(s) naming another payment method.
+	 * @dataProvider provider_full_refund_on_a_kept_payment
+	 *
+	 * Client 11.3.0 finds the order by the charge and refunds it whatever its payment method, logging nothing of the kind
+	 * (class-wc-payments-webhook-processing-service.php:1270-1302). The built-in store refunds it the same way and writes
+	 * one warning, whatever the logging setting, once per refund applied as the order's own when the order's payment
+	 * method is not a WooPayments one. The charge is a Stripe Charge with its refunds list
+	 * (https://docs.stripe.com/api/charges/object).
+	 *
+	 * @param callable $create_order         Creates the order the charge pays.
+	 * @param bool     $logging              Whether WooPayments logging is on.
+	 * @param bool     $first_delivery_fails Whether the first delivery fails creating the refund row, so the event is delivered again.
+	 * @param int      $deliveries           How many times the event is delivered after any failed first delivery.
+	 * @param int      $expected_lines       Own-payment lines naming another payment method.
+	 */
+	public function test_full_charge_refunded_on_a_kept_payment_logs_another_payment_method_once( callable $create_order, bool $logging, bool $first_delivery_fails, int $deliveries, int $expected_lines ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		if ( $logging ) {
+			self::enable_woopayments_debug_logging();
+		} else {
+			add_filter( 'wcpay_dev_mode', '__return_false' );
+		}
+		$this->assertSame( $logging, wc_get_container()->get( WooPaymentsLogger::class )->can_log() );
+		$order                                  = $create_order();
+		$payment_method                         = $order->get_payment_method();
+		$charge                                 = $this->get_successful_refund_charge();
+		$charge['id']                           = 'ch_A';
+		$charge['payment_intent']               = 'pi_A';
+		$charge['amount']                       = 1099;
+		$charge['refunds']['data'][0]['id']     = 're_A';
+		$charge['refunds']['data'][0]['amount'] = 1099;
+		$logger                                 = RecordingWcLogger::install();
+		if ( $first_delivery_fails ) {
+			$refused     = 0;
+			$refuse_once = static function () use ( &$refused ): void {
+				if ( 0 === $refused++ ) {
+					throw new \Exception( 'Refund hook refused.' );
+				}
+			};
+			add_action( 'woocommerce_create_refund', $refuse_once );
+			$caught = null;
+			try {
+				$this->sut->process( 'charge.refunded', $charge );
+			} catch ( \RuntimeException $exception ) {
+				$caught = $exception;
+			}
+			$this->assertInstanceOf( \RuntimeException::class, $caught, 'The first delivery fails creating the refund row.' );
+			$this->assertCount( 0, wc_get_order( $order->get_id() )->get_refunds(), 'The failed delivery leaves no refund row.' );
+		}
+
+		for ( $delivery = 0; $delivery < $deliveries; $delivery++ ) {
+			$this->sut->process( 'charge.refunded', $charge );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$refunds = $order->get_refunds();
+		$this->assertCount( 1, $refunds );
+		$this->assertSame( '-10.99', $refunds[0]->get_total() );
+		$this->assertSame( 're_A', $refunds[0]->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( 'refunded', $order->get_status() );
+		$this->assertSame( 'successful', $order->get_meta( '_wcpay_refund_status', true ) );
+		$this->assertSame( $payment_method, $order->get_payment_method() );
+		$this->assertCount( 1, $this->get_notes_containing( $order, 'was successfully processed' ) );
+		$lines = $this->get_own_event_on_another_payment_method_lines( $logger );
+		$this->assertCount( $expected_lines, $lines );
+		if ( 0 === $expected_lines ) {
+			return;
+		}
+		$index = array_key_first( $lines );
+		$this->assertSame(
+			array( 'warning', 'own payment event applied on an order of another payment method: order ' . $order->get_id() . ', charge.refunded, charge ch_A, order payment method bacs', 'woopayments' ),
+			$lines[ $index ]
+		);
+		$this->assertSame(
+			array(
+				'order_id'       => $order->get_id(),
+				'event_type'     => 'charge.refunded',
+				'charge_id'      => 'ch_A',
+				'payment_method' => 'bacs',
+				'reason'         => 'own_payment_event_on_another_payment_method',
+			),
+			array_intersect_key( $logger->contexts[ $index ], array_flip( array( 'order_id', 'event_type', 'charge_id', 'payment_method', 'reason' ) ) )
+		);
+	}
+
+	/**
+	 * Orders whose payment a full refund refunds, the logging setting and the deliveries.
+	 *
+	 * @return array<string,array{0:callable,1:bool,2:bool,3:int,4:int}>
+	 */
+	public function provider_full_refund_on_a_kept_payment(): array {
+		$kept = static fn(): WC_Order => StoredPaymentRecords::payment_kept_on_an_order_of_another_method();
+
+		return array(
+			'a WooPayments payment kept on a bank transfer order' => array( $kept, true, false, 1, 1 ),
+			'a WooPayments payment kept on a bank transfer order, delivered twice' => array( $kept, true, false, 2, 1 ),
+			'a WooPayments payment kept on a bank transfer order, delivered again after a failed delivery' => array( $kept, true, true, 1, 1 ),
+			'a WooPayments payment kept on a bank transfer order, with logging off' => array( $kept, false, false, 1, 1 ),
+			'a WooPayments order' => array( static fn(): WC_Order => StoredPaymentRecords::payment(), true, false, 1, 0 ),
+		);
+	}
+
+	/**
+	 * Get the recorded lines saying a WooPayments event was applied as the payment of an order of another payment method.
+	 *
+	 * @param RecordingWcLogger $logger Recording logger.
+	 * @return array<int,array{0:string,1:string,2:string}> Lines by their index in the recording.
+	 */
+	private function get_own_event_on_another_payment_method_lines( RecordingWcLogger $logger ): array {
+		return array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'own payment event applied on an order of another payment method:' ) );
 	}
 
 	/**
