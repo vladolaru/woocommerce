@@ -477,6 +477,11 @@ class StripeBillingSubscriptionService {
 			$response = $this->api->create_subscription( $subscription_data );
 
 			$this->set_wcpay_subscription_id( $subscription, (string) $response['id'] );
+			// A pending invoice found now belongs to an earlier Stripe subscription; charging it would bill a period paid
+			// another way, with no order to record it.
+			if ( '' !== $this->invoice_service->get_pending_invoice_id( $subscription ) ) {
+				$this->invoice_service->mark_pending_invoice_paid_for_subscription( $subscription );
+			}
 			$this->set_wcpay_subscription_item_ids( $subscription, (array) $response['items']['data'] );
 
 			if ( isset( $response['discounts'] ) ) {

@@ -571,6 +571,31 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A new Stripe subscription clears the pending invoice an earlier one left, so a later payment method change charges nothing.
+	 *
+	 * The mark is set only for the Stripe subscription the subscription holds, and creation runs only without one, so a mark
+	 * found at creation is an earlier Stripe subscription's open invoice. Its renewal was paid another way before the
+	 * subscription left WooPayments and came back with a saved card.
+	 */
+	public function test_a_new_stripe_subscription_clears_an_earlier_pending_invoice(): void {
+		$this->queue_entry( $this->get_entry( 'create_subscription' ) );
+		$subscription = $this->create_subscription(
+			array(
+				'_wcpay_pending_invoice_id'        => 'in_earlier_open_invoice',
+				'_cancelled_wcpay_subscription_id' => 'sub_earlier',
+			)
+		);
+
+		$this->sut->maybe_create_subscription_from_update_payment_method( $subscription, 'woocommerce_payments' );
+		$saved = wc_get_order( $subscription->get_id() );
+		$this->sut->maybe_attempt_payment_for_subscription( $saved, $this->create_token() );
+
+		$this->assertSame( self::MAIN_SUBSCRIPTION_ID, $saved->get_meta( '_wcpay_subscription_id', true ) );
+		$this->assertSame( '', $saved->get_meta( '_wcpay_pending_invoice_id', true ) );
+		$this->assertSame( array( 'POST' ), array_column( $this->get_requests(), 0 ), 'Only the creation; the earlier invoice is not charged.' );
+	}
+
+	/**
 	 * @testdox A checkout subscription created after a switch to WooPayments in the same process keeps its own billing dates.
 	 *
 	 * Client 11.1.0 sets the switch's backdating flag on its subscription service singleton and never clears it
