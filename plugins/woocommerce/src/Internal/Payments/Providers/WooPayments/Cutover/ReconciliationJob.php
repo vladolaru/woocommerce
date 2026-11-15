@@ -100,8 +100,9 @@ class ReconciliationJob implements RegisterHooksInterface {
 
 	/**
 	 * Retry delay in the first day after the merchant's start (FAST_RETRY_WINDOW), for a held switch no store manager is
-	 * looking at: an admin page brings the attempt forward sooner (ADMIN_PAGE_ATTEMPT_FLOOR), and so do the events that
-	 * clear a code (bring_deferred_attempt_forward()).
+	 * looking at: an admin page brings the attempt forward sooner (ADMIN_PAGE_ATTEMPT_FLOOR) for a record before the
+	 * hand-over, a version-held one only once its files are supported, and so do the events that clear a code
+	 * (bring_deferred_attempt_forward()).
 	 *
 	 * Cost: 96 attempts a day, each running the preflight, two queue scans, three record writes and one queued action. It
 	 * buys a blocker that clears with nothing the switch hears, on a store nobody is looking at, continuing within 15 minutes.
@@ -224,8 +225,8 @@ class ReconciliationJob implements RegisterHooksInterface {
 	 * Retry delay past FAST_RETRY_WINDOW, for a held switch no store manager is looking at.
 	 *
 	 * Cost: one attempt a day, with no end. It falls on a merchant who clears the blocker with nothing the switch hears and
-	 * opens no admin page: the switch continues up to a day later. A store manager's admin page brings it within about a
-	 * minute (ADMIN_PAGE_ATTEMPT_FLOOR).
+	 * opens no admin page: the switch continues up to a day later. For a record before the hand-over, a store manager's
+	 * admin page makes the attempt due by the floor's end (ADMIN_PAGE_ATTEMPT_FLOOR), and the next queue runner takes it.
 	 */
 	private const SLOW_RETRY_DELAY = DAY_IN_SECONDS;
 
@@ -936,8 +937,9 @@ class ReconciliationJob implements RegisterHooksInterface {
 	/**
 	 * Bring a held switch's next attempt forward on a store manager's admin page.
 	 *
-	 * The record the page already read decides, so a page that moves nothing runs no query. Under the lock, the
-	 * compare-and-set on that record catches one another request has changed since.
+	 * A page refused by the first eligibility checks, which read only the record the page already has, runs no query. A page
+	 * that passes them takes the write lock, and the compare-and-set on that record catches one another request has changed
+	 * since; when two requests race on the same record, the later one pays the lock and compare-and-set queries and moves nothing.
 	 *
 	 * @return bool True when the next attempt was moved and scheduled.
 	 */
@@ -970,7 +972,9 @@ class ReconciliationJob implements RegisterHooksInterface {
 	 * Only a deferred record with no hand-over token moves: past the hand-over the switch keeps its own timing. The target is
 	 * at least ADMIN_PAGE_ATTEMPT_FLOOR after the record's last write, and the attempt only ever moves sooner. A record held
 	 * by the extension version moves once the installed files carry a supported version, read last, and like the update
-	 * event to UPDATED_PLUGIN_RETRY_DELAY from now, so the job's updater never runs from browsing.
+	 * event to UPDATED_PLUGIN_RETRY_DELAY from now, so a page never moves a record that still needs the update. The attempt
+	 * itself reads the loaded code's version: on a host whose old opcode outlives that minute it can run the updater once a
+	 * minute while a manager browses, installing nothing.
 	 *
 	 * @param array<string,mixed> $record Cutover record.
 	 * @param int                 $now    Current UTC timestamp.
