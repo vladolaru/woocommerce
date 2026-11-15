@@ -540,6 +540,11 @@ class WooPaymentsPaymentOperationService {
 
 			$intent_id = $this->get_operation_intent_id( $context, 'capture' );
 			if ( '' !== $intent_id ) {
+				$refusal = $this->refuse_an_intent_id_outside_the_form( $context, 'capture', $intent_id );
+				if ( null !== $refusal ) {
+					return $refusal;
+				}
+
 				$amount_to_capture = WooPaymentsCurrencyUtils::amount_to_minor_units( $context->get_amount() ?? (float) $order->get_total(), (string) $order->get_currency() );
 				// Client 11.1.0 always captures the order total (`class-wc-payment-gateway-wcpay.php:3966, 3981`) and sends the
 				// order's Level 3 data with it (:3984-3986), so it never meets a partial capture. The order's line items add up to
@@ -629,6 +634,11 @@ class WooPaymentsPaymentOperationService {
 
 			$intent_id = $this->get_operation_intent_id( $context, 'cancel' );
 			if ( '' !== $intent_id ) {
+				$refusal = $this->refuse_an_intent_id_outside_the_form( $context, 'cancel', $intent_id );
+				if ( null !== $refusal ) {
+					return $refusal;
+				}
+
 				try {
 					$result  = $this->api_client->cancel_intention( $intent_id );
 					$outcome = WooPaymentsIntentCodec::outcome_from_cancel_result( $result );
@@ -1667,7 +1677,7 @@ class WooPaymentsPaymentOperationService {
 	 * @throws ApiException When the id is not a Stripe id.
 	 */
 	private function assert_valid_stripe_id( string $id ): void {
-		if ( preg_match( '/^[a-z]+_\w{1,250}$/', $id ) ) {
+		if ( preg_match( Client::ROUTE_STRIPE_ID_PATTERN, $id ) ) {
 			return;
 		}
 
@@ -1879,6 +1889,47 @@ class WooPaymentsPaymentOperationService {
 			'',
 			array(
 				self::DATA_STATUS_CHANGE_REFUSAL => $refusal,
+				WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array( '_intention_status' => (string) $fresh_order->get_meta( '_intention_status', true ) ),
+			)
+		);
+	}
+
+	/**
+	 * Refuse a capture or cancel whose intent ID is outside the intent form, before any request, as client 11.3.0's
+	 * Capture_Intention and Cancel_Intention do (core/server/request/class-capture-intention.php:42-45,
+	 * class-cancel-intention.php:40-43). The refusal keeps the intent status the order stores, as the status-change
+	 * refusal does, and its line prints no value.
+	 *
+	 * @param PaymentOperationContext $context   Capture or cancel context.
+	 * @param string                  $operation `capture` or `cancel`.
+	 * @param string                  $intent_id The intent the operation acts on.
+	 * @return PaymentOutcome|null The refusal, or null when the operation goes on.
+	 */
+	private function refuse_an_intent_id_outside_the_form( PaymentOperationContext $context, string $operation, string $intent_id ): ?PaymentOutcome {
+		if ( 1 === preg_match( Client::ROUTE_STRIPE_ID_PATTERN, $intent_id ) ) {
+			return null;
+		}
+
+		$order = $context->get_order();
+		$this->logger->log_always(
+			sprintf( 'The %1$s of order #%2$d was not sent: its intent ID is outside the intent form.', $operation, $order->get_id() ),
+			'warning',
+			array(
+				'order_id'  => $order->get_id(),
+				'operation' => $operation,
+			)
+		);
+		$fresh_order = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
+
+		return new PaymentOutcome(
+			PaymentOutcome::STATUS_FAILED,
+			'',
+			'',
+			'',
+			'',
+			array(
+				PaymentOutcome::DATA_ERROR_CODE => 'wcpay_core_invalid_request_parameter_stripe_id',
+				'operation'                     => $operation,
 				WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array( '_intention_status' => (string) $fresh_order->get_meta( '_intention_status', true ) ),
 			)
 		);

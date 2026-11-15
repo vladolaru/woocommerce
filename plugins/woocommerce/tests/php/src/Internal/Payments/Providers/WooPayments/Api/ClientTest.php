@@ -2034,23 +2034,24 @@ class ClientTest extends WC_Unit_Test_Case {
 				),
 				array( 'wc_order_callback', 'idem_callback' ),
 			),
-			// The order screen captures on the transaction ID, which a merchant can type: the request keeps it, the warning does not.
-			'cheque capture ID' => array(
+			// The order screen captures on the transaction ID, which a merchant can type in the intent form with any prefix: the
+			// request keeps it, the warning does not.
+			'typed capture ID'  => array(
 				static function ( Client $sut ) use ( $order_metadata ): void {
-					$sut->capture_intention( 'cheque', 500, $order_metadata );
+					$sut->capture_intention( 'inv_2024001', 500, $order_metadata );
 				},
 				static function ( array $params ): array {
 					$params['amount_to_capture'] = 1;
 					return $params;
 				},
-				'intentions/cheque/capture',
+				'intentions/inv_2024001/capture',
 				array( 'amount_to_capture' ),
 				null,
 				array(
 					'key'   => 'level3',
 					'value' => array(),
 				),
-				array( 'cheque' ),
+				array( 'inv_2024001' ),
 				'intentions/another value/capture',
 			),
 			'refund'            => array(
@@ -2297,12 +2298,11 @@ class ClientTest extends WC_Unit_Test_Case {
 				true,
 			),
 			'refund with only a lowercase copy' => array( $refund, 'refunds', false ),
-			// The cancel path does not encode the ID, so a typed transaction ID with slashes spans several segments.
-			'cancel on a typed ID with slashes' => array(
+			'cancel on a typed ID'              => array(
 				static function ( Client $sut ): void {
-					$sut->cancel_intention( 'INV/2024/001' );
+					$sut->cancel_intention( 'inv_2024_001' );
 				},
-				'intentions/INV/2024/001/cancel',
+				'intentions/inv_2024_001/cancel',
 				true,
 				'intentions/another value/cancel',
 			),
@@ -3939,14 +3939,21 @@ class ClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * One row per call that puts a caller value in the request path or query: send, expected error code.
+	 * One row per call that puts a caller value in the request path or query: send, expected error code. Capture and
+	 * cancel get one row per ID outside the intent form.
 	 *
 	 * @return array<string,array{0:callable,1:string}>
 	 */
 	public function provider_invalid_route_parameters(): array {
 		$route = 'wcpay_route_validation_failure';
 
-		return array(
+		$intent_rows = array();
+		foreach ( self::intent_ids_outside_the_form() as $name => $intent_id ) {
+			$intent_rows[ 'capture_intention on ' . $name ] = array( static fn( Client $sut ) => $sut->capture_intention( $intent_id, 1000 ), $route );
+			$intent_rows[ 'cancel_intention on ' . $name ]  = array( static fn( Client $sut ) => $sut->cancel_intention( $intent_id ), $route );
+		}
+
+		return $intent_rows + array(
 			'list_payment_intentions'     => array( static fn( Client $sut ) => $sut->list_payment_intentions( 'cus&customer=cus_other' ), $route ),
 			'list_charge_refunds'         => array( static fn( Client $sut ) => $sut->list_charge_refunds( 'ch_a&charge=ch_b' ), $route ),
 			'get_payment_methods'         => array( static fn( Client $sut ) => $sut->get_payment_methods( 'cus-test', 'card' ), $route ),
@@ -3960,6 +3967,24 @@ class ClientTest extends WC_Unit_Test_Case {
 			'get_disputes_export_url'     => array( static fn( Client $sut ) => $sut->get_disputes_export_url( 'dpexp%2Ftest' ), $route ),
 			'get_document'                => array( static fn( Client $sut ) => $sut->get_document( '../vat_invoice-123' ), $route ),
 			'get_payouts_export_url'      => array( static fn( Client $sut ) => $sut->get_payouts_export_url( '../poexp_test' ), $route ),
+		);
+	}
+
+	/**
+	 * IDs outside the intent form, Client::ROUTE_STRIPE_ID_PATTERN, by name.
+	 *
+	 * @return array<string,string>
+	 */
+	private static function intent_ids_outside_the_form(): array {
+		return array(
+			'an empty ID'              => '',
+			'an ID with no prefix'     => 'ORDER123',
+			'a leading space'          => ' pi_3UJhOgBzWlxcwgpP0AOgQE2z',
+			'a prefix alone'           => 'pi_',
+			'an uppercase prefix'      => 'PI_3UJhOgBzWlxcwgpP0AOgQE2z',
+			'a separator'              => 'pi_3UJhOgBz-WlxcwgpP0AOgQE2z',
+			'more than 250 characters' => 'pi_' . str_repeat( 'a', 251 ),
+			'a trailing newline'       => "pi_3UJhOgBzWlxcwgpP0AOgQE2z\n",
 		);
 	}
 

@@ -76,6 +76,13 @@ class Client {
 	private const ROUTE_WORD_ID_PATTERN = '/^\w+$/';
 
 	/**
+	 * Route ID pattern for Stripe object IDs: a lowercase prefix, an underscore, then 1 to 250 letters, digits or underscores.
+	 * Client 11.3.0's Request::validate_stripe_id() form (core/server/class-request.php:669-709), anchored at the very end
+	 * where the client's `$` also takes a trailing newline.
+	 */
+	public const ROUTE_STRIPE_ID_PATTERN = '/^[a-z]+_\w{1,250}\z/';
+
+	/**
 	 * Route ID pattern for export IDs: export routes accept opaque IDs from the platform and only exclude path separators and URL-encoded path bytes.
 	 */
 	private const ROUTE_EXPORT_ID_PATTERN = '/^[^\/\\\\%]+$/';
@@ -353,8 +360,11 @@ class Client {
 	 * @param array<string,mixed> $metadata           Intent metadata.
 	 * @param array<string,mixed> $level3             Level 3 data; sent even when empty, as client 11.1.0's capture request does (core/server/request/class-capture-intention.php:25).
 	 * @return array<string,mixed>
+	 * @throws ApiException When the intent ID is invalid or the request fails.
 	 */
 	public function capture_intention( string $intent_id, int $amount_to_capture, array $metadata = array(), array $level3 = array() ): array {
+		$this->validate_route_id( $intent_id, self::ROUTE_STRIPE_ID_PATTERN );
+
 		$params = array(
 			'amount_to_capture' => $amount_to_capture,
 			'metadata'          => $metadata,
@@ -369,8 +379,11 @@ class Client {
 	 *
 	 * @param string $intent_id Intent ID.
 	 * @return array<string,mixed>
+	 * @throws ApiException When the intent ID is invalid or the request fails.
 	 */
 	public function cancel_intention( string $intent_id ): array {
+		$this->validate_route_id( $intent_id, self::ROUTE_STRIPE_ID_PATTERN );
+
 		return $this->request( array(), 'intentions/' . $intent_id . '/cancel', 'POST' );
 	}
 
@@ -2368,7 +2381,7 @@ class Client {
 			return;
 		}
 
-		// Capture and cancel put the order's transaction ID, which a merchant can type, unencoded after intentions/, so only that
+		// Capture and cancel put the order's transaction ID, which a merchant can type, after intentions/ once it has the intent form, so only that
 		// ID goes through the helper; the rest of the path holds values our code or the platform set, and prints as built.
 		$printed_api = $api;
 		if ( 0 === strpos( $api, 'intentions/' ) ) {

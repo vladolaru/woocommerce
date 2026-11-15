@@ -1245,6 +1245,68 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The order screen's $operation on a transaction ID outside the intent form sends nothing and adds the failure note once.
+	 *
+	 * Client 11.3.0 refuses the ID before any request (core/server/request/class-capture-intention.php:42-45,
+	 * class-cancel-intention.php:40-43), and its order screen action then ends on the critical-error screen; here the
+	 * save completes with the generic failure note, and the order keeps its status, intent and intent status.
+	 *
+	 * @testWith ["capture", "woocommerce_order_action_capture_charge"]
+	 *           ["cancel", "woocommerce_order_action_cancel_authorization"]
+	 *
+	 * @param string $operation Capture or cancel.
+	 * @param string $action    Order action hook.
+	 */
+	public function test_order_screen_action_on_a_transaction_id_outside_the_form_sends_nothing( string $operation, string $action ): void {
+		$order = $this->create_recorded_authorization_order( 'requires_capture', OrderStatus::ON_HOLD );
+		$order->set_transaction_id( 'ORDER123' );
+		$order->save();
+		$transport = $this->create_operation_transport( $operation );
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $this->create_platform( null, null, new \ArrayObject() ) );
+		$this->sut->register();
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising the public WooCommerce order action hook.
+		do_action( $action, wc_get_order( $order->get_id() ) );
+
+		$fresh = wc_get_order( $order->get_id() );
+		$this->assertSame( 0, $transport->request_count );
+		$this->assertSame( 1, $this->count_notes( $order, $this->failure_note( $operation ) ) );
+		$this->assertSame( OrderStatus::ON_HOLD, $fresh->get_status() );
+		$this->assertSame( 'pi_3UJhOgBzWlxcwgpP0AOgQE2z', $fresh->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'requires_capture', $fresh->get_meta( '_intention_status', true ) );
+	}
+
+	/**
+	 * @testdox A status change to $order_status whose read intent ID is outside the intent form sends no $operation and keeps the stored intent status.
+	 *
+	 * The order stores processing, so the status change reads the intent; the read here answers the recorded
+	 * authorization (Fixtures/platform-manual-capture.json). The refused operation writes nothing over the stored status.
+	 *
+	 * @dataProvider status_change_operation_data
+	 *
+	 * @param string $operation    Capture or cancel.
+	 * @param string $order_status Status the order changes to.
+	 * @param string $hook         Status hook.
+	 */
+	public function test_status_change_on_a_read_intent_id_outside_the_form_keeps_the_stored_status( string $operation, string $order_status, string $hook ): void {
+		$order = $this->create_recorded_authorization_order( 'processing', $order_status );
+		$order->set_transaction_id( 'PI_3UJhOgBzWlxcwgpP0AOgQE2z' );
+		$order->update_meta_data( '_intent_id', 'PI_3UJhOgBzWlxcwgpP0AOgQE2z' );
+		$order->save();
+		$reads     = new \ArrayObject();
+		$transport = $this->create_operation_transport( $operation );
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $this->create_platform( $this->recorded_intent( 'authorize_manual_capture' ), null, $reads ) );
+		$this->sut->register();
+
+		$this->fire_order_hook( $hook, $order );
+
+		$this->assertSame( array( 'PI_3UJhOgBzWlxcwgpP0AOgQE2z' ), $reads->getArrayCopy() );
+		$this->assertSame( 0, $transport->request_count );
+		$this->assertSame( 'processing', wc_get_order( $order->get_id() )->get_meta( '_intention_status', true ) );
+		$this->assertSame( 1, $this->count_notes( $order, $this->failure_note( $operation ) ) );
+	}
+
+	/**
 	 * @testdox A $operation on the status change is checked against the order read under its own lock: $_dataName.
 	 *
 	 * Client 11.3.0 acts on the intent it read (class-wc-payments-order-service.php:2327-2350, :2381-2418). Here the order

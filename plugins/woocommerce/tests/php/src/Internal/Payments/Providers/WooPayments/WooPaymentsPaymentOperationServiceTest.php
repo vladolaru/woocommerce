@@ -9650,7 +9650,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 
 		$lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => false !== strpos( $line[1], 'while the order stores requires_capture' ) ) );
 		foreach ( $logger->lines as $index => $line ) {
-			$this->assertStringNotContainsString( 'ORDER-123', $line[1] . (string) wp_json_encode( $logger->contexts[ $index ] ), 'A transaction ID that is not an intent is never printed.' );
+			$this->assertStringNotContainsString( 'order_123', $line[1] . (string) wp_json_encode( $logger->contexts[ $index ] ), 'A transaction ID that is not an intent is never printed.' );
 		}
 		if ( '' === $logged ) {
 			$this->assertSame( array(), $lines );
@@ -9682,7 +9682,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function provider_operations_on_a_stored_authorization(): array {
 		$beside_another   = static fn(): WC_Order => StoredPaymentRecords::authorization_status_beside_another_intent( OrderStatus::COMPLETED );
-		$typed_txn        = static fn(): WC_Order => StoredPaymentRecords::authorization_status_beside_another_intent( OrderStatus::ON_HOLD, 'ORDER-123' );
+		$typed_txn        = static fn(): WC_Order => StoredPaymentRecords::authorization_status_beside_another_intent( OrderStatus::ON_HOLD, 'order_123' );
 		$authorization    = static fn(): WC_Order => StoredPaymentRecords::authorization();
 		$beside_a_decline = static fn(): WC_Order => StoredPaymentRecords::payment_beside_a_declined_retry();
 
@@ -9693,8 +9693,8 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			'an order storing another intent beside its authorization, after a platform read' => array( $beside_another, 'cancel', 'platform read', 'pi_B', '' ),
 			'an ordinary authorization'         => array( $authorization, 'capture', 'order screen', 'pi_A', '' ),
 			'a payment beside a declined retry' => array( $beside_a_decline, 'capture', 'order screen', 'pi_A', '' ),
-			'an order whose transaction ID was typed, from the order screen' => array( $typed_txn, 'capture', 'order screen', 'ORDER-123', 'another value|another value|pi_B' ),
-			'an order whose transaction ID was typed, cancelled from the order screen' => array( $typed_txn, 'cancel', 'order screen', 'ORDER-123', 'another value|another value|pi_B' ),
+			'an order whose transaction ID was typed, from the order screen' => array( $typed_txn, 'capture', 'order screen', 'order_123', 'another value|another value|pi_B' ),
+			'an order whose transaction ID was typed, cancelled from the order screen' => array( $typed_txn, 'cancel', 'order screen', 'order_123', 'another value|another value|pi_B' ),
 		);
 	}
 
@@ -10493,6 +10493,140 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			$this->assertSame( 'wcpay_gateway_unavailable', $outcome->get_data()['error_code'], "The $operation must report the unavailable gateway." );
 			$this->assertSame( $operation, $outcome->get_data()['operation'], "The $operation must name itself." );
 		}
+	}
+
+	/**
+	 * @testdox The $operation on $_dataName is refused with no request, and one line names only the order and the operation.
+	 *
+	 * Client 11.3.0's Capture_Intention and Cancel_Intention refuse an ID outside the intent form before any request
+	 * (core/server/request/class-capture-intention.php:42-45, class-cancel-intention.php:40-43, class-request.php:669-709).
+	 * The order screen sends the transaction ID a merchant typed; the order stores its authorization as requires_capture.
+	 *
+	 * @dataProvider provider_operations_on_an_intent_id_outside_the_form
+	 *
+	 * @param string $operation 'capture' or 'cancel'.
+	 * @param string $intent_id Transaction ID outside the intent form.
+	 */
+	public function test_operation_on_an_intent_id_outside_the_form_is_refused_before_any_request( string $operation, string $intent_id ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$order = StoredPaymentRecords::authorization();
+		$order->set_transaction_id( $intent_id );
+		$order->save();
+		$http_client = new FakeHttpClient();
+		$sut         = $this->create_operation_service_over_fake_transport( $http_client );
+		$logger      = RecordingWcLogger::install();
+
+		$outcome = $this->run_capture_or_cancel( $sut, $order, $operation );
+
+		$this->assertSame( 0, $http_client->request_count, 'No request, the after-failure read included.' );
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertNull( $outcome->get_effect_plan() );
+		$this->assertSame(
+			array(
+				PaymentOutcome::DATA_ERROR_CODE => 'wcpay_core_invalid_request_parameter_stripe_id',
+				'operation'                     => $operation,
+				WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array( '_intention_status' => 'requires_capture' ),
+			),
+			$outcome->get_data()
+		);
+		$message = sprintf( 'The %1$s of order #%2$d was not sent: its intent ID is outside the intent form.', $operation, $order->get_id() );
+		$lines   = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => $message === $line[1] ) );
+		$this->assertCount( 1, $lines, 'One line, with logging off.' );
+		$this->assertSame( array( 'warning', 'woopayments' ), array( $logger->lines[ $lines[0] ][0], $logger->lines[ $lines[0] ][2] ) );
+		$this->assertSame(
+			array(
+				'order_id'  => $order->get_id(),
+				'operation' => $operation,
+				'source'    => 'woopayments',
+			),
+			$logger->contexts[ $lines[0] ]
+		);
+	}
+
+	/**
+	 * Captures and cancels on a transaction ID outside the intent form; the empty ID keeps the unavailable outcome
+	 * (test_operations_fail_closed_without_a_charge_or_intent_id).
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public function provider_operations_on_an_intent_id_outside_the_form(): array {
+		$intent_ids = array(
+			'an ID with no prefix'     => 'ORDER123',
+			'a leading space'          => ' pi_3UJhOgBzWlxcwgpP0AOgQE2z',
+			'a prefix alone'           => 'pi_',
+			'an uppercase prefix'      => 'PI_3UJhOgBzWlxcwgpP0AOgQE2z',
+			'a separator'              => 'pi_3UJhOgBz-WlxcwgpP0AOgQE2z',
+			'more than 250 characters' => 'pi_' . str_repeat( 'a', 251 ),
+			'a trailing newline'       => "pi_3UJhOgBzWlxcwgpP0AOgQE2z\n",
+		);
+
+		$rows = array();
+		foreach ( array( 'capture', 'cancel' ) as $operation ) {
+			foreach ( $intent_ids as $name => $intent_id ) {
+				$rows[ $name . ', ' . $operation ] = array( $operation, $intent_id );
+			}
+		}
+
+		return $rows;
+	}
+
+	/**
+	 * @testdox The $operation on a transaction ID in the intent form is sent for it, with no refusal line.
+	 *
+	 * @testWith ["capture", "succeeded"]
+	 *           ["cancel", "canceled"]
+	 *
+	 * @param string $operation 'capture' or 'cancel'.
+	 * @param string $answered  Intent status the platform answers.
+	 */
+	public function test_operation_on_an_intent_id_in_the_form_is_sent( string $operation, string $answered ): void {
+		$order = StoredPaymentRecords::authorization();
+		$order->set_transaction_id( 'pi_3UJhOgBzWlxcwgpP0AOgQE2z' );
+		$order->save();
+		$http_client           = new FakeHttpClient();
+		$http_client->response = self::http_json(
+			200,
+			array(
+				'id'     => 'pi_3UJhOgBzWlxcwgpP0AOgQE2z',
+				'status' => $answered,
+			)
+		);
+		$sut                   = $this->create_operation_service_over_fake_transport( $http_client );
+		$logger                = RecordingWcLogger::install();
+
+		$this->run_capture_or_cancel( $sut, $order, $operation );
+
+		$this->assertSame( array( 'intentions/pi_3UJhOgBzWlxcwgpP0AOgQE2z/' . $operation ), array_map( static fn( array $request ): string => (string) strstr( (string) $request['path'], 'intentions/' ), $http_client->requests ) );
+		$this->assertSame( array(), array_filter( $logger->lines, static fn( array $line ): bool => str_contains( $line[1], 'outside the intent form' ) ) );
+	}
+
+	/**
+	 * Build the operation service on the real API client, with only the platform's HTTP answers faked.
+	 *
+	 * @param FakeHttpClient $http_client Platform answers.
+	 * @return WooPaymentsPaymentOperationService
+	 */
+	private function create_operation_service_over_fake_transport( FakeHttpClient $http_client ): WooPaymentsPaymentOperationService {
+		$account_service = $this->create_account_service( false );
+		$api_client      = new Client();
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
+
+		return $this->create_operation_service( $api_client, null, null, $account_service );
+	}
+
+	/**
+	 * Run a capture or cancel from the order screen.
+	 *
+	 * @param WooPaymentsPaymentOperationService $sut       Service.
+	 * @param WC_Order                           $order     Order.
+	 * @param string                             $operation 'capture' or 'cancel'.
+	 * @return PaymentOutcome
+	 */
+	private function run_capture_or_cancel( WooPaymentsPaymentOperationService $sut, WC_Order $order, string $operation ): PaymentOutcome {
+		return 'capture' === $operation
+			? $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' )
+			: $sut->cancel( PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_cancel' );
 	}
 
 	/**
