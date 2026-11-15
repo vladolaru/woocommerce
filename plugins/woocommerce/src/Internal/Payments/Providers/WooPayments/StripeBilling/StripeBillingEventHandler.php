@@ -267,8 +267,8 @@ class StripeBillingEventHandler {
 	 * A renewal that needs payment completes when the invoice's amount and currency match its total
 	 * (StripeBillingInvoiceService::does_invoice_payment_match_order_total()) and is otherwise held with its payment recorded;
 	 * a renewal that no longer needs payment gets its payment recorded and a note, or only a note when it records another
-	 * payment (see apply_paid_invoice_under_lock()). An invoice without its amount paid or currency is refused as invalid
-	 * event data before any renewal is found or created.
+	 * payment or can no longer refund the invoice's amount (see apply_paid_invoice_under_lock()). An invoice without its
+	 * amount paid or currency is refused as invalid event data before any renewal is found or created.
 	 *
 	 * @param WC_Order            $subscription     Subscription.
 	 * @param string              $wcpay_invoice_id Invoice ID.
@@ -320,6 +320,8 @@ class StripeBillingEventHandler {
 	 *   capture the authorization and the event fails, so it is retried and the payment recorded once it can be read;
 	 * - one that records another payment (another payment method, or a paid renewal whose transaction ID names another
 	 *   payment) gets only a note: the invoice's payment is not written over it;
+	 * - one that is neither paid nor payable and can no longer refund the invoice's amount, such as a refunded renewal,
+	 *   gets only the note that sends the refund to the charge's transaction page, unless it already recorded this invoice;
 	 * - one that is neither paid nor payable, such as a cancelled renewal, gets its payment recorded and a note saying where
 	 *   to refund it, unless it already recorded this invoice.
 	 *
@@ -370,6 +372,14 @@ class StripeBillingEventHandler {
 			|| ( '' !== $transaction_id && in_array( $transaction_id, array( $intent_id, $charge_id ), true ) );
 		$recorded_unpaid  = false;
 		$was_succeeded    = 'succeeded' === $order->get_meta( '_intention_status', true );
+
+		if ( null === $authorization && ! $already_recorded && $this->cannot_refund_the_invoice_amount( $order, $intent_id, $amount_paid ) ) {
+			// A refund from this order would be refused, so its charge is left to its transaction page, which then refunds at the platform.
+			$note_facts = array( 'wording' => WooPaymentsOrderNoteService::INVOICE_NOTE_REFUND_FROM_TRANSACTION_PAGE ) + $this->get_collected_invoice_note_facts( $subscription, $order );
+			$this->other_charge_recorder->record( $order, 'invoice.paid', $invoice_facts + $note_facts );
+			return $subscription;
+		}
+
 		if ( null !== $intent ) {
 			// Recording writes this mode too, after the success note reads it; a renewal has none stored, so it is set first.
 			$order->update_meta_data( '_wcpay_mode', $this->account_service->get_order_mode() );
@@ -505,6 +515,25 @@ class StripeBillingEventHandler {
 		$transaction_id = (string) $order->get_transaction_id();
 
 		return '' !== $transaction_id && $transaction_id !== $intent_id && $transaction_id !== $charge_id;
+	}
+
+	/**
+	 * Tell whether a renewal neither paid nor payable can no longer refund the invoice's amount: what it can still refund,
+	 * in its own currency, is below that amount, as after a change to Refunded. A refund of the invoice's payment from this
+	 * order would then be refused, on the order screen and on the charge's transaction page alike.
+	 *
+	 * @param WC_Order $order       Renewal order, read under the lock.
+	 * @param string   $intent_id   The invoice's payment intent ID.
+	 * @param mixed    $amount_paid The invoice's `amount_paid`, in minor units.
+	 * @return bool
+	 */
+	private function cannot_refund_the_invoice_amount( WC_Order $order, string $intent_id, $amount_paid ): bool {
+		if ( '' === $intent_id || ! is_numeric( $amount_paid ) || $order->needs_payment() || $order->is_paid() ) {
+			return false;
+		}
+
+		// Compared as the transaction page's refund compares it (WooPaymentsPaymentDetailsRestController::get_refund_amount()).
+		return WooPaymentsCurrencyUtils::amount_from_minor_units( (int) $amount_paid, (string) $order->get_currency() ) > (float) $order->get_remaining_refund_amount();
 	}
 
 	/**

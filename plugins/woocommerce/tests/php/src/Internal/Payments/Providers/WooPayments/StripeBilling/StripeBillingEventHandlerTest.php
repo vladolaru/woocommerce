@@ -561,9 +561,22 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 				false,
 				array( self::RENEWAL_INTENT_ID, self::RENEWAL_CHARGE_ID, '' ),
 			),
+			'refunded after its invoice was recorded'      => array(
+				'refunded',
+				array(
+					'_intention_status' => 'succeeded',
+					'_intent_id'        => self::RENEWAL_INTENT_ID,
+					'_charge_id'        => self::RENEWAL_CHARGE_ID,
+				),
+				'',
+				'active',
+				null,
+				false,
+				array( self::RENEWAL_INTENT_ID, self::RENEWAL_CHARGE_ID, '' ),
+			),
 			'on hold for another reason'                   => array( 'on-hold', array(), '', 'on-hold', $from_order, true, $invoice_recorded ),
 			'cancelled'                                    => array( 'cancelled', array(), '', 'on-hold', $from_order, true, $invoice_recorded ),
-			'refunded'                                     => array( 'refunded', array(), '', 'active', $from_order, true, $invoice_recorded ),
+			'cancelled, subscription active'               => array( 'cancelled', array(), '', 'active', $from_order, true, $invoice_recorded ),
 			'cancelled, subscription pending cancellation' => array( 'cancelled', array(), '', 'pending-cancel', $from_order, false, $invoice_recorded ),
 			'cancelled after a declined attempt'           => array(
 				'cancelled',
@@ -591,6 +604,91 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 				array( 'pi_held', 'ch_held', '' ),
 			),
 		);
+	}
+
+	/**
+	 * @testdox A paid invoice for a renewal neither paid nor payable follows what the renewal can still refund: $_dataName.
+	 *
+	 * Delivered twice. A renewal that can no longer refund the invoice's amount, as after a change to Refunded, would refuse
+	 * a refund of the invoice's payment on the order screen and on the charge's transaction page alike. So nothing is
+	 * written, and the note sends the refund to the transaction page, which then refunds at the platform. A renewal whose
+	 * remainder covers the invoice gets the payment recorded and the note that says to refund it from the order.
+	 *
+	 * @testWith ["refunded by a status change, never paid", "status change", "24.90", "", "refunded", false]
+	 *           ["paid by hand, then refunded in full by hand", "paid by hand", "24.90", "24.90", "refunded", false]
+	 *           ["part refunded, then cancelled, the remainder below the invoice", "paid by hand", "24.90", "10.00", "cancelled", false]
+	 *           ["part refunded, then cancelled, the remainder equal to the invoice", "paid by hand", "34.90", "10.00", "cancelled", true]
+	 *           ["part refunded, then cancelled, the remainder above the invoice", "paid by hand", "44.90", "10.00", "cancelled", true]
+	 *
+	 * @param string $name              Case name.
+	 * @param string $produced_by       How the renewal came to be neither paid nor payable after its attempt failed.
+	 * @param string $total             Renewal total.
+	 * @param string $refund            Amount refunded by hand, without the gateway, or an empty string for none.
+	 * @param string $expected_status   Renewal status before and after the invoice.
+	 * @param bool   $expected_recorded Whether the invoice's payment is recorded on the renewal.
+	 */
+	public function test_paid_invoice_on_a_renewal_neither_paid_nor_payable_follows_what_it_can_still_refund( string $name, string $produced_by, string $total, string $refund, string $expected_status, bool $expected_recorded ): void {
+		unset( $name );
+		$subscription = $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID, array(), 'on-hold' );
+		$renewal      = $this->create_unpaid_renewal_order( $subscription, $total );
+		$renewal->update_status( 'failed' );
+		if ( 'status change' === $produced_by ) {
+			// Core's own full refund on a change to Refunded (wc_order_fully_refunded()).
+			$renewal->update_status( 'refunded' );
+		} else {
+			// Marked paid by hand on the order screen, WooPayments kept and no reference typed, then refunded by hand.
+			$renewal->update_status( 'processing' );
+			wc_create_refund(
+				array(
+					'order_id'       => $renewal->get_id(),
+					'amount'         => $refund,
+					'refund_payment' => false,
+				)
+			);
+			$renewal = wc_get_order( $renewal->get_id() );
+			if ( 'cancelled' === $expected_status ) {
+				$renewal->update_status( 'cancelled' );
+			}
+		}
+		$renewal = wc_get_order( $renewal->get_id() );
+		$this->assertSame( $expected_status, $renewal->get_status() );
+		$this->assertSame( 'status change' !== $produced_by, null !== $renewal->get_date_paid() );
+		$this->assertSame( '', $renewal->get_transaction_id() );
+		$refunded_before = (float) $renewal->get_total_refunded();
+		$this->assertGreaterThan( 0, $refunded_before );
+		$before       = $this->get_payment_record( $renewal );
+		$notes_before = $this->get_note_contents( $renewal );
+		for ( $delivery = 1; $delivery <= 2; $delivery++ ) {
+			$this->queue_response( 200, $this->get_renewal_intent() );
+			$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
+		}
+		$event = $this->get_event( 'invoice_paid_renewal' );
+
+		$this->sut->handle_event( $event );
+		$this->sut->handle_event( $event );
+
+		$renewal   = wc_get_order( $renewal->get_id() );
+		$new_notes = array_values( array_diff( $this->get_note_contents( $renewal ), $notes_before ) );
+		$this->assertCount( 1, $new_notes, 'One note however often the invoice arrives.' );
+		$this->assertStringStartsWith( 'Stripe Billing collected renewal invoice <code>' . self::RENEWAL_INVOICE_ID . '</code> for ', $new_notes[0] );
+		$this->assertStringContainsString( '&#36;</span>24.90', $new_notes[0], 'The invoice amount.' );
+		$this->assertStringContainsString( '>' . self::RENEWAL_CHARGE_ID . '</a>)', $new_notes[0] );
+		$refund_from = $expected_recorded
+			? 'If the customer should not have been charged, refund the payment from this order.'
+			: 'If the customer should not have been charged, refund the charge from its WooPayments transaction page, not from this order.';
+		$this->assertStringContainsString( 'while this order&#039;s status was ' . wc_get_order_status_name( $expected_status ) . '. The order status was not changed. ' . $refund_from . ' Stripe Billing will keep charging subscription #', $new_notes[0] );
+		$this->assertSame( $expected_status, $renewal->get_status() );
+		$this->assertSame( $refunded_before, (float) $renewal->get_total_refunded(), 'No refund row is added.' );
+		$charge = wc_get_container()->get( WooPaymentsOrderDetailsService::class )->enrich_charge_response( array( 'id' => self::RENEWAL_CHARGE_ID ) );
+		if ( $expected_recorded ) {
+			$this->assertSame( array( self::RENEWAL_INTENT_ID, self::RENEWAL_CHARGE_ID, self::RENEWAL_INTENT_ID ), array( $renewal->get_meta( '_intent_id', true ), $renewal->get_meta( '_charge_id', true ), $renewal->get_transaction_id() ) );
+			$this->assertSame( 0, $this->count_log_lines( 'other charge recorded' ) );
+			$this->assertSame( $renewal->get_id(), $charge['order']['id'] ?? null, 'The invoice\'s charge links the renewal, whose refund can cover it.' );
+			return;
+		}
+		$this->assertSame( $before, $this->get_payment_record( $renewal ), 'Nothing is written: no mode, customer, intent, charge, fee or transaction ID.' );
+		$this->assertSame( 2, $this->count_log_lines( 'other charge recorded: order ' . $renewal->get_id() . ', invoice.paid, charge ' . self::RENEWAL_CHARGE_ID ), 'One warning line per delivery.' );
+		$this->assertSame( array(), $charge['order'], 'The invoice\'s charge links no order, so its transaction page refunds it at the platform.' );
 	}
 
 	/**
