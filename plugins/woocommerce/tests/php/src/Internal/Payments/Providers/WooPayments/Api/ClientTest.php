@@ -19,6 +19,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\DocumentsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ReportingBalanceSummaryRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingApi;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use WC_Unit_Test_Case;
 use WP_Error;
@@ -2034,22 +2035,22 @@ class ClientTest extends WC_Unit_Test_Case {
 				array( 'wc_order_callback', 'idem_callback' ),
 			),
 			// The order screen captures on the transaction ID, which a merchant can type: the request keeps it, the warning does not.
-			'typed capture ID'  => array(
+			'cheque capture ID' => array(
 				static function ( Client $sut ) use ( $order_metadata ): void {
-					$sut->capture_intention( 'Paid-ORDER-123', 500, $order_metadata );
+					$sut->capture_intention( 'cheque', 500, $order_metadata );
 				},
 				static function ( array $params ): array {
 					$params['amount_to_capture'] = 1;
 					return $params;
 				},
-				'intentions/Paid-ORDER-123/capture',
+				'intentions/cheque/capture',
 				array( 'amount_to_capture' ),
 				null,
 				array(
 					'key'   => 'level3',
 					'value' => array(),
 				),
-				array( 'Paid-ORDER-123' ),
+				array( 'cheque' ),
 				'intentions/another value/capture',
 			),
 			'refund'            => array(
@@ -2226,11 +2227,12 @@ class ClientTest extends WC_Unit_Test_Case {
 	 * @testdox A wcpay_api_request_headers callback cannot change the Idempotency-Key the store set on a $_dataName request, nor add another-case copy.
 	 * @dataProvider idempotency_header_request_data
 	 *
-	 * @param callable $send            Sends the request through the client.
-	 * @param string   $path            API path sent.
-	 * @param bool     $replace_header  Whether the callback replaces the header, besides adding a lowercase copy.
+	 * @param callable    $send           Sends the request through the client.
+	 * @param string      $path           API path sent.
+	 * @param bool        $replace_header Whether the callback replaces the header, besides adding a lowercase copy.
+	 * @param string|null $printed_path   API path the warning prints, when it is not the path sent.
 	 */
-	public function test_a_request_headers_callback_cannot_change_the_idempotency_key( callable $send, string $path, bool $replace_header ): void {
+	public function test_a_request_headers_callback_cannot_change_the_idempotency_key( callable $send, string $path, bool $replace_header, ?string $printed_path = null ): void {
 		list( $sut, $http_client ) = $this->make_sut( false );
 		$logger                    = RecordingWcLogger::install();
 		$built_key                 = null;
@@ -2247,6 +2249,7 @@ class ClientTest extends WC_Unit_Test_Case {
 		$send( $sut );
 
 		$headers = $http_client->last_headers;
+		$this->assertSame( '/sites/123/wcpay/' . $path, $http_client->last_path );
 		$this->assertIsString( $built_key, 'The store sets an idempotency key on every POST.' );
 		$this->assertSame( $built_key, $headers['Idempotency-Key'] ?? null, 'The key the store set must be sent.' );
 		$copies = array_filter( array_keys( $headers ), static fn( $name ): bool => 0 === strcasecmp( (string) $name, 'Idempotency-Key' ) );
@@ -2254,7 +2257,7 @@ class ClientTest extends WC_Unit_Test_Case {
 
 		$warnings = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] ) );
 		$this->assertCount( 1, $warnings, 'One warning per request.' );
-		$this->assertSame( 'A callback changed values the store locks on the WooPayments POST ' . $path . ' request (wcpay_api_request_headers changed Idempotency-Key). The values the store built were sent instead.', $warnings[0][1] );
+		$this->assertSame( 'A callback changed values the store locks on the WooPayments POST ' . ( $printed_path ?? $path ) . ' request (wcpay_api_request_headers changed Idempotency-Key). The values the store built were sent instead.', $warnings[0][1] );
 	}
 
 	/**
@@ -2283,7 +2286,26 @@ class ClientTest extends WC_Unit_Test_Case {
 				'customers/cus_built',
 				true,
 			),
+			// The subscription ID is the one the platform recorded (Fixtures/platform-stripe-billing-api.json, update_subscription).
+			'Stripe Billing subscription'       => array(
+				static function ( Client $sut ): void {
+					$stripe_billing_api = new StripeBillingApi();
+					$stripe_billing_api->init( $sut );
+					$stripe_billing_api->update_subscription( 'sub_1UM1VrBzWlxcwgpP6A3GwGLe', array( 'default_payment_method' => 'pm_1UJhOFBzWlxcwgpPvcySvyc5' ) );
+				},
+				'subscriptions/sub_1UM1VrBzWlxcwgpP6A3GwGLe',
+				true,
+			),
 			'refund with only a lowercase copy' => array( $refund, 'refunds', false ),
+			// The cancel path does not encode the ID, so a typed transaction ID with slashes spans several segments.
+			'cancel on a typed ID with slashes' => array(
+				static function ( Client $sut ): void {
+					$sut->cancel_intention( 'INV/2024/001' );
+				},
+				'intentions/INV/2024/001/cancel',
+				true,
+				'intentions/another value/cancel',
+			),
 		);
 	}
 

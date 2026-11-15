@@ -2368,15 +2368,16 @@ class Client {
 			return;
 		}
 
-		// The path's own words print as they are; any other segment, such as an intent ID the order stores or a merchant
-		// typed as its transaction ID, prints through the provider ID helper. The request itself keeps the path it was sent with.
-		$printed_api = implode(
-			'/',
-			array_map(
-				static fn( string $segment ): string => 1 === preg_match( '/\A[a-z]+(?:[_-][a-z]+)*\z/', $segment ) ? $segment : WooPaymentsLogger::get_loggable_provider_id( $segment ),
-				explode( '/', $api )
-			)
-		);
+		// Capture and cancel put the order's transaction ID, which a merchant can type, unencoded after intentions/, so only that
+		// ID goes through the helper; the rest of the path holds values our code or the platform set, and prints as built.
+		$printed_api = $api;
+		if ( 0 === strpos( $api, 'intentions/' ) ) {
+			$intent_part = substr( $api, strlen( 'intentions/' ) );
+			$action      = strrpos( $intent_part, '/' );
+			$printed_api = 'intentions/' . ( false === $action
+				? WooPaymentsLogger::get_loggable_provider_id( $intent_part )
+				: WooPaymentsLogger::get_loggable_provider_id( substr( $intent_part, 0, $action ) ) . substr( $intent_part, $action ) );
+		}
 		$this->transport_log->warning( sprintf( 'A callback changed values the store locks on the WooPayments %1$s %2$s request (%3$s). The values the store built were sent instead.', $method, $printed_api, implode( '; ', $changes ) ) );
 	}
 
