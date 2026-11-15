@@ -407,8 +407,8 @@ class PreflightService {
 	 * WordPress's deactivate_plugins() reads active_plugins through get_option() and writes back what it read. In a queue
 	 * request a plugin load manager can filter that list, so the call would skip a hidden extension, or write the list back
 	 * without the plugins hidden in that request and so deactivate them for the whole store. For this one call every read of
-	 * active_plugins answers from the stored list, read again each time, so hooks that run after WordPress's write read the
-	 * list without the extension.
+	 * active_plugins answers the stored list read just before it, and, once WordPress is about to write the list, the value it
+	 * writes. The call itself runs no query of ours, so hooks that run after the write read the list without the extension.
 	 *
 	 * An extension that is not active counts as deactivated: a retry after a crash that followed a successful deactivation
 	 * finds nothing to deactivate. An extension active for every site stays active, and this reports false. So does a stored
@@ -436,27 +436,28 @@ class PreflightService {
 		}
 		// get_option() runs the pre_option_{$option} filter and then the generic pre_option filter (WordPress 6.1+), and a value
 		// from it skips every option_active_plugins callback. Write-side filters stay, so a tool that guards its own writes still does.
-		// Once a read in the call fails, every later read in it answers an empty list. A failure before deactivate_plugins() has
-		// found the extension active leaves it nothing to deactivate, so no callback runs and nothing is written, even when a
-		// later read would work again.
-		$read_failed = false;
-		$stored_view = function ( $pre, $option ) use ( &$read_failed ) {
-			if ( 'active_plugins' !== $option ) {
-				return $pre;
+		// Reads answer the list read above until WordPress is about to write it. The last callback on the generic pre_update_option
+		// filter runs after the option's own filter and every earlier one, so it sees the value about to be written, a write guard's
+		// change included; it keeps that value for every later read, a listener's nested write too, and returns it unchanged.
+		$plugins_view = $site_plugins;
+		$stored_view  = static function ( $pre, $option ) use ( &$plugins_view ) {
+			return 'active_plugins' === $option ? $plugins_view : $pre;
+		};
+		$written_view = static function ( $value, $option ) use ( &$plugins_view ) {
+			if ( 'active_plugins' === $option ) {
+				$plugins_view = $value;
 			}
-			$plugins = $read_failed ? null : $this->read_stored_site_plugins();
-			if ( null === $plugins ) {
-				$read_failed = true;
-				return array();
-			}
-			return $plugins;
+			return $value;
 		};
 		add_filter( 'pre_option', $stored_view, PHP_INT_MAX, 2 );
+		add_filter( 'pre_update_option', $written_view, PHP_INT_MAX, 2 );
 		try {
 			$this->legacy_proxy->call_function( 'deactivate_plugins', $plugin_file, false, false );
 		} finally {
 			remove_filter( 'pre_option', $stored_view, PHP_INT_MAX );
+			remove_filter( 'pre_update_option', $written_view, PHP_INT_MAX );
 		}
+		// A write that failed, or that a guard turned back, leaves the extension in the stored list, which these reads find.
 		return false === $this->is_woopayments_stored_site_active() && false === $this->is_woopayments_stored_network_active();
 	}
 
