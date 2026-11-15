@@ -1104,7 +1104,7 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Deactivation reports false when the stored list cannot be read after WordPress wrote it.
 	 */
 	public function test_deactivation_reports_false_when_the_check_after_cannot_read(): void {
-		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, 'hello-dolly/hello.php' ) );
 		$sut                = $this->create_sut();
 		$this->read_failure = new StoredPluginListReadFailure();
 		$read_failure       = $this->read_failure;
@@ -1117,6 +1117,120 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertFalse( $sut->deactivate_woopayments_plugin() );
 		$this->assertFalse( $sut->is_woopayments_stored_site_active(), 'WordPress did deactivate it; the check could not tell.' );
+		$this->assertNull( $sut->get_deactivation_list_change(), 'A list that could not be read is not compared, not even as an empty one.' );
+	}
+
+	/**
+	 * WordPress's deactivate_plugins() writes the list it read before its hooks ran, so a plugin a nested deactivation removes
+	 * in those hooks comes back with that write: the list after the call equals the list before less WooPayments, and the
+	 * comparison cannot see it.
+	 *
+	 * @dataProvider deactivation_list_change_provider
+	 * @testdox After the deactivation, the stored site list is compared with the list read before it less WooPayments: $_dataName.
+	 *
+	 * @param string                                                      $arrangement     What else happens during the deactivation.
+	 * @param array{removed:array<int,mixed>,added:array<int,mixed>}|null $expected_change The change the call keeps.
+	 * @param string[]                                                    $expected_stored The stored list after the call.
+	 */
+	public function test_the_deactivation_keeps_what_else_changed_in_the_stored_list( string $arrangement, ?array $expected_change, array $expected_stored ): void {
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, 'hello-dolly/hello.php', 'other-plugin/other-plugin.php' ) );
+		$changed = false;
+		if ( 'a later read filter hides a plugin' === $arrangement ) {
+			$this->hide_a_plugin_from_a_later_read_filter( 'hello-dolly/hello.php' );
+		} elseif ( 'a write guard adds a plugin' === $arrangement ) {
+			add_filter(
+				'pre_update_option',
+				static fn( $value, $option ) => 'active_plugins' === $option && ! in_array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, (array) $value, true ) ? array_merge( (array) $value, array( 'guarded/guarded.php' ) ) : $value,
+				1000,
+				2
+			);
+		} elseif ( 'no change' !== $arrangement ) {
+			// A nested deactivation before WordPress's write, or after it.
+			add_action(
+				'deactivate_plugin' === $arrangement ? 'deactivate_plugin' : 'updated_option',
+				static function ( $subject ) use ( &$changed ): void {
+					if ( ! $changed && in_array( $subject, array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, 'active_plugins' ), true ) ) {
+						$changed = true;
+						deactivate_plugins( 'hello-dolly/hello.php', true, false );
+					}
+				}
+			);
+		}
+		$sut = $this->create_sut();
+
+		$this->assertTrue( $sut->deactivate_woopayments_plugin() );
+		$this->assertSame( $expected_change, $sut->get_deactivation_list_change() );
+		$this->assertSame( $expected_stored, array_values( (array) $this->read_stored_active_plugins() ) );
+		if ( ! in_array( $arrangement, array( 'no change', 'a later read filter hides a plugin', 'a write guard adds a plugin' ), true ) ) {
+			$this->assertTrue( $changed, 'The nested deactivation ran.' );
+		}
+	}
+
+	/**
+	 * @return array<string,array{string,array{removed:array<int,mixed>,added:array<int,mixed>}|null,string[]}>
+	 */
+	public function deactivation_list_change_provider(): array {
+		return array(
+			'only WooPayments leaves'     => array( 'no change', null, array( 'hello-dolly/hello.php', 'other-plugin/other-plugin.php' ) ),
+			'a later read filter hides a plugin, so the write drops it' => array(
+				'a later read filter hides a plugin',
+				array(
+					'removed' => array( 'hello-dolly/hello.php' ),
+					'added'   => array(),
+				),
+				array( 'other-plugin/other-plugin.php' ),
+			),
+			'a nested deactivation after the write removes a plugin' => array(
+				'updated_option',
+				array(
+					'removed' => array( 'hello-dolly/hello.php' ),
+					'added'   => array(),
+				),
+				array( 'other-plugin/other-plugin.php' ),
+			),
+			'a write guard adds a plugin' => array(
+				'a write guard adds a plugin',
+				array(
+					'removed' => array(),
+					'added'   => array( 'guarded/guarded.php' ),
+				),
+				array( 'hello-dolly/hello.php', 'other-plugin/other-plugin.php', 'guarded/guarded.php' ),
+			),
+			"a nested deactivation before the write, which WordPress's write restores" => array( 'deactivate_plugin', null, array( 'hello-dolly/hello.php', 'other-plugin/other-plugin.php' ) ),
+		);
+	}
+
+	/**
+	 * @testdox A deactivation with nothing to deactivate keeps no change from an earlier call.
+	 */
+	public function test_a_deactivation_with_nothing_to_deactivate_keeps_no_earlier_change(): void {
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, 'hello-dolly/hello.php' ) );
+		$this->hide_a_plugin_from_a_later_read_filter( 'hello-dolly/hello.php' );
+		$sut = $this->create_sut();
+		$this->assertTrue( $sut->deactivate_woopayments_plugin() );
+		$this->assertNotNull( $sut->get_deactivation_list_change() );
+
+		$this->assertTrue( $sut->deactivate_woopayments_plugin(), 'Nothing left to deactivate.' );
+		$this->assertNull( $sut->get_deactivation_list_change() );
+	}
+
+	/**
+	 * Hide a plugin from the deactivation's reads with a read filter that runs after the switch's own: registered on the
+	 * generic pre_option filter at the same last priority once the switch's callback is there.
+	 *
+	 * @param string $plugin_file Plugin file to hide.
+	 */
+	private function hide_a_plugin_from_a_later_read_filter( string $plugin_file ): void {
+		$hide = static fn( $pre, $option ) => 'active_plugins' === $option && is_array( $pre ) ? array_values( array_diff( $pre, array( $plugin_file ) ) ) : $pre;
+		add_filter(
+			'pre_option_active_plugins',
+			static function ( $pre ) use ( $hide ) {
+				if ( ! empty( $GLOBALS['wp_filter']['pre_option']->callbacks[ PHP_INT_MAX ] ) && ! has_filter( 'pre_option', $hide ) ) {
+					add_filter( 'pre_option', $hide, PHP_INT_MAX, 2 );
+				}
+				return $pre;
+			}
+		);
 	}
 
 	/**
