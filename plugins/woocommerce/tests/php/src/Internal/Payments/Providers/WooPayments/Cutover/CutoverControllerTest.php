@@ -864,6 +864,32 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A plugin deactivation brings forward a switch held back by a renewal plugin, and a WooPayments update one waiting for a newer extension.
+	 */
+	public function test_plugin_events_bring_the_waiting_switch_forward(): void {
+		$job        = new class() extends ReconciliationJob {
+			/** @var string[] Codes the controller asked to bring forward. */
+			public array $codes = array();
+
+			/**
+			 * Record the code.
+			 *
+			 * @param string $code Deferral code.
+			 */
+			public function bring_deferred_attempt_forward( string $code ): bool {
+				$this->codes[] = $code;
+				return true;
+			}
+		};
+		$controller = $this->create_cutover_controller( $job );
+
+		$controller->handle_plugin_deactivated( 'yith-woocommerce-subscription-premium/init.php' );
+		$controller->handle_woopayments_updated();
+
+		$this->assertSame( array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE, PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED ), $job->codes );
+	}
+
+	/**
 	 * @testdox While a plugin that renews through the WooPayments extension is active, the switch notice names it and says why the store cannot switch instead of offering the switch ($_dataName).
 	 * @dataProvider provide_renewal_plugin_holdback_offers
 	 *
@@ -1162,6 +1188,16 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 			public function record_plugin_activation(): bool {
 				++$this->activations;
 				return true;
+			}
+
+			/**
+			 * No switch waits here.
+			 *
+			 * @param string $code Deferral code.
+			 */
+			public function bring_deferred_attempt_forward( string $code ): bool {
+				unset( $code );
+				return false;
 			}
 
 			/**
@@ -1812,6 +1848,16 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 
 			/** Return an external lifecycle event. */
 			public function is_internal_plugin_lifecycle_change(): bool {
+				return false;
+			}
+
+			/**
+			 * No durable record, so nothing waits.
+			 *
+			 * @param string $code Deferral code.
+			 */
+			public function bring_deferred_attempt_forward( string $code ): bool {
+				unset( $code );
 				return false;
 			}
 		};

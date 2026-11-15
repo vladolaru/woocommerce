@@ -320,6 +320,47 @@ class PerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A switch that waited because the extension was active for every site retries now once the conversion finished, and only then: conversion finished: $finished.
+	 * @group multisite
+	 * @testWith [true]
+	 *           [false]
+	 *
+	 * @param bool $finished Whether the network activation was removed.
+	 */
+	public function test_conversion_brings_a_switch_waiting_for_it_forward( bool $finished ): void {
+		$this->skip_unless_multisite();
+		$main    = get_current_blog_id();
+		$waiting = $this->create_site( 'waiting', true, true );
+		$this->arrange_site( $main, false, true );
+		$this->activate_for_every_site();
+		$this->create_record( $waiting, StateStore::STATE_DEFERRED, 'deferred', array( ReconciliationJob::CODE_PLUGIN_ACTIVE_SITEWIDE ) );
+		$action_id               = $this->schedule_next_attempt( $waiting );
+		$before                  = $this->read_record( $waiting );
+		$keep_network_activation = static fn( $value, $old_value ) => $old_value;
+		if ( ! $finished ) {
+			add_filter( 'pre_update_site_option_active_sitewide_plugins', $keep_network_activation, 10, 2 );
+		}
+
+		$now = time();
+		try {
+			$result = $this->create_sut()->convert();
+		} finally {
+			remove_filter( 'pre_update_site_option_active_sitewide_plugins', $keep_network_activation, 10 );
+		}
+
+		$this->assertContains( $waiting, $result['activated'] );
+		$after = $this->read_record( $waiting );
+		if ( $finished ) {
+			$this->assertLessThanOrEqual( time(), $after['next_attempt_at'], 'The attempt is due now.' );
+			$this->assertGreaterThanOrEqual( $now, $after['next_attempt_at'] );
+			$this->assertNotSame( $action_id, $this->read_scheduled_action_id( $waiting ), 'The attempt is scheduled again for now.' );
+		} else {
+			$this->assertSame( $before, $after, 'A conversion that left the network activation brings nothing forward.' );
+			$this->assertSame( $action_id, $this->read_scheduled_action_id( $waiting ) );
+		}
+	}
+
+	/**
 	 * @testdox A switch that is done, or past finalize with its request token, goes back to awaiting the merchant's start when the conversion activates the extension on its site or finds it active there, with one new generation: $kind, listener loaded: $listener, already active: $already_active.
 	 * @group multisite
 	 * @dataProvider provider_switch_that_rolls_back

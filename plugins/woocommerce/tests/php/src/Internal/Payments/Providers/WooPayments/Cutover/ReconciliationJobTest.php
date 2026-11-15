@@ -20,6 +20,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\Cutov
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PreflightService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\DataMigration;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PluginLifecycleListener;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\ExtensionBoundRenewalPlugins;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteWordingSnapshot;
@@ -1460,6 +1461,121 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertIsArray( $verification );
 		$this->assertSame( 'verify_builtin_ownership', $verification['current_step'] );
 		$this->assertFalse( get_option( '_wcpay_feature_upe' ), 'The retired option the extension wrote again is removed.' );
+	}
+
+	/**
+	 * A merchant who cleared what held the switch back must not wait the cadence. A renewal plugin's deactivation and a
+	 * finished per-site conversion clear it at once; an extension update is read on the next request, which runs the new code.
+	 *
+	 * @testdox An event that can clear a deferred switch's code brings its next attempt forward by $expected_delay s, without a hand-over time: $code.
+	 * @dataProvider deferred_attempt_forward_provider
+	 *
+	 * @param string $code           The deferral code the event can clear.
+	 * @param int    $expected_delay Seconds until the next attempt.
+	 * @param bool   $dispatches     Whether the request dispatches a queue runner as it ends.
+	 */
+	public function test_an_event_brings_the_deferred_attempt_forward( string $code, int $expected_delay, bool $dispatches ): void {
+		$deferred = $this->create_deferred_record( array( $code ) );
+		$old      = $deferred['action_id'];
+
+		$before = time();
+		$this->assertTrue( $this->sut->bring_deferred_attempt_forward( $code ) );
+		$after = time();
+
+		try {
+			$moved = $this->state_store->get_record();
+			$this->assertIsArray( $moved );
+			$this->assertSame( StateStore::STATE_DEFERRED, $moved['state'] );
+			$this->assertSame( $deferred['attempt'], $moved['attempt'] );
+			$this->assertSame( $deferred['step_log'], $moved['step_log'] );
+			$this->assertGreaterThanOrEqual( $before + $expected_delay, $moved['next_attempt_at'] );
+			$this->assertLessThanOrEqual( $after + $expected_delay, $moved['next_attempt_at'] );
+			$this->assertArrayNotHasKey( StateStore::HANDED_OVER_AT_KEY, $moved );
+			$this->assertNotSame( $old, $moved['action_id'] );
+			$this->assertSame( $moved['action_id'], $this->scheduler->get_scheduled_action_id( $moved['generation'], 2 ) );
+			$this->assertSame( ActionScheduler_Store::STATUS_CANCELED, ActionScheduler::store()->get_status( $old ) );
+			$this->assertSame( $moved['next_attempt_at'], ActionScheduler::store()->fetch_action( $moved['action_id'] )->get_schedule()->get_date()->getTimestamp() );
+			$this->assertSame( $dispatches, is_int( has_action( 'shutdown', array( $this->scheduler, 'dispatch_async' ) ) ) );
+		} finally {
+			remove_action( 'shutdown', array( $this->scheduler, 'dispatch_async' ) );
+		}
+	}
+
+	/**
+	 * @return array<string,array{string,int,bool}>
+	 */
+	public function deferred_attempt_forward_provider(): array {
+		return array(
+			'a renewal plugin deactivated'          => array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE, 0, true ),
+			'the per-site conversion done'          => array( ReconciliationJob::CODE_PLUGIN_ACTIVE_SITEWIDE, 0, true ),
+			'the extension updated by the merchant' => array( PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED, 60, false ),
+		);
+	}
+
+	/**
+	 * @testdox An event brings nothing forward on a record that does not wait for its code: $_dataName.
+	 * @dataProvider records_not_brought_forward_provider
+	 *
+	 * @param string $state The record's state.
+	 * @param string $code  The record's code.
+	 */
+	public function test_an_event_leaves_a_record_that_does_not_wait_for_it( string $state, string $code ): void {
+		$deferred = $this->create_deferred_record( array( $code ) );
+		$record   = StateStore::STATE_RUNNING === $state ? $this->create_running_record( $deferred ) : $deferred;
+
+		$this->assertFalse( $this->sut->bring_deferred_attempt_forward( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE ) );
+		$this->assertSame( $record, $this->state_store->get_record() );
+		$this->assertFalse( has_action( 'shutdown', array( $this->scheduler, 'dispatch_async' ) ) );
+	}
+
+	/**
+	 * @return array<string,array{string,string}>
+	 */
+	public function records_not_brought_forward_provider(): array {
+		return array(
+			'deferred for another reason'        => array( StateStore::STATE_DEFERRED, PreflightService::FAILURE_QUEUE_HOOKS_UNHANDLED ),
+			'the code, but the job runs a claim' => array( StateStore::STATE_RUNNING, PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE ),
+		);
+	}
+
+	/**
+	 * @testdox An extension update leaves an attempt already due within its minute as it is.
+	 */
+	public function test_an_update_leaves_an_attempt_due_sooner_as_it_is(): void {
+		$deferred                  = $this->create_deferred_record( array( PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED ) );
+		$sooner                    = $deferred;
+		$sooner['revision']        = $deferred['revision'] + 1;
+		$sooner['next_attempt_at'] = time() + 30;
+		$this->assertTrue( $this->state_store->compare_and_set_record( $deferred, $sooner ) );
+
+		$this->assertTrue( $this->sut->bring_deferred_attempt_forward( PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED ) );
+		$this->assertSame( $sooner, $this->state_store->get_record() );
+	}
+
+	/**
+	 * Create a deferred record with codes, its next attempt at the cadence and scheduled.
+	 *
+	 * @param string[] $codes Deferral codes.
+	 * @return array<string,mixed> The deferred record.
+	 */
+	private function create_deferred_record( array $codes ): array {
+		$this->assertTrue( $this->sut->enqueue( 'merchant' ) );
+		$pending = $this->state_store->get_record();
+		$this->assertIsArray( $pending );
+		$this->scheduler->cancel( $pending['generation'], 1 );
+		$now                         = time();
+		$deferred                    = $pending;
+		$deferred['revision']        = $pending['revision'] + 1;
+		$deferred['state']           = StateStore::STATE_DEFERRED;
+		$deferred['current_step']    = 'deferred';
+		$deferred['attempt']         = 1;
+		$deferred['deferred_codes']  = $codes;
+		$deferred['next_attempt_at'] = $now + 15 * MINUTE_IN_SECONDS;
+		$deferred['action_id']       = $this->scheduler->schedule( $deferred['next_attempt_at'], $pending['generation'], 2 );
+		$this->assertGreaterThan( 0, $deferred['action_id'] );
+		$this->assertTrue( $this->state_store->compare_and_set_record( $pending, $deferred ) );
+
+		return $deferred;
 	}
 
 	/**
@@ -4751,8 +4867,25 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			protected function upgrade_woopayments_plugin_file( string $plugin_file ): array {
 				$this->upgraded_plugin_files[] = $plugin_file;
 				$this->lock_observations[]     = false !== get_option( 'woocommerce_woopayments_cutover_plugin_update_lock.lock', false );
+				// Core's upgrader_process_complete reaches the listener when the update finishes; the job's own update runs
+				// inside its claim, which the listener leaves alone. Called directly: core's own callbacks there check for
+				// updates over HTTP.
+				$record = get_option( StateStore::OPTION_NAME );
+				( new PluginLifecycleListener() )->handle_upgrader_process_complete(
+					null,
+					array(
+						'action'  => 'update',
+						'type'    => 'plugin',
+						'bulk'    => true,
+						'plugins' => array( $plugin_file ),
+					)
+				);
+				$this->records_unchanged_by_the_update_hook[] = get_option( StateStore::OPTION_NAME ) === $record;
 				return array( 'destination_name' => 'woocommerce-payments' );
 			}
+
+			/** @var bool[] Whether the record was the same after core's update hook ran. */
+			public array $records_unchanged_by_the_update_hook = array();
 
 			/**
 			 * Report the header version of the freshly installed plugin files.
@@ -4811,10 +4944,17 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
 		$this->scheduler->cancel( $pending['generation'], 1 );
+		// The listener reaches the container's job, which acts only with the feature on.
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 
 		$before = time();
-		$sut->handle_reconcile( $pending['generation'], 1 );
+		try {
+			$sut->handle_reconcile( $pending['generation'], 1 );
+		} finally {
+			delete_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION );
+		}
 		$after = time();
+		$this->assertSame( array( true ), $job->records_unchanged_by_the_update_hook, "The job's own update does not bring its attempt forward." );
 
 		$first = $this->state_store->get_record();
 		$this->assertIsArray( $first );

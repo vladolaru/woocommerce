@@ -322,7 +322,8 @@ class CutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Forget the cached bundled subscriptions classification when WooCommerce Subscriptions is deactivated.
+	 * Forget the cached bundled subscriptions classification when WooCommerce Subscriptions is deactivated, and bring
+	 * forward a switch held back by a plugin that renews through the WooPayments extension, which may be the one deactivated.
 	 *
 	 * A deactivation of the WooPayments extension records nothing: it is never a request to switch.
 	 *
@@ -334,6 +335,19 @@ class CutoverController implements RegisterHooksInterface {
 		if ( is_string( $plugin ) ) {
 			$this->maybe_forget_admin_classification( $plugin );
 		}
+		$this->reconciliation_job->bring_deferred_attempt_forward( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE );
+	}
+
+	/**
+	 * Bring forward a switch that waits for a newer WooPayments extension, once a store manager updated it by hand, as the
+	 * update warning asks.
+	 *
+	 * @internal
+	 *
+	 * @since 11.4.0
+	 */
+	public function handle_woopayments_updated(): void {
+		$this->reconciliation_job->bring_deferred_attempt_forward( PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED );
 	}
 
 	/**

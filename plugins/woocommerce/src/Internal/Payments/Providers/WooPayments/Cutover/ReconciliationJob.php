@@ -839,6 +839,71 @@ class ReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Bring a deferred switch's next attempt forward after an event that can clear what holds it back.
+	 *
+	 * Only a deferred record carrying the code moves; the job's own work runs inside a running claim, which this leaves
+	 * alone. A deactivated renewal plugin or a finished per-site conversion clears its condition at once, so the attempt is
+	 * due now. An extension update takes UPDATED_PLUGIN_RETRY_DELAY, since the updating request still runs the old code;
+	 * the hand-over time is not touched. The attempt re-runs every check, so the bound is one attempt per event.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param string $code The deferral code the event can clear.
+	 * @return bool True when the next attempt was moved and scheduled.
+	 */
+	public function bring_deferred_attempt_forward( string $code ): bool {
+		if ( ! $this->is_deferred_for( $this->state_store->get_record(), $code ) || ! $this->arbiter->is_builtin_enabled() ) {
+			return false;
+		}
+		$delay = PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED === $code ? self::UPDATED_PLUGIN_RETRY_DELAY : 0;
+		$now   = time();
+		$moved = $this->with_write_lock(
+			$now,
+			function () use ( $code, $delay, $now ): bool {
+				$record = $this->state_store->get_record();
+				if ( ! is_array( $record ) || ! $this->is_deferred_for( $record, $code ) ) {
+					return false;
+				}
+				if ( is_int( $record['next_attempt_at'] ) && $record['next_attempt_at'] <= $now + $delay ) {
+					return true;
+				}
+				$forward                    = $record;
+				$forward['revision']        = $record['revision'] + 1;
+				$forward['action_id']       = 0;
+				$forward['updated_at']      = $now;
+				$forward['next_attempt_at'] = $now + $delay;
+				if ( ! $this->state_store->compare_and_set_record( $record, $forward ) ) {
+					return false;
+				}
+				$this->scheduler->cancel( $record['generation'], $record['attempt'] + 1 );
+
+				return $this->ensure_record_scheduled( $forward, $now );
+			},
+			false
+		);
+		// The event's request is not a queue runner: once it ends, after WordPress has written the plugin list, a fresh
+		// runner takes the attempt now due. A request switched into another site would dispatch for its own site.
+		if ( $moved && 0 === $delay && ! ( is_multisite() && ms_is_switched() ) ) {
+			add_action( 'shutdown', array( $this->scheduler, 'dispatch_async' ) );
+		}
+
+		return $moved;
+	}
+
+	/**
+	 * Tell whether a record is a deferred switch held back by a code.
+	 *
+	 * @param array<string,mixed>|null $record Cutover record.
+	 * @param string                   $code   Deferral code.
+	 * @return bool
+	 */
+	private function is_deferred_for( ?array $record, string $code ): bool {
+		return is_array( $record )
+			&& StateStore::STATE_DEFERRED === $record['state']
+			&& in_array( $code, (array) ( $record[ StateStore::BLOCKING_CODES_KEY ] ?? array() ), true );
+	}
+
+	/**
 	 * Get the retry delay for a deferral that waits only for queued WooPayments actions about to run.
 	 *
 	 * The short delay applies when the only code is the unhandled queued action one and every such action is due between

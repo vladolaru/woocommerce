@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -389,16 +390,43 @@ class PerSiteActivationController implements RegisterHooksInterface {
 
 		if ( array() === $result['failed'] ) {
 			$this->legacy_proxy->call_function( 'deactivate_plugins', $plugin_file, false, true );
-			if ( array_key_exists( $plugin_file, (array) $this->legacy_proxy->call_function( 'get_site_option', 'active_sitewide_plugins', array() ) ) ) {
+			$still_sitewide = array_key_exists( $plugin_file, (array) $this->legacy_proxy->call_function( 'get_site_option', 'active_sitewide_plugins', array() ) );
+			if ( $still_sitewide ) {
 				$this->log( 'error', 'WooPayments per-site activation could not deactivate the network-wide WooPayments extension.', array( 'plugin_file' => $plugin_file ) );
 			}
 			// The owner each site resolved earlier in this request read the network activation.
 			foreach ( $site_ids as $site_id ) {
 				$this->arbiter->invalidate( $site_id );
 			}
+			if ( ! $still_sitewide ) {
+				$this->bring_waiting_switches_forward( array_merge( $result['activated'], $result['skipped'] ) );
+			}
 		}
 
 		return $result;
+	}
+
+	/**
+	 * Bring forward the switch of each site that now runs the WooPayments extension on its own and waited for the
+	 * conversion; best effort, an error is logged.
+	 *
+	 * @param int[] $site_ids Sites where the extension now runs per site.
+	 */
+	private function bring_waiting_switches_forward( array $site_ids ): void {
+		foreach ( $site_ids as $site_id ) {
+			switch_to_blog( $site_id );
+			try {
+				$this->reconciliation_job->bring_deferred_attempt_forward( ReconciliationJob::CODE_PLUGIN_ACTIVE_SITEWIDE );
+			} catch ( \Throwable $error ) {
+				$this->log(
+					'error',
+					'WooPayments per-site activation could not bring this site\'s switch forward.',
+					array_merge( array( 'site_id' => $site_id ), WooPaymentsLogger::get_failure_context( $error ) )
+				);
+			} finally {
+				restore_current_blog();
+			}
+		}
 	}
 
 	/**
