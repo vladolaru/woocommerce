@@ -3657,11 +3657,57 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An extension loaded from outside Plugins holds the switch back at the retry cadence, before the fence, without deactivating anything.
+	 * A queue process can have loaded the extension's code before the merchant deactivated it, so this process cannot tell
+	 * a loader from its own age. The admin request, which began after the lists were written, withholds Start instead.
+	 *
+	 * @testdox A process that runs the extension's code while the stored plugin lists are clear passes the preflight, deactivates nothing, stores the token and schedules the ownership check.
 	 */
-	public function test_extension_loaded_outside_the_plugin_lists_defers_at_the_cadence(): void {
-		$preflight = $this->create_preflight_with_failures( array( PreflightService::FAILURE_LOADED_OUTSIDE_PLUGIN_LISTS ) );
-		$sut       = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization() );
+	public function test_a_process_running_the_extension_with_the_stored_lists_clear_hands_over(): void {
+		$this->arrange_extension_era_store();
+		update_option( 'active_plugins', array() );
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'defined' => fn( $name ) => 'WCPAY_PLUGIN_FILE' === $name || defined( $name ),
+			)
+		);
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		$preflight = new class() extends PreflightService {
+			/** Environment failures a unit test store always reports: no plugin files, no platform connection, no provider transport. */
+			private const ENVIRONMENT_FAILURES = array(
+				'woopayments_plugin_version_unsupported',
+				'builtin_transport_unavailable',
+				'wpcom_blog_id_unavailable',
+				'wpcom_connection_unavailable',
+				'wpcom_connection_owner_unavailable',
+			);
+
+			/** @var int */
+			public int $deactivations = 0;
+
+			/** @return string[] */
+			public function get_failures(): array {
+				return array_values( array_diff( parent::get_failures(), self::ENVIRONMENT_FAILURES ) );
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** Count the deactivation calls. */
+			public function deactivate_woopayments_plugin(): bool {
+				++$this->deactivations;
+				return true;
+			}
+
+			/** Site-local scenario. */
+			public function is_woopayments_network_active(): bool {
+				return false;
+			}
+		};
+		$preflight->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ) );
+		$this->assertTrue( $preflight->is_woopayments_loaded_outside_plugin_lists(), 'This process runs the code with the stored lists clear.' );
+		$sut = $this->create_state_writing_job( true, $preflight );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
 		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
@@ -3669,12 +3715,16 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 
 		$sut->handle_reconcile( $pending['generation'], 1 );
 
-		$held = $this->state_store->get_record();
-		$this->assertIsArray( $held );
-		$this->assertSame( StateStore::STATE_DEFERRED, $held['state'] );
-		$this->assertSame( array( PreflightService::FAILURE_LOADED_OUTSIDE_PLUGIN_LISTS ), $held['deferred_codes'] );
-		$this->assertSame( 900, $this->get_deferral_delay( $held ) );
-		$this->assertNull( $held['request_origin_token'] ?? null, 'The fence was not reached.' );
+		$verification = $this->state_store->get_record();
+		$this->assertIsArray( $verification );
+		$this->assertSame( StateStore::STATE_PENDING, $verification['state'] );
+		$this->assertSame( 'verify_builtin_ownership', $verification['current_step'] );
+		$this->assertSame( array(), $verification['deferred_codes'] );
+		$this->assertSame( 0, $preflight->deactivations, 'Finalize finds nothing to deactivate.' );
+		$this->assertIsString( $verification['request_origin_token'] );
+		$this->assertSame( $verification[ StateStore::HANDED_OVER_AT_KEY ] + 5, $verification['next_attempt_at'] );
+		$this->assertSame( $verification['action_id'], $this->scheduler->get_scheduled_action_id( $verification['generation'], 2 ) );
+		$this->assertStringNotContainsString( 'woopayments_loaded_outside_plugin_lists', (string) wp_json_encode( $verification ), 'No record carries the refusal code.' );
 	}
 
 	/**

@@ -253,7 +253,7 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox The induced reconciliation vocabulary is exactly the 10 conditions a store can reach.
 	 */
-	public function test_induced_reconciliation_vocabulary_is_exactly_the_eleven_reachable_conditions(): void {
+	public function test_induced_reconciliation_vocabulary_is_exactly_the_ten_reachable_conditions(): void {
 		$codes = array();
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 		$codes = array_merge( $codes, $this->create_sut()->get_failures() );
@@ -271,31 +271,33 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 
 		$unique_codes = array_values( array_unique( $codes ) );
 
-		$this->assertSame( array( 'builtin_runtime_disabled', 'woopayments_plugin_version_unsupported', 'builtin_transport_unavailable', 'wpcom_connection_unavailable', 'wpcom_blog_id_unavailable', 'wpcom_connection_owner_unavailable', 'multi_currency_rates_unavailable', 'operational_queue_hooks_unhandled', 'bundled_stripe_billing_subscriptions_present', 'extension_renewal_plugin_active', 'woopayments_loaded_outside_plugin_lists' ), $unique_codes );
-		$this->assertCount( 11, $unique_codes );
+		$this->assertSame( array( 'builtin_runtime_disabled', 'woopayments_plugin_version_unsupported', 'builtin_transport_unavailable', 'wpcom_connection_unavailable', 'wpcom_blog_id_unavailable', 'wpcom_connection_owner_unavailable', 'multi_currency_rates_unavailable', 'operational_queue_hooks_unhandled', 'bundled_stripe_billing_subscriptions_present', 'extension_renewal_plugin_active' ), $unique_codes );
+		$this->assertCount( 10, $unique_codes );
 	}
 
 	/**
-	 * The switch's deactivation can only remove an extension that a stored plugin list holds.
+	 * The switch's deactivation can only remove an extension that a stored plugin list holds. Only the admin request reads
+	 * that as the site's setup: a queue process can have loaded the code before the merchant deactivated the extension.
 	 *
-	 * @testdox The preflight refuses the switch when the extension's code runs and $_dataName.
+	 * @testdox The extension's code running while $_dataName is seen for the admin side and never refuses the switch in the preflight.
 	 * @dataProvider provide_loaded_outside_plugin_lists
 	 *
 	 * @param bool $code_loaded Whether this process runs the extension's code.
 	 * @param bool $stored      Whether the stored site list holds the extension.
 	 * @param bool $read_fails  Whether the stored site list cannot be read.
-	 * @param bool $refused     Whether the preflight refuses the switch.
+	 * @param bool $seen        Whether the check sees the extension loaded outside the stored lists.
 	 */
-	public function test_an_extension_loaded_outside_the_plugin_lists_refuses_the_switch( bool $code_loaded, bool $stored, bool $read_fails, bool $refused ): void {
+	public function test_an_extension_loaded_outside_the_plugin_lists_is_seen_but_never_refused( bool $code_loaded, bool $stored, bool $read_fails, bool $seen ): void {
 		$this->fake_active_plugins( array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ), array(), false, $code_loaded );
 		update_option( 'active_plugins', $stored ? array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) : array() );
 		$sut = $this->create_sut();
 		if ( $read_fails ) {
 			$this->read_failure                = new StoredPluginListReadFailure();
-			$this->read_failure->site_failures = 1;
+			$this->read_failure->site_failures = 2;
 		}
 
-		$this->assertSame( $refused, in_array( PreflightService::FAILURE_LOADED_OUTSIDE_PLUGIN_LISTS, $sut->get_failures(), true ) );
+		$this->assertSame( $seen, $sut->is_woopayments_loaded_outside_plugin_lists() );
+		$this->assertNotContains( 'woopayments_loaded_outside_plugin_lists', $sut->get_failures() );
 	}
 
 	/**

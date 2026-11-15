@@ -149,9 +149,13 @@ class ReconciliationJob implements RegisterHooksInterface {
 	private const OUTCOME_OWNERSHIP_READING_UNAVAILABLE = 'ownership_reading_unavailable';
 
 	/**
-	 * Retry delay after the job updated the extension to a supported version, which it records on its next request.
+	 * Retry delay after the job, or a store manager by hand, updated the extension to a supported version, which the
+	 * extension records on its next request.
 	 *
-	 * Not zero: Action Scheduler keeps claiming due actions in the same run, which still has the old extension loaded.
+	 * Not zero: Action Scheduler keeps claiming due actions in the same run, which still has the old extension loaded. Not
+	 * 5 s: a request that starts after the update can still run the old code, in another PHP pool whose opcache revalidates
+	 * on an interval or on a second web server that has not yet received the new files. That attempt reads the old version
+	 * and can fall to the retry cadence; a minute gives both time to catch up.
 	 */
 	private const UPDATED_PLUGIN_RETRY_DELAY = MINUTE_IN_SECONDS;
 
@@ -171,8 +175,9 @@ class ReconciliationJob implements RegisterHooksInterface {
 	 * The same five minutes Action Scheduler gives a claimed action before it unclaims or fails it
 	 * (ActionScheduler_QueueCleaner::reset_timeouts() and mark_failures()), so a stuck running action leaves the queue
 	 * within it. A queue runner can also be filtered to claim the switch's action and never the one it waits for; that one
-	 * stays pending and overdue for good, so past this limit the switch goes back to the retry cadence instead of retrying
-	 * every minute without end: about six short retries at most.
+	 * stays pending and overdue for good, so past this limit the switch goes back to the retry cadence: for a queue that gets
+	 * no new actions, about six short retries at most. While fresh unhandled actions keep arriving and running, with none
+	 * left overdue, each retry finds only actions due inside the window, so the short retries go on until the arrivals pause.
 	 */
 	private const QUEUED_ACTION_OVERDUE_LIMIT = 5 * MINUTE_IN_SECONDS;
 
@@ -1019,6 +1024,11 @@ class ReconciliationJob implements RegisterHooksInterface {
 	/**
 	 * Migrate the data, deactivate the extension and schedule the ownership check for one site.
 	 *
+	 * A deactivation that cannot be confirmed defers at the retry cadence, and the next attempt rolls back only if the lists
+	 * still hold the extension. The reading after the deactivation can lag on a database router that does not keep the
+	 * request on the primary; a second one 15 minutes later keeps a lagging read from rolling a switched store back to no
+	 * owner. Meanwhile an extension still listed keeps payments, and the token gives them to the built-in if it is not.
+	 *
 	 * @param array<string,mixed> $claimed  Exact running state owned by this worker.
 	 * @param array<int,mixed>    $outcomes Informational outcomes accumulated during reconciliation.
 	 */
@@ -1212,7 +1222,10 @@ class ReconciliationJob implements RegisterHooksInterface {
 	 * Complete one verification claim once a request without the extension's code reads the stored plugin lists clear:
 	 * fence the claim, sync the setup tier and record the switch as done.
 	 *
-	 * Lists that hold the extension again defer the claim; the next attempt rolls the switch back.
+	 * Lists that hold the extension again defer the claim at the retry cadence; the next attempt rolls the switch back if they
+	 * still do. Two readings 15 minutes apart keep one lagging read, from a database replica behind the deactivation, from
+	 * rolling a switched store back to no owner. Meanwhile an extension really back takes payments, as the lists say, and
+	 * the token keeps them with the built-in if the reading lagged.
 	 *
 	 * @param array<string,mixed> $claimed    Exact running state owned by this worker.
 	 * @param bool                $lists_hold Whether the stored plugin lists held the extension when the claim read them.

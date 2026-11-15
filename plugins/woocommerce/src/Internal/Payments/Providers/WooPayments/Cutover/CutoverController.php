@@ -576,8 +576,9 @@ class CutoverController implements RegisterHooksInterface {
 			// Payments settings keeps the switch notice, with no "Not now"; every other admin page honours the snooze.
 			$on_payments_settings = $this->is_payments_settings_request();
 			if ( ( $on_payments_settings || ! $this->is_start_notice_snoozed() ) && $this->reconciliation_job->can_offer_start() ) {
-				// The preflight would hold the switch back, so the notice says why instead of offering it. Read only when the
-				// notice shows: the check reads the stored plugin lists when the extension's code is loaded.
+				// The notice says why instead of offering the switch when this site's setup loads the extension, which the switch
+				// could not turn off, or when the preflight would hold the switch back for a renewal plugin. Read only when the
+				// notice shows: the first check reads the stored plugin lists when the extension's code is loaded.
 				$plugin_names = $this->renewal_plugins->get_active_plugin_names();
 				if ( $this->preflight_service->is_woopayments_loaded_outside_plugin_lists() ) {
 					$this->output_loaded_outside_plugin_lists_notice( ! $on_payments_settings );
@@ -626,17 +627,6 @@ class CutoverController implements RegisterHooksInterface {
 					$this->output_queued_actions_line();
 				}
 				echo '</div>';
-				// A switch held back because the extension is loaded from outside Plugins says so, while this request reads the
-				// same; a stale queue process elsewhere never shows it. Never for a record carrying the hand-over token: the page
-				// the merchant lands on after the click can boot before the hand-over and render after it.
-				if (
-					StateStore::STATE_DEFERRED === $record['state']
-					&& null === ( $record['request_origin_token'] ?? null )
-					&& in_array( PreflightService::FAILURE_LOADED_OUTSIDE_PLUGIN_LISTS, (array) ( $record[ StateStore::BLOCKING_CODES_KEY ] ?? array() ), true )
-					&& $this->preflight_service->is_woopayments_loaded_outside_plugin_lists()
-				) {
-					$this->output_loaded_outside_plugin_lists_notice( false );
-				}
 				// A switch whose extension became active for every site after its start waits for the per-site activation, and stops saying so once it no longer is.
 				if ( StateStore::STATE_DEFERRED === $record['state'] && $this->preflight_service->is_woopayments_network_active() && in_array( ReconciliationJob::CODE_PLUGIN_ACTIVE_SITEWIDE, (array) ( $record[ StateStore::BLOCKING_CODES_KEY ] ?? array() ), true ) ) {
 					$this->output_sitewide_refusal_notice();
