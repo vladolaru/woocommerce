@@ -2828,7 +2828,10 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Ownership verification from a fresh request defers while the stored plugin list holds the extension again, without finishing.
+	 * The second reading is what keeps a lagging read from rolling a switched store back; past the first day the retry
+	 * cadence would put it a day out.
+	 *
+	 * @testdox Ownership verification from a fresh request defers while the stored plugin list holds the extension again, without finishing, and reads again 15 minutes later on a switch started more than a day ago.
 	 */
 	public function test_ownership_verification_defers_while_the_extension_still_runs(): void {
 		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
@@ -2845,6 +2848,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$verification['current_step']         = 'verify_builtin_ownership';
 		$verification['next_attempt_at']      = time() + MINUTE_IN_SECONDS;
 		$verification['request_origin_token'] = 'previous-request-token';
+		$verification['started_at']           = time() - DAY_IN_SECONDS - 1;
 		$this->assertTrue( $this->state_store->compare_and_set_record( $queued, $verification ) );
 
 		$this->start_fresh_request();
@@ -2854,10 +2858,11 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertIsArray( $deferred );
 		$this->assertSame( StateStore::STATE_DEFERRED, $deferred['state'] );
 		$this->assertSame( array( 'builtin_ownership_unverified' ), $deferred['deferred_codes'] );
+		$this->assertSame( 15 * MINUTE_IN_SECONDS, $this->get_deferral_delay( $deferred ), 'The second reading waits 15 minutes on any day.' );
 	}
 
 	/**
-	 * @testdox A merchant-started claim whose plugin deactivation fails (throws: $throws) defers without moving to ownership verification or syncing the setup tier.
+	 * @testdox A merchant-started claim whose plugin deactivation fails (throws: $throws) defers without moving to ownership verification or syncing the setup tier, and reads again 15 minutes later on a switch started more than a day ago.
 	 * @testWith [false]
 	 *           [true]
 	 *
@@ -2946,8 +2951,14 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
 		$this->scheduler->cancel( $pending['generation'], 1 );
+		// A retry of a switch started more than a day ago, where the cadence is daily.
+		$aged               = $pending;
+		$aged['revision']   = $pending['revision'] + 1;
+		$aged['attempt']    = 1;
+		$aged['started_at'] = time() - DAY_IN_SECONDS - 1;
+		$this->assertTrue( $this->state_store->compare_and_set_record( $pending, $aged ) );
 
-		$sut->handle_reconcile( $pending['generation'], 1 );
+		$sut->handle_reconcile( $pending['generation'], 2 );
 
 		$deferred = $this->state_store->get_record();
 		$this->assertIsArray( $deferred );
@@ -2956,6 +2967,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'plugin_deactivation_failed' ), $deferred['deferred_codes'] );
 		$this->assertSame( 'deferred', $deferred['current_step'] );
 		$this->assertSame( 0, $sync_calls, 'Native state must not be synced while the plugin still runs.' );
+		$this->assertSame( 15 * MINUTE_IN_SECONDS, $this->get_deferral_delay( $deferred ), 'The second reading waits 15 minutes on any day.' );
 	}
 
 	/**

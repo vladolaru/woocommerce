@@ -149,6 +149,18 @@ class ReconciliationJob implements RegisterHooksInterface {
 	private const OUTCOME_OWNERSHIP_READING_UNAVAILABLE = 'ownership_reading_unavailable';
 
 	/**
+	 * Delay before a switch past the hand-over reads the stored plugin lists again, after a reading that still held the
+	 * extension (plugin_deactivation_failed, builtin_ownership_unverified): that next reading rolls the switch back if they
+	 * still do, so the two are kept apart for a lagging database replica to catch up.
+	 *
+	 * Fifteen minutes is the first-day retry cadence these two deferrals were written with; no shorter bound on replica lag
+	 * is known, and a sooner reading buys the merchant nothing, since payments follow the stored lists meanwhile. Explicit,
+	 * so the second reading never waits the daily cadence. A next process that cannot read the lists still takes the cadence
+	 * (get_unreadable_ownership_retry_delay()).
+	 */
+	private const SECOND_READING_DELAY = 15 * MINUTE_IN_SECONDS;
+
+	/**
 	 * Retry delay after the job, or a store manager by hand, updated the extension to a supported version, which the
 	 * extension records on its next request.
 	 *
@@ -1024,11 +1036,10 @@ class ReconciliationJob implements RegisterHooksInterface {
 	/**
 	 * Migrate the data, deactivate the extension and schedule the ownership check for one site.
 	 *
-	 * A deactivation that cannot be confirmed defers at the retry cadence, and the next attempt rolls back only if the lists
-	 * still hold the extension. The reading after the deactivation can lag on a database router that does not keep the
-	 * request on the primary; a second one a retry cadence step later (15 minutes in the first day, daily after) keeps a
-	 * lagging read from rolling a switched store back to no owner. Meanwhile an extension still listed keeps payments, and
-	 * the token gives them to the built-in if it is not.
+	 * A deactivation that cannot be confirmed defers, and the next attempt rolls back only if the lists still hold the
+	 * extension. The reading after the deactivation can lag on a database router that does not keep the request on the
+	 * primary; a second one 15 minutes later (SECOND_READING_DELAY) keeps a lagging read from rolling a switched store back
+	 * to no owner. Meanwhile an extension still listed keeps payments, and the token gives them to the built-in if it is not.
 	 *
 	 * @param array<string,mixed> $claimed  Exact running state owned by this worker.
 	 * @param array<int,mixed>    $outcomes Informational outcomes accumulated during reconciliation.
@@ -1096,7 +1107,7 @@ class ReconciliationJob implements RegisterHooksInterface {
 		}
 		if ( ! $deactivated ) {
 			// The token stays, so the next attempt finds the extension active and rolls the switch back to it.
-			$this->defer( $claimed, array( 'plugin_deactivation_failed' ), $outcomes );
+			$this->defer( $claimed, array( 'plugin_deactivation_failed' ), $outcomes, self::SECOND_READING_DELAY );
 			return;
 		}
 		// The tier follows now; this write takes no lock. A rollback made since is unharmed: the effective tier reads
@@ -1223,17 +1234,17 @@ class ReconciliationJob implements RegisterHooksInterface {
 	 * Complete one verification claim once a request without the extension's code reads the stored plugin lists clear:
 	 * fence the claim, sync the setup tier and record the switch as done.
 	 *
-	 * Lists that hold the extension again defer the claim at the retry cadence; the next attempt rolls the switch back if they
-	 * still do. Two readings a retry cadence step apart (15 minutes in the first day, daily after) keep one lagging read,
-	 * from a database replica behind the deactivation, from rolling a switched store back to no owner. Meanwhile an extension really back takes payments, as the lists say, and
-	 * the token keeps them with the built-in if the reading lagged.
+	 * Lists that hold the extension again defer the claim; the next attempt rolls the switch back if they still do. Two
+	 * readings 15 minutes apart (SECOND_READING_DELAY) keep one lagging read, from a database replica behind the
+	 * deactivation, from rolling a switched store back to no owner. Meanwhile an extension really back takes payments, as the
+	 * lists say, and the token keeps them with the built-in if the reading lagged.
 	 *
 	 * @param array<string,mixed> $claimed    Exact running state owned by this worker.
 	 * @param bool                $lists_hold Whether the stored plugin lists held the extension when the claim read them.
 	 */
 	private function complete_verified_claim( array $claimed, bool $lists_hold ): void {
 		if ( $lists_hold ) {
-			$this->defer( $claimed, array( 'builtin_ownership_unverified' ) );
+			$this->defer( $claimed, array( 'builtin_ownership_unverified' ), array(), self::SECOND_READING_DELAY );
 			return;
 		}
 		$claimed = $this->fence_finalizing_claim( $claimed );
