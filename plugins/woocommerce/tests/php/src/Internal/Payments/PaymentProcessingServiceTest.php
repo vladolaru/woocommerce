@@ -2907,11 +2907,32 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Successful captures stay reconcilable when provider effect application throws.
+	 * @testdox Successful captures stay reconcilable when provider effect application throws, and the reconciliation fills an empty transaction ID but never replaces a different one: $_dataName.
+	 *
+	 * The effects throw before the lifecycle runs, so a capture that keeps the order status records its payment only
+	 * through the reconciliation, which writes the transaction ID only when the order has none.
+	 *
+	 * @testWith ["", false, "pi_capture_effect_failure", true]
+	 *           ["", true, "pi_capture_effect_failure", true]
+	 *           ["pi_earlier_attempt", true, "pi_earlier_attempt", false]
+	 *
+	 * @param string $stored_txn            Transaction ID the order stores.
+	 * @param bool   $preserve_order_status Whether the capture keeps the order status, as a status-change capture does.
+	 * @param string $expected_txn          Transaction ID after the capture.
+	 * @param bool   $persisted             Whether the apply-failure line reports the reconciliation context saved.
 	 */
-	public function test_capture_keeps_provider_success_when_effect_application_throws(): void {
-		$order    = $this->create_woopayments_order( '10.00' );
-		$outcome  = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_capture_effect_failure' );
+	public function test_capture_keeps_provider_success_when_effect_application_throws( string $stored_txn, bool $preserve_order_status, string $expected_txn, bool $persisted ): void {
+		$order = $this->create_woopayments_order( '10.00' );
+		$order->set_transaction_id( $stored_txn );
+		$order->save();
+		$outcome     = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_capture_effect_failure', '', '', '', $preserve_order_status ? array( PaymentOutcome::DATA_PRESERVE_ORDER_STATUS => true ) : array() );
+		$fake_logger = $this->create_fake_logger();
+		add_filter(
+			'woocommerce_logging_class',
+			function () use ( $fake_logger ) {
+				return $fake_logger;
+			}
+		);
 		$provider = new class( $outcome ) extends RecordingProvider implements ProviderOperationEffectApplierInterface {
 			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double always throws.
 			/**
@@ -2935,7 +2956,15 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( $outcome, $result );
-		$this->assertSame( 'pi_capture_effect_failure', $order->get_transaction_id() );
+		$this->assertSame( $expected_txn, $order->get_transaction_id() );
+		$apply_logs = array_values(
+			array_filter(
+				$fake_logger->error_calls,
+				static fn( array $call ): bool => 0 === strpos( $call['message'], 'Payment provider operation returned a reconcilable outcome' )
+			)
+		);
+		$this->assertCount( 1, $apply_logs );
+		$this->assertSame( $persisted, $apply_logs[0]['context']['reconciliation_persisted'] );
 	}
 
 	/**

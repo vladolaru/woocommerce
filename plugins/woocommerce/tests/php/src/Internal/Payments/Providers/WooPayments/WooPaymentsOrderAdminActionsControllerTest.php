@@ -20,6 +20,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPlatformEvents;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\StoredPaymentRecords;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
@@ -29,6 +30,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCh
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundAmbiguityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderAdminActionsController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAuthorizationsRestController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
@@ -45,6 +48,7 @@ use Automattic\WooCommerce\Tests\Internal\Payments\RecordingProvider;
 use RuntimeException;
 use WC_Order;
 use WC_Unit_Test_Case;
+use WP_REST_Request;
 
 /**
  * Tests for the WooPaymentsOrderAdminActionsController class.
@@ -57,6 +61,20 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	 * @var string
 	 */
 	private const RETRY_HOOK = 'woocommerce_woopayments_retry_status_change_operation';
+
+	/**
+	 * The recorded manual-capture authorization's intent (Fixtures/platform-manual-capture.json).
+	 *
+	 * @var string
+	 */
+	private const RECORDED_INTENT = 'pi_3UJhOgBzWlxcwgpP0AOgQE2z';
+
+	/**
+	 * The recorded manual-capture authorization's charge (Fixtures/platform-manual-capture.json, latest_charge).
+	 *
+	 * @var string
+	 */
+	private const RECORDED_CHARGE = 'ch_3UJhOgBzWlxcwgpP0NcK21bQ';
 
 	/**
 	 * The System Under Test.
@@ -908,21 +926,24 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A status change to Completed captures once and leaves the payment uncompleted, with one capture note, one Fee details job and the date paid the change set: $_dataName.
+	 * @testdox A status change to Completed captures once and leaves the payment uncompleted, with one capture note, one Fee details job, the date paid the change set and the captured payment as the transaction ID: $_dataName.
 	 *
 	 * Client 11.3.0's status-change capture captures, adds its capture note once, schedules the Fee details job and stores
 	 * the intent status; it never completes the payment, so the order status and the date paid are the merchant's change
 	 * (class-wc-payments-order-service.php:2381-2429). The writer that completes a capture (:2193-2219, :2216) is not on
-	 * this path.
+	 * this path. The client writes no transaction ID there; the built-in capture records the captured payment as the
+	 * transaction ID, filling an empty one and replacing another attempt's with one warning naming both.
 	 *
 	 * @dataProvider status_changes_to_completed_that_capture
 	 *
 	 * @param string $from_status   Order status before the change.
 	 * @param string $stored_status Intent status the order stores.
 	 * @param bool   $retried       Whether the order payment lock refuses the change, so its retry captures.
+	 * @param string $stored_txn    Transaction ID the order stores: the captured intent, none, or another attempt's.
 	 */
-	public function test_status_change_to_completed_captures_without_completing_the_payment( string $from_status, string $stored_status, bool $retried ): void {
-		$order     = $this->create_recorded_authorization_order( $stored_status, $from_status );
+	public function test_status_change_to_completed_captures_without_completing_the_payment( string $from_status, string $stored_status, bool $retried, string $stored_txn = self::RECORDED_INTENT ): void {
+		$order     = $this->create_recorded_authorization_order_storing( $stored_txn, $stored_status, $from_status );
+		$logger    = RecordingWcLogger::install();
 		$transport = $this->create_operation_transport( PaymentProcessingService::OPERATION_CAPTURE );
 		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $this->create_platform( $this->recorded_intent( 'authorize_manual_capture' ), null, new \ArrayObject() ) );
 		$this->sut->register();
@@ -969,13 +990,23 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 0, $this->count_payment_complete_notes( $order ) );
 		$this->assertSame( $retried ? 1 : 0, $this->count_notes( $order, $this->pending_note( PaymentProcessingService::OPERATION_CAPTURE ) ) );
 		$this->assertSame( 1, $this->count_pending_fee_details_jobs( $order ) );
+		$this->assertSame( self::RECORDED_INTENT, $order->get_transaction_id(), 'The captured payment is the transaction ID.' );
+		$replaced = $this->replacement_lines( $logger );
+		if ( '' === $stored_txn || self::RECORDED_INTENT === $stored_txn ) {
+			$this->assertCount( 0, $replaced, 'Nothing different was replaced, so no line is written.' );
+		} else {
+			$this->assertCount( 1, $replaced, 'One line names the replaced transaction ID.' );
+			$this->assertSame( $stored_txn, $replaced[0]['replaced_transaction_id'] );
+			$this->assertSame( self::RECORDED_INTENT, $replaced[0]['payment_reference'] );
+		}
 	}
 
 	/**
 	 * Status changes to Completed that capture: the stored authorization, at once or by its retry, and an order whose
-	 * stored status is not settled, whose intent is read.
+	 * stored status is not settled, whose intent is read; on an order whose transaction ID names the authorization, names
+	 * nothing, or names an earlier attempt.
 	 *
-	 * @return array<string,array{string,string,bool}>
+	 * @return array<string,array{0:string,1:string,2:bool,3?:string}>
 	 */
 	public function status_changes_to_completed_that_capture(): array {
 		return array(
@@ -983,7 +1014,221 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 			'on hold, stored authorization, retried' => array( OrderStatus::ON_HOLD, 'requires_capture', true ),
 			'pending, the intent is read'            => array( OrderStatus::PENDING, 'requires_action', false ),
 			'pending, the intent is read, retried'   => array( OrderStatus::PENDING, 'requires_action', true ),
+			'on hold, stored authorization, no transaction ID' => array( OrderStatus::ON_HOLD, 'requires_capture', false, '' ),
+			'pending, the intent is read, no transaction ID' => array( OrderStatus::PENDING, 'requires_action', false, '' ),
+			'on hold, stored authorization, another attempt\'s transaction ID' => array( OrderStatus::ON_HOLD, 'requires_capture', false, 'pi_earlier_attempt' ),
 		);
+	}
+
+	/**
+	 * @testdox A status change to Completed whose capture note fails after the order was saved keeps the captured payment as the transaction ID, and the reconciliation reports its context saved.
+	 *
+	 * The order names another attempt; the capture records the captured payment in the lifecycle's save, before its note.
+	 * A note callback then throws, so the reconciliation runs and finds the transaction ID already naming the payment.
+	 */
+	public function test_status_change_capture_whose_note_fails_after_the_save_keeps_the_captured_payment(): void {
+		$order     = $this->create_recorded_authorization_order_storing( 'pi_earlier_attempt', 'requires_capture', OrderStatus::ON_HOLD );
+		$logger    = RecordingWcLogger::install();
+		$transport = $this->create_operation_transport( PaymentProcessingService::OPERATION_CAPTURE );
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $this->create_platform( null, null, new \ArrayObject() ) );
+		$this->sut->register();
+		$throws = 0;
+		add_action(
+			'woocommerce_order_note_added',
+			static function ( $note_id ) use ( &$throws ): void {
+				$note = get_comment( $note_id );
+				if ( $note instanceof \WP_Comment && str_contains( $note->comment_content, 'was <strong>successfully captured</strong>' ) ) {
+					++$throws;
+					throw new RuntimeException( 'A note callback failed.' );
+				}
+			}
+		);
+
+		$order->update_status( OrderStatus::COMPLETED );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 1, $throws, 'The capture note reached the failing callback.' );
+		$this->assertSame( array( $this->operation_path( PaymentProcessingService::OPERATION_CAPTURE ) ), $this->request_paths( $transport ) );
+		$this->assertSame( OrderStatus::COMPLETED, $order->get_status() );
+		$this->assertSame( self::RECORDED_INTENT, $order->get_transaction_id() );
+		$apply_failures = array_values( array_filter( $logger->contexts, static fn( array $context ): bool => array_key_exists( 'reconciliation_persisted', $context ) ) );
+		$this->assertCount( 1, $apply_failures );
+		$this->assertTrue( $apply_failures[0]['reconciliation_persisted'] );
+		$this->assertSame( 0, $this->count_notes( $order, $this->failure_note( PaymentProcessingService::OPERATION_CAPTURE ) ) );
+	}
+
+	/**
+	 * @testdox A refund made outside WP Admin on the payment a status change captured, on an order that had no transaction ID, adds a refund to the order.
+	 *
+	 * Client 11.3.0 finds the order by its stored charge and makes the refund row (class-wc-payments-webhook-processing-service.php:1265-1273);
+	 * the built-in code owns a paid order's events by its transaction ID, which the capture now names.
+	 */
+	public function test_refund_made_outside_after_a_status_change_capture_without_a_transaction_id_is_the_orders_own(): void {
+		$order = $this->capture_by_status_change( StoredPaymentRecords::authorization_without_transaction_id( self::RECORDED_INTENT, 'requires_capture', OrderStatus::ON_HOLD, self::RECORDED_CHARGE ) );
+		$event = $this->recorded_partial_refund_event( $order, 500 );
+
+		wc_get_container()->get( EventIngestor::class )->process( $event );
+
+		$order   = wc_get_order( $order->get_id() );
+		$refunds = $order->get_refunds();
+		$this->assertCount( 1, $refunds );
+		$this->assertSame( '-5.00', $refunds[0]->get_total() );
+		$this->assertSame( $event['data']['object']['refunds']['data'][0]['id'], $refunds[0]->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( 1, $this->count_notes_containing( $order, 'was successfully processed using WooPayments' ), 'One refund note.' );
+		$this->assertSame( 0, $this->count_notes_containing( $order, 'does not pay this order' ), 'No other-charge note.' );
+		$this->assertSame( OrderStatus::COMPLETED, $order->get_status() );
+	}
+
+	/**
+	 * @testdox A dispute opened on the payment a status change captured, on an order that had no transaction ID, puts the order on hold with the dispute recorded.
+	 *
+	 * Client 11.3.0 finds the order by its stored charge and holds it (class-wc-payments-webhook-processing-service.php:1136-1158);
+	 * the built-in code owns a paid order's events by its transaction ID, which the capture now names.
+	 */
+	public function test_dispute_after_a_status_change_capture_without_a_transaction_id_holds_the_order(): void {
+		$order = $this->capture_by_status_change( StoredPaymentRecords::authorization_without_transaction_id( self::RECORDED_INTENT, 'requires_capture', OrderStatus::ON_HOLD, self::RECORDED_CHARGE ) );
+		$event = RecordedPlatformEvents::body( 'platform-dispute-created-events.json', 'accept_case_created' );
+
+		$event['data']['object']['charge']         = self::RECORDED_CHARGE;
+		$event['data']['object']['payment_intent'] = self::RECORDED_INTENT;
+		$event['data']['object']['amount']         = 1099;
+
+		wc_get_container()->get( EventIngestor::class )->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertContains( $event['data']['object']['id'], (array) $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$this->assertSame( OrderStatus::ON_HOLD, $order->get_status() );
+		$this->assertSame( 1, $this->count_notes_containing( $order, 'Payment has been disputed' ) );
+		$this->assertSame( 0, $this->count_notes_containing( $order, 'does not pay this order' ), 'No other-charge note.' );
+	}
+
+	/**
+	 * @testdox After a status change to Completed replaced another attempt's transaction ID, a payment success is the order's own only for the captured payment: $label.
+	 *
+	 * The captured payment's success changes nothing a second time; an earlier attempt's late success is recorded as
+	 * another charge and leaves the stored intent and charge on the captured payment.
+	 *
+	 * @testWith ["the captured payment's success, delivered twice", "pi_3UJhOgBzWlxcwgpP0AOgQE2z", "ch_3UJhOgBzWlxcwgpP0NcK21bQ", 2, 0]
+	 *           ["the earlier attempt's late success", "pi_earlier_attempt", "ch_earlier_attempt", 1, 1]
+	 *
+	 * @param string $label               Row label.
+	 * @param string $intent_id           Intent whose success is delivered.
+	 * @param string $charge_id           Its charge.
+	 * @param int    $deliveries          How many times the event is delivered.
+	 * @param int    $other_charge_notes  Other-charge notes expected.
+	 */
+	public function test_payment_success_after_a_status_change_capture_replaced_another_attempt( string $label, string $intent_id, string $charge_id, int $deliveries, int $other_charge_notes ): void {
+		unset( $label );
+		$order = $this->capture_by_status_change( StoredPaymentRecords::authorization_with_another_attempts_transaction_id( 'pi_earlier_attempt', self::RECORDED_INTENT, 'requires_capture', OrderStatus::ON_HOLD, self::RECORDED_CHARGE ) );
+		$event = $this->recorded_payment_success_event( $order, $intent_id, $charge_id );
+
+		for ( $i = 0; $i < $deliveries; $i++ ) {
+			wc_get_container()->get( EventIngestor::class )->process( $event );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( $other_charge_notes, $this->count_notes_containing( $order, 'does not pay this order' ) );
+		$this->assertSame( 1, $this->count_notes_containing( $order, 'was <strong>successfully captured</strong>' ), 'The capture note only.' );
+		$this->assertSame( 0, $this->count_notes_containing( $order, 'was <strong>successfully charged</strong>' ), 'No success note.' );
+		$this->assertSame( self::RECORDED_INTENT, $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( self::RECORDED_CHARGE, $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( self::RECORDED_INTENT, $order->get_transaction_id() );
+		$this->assertSame( OrderStatus::COMPLETED, $order->get_status() );
+	}
+
+	/**
+	 * @testdox After a status change to Completed replaced another attempt's transaction ID, the authorizations list refuses to capture that attempt, before any platform request.
+	 *
+	 * The list acts only on the intent the transaction ID names, which is the captured payment.
+	 */
+	public function test_authorizations_list_refuses_to_capture_an_earlier_attempt_after_a_status_change_capture(): void {
+		$order      = $this->capture_by_status_change( StoredPaymentRecords::authorization_with_another_attempts_transaction_id( 'pi_earlier_attempt', self::RECORDED_INTENT, 'requires_capture', OrderStatus::ON_HOLD, self::RECORDED_CHARGE ) );
+		$api_client = $this->createMock( Client::class );
+		$api_client->expects( $this->never() )->method( $this->anything() );
+		$processing = $this->createMock( PaymentProcessingService::class );
+		$processing->expects( $this->never() )->method( $this->anything() );
+		$controller = new WooPaymentsAuthorizationsRestController();
+		$controller->init( $api_client, $processing, new WooPaymentsProvider() );
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_authorization' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_earlier_attempt' );
+
+		$response = $controller->capture_authorization( $request );
+
+		$this->assertInstanceOf( \WP_Error::class, $response );
+		$this->assertSame( 'wcpay_intent_order_mismatch', $response->get_error_code() );
+		$this->assertSame( 409, $response->get_error_data()['status'] );
+	}
+
+	/**
+	 * Capture the recorded authorization by changing the order to Completed, then put the store in test mode, the mode the
+	 * recorded events were delivered in.
+	 *
+	 * @param WC_Order $order Authorized order on the recorded intent.
+	 * @return WC_Order The order read again after the capture.
+	 */
+	private function capture_by_status_change( WC_Order $order ): WC_Order {
+		$transport = $this->create_operation_transport( PaymentProcessingService::OPERATION_CAPTURE );
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $this->create_platform( null, null, new \ArrayObject() ) );
+		$this->sut->register();
+
+		$order->update_status( OrderStatus::COMPLETED );
+
+		$this->assertSame( array( $this->operation_path( PaymentProcessingService::OPERATION_CAPTURE ) ), $this->request_paths( $transport ) );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+
+		return wc_get_order( $order->get_id() );
+	}
+
+	/**
+	 * A charge.refunded event the platform forwarded (Fixtures/platform-charge-dispute-events.json), pointed at the order's
+	 * stored charge and intent, for a partial refund of the given amount.
+	 *
+	 * @param WC_Order $order         Order.
+	 * @param int      $refund_amount Refund amount in minor units.
+	 * @return array<string,mixed>
+	 */
+	private function recorded_partial_refund_event( WC_Order $order, int $refund_amount ): array {
+		$event  = RecordedPlatformEvents::body( 'platform-charge-dispute-events.json', 'card_charge_refunded_in_full' );
+		$charge = &$event['data']['object'];
+
+		$charge['id']                           = (string) $order->get_meta( '_charge_id', true );
+		$charge['payment_intent']               = (string) $order->get_meta( '_intent_id', true );
+		$charge['metadata']['order_id']         = (string) $order->get_id();
+		$charge['metadata']['order_key']        = $order->get_order_key();
+		$charge['amount_refunded']              = $refund_amount;
+		$charge['refunded']                     = false;
+		$charge['refunds']['data'][0]['charge'] = $charge['id'];
+		$charge['refunds']['data'][0]['amount'] = $refund_amount;
+		unset( $charge );
+
+		return $event;
+	}
+
+	/**
+	 * A payment_intent.succeeded event the platform forwarded (Fixtures/platform-payment-intent-events.json), for the given
+	 * manual-capture intent and its charge, whose metadata names the order.
+	 *
+	 * @param WC_Order $order     Order.
+	 * @param string   $intent_id Intent ID.
+	 * @param string   $charge_id Charge ID.
+	 * @return array<string,mixed>
+	 */
+	private function recorded_payment_success_event( WC_Order $order, string $intent_id, string $charge_id ): array {
+		$event  = RecordedPlatformEvents::body( 'platform-payment-intent-events.json', 'card_checkout_succeeded' );
+		$intent = &$event['data']['object'];
+
+		$event['id']                                    = 'evt_' . substr( $intent_id, 3 );
+		$intent['id']                                   = $intent_id;
+		$intent['capture_method']                       = 'manual';
+		$intent['latest_charge']                        = $charge_id;
+		$intent['charges']['data'][0]['id']             = $charge_id;
+		$intent['charges']['data'][0]['payment_intent'] = $intent_id;
+		$intent['metadata']['order_id']                 = (string) $order->get_id();
+		$intent['metadata']['order_key']                = $order->get_order_key();
+		unset( $intent );
+
+		return $event;
 	}
 
 	/**
@@ -2261,6 +2506,36 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$order->save();
 
 		return $order;
+	}
+
+	/**
+	 * Create a saved WooPayments order on the recorded manual-capture authorization, storing the given status, whose
+	 * transaction ID names that authorization, names nothing, or names another attempt.
+	 *
+	 * @param string $stored_txn    Transaction ID: the recorded intent, '' or another attempt's.
+	 * @param string $stored_status Intent status the order stores.
+	 * @param string $order_status  Status the order is saved with, before its status hook fires.
+	 * @return WC_Order
+	 */
+	private function create_recorded_authorization_order_storing( string $stored_txn, string $stored_status, string $order_status ): WC_Order {
+		$charge_id = 'requires_capture' === $stored_status ? self::RECORDED_CHARGE : '';
+		if ( self::RECORDED_INTENT === $stored_txn ) {
+			return $this->create_recorded_authorization_order( $stored_status, $order_status );
+		}
+
+		return '' === $stored_txn
+			? StoredPaymentRecords::authorization_without_transaction_id( self::RECORDED_INTENT, $stored_status, $order_status, $charge_id )
+			: StoredPaymentRecords::authorization_with_another_attempts_transaction_id( $stored_txn, self::RECORDED_INTENT, $stored_status, $order_status, $charge_id );
+	}
+
+	/**
+	 * The recorded contexts of the lines that name a transaction ID a completion replaced.
+	 *
+	 * @param RecordingWcLogger $logger Recording logger.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function replacement_lines( RecordingWcLogger $logger ): array {
+		return array_values( array_filter( $logger->contexts, static fn( array $context ): bool => 'completion_replaced_a_different_transaction_id' === ( $context['reason'] ?? '' ) ) );
 	}
 
 	/**

@@ -79,6 +79,60 @@ final class StoredPaymentRecords {
 	}
 
 	/**
+	 * An authorization whose order has no transaction ID: the stored intent names the attempt, with its status and charge.
+	 *
+	 * Written by a merchant who clears the Transaction ID field on the order screen and saves (WC_Meta_Box_Order_Data::save()),
+	 * or by a REST update that sends an empty transaction_id. Also written by the amount-mismatch refusal, which stores the
+	 * refused intent with requires_payment_method and no transaction ID (WooPaymentsOutcomeMetadataMapper::get_outcome_meta()),
+	 * when the merchant completes the order before that intent's authorization is recorded.
+	 *
+	 * @param string $intent_id     The attempt's intent, the stored intent.
+	 * @param string $stored_status The status stored for it.
+	 * @param string $order_status  Order status; a paid status gets a paid date.
+	 * @param string $charge_id     Its charge, or '' for none.
+	 * @return WC_Order
+	 */
+	public static function authorization_without_transaction_id( string $intent_id = 'pi_A', string $stored_status = 'requires_capture', string $order_status = OrderStatus::ON_HOLD, string $charge_id = 'ch_A' ): WC_Order {
+		return self::create_order(
+			$order_status,
+			'',
+			array(
+				'_intent_id'        => $intent_id,
+				'_intention_status' => $stored_status,
+				'_charge_id'        => $charge_id,
+			)
+		);
+	}
+
+	/**
+	 * An authorization whose transaction ID names another attempt: the stored intent names the authorized attempt, with its
+	 * status and charge, and the transaction ID an earlier attempt or a typed value.
+	 *
+	 * Written by the amount-mismatch refusal over an order whose transaction ID an earlier started attempt had set
+	 * (OrderPaymentLifecycleService fills an empty transaction ID on a started event), when the merchant completes the order
+	 * before the refused intent's authorization is recorded; or by a merchant who types another value into the Transaction ID
+	 * field and saves.
+	 *
+	 * @param string $transaction_id The earlier attempt's intent or the typed value.
+	 * @param string $intent_id      The authorized attempt's intent, the stored intent.
+	 * @param string $stored_status  The status stored for it.
+	 * @param string $order_status   Order status; a paid status gets a paid date.
+	 * @param string $charge_id      Its charge, or '' for none.
+	 * @return WC_Order
+	 */
+	public static function authorization_with_another_attempts_transaction_id( string $transaction_id = 'pi_earlier', string $intent_id = 'pi_A', string $stored_status = 'requires_capture', string $order_status = OrderStatus::ON_HOLD, string $charge_id = 'ch_A' ): WC_Order {
+		return self::create_order(
+			$order_status,
+			$transaction_id,
+			array(
+				'_intent_id'        => $intent_id,
+				'_intention_status' => $stored_status,
+				'_charge_id'        => $charge_id,
+			)
+		);
+	}
+
+	/**
 	 * An authorization's requires_capture status stored beside another attempt's intent and charge: the transaction ID
 	 * names the authorized payment, the stored intent another attempt.
 	 *
