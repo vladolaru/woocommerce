@@ -1097,7 +1097,7 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 			'5, subscription not held'            => array(
 				WooPaymentsOrderNoteService::INVOICE_NOTE_SUBSCRIPTION_NOT_HELD,
 				array( 'subscription_status' => 'cancelled' ) + $renewal,
-				'Stripe Billing collected renewal invoice <code>in_collected</code> for {amount} (WooPayments charge {charge}) while subscription {number} was Cancelled, and this order now records that payment. If the customer should not have been charged, refund the payment from this order. WooPayments has not confirmed that Stripe Billing stopped billing this subscription, so the customer may be charged again at a later renewal.',
+				'Stripe Billing collected renewal invoice <code>in_collected</code> for {amount} (WooPayments charge {charge}) while subscription {number} was Cancelled, and this order now records that payment. If the customer should not have been charged, refund the payment from this order. If Stripe Billing still bills this subscription, the customer may be charged again at a later renewal.',
 			),
 			'4u, payment not read'                => array(
 				WooPaymentsOrderNoteService::INVOICE_NOTE_PAYMENT_NOT_READ,

@@ -718,7 +718,7 @@ class WooPaymentsOrderNoteService {
 			case self::INVOICE_NOTE_SUBSCRIPTION_NOT_HELD:
 				$subscription_status = $facts['subscription_status'] ?? '';
 				/* translators: %1$s: Stripe Billing invoice ID, %2$s: amount the invoice collected, %3$s: WooPayments charge ID, %4$s: subscription number, %5$s: subscription status, such as "Cancelled", %6$s: transaction URL. */
-				$format = __( 'Stripe Billing collected renewal invoice <code>%1$s</code> for %2$s (WooPayments charge <a>%3$s</a>) while subscription #%4$s was %5$s, and this order now records that payment. If the customer should not have been charged, refund the payment from this order. WooPayments has not confirmed that Stripe Billing stopped billing this subscription, so the customer may be charged again at a later renewal.', 'woocommerce' );
+				$format = __( 'Stripe Billing collected renewal invoice <code>%1$s</code> for %2$s (WooPayments charge <a>%3$s</a>) while subscription #%4$s was %5$s, and this order now records that payment. If the customer should not have been charged, refund the payment from this order. If Stripe Billing still bills this subscription, the customer may be charged again at a later renewal.', 'woocommerce' );
 				return sprintf(
 					WooPaymentsHtmlUtils::escape_interpolated_html(
 						$format,

@@ -2495,7 +2495,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 
 		return 'Stripe Billing collected renewal invoice <code>' . self::RENEWAL_INVOICE_ID . '</code> for ' . wc_price( 24.9, array( 'currency' => 'USD' ) )
 			. ' (WooPayments charge <a href="' . esc_url( $charge_url ) . '" target="_blank" rel="noopener noreferrer">' . self::RENEWAL_CHARGE_ID . '</a>) while subscription #'
-			. $subscription->get_order_number() . ' was ' . $status_name . ', and this order now records that payment. If the customer should not have been charged, refund the payment from this order. WooPayments has not confirmed that Stripe Billing stopped billing this subscription, so the customer may be charged again at a later renewal.';
+			. $subscription->get_order_number() . ' was ' . $status_name . ', and this order now records that payment. If the customer should not have been charged, refund the payment from this order. If Stripe Billing still bills this subscription, the customer may be charged again at a later renewal.';
 	}
 
 	/**
