@@ -1026,8 +1026,9 @@ class ReconciliationJob implements RegisterHooksInterface {
 	 *
 	 * A deactivation that cannot be confirmed defers at the retry cadence, and the next attempt rolls back only if the lists
 	 * still hold the extension. The reading after the deactivation can lag on a database router that does not keep the
-	 * request on the primary; a second one 15 minutes later keeps a lagging read from rolling a switched store back to no
-	 * owner. Meanwhile an extension still listed keeps payments, and the token gives them to the built-in if it is not.
+	 * request on the primary; a second one a retry cadence step later (15 minutes in the first day, daily after) keeps a
+	 * lagging read from rolling a switched store back to no owner. Meanwhile an extension still listed keeps payments, and
+	 * the token gives them to the built-in if it is not.
 	 *
 	 * @param array<string,mixed> $claimed  Exact running state owned by this worker.
 	 * @param array<int,mixed>    $outcomes Informational outcomes accumulated during reconciliation.
@@ -1223,8 +1224,8 @@ class ReconciliationJob implements RegisterHooksInterface {
 	 * fence the claim, sync the setup tier and record the switch as done.
 	 *
 	 * Lists that hold the extension again defer the claim at the retry cadence; the next attempt rolls the switch back if they
-	 * still do. Two readings 15 minutes apart keep one lagging read, from a database replica behind the deactivation, from
-	 * rolling a switched store back to no owner. Meanwhile an extension really back takes payments, as the lists say, and
+	 * still do. Two readings a retry cadence step apart (15 minutes in the first day, daily after) keep one lagging read,
+	 * from a database replica behind the deactivation, from rolling a switched store back to no owner. Meanwhile an extension really back takes payments, as the lists say, and
 	 * the token keeps them with the built-in if the reading lagged.
 	 *
 	 * @param array<string,mixed> $claimed    Exact running state owned by this worker.
