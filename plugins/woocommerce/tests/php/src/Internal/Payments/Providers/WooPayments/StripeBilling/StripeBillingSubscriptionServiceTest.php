@@ -748,8 +748,7 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox A platform failure on $method does not stop the status change, writes an error line whatever the logging setting, and leaves a note on the subscription, without the suspension note.
-	 * @testWith ["cancel_subscription", "There was a problem canceling the subscription on WooPayments server.", "WooPayments could not cancel this subscription at Stripe"]
-	 *           ["handle_subscription_status_on_hold", "There was a problem updating the WooPayments subscription on server.", "WooPayments could not pause this subscription at Stripe"]
+	 * @testWith ["handle_subscription_status_on_hold", "There was a problem updating the WooPayments subscription on server.", "WooPayments could not pause this subscription at Stripe"]
 	 *           ["set_pending_cancel_for_subscription", "There was a problem updating the WooPayments subscription on server.", "WooPayments could not set this subscription to cancel at the end of its period at Stripe"]
 	 *           ["reactivate_subscription", "There was a problem updating the WooPayments subscription on server.", "WooPayments could not resume this subscription at Stripe"]
 	 *
@@ -934,6 +933,136 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( array( 'DELETE', '/sites/4/wcpay/subscriptions/' . self::MAIN_SUBSCRIPTION_ID . '?test_mode=1', null ) ), $this->get_requests() );
 		$this->assertFalse( $saved->meta_exists( '_wcpay_subscription_id' ) );
 		$this->assertSame( self::MAIN_SUBSCRIPTION_ID, $saved->get_meta( '_cancelled_wcpay_subscription_id', true ) );
+		$this->assertNull( $this->get_retry_cancel_delay( $subscription, 1 ), 'A confirmed cancel schedules no retry.' );
+	}
+
+	/**
+	 * @testdox A cancel that Stripe refuses after a $trigger keeps the Stripe ID and is retried at +1, +10 and +60 minutes: $_dataName.
+	 *
+	 * Each failed attempt writes the always-written line and nothing else; after the fourth the subscription gets the give-up
+	 * note once. A confirmed retry moves the ID as a first-time cancel does: off WooPayments it moves to the cancelled key,
+	 * on a cancelled subscription it stays, as today.
+	 *
+	 * @dataProvider provider_failed_cancels
+	 *
+	 * @param string $trigger          `payment method change` or `cancellation`.
+	 * @param int    $failures         Attempts Stripe refuses before it confirms, 4 for all of them.
+	 * @param string $expected_id_key  Meta key that holds the Stripe ID at the end.
+	 * @param int    $expected_give_up Give-up notes at the end.
+	 */
+	public function test_a_failed_cancel_keeps_the_stripe_id_and_is_retried( string $trigger, int $failures, string $expected_id_key, int $expected_give_up ): void {
+		$subscription = $this->create_subscription( array( '_wcpay_subscription_id' => self::MAIN_SUBSCRIPTION_ID ) );
+		$subscription->set_status( 'active' );
+		$subscription->save();
+		$attempts = min( $failures + 1, 4 );
+		for ( $attempt = 1; $attempt <= $attempts; $attempt++ ) {
+			if ( $attempt > 1 ) {
+				$this->queue_entry( $this->get_entry( 'get_subscription' ) );
+			}
+			if ( $attempt <= $failures ) {
+				$this->queue_platform_failure();
+			} else {
+				$this->queue_entry( $this->get_entry( 'cancel_subscription' ) );
+			}
+		}
+		$this->register_stripe_billing_module();
+		$logger = RecordingWcLogger::install();
+
+		if ( 'cancellation' === $trigger ) {
+			$subscription->update_status( 'cancelled' );
+		} else {
+			// WooCommerce Subscriptions saves the new payment method before it fires the hook (class-wc-subscriptions-change-payment-gateway.php:588-607).
+			$subscription->set_payment_method( 'stripe' );
+			$subscription->save();
+			do_action( 'woocommerce_subscription_payment_method_updated_from_woocommerce_payments', $subscription, 'stripe' );
+		}
+
+		$saved = wc_get_order( $subscription->get_id() );
+		$this->assertSame( self::MAIN_SUBSCRIPTION_ID, $saved->get_meta( '_wcpay_subscription_id', true ), 'The ID stays until Stripe confirms.' );
+		$this->assertFalse( $saved->meta_exists( '_cancelled_wcpay_subscription_id' ) );
+		$this->assertSame( array(), $this->get_notes_starting_with( $saved, 'WooPayments could not' ), 'The first failure leaves no note.' );
+
+		$delays = array(
+			1 => MINUTE_IN_SECONDS,
+			2 => 10 * MINUTE_IN_SECONDS,
+			3 => HOUR_IN_SECONDS,
+		);
+		for ( $retry = 1; $retry < $attempts; $retry++ ) {
+			$this->assertEqualsWithDelta( $delays[ $retry ], $this->get_retry_cancel_delay( $subscription, $retry ), 5, "Retry $retry runs on the webhook retry cadence." );
+			do_action( StripeBillingSubscriptionService::RETRY_CANCEL_ACTION, $subscription->get_id(), $retry );
+		}
+
+		$saved = wc_get_order( $subscription->get_id() );
+		$this->assertSame( self::MAIN_SUBSCRIPTION_ID, $saved->get_meta( $expected_id_key, true ) );
+		$moved = '_cancelled_wcpay_subscription_id' === $expected_id_key;
+		$this->assertSame( ! $moved, $saved->meta_exists( '_wcpay_subscription_id' ), 'Only a confirmed cancel off WooPayments moves the ID.' );
+		$this->assertSame( $moved, $saved->meta_exists( '_cancelled_wcpay_subscription_id' ) );
+		$this->assertNull( $this->get_retry_cancel_delay( $subscription, $attempts ), 'No retry follows the last attempt or a confirmed one.' );
+		$this->assertCount( $failures, array_keys( array_column( $logger->get_errors(), 1 ), 'There was a problem canceling the subscription on WooPayments server.', true ), 'One always-written line per failed attempt.' );
+		$this->assertSame(
+			$expected_give_up ? array( 'WooPayments could not cancel this subscription\'s Stripe billing (' . self::MAIN_SUBSCRIPTION_ID . ') after 4 attempts, so the customer may still be charged each period. Contact WooPayments support with this ID to stop it. Each charge it takes appears as a renewal order of this subscription, where you can refund it.' ) : array(),
+			$this->get_notes_starting_with( $saved, 'WooPayments could not' )
+		);
+		$this->assertSame( 1 + 2 * ( $attempts - 1 ), $this->http_client->request_count, 'Each retry reads the Stripe subscription, then cancels it.' );
+	}
+
+	/**
+	 * Failed cancels: what started them, how many attempts Stripe refuses, where the ID ends and the give-up notes.
+	 *
+	 * @return array<string,array{string,int,string,int}>
+	 */
+	public function provider_failed_cancels(): array {
+		return array(
+			'payment method change, refused once'       => array( 'payment method change', 1, '_cancelled_wcpay_subscription_id', 0 ),
+			'payment method change, refused four times' => array( 'payment method change', 4, '_wcpay_subscription_id', 1 ),
+			'cancellation, refused once'                => array( 'cancellation', 1, '_wcpay_subscription_id', 0 ),
+			'cancellation, refused four times'          => array( 'cancellation', 4, '_wcpay_subscription_id', 1 ),
+		);
+	}
+
+	/**
+	 * @testdox A cancel retry for a subscription back on WooPayments and $status drops: its Stripe subscription is wanted again.
+	 * @testWith ["active"]
+	 *           ["on-hold"]
+	 *
+	 * @param string $status Subscription status when the retry runs.
+	 */
+	public function test_a_cancel_retry_drops_for_a_subscription_back_on_woopayments( string $status ): void {
+		$subscription = $this->create_subscription( array( '_wcpay_subscription_id' => self::MAIN_SUBSCRIPTION_ID ) );
+		$subscription->set_status( $status );
+		$subscription->save();
+
+		$this->sut->handle_retry_cancel_subscription( $subscription->get_id(), 1 );
+
+		$this->assertSame( 0, $this->http_client->request_count );
+		$this->assertSame( self::MAIN_SUBSCRIPTION_ID, wc_get_order( $subscription->get_id() )->get_meta( '_wcpay_subscription_id', true ) );
+		$this->assertNull( $this->get_retry_cancel_delay( $subscription, 2 ) );
+	}
+
+	/**
+	 * @testdox A cancel retry that finds the Stripe subscription already canceled counts it as cancelled, without another cancel: $_dataName.
+	 * @testWith ["moved off WooPayments", "stripe", "active", "_cancelled_wcpay_subscription_id"]
+	 *           ["cancelled on WooPayments", "woocommerce_payments", "cancelled", "_wcpay_subscription_id"]
+	 *
+	 * @param string $name            Case name.
+	 * @param string $payment_method  Subscription payment method.
+	 * @param string $status          Subscription status.
+	 * @param string $expected_id_key Meta key that holds the Stripe ID afterwards.
+	 */
+	public function test_a_cancel_retry_counts_an_already_canceled_stripe_subscription( string $name, string $payment_method, string $status, string $expected_id_key ): void {
+		unset( $name );
+		$subscription = $this->create_subscription( array( '_wcpay_subscription_id' => self::MAIN_SUBSCRIPTION_ID ), 2, '49.80', 'USD', $payment_method );
+		$subscription->set_status( $status );
+		$subscription->save();
+		$entry                               = $this->get_entry( 'get_subscription' );
+		$entry['response']['body']['status'] = 'canceled';
+		$this->queue_entry( $entry );
+
+		$this->sut->handle_retry_cancel_subscription( $subscription->get_id(), 2 );
+
+		$this->assertSame( array( array( 'GET', '/sites/4/wcpay/subscriptions/' . self::MAIN_SUBSCRIPTION_ID . '?test_mode=1', null ) ), $this->get_requests() );
+		$this->assertSame( self::MAIN_SUBSCRIPTION_ID, wc_get_order( $subscription->get_id() )->get_meta( $expected_id_key, true ) );
+		$this->assertNull( $this->get_retry_cancel_delay( $subscription, 3 ) );
 	}
 
 	/**
@@ -1585,6 +1714,55 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 			static fn( array $request ) => array( $request['method'], $request['path'], null === $request['body'] ? null : json_decode( (string) $request['body'], true ) ),
 			$this->http_client->requests
 		);
+	}
+
+	/**
+	 * Queue a platform failure.
+	 */
+	private function queue_platform_failure(): void {
+		$this->http_client->responses[] = $this->make_response(
+			500,
+			array(
+				'code'    => 'wcpay_server_error',
+				'message' => 'Rec T63 platform failure',
+				'data'    => array( 'status' => 500 ),
+			)
+		);
+	}
+
+	/**
+	 * Get how long after now a subscription's pending cancel retry runs, or null when none is pending.
+	 *
+	 * @param WC_Order $subscription Subscription.
+	 * @param int      $retry        Retry number.
+	 * @return int|null
+	 */
+	private function get_retry_cancel_delay( WC_Order $subscription, int $retry ): ?int {
+		$actions = as_get_scheduled_actions(
+			array(
+				'hook'   => StripeBillingSubscriptionService::RETRY_CANCEL_ACTION,
+				'args'   => array(
+					'subscription_id' => $subscription->get_id(),
+					'retry'           => $retry,
+				),
+				'group'  => 'woocommerce_payments',
+				'status' => \ActionScheduler_Store::STATUS_PENDING,
+			)
+		);
+		$action  = reset( $actions );
+
+		return $action ? $action->get_schedule()->get_date()->getTimestamp() - time() : null;
+	}
+
+	/**
+	 * Get the notes of an order that start with a text.
+	 *
+	 * @param WC_Order $order Order or subscription.
+	 * @param string   $text  Start of the notes.
+	 * @return array<int,string>
+	 */
+	private function get_notes_starting_with( WC_Order $order, string $text ): array {
+		return array_values( array_filter( $this->get_order_note_texts( $order ), static fn( string $note ): bool => 0 === strpos( $note, $text ) ) );
 	}
 
 	/**

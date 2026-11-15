@@ -944,6 +944,38 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox After a failed cancel on a payment method change, Stripe's collection of the open invoice reaches the renewal the merchant marked paid another way, which only gets the other-charge note.
+	 *
+	 * The order-screen edit that marks a failed renewal paid with another method moves the subscription's payment method,
+	 * and the cancel fails. The subscription keeps its Stripe ID, so the paid invoice finds the renewal by its invoice ID.
+	 */
+	public function test_paid_invoice_after_a_failed_cancel_reaches_the_renewal_paid_another_way(): void {
+		$subscription = $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID, array(), 'on-hold' );
+		$renewal      = $this->create_unpaid_renewal_order( $subscription, '24.90' );
+		$renewal->set_payment_method( 'other' );
+		$renewal->set_status( 'processing' );
+		$renewal->set_date_paid( time() );
+		$renewal->save();
+		$subscription->set_payment_method( 'other' );
+		$subscription->set_status( 'active' );
+		$subscription->save();
+		$this->queue_platform_error();
+		$this->subscription_service->maybe_cancel_subscription( $subscription, 'other' );
+		$renewal = wc_get_order( $renewal->get_id() );
+		$before  = $this->get_payment_record( $renewal );
+		$this->queue_response( 200, $this->get_renewal_intent() );
+		$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
+
+		$this->sut->handle_event( $this->get_event( 'invoice_paid_renewal' ) );
+
+		$renewal = wc_get_order( $renewal->get_id() );
+		$this->assertCount( 1, $this->get_notes_containing( $renewal, 'after this order was already paid with another payment method, so the customer may have paid twice.' ) );
+		$this->assertSame( $before, $this->get_payment_record( $renewal ), 'The invoice\'s payment is not written over the other one.' );
+		$this->assertSame( 'processing', $renewal->get_status() );
+		$this->assertSame( self::CLOCK_SUBSCRIPTION_ID, wc_get_order( $subscription->get_id() )->get_meta( '_wcpay_subscription_id', true ) );
+	}
+
+	/**
 	 * @testdox A paid invoice for a renewal that already records the invoice's payment, or names no payment intent, adds no invoice note: $_dataName.
 	 *
 	 * @testWith ["the invoice's intent", "pi_3UM1YABzWlxcwgpP0GYqv6LC", true]
@@ -2039,21 +2071,42 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An upcoming invoice for a subscription moved off WooPayments that still holds its Stripe ID cancels it again and leaves its schedule alone.
+	 * @testdox An upcoming invoice for a subscription moved off WooPayments that still holds its Stripe ID cancels it again and leaves its schedule alone; the cancel $answer.
+	 * @testWith ["succeeds", "_cancelled_wcpay_subscription_id", false]
+	 *           ["fails", "_wcpay_subscription_id", true]
+	 *
+	 * @param string $answer          How the cancel ends.
+	 * @param string $expected_id_key Meta key that holds the Stripe ID afterwards.
+	 * @param bool   $expected_retry  Whether a cancel retry is scheduled.
 	 */
-	public function test_upcoming_invoice_for_a_subscription_moved_off_woopayments_cancels_it_again(): void {
+	public function test_upcoming_invoice_for_a_subscription_moved_off_woopayments_cancels_it_again( string $answer, string $expected_id_key, bool $expected_retry ): void {
 		$subscription = $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID, array( '_schedule_next_payment' => '2026-10-30 00:00:00' ) );
 		$subscription->set_payment_method( 'stripe' );
 		$subscription->save();
-		$this->queue_billing( 'cancel_subscription' );
+		if ( 'succeeds' === $answer ) {
+			$this->queue_billing( 'cancel_subscription' );
+		} else {
+			$this->queue_platform_error();
+		}
 
 		$this->sut->handle_event( $this->get_event( 'invoice_upcoming' ) );
 
 		$this->assertSame( array( array( 'DELETE', '/sites/4/wcpay/subscriptions/' . self::CLOCK_SUBSCRIPTION_ID . '?test_mode=1', null ) ), $this->get_requests(), 'No read of the Stripe subscription and no item repair.' );
 		$subscription = wc_get_order( $subscription->get_id() );
-		$this->assertSame( self::CLOCK_SUBSCRIPTION_ID, $subscription->get_meta( '_cancelled_wcpay_subscription_id', true ) );
+		$this->assertSame( self::CLOCK_SUBSCRIPTION_ID, $subscription->get_meta( $expected_id_key, true ) );
 		$this->assertSame( '2026-10-30 00:00:00', $subscription->get_meta( '_schedule_next_payment', true ), 'Stripe\'s period end is not written onto the other payment method\'s schedule.' );
 		$this->assertSame( array(), $this->get_notes_containing( $subscription, 'Next automatic payment scheduled for' ) );
+		$this->assertSame(
+			$expected_retry,
+			as_has_scheduled_action(
+				StripeBillingSubscriptionService::RETRY_CANCEL_ACTION,
+				array(
+					'subscription_id' => $subscription->get_id(),
+					'retry'           => 1,
+				),
+				'woocommerce_payments'
+			)
+		);
 	}
 
 	/**

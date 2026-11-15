@@ -341,6 +341,7 @@ class StripeBillingModule implements RegisterHooksInterface {
 		$this->attach( 'woocommerce_admin_order_data_after_billing_address', StripeBillingSubscriptionService::class, 'show_wcpay_subscription_id' );
 		$this->attach( 'admin_notices', StripeBillingPluginsScreenNotice::class, 'maybe_show_notice' );
 		$this->attach( 'woocommerce_subscription_payment_method_updated_from_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID, StripeBillingSubscriptionService::class, 'maybe_cancel_subscription', 10, 2 );
+		$this->attach( StripeBillingSubscriptionService::RETRY_CANCEL_ACTION, StripeBillingSubscriptionService::class, 'handle_retry_cancel_subscription', 10, 2 );
 		// Client 11.1.0 sets this context before the filter runs (src/Internal/Service/OrderService.php:121, :133), so it
 		// goes first here.
 		$this->attach( 'wcpay_metadata_from_order', StripeBillingSubscriptionService::class, 'set_stripe_billing_payment_context', 0, 2 );

@@ -11,6 +11,8 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
@@ -55,6 +57,11 @@ class StripeBillingSubscriptionService {
 	 * Subscription meta holding the Stripe discount IDs.
 	 */
 	public const SUBSCRIPTION_DISCOUNT_IDS_META_KEY = '_wcpay_subscription_discount_ids';
+
+	/**
+	 * Action Scheduler hook of the job that retries a failed cancel of a Stripe subscription.
+	 */
+	public const RETRY_CANCEL_ACTION = 'woocommerce_woopayments_retry_stripe_billing_cancel';
 
 	/**
 	 * The only features a Stripe-billed subscription supports.
@@ -543,27 +550,52 @@ class StripeBillingSubscriptionService {
 	/**
 	 * Cancel the Stripe subscription of a subscription that was cancelled or expired.
 	 *
+	 * A failed cancel is retried by a job on the webhook retry cadence (handle_retry_cancel_subscription()).
+	 *
 	 * @internal
 	 *
 	 * @param mixed $subscription Subscription.
+	 * @return bool Whether Stripe confirmed the cancel; false when it failed or there is no Stripe subscription.
 	 */
-	public function cancel_subscription( $subscription ): void {
+	public function cancel_subscription( $subscription ): bool {
+		if ( ! $subscription instanceof WC_Order ) {
+			return false;
+		}
+
+		return $this->cancel_stripe_subscription( $subscription, 0 );
+	}
+
+	/**
+	 * Retry a failed cancel of a subscription's Stripe subscription, while the subscription still holds the Stripe ID and
+	 * still wants the cancel: it is on another payment method, or WooCommerce Subscriptions counts its status as ended.
+	 *
+	 * A Stripe subscription already canceled counts as cancelled. A subscription off WooPayments then moves its Stripe ID
+	 * to `_cancelled_wcpay_subscription_id`, as maybe_cancel_subscription() does.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $subscription_id Subscription ID.
+	 * @param mixed $retry           Number of this retry, from 1.
+	 */
+	public function handle_retry_cancel_subscription( $subscription_id, $retry ): void {
+		if ( SubscriptionMethodPolicy::is_duplicate_site() || ! function_exists( 'wcs_get_subscription' ) ) {
+			return;
+		}
+
+		$subscription = wcs_get_subscription( absint( $subscription_id ) );
 		if ( ! $subscription instanceof WC_Order ) {
 			return;
 		}
 
 		$wcpay_subscription_id = $this->get_wcpay_subscription_id( $subscription );
-		if ( ! $wcpay_subscription_id ) {
+		if ( ! $wcpay_subscription_id || ! $this->wants_stripe_subscription_cancelled( $subscription ) ) {
 			return;
 		}
 
-		try {
-			$this->api->cancel_subscription( $wcpay_subscription_id );
-		} catch ( ApiException $exception ) {
-			// Client 11.1.0 logs this only when WooPayments logging is on (class-wc-payments-subscription-service.php:525-529); a
-			// cancellation that did not reach Stripe keeps billing, so this line is always written and the merchant gets a note.
-			$this->logger->log_throwable_always( 'There was a problem canceling the subscription on WooPayments server.', $exception, array( 'subscription_id' => $subscription->get_id() ) );
-			$subscription->add_order_note( __( 'WooPayments could not cancel this subscription at Stripe, so Stripe may keep billing it. Check the subscription in your WooPayments dashboard.', 'woocommerce' ) );
+		$wcpay_subscription = $this->get_wcpay_subscription( $subscription );
+		$cancelled          = 'canceled' === ( $wcpay_subscription['status'] ?? '' ) || $this->cancel_stripe_subscription( $subscription, absint( $retry ) );
+		if ( $cancelled && WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $subscription->get_payment_method() ) {
+			$this->move_wcpay_subscription_id_to_cancelled( $subscription, $wcpay_subscription_id );
 		}
 	}
 
@@ -913,7 +945,8 @@ class StripeBillingSubscriptionService {
 	}
 
 	/**
-	 * Cancel the Stripe subscription of a subscription moved off WooPayments, keeping its ID under `_cancelled_wcpay_subscription_id`.
+	 * Cancel the Stripe subscription of a subscription moved off WooPayments. Once Stripe confirms, the ID moves to
+	 * `_cancelled_wcpay_subscription_id`; until then the subscription keeps it, so its invoice events still find it.
 	 *
 	 * @internal
 	 *
@@ -930,8 +963,86 @@ class StripeBillingSubscriptionService {
 			return;
 		}
 
-		$this->cancel_subscription( $subscription );
+		if ( $this->cancel_subscription( $subscription ) ) {
+			$this->move_wcpay_subscription_id_to_cancelled( $subscription, $wcpay_subscription_id );
+		}
+	}
 
+	/**
+	 * Cancel a subscription's Stripe subscription. A failure writes the always-written line and schedules the next retry
+	 * on the webhook retry cadence; after the last one the merchant gets a note saying what to do.
+	 *
+	 * @param WC_Order $subscription Subscription.
+	 * @param int      $retry        Which retry this is, 0 for the first attempt.
+	 * @return bool Whether Stripe confirmed the cancel.
+	 */
+	private function cancel_stripe_subscription( WC_Order $subscription, int $retry ): bool {
+		$wcpay_subscription_id = $this->get_wcpay_subscription_id( $subscription );
+		if ( ! $wcpay_subscription_id ) {
+			return false;
+		}
+
+		try {
+			$this->api->cancel_subscription( $wcpay_subscription_id );
+			return true;
+		} catch ( ApiException $exception ) {
+			// Client 11.1.0 logs this only when WooPayments logging is on (class-wc-payments-subscription-service.php:525-529); a
+			// cancellation that did not reach Stripe keeps billing, so this line is always written, once per attempt.
+			$this->logger->log_throwable_always(
+				'There was a problem canceling the subscription on WooPayments server.',
+				$exception,
+				array(
+					'subscription_id' => $subscription->get_id(),
+					'attempt'         => $retry + 1,
+				)
+			);
+		}
+
+		$delays = WebhookReliabilityService::RETRY_DELAYS_SECONDS;
+		if ( isset( $delays[ $retry ] ) ) {
+			wc_get_container()->get( WooPaymentsActionSchedulerService::class )->schedule_job(
+				self::RETRY_CANCEL_ACTION,
+				array(
+					'subscription_id' => $subscription->get_id(),
+					'retry'           => $retry + 1,
+				),
+				time() + $delays[ $retry ]
+			);
+
+			return false;
+		}
+
+		$subscription->add_order_note(
+			sprintf(
+				/* translators: %1$s: Stripe subscription ID, %2$d: number of attempts. */
+				__( 'WooPayments could not cancel this subscription\'s Stripe billing (%1$s) after %2$d attempts, so the customer may still be charged each period. Contact WooPayments support with this ID to stop it. Each charge it takes appears as a renewal order of this subscription, where you can refund it.', 'woocommerce' ),
+				esc_html( $wcpay_subscription_id ),
+				$retry + 1
+			)
+		);
+
+		return false;
+	}
+
+	/**
+	 * Tell whether a subscription still wants its Stripe subscription cancelled, from what it is now: on another payment
+	 * method, or in a status WooCommerce Subscriptions counts as ended. One back on WooPayments and live keeps it.
+	 *
+	 * @param WC_Order $subscription Subscription, read when the retry runs.
+	 * @return bool
+	 */
+	private function wants_stripe_subscription_cancelled( WC_Order $subscription ): bool {
+		return WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $subscription->get_payment_method()
+			|| ( function_exists( 'wcs_get_subscription_ended_statuses' ) && $subscription->has_status( wcs_get_subscription_ended_statuses() ) );
+	}
+
+	/**
+	 * Move a subscription's Stripe ID to `_cancelled_wcpay_subscription_id`, once Stripe cancelled its subscription.
+	 *
+	 * @param WC_Order $subscription          Subscription.
+	 * @param string   $wcpay_subscription_id Stripe subscription ID.
+	 */
+	private function move_wcpay_subscription_id_to_cancelled( WC_Order $subscription, string $wcpay_subscription_id ): void {
 		$subscription->update_meta_data( '_cancelled' . self::SUBSCRIPTION_ID_META_KEY, $wcpay_subscription_id );
 		$subscription->delete_meta_data( self::SUBSCRIPTION_ID_META_KEY );
 		$subscription->save();
