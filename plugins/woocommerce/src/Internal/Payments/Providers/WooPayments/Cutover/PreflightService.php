@@ -409,7 +409,8 @@ class PreflightService {
 	 * without the plugins hidden in that request and so deactivate them for the whole store. For this one call each read of
 	 * active_plugins queries the current blog's stored row. Every read that works gives that row, unless a read filter that
 	 * runs after this one replaces the answer. WordPress's write is not atomic against a nested plugin change: it writes the
-	 * list it read before its hooks ran. When a read fails, WordPress answers as if this filter were not there.
+	 * list it read before its hooks ran. When a read fails, or arrives while this filter's own query runs, WordPress answers
+	 * as if this filter were not there.
 	 *
 	 * An extension that is not active counts as deactivated: a retry after a crash that followed a successful deactivation
 	 * finds nothing to deactivate. An extension active for every site stays active, and this reports false. So does a stored
@@ -439,8 +440,20 @@ class PreflightService {
 		// from it skips every option_active_plugins callback. Write-side filters stay, so a tool that guards its own writes still does.
 		// Each read queries the stored row of the blog current at that moment, before and after WordPress's write alike.
 		// A read that fails returns the value this filter was given, so WordPress answers as it would without the filter.
+		// A listener on the database's query filter that reads plugin activity would re-enter this callback from inside its
+		// query, without end. The flag only marks that query as running; a read that arrives meanwhile gets the value it was given.
 		$stored_view = function ( $pre, $option ) {
-			return 'active_plugins' === $option ? ( $this->read_stored_site_plugins() ?? $pre ) : $pre;
+			static $querying = false;
+			if ( 'active_plugins' !== $option || $querying ) {
+				return $pre;
+			}
+			$querying = true;
+			try {
+				$stored = $this->read_stored_site_plugins();
+			} finally {
+				$querying = false;
+			}
+			return $stored ?? $pre;
 		};
 		add_filter( 'pre_option', $stored_view, PHP_INT_MAX, 2 );
 		try {

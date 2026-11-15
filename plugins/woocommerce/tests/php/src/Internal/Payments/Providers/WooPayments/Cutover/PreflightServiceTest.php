@@ -719,6 +719,111 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Plain WordPress answers this read from its cache, so the listener's own read runs no query. Inside the call each read
+	 * of the list is a query, which runs the listener again. The listener stops reading past a small depth, so a missing
+	 * guard fails this row instead of hanging the suite.
+	 *
+	 * @testdox A listener on the database's query filter that reads plugin activity during the deactivation does not re-enter it without end.
+	 * @group multisite
+	 */
+	public function test_a_query_listener_that_reads_plugin_activity_does_not_recurse(): void {
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, 'hello-dolly/hello.php' ) );
+		$network_plugins = array( 'network-plugin/network-plugin.php' => 1 );
+		if ( is_multisite() ) {
+			update_site_option( 'active_sitewide_plugins', $network_plugins );
+		}
+		$sut      = $this->create_sut();
+		$depth    = 0;
+		$deepest  = 0;
+		$listener = static function ( $query ) use ( &$depth, &$deepest ) {
+			if ( $depth >= 5 ) {
+				$deepest = $depth + 1;
+				return $query;
+			}
+			++$depth;
+			$deepest = max( $deepest, $depth );
+			try {
+				is_plugin_active( 'hello-dolly/hello.php' );
+			} finally {
+				--$depth;
+			}
+			return $query;
+		};
+		add_filter( 'query', $listener );
+
+		$result = $sut->deactivate_woopayments_plugin();
+		remove_filter( 'query', $listener );
+
+		// A read under one of WordPress's own queries runs the switch's query once more; the read under that query runs none.
+		$this->assertSame( 2, $deepest, 'The listener ran at most one level inside itself.' );
+		$this->assertTrue( $result );
+		$this->assertSame( array( 1 => 'hello-dolly/hello.php' ), $this->read_stored_active_plugins() );
+		if ( is_multisite() ) {
+			global $wpdb;
+			$stored_network = $wpdb->get_var( $wpdb->prepare( "SELECT meta_value FROM {$wpdb->sitemeta} WHERE site_id = %d AND meta_key = 'active_sitewide_plugins'", get_current_network_id() ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- The stored row is what the row checks.
+			$this->assertSame( $network_plugins, maybe_unserialize( (string) $stored_network ) );
+		}
+		$this->assertSame( array(), $GLOBALS['wp_filter']['pre_option']->callbacks[ PHP_INT_MAX ] ?? array(), 'No callback is left on the generic pre_option filter.' );
+	}
+
+	/**
+	 * A plugin load manager's read filter hides hello-dolly, so WordPress's own answer differs from the stored row. A listener
+	 * that throws out of the switch's query leaves the next read to query the stored row again.
+	 *
+	 * @dataProvider nested_read_provider
+	 * @testdox A read of the plugin list made while the deactivation's own query runs gets WordPress's answer, and the read around it gets the stored list: $_dataName.
+	 *
+	 * @param bool $listener_throws Whether the query listener throws after its read.
+	 */
+	public function test_a_read_during_the_deactivation_query_gets_the_wordpress_answer( bool $listener_throws ): void {
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, 'hello-dolly/hello.php' ) );
+		add_filter( 'option_active_plugins', static fn( $plugins ) => array_values( array_diff( (array) $plugins, array( 'hello-dolly/hello.php' ) ) ) );
+		$sut    = $this->create_sut();
+		$armed  = false;
+		$nested = null;
+		add_filter(
+			'query',
+			static function ( $query ) use ( &$armed, &$nested, $listener_throws ) {
+				if ( $armed && is_string( $query ) && false !== strpos( $query, "SELECT option_value FROM {$GLOBALS['wpdb']->options} WHERE option_name = 'active_plugins' LIMIT 1" ) ) {
+					$armed  = false;
+					$nested = get_option( 'active_plugins' );
+					if ( $listener_throws ) {
+						throw new \RuntimeException( 'Query listener failure.' );
+					}
+				}
+				return $query;
+			}
+		);
+		$outer = null;
+		add_action(
+			'deactivate_plugin',
+			static function () use ( &$armed, &$outer ): void {
+				$armed = true;
+				try {
+					$outer = get_option( 'active_plugins' );
+				} catch ( \RuntimeException $e ) {
+					$outer = get_option( 'active_plugins' );
+				}
+			}
+		);
+
+		$this->assertTrue( $sut->deactivate_woopayments_plugin() );
+		$this->assertSame( array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ), $nested, "The nested read gets WordPress's own, filtered answer." );
+		$this->assertSame( array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, 'hello-dolly/hello.php' ), $outer, 'The read around it gets the stored list.' );
+		$this->assertSame( array( 'hello-dolly/hello.php' ), array_values( (array) $this->read_stored_active_plugins() ) );
+	}
+
+	/**
+	 * @return array<string,array{bool}>
+	 */
+	public function nested_read_provider(): array {
+		return array(
+			'the listener returns'                     => array( false ),
+			'the listener throws and the read repeats' => array( true ),
+		);
+	}
+
+	/**
 	 * Each read queries the options table of the blog current at that moment.
 	 *
 	 * @testdox On a multisite, a plugin activated on another site by a listener inside the deactivation leaves both sites' stored lists exact.
