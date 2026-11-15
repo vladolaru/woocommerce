@@ -163,7 +163,7 @@ class DataMigration implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Run the data migration.
+	 * Run the data migration once per migration version: a store whose marker carries this version is left alone.
 	 *
 	 * @return array{changes:string[]}
 	 */
@@ -172,6 +172,30 @@ class DataMigration implements RegisterHooksInterface {
 			return array( 'changes' => array( 'already_normalized' ) );
 		}
 
+		return $this->migrate();
+	}
+
+	/**
+	 * Run the data migration for the switch, whatever the marker says.
+	 *
+	 * The extension may have run again since an earlier migration on this store, after a return to it or before a retried
+	 * attempt, and written its settings and options again. Each step checks before it writes, so a second run changes only
+	 * what the extension wrote since.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return array{changes:string[]}
+	 */
+	public function run_for_switch(): array {
+		return $this->migrate();
+	}
+
+	/**
+	 * Migrate the stored data and record the migration version.
+	 *
+	 * @return array{changes:string[]}
+	 */
+	private function migrate(): array {
 		$changes          = array();
 		$settings         = $this->get_gateway_settings();
 		$previous_version = $this->get_previous_version();

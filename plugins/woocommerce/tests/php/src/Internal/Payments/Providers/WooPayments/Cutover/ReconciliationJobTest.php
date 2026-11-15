@@ -405,7 +405,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			private int $run_count = 0;
 
 			/** @return array{changes:string[]} */
-			public function run(): array {
+			public function run_for_switch(): array {
 				++$this->run_count;
 				return array(
 					'changes' => array( 'no_changes' ),
@@ -605,7 +605,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** @return array{changes:string[]} */
-			public function run(): array {
+			public function run_for_switch(): array {
 				$this->busy = $this->store->acquire_write_lock( time() );
 				return array(
 					'changes' => array( 'no_changes' ),
@@ -854,7 +854,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** @return array{changes:string[]} */
-			public function run(): array {
+			public function run_for_switch(): array {
 				++$this->runs;
 				return array(
 					'changes' => array(),
@@ -1064,7 +1064,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** @return array{changes:string[]} */
-			public function run(): array {
+			public function run_for_switch(): array {
 				++$this->runs;
 				if ( is_callable( $this->during_run ) ) {
 					$during_run       = $this->during_run;
@@ -1203,7 +1203,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** @return array{changes:string[]} */
-			public function run(): array {
+			public function run_for_switch(): array {
 				if ( is_callable( $this->during_run ) ) {
 					$during_run       = $this->during_run;
 					$this->during_run = null;
@@ -1370,14 +1370,14 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			private array $changes;
 
 			/**
-			 * @param string[] $changes What run() reports.
+			 * @param string[] $changes What run_for_switch() reports.
 			 */
 			public function __construct( array $changes ) {
 				$this->changes = $changes;
 			}
 
 			/** @return array{changes:string[]} */
-			public function run(): array {
+			public function run_for_switch(): array {
 				return array(
 					'changes' => $this->changes,
 				);
@@ -1436,6 +1436,30 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			'on time'                             => array( 0, array(), 0 ),
 			'a day after the merchant started it' => array( DAY_IN_SECONDS + 1, array( 'no_changes' ), 1 ),
 		);
+	}
+
+	/**
+	 * A store that migrated once and went back to the extension can carry what the extension wrote since, so the marker
+	 * from the first migration must not skip the second.
+	 *
+	 * @testdox A switch on a store whose data was migrated before migrates again before the hand-over.
+	 */
+	public function test_a_switch_migrates_again_past_the_one_shot_marker(): void {
+		$this->arrange_extension_era_store();
+		update_option( 'woocommerce_woopayments_cutover_normalization_version', '4' );
+		update_option( '_wcpay_feature_upe', '1' );
+		$sut = $this->create_job( true, $this->create_plugin_deactivating_preflight(), null, true, wc_get_container()->get( DataMigration::class ) );
+		$this->assertTrue( $sut->enqueue( 'merchant' ) );
+		$pending = $this->state_store->get_record();
+		$this->assertIsArray( $pending );
+		$this->scheduler->cancel( $pending['generation'], 1 );
+
+		$sut->handle_reconcile( $pending['generation'], 1 );
+
+		$verification = $this->state_store->get_record();
+		$this->assertIsArray( $verification );
+		$this->assertSame( 'verify_builtin_ownership', $verification['current_step'] );
+		$this->assertFalse( get_option( '_wcpay_feature_upe' ), 'The retired option the extension wrote again is removed.' );
 	}
 
 	/**
@@ -2780,7 +2804,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	private function create_noop_normalization(): DataMigration {
 		return new class() extends DataMigration {
 			/** @return array{changes:string[]} */
-			public function run(): array {
+			public function run_for_switch(): array {
 				return array(
 					'changes' => array(),
 				);
@@ -4117,7 +4141,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** @return array{changes:string[]} */
-			public function run(): array {
+			public function run_for_switch(): array {
 				++$this->runs;
 				return array(
 					'changes' => array(),
@@ -4776,7 +4800,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		};
 		$normalization = new class() extends DataMigration {
 			/** @return array{changes:string[]} */
-			public function run(): array {
+			public function run_for_switch(): array {
 				return array(
 					'changes' => array(),
 				);
@@ -5812,7 +5836,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	private function create_state_writing_job( bool $extension_owns, PreflightService $preflight ): ReconciliationJob {
 		$normalization = new class() extends DataMigration {
 			/** @return array{changes:string[]} */
-			public function run(): array {
+			public function run_for_switch(): array {
 				return array(
 					'changes' => array( 'no_changes' ),
 				);
@@ -5916,7 +5940,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( PreflightService::class, $preflight_service );
 		$data_migration = $data_migration ?? new class() extends DataMigration {
 			/** Return a controlled persistence failure for tests that do not exercise finalization. */
-			public function run(): array {
+			public function run_for_switch(): array {
 				return array(
 					'changes' => array( 'settings_persistence_failed' ),
 				);

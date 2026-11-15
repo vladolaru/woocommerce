@@ -141,6 +141,35 @@ class DataMigrationTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * The extension can run again after a migration, on a return to it or before a retried attempt, and write again what
+	 * the migration removed. The switch migrates whatever the marker says; the per-request path keeps the marker.
+	 *
+	 * @testdox The switch's migration runs past the one-shot marker, removing what the extension wrote since, and a second run changes nothing.
+	 */
+	public function test_switch_migration_runs_again_past_the_marker_and_changes_nothing_twice(): void {
+		$this->seed_extension_options();
+		$this->create_runner()->run();
+		$this->assertSame( '4', get_option( self::MIGRATION_VERSION_OPTION ) );
+		update_option( '_wcpay_feature_upe', '1' );
+		set_transient( 'wcpay_upe_appearance', 'stale', HOUR_IN_SECONDS );
+
+		$this->assertSame( array( 'already_normalized' ), $this->create_runner()->run()['changes'] );
+		$this->assertSame( '1', get_option( '_wcpay_feature_upe' ), 'The per-request path keeps the one-shot marker.' );
+
+		$again = $this->create_runner()->run_for_switch();
+
+		$this->assertContains( 'deprecated_flags_and_options', $again['changes'] );
+		$this->assertContains( 'appearance_transients', $again['changes'] );
+		$this->assertFalse( get_option( '_wcpay_feature_upe' ) );
+		$this->assertFalse( get_transient( 'wcpay_upe_appearance' ) );
+		$settings = get_option( self::SETTINGS_OPTION );
+
+		$this->assertSame( array( 'no_changes' ), $this->create_runner()->run_for_switch()['changes'], 'Each step checks before it writes.' );
+		$this->assertSame( $settings, get_option( self::SETTINGS_OPTION ) );
+		$this->assertSame( '4', get_option( self::MIGRATION_VERSION_OPTION ) );
+	}
+
+	/**
 	 * @testdox Leaves the marker unset when a discontinued split gateway update fails and retries it.
 	 */
 	public function test_run_retries_discontinued_method_cleanup_after_split_gateway_write_failure(): void {

@@ -1076,7 +1076,9 @@ class ReconciliationJob implements RegisterHooksInterface {
 	/**
 	 * Run the data migration for a claim about to finalize.
 	 *
-	 * A migration that throws, or that could not persist the gateway settings, defers the claim.
+	 * It runs whatever the one-shot marker says: an earlier switch on this store, or this one before a retried attempt,
+	 * migrated once, and the extension may have written again since. A migration that throws, or that could not persist the
+	 * gateway settings, defers the claim.
 	 *
 	 * @param array<string,mixed> $claimed  Exact running state owned by this worker.
 	 * @param array<int,mixed>    $outcomes Informational outcomes accumulated during reconciliation.
@@ -1084,7 +1086,7 @@ class ReconciliationJob implements RegisterHooksInterface {
 	 */
 	private function migrate_data_for_claim( array $claimed, array $outcomes ): ?array {
 		try {
-			$result = $this->data_migration->run();
+			$result = $this->data_migration->run_for_switch();
 		} catch ( \Throwable $error ) {
 			$this->log_error( 'WooPayments cutover data migration failed.', array( 'error' => $error->getMessage() ) );
 			$this->defer( $claimed, array( self::CODE_DATA_MIGRATION_FAILED ), $outcomes );
