@@ -88,6 +88,32 @@ class WooPaymentsActionSchedulerService {
 	}
 
 	/**
+	 * Tell whether a job of the hook is pending or running with any of the given sets of arguments, each matched exactly.
+	 *
+	 * Before Action Scheduler initializes, nothing is found: schedule_job() then defers and dedupes by exact arguments.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param string                             $hook     Hook name.
+	 * @param array<int,array<int|string,mixed>> $args_set Argument sets, each compared whole.
+	 * @param string                             $group    Action Scheduler group. Defaults to the canonical group.
+	 * @return bool
+	 */
+	public function has_scheduled_job( string $hook, array $args_set, string $group = self::GROUP_ID ): bool {
+		if ( ! did_action( 'action_scheduler_init' ) ) {
+			return false;
+		}
+
+		foreach ( $args_set as $args ) {
+			if ( as_has_scheduled_action( $hook, $args, $group ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
 	 * Keep a job asked for before Action Scheduler initialized, and schedule it when it does.
 	 *
 	 * @param string                  $hook      Hook name.

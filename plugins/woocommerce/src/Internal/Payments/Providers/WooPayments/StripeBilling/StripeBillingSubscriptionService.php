@@ -585,7 +585,33 @@ class StripeBillingSubscriptionService {
 	}
 
 	/**
-	 * Retry a failed cancel of a subscription's Stripe subscription, while the subscription still holds the Stripe ID and
+	 * Ask the cancel job to cancel a subscription's Stripe subscription now, while the subscription holds the Stripe ID and
+	 * still wants the cancel, unless a cancel job for it is already pending or running at any attempt.
+	 *
+	 * @param WC_Order $subscription Subscription.
+	 */
+	public function request_stripe_subscription_cancel( WC_Order $subscription ): void {
+		if ( ! $this->get_wcpay_subscription_id( $subscription ) || ! $this->wants_stripe_subscription_cancelled( $subscription ) ) {
+			return;
+		}
+
+		$subscription_id = $subscription->get_id();
+		$jobs            = array_map(
+			static fn( int $retry ): array => array(
+				'subscription_id' => $subscription_id,
+				'retry'           => $retry,
+			),
+			range( 0, count( WebhookReliabilityService::RETRY_DELAYS_SECONDS ) )
+		);
+		if ( $this->scheduler->has_scheduled_job( self::RETRY_CANCEL_ACTION, $jobs ) ) {
+			return;
+		}
+
+		$this->scheduler->schedule_job( self::RETRY_CANCEL_ACTION, $jobs[0], time() );
+	}
+
+	/**
+	 * Cancel a subscription's Stripe subscription from the cancel job, while the subscription still holds the Stripe ID and
 	 * still wants the cancel: it is on another payment method, or WooCommerce Subscriptions counts its status as ended.
 	 *
 	 * A Stripe subscription already canceled, or one Stripe does not have in live mode, counts as cancelled. A subscription
@@ -594,7 +620,7 @@ class StripeBillingSubscriptionService {
 	 * @internal
 	 *
 	 * @param mixed $subscription_id Subscription ID.
-	 * @param mixed $retry           Number of this retry, from 1.
+	 * @param mixed $retry           Number of this attempt, from 0 for a first attempt asked for by request_stripe_subscription_cancel().
 	 */
 	public function handle_retry_cancel_subscription( $subscription_id, $retry ): void {
 		if ( SubscriptionMethodPolicy::is_duplicate_site() || ! function_exists( 'wcs_get_subscription' ) ) {

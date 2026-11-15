@@ -342,9 +342,32 @@ class StripeBillingModule implements RegisterHooksInterface {
 		$this->attach( 'admin_notices', StripeBillingPluginsScreenNotice::class, 'maybe_show_notice' );
 		$this->attach( 'woocommerce_subscription_payment_method_updated_from_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID, StripeBillingSubscriptionService::class, 'maybe_cancel_subscription', 10, 2 );
 		$this->attach( StripeBillingSubscriptionService::RETRY_CANCEL_ACTION, StripeBillingSubscriptionService::class, 'handle_retry_cancel_subscription', 10, 2 );
+		add_action( 'woocommerce_after_subscription_object_save', array( $this, 'handle_woocommerce_after_subscription_object_save' ) );
 		// Client 11.1.0 sets this context before the filter runs (src/Internal/Service/OrderService.php:121, :133), so it
 		// goes first here.
 		$this->attach( 'wcpay_metadata_from_order', StripeBillingSubscriptionService::class, 'set_stripe_billing_payment_context', 0, 2 );
+	}
+
+	/**
+	 * Ask for the Stripe subscription of a subscription saved off WooPayments to be cancelled, while it holds the Stripe ID.
+	 *
+	 * Reads only the payment method and meta already in memory until both say so, so a store whose subscriptions are not
+	 * billed by Stripe does nothing more on a save.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $subscription Subscription that was saved.
+	 */
+	public function handle_woocommerce_after_subscription_object_save( $subscription ): void {
+		if ( ! $subscription instanceof WC_Order || WooPaymentsPersistenceVocabulary::GATEWAY_ID === $subscription->get_payment_method() ) {
+			return;
+		}
+
+		if ( '' === (string) $subscription->get_meta( StripeBillingSubscriptionService::SUBSCRIPTION_ID_META_KEY, true ) ) {
+			return;
+		}
+
+		$this->get_subscription_service()->request_stripe_subscription_cancel( $subscription );
 	}
 
 	/**

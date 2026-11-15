@@ -17,6 +17,14 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\S
 class SubscriptionDouble extends \WC_Order {
 
 	/**
+	 * Object type, as WooCommerce Subscriptions 9.4.1 sets it (includes/core/class-wc-subscription.php:38): a save fires
+	 * `woocommerce_after_subscription_object_save`, not the order's hook.
+	 *
+	 * @var string
+	 */
+	protected $object_type = 'subscription';
+
+	/**
 	 * Tell whether the subscription renews manually.
 	 *
 	 * @return bool

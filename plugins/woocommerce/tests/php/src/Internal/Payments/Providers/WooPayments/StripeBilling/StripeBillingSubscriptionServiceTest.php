@@ -1192,6 +1192,241 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Saving a Stripe-billed subscription with the payment method $_dataName asks the cancel job for its first attempt, due now, and sends nothing to the platform.
+	 *
+	 * The edit screen, the REST writers and code all end in set_payment_method() and save(); none fires the updated-from hook.
+	 * Manual Renewal is an empty method (WooCommerce Subscriptions 9.4.1 class-wc-subscription.php:2531-2535).
+	 *
+	 * @testWith ["", "Manual Renewal"]
+	 *           ["manual", "the REST writers' manual"]
+	 *           ["stripe", "another gateway"]
+	 *           ["woocommerce_payments_klarna", "another WooPayments method"]
+	 *
+	 * @param string $payment_method Payment method saved.
+	 * @param string $name           Case name.
+	 */
+	public function test_a_save_off_woopayments_asks_for_the_stripe_cancel( string $payment_method, string $name ): void {
+		unset( $name );
+		$subscription = $this->create_subscription( array( '_wcpay_subscription_id' => self::MAIN_SUBSCRIPTION_ID ) );
+		$this->register_stripe_billing_module();
+
+		$subscription->set_payment_method( $payment_method );
+		$subscription->save();
+
+		$this->assertSame( 0, $this->http_client->request_count, 'No platform request inside the save.' );
+		$jobs = $this->get_pending_cancel_jobs( $subscription );
+		$this->assertSame( array( 0 ), array_keys( $jobs ), 'One job, for the first attempt.' );
+		$this->assertEqualsWithDelta( 0, $jobs[0], 5, 'Due now.' );
+		$this->assertSame( self::MAIN_SUBSCRIPTION_ID, wc_get_order( $subscription->get_id() )->get_meta( '_wcpay_subscription_id', true ), 'The ID stays until Stripe confirms.' );
+	}
+
+	/**
+	 * @testdox Saving a subscription $_dataName asks for nothing, and the subscription service is never resolved.
+	 *
+	 * The service is replaced by an object of another class, so resolving it fails the test: the save reads only the
+	 * payment method and meta in memory.
+	 *
+	 * @testWith ["on WooPayments with a Stripe ID", "woocommerce_payments", "sub_1"]
+	 *           ["on WooPayments without a Stripe ID", "woocommerce_payments", ""]
+	 *           ["on another gateway without a Stripe ID", "stripe", ""]
+	 *
+	 * @param string $name                  Case name.
+	 * @param string $payment_method        Payment method saved.
+	 * @param string $wcpay_subscription_id Stripe subscription ID it holds.
+	 */
+	public function test_a_save_that_is_not_off_stripe_billing_asks_nothing( string $name, string $payment_method, string $wcpay_subscription_id ): void {
+		unset( $name );
+		$subscription = $this->create_subscription( '' !== $wcpay_subscription_id ? array( '_wcpay_subscription_id' => $wcpay_subscription_id ) : array() );
+		$this->register_stripe_billing_module();
+		wc_get_container()->replace( StripeBillingSubscriptionService::class, new \stdClass() );
+
+		$subscription->set_payment_method( $payment_method );
+		$subscription->update_meta_data( '_billing_interval', '2' );
+		$subscription->save();
+
+		$this->assertSame( array(), $this->get_pending_cancel_jobs( $subscription ) );
+		$this->assertSame( 0, $this->http_client->request_count );
+	}
+
+	/**
+	 * @testdox Saving a Stripe-billed subscription still on WooPayments asks nothing when it is $_dataName: only the payment method counts on a save.
+	 *
+	 * A status cancel never moves the ID, so an ended status would ask on every later save. Subscriptions counts
+	 * pending-cancel as ended, which would end a Stripe subscription set to stop at period end. The manual flag with the
+	 * method still WooPayments is what a manual renewal paid with a saved card leaves, and Stripe bills that subscription.
+	 *
+	 * @testWith ["cancelled", "cancelled", false]
+	 *           ["expired", "expired", false]
+	 *           ["pending cancellation", "pending-cancel", false]
+	 *           ["active with the manual flag", "active", true]
+	 *
+	 * @param string $name      Case name.
+	 * @param string $status    Status saved.
+	 * @param bool   $is_manual Whether the manual flag is set.
+	 */
+	public function test_a_save_on_woopayments_asks_nothing_whatever_the_status_or_flag( string $name, string $status, bool $is_manual ): void {
+		unset( $name );
+		$subscription = $this->create_subscription( array( '_wcpay_subscription_id' => self::MAIN_SUBSCRIPTION_ID ) );
+		$this->register_stripe_billing_module();
+
+		$subscription->set_status( $status );
+		$subscription->set_requires_manual_renewal( $is_manual );
+		$subscription->save();
+
+		$this->assertSame( array(), $this->get_pending_cancel_jobs( $subscription ) );
+		$this->assertSame( 0, $this->http_client->request_count );
+	}
+
+	/**
+	 * @testdox Saving a subscription off WooPayments asks no second job while a cancel job at attempt $retry is $state.
+	 * @testWith [0, "pending"]
+	 *           [1, "pending"]
+	 *           [2, "pending"]
+	 *           [3, "pending"]
+	 *           [1, "running"]
+	 *
+	 * @param int    $retry Attempt of the existing job.
+	 * @param string $state `pending` or `running`.
+	 */
+	public function test_a_save_asks_nothing_while_a_cancel_job_is_pending_or_running( int $retry, string $state ): void {
+		$subscription = $this->create_subscription( array( '_wcpay_subscription_id' => self::MAIN_SUBSCRIPTION_ID ) );
+		$this->register_stripe_billing_module();
+		$action_id = as_schedule_single_action(
+			time() + HOUR_IN_SECONDS,
+			StripeBillingSubscriptionService::RETRY_CANCEL_ACTION,
+			array(
+				'subscription_id' => $subscription->get_id(),
+				'retry'           => $retry,
+			),
+			'woocommerce_payments'
+		);
+		if ( 'running' === $state ) {
+			\ActionScheduler::store()->log_execution( $action_id );
+		}
+
+		$subscription->set_payment_method( 'stripe' );
+		$subscription->save();
+
+		$this->assertSame( 'pending' === $state ? array( $retry ) : array(), array_keys( $this->get_pending_cancel_jobs( $subscription ) ), 'Only the existing job.' );
+	}
+
+	/**
+	 * @testdox Saving a subscription off WooPayments after its attempts gave up starts a new run at the first attempt.
+	 */
+	public function test_a_save_after_a_give_up_starts_a_new_run(): void {
+		$subscription = $this->create_subscription( array( '_wcpay_subscription_id' => self::MAIN_SUBSCRIPTION_ID ), 2, '49.80', 'USD', 'stripe' );
+		$this->register_stripe_billing_module();
+		$last_attempt = as_schedule_single_action(
+			time() - HOUR_IN_SECONDS,
+			StripeBillingSubscriptionService::RETRY_CANCEL_ACTION,
+			array(
+				'subscription_id' => $subscription->get_id(),
+				'retry'           => 3,
+			),
+			'woocommerce_payments'
+		);
+		\ActionScheduler::store()->mark_complete( $last_attempt );
+
+		$subscription->set_billing_email( 'renewed@example.com' );
+		$subscription->save();
+
+		$this->assertSame( array( 0 ), array_keys( $this->get_pending_cancel_jobs( $subscription ) ) );
+	}
+
+	/**
+	 * @testdox A save that fails in the data store asks for nothing: the ask runs after the write.
+	 */
+	public function test_a_failed_save_asks_for_nothing(): void {
+		$subscription = $this->create_subscription( array( '_wcpay_subscription_id' => self::MAIN_SUBSCRIPTION_ID ) );
+		$this->register_stripe_billing_module();
+		$fail = static function (): void {
+			throw new \Exception( 'Data store write failed.' );
+		};
+		add_action( 'woocommerce_update_order', $fail );
+
+		try {
+			$subscription->set_payment_method( 'stripe' );
+			$subscription->save();
+		} finally {
+			remove_action( 'woocommerce_update_order', $fail );
+		}
+
+		$this->assertNotNull( $subscription->get_last_save_error(), 'The save failed.' );
+		$this->assertSame( array(), $this->get_pending_cancel_jobs( $subscription ) );
+	}
+
+	/**
+	 * @testdox The first attempt of the cancel job $_dataName.
+	 *
+	 * It reads the Stripe subscription, then cancels it. A failure keeps the ID and asks for the second attempt on the
+	 * webhook retry cadence, so a run has four attempts.
+	 *
+	 * @testWith ["moves the ID once Stripe confirms", true]
+	 *           ["keeps the ID and asks for attempt 2 in a minute when Stripe refuses", false]
+	 *
+	 * @param string $name      Case name.
+	 * @param bool   $confirmed Whether Stripe confirms the cancel.
+	 */
+	public function test_the_first_cancel_attempt_of_the_job( string $name, bool $confirmed ): void {
+		unset( $name );
+		$subscription = $this->create_subscription( array( '_wcpay_subscription_id' => self::MAIN_SUBSCRIPTION_ID ), 2, '49.80', 'USD', 'stripe' );
+		$this->queue_entry( $this->get_entry( 'get_subscription' ) );
+		if ( $confirmed ) {
+			$this->queue_entry( $this->get_entry( 'cancel_subscription' ) );
+		} else {
+			$this->queue_platform_failure();
+		}
+
+		$this->sut->handle_retry_cancel_subscription( $subscription->get_id(), 0 );
+
+		$path = '/sites/4/wcpay/subscriptions/' . self::MAIN_SUBSCRIPTION_ID . '?test_mode=1';
+		$this->assertSame( array( array( 'GET', $path ), array( 'DELETE', $path ) ), array_map( static fn( array $request ): array => array_slice( $request, 0, 2 ), $this->get_requests() ) );
+		$saved = wc_get_order( $subscription->get_id() );
+		$this->assertSame( self::MAIN_SUBSCRIPTION_ID, $saved->get_meta( $confirmed ? '_cancelled_wcpay_subscription_id' : '_wcpay_subscription_id', true ) );
+		if ( $confirmed ) {
+			$this->assertNull( $this->get_retry_cancel_delay( $subscription, 1 ) );
+		} else {
+			$this->assertEqualsWithDelta( MINUTE_IN_SECONDS, $this->get_retry_cancel_delay( $subscription, 1 ), 5 );
+		}
+	}
+
+	/**
+	 * @testdox A failed customer payment method change and the save's own first attempt leave one second attempt pending.
+	 *
+	 * Subscriptions saves the new method (class-wc-subscriptions-change-payment-gateway.php:601), which asks the job for
+	 * its first attempt, then fires the updated-from hook (:607), whose inline cancel fails and asks for the second. The
+	 * job's own failed first attempt asks for the same second attempt, and the scheduler keeps the earlier one.
+	 */
+	public function test_a_failed_customer_change_and_its_first_job_leave_one_second_attempt(): void {
+		$subscription = $this->create_subscription( array( '_wcpay_subscription_id' => self::MAIN_SUBSCRIPTION_ID ) );
+		$this->register_stripe_billing_module();
+		$this->queue_platform_failure();
+		$this->queue_entry( $this->get_entry( 'get_subscription' ) );
+		$this->queue_platform_failure();
+
+		$subscription->set_payment_method( 'stripe' );
+		$subscription->save();
+		do_action( 'woocommerce_subscription_payment_method_updated_from_woocommerce_payments', $subscription, 'stripe' );
+		do_action( StripeBillingSubscriptionService::RETRY_CANCEL_ACTION, $subscription->get_id(), 0 );
+
+		$second = as_get_scheduled_actions(
+			array(
+				'hook'     => StripeBillingSubscriptionService::RETRY_CANCEL_ACTION,
+				'args'     => array(
+					'subscription_id' => $subscription->get_id(),
+					'retry'           => 1,
+				),
+				'group'    => 'woocommerce_payments',
+				'status'   => \ActionScheduler_Store::STATUS_PENDING,
+				'per_page' => -1,
+			),
+			'ids'
+		);
+		$this->assertCount( 1, $second );
+		$this->assertSame( 3, $this->http_client->request_count, 'The inline cancel, then the job\'s read and cancel.' );
+	}
+
+	/**
 	 * @testdox After a payment method change, the pending invoice is charged and, once paid, its failed renewal order is completed with the new token (client test_maybe_attempt_payment_for_subscription, `class-wc-payments-subscription-service.php:658-694`).
 	 *
 	 * Request from client `:670` with `charge_invoice()`'s default empty data (`class-wc-payments-api-client.php:1554-1567`).
@@ -1878,6 +2113,32 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 		$action  = reset( $actions );
 
 		return $action ? $action->get_schedule()->get_date()->getTimestamp() - time() : null;
+	}
+
+	/**
+	 * Get a subscription's pending cancel jobs: how long after now each runs, by attempt.
+	 *
+	 * @param WC_Order $subscription Subscription.
+	 * @return array<int,int>
+	 */
+	private function get_pending_cancel_jobs( WC_Order $subscription ): array {
+		$jobs = array();
+		foreach ( as_get_scheduled_actions(
+			array(
+				'hook'     => StripeBillingSubscriptionService::RETRY_CANCEL_ACTION,
+				'group'    => 'woocommerce_payments',
+				'status'   => \ActionScheduler_Store::STATUS_PENDING,
+				'per_page' => -1,
+			)
+		) as $action ) {
+			$args = $action->get_args();
+			if ( $subscription->get_id() === ( $args['subscription_id'] ?? null ) ) {
+				$jobs[ (int) $args['retry'] ] = $action->get_schedule()->get_date()->getTimestamp() - time();
+			}
+		}
+		ksort( $jobs );
+
+		return $jobs;
 	}
 
 	/**
