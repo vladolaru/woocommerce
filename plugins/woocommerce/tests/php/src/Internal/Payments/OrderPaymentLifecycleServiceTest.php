@@ -741,38 +741,125 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A completed event that leaves the order status untouched writes its meta and note, and neither completes the payment nor holds the order: $label.
+	 * @testdox A completed event that leaves the order status untouched writes its meta and note, neither completes the payment nor holds the order, and records its payment as the transaction ID: $_dataName.
 	 *
 	 * Client 11.3.0's status-change capture records a capture on an order whose status the merchant just set, and does
-	 * not complete the payment (class-wc-payments-order-service.php:2381-2429).
+	 * not complete the payment (class-wc-payments-order-service.php:2381-2429); it writes no transaction ID. The built-in
+	 * one records the captured payment as the transaction ID: it fills an empty one, leaves an equal one, and replaces a
+	 * different one, a value typed into the order and not yet saved included, with one warning naming both. Core's PayPal
+	 * Standard also writes the transaction ID on its status-change capture (includes/gateways/paypal/class-wc-gateway-paypal.php:774).
+	 * The event is applied under the caller's lock, as the status-change capture applies it, so the order object is not
+	 * read again.
 	 *
-	 * @testWith ["on hold", "on-hold", false]
-	 *           ["completed", "completed", false]
-	 *           ["pending, with a hold", "pending", true]
+	 * @dataProvider completions_that_leave_the_order_status
 	 *
-	 * @param string $label  Row label.
-	 * @param string $status Order status before the event.
-	 * @param bool   $hold   Whether the event also asks to hold the order.
+	 * @param string      $status            Order status before the event.
+	 * @param bool        $hold              Whether the event also asks to hold the order.
+	 * @param string      $stored_txn        Transaction ID the order stores.
+	 * @param string      $unsaved_txn       Transaction ID set on the order object and not saved, or '' for none.
+	 * @param string|null $payment_reference The event's payment reference.
+	 * @param string      $expected_txn      Transaction ID stored after the event.
+	 * @param string|null $replaced          Transaction ID the warning names as replaced, or null when no warning.
 	 */
-	public function test_completed_event_that_leaves_the_order_status_records_the_payment_only( string $label, string $status, bool $hold ): void {
-		unset( $label );
+	public function test_completed_event_that_leaves_the_order_status_records_its_payment( string $status, bool $hold, string $stored_txn, string $unsaved_txn, ?string $payment_reference, string $expected_txn, ?string $replaced ): void {
 		$order = $this->create_woopayments_order();
 		$order->set_status( $status );
+		$order->set_transaction_id( $stored_txn );
 		$order->save();
+		if ( '' !== $unsaved_txn ) {
+			$order->set_transaction_id( $unsaved_txn );
+		}
 		$completions = did_action( 'woocommerce_pre_payment_complete' );
 
-		$this->apply_event(
+		$this->apply_event_under_lock(
 			$order,
-			new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, 'pi_recorded', array( '_intention_status' => 'succeeded' ), array(), 'Captured pi_recorded.', PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS, array(), true, $hold )
+			new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, $payment_reference, array( '_intention_status' => 'succeeded' ), array(), 'Captured pi_recorded.', PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS, array(), true, $hold )
 		);
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 0, did_action( 'woocommerce_pre_payment_complete' ) - $completions, 'The payment is not completed.' );
 		$this->assertSame( $status, $order->get_status() );
-		$this->assertSame( '', $order->get_transaction_id() );
+		$this->assertSame( $expected_txn, $order->get_transaction_id() );
 		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
 		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Captured pi_recorded.' ) );
+		$lines = $this->replacement_lines();
+		if ( null === $replaced ) {
+			$this->assertCount( 0, $lines, 'Nothing different was replaced, so no line is written.' );
+			return;
+		}
+		$this->assertCount( 1, $lines, 'One line names the replaced transaction ID.' );
+		$this->assertSame( 'warning', $lines[0]['level'] );
+		$this->assertSame( sprintf( 'Order #%1$d recorded a captured payment that keeps its status; its transaction ID %2$s was replaced with %3$s.', $order->get_id(), $replaced, $expected_txn ), $lines[0]['message'] );
+		$this->assertSame(
+			array(
+				'source'                  => 'order-payments',
+				'order_id'                => $order->get_id(),
+				'payment_reference'       => $expected_txn,
+				'replaced_transaction_id' => $replaced,
+				'reason'                  => 'completion_replaced_a_different_transaction_id',
+			),
+			$lines[0]['context']
+		);
+	}
+
+	/**
+	 * Completed events that keep the order status, by the transaction ID the order holds.
+	 *
+	 * @return array<string,array{string,bool,string,string,string|null,string,string|null}>
+	 */
+	public static function completions_that_leave_the_order_status(): array {
+		return array(
+			'on hold, no transaction ID'                  => array( 'on-hold', false, '', '', 'pi_recorded', 'pi_recorded', null ),
+			'completed, no transaction ID'                => array( 'completed', false, '', '', 'pi_recorded', 'pi_recorded', null ),
+			'pending, with a hold, no transaction ID'     => array( 'pending', true, '', '', 'pi_recorded', 'pi_recorded', null ),
+			'another attempt\'s transaction ID'           => array( 'on-hold', false, 'pi_earlier', '', 'pi_recorded', 'pi_recorded', 'pi_earlier' ),
+			'the same transaction ID'                     => array( 'on-hold', false, 'pi_recorded', '', 'pi_recorded', 'pi_recorded', null ),
+			'no payment reference'                        => array( 'on-hold', false, 'pi_earlier', '', null, 'pi_earlier', null ),
+			'a typed transaction ID the save has not run' => array( 'on-hold', false, '', 'manual-ref-123', 'pi_recorded', 'pi_recorded', 'manual-ref-123' ),
+		);
+	}
+
+	/**
+	 * @testdox An event that keeps the order status and is skipped, or fails, leaves no transaction ID on the order object or in the store: $label.
+	 *
+	 * A skipped event writes nothing, so a later save of the same object writes no transaction ID either; a failed event
+	 * that keeps the order status records no payment.
+	 *
+	 * @testWith ["its capture note is on the order", "completed", "success_note_exists"]
+	 *           ["an open dispute", "completed", "open_dispute"]
+	 *           ["a failure that keeps the status", "failed", ""]
+	 *
+	 * @param string $label        Row label.
+	 * @param string $event_status Lifecycle event status.
+	 * @param string $skip_reason  Reason the skip is logged with, or '' when the event is applied.
+	 */
+	public function test_event_that_leaves_the_order_status_and_records_no_payment_writes_no_transaction_id( string $label, string $event_status, string $skip_reason ): void {
+		unset( $label );
+		$order = $this->create_woopayments_order();
+		$order->set_status( 'on-hold' );
+		if ( 'success_note_exists' === $skip_reason ) {
+			$order->add_order_note( 'Captured pi_recorded.' );
+		}
+		if ( 'open_dispute' === $skip_reason ) {
+			$order->update_meta_data( $this->persistence_vocabulary->get_open_dispute_ids_meta_key(), array( 'dp_1' ) );
+		}
+		$order->save();
+
+		$event = PaymentLifecycleEvent::STATUS_FAILED === $event_status
+			? new PaymentLifecycleEvent( $event_status, 'pi_blocked', array( '_intention_status' => 'canceled' ), array(), 'Blocked pi_blocked.', 'payment_blocked', array(), true )
+			: new PaymentLifecycleEvent( $event_status, 'pi_recorded', array( '_intention_status' => 'succeeded' ), array(), 'Captured pi_recorded.', PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS, array(), true );
+
+		$this->apply_event_under_lock( $order, $event );
+
+		if ( '' !== $skip_reason ) {
+			$this->assertLogged( 'debug', 'event skipped', array( 'reason' => $skip_reason ) );
+		}
+		$this->assertArrayNotHasKey( 'transaction_id', $order->get_changes(), 'The event leaves no transaction ID change on the object.' );
+		$this->assertSame( '', wc_get_order( $order->get_id() )->get_transaction_id() );
+		$order->save();
+		$this->assertSame( '', wc_get_order( $order->get_id() )->get_transaction_id(), 'A later save of the same object writes none.' );
+		$this->assertSame( 'on-hold', wc_get_order( $order->get_id() )->get_status() );
 	}
 
 	/**
@@ -1572,6 +1659,15 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	 */
 	private function apply_event( WC_Order $order, PaymentLifecycleEvent $event, ?ProviderPersistenceVocabularyInterface $persistence_vocabulary = null ): void {
 		$this->sut->apply( $order, $event, $persistence_vocabulary ?? $this->persistence_vocabulary );
+	}
+
+	/**
+	 * The captured warnings that name a transaction ID a completion replaced.
+	 *
+	 * @return array<int,array{level:string,message:string,context:array}>
+	 */
+	private function replacement_lines(): array {
+		return array_values( array_filter( $this->captured_logs, static fn( array $log ): bool => 'completion_replaced_a_different_transaction_id' === ( $log['context']['reason'] ?? '' ) ) );
 	}
 
 	/**

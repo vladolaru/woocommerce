@@ -170,8 +170,11 @@ class PaymentOutcome {
 	 * fail the order: a payment refused before processing (for example by fraud
 	 * screening) leaves the status for the merchant to decide, and the checkout result
 	 * is still a failure for the shopper. A completed outcome neither completes the
-	 * payment nor holds the order: the payment is recorded on an order whose status
-	 * was already set. Outcomes of other statuses do not read the flag.
+	 * payment nor holds the order. It records the payment on an order whose status
+	 * was already set, and its payment ID becomes the order's transaction ID,
+	 * replacing a different one. A provider sets it on a completed outcome only for a
+	 * payment it has decided is the order's own. Outcomes of other statuses do not
+	 * read the flag.
 	 *
 	 * @var string
 	 */

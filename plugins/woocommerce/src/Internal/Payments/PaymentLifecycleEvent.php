@@ -328,8 +328,9 @@ class PaymentLifecycleEvent {
 	 *
 	 * The event's meta and note are still written. A failed or capture-expired event does not fail the order, for example
 	 * a payment refused before processing, whose status the merchant decides. A completed event neither completes the
-	 * payment nor holds the order, for example a payment recorded on an order whose status was already set. Other
-	 * statuses do not read the flag.
+	 * payment nor holds the order. It records the payment on an order whose status was already set, and its payment
+	 * reference becomes the order's transaction ID, replacing a different one. A provider sets it on a completed event
+	 * only for a payment it has decided is the order's own. Other statuses do not read the flag.
 	 *
 	 * @return bool
 	 */

@@ -352,6 +352,8 @@ class OrderPaymentLifecycleService {
 	/**
 	 * Apply the WooCommerce order status transition for a lifecycle event.
 	 *
+	 * A completed event that keeps the order status records its payment reference as the transaction ID.
+	 *
 	 * @param WC_Order              $order Order object.
 	 * @param PaymentLifecycleEvent $event Lifecycle event.
 	 * @return bool True when the transition saved the order.
@@ -360,6 +362,7 @@ class OrderPaymentLifecycleService {
 		switch ( $event->get_status() ) {
 			case PaymentLifecycleEvent::STATUS_COMPLETED:
 				if ( $event->should_preserve_order_status() ) {
+					$this->record_preserved_completion_payment( $order, $event );
 					return false;
 				}
 
@@ -395,6 +398,43 @@ class OrderPaymentLifecycleService {
 		}
 
 		return false;
+	}
+
+	/**
+	 * Record a completed payment on an order whose status the event keeps: its payment reference becomes the transaction ID.
+	 *
+	 * The event's producer decided the payment is the order's own, so a different transaction ID is replaced and logged
+	 * with both values; the log line is the only place a replaced value survives. The caller saves the order.
+	 *
+	 * @param WC_Order              $order Order object.
+	 * @param PaymentLifecycleEvent $event Completed event that keeps the order status.
+	 */
+	private function record_preserved_completion_payment( WC_Order $order, PaymentLifecycleEvent $event ): void {
+		$payment_reference = (string) $event->get_payment_reference();
+		$transaction_id    = (string) $order->get_transaction_id();
+		if ( '' === $payment_reference || $payment_reference === $transaction_id ) {
+			return;
+		}
+
+		if ( '' !== $transaction_id ) {
+			wc_get_logger()->warning(
+				sprintf(
+					'Order #%1$d recorded a captured payment that keeps its status; its transaction ID %2$s was replaced with %3$s.',
+					$order->get_id(),
+					$transaction_id,
+					$payment_reference
+				),
+				array(
+					'source'                  => 'order-payments',
+					'order_id'                => $order->get_id(),
+					'payment_reference'       => $payment_reference,
+					'replaced_transaction_id' => $transaction_id,
+					'reason'                  => 'completion_replaced_a_different_transaction_id',
+				)
+			);
+		}
+
+		$order->set_transaction_id( $payment_reference );
 	}
 
 	/**
