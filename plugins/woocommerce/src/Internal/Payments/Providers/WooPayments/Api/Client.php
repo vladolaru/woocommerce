@@ -405,13 +405,16 @@ class Client {
 	 * @param string              $customer_id   Customer ID.
 	 * @param array<string,mixed> $customer_data Customer update payload.
 	 * @return void
-	 * @throws ApiException When the customer ID is missing.
+	 * @throws ApiException When the customer ID is missing or invalid, or the request fails.
 	 */
 	public function update_customer( string $customer_id, array $customer_data = array() ): void {
 		if ( '' === trim( $customer_id ) ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
 			throw new ApiException( __( 'Customer ID is required.', 'woocommerce' ), 'wcpay_mandatory_customer_id_missing', 400 );
 		}
+
+		// Client 11.3.0 refuses a customer ID outside the word form the same way (wc-payment-api/class-wc-payments-api-client.php:1410-1416).
+		$this->validate_route_id( $customer_id, self::ROUTE_WORD_ID_PATTERN );
 
 		$this->request( $customer_data, 'customers/' . $customer_id, 'POST' );
 	}

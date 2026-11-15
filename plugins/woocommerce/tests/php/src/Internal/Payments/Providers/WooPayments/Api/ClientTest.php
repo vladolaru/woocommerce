@@ -3967,6 +3967,7 @@ class ClientTest extends WC_Unit_Test_Case {
 			'get_disputes_export_url'     => array( static fn( Client $sut ) => $sut->get_disputes_export_url( 'dpexp%2Ftest' ), $route ),
 			'get_document'                => array( static fn( Client $sut ) => $sut->get_document( '../vat_invoice-123' ), $route ),
 			'get_payouts_export_url'      => array( static fn( Client $sut ) => $sut->get_payouts_export_url( '../poexp_test' ), $route ),
+			'update_customer'             => array( static fn( Client $sut ) => $sut->update_customer( 'cus_Ab12-3' ), $route ),
 		);
 	}
 

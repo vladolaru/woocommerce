@@ -6,9 +6,11 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Order;
 use WC_Unit_Test_Case;
@@ -911,6 +913,45 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'cus_new', $sut->replace_missing_customer_for_order( $order, 'cus_old' ) );
 		$this->assertSame( 'cus_new', get_user_option( '_wcpay_customer_id_live', $user_id ) );
+	}
+
+	/**
+	 * @testdox A stored customer ID outside the word form is refused with no request, and nothing is recreated.
+	 *
+	 * Client 11.3.0's update_customer() refuses it before any request with the route validation error
+	 * (wc-payment-api/class-wc-payments-api-client.php:1410-1416), which is not resource_missing, so neither store takes
+	 * its recreate branch. The platform here answers every request that the customer is missing.
+	 */
+	public function test_update_on_a_stored_customer_id_outside_the_word_form_sends_nothing(): void {
+		$user_id = $this->factory->user->create( array( 'user_login' => 'stored-customer' ) );
+		$order   = $this->create_checkout_order( $user_id );
+		update_user_option( $user_id, '_wcpay_customer_id_live', 'cus_Ab12-3' );
+		$http_client           = new FakeHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => 404 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => (string) wp_json_encode(
+				array(
+					'error' => array(
+						'type'    => 'invalid_request_error',
+						'code'    => 'resource_missing',
+						'message' => "No such customer: 'cus_Ab12-3'",
+					),
+				)
+			),
+		);
+		$api_client            = new Client();
+		$api_client->init( $http_client, $this->create_account_service_stub( false ), wc_get_container()->get( TransportLog::class ) );
+
+		try {
+			$this->create_sut( false, $api_client )->update_customer_for_order( 'cus_Ab12-3', $order );
+			$this->fail( 'Expected the customer ID to be refused.' );
+		} catch ( ApiException $exception ) {
+			$this->assertSame( 'wcpay_route_validation_failure', $exception->get_error_code() );
+		}
+
+		$this->assertSame( 0, $http_client->request_count );
+		$this->assertSame( 'cus_Ab12-3', get_user_option( '_wcpay_customer_id_live', $user_id ) );
 	}
 
 	/**
