@@ -756,9 +756,13 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Under Switch in progress, the store says the extension runs from outside Plugins only when this request runs its code with the stored lists clear, on a record a minute past its hand-over or held back for it ($_dataName).
+	 * A record carrying the hand-over token never shows the sentence: the page the merchant lands on after the click can
+	 * boot before the hand-over and render after it.
+	 *
+	 * @testdox Under Switch in progress, the store says the extension runs from outside Plugins only for a switch held back for it, while this request runs its code with the stored lists clear ($_dataName).
 	 * @dataProvider provide_in_progress_loaded_outside_plugin_lists
 	 *
+	 * @param string   $state           The record's state.
 	 * @param bool     $token           Whether the record carries the hand-over token.
 	 * @param int|null $since_hand_over Seconds since the hand-over time on the record, or null for none.
 	 * @param string[] $codes           The record's codes.
@@ -766,14 +770,14 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	 * @param bool     $stored          Whether the stored site list holds the extension.
 	 * @param bool     $shown           Whether the sentence shows.
 	 */
-	public function test_switch_in_progress_says_when_the_extension_runs_from_outside_plugins( bool $token, ?int $since_hand_over, array $codes, bool $code_loaded, bool $stored, bool $shown ): void {
+	public function test_switch_in_progress_says_when_the_extension_runs_from_outside_plugins( string $state, bool $token, ?int $since_hand_over, array $codes, bool $code_loaded, bool $stored, bool $shown ): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		update_option( 'active_plugins', $stored ? array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) : array() );
 		$this->extension_class_loaded = $code_loaded;
 		$record                       = array(
-			'state'                  => $token ? StateStore::STATE_PENDING : StateStore::STATE_DEFERRED,
+			'state'                  => $state,
 			'deferred_codes'         => $codes,
 			'informational_outcomes' => array(),
 			'request_origin_token'   => $token ? 'token' : null,
@@ -810,19 +814,21 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @return array<string,array{bool,int|null,string[],bool,bool,bool}>
+	 * @return array<string,array{string,bool,int|null,string[],bool,bool,bool}>
 	 */
 	public function provide_in_progress_loaded_outside_plugin_lists(): array {
-		$code = PreflightService::FAILURE_LOADED_OUTSIDE_PLUGIN_LISTS;
+		$code     = PreflightService::FAILURE_LOADED_OUTSIDE_PLUGIN_LISTS;
+		$deferred = StateStore::STATE_DEFERRED;
+		$running  = StateStore::STATE_RUNNING;
 		return array(
-			'the landing page two seconds after the hand-over' => array( true, 2, array(), true, false, false ),
-			'a minute after the hand-over'               => array( true, MINUTE_IN_SECONDS, array(), true, false, true ),
-			'past the hand-over with no hand-over time'  => array( true, null, array(), true, false, false ),
-			'a minute after, lists hold the extension'   => array( true, MINUTE_IN_SECONDS, array(), true, true, false ),
-			'a minute after, code not loaded'            => array( true, MINUTE_IN_SECONDS, array(), false, false, false ),
-			'held back for it, code loaded, lists clear' => array( false, null, array( $code ), true, false, true ),
-			'held back for it, the extension since activated' => array( false, null, array( $code ), true, true, false ),
-			'held back for another reason'               => array( false, null, array( 'operational_queue_hooks_unhandled' ), true, false, false ),
+			'held back for it, code loaded, lists clear'   => array( $deferred, false, null, array( $code ), true, false, true ),
+			'held back for it, the extension since activated' => array( $deferred, false, null, array( $code ), true, true, false ),
+			'held back for it, code not loaded'            => array( $deferred, false, null, array( $code ), false, false, false ),
+			'held back for another reason'                 => array( $deferred, false, null, array( 'operational_queue_hooks_unhandled' ), true, false, false ),
+			'running with the code kept from its deferral' => array( $running, false, null, array( $code ), true, false, false ),
+			'running with the token, no hand-over time'    => array( $running, true, null, array( $code ), true, false, false ),
+			'running with the token, a minute after the hand-over' => array( $running, true, MINUTE_IN_SECONDS, array( $code ), true, false, false ),
+			'deferred with the token and the code'         => array( $deferred, true, MINUTE_IN_SECONDS, array( $code ), true, false, false ),
 		);
 	}
 
@@ -980,14 +986,15 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 		};
 		$preflight   = $this->create_preflight_service(
 			new class() extends PreflightService {
-				/** @return array<int,array{action_id:int,hook:string,group:string,due_at:int|null}> */
+				/** @return array<int,array{action_id:int,hook:string,group:string,due_at:int|null,earliest_due_at:int|null}> */
 				public function get_unhandled_queue_actions(): array {
 					return array(
 						array(
-							'action_id' => 0,
-							'hook'      => 'woocommerce_woopayments_operational_queue_query_failed',
-							'group'     => '',
-							'due_at'    => null,
+							'action_id'       => 0,
+							'hook'            => 'woocommerce_woopayments_operational_queue_query_failed',
+							'group'           => '',
+							'due_at'          => null,
+							'earliest_due_at' => null,
 						),
 					);
 				}

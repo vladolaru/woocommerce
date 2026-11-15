@@ -116,10 +116,9 @@ class ReconciliationJob implements RegisterHooksInterface {
 	 *
 	 * Here the process is normally the runner that deactivated the extension, still working through its batch within
 	 * Action Scheduler's 30 s limit for a web runner; the runner it dispatches next can read. One minute covers that limit,
-	 * at 12 retries at most. The in-progress notice waits as long after the hand-over before it says the extension runs from
-	 * outside Plugins, since a page that booted before the hand-over still runs the extension's code.
+	 * at 12 retries at most.
 	 */
-	public const UNREADABLE_OWNERSHIP_FAST_WINDOW = MINUTE_IN_SECONDS;
+	private const UNREADABLE_OWNERSHIP_FAST_WINDOW = MINUTE_IN_SECONDS;
 
 	/**
 	 * Time after the hand-over until which a check that cannot read ownership retries every UNREADABLE_OWNERSHIP_SLOW_DELAY;
@@ -936,7 +935,9 @@ class ReconciliationJob implements RegisterHooksInterface {
 	 *
 	 * The short delay applies when the only code is the unhandled queued action one and every such action is due between
 	 * QUEUED_ACTION_OVERDUE_LIMIT ago and QUEUED_ACTION_RETRY_DELAY from now; a running action was due when it was claimed.
-	 * An action due later, an unreadable queue or due time, or any other code keeps the retry cadence.
+	 * Each row stands for a hook and group, so both its earliest and its latest due time must be inside: an action left
+	 * overdue for good keeps its group's earliest due time old however many fresh ones arrive beside it. An action due
+	 * later, an unreadable queue or due time, or any other code keeps the retry cadence.
 	 *
 	 * @param array<int,string>                   $codes             The deferral's codes.
 	 * @param array<int,array<string,mixed>>|null $unhandled_actions The unhandled queued actions already read, or null to read them now.
@@ -948,8 +949,9 @@ class ReconciliationJob implements RegisterHooksInterface {
 		}
 		$now = time();
 		foreach ( $unhandled_actions ?? $this->preflight_service->get_unhandled_queue_actions() as $action ) {
-			$due_at = $action['due_at'] ?? null;
-			if ( ! is_int( $due_at ) || $due_at < $now - self::QUEUED_ACTION_OVERDUE_LIMIT || $due_at > $now + self::QUEUED_ACTION_RETRY_DELAY ) {
+			$earliest_due_at = $action['earliest_due_at'] ?? null;
+			$latest_due_at   = $action['due_at'] ?? null;
+			if ( ! is_int( $earliest_due_at ) || ! is_int( $latest_due_at ) || $earliest_due_at < $now - self::QUEUED_ACTION_OVERDUE_LIMIT || $latest_due_at > $now + self::QUEUED_ACTION_RETRY_DELAY ) {
 				return null;
 			}
 		}

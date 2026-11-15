@@ -2715,6 +2715,18 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 				$action_id = $queue( $now + 10 );
 				$wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->prefix}actionscheduler_actions SET scheduled_date_gmt = '0000-00-00 00:00:00' WHERE action_id = %d", $action_id ) );
 				break;
+			case 'one hook is six minutes overdue and near':
+				$queue( $now - 6 * MINUTE_IN_SECONDS, self::EXTENSION_CHECK_HOOK, array( 'run' => 1 ) );
+				$queue( $now + 10, self::EXTENSION_CHECK_HOOK, array( 'run' => 2 ) );
+				break;
+			case 'one hook has a zero due date and a near one':
+			case 'one hook has no due date and a near one':
+				global $wpdb;
+				$action_id = $queue( $now + 10, self::EXTENSION_CHECK_HOOK, array( 'run' => 1 ) );
+				$queue( $now + 10, self::EXTENSION_CHECK_HOOK, array( 'run' => 2 ) );
+				$stored = 'one hook has no due date and a near one' === $shape ? 'NULL' : "'0000-00-00 00:00:00'";
+				$wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->prefix}actionscheduler_actions SET scheduled_date_gmt = {$stored} WHERE action_id = %d", $action_id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- A fixed test literal.
+				break;
 		}
 		$preflight = $this->create_queue_scanning_preflight( $plugin_active, $deactivations, $other_failures, $database );
 		try {
@@ -2741,6 +2753,46 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * A queue runner filtered never to claim an action leaves it pending, while the extension keeps queueing fresh ones on
+	 * the same hook. The group's earliest due time keeps ageing, so the short retries end at the overdue limit.
+	 *
+	 * @testdox A switch waiting for an action left pending while fresh ones arrive on its hook retries in a minute until that action is five minutes overdue, then takes the cadence.
+	 */
+	public function test_fresh_actions_beside_one_left_pending_reach_the_cadence(): void {
+		global $wpdb;
+		$plugin_active = true;
+		$deactivations = 0;
+		$preflight     = $this->create_queue_scanning_preflight( $plugin_active, $deactivations );
+		$left_pending  = (int) as_schedule_single_action( time() - 30, self::EXTENSION_CHECK_HOOK, array( 'run' => 0 ), 'woocommerce-payments' );
+		$delays        = array();
+		try {
+			$sut = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization() );
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			$record = $this->state_store->get_record();
+			$this->assertIsArray( $record );
+			$this->scheduler->cancel( $record['generation'], 1 );
+			for ( $attempt = 1; $attempt <= 8; $attempt++ ) {
+				$sut->handle_reconcile( $record['generation'], $attempt );
+				$record = $this->state_store->get_record();
+				$this->assertIsArray( $record );
+				$this->assertSame( StateStore::STATE_DEFERRED, $record['state'] );
+				$delays[] = $this->get_deferral_delay( $record );
+				if ( 60 !== end( $delays ) ) {
+					break;
+				}
+				// The minute until the retry passes for the action left pending, and the extension queues a fresh one due now.
+				$wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->prefix}actionscheduler_actions SET scheduled_date_gmt = %s WHERE action_id = %d", gmdate( 'Y-m-d H:i:s', time() - 30 - $attempt * MINUTE_IN_SECONDS ), $left_pending ) );
+				as_schedule_single_action( time() + 10, self::EXTENSION_CHECK_HOOK, array( 'run' => $attempt ), 'woocommerce-payments' );
+			}
+
+			$this->assertSame( array( 60, 60, 60, 60, 60, 900 ), $delays, 'Five short retries while the action is at most five minutes overdue, then the cadence.' );
+			$this->assertSame( 0, $deactivations );
+		} finally {
+			$this->cleanup_canceled_authorization_fix_state();
+		}
+	}
+
+	/**
 	 * Queue shapes and the retry delay each gives.
 	 *
 	 * @return array<string,array{0:string,1:int}>
@@ -2757,6 +2809,9 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			'the queue query fails'                       => 900,
 			'an action is six minutes overdue'            => 900,
 			'an action has a zero due date'               => 900,
+			'one hook is six minutes overdue and near'    => 900,
+			'one hook has a zero due date and a near one' => 900,
+			'one hook has no due date and a near one'     => 900,
 		);
 		$rows  = array();
 		foreach ( $cases as $case => $delay ) {

@@ -626,16 +626,13 @@ class CutoverController implements RegisterHooksInterface {
 					$this->output_queued_actions_line();
 				}
 				echo '</div>';
-				// A switch held back because the extension is loaded from outside Plugins says so, as does one past its hand-over
-				// whose extension still runs in this request with the stored lists clear: there it does not end by itself. This
-				// request's own reading, so a stale queue process elsewhere never shows it. Past the hand-over only once it is a
-				// minute old: the page the merchant lands on after the click can boot before the hand-over and render after it.
-				$handed_over_at = $record[ StateStore::HANDED_OVER_AT_KEY ] ?? null;
+				// A switch held back because the extension is loaded from outside Plugins says so, while this request reads the
+				// same; a stale queue process elsewhere never shows it. Never for a record carrying the hand-over token: the page
+				// the merchant lands on after the click can boot before the hand-over and render after it.
 				if (
-					(
-						in_array( PreflightService::FAILURE_LOADED_OUTSIDE_PLUGIN_LISTS, (array) ( $record[ StateStore::BLOCKING_CODES_KEY ] ?? array() ), true )
-						|| ( null !== ( $record['request_origin_token'] ?? null ) && is_int( $handed_over_at ) && (int) $this->legacy_proxy->call_function( 'time' ) - $handed_over_at >= ReconciliationJob::UNREADABLE_OWNERSHIP_FAST_WINDOW )
-					)
+					StateStore::STATE_DEFERRED === $record['state']
+					&& null === ( $record['request_origin_token'] ?? null )
+					&& in_array( PreflightService::FAILURE_LOADED_OUTSIDE_PLUGIN_LISTS, (array) ( $record[ StateStore::BLOCKING_CODES_KEY ] ?? array() ), true )
 					&& $this->preflight_service->is_woopayments_loaded_outside_plugin_lists()
 				) {
 					$this->output_loaded_outside_plugin_lists_notice( false );

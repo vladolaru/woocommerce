@@ -260,11 +260,13 @@ class PreflightService {
 	 * Get pending or running WooPayments Action Scheduler actions (wcpay_ and woocommerce_woopayments_ hooks), one per hook and group.
 	 *
 	 * Callers only decide by hook and group, so a queue of thousands of same-hook actions is read as one row. Its due time is
-	 * the latest of the group's pending and running actions, so one queued far ahead counts even when another is due now.
-	 * On a database without identifier placeholders or a failed query, returns one sentinel row (action_id 0, no due time)
+	 * the latest of the group's pending and running actions, so one queued far ahead counts even when another is due now;
+	 * its earliest due time is the first of them, so one long overdue counts even when others are due now. A zero date sorts
+	 * first, so it is the earliest and reads as none; the earliest is also none when any action in the group has no date.
+	 * On a database without identifier placeholders or a failed query, returns one sentinel row (action_id 0, no due times)
 	 * whose hook is one of the *_HOOK constants, which blocks the switch.
 	 *
-	 * @return array<int,array{action_id:int,hook:string,group:string,due_at:int|null}> One row per hook and group, ordered by action ID.
+	 * @return array<int,array{action_id:int,hook:string,group:string,due_at:int|null,earliest_due_at:int|null}> One row per hook and group, ordered by action ID.
 	 */
 	public function get_queued_woopayments_actions(): array {
 		$wpdb = $this->get_database();
@@ -274,15 +276,16 @@ class PreflightService {
 		if ( ! $wpdb->has_cap( 'identifier_placeholders' ) ) {
 			return array(
 				array(
-					'action_id' => 0,
-					'hook'      => self::IDENTIFIER_PLACEHOLDERS_UNAVAILABLE_HOOK,
-					'group'     => '',
-					'due_at'    => null,
+					'action_id'       => 0,
+					'hook'            => self::IDENTIFIER_PLACEHOLDERS_UNAVAILABLE_HOOK,
+					'group'           => '',
+					'due_at'          => null,
+					'earliest_due_at' => null,
 				),
 			);
 		}
 		$query   = $wpdb->prepare(
-			'SELECT MIN( actions.action_id ) AS action_id, actions.hook, action_groups.slug AS action_group, MAX( actions.scheduled_date_gmt ) AS due_gmt FROM %i AS actions LEFT JOIN %i AS action_groups ON actions.group_id = action_groups.group_id WHERE actions.status IN ( %s, %s ) AND ( actions.hook LIKE %s OR actions.hook LIKE %s ) GROUP BY actions.hook, action_groups.slug ORDER BY action_id ASC',
+			'SELECT MIN( actions.action_id ) AS action_id, actions.hook, action_groups.slug AS action_group, MAX( actions.scheduled_date_gmt ) AS due_gmt, MIN( actions.scheduled_date_gmt ) AS earliest_gmt, COUNT( * ) - COUNT( actions.scheduled_date_gmt ) AS undated FROM %i AS actions LEFT JOIN %i AS action_groups ON actions.group_id = action_groups.group_id WHERE actions.status IN ( %s, %s ) AND ( actions.hook LIKE %s OR actions.hook LIKE %s ) GROUP BY actions.hook, action_groups.slug ORDER BY action_id ASC',
 			$wpdb->actionscheduler_actions,
 			$wpdb->actionscheduler_groups,
 			\ActionScheduler_Store::STATUS_PENDING,
@@ -294,10 +297,11 @@ class PreflightService {
 		if ( ! is_array( $actions ) || '' !== $wpdb->last_error ) {
 			return array(
 				array(
-					'action_id' => 0,
-					'hook'      => self::OPERATIONAL_QUEUE_QUERY_FAILED_HOOK,
-					'group'     => '',
-					'due_at'    => null,
+					'action_id'       => 0,
+					'hook'            => self::OPERATIONAL_QUEUE_QUERY_FAILED_HOOK,
+					'group'           => '',
+					'due_at'          => null,
+					'earliest_due_at' => null,
 				),
 			);
 		}
@@ -305,10 +309,11 @@ class PreflightService {
 		return array_map(
 			static function ( array $action ): array {
 				return array(
-					'action_id' => (int) $action['action_id'],
-					'hook'      => (string) $action['hook'],
-					'group'     => isset( $action['action_group'] ) ? (string) $action['action_group'] : '',
-					'due_at'    => self::parse_due_at( $action['due_gmt'] ?? null ),
+					'action_id'       => (int) $action['action_id'],
+					'hook'            => (string) $action['hook'],
+					'group'           => isset( $action['action_group'] ) ? (string) $action['action_group'] : '',
+					'due_at'          => self::parse_due_at( $action['due_gmt'] ?? null ),
+					'earliest_due_at' => 0 === (int) ( $action['undated'] ?? 1 ) ? self::parse_due_at( $action['earliest_gmt'] ?? null ) : null,
 				);
 			},
 			$actions
@@ -339,7 +344,7 @@ class PreflightService {
 	/**
 	 * Get operational actions after excluding the cutover job itself.
 	 *
-	 * @return array<int,array{action_id:int,hook:string,group:string,due_at:int|null}> Actions ordered by ID.
+	 * @return array<int,array{action_id:int,hook:string,group:string,due_at:int|null,earliest_due_at:int|null}> Actions ordered by ID.
 	 */
 	public function get_queued_operational_actions(): array {
 		return array_values( array_filter( $this->get_queued_woopayments_actions(), array( $this, 'is_not_cutover_action' ) ) );
@@ -586,11 +591,30 @@ class PreflightService {
 	/**
 	 * Tell whether a stored plugin list holds WooPayments.
 	 *
+	 * The start notice asks on every admin page of an extension store, so the canonical path is looked for in the whole list
+	 * first; the installed plugin registry is read, once, only when the list does not hold it.
+	 *
 	 * @param array<int|string,mixed>|null $plugin_files Plugin files, or null for a list that could not be read.
 	 * @return bool|null Whether the list holds WooPayments, or null when it could not be read.
 	 */
 	private function holds_woopayments( ?array $plugin_files ): ?bool {
-		return null === $plugin_files ? null : '' !== $this->find_woopayments_plugin_file( $plugin_files );
+		if ( null === $plugin_files ) {
+			return null;
+		}
+		if ( in_array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, $plugin_files, true ) ) {
+			return true;
+		}
+		$plugins = null;
+		foreach ( $plugin_files as $plugin_file ) {
+			if ( ! is_string( $plugin_file ) ) {
+				continue;
+			}
+			$plugins = $plugins ?? $this->get_installed_plugins();
+			if ( self::has_woopayments_header( $plugins, $plugin_file ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -774,7 +798,7 @@ class PreflightService {
 	 *
 	 * @since 11.4.0
 	 *
-	 * @return array<int,array{action_id:int,hook:string,group:string,due_at:int|null}>
+	 * @return array<int,array{action_id:int,hook:string,group:string,due_at:int|null,earliest_due_at:int|null}>
 	 */
 	public function get_unhandled_queue_actions(): array {
 		return array_values(
@@ -811,11 +835,30 @@ class PreflightService {
 		if ( WooPaymentsRuntimeArbiter::PLUGIN_FILE === $plugin_file ) {
 			return true;
 		}
+		return self::has_woopayments_header( $this->get_installed_plugins(), $plugin_file );
+	}
+
+	/**
+	 * Read the installed plugin registry.
+	 *
+	 * @return mixed The registry keyed by plugin file, as get_plugins() returns it.
+	 */
+	private function get_installed_plugins() {
 		// WordPress 6.8+ loads this file on every request (#62244); kept as WooCommerce's own pattern (see src/Admin/PluginsHelper.php).
 		if ( ! function_exists( 'get_plugins' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		}
-		$plugins = $this->legacy_proxy->call_function( 'get_plugins' );
+		return $this->legacy_proxy->call_function( 'get_plugins' );
+	}
+
+	/**
+	 * Tell whether the installed plugin registry gives a plugin file the WooPayments name or text domain.
+	 *
+	 * @param mixed  $plugins     The installed plugin registry.
+	 * @param string $plugin_file Plugin file identifier.
+	 * @return bool
+	 */
+	private static function has_woopayments_header( $plugins, string $plugin_file ): bool {
 		if ( ! is_array( $plugins ) || ! isset( $plugins[ $plugin_file ] ) || ! is_array( $plugins[ $plugin_file ] ) ) {
 			return false;
 		}

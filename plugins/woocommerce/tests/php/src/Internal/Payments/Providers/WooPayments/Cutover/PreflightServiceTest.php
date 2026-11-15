@@ -383,9 +383,9 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The operational queue scan gives each hook and group the latest due time of its pending and running actions.
+	 * @testdox The operational queue scan gives each hook and group the latest and the earliest due time of its pending and running actions.
 	 */
-	public function test_operational_action_discovery_reads_the_latest_due_time_of_each_hook_and_group(): void {
+	public function test_operational_action_discovery_reads_the_latest_and_earliest_due_time_of_each_hook_and_group(): void {
 		$now      = time();
 		$near_id  = as_schedule_single_action( $now + 10, 'wcpay_preflight_service_test', array( 'order_id' => 1 ), 'woocommerce-payments', true );
 		$later_id = as_schedule_single_action( $now + HOUR_IN_SECONDS, 'wcpay_preflight_service_test', array( 'order_id' => 2 ), 'woocommerce-payments', true );
@@ -397,14 +397,40 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame(
 			array(
 				array(
-					'action_id' => $near_id,
-					'hook'      => 'wcpay_preflight_service_test',
-					'group'     => 'woocommerce-payments',
-					'due_at'    => $now + HOUR_IN_SECONDS,
+					'action_id'       => $near_id,
+					'hook'            => 'wcpay_preflight_service_test',
+					'group'           => 'woocommerce-payments',
+					'due_at'          => $now + HOUR_IN_SECONDS,
+					'earliest_due_at' => $now + 10,
 				),
 			),
 			$actions
 		);
+	}
+
+	/**
+	 * An action with no date or a zero date beside one due now must not let the group read as due now.
+	 *
+	 * @testdox A group holding an action whose stored due date is $stored has no earliest due time, whatever its other actions say.
+	 * @testWith ["NULL"]
+	 *           ["'0000-00-00 00:00:00'"]
+	 *
+	 * @param string $stored SQL value written as the action's due date.
+	 */
+	public function test_an_undated_action_leaves_its_group_without_an_earliest_due_time( string $stored ): void {
+		global $wpdb;
+		$now     = time();
+		$undated = as_schedule_single_action( $now + 10, 'wcpay_preflight_service_test', array( 'order_id' => 1 ), 'woocommerce-payments' );
+		$near_id = as_schedule_single_action( $now + 10, 'wcpay_preflight_service_test', array( 'order_id' => 2 ), 'woocommerce-payments' );
+		$this->assertIsInt( $undated );
+		$this->assertIsInt( $near_id );
+		$wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->prefix}actionscheduler_actions SET scheduled_date_gmt = {$stored} WHERE action_id = %d", $undated ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- A fixed test literal.
+
+		$actions = $this->create_sut()->get_queued_woopayments_actions();
+
+		$this->assertCount( 1, $actions );
+		$this->assertSame( $now + 10, $actions[0]['due_at'], 'The latest due time is still read.' );
+		$this->assertNull( $actions[0]['earliest_due_at'] );
 	}
 
 	/**
@@ -436,11 +462,15 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 					'hook'         => 'wcpay_preflight_service_test',
 					'action_group' => 'woocommerce-payments',
 					'due_gmt'      => $stored,
+					'earliest_gmt' => $stored,
+					'undated'      => '0',
 				),
 			)
 		);
 
-		$this->assertSame( array( null ), array_column( $this->create_sut( $wpdb )->get_queued_woopayments_actions(), 'due_at' ) );
+		$actions = $this->create_sut( $wpdb )->get_queued_woopayments_actions();
+		$this->assertSame( array( null ), array_column( $actions, 'due_at' ) );
+		$this->assertSame( array( null ), array_column( $actions, 'earliest_due_at' ) );
 	}
 
 	/**
@@ -489,10 +519,11 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame(
 			array(
 				array(
-					'action_id' => 0,
-					'hook'      => 'woocommerce_woopayments_operational_queue_query_failed',
-					'group'     => '',
-					'due_at'    => null,
+					'action_id'       => 0,
+					'hook'            => 'woocommerce_woopayments_operational_queue_query_failed',
+					'group'           => '',
+					'due_at'          => null,
+					'earliest_due_at' => null,
 				),
 			),
 			$sut->get_queued_woopayments_actions()
@@ -619,6 +650,50 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( $this->create_sut()->deactivate_woopayments_plugin() );
 		$this->assertSame( array( 'from another pre_option callback', 'Stored store name', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) ), $seen_during_call, 'A write of another option leaves the plugin list as read.' );
+	}
+
+	/**
+	 * The start notice asks on every admin page of an extension store, so a list holding the canonical path must not read
+	 * the installed plugin registry, whatever is listed before it.
+	 *
+	 * @testdox The stored lists are found to hold WooPayments by its canonical path without reading the installed plugins; a list without it is checked against one registry read.
+	 */
+	public function test_the_stored_list_check_reads_the_plugin_registry_only_without_the_canonical_path(): void {
+		$registry_reads = 0;
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'get_plugins' => function () use ( &$registry_reads ): array {
+					++$registry_reads;
+					return array(
+						'hello-dolly/hello.php' => array(
+							'Name'       => 'Hello Dolly',
+							'TextDomain' => 'hello-dolly',
+						),
+						'akismet/akismet.php'   => array(
+							'Name'       => 'Akismet Anti-spam',
+							'TextDomain' => 'akismet',
+						),
+						'payments-moved/woocommerce-payments.php' => array(
+							'Name'       => 'WooPayments',
+							'TextDomain' => 'woocommerce-payments',
+						),
+					);
+				},
+			)
+		);
+		$sut = $this->create_sut();
+
+		update_option( 'active_plugins', array( 'hello-dolly/hello.php', WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
+		$this->assertTrue( $sut->is_woopayments_in_stored_lists() );
+		$this->assertSame( 0, $registry_reads, 'The canonical path is found without the installed plugins.' );
+
+		update_option( 'active_plugins', array( 'hello-dolly/hello.php', 'akismet/akismet.php', 'payments-moved/woocommerce-payments.php' ) );
+		$this->assertTrue( $sut->is_woopayments_stored_site_active(), 'WooPayments in another folder is still found by its header.' );
+		$this->assertSame( 1, $registry_reads, 'One read of the installed plugins for the whole list.' );
+
+		update_option( 'active_plugins', array( 'hello-dolly/hello.php', 'akismet/akismet.php' ) );
+		$this->assertFalse( $sut->is_woopayments_stored_site_active() );
+		$this->assertSame( 2, $registry_reads, 'One read of the installed plugins for the whole list.' );
 	}
 
 	/**
