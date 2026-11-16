@@ -525,7 +525,7 @@ class PaymentIntentEventHandler {
 	 *
 	 * The webhook's own delivery updates the order from the intent's status, so its completion leaves an order already in a
 	 * paid status as it is, after the payment meta is written (client 11.3.0 class-wc-payments-webhook-processing-service.php:642-716,
-	 * class-wc-payments-order-service.php:475).
+	 * class-wc-payments-order-service.php:475). On such an order its payment meta also stores the succeeded status.
 	 *
 	 * The payment meta is written and the token repaired first, in the client's order (:715, then :716); the token repair can
 	 * call the platform, so the order is then read again in place and the hold and the event are decided on that read.
@@ -538,6 +538,12 @@ class PaymentIntentEventHandler {
 	private function apply_succeeded_payment_intent( WC_Order $order, array $payment_intent, ?array $hold_note_candidates, bool $reports_intent_status ): void {
 		// Read before the payment meta below replaces it with the arriving intent.
 		$stored_intent_id = (string) $order->get_meta( '_intent_id', true );
+		// On an order in a paid status the lifecycle skips the webhook's success and writes none of its meta, so the success
+		// is stored here, in the save that stores its charge, and the stored charge and status describe one payment. Client
+		// 11.3.0 stores no status here (class-wc-payments-webhook-processing-service.php:642-701, :716).
+		if ( $reports_intent_status && $this->lifecycle_service->has_paid_status( $order ) ) {
+			$order->update_meta_data( '_intention_status', 'succeeded' );
+		}
 		// The order keeps the payment method and title its checkout, redirect return or in-person capture wrote: client 11.1.0's
 		// webhook never sets them (includes/class-wc-payments-webhook-processing-service.php process_webhook_payment_intent_succeeded()).
 		$this->write_succeeded_payment_intent_meta( $order, $payment_intent );

@@ -3157,14 +3157,14 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A succeeded payment on an order already paid, storing another intent's authorization status, leaves the order as it is, with the capture-choice line.
+	 * @testdox A succeeded payment on an order already paid, storing another intent's authorization status, stores its succeeded status first, so no capture is chosen and no capture-choice line is written.
 	 *
-	 * The order's transaction ID names the arriving payment, so the event is the order's own; the capture is chosen on the
-	 * stored requires_capture status and the lifecycle then skips it, since the webhook leaves a paid order as it is
-	 * (client 11.3.0 class-wc-payments-webhook-processing-service.php:642-716, class-wc-payments-order-service.php:475).
-	 * The line records the choice, so it is written once all the same.
+	 * The order's transaction ID names the arriving payment, so the event is the order's own. On an order in a paid status
+	 * the webhook stores the payment's succeeded status with its charge, before the capture choice reads the stored
+	 * status, and the lifecycle then skips the success, since the webhook leaves a paid order as it is (client 11.3.0
+	 * class-wc-payments-webhook-processing-service.php:642-716, class-wc-payments-order-service.php:475).
 	 */
-	public function test_capture_choice_on_an_already_paid_order_logs_the_line_and_leaves_the_order(): void {
+	public function test_capture_choice_on_an_already_paid_order_is_not_made(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		add_filter( 'wcpay_dev_mode', '__return_false' );
 		$event      = RecordedPlatformEvents::body( 'platform-payment-intent-events.json', 'manual_capture_amount_capturable_updated' );
@@ -3187,12 +3187,9 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( $intent_id, $order->get_transaction_id() );
 		$this->assertCount( $note_count, wc_get_order_notes( $notes ), 'The skipped event adds no note.' );
 		$this->assertSame( 'order_paid', $this->get_logged_context( $logger, 'Payment event skipped: the order is already paid, so the event does not change it.' )['reason'] ?? '' );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
 		$lines = array_values( array_filter( $logger->lines, static fn( array $line ): bool => false !== strpos( $line[1], 'the capture of an authorization, but the requires_capture status' ) ) );
-		$this->assertCount( 1, $lines );
-		$this->assertSame(
-			array( 'warning', sprintf( 'Payment %1$s on order #%2$d is treated as the capture of an authorization, but the requires_capture status the order stores is beside intent pi_anotherAttempt.', $intent_id, $order->get_id() ), 'woopayments' ),
-			$lines[0]
-		);
+		$this->assertSame( array(), $lines );
 	}
 
 	/**
@@ -3484,10 +3481,11 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A succeeded payment on an order already paid by it, with neither payment note, writes only the payment meta: $_dataName.
+	 * @testdox A succeeded payment on an order already paid by it, with neither payment note, writes only the payment meta and its succeeded status: $_dataName.
 	 *
 	 * Client 11.3.0's webhook writes the payment meta, then updates the order from the intent only while it is not paid
-	 * (class-wc-payments-webhook-processing-service.php:642-716, class-wc-payments-order-service.php:475, :3398-3410).
+	 * (class-wc-payments-webhook-processing-service.php:642-716, class-wc-payments-order-service.php:475, :3398-3410); it
+	 * stores no status there. The built-in stores the succeeded status with the charge, so the two describe one payment.
 	 *
 	 * @dataProvider provider_paid_orders_a_succeeded_payment_is_delivered_to
 	 *
@@ -3523,7 +3521,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( $status, $order->get_status() );
 		$this->assertSame( $completions, $this->count_completion_hooks( $status ), 'No completion hook fires.' );
 		$this->assertSame( (string) $event['data']['object']['charges']['data'][0]['id'], $order->get_meta( '_charge_id', true ), 'The payment meta is written.' );
-		$this->assertSame( $stored_requires_capture ? 'requires_capture' : '', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
 		$this->assertCount( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 	}
 
@@ -5860,6 +5858,125 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 			'Cancelled, the amount equal to the total' => array( OrderStatus::CANCELLED, 1099, false ),
 			'Refunded, the amount different from the total' => array( OrderStatus::REFUNDED, 1500, false ),
 			'On hold, which a filter counts as paid'   => array( OrderStatus::ON_HOLD, 1099, true ),
+		);
+	}
+
+	/**
+	 * @testdox The webhook's own success on an order in a paid status stores the succeeded status with its charge, $_dataName.
+	 * @dataProvider own_success_on_a_hand_paid_order
+	 *
+	 * The lifecycle skips the success on a paid order before it writes the event's meta, so without this the order would
+	 * keep the attempt's requires_action status beside the payment's charge, fee and net. Client 11.3.0's webhook stores the
+	 * charge and no status, then leaves a paid order as it is (class-wc-payments-webhook-processing-service.php:642-701,
+	 * :716). A success that is not the order's own is recorded as another charge and stores nothing of its payment.
+	 *
+	 * @param string $payment_method Payment method the merchant left or chose.
+	 * @param string $transaction_id Transaction ID the order stores.
+	 * @param string $expected_status Stored intent status after the success.
+	 * @param string $expected_charge Stored charge after the success.
+	 */
+	public function test_own_success_on_a_paid_order_stores_succeeded_with_its_charge( string $payment_method, string $transaction_id, string $expected_status, string $expected_charge ): void {
+		$order = StoredPaymentRecords::paid_by_hand_over_an_open_attempt( $payment_method, $transaction_id );
+
+		$this->sut->process( $this->create_hand_paid_attempt_success_event( $order ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( OrderStatus::PROCESSING, $order->get_status() );
+		$this->assertSame( $transaction_id, $order->get_transaction_id() );
+		$this->assertSame( $expected_status, $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( $expected_charge, $order->get_meta( '_charge_id', true ) );
+	}
+
+	/**
+	 * Hand-paid orders over an open attempt, with what the attempt's success leaves stored.
+	 *
+	 * @return array<string,array{string,string,string,string}>
+	 */
+	public function own_success_on_a_hand_paid_order(): array {
+		return array(
+			'method unchanged, own by its transaction ID' => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_A', 'succeeded', 'ch_A' ),
+			'method Other, own by its transaction ID'     => array( 'other', 'pi_A', 'succeeded', 'ch_A' ),
+			'empty transaction ID, the stored payment stands in' => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, '', 'succeeded', 'ch_A' ),
+			'transaction ID naming another attempt'       => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_other', 'requires_action', '' ),
+		);
+	}
+
+	/**
+	 * @testdox The webhook's success on an On hold authorization that a filter counts as paid is left to the lifecycle, which records it as the capture.
+	 *
+	 * Only a status in wc_get_is_paid_statuses() is paid for the lifecycle, so it applies the success here; storing succeeded
+	 * first would turn the capture of the stored authorization into a plain success (client 11.3.0
+	 * class-wc-payments-order-service.php:484-489).
+	 */
+	public function test_own_success_on_a_status_a_filter_counts_as_paid_is_left_to_the_lifecycle(): void {
+		$order = StoredPaymentRecords::authorization();
+		add_filter( 'woocommerce_order_is_paid', static fn( $is_paid, $paid_order ): bool => $paid_order instanceof WC_Order && $paid_order->get_id() === $order->get_id() ? true : (bool) $is_paid, 10, 2 );
+
+		$this->sut->process( $this->create_hand_paid_attempt_success_event( $order ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertTrue( $order->has_status( wc_get_is_paid_statuses() ), 'The lifecycle completes the order.' );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'successfully captured' ) );
+		$this->assertCount( 0, $this->get_order_notes_containing( $order, 'successfully charged' ) );
+	}
+
+	/**
+	 * @testdox A success on a paid order that the webhook does not report from its own status keeps the stored status: $_dataName.
+	 * @dataProvider successes_that_do_not_report_the_intent_status
+	 *
+	 * A Stripe Billing invoice's intent is settled by its invoice and writes only its payment meta (client 11.3.0
+	 * class-wc-payments-webhook-processing-service.php:711-717), and Stripe Billing's paid renewal records its payment through
+	 * its own handler, which reads the stored status (StripeBillingEventHandler::apply_paid_invoice_under_lock()).
+	 *
+	 * @param string $path Which success arrives.
+	 */
+	public function test_success_that_does_not_report_the_intent_status_keeps_the_stored_status( string $path ): void {
+		$order = StoredPaymentRecords::paid_by_hand_over_an_open_attempt();
+		$event = $this->create_hand_paid_attempt_success_event( $order );
+
+		if ( 'invoice' === $path ) {
+			$event['data']['object']['invoice'] = 'in_A';
+			$this->sut->process( $event );
+		} else {
+			wc_get_container()->get( PaymentIntentEventHandler::class )->apply_succeeded_payment_intent_under_lock( $order, $event['data']['object'], array( 'The renewal invoice collected another amount.' ) );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'ch_A', $order->get_meta( '_charge_id', true ), 'The payment meta is written.' );
+		$this->assertSame( 'requires_action', $order->get_meta( '_intention_status', true ) );
+	}
+
+	/**
+	 * Successes on a paid order that do not come from the webhook's own success.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function successes_that_do_not_report_the_intent_status(): array {
+		return array(
+			"a Stripe Billing invoice's intent" => array( 'invoice' ),
+			"Stripe Billing's paid renewal with an amount hold" => array( 'stripe billing' ),
+		);
+	}
+
+	/**
+	 * A payment_intent.succeeded of the order's stored attempt pi_A, with its charge ch_A, for the order's total.
+	 *
+	 * @param WC_Order $order Order the intent pays.
+	 * @return array<string,mixed>
+	 */
+	private function create_hand_paid_attempt_success_event( WC_Order $order ): array {
+		return $this->create_payment_intent_event(
+			'payment_intent.succeeded',
+			$order,
+			array(
+				'id'      => 'pi_A',
+				'amount'  => 1099,
+				'charges' => array( 'data' => array( array( 'id' => 'ch_A' ) ) ),
+			)
 		);
 	}
 

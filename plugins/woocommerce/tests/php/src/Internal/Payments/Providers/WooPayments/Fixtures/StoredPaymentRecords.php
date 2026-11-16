@@ -81,6 +81,32 @@ final class StoredPaymentRecords {
 	}
 
 	/**
+	 * A 3DS attempt marked paid by hand: a Processing order whose stored intent waits for the shopper, with no charge.
+	 *
+	 * Written by the checkout's attach of a 3DS attempt (the transaction ID, the intent and its requires_action status, no
+	 * charge), then a merchant who sets the order to Processing on the order screen while the challenge is still open,
+	 * changing its payment method or typing a reference in Transaction ID or neither (WC_Meta_Box_Order_Data::save()). In
+	 * the WooPayments extension the attach is attach_intent_info_to_order() (client 11.3.0
+	 * class-wc-payments-order-service.php:1875-1884).
+	 *
+	 * @param string $payment_method Payment method the merchant left or chose.
+	 * @param string $transaction_id Transaction ID: the attempt's intent, a reference the merchant typed, or '' for a cleared field.
+	 * @param string $intent_id      The attempt's intent, the stored intent.
+	 * @return WC_Order
+	 */
+	public static function paid_by_hand_over_an_open_attempt( string $payment_method = WooPaymentsPersistenceVocabulary::GATEWAY_ID, string $transaction_id = 'pi_A', string $intent_id = 'pi_A' ): WC_Order {
+		return self::create_order(
+			OrderStatus::PROCESSING,
+			$transaction_id,
+			array(
+				'_intent_id'        => $intent_id,
+				'_intention_status' => 'requires_action',
+			),
+			$payment_method
+		);
+	}
+
+	/**
 	 * An ordinary authorization: an On hold order whose transaction ID and stored intent name the authorized payment, which
 	 * waits for its capture.
 	 *
