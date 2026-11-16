@@ -1,6 +1,6 @@
 import type { ApiClient } from '@woocommerce/e2e-utils-playwright';
 import { fillBillingCheckoutBlocks } from '@woocommerce/e2e-utils-playwright';
-import type { Page } from '@playwright/test';
+import type { Browser, Page } from '@playwright/test';
 
 import { expect, tags, test } from '../../../fixtures/fixtures';
 import { wpCLI, wpEvalJson } from '../../../utils/woopayments-cli';
@@ -192,6 +192,171 @@ function orderMeta( order: Record< string, unknown >, key: string ): string {
 	return typeof value === 'string' ? value : '';
 }
 
+const WOOPAYMENTS_PLUGIN_FILE = 'woocommerce-payments/woocommerce-payments.php';
+const SWITCH_FLOOR = '10.6.0';
+const UPDATE_FIRST_ACTIVE =
+	'WooPayments is now part of WooCommerce. To switch, first update the WooPayments extension to the latest version.';
+const UPDATE_FIRST_DEACTIVATED =
+	'WooPayments is now part of WooCommerce. To switch, first activate the WooPayments extension in Plugins and update it to the latest version.';
+
+interface StageRecord {
+	stage: string;
+	at: string;
+	owner: string;
+	card_offered: boolean;
+}
+
+function isAtOrAboveFloor( version: string ): boolean {
+	return version.localeCompare( SWITCH_FLOOR, 'en', { numeric: true } ) >= 0;
+}
+
+/**
+ * Reads, before any page, that WordPress's automatic updater is off: this
+ * store mounts the WooCommerce checkout as a plugin, and an update of it
+ * would overwrite the checkout. The cases below update WooPayments alone,
+ * from its own row.
+ */
+async function expectAutomaticUpdaterOff(): Promise< void > {
+	const disabled = await wpEvalJson< boolean >( `
+		require_once ABSPATH . 'wp-admin/includes/admin.php';
+		require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
+		return ( new WP_Automatic_Updater() )->is_disabled();
+	` );
+	expect(
+		disabled,
+		'the automatic updater must be off before any page loads'
+	).toBe( true );
+}
+
+/**
+ * Tells whether a fresh guest's checkout offers WooPayments' card: a product
+ * in the cart, then the Checkout block once it lists its payment methods or
+ * says it has none.
+ */
+async function readShopperCardOffered(
+	browser: Browser,
+	baseURL: string,
+	productId: number
+): Promise< boolean > {
+	const context = await browser.newContext( { baseURL } );
+	try {
+		const shopper = await context.newPage();
+		await shopper.goto( `?post_type=product&p=${ productId }` );
+		await shopper
+			.getByRole( 'button', { name: 'Add to cart', exact: true } )
+			.click();
+		await shopper.goto( 'checkout/' );
+		const options = shopper.getByRole( 'group', {
+			name: 'Payment options',
+		} );
+		await expect(
+			options
+				.getByRole( 'radio' )
+				.or(
+					shopper.getByText(
+						'There are no payment methods available.',
+						{ exact: false }
+					)
+				)
+				.first()
+		).toBeVisible( { timeout: 30_000 } );
+		return (
+			( await options.getByRole( 'radio', { name: /Card/i } ).count() ) >
+			0
+		);
+	} finally {
+		await context.close();
+	}
+}
+
+/**
+ * Records one stage of an old-extension case: its time, the runtime owner,
+ * and whether a fresh guest's checkout offers WooPayments' card. Each record
+ * is a test annotation, so a failed run keeps the stages it reached.
+ */
+async function recordStage(
+	stage: string,
+	restApi: ApiClient,
+	browser: Browser,
+	baseURL: string,
+	productId: number
+): Promise< StageRecord > {
+	const at = new Date().toISOString();
+	const record = {
+		stage,
+		at,
+		owner: await readRuntimeOwner( restApi ),
+		card_offered: await readShopperCardOffered(
+			browser,
+			baseURL,
+			productId
+		),
+	};
+	test.info().annotations.push( {
+		type: 'stage',
+		description: JSON.stringify( record ),
+	} );
+	return record;
+}
+
+/**
+ * Updates WooPayments as a merchant does, with the "update now" link in its
+ * own row in Plugins, which runs core's update for that one plugin. The row
+ * is matched by its plugin file, so no other plugin is touched. Returns once
+ * the installed files are at or above the switch's floor.
+ */
+async function updateWooPaymentsInPlugins( page: Page ): Promise< void > {
+	const updateRow = page.locator(
+		`tr.plugin-update-tr[data-plugin="${ WOOPAYMENTS_PLUGIN_FILE }"]`
+	);
+	const updateLink = updateRow.getByRole( 'link', {
+		name: 'Update WooPayments now',
+		exact: true,
+	} );
+	// Plugins asks wordpress.org for updates as it loads; the retry covers a
+	// slow answer.
+	await expect( async () => {
+		await page.goto( 'wp-admin/plugins.php' );
+		await expect( updateLink ).toBeVisible( { timeout: 5_000 } );
+	} ).toPass( { timeout: 60_000 } );
+	await updateLink.click();
+	const result = updateRow.locator( '.update-message p' );
+	await expect( result ).toHaveText( /Updated!|failed/i, {
+		timeout: 3 * 60_000,
+	} );
+	await expect( result ).toHaveText( 'Updated!' );
+	await expect
+		.poll(
+			async () =>
+				isAtOrAboveFloor(
+					( await readCutoverStatus( 0 ) ).plugin_version
+				),
+			{ timeout: 60_000 }
+		)
+		.toBe( true );
+}
+
+/**
+ * Waits for wp-admin to offer the switch: the extension records its new
+ * version on the first request that runs the updated code, so a later page
+ * shows Start. Returns the link, checked to be the nonce-bound entry point.
+ */
+async function waitForStartLink( page: Page, baseURL: string ) {
+	const link = page.getByRole( 'link', {
+		name: 'Start the switch',
+		exact: true,
+	} );
+	await expect( async () => {
+		await page.goto( 'wp-admin/' );
+		await expect( link ).toBeVisible( { timeout: 5_000 } );
+	} ).toPass( { timeout: 60_000 } );
+	validateCutoverActionURL(
+		( await link.getAttribute( 'href' ) ) ?? '',
+		baseURL
+	);
+	return link;
+}
+
 let migratorActionId: number;
 
 test.describe( 'WooPayments transition: cutover reconciliation', () => {
@@ -233,6 +398,12 @@ test.describe( 'WooPayments transition: cutover reconciliation', () => {
 		await wpCLI( [ 'wp', 'woopayments-e2e-transition', 'reset' ] );
 	} );
 
+	/**
+	 * Seeded at 10.5.0, below the 10.6.0 floor, with the extension active: the
+	 * switch is not offered until the merchant updates WooPayments in Plugins,
+	 * since the switch never updates the extension. Then the one click, done,
+	 * and a guest card payment on the built-in WooPayments.
+	 */
 	test(
 		'one click proves the allocated cutover reconciliation profile contract',
 		{
@@ -242,7 +413,7 @@ test.describe( 'WooPayments transition: cutover reconciliation', () => {
 				tags.WOOPAYMENTS_TRANSITION,
 			],
 		},
-		async ( { page, restApi, baseURL } ) => {
+		async ( { page, restApi, baseURL, browser } ) => {
 			await requireTestModeAccount( restApi );
 			expect(
 				await readRuntimeOwner( restApi ),
@@ -257,61 +428,77 @@ test.describe( 'WooPayments transition: cutover reconciliation', () => {
 				before.native_state,
 				'the switch notice loads only from the available tier up'
 			).toBe( 'available' );
+			await expectAutomaticUpdaterOff();
+			// No cleanup call here: `afterAll` already runs a full `db reset`,
+			// which removes this product along with everything else, so a
+			// REST delete here would only risk masking the case's own error.
+			const product = await createRunProduct( restApi );
 
+			// Stage 1: below the floor the extension keeps payments, and the
+			// merchant is asked to update it, with no Start.
+			const seeded = await recordStage(
+				'below the floor',
+				restApi,
+				browser,
+				baseURL!,
+				product.id
+			);
+			expect( seeded.owner ).toBe( 'extension' );
+			expect(
+				seeded.card_offered,
+				"the extension's card is offered before the update"
+			).toBe( true );
 			await page.goto( 'wp-login.php' );
 			await logIn( page, admin.username, admin.password, false );
 			await page.goto( 'wp-admin/' );
-			const link = page.getByRole( 'link', {
-				name: 'Start the switch',
-				exact: true,
-			} );
-			await expect( link ).toBeVisible();
-			const href = await link.getAttribute( 'href' );
-			if ( ! href ) {
-				throw new Error(
-					'The product WooPayments cutover action has no exact URL.'
-				);
-			}
-			validateCutoverActionURL( href, baseURL! );
+			await expect(
+				page.getByText( UPDATE_FIRST_ACTIVE, { exact: true } )
+			).toBeVisible();
+			await expect(
+				page.getByRole( 'link', {
+					name: 'Start the switch',
+					exact: true,
+				} )
+			).toHaveCount( 0 );
 
+			// Stage 2: the merchant updates WooPayments from its row in Plugins.
+			await updateWooPaymentsInPlugins( page );
+			const updated = await recordStage(
+				'updated in Plugins',
+				restApi,
+				browser,
+				baseURL!,
+				product.id
+			);
+			expect( updated.owner ).toBe( 'extension' );
+			expect(
+				updated.card_offered,
+				"the extension's card is offered after the update"
+			).toBe( true );
+
+			// Stage 3: wp-admin offers the switch, and the click starts it.
+			const link = await waitForStartLink( page, baseURL! );
 			await link.click( { timeout: 30_000 } );
-			// Below the 10.6.0 floor, the start updates the extension first, and
-			// the site answers 503 while the update runs (WordPress maintenance
-			// mode), so wait for the updated files before reading the notice.
-			await expect
-				.poll(
-					async () => {
-						const response = await page.request.get( 'wp-admin/' );
-						if ( response.status() !== 200 ) {
-							return false;
-						}
-						const { plugin_version: version } =
-							await readCutoverStatus( migratorActionId );
-						return (
-							version.localeCompare( '10.6.0', undefined, {
-								numeric: true,
-							} ) >= 0
-						);
-					},
-					{ timeout: 60_000, intervals: [ 1000, 2000, 5000 ] }
-				)
-				.toBe( true );
-			await page.goto( 'wp-admin/' );
 			await expect(
 				page.getByText( SWITCH_IN_PROGRESS, { exact: true } )
 			).toBeVisible();
-
 			const started = await readCutoverStatus( migratorActionId );
 			expect( started.record ).not.toBeNull();
 			expect( started.record!.current_step ).not.toBe(
 				'awaiting_merchant_start'
 			);
+			await recordStage(
+				'switch started',
+				restApi,
+				browser,
+				baseURL!,
+				product.id
+			);
 
-			// Sized for the switch's own waits, nothing rescheduled: the update's
-			// one-minute retry, at most one one-minute retry for an extension
-			// action due within it, and the ownership check 5 s after the
-			// hand-over, each picked up within a queue cycle. A return of the
-			// 15-minute retry fails it.
+			// Sized for the switch's own waits, nothing rescheduled: at most one
+			// one-minute retry for an extension action due within it, and the
+			// ownership check 5 s after the hand-over, each picked up within a
+			// queue cycle. A return of the 15-minute retry fails it.
 			let completed = started;
 			await expect
 				.poll(
@@ -344,15 +531,25 @@ test.describe( 'WooPayments transition: cutover reconciliation', () => {
 				page.getByText( SWITCH_IN_PROGRESS, { exact: true } )
 			).toHaveCount( 0 );
 
+			// Stage 4: done, on the built-in WooPayments.
+			const done = await recordStage(
+				'done',
+				restApi,
+				browser,
+				baseURL!,
+				product.id
+			);
+			expect( done.owner ).toBe( 'builtin' );
+			expect(
+				done.card_offered,
+				"the built-in WooPayments' card is offered once the switch is done"
+			).toBe( true );
+
 			// The payment below proves a fresh guest checkout on the exact
 			// contract the harness cited: the client's basic-card guest
 			// checkout, `shopper-checkout-purchase.spec.ts:53`.
 			await page.context().clearCookies();
 			const baselineOrderId = await readHighestOrderId( restApi );
-			// No cleanup call here: `afterAll` already runs a full `db reset`,
-			// which removes this product along with everything else, so a
-			// REST delete here would only risk masking the case's own error.
-			const product = await createRunProduct( restApi );
 			{
 				await page.goto( `?post_type=product&p=${ product.id }` );
 				await page
@@ -617,34 +814,8 @@ async function runDeferredAttemptNow(): Promise< number > {
 	` );
 }
 
-/**
- * Waits for WordPress's own maintenance-mode page to clear by reloading,
- * instead of sleeping a fixed span. The real `Plugin_Upgrader::bulk_upgrade()`
- * attempt (F-UPGRADEDEACT, b6edbf50550) holds the site in that mode for the
- * moment its install takes, and the click's own admin request can already
- * trigger it.
- */
-async function waitPastMaintenanceMode( page: Page ): Promise< void > {
-	await expect
-		.poll(
-			async () => {
-				const notice = page.getByText(
-					'Briefly unavailable for scheduled maintenance',
-					{ exact: false }
-				);
-				if ( ( await notice.count() ) === 0 ) {
-					return true;
-				}
-				await page.reload().catch( () => undefined );
-				return false;
-			},
-			{ timeout: 30_000, intervals: [ 500, 1000, 2000 ] }
-		)
-		.toBe( true );
-}
-
 test.describe( 'WooPayments transition: old plugin cutover advancement', () => {
-	test.describe.configure( { timeout: 5 * 60_000 } );
+	test.describe.configure( { timeout: 20 * 60_000 } );
 
 	test.beforeAll( async () => {
 		process.env.E2E_WP_ENV_CONFIG ??=
@@ -667,6 +838,9 @@ test.describe( 'WooPayments transition: old plugin cutover advancement', () => {
 		expect( identity.plugin_version ).toBe( '10.4.0' );
 		expect( identity.plugin_active ).toBe( true );
 		expect( identity.native_state ).toBe( 'available' );
+		// The merchant deactivates the extension by hand, so the store waits
+		// for its switch.
+		await wpCLI( [ 'wp', 'plugin', 'deactivate', 'woocommerce-payments' ] );
 	} );
 
 	test.afterAll( async () => {
@@ -674,20 +848,13 @@ test.describe( 'WooPayments transition: old plugin cutover advancement', () => {
 	} );
 
 	/**
-	 * The expected sequence for an old, unsupported plugin version (10.4.0)
-	 * is the program's own design (plan.md Task 3.1) and the
-	 * zero-merchant-action rule: after the one click, the plugin stays
-	 * active and owning while its own real
-	 * `Plugin_Upgrader::bulk_upgrade()` attempt upgrades it in place
-	 * (F-UPGRADEDEACT, b6edbf50550), and everything after completes
-	 * automatically through the product's own retry cycle with no further
-	 * merchant action, ending with native owning the store and the plugin
-	 * deactivated only at that all-clear step. This replaces the pre-merge
-	 * driver's expectation that this same version would fail its upgrade
-	 * and stay deferred with the plugin as owner (owner FYI).
+	 * A store that ran WooPayments 10.4.0, below the 10.6.0 floor, and
+	 * deactivated it by hand: nothing takes payments, and the switch is not
+	 * offered, since it never updates the extension. The merchant activates
+	 * and updates WooPayments in Plugins, then the one click switches.
 	 */
 	test(
-		'an old, unsupported plugin version proves the real Plugin_Upgrader disposition',
+		'a deactivated extension below the floor is activated and updated in Plugins, then switches in one click',
 		{
 			tag: [
 				tags.WOOPAYMENTS_NATIVE,
@@ -695,42 +862,100 @@ test.describe( 'WooPayments transition: old plugin cutover advancement', () => {
 				tags.WOOPAYMENTS_TRANSITION,
 			],
 		},
-		async ( { page, restApi, baseURL } ) => {
+		async ( { page, restApi, baseURL, browser } ) => {
 			expect(
 				await readRuntimeOwner( restApi ),
-				'the plugin must own runtime before its own cutover writes'
-			).toBe( 'extension' );
-
+				'nothing owns payments while the store waits for its switch'
+			).toBe( 'none' );
 			const before = await readCutoverStatus( 0 );
 			expect( before.plugin_version ).toBe( '10.4.0' );
-			expect( before.plugin_active ).toBe( true );
+			expect( before.plugin_active ).toBe( false );
 			expect( before.preflight_failures ).toContain( VERSION_BLOCKER );
-			expect( before.native_state ).toBe( 'available' );
+			await expectAutomaticUpdaterOff();
+			// `afterAll` resets the store, this product included.
+			const product = await createRunProduct( restApi );
 
+			// Stage 1: the store waits for its switch with no Start, and the
+			// merchant is asked to activate and update the extension.
+			const waiting = await recordStage(
+				'deactivated below the floor',
+				restApi,
+				browser,
+				baseURL!,
+				product.id
+			);
+			expect( waiting.owner ).toBe( 'none' );
+			expect(
+				waiting.card_offered,
+				'nothing offers WooPayments while the store waits for its switch'
+			).toBe( false );
 			await page.goto( 'wp-login.php' );
 			await logIn( page, admin.username, admin.password, false );
 			await page.goto( 'wp-admin/' );
-			const link = page.getByRole( 'link', {
-				name: 'Start the switch',
-				exact: true,
-			} );
-			await expect( link ).toBeVisible();
-			const href = await link.getAttribute( 'href' );
-			if ( ! href ) {
-				throw new Error(
-					'The product WooPayments cutover action has no exact URL.'
-				);
-			}
-			validateCutoverActionURL( href, baseURL! );
+			await expect(
+				page.getByText( UPDATE_FIRST_DEACTIVATED, { exact: true } )
+			).toBeVisible();
+			await expect(
+				page.getByRole( 'link', {
+					name: 'Start the switch',
+					exact: true,
+				} )
+			).toHaveCount( 0 );
 
+			// Stage 2: the merchant activates WooPayments from its row in Plugins.
+			await page.goto( 'wp-admin/plugins.php' );
+			await page
+				.locator( `tr[data-plugin="${ WOOPAYMENTS_PLUGIN_FILE }"]` )
+				.getByRole( 'link', {
+					name: 'Activate WooPayments',
+					exact: true,
+				} )
+				.click();
+			await expect
+				.poll(
+					async () => ( await readCutoverStatus( 0 ) ).plugin_active,
+					{ timeout: 60_000 }
+				)
+				.toBe( true );
+			const activated = await recordStage(
+				'activated',
+				restApi,
+				browser,
+				baseURL!,
+				product.id
+			);
+			expect( activated.owner ).toBe( 'extension' );
+
+			// Stage 3: the merchant updates WooPayments from its row in Plugins.
+			await updateWooPaymentsInPlugins( page );
+			const updated = await recordStage(
+				'updated in Plugins',
+				restApi,
+				browser,
+				baseURL!,
+				product.id
+			);
+			expect( updated.owner ).toBe( 'extension' );
+
+			// Stage 4: wp-admin offers the switch, and the click starts it.
+			const link = await waitForStartLink( page, baseURL! );
 			await link.click( { timeout: 30_000 } );
-			await waitPastMaintenanceMode( page );
+			await expect(
+				page.getByText( SWITCH_IN_PROGRESS, { exact: true } )
+			).toBeVisible();
+			await recordStage(
+				'switch started',
+				restApi,
+				browser,
+				baseURL!,
+				product.id
+			);
 
-			// Step 1: the first attempt. Not asserted: record.deferred_codes,
-			// a stale mid-attempt snapshot taken before this same attempt's
-			// own upgrade result lands (F-UPGRADELOG, T.7). The status is read
-			// only inside the poll's try: a WP-CLI process that loads the
-			// extension while the attempt swaps its files fails and is retried.
+			// Stage 5: the product's own retry cycle at its own times, nothing
+			// rescheduled, the queue triggered on each tick (a test-time
+			// shortcut, not a product finding). The status is read only inside
+			// the poll's try: a WP-CLI process that loads the extension while
+			// the switch deactivates it fails and is retried.
 			let owner = '';
 			let status!: CutoverStatus;
 			await expect
@@ -745,57 +970,22 @@ test.describe( 'WooPayments transition: old plugin cutover advancement', () => {
 						}
 						return status.record?.state ?? null;
 					},
-					{ timeout: 60_000, intervals: [ 1000, 3000, 5000 ] }
-				)
-				.toBe( 'deferred' );
-			expect(
-				owner,
-				'the plugin must still own runtime after the first attempt'
-			).toBe( 'extension' );
-			expect(
-				status.plugin_active,
-				'the plugin must stay active through the first attempt'
-			).toBe( true );
-			expect( status.network_active ).toBe( false );
-			expect(
-				status.plugin_version.localeCompare( '10.5.0', 'en', {
-					numeric: true,
-				} ),
-				"the plugin's own header version must already be at or above the supported floor"
-			).toBeGreaterThanOrEqual( 0 );
-
-			// Step 2: zero merchant action. The merchant's one click already
-			// happened above; every later attempt is the product's own retry
-			// cycle at its own times, nothing rescheduled: the update's
-			// one-minute retry, then the ownership check 5 s after the hand-over
-			// (the queue triggered on each tick, a test-time shortcut,
-			// not a product finding).
-			await expect
-				.poll(
-					async () => {
-						await triggerActionSchedulerQueue( baseURL! );
-						try {
-							owner = await readRuntimeOwner( restApi );
-							status = await readCutoverStatus( 0 );
-						} catch {
-							return null;
-						}
-						return status.record?.state ?? null;
-					},
-					{ timeout: 3 * 60_000, intervals: [ 1000, 3000, 5000 ] }
+					{ timeout: 5 * 60_000, intervals: [ 1000, 3000, 5000 ] }
 				)
 				.toBe( 'done' );
-
-			// Step 3: the all-clear. The plugin is deactivated only here,
-			// not during the deferred attempt above (asserted active there).
 			expect( owner ).toBe( 'builtin' );
-			expect(
-				status.plugin_active,
-				'the plugin must be deactivated only once the record is done'
-			).toBe( false );
+			expect( status.plugin_active ).toBe( false );
 			expect( status.network_active ).toBe( false );
 			expect( status.preflight_failures ).toEqual( [] );
 			await expectNativeGatewayActive( restApi, status );
+			const done = await recordStage(
+				'done',
+				restApi,
+				browser,
+				baseURL!,
+				product.id
+			);
+			expect( done.owner ).toBe( 'builtin' );
 		}
 	);
 } );
