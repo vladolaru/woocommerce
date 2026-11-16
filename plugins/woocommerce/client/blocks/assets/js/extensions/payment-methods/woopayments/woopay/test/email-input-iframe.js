@@ -1,4 +1,9 @@
 /**
+ * External dependencies
+ */
+import { reload as navigate } from '@woocommerce/utils/navigation';
+
+/**
  * Internal dependencies
  */
 import {
@@ -7,9 +12,10 @@ import {
 	isPreviewing,
 	shouldHandleWooPayEmailInput,
 	shouldSkipWooPay,
-	__test__,
 } from '../email-input-iframe';
 import { postFromWooPay } from '../protocol/test/utils/post-from-woopay';
+
+jest.mock( '@woocommerce/utils/navigation', () => ( { reload: jest.fn() } ) );
 
 const WOOPAY_HOST = 'https://pay.woo.test';
 
@@ -46,7 +52,6 @@ describe( 'WooPay email input (blocks)', () => {
 	let fetchResponses;
 	let windowListeners;
 	let documentListeners;
-	let navigate;
 	let getComputedStyleSpy;
 
 	const renderCheckout = () => {
@@ -164,8 +169,7 @@ describe( 'WooPay email input (blocks)', () => {
 			'/checkout/'
 		);
 		window.history.replaceState = jest.fn();
-		navigate = jest.fn();
-		__test__.setNavigate( navigate );
+		navigate.mockReset();
 		jest.useFakeTimers();
 	} );
 

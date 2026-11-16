@@ -1,4 +1,9 @@
 /**
+ * External dependencies
+ */
+import { reload as navigate } from '@woocommerce/utils/navigation';
+
+/**
  * Internal dependencies
  */
 import { recordWooPaymentsUserEvent, getTracksIdentity } from '../tracks';
@@ -19,10 +24,6 @@ import { getWooPayRequestArgs } from './request';
  * The WooPay email check on the Blocks checkout: the shared WooPay protocol (./protocol) with the Blocks checkout's
  * fields, notices and requests.
  */
-
-let navigate = ( url ) => {
-	window.location.href = url;
-};
 
 export {
 	claimWooPayRedirect,
@@ -108,7 +109,7 @@ export const handleWooPayEmailInput = async ( field, paymentSettings ) => {
 					eventName,
 					eventProperties
 				),
-			navigate: ( url ) => navigate( url ),
+			navigate,
 			// Placing the order cancels the lookup and closes the iframe.
 			onPlaceOrder: ( callback ) =>
 				getTargetElement(
@@ -128,10 +129,4 @@ export const handleWooPayEmailInput = async ( field, paymentSettings ) => {
 		woopayEmailInput,
 		tracksUserId
 	);
-};
-
-export const __test__ = {
-	setNavigate: ( callback ) => {
-		navigate = callback;
-	},
 };

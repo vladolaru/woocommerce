@@ -6,18 +6,21 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createElement } from '@wordpress/element';
 import { registerExpressPaymentMethod } from '@woocommerce/blocks-registry';
+import { reload as navigate } from '@woocommerce/utils/navigation';
 import { dispatch } from '@wordpress/data';
 
 /**
  * Internal dependencies
  */
-import registerWooPay, { __test__ } from '../index';
+import registerWooPay from '../index';
 import { getConnect } from '../protocol';
 import { postFromWooPay } from '../protocol/test/utils/post-from-woopay';
 
 jest.mock( '@woocommerce/blocks-registry', () => ( {
 	registerExpressPaymentMethod: jest.fn(),
 } ) );
+
+jest.mock( '@woocommerce/utils/navigation', () => ( { reload: jest.fn() } ) );
 
 jest.mock( '@wordpress/data', () => ( {
 	...jest.requireActual( '@wordpress/data' ),
@@ -85,7 +88,6 @@ const nativeContentWindow = Object.getOwnPropertyDescriptor(
 	window.HTMLIFrameElement.prototype,
 	'contentWindow'
 );
-let navigate;
 let getComputedStyleSpy;
 let user;
 
@@ -144,8 +146,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 	} );
 
 	beforeEach( () => {
-		navigate = jest.fn();
-		__test__.setNavigate( navigate );
+		navigate.mockReset();
 		user = userEvent.setup();
 	} );
 
@@ -1364,10 +1365,9 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 			);
 
 			it( 'shows the error and releases the button when the navigation fails', async () => {
-				navigate = jest.fn( () => {
+				navigate.mockImplementation( () => {
 					throw new Error( 'Navigation blocked' );
 				} );
-				__test__.setNavigate( navigate );
 				renderButton();
 
 				await answerWithAddress(

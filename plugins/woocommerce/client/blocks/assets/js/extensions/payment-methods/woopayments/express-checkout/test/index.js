@@ -5,10 +5,13 @@ import { act, render, waitFor } from '@testing-library/react';
 import { createElement } from '@wordpress/element';
 import { registerExpressPaymentMethod } from '@woocommerce/blocks-registry';
 import apiFetch from '@wordpress/api-fetch';
+import { reload as navigate } from '@woocommerce/utils/navigation';
 
 jest.mock( '@woocommerce/blocks-registry', () => ( {
 	registerExpressPaymentMethod: jest.fn(),
 } ) );
+
+jest.mock( '@woocommerce/utils/navigation', () => ( { reload: jest.fn() } ) );
 
 const mockInvalidateResolutionForStore = jest.fn();
 jest.mock( '@wordpress/data', () => ( {
@@ -385,7 +388,6 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 	let expressElement;
 	let expressHandlers;
 	let registerExpressCheckout;
-	let setNavigate;
 	let stripe;
 	let elements;
 	let availablePaymentMethods;
@@ -397,7 +399,6 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		mockGetPaymentMethodData.mockReturnValue( basePaymentMethodData );
 		const expressCheckoutModule = require( '../index' );
 		registerExpressCheckout = expressCheckoutModule.default;
-		setNavigate = expressCheckoutModule.__test__.setNavigate;
 	} );
 
 	beforeEach( () => {
@@ -2537,6 +2538,10 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		};
 
 		beforeEach( () => {
+			// These rows read window.location, so the navigation runs for real.
+			navigate.mockImplementation(
+				jest.requireActual( '@woocommerce/utils/navigation' ).reload
+			);
 			apiFetch.mockResolvedValueOnce( confirmationResponse );
 			window.fetch = jest.fn( ( url, options ) =>
 				Promise.resolve(
@@ -2553,6 +2558,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		} );
 
 		afterEach( () => {
+			navigate.mockReset();
 			window.history.replaceState( null, '', checkoutUrl );
 		} );
 
@@ -2783,7 +2789,6 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 
 	describe( 'leaving checkout after a successful wallet payment', () => {
 		const pageUrl = window.location.href;
-		let navigate;
 
 		const confirmGooglePay = async ( props = {} ) => {
 			registerExpressCheckout();
@@ -2811,15 +2816,8 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			} );
 		};
 
-		beforeEach( () => {
-			navigate = jest.fn();
-			setNavigate( navigate );
-		} );
-
 		afterEach( () => {
-			setNavigate( ( url ) => {
-				window.location.href = url;
-			} );
+			navigate.mockReset();
 			window.history.replaceState( null, '', pageUrl );
 		} );
 

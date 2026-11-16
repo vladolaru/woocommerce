@@ -5,6 +5,7 @@ import { registerExpressPaymentMethod } from '@woocommerce/blocks-registry';
 import { getPaymentMethodData } from '@woocommerce/settings';
 import { cartStore } from '@woocommerce/block-data';
 import { extensionCartUpdate } from '@woocommerce/blocks-checkout';
+import { reload as navigate } from '@woocommerce/utils/navigation';
 import { decodeEntities } from '@wordpress/html-entities';
 import { dispatch } from '@wordpress/data';
 import { applyFilters } from '@wordpress/hooks';
@@ -1086,10 +1087,6 @@ const confirmIntent = ( redirectUrl ) => {
 // One API object for every express method, as the client passes its WCPayAPI instance (client/checkout/blocks/index.js).
 const expressCheckoutApi = { confirmIntent };
 
-let navigate = ( url ) => {
-	window.location.href = url;
-};
-
 // Whether the BlockUI page overlay up now is the one these wallets put up.
 let isPageLocked = false;
 
@@ -1662,9 +1659,3 @@ registerSubscriptionsCompatibility();
 registerWooPaymentsExpressCheckout();
 
 export default registerWooPaymentsExpressCheckout;
-
-export const __test__ = {
-	setNavigate: ( callback ) => {
-		navigate = callback;
-	},
-};

@@ -3,6 +3,7 @@
  */
 import { registerExpressPaymentMethod } from '@woocommerce/blocks-registry';
 import { getPaymentMethodData } from '@woocommerce/settings';
+import { reload as navigate } from '@woocommerce/utils/navigation';
 import { __, sprintf } from '@wordpress/i18n';
 import { useEffect, useRef, useState } from '@wordpress/element';
 
@@ -65,9 +66,6 @@ const wooPayConnectArgs = {
 		return settings.platformTrackerNonce;
 	},
 	iframeTitle: __( 'WooPay Connect', 'woocommerce' ),
-};
-let navigate = ( url ) => {
-	window.location.href = url;
 };
 
 // The hosted WooPay address the page leaves for, or '' when it would not leave: not http or https, or the current
@@ -639,9 +637,3 @@ const registerWooPay = () => {
 registerWooPay();
 
 export default registerWooPay;
-
-export const __test__ = {
-	setNavigate: ( callback ) => {
-		navigate = callback;
-	},
-};
