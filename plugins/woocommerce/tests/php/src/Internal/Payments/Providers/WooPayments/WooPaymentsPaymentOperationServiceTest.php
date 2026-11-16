@@ -25,6 +25,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCh
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundAmbiguityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEarlierAttemptCleanup;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsErrorMessages;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressPaymentMethodTypes;
@@ -4907,6 +4908,53 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( OrderStatus::FAILED, $order->get_status() );
 		$this->assertSame( $expected_mode, $order->get_meta( '_wcpay_mode', true ) );
+	}
+
+	/**
+	 * @testdox A $0 checkout whose card save is declined and which another gateway then checks out is cleaned up before a subscription created at priority 100 copies the order's meta.
+	 *
+	 * WooCommerce Subscriptions creates the subscription at 100 and copies the order's meta into it from a fresh load
+	 * (includes/core/class-wc-subscriptions-checkout.php:24, :79, :191); SubscriptionsController leaves out only the
+	 * single-payment keys (SubscriptionsController::SINGLE_PAYMENT_META_KEYS), so the declined card's payment method and the
+	 * customer were copied when the declined save stored no mode. The callback at 100 reads what that copy reads. The
+	 * decline is REC-2's recorded generic_decline (Fixtures/platform-setup-intent-declines.json), which names no payment
+	 * intent, so no intent is stored.
+	 */
+	public function test_declined_zero_total_card_save_is_cleaned_up_before_the_subscription_copy(): void {
+		$order          = $this->create_woopayments_order( '0.00' );
+		$recorded       = $this->load_recorded_decline_entry( 'generic_decline', 'platform-setup-intent-declines.json' );
+		$payment_method = (string) $recorded['error']['setup_intent']['last_setup_error']['payment_method']['id'];
+		wc_get_container()->get( PaymentProcessingService::class )->process_checkout_outcome(
+			PaymentOperationContext::for_checkout(
+				$order,
+				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+				$payment_method,
+				array(
+					'payment_token'       => 'new',
+					'save_payment_method' => true,
+				)
+			),
+			$this->create_provider_declining_checkout( $recorded, $this->create_account_service( true ) )
+		);
+		wc_get_container()->get( WooPaymentsEarlierAttemptCleanup::class )->register();
+		$copied = null;
+		add_action(
+			'woocommerce_store_api_checkout_order_processed',
+			static function ( $passed ) use ( &$copied ) {
+				$loaded = wc_get_order( $passed );
+				$copied = array( $loaded->get_meta( '_payment_method_id', true ), $loaded->get_meta( '_stripe_customer_id', true ), $loaded->get_meta( '_wcpay_mode', true ) );
+			},
+			100
+		);
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( array( $payment_method, 'cus_rec1_checkout' ), array( $order->get_meta( '_payment_method_id', true ), $order->get_meta( '_stripe_customer_id', true ) ), 'The declined save leaves the payment method and the customer.' );
+		$order->set_payment_method( 'bacs' );
+		$order->save();
+
+		do_action( 'woocommerce_store_api_checkout_order_processed', $order );
+
+		$this->assertSame( array( '', '', '' ), $copied );
+		$this->assertNotSame( '', (string) wc_get_order( $order->get_id() )->get_meta( WooPaymentsPersistenceVocabulary::PAYMENT_DETAILS_REMOVED_META_KEY, true ), 'The cleanup ran.' );
 	}
 
 	/**

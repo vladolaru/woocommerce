@@ -293,6 +293,45 @@ final class StoredPaymentRecords {
 	}
 
 	/**
+	 * An earlier WooPayments attempt's record on an order whose checkout another payment method has just taken: the
+	 * attempt's mode, payment method, customer, stored intent and status, and its charge and transaction ID when it wrote
+	 * them, while the order's payment method names, for example, bank transfer.
+	 *
+	 * Written by the attempt: the charge key's save writes the mode at the attempt's start
+	 * (WooPaymentsPaymentOperationService::ensure_charge_idempotency_key()); a declined request's failed outcome writes the
+	 * intent, the default requires_payment_method status, the payment method and the customer
+	 * (WooPaymentsOutcomeMetadataMapper::get_outcome_meta()); a started or paid attempt's attach writes the transaction ID
+	 * and the charge (WooPaymentsOrderEffectApplier::attach_intent_info()). Then the other gateway's checkout sets its
+	 * payment method on the reused order before the checkout hooks fire (the Store API's CheckoutTrait::update_order_from_request(),
+	 * WC_Checkout::create_order(), WC_Form_Handler::pay_action()). In the WooPayments extension the same values come from
+	 * process_payment_for_order() (client 11.3.0 class-wc-payment-gateway-wcpay.php:1962-1964 and its setters).
+	 *
+	 * @param string $stored_status  The status stored for the attempt.
+	 * @param string $intent_id      The attempt's intent, the stored intent, or '' for none.
+	 * @param string $transaction_id The transaction ID, or '' for none.
+	 * @param string $charge_id      The stored charge, or '' for none.
+	 * @param string $order_status   Order status; a paid status gets a paid date.
+	 * @param string $payment_method The other gateway's ID.
+	 * @param string $mode           The stored mode, or '' for none.
+	 * @return WC_Order
+	 */
+	public static function attempt_before_a_takeover( string $stored_status = 'requires_payment_method', string $intent_id = 'pi_A', string $transaction_id = '', string $charge_id = '', string $order_status = OrderStatus::PENDING, string $payment_method = 'bacs', string $mode = 'test' ): WC_Order {
+		return self::create_order(
+			$order_status,
+			$transaction_id,
+			array(
+				'_intent_id'          => $intent_id,
+				'_intention_status'   => $stored_status,
+				'_charge_id'          => $charge_id,
+				'_payment_method_id'  => 'pm_A',
+				'_stripe_customer_id' => 'cus_A',
+				'_wcpay_mode'         => $mode,
+			),
+			$payment_method
+		);
+	}
+
+	/**
 	 * Create and save an order with the given status, transaction ID, stored values and payment method.
 	 *
 	 * @param string               $status         Order status; a paid status gets a paid date.

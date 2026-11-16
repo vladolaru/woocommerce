@@ -176,6 +176,8 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 			WooPaymentsFeeDetailsNoteController::class,
 			WooPaymentsTestModeOrderEmailService::class,
 			WooPaymentsLoanApprovedNote::class,
+			// The built-in still applies webhooks with its checkout off, so another gateway's checkout cleans up an earlier attempt.
+			WooPaymentsEarlierAttemptCleanup::class,
 		);
 		$connected_rest             = array_merge(
 			array(
@@ -199,6 +201,8 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 				UserPreferenceFields::class,
 				HomeTasks::class,
 				WooPaymentsLoanApprovedNote::class,
+				// The Store API checkout and order-pay routes clean up an earlier attempt another gateway took over.
+				WooPaymentsEarlierAttemptCleanup::class,
 			)
 		);
 		$connected_cron             = array(
@@ -237,7 +241,8 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 			),
 			WooPaymentsSetupTier::CONNECTED => array(
 				// The VAT details link lands on a front-end URL (client 11.1.0 `includes/class-wc-payments-vat-redirect-service.php:25`).
-				RequestTypeUtil::FRONT => array_merge( $gateway_prefix, array( WooPaymentsVatDetailsRedirect::class ) ),
+				// The classic checkout and the pay page clean up an earlier attempt another gateway took over, also with the checkout off.
+				RequestTypeUtil::FRONT => array_merge( $gateway_prefix, array( WooPaymentsVatDetailsRedirect::class, WooPaymentsEarlierAttemptCleanup::class ) ),
 				RequestTypeUtil::ADMIN => array_merge( $gateway_prefix, $connected_admin ),
 				RequestTypeUtil::AJAX  => array_merge( $gateway_prefix, $connected_ajax ),
 				RequestTypeUtil::REST  => array_merge( $gateway_prefix, $connected_rest ),
@@ -273,6 +278,8 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 						WooPaymentsPaymentMethodMessaging::class,
 						WooPaymentsApplePayDomainService::class,
 						WooPaymentsFrontendTrackingController::class,
+						// The classic checkout and the pay page post to a page; it cleans up an earlier attempt another gateway took over.
+						WooPaymentsEarlierAttemptCleanup::class,
 						WooPaymentsFraudOrderTrackingService::class,
 						WooPaymentsStoreSetupReportController::class,
 						WooPaymentsAccountMilestonesController::class,
