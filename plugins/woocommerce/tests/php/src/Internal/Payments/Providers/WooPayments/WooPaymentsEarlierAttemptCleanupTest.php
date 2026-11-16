@@ -133,11 +133,12 @@ class WooPaymentsEarlierAttemptCleanupTest extends WC_Unit_Test_Case {
 	 * Client 11.3.0 class-wc-payments-order-service.php:1290-1339 (list, delete, time, note) and :1420-1460 (clear, cancel,
 	 * notes); the cancel goes straight to the platform, never through the operation service that would cancel the order and
 	 * stamp the fraud meta. The wording says the customer checked out with another payment method, which is true for a
-	 * bank transfer that has not been paid yet.
+	 * bank transfer that has not been paid yet. The could-not-cancel note links the payment to its transaction page, since
+	 * the transactions search does not find a payment by this ID; the removal and the was-cancelled notes name it plainly.
 	 *
 	 * @param array<string,mixed> $cancel_answer   The platform's answer to the cancel.
 	 * @param bool                $lock_held       Whether a WooPayments operation holds the order payment lock at shutdown.
-	 * @param string              $expected_note   The shutdown note.
+	 * @param string              $expected_note   The shutdown note, with %1$s for the linked payment.
 	 * @param string              $expected_txn    The transaction ID after shutdown.
 	 */
 	public function test_takeover_of_an_attempt_waiting_for_authentication( array $cancel_answer, bool $lock_held, string $expected_note, string $expected_txn ): void {
@@ -169,7 +170,7 @@ class WooPaymentsEarlierAttemptCleanupTest extends WC_Unit_Test_Case {
 		$finished = wc_get_order( $order->get_id() );
 		$this->assertSame( $expected_txn, $finished->get_transaction_id() );
 		$this->assertSame( array( 'POST /sites/123/wcpay/intentions/pi_A/cancel' ), $this->sent_requests() );
-		$this->assertSame( 1, self::count_notes( $order, $expected_note ) );
+		$this->assertSame( 1, self::count_notes( $order, sprintf( $expected_note, self::linked_id( 'pi_A' ) ) ) );
 		$this->assertSame( OrderStatus::PENDING, $finished->get_status() );
 		$this->assertSame( '', (string) $finished->get_meta( '_wcpay_fraud_meta_box_type', true ) );
 		$this->assertSame( '', (string) $finished->get_meta( '_wcpay_fraud_outcome_status', true ) );
@@ -198,9 +199,9 @@ class WooPaymentsEarlierAttemptCleanupTest extends WC_Unit_Test_Case {
 
 		return array(
 			'the cancel succeeds'                          => array( $cancelled, false, 'The earlier WooPayments payment <code>pi_A</code> was cancelled because the customer checked out with another payment method.', '' ),
-			'the cancel is refused'                        => array( $refused, false, 'The earlier WooPayments payment <code>pi_A</code> could not be cancelled when the customer checked out with another payment method. Check that it was not charged.', '' ),
+			'the cancel is refused'                        => array( $refused, false, 'The earlier WooPayments payment %1$s could not be cancelled when the customer checked out with another payment method. Check that it was not charged.', '' ),
 			'the lock is held at shutdown, cancel succeeds' => array( $cancelled, true, 'The earlier WooPayments payment <code>pi_A</code> was cancelled because the customer checked out with another payment method. The order&#039;s transaction ID was not cleared, because a WooPayments payment for this order was being recorded at that moment.', 'pi_A' ),
-			'the lock is held at shutdown, cancel refused' => array( $refused, true, 'The earlier WooPayments payment <code>pi_A</code> could not be cancelled when the customer checked out with another payment method. Check that it was not charged. The order&#039;s transaction ID was not cleared, because a WooPayments payment for this order was being recorded at that moment.', 'pi_A' ),
+			'the lock is held at shutdown, cancel refused' => array( $refused, true, 'The earlier WooPayments payment %1$s could not be cancelled when the customer checked out with another payment method. Check that it was not charged. The order&#039;s transaction ID was not cleared, because a WooPayments payment for this order was being recorded at that moment.', 'pi_A' ),
 		);
 	}
 
@@ -290,11 +291,12 @@ class WooPaymentsEarlierAttemptCleanupTest extends WC_Unit_Test_Case {
 	 * answers are the recorded intents of Fixtures/platform-intention-basic-card.json (succeeded) and
 	 * Fixtures/platform-manual-capture.json (requires_capture); the refunded and disputed ones set the recorded charge's
 	 * `refunded` or `disputed` flag, a model of the platform's charge object, not a recording; the processing one, as an
-	 * asynchronous method's payment reads before it settles, sets the recorded intent's status.
+	 * asynchronous method's payment reads before it settles, sets the recorded intent's status. The note links the payment
+	 * to its transaction page.
 	 *
 	 * @param array<string,mixed> $intent         The read's answer.
 	 * @param string              $transaction_id The order's transaction ID.
-	 * @param string              $expected_note  The note.
+	 * @param string              $expected_note  The note, with %1$s for the linked payment.
 	 */
 	public function test_kept_payment( array $intent, string $transaction_id, string $expected_note ): void {
 		$intent_id                 = (string) $intent['id'];
@@ -313,7 +315,7 @@ class WooPaymentsEarlierAttemptCleanupTest extends WC_Unit_Test_Case {
 		$this->assertSame( '', $stored->get_meta( WooPaymentsPersistenceVocabulary::PAYMENT_DETAILS_REMOVED_META_KEY, true ) );
 		$this->assertSame( $transaction_id, $stored->get_transaction_id() );
 		$this->assertFalse( has_action( 'shutdown', array( $this->sut, 'finish_earlier_attempts' ) ) );
-		$this->assertSame( array( $expected_note ), self::takeover_notes( $order ), 'One note for the intent, however many takeovers.' );
+		$this->assertSame( array( sprintf( $expected_note, self::linked_id( $intent_id ) ) ), self::takeover_notes( $order ), 'One note for the intent, however many takeovers.' );
 	}
 
 	/**
@@ -333,16 +335,16 @@ class WooPaymentsEarlierAttemptCleanupTest extends WC_Unit_Test_Case {
 		$intent_id = (string) $succeeded['id'];
 		$sentence  = ' This order&#039;s transaction ID names that payment at this moment, so a refund or a dispute of it changes this order.';
 		$both      = ' If both payments end up made, one of them needs a refund.';
-		$opening   = 'When the customer checked out with another payment method, the WooPayments payment <code>%s</code> recorded on this order ';
+		$opening   = 'When the customer checked out with another payment method, the WooPayments payment %1$s recorded on this order ';
 
 		return array(
-			'succeeded, named by the transaction ID'      => array( $succeeded, $intent_id, sprintf( $opening, $intent_id ) . 'held money.' . $both . $sentence ),
-			'succeeded, no transaction ID'                => array( $succeeded, '', sprintf( $opening, $intent_id ) . 'held money.' . $both ),
-			'succeeded, the transaction ID names another' => array( $succeeded, 'pi_other', sprintf( $opening, $intent_id ) . 'held money.' . $both ),
-			'authorized and not captured'                 => array( $authorized, (string) $authorized['id'], sprintf( $opening, (string) $authorized['id'] ) . 'was authorized and not captured.' . $both . $sentence ),
-			'refunded in full'                            => array( $refunded, $intent_id, sprintf( $opening, $intent_id ) . 'had been refunded in full.' . $both . $sentence ),
-			'disputed'                                    => array( $disputed, $intent_id, sprintf( $opening, $intent_id ) . 'was disputed.' . $both . $sentence ),
-			'still being processed'                       => array( $processing, $intent_id, sprintf( $opening, $intent_id ) . 'was still being processed.' . $both . $sentence ),
+			'succeeded, named by the transaction ID'      => array( $succeeded, $intent_id, $opening . 'held money.' . $both . $sentence ),
+			'succeeded, no transaction ID'                => array( $succeeded, '', $opening . 'held money.' . $both ),
+			'succeeded, the transaction ID names another' => array( $succeeded, 'pi_other', $opening . 'held money.' . $both ),
+			'authorized and not captured'                 => array( $authorized, (string) $authorized['id'], $opening . 'was authorized and not captured.' . $both . $sentence ),
+			'refunded in full'                            => array( $refunded, $intent_id, $opening . 'had been refunded in full.' . $both . $sentence ),
+			'disputed'                                    => array( $disputed, $intent_id, $opening . 'was disputed.' . $both . $sentence ),
+			'still being processed'                       => array( $processing, $intent_id, $opening . 'was still being processed.' . $both . $sentence ),
 		);
 	}
 
@@ -369,7 +371,7 @@ class WooPaymentsEarlierAttemptCleanupTest extends WC_Unit_Test_Case {
 		$this->assertSame( $keys, self::read_keys( $stored ) );
 		$this->assertSame( '', $stored->get_meta( WooPaymentsPersistenceVocabulary::SUPERSEDED_INTENT_IDS_META_KEY, true ) );
 		$this->assertSame( 'pi_A', $stored->get_transaction_id() );
-		$this->assertSame( array( 'The WooPayments payment <code>pi_A</code> could not be checked when the customer checked out with another payment method. Check whether it took money from the customer.' ), self::takeover_notes( $order ) );
+		$this->assertSame( array( 'The WooPayments payment ' . self::linked_id( 'pi_A' ) . ' could not be checked when the customer checked out with another payment method. Check whether it took money from the customer.' ), self::takeover_notes( $order ) );
 		$this->assertCount( 2, array_filter( $logger->contexts, static fn( array $context ): bool => 'takeover_read_failed' === ( $context['reason'] ?? '' ) ) );
 	}
 
@@ -480,11 +482,14 @@ class WooPaymentsEarlierAttemptCleanupTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox When a WooPayments operation holds the order payment lock at the checkout, nothing is removed, the refusal is logged and the order says where to check ($_dataName).
+	 * @testdox When a WooPayments operation holds the order payment lock at the checkout, nothing is removed, the refusal is logged and the order says where to check, linking the payment when it has a transaction page ($_dataName).
 	 * @dataProvider provide_lock_refusals
 	 *
+	 * A setup intent has no transaction page, so it stays plain; an ID that is not a well-formed one is escaped in both the
+	 * address and the text.
+	 *
 	 * @param string $intent_id     The stored intent.
-	 * @param string $expected_note The note.
+	 * @param string $expected_note The note, with %1$s for the linked payment and %2$s for the store's admin.php address.
 	 */
 	public function test_lock_refused_at_the_checkout( string $intent_id, string $expected_note ): void {
 		$logger     = RecordingWcLogger::install();
@@ -500,7 +505,7 @@ class WooPaymentsEarlierAttemptCleanupTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertSame( $keys, self::read_keys( wc_get_order( $order->get_id() ) ) );
-		$this->assertSame( 1, self::count_notes( $order, $expected_note ) );
+		$this->assertSame( 1, self::count_notes( $order, sprintf( $expected_note, self::linked_id( $intent_id ), admin_url( 'admin.php' ) ) ) );
 		$this->assertCount( 1, array_filter( $logger->contexts, static fn( array $context ): bool => 'takeover_cleanup_lock_refused' === ( $context['reason'] ?? '' ) && 'payment status update' === ( $context['holder_operation'] ?? '' ) ) );
 	}
 
@@ -509,7 +514,9 @@ class WooPaymentsEarlierAttemptCleanupTest extends WC_Unit_Test_Case {
 	 */
 	public function provide_lock_refusals(): array {
 		return array(
-			'with a stored intent'  => array( 'pi_A', 'The payment details of an earlier WooPayments attempt (<code>pi_A</code>) were not removed when the customer checked out with another payment method, because a WooPayments payment for this order was being recorded at that moment. Before fulfilling the order, check its payment details or the WooPayments transaction for <code>pi_A</code>.' ),
+			'with a stored intent'  => array( 'pi_A', 'The payment details of an earlier WooPayments attempt (%1$s) were not removed when the customer checked out with another payment method, because a WooPayments payment for this order was being recorded at that moment. Before fulfilling the order, check its payment details or the WooPayments transaction for %1$s.' ),
+			'with a setup intent'   => array( 'seti_S', 'The payment details of an earlier WooPayments attempt (<code>seti_S</code>) were not removed when the customer checked out with another payment method, because a WooPayments payment for this order was being recorded at that moment. Before fulfilling the order, check its payment details or the WooPayments transaction for <code>seti_S</code>.' ),
+			'with a hostile ID'     => array( 'pi_A\'"><b>x</b>', 'The payment details of an earlier WooPayments attempt (<a href="%2$s?page=wc-admin&#038;path=%%2Fpayments%%2Ftransactions%%2Fdetails&#038;id=pi_A&#039;bx/b" target="_blank" rel="noopener noreferrer">pi_A&#039;&quot;&gt;&lt;b&gt;x&lt;/b&gt;</a>) were not removed when the customer checked out with another payment method, because a WooPayments payment for this order was being recorded at that moment. Before fulfilling the order, check its payment details or the WooPayments transaction for <a href="%2$s?page=wc-admin&#038;path=%%2Fpayments%%2Ftransactions%%2Fdetails&#038;id=pi_A&#039;bx/b" target="_blank" rel="noopener noreferrer">pi_A&#039;&quot;&gt;&lt;b&gt;x&lt;/b&gt;</a>.' ),
 			'with no stored intent' => array( '', 'The payment details of an earlier WooPayments attempt were not removed when the customer checked out with another payment method, because a WooPayments payment for this order was being recorded at that moment. Before fulfilling the order, check its payment details or its WooPayments transactions.' ),
 		);
 	}
@@ -914,11 +921,21 @@ class WooPaymentsEarlierAttemptCleanupTest extends WC_Unit_Test_Case {
 		$notes = array_values(
 			array_filter(
 				array_map( static fn( $order_note ): string => (string) $order_note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) ),
-				static fn( string $content ): bool => 0 === strpos( $content, 'When the customer checked out' ) || 0 === strpos( $content, 'The WooPayments payment <code>' )
+				static fn( string $content ): bool => 0 === strpos( $content, 'When the customer checked out' ) || 0 === strpos( $content, 'The WooPayments payment ' )
 			)
 		);
 
 		return array_reverse( $notes );
+	}
+
+	/**
+	 * Name a payment as a note links it: to its WooPayments transaction page, opened in a new tab.
+	 *
+	 * @param string $intent_id A well-formed payment intent ID.
+	 * @return string
+	 */
+	private static function linked_id( string $intent_id ): string {
+		return '<a href="' . admin_url( 'admin.php' ) . '?page=wc-admin&#038;path=%2Fpayments%2Ftransactions%2Fdetails&#038;id=' . $intent_id . '" target="_blank" rel="noopener noreferrer">' . $intent_id . '</a>';
 	}
 
 	/**

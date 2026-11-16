@@ -6457,14 +6457,18 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	 * built-in asks it under the claim, before ownership, so the success's prelude never rewrites the stored payment. The
 	 * wording says the customer checked out with another payment method. The client notes every delivery; the built-in
 	 * writes the note once per event type and intent, as its other-charge note. The authorization is the recorded
-	 * manual_capture_amount_capturable_updated event (Fixtures/platform-payment-intent-events.json).
+	 * manual_capture_amount_capturable_updated event (Fixtures/platform-payment-intent-events.json). The success note asks
+	 * the merchant to check the payment, so it links the payment to its transaction page, escaped in the address and the
+	 * text; the authorization note names it plainly.
 	 *
 	 * @param string $kind          Which event, `success` or `authorization`.
 	 * @param string $order_status  Order status.
 	 * @param string $method        The order's payment method.
-	 * @param string $expected_note The note, with %1$s for the intent and %2$s for the charge.
+	 * @param string $expected_note The note, with %1$s for the intent, %2$s for the charge, %3$s for the intent's
+	 *                              transaction page and %4$s for the store's admin.php address.
+	 * @param string $success_id    The intent of the success event.
 	 */
-	public function test_listed_attempt_event_is_skipped( string $kind, string $order_status, string $method, string $expected_note ): void {
+	public function test_listed_attempt_event_is_skipped( string $kind, string $order_status, string $method, string $expected_note, string $success_id ): void {
 		// The recorded authorization is a test-mode event, which the ingestor applies only in test mode.
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		$order     = StoredPaymentRecords::after_a_takeover_cleanup( array(), time(), $order_status, '', 'ch_A', $method );
@@ -6473,7 +6477,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 				'payment_intent.succeeded',
 				$order,
 				array(
-					'id'      => 'pi_A',
+					'id'      => $success_id,
 					'charges' => array( 'data' => array( array( 'id' => 'ch_late' ) ) ),
 				)
 			)
@@ -6496,19 +6500,21 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 			array( $order->get_meta( '_intent_id', true ), $order->get_meta( '_charge_id', true ), $order->get_meta( '_wcpay_transaction_fee', true ), $order->get_meta( '_wcpay_net', true ) ),
 			'Nothing of the payment is written.'
 		);
-		$this->assertCount( 1, $this->get_order_notes_containing( $order, sprintf( $expected_note, $intent_id, $charge_id ) ) );
+		$transaction_page = admin_url( 'admin.php' ) . '?page=wc-admin&#038;path=%2Fpayments%2Ftransactions%2Fdetails&#038;id=' . $intent_id;
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, sprintf( $expected_note, $intent_id, $charge_id, $transaction_page, admin_url( 'admin.php' ) ) ) );
 		$this->assertCount( 0, $this->get_order_notes_containing( $order, 'does not pay this order' ) );
 	}
 
 	/**
 	 * Skipped events and the orders they arrive on.
 	 *
-	 * @return array<string,array{string,string,string,string}>
+	 * @return array<string,array{string,string,string,string,string}>
 	 */
 	public function provide_skipped_superseded_attempts(): array {
 		return array(
-			'a success on a paid order whose transaction ID names it' => array( 'success', OrderStatus::PROCESSING, 'bacs', 'A WooPayments payment <code>%1$s</code> (charge <code>%2$s</code>) succeeded after the customer checked out with another payment method, so the order was not updated. Check whether the payment needs a refund.' ),
-			'an authorization on a Pending WooPayments order'         => array( 'authorization', OrderStatus::PENDING, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'A WooPayments payment <code>%1$s</code> was authorized after the customer checked out with another payment method, so the order was not updated. The authorization was not captured and expires on its own.' ),
+			'a success on a paid order whose transaction ID names it' => array( 'success', OrderStatus::PROCESSING, 'bacs', 'A WooPayments payment <a href="%3$s" target="_blank" rel="noopener noreferrer">%1$s</a> (charge <code>%2$s</code>) succeeded after the customer checked out with another payment method, so the order was not updated. Check whether the payment needs a refund.', 'pi_A' ),
+			'a success with a hostile payment ID' => array( 'success', OrderStatus::PROCESSING, 'bacs', 'A WooPayments payment <a href="%4$s?page=wc-admin&#038;path=%%2Fpayments%%2Ftransactions%%2Fdetails&#038;id=pi_A&#039;bx/b" target="_blank" rel="noopener noreferrer">pi_A&#039;&quot;&gt;&lt;b&gt;x&lt;/b&gt;</a> (charge <code>%2$s</code>) succeeded after the customer checked out with another payment method, so the order was not updated. Check whether the payment needs a refund.', 'pi_A\'"><b>x</b>' ),
+			'an authorization on a Pending WooPayments order' => array( 'authorization', OrderStatus::PENDING, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'A WooPayments payment <code>%1$s</code> was authorized after the customer checked out with another payment method, so the order was not updated. The authorization was not captured and expires on its own.', '' ),
 		);
 	}
 

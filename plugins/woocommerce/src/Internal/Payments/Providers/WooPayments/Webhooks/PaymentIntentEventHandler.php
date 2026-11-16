@@ -397,14 +397,19 @@ class PaymentIntentEventHandler {
 		}
 
 		if ( 'payment_intent.succeeded' === $event_type ) {
-			$note = sprintf(
+			$transaction_url = esc_url( $this->order_note_service->transaction_url( $intent_id, $charge_id ) );
+			$note            = sprintf(
 				WooPaymentsHtmlUtils::escape_interpolated_html(
 					/* translators: %1$s: the ID of a WooPayments payment, %2$s: the ID of its charge. */
-					__( 'A WooPayments payment <code>%1$s</code> (charge <code>%2$s</code>) succeeded after the customer checked out with another payment method, so the order was not updated. Check whether the payment needs a refund.', 'woocommerce' ),
-					array( 'code' => '<code>' )
+					__( 'A WooPayments payment <a>%1$s</a> (charge <code>%2$s</code>) succeeded after the customer checked out with another payment method, so the order was not updated. Check whether the payment needs a refund.', 'woocommerce' ),
+					array(
+						'a'    => '' !== $transaction_url ? '<a href="%3$s" target="_blank" rel="noopener noreferrer">' : '<code>',
+						'code' => '<code>',
+					)
 				),
 				esc_html( $intent_id ),
-				esc_html( $charge_id )
+				esc_html( $charge_id ),
+				$transaction_url
 			);
 		} else {
 			$note = sprintf(

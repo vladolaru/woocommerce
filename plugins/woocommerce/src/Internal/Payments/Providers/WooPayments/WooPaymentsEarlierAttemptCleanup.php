@@ -169,6 +169,9 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 	 * own writes are a meta save on a fresh copy and a note, neither of which fires that hook, and the listener is removed
 	 * first. The removals in memory go on the object being saved, which the pay action does not save again before the
 	 * payment. When that gateway's field validation then fails, the order stays cleaned with that gateway as its method.
+	 * When core catches a throw from the pay action's save of the chosen method, this hook does not fire and the payment
+	 * still runs, so the cleanup runs inside that gateway's own save and deletes its values of the same names; that needs
+	 * the database to refuse exactly that save, which core notes as an error, so it is recorded here, not guarded.
 	 *
 	 * @internal
 	 *
@@ -427,9 +430,11 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 	 * @param bool     $not_cleared Whether the order payment lock kept the transaction ID from being cleared.
 	 */
 	private function cancel_earlier_attempt( WC_Order $order, string $intent_id, bool $not_cleared ): void {
+		$cancelled = false;
 		try {
 			$this->get_api_client()->cancel_intention( $intent_id );
-			$message = $not_cleared
+			$cancelled = true;
+			$message   = $not_cleared
 				/* translators: %1$s: the ID of a WooPayments payment. */
 				? __( 'The earlier WooPayments payment <code>%1$s</code> was cancelled because the customer checked out with another payment method. The order\'s transaction ID was not cleared, because a WooPayments payment for this order was being recorded at that moment.', 'woocommerce' )
 				/* translators: %1$s: the ID of a WooPayments payment. */
@@ -438,13 +443,13 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 			$this->get_logger()->log_throwable_always( sprintf( 'The earlier WooPayments attempt of order #%d could not be cancelled.', $order->get_id() ), $exception, array( 'order_id' => $order->get_id() ) );
 			$message = $not_cleared
 				/* translators: %1$s: the ID of a WooPayments payment. */
-				? __( 'The earlier WooPayments payment <code>%1$s</code> could not be cancelled when the customer checked out with another payment method. Check that it was not charged. The order\'s transaction ID was not cleared, because a WooPayments payment for this order was being recorded at that moment.', 'woocommerce' )
+				? __( 'The earlier WooPayments payment <a>%1$s</a> could not be cancelled when the customer checked out with another payment method. Check that it was not charged. The order\'s transaction ID was not cleared, because a WooPayments payment for this order was being recorded at that moment.', 'woocommerce' )
 				/* translators: %1$s: the ID of a WooPayments payment. */
-				: __( 'The earlier WooPayments payment <code>%1$s</code> could not be cancelled when the customer checked out with another payment method. Check that it was not charged.', 'woocommerce' );
+				: __( 'The earlier WooPayments payment <a>%1$s</a> could not be cancelled when the customer checked out with another payment method. Check that it was not charged.', 'woocommerce' );
 		}
 
 		try {
-			$order->add_order_note( self::note_naming_intent( $message, $intent_id ) );
+			$order->add_order_note( $cancelled ? self::note_naming_intent( $message, $intent_id ) : $this->note_linking_intent( $message, $intent_id ) );
 		} catch ( Throwable $exception ) {
 			$this->get_logger()->log_throwable_always( sprintf( 'The cancel of an earlier WooPayments attempt could not be noted on order #%d.', $order->get_id() ), $exception, array( 'order_id' => $order->get_id() ) );
 		}
@@ -564,22 +569,22 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 	private function add_kept_payment_note( WC_Order $order, string $intent_id, array $intent ): void {
 		if ( WooPaymentsIntentCodec::is_disputed( $intent ) ) {
 			/* translators: %1$s: the ID of a WooPayments payment. */
-			$message = __( 'When the customer checked out with another payment method, the WooPayments payment <code>%1$s</code> recorded on this order was disputed. If both payments end up made, one of them needs a refund.', 'woocommerce' );
+			$message = __( 'When the customer checked out with another payment method, the WooPayments payment <a>%1$s</a> recorded on this order was disputed. If both payments end up made, one of them needs a refund.', 'woocommerce' );
 		} elseif ( WooPaymentsIntentCodec::is_fully_refunded( $intent ) ) {
 			/* translators: %1$s: the ID of a WooPayments payment. */
-			$message = __( 'When the customer checked out with another payment method, the WooPayments payment <code>%1$s</code> recorded on this order had been refunded in full. If both payments end up made, one of them needs a refund.', 'woocommerce' );
+			$message = __( 'When the customer checked out with another payment method, the WooPayments payment <a>%1$s</a> recorded on this order had been refunded in full. If both payments end up made, one of them needs a refund.', 'woocommerce' );
 		} elseif ( 'requires_capture' === $intent['status'] ) {
 			/* translators: %1$s: the ID of a WooPayments payment. */
-			$message = __( 'When the customer checked out with another payment method, the WooPayments payment <code>%1$s</code> recorded on this order was authorized and not captured. If both payments end up made, one of them needs a refund.', 'woocommerce' );
+			$message = __( 'When the customer checked out with another payment method, the WooPayments payment <a>%1$s</a> recorded on this order was authorized and not captured. If both payments end up made, one of them needs a refund.', 'woocommerce' );
 		} elseif ( 'processing' === $intent['status'] ) {
 			/* translators: %1$s: the ID of a WooPayments payment. */
-			$message = __( 'When the customer checked out with another payment method, the WooPayments payment <code>%1$s</code> recorded on this order was still being processed. If both payments end up made, one of them needs a refund.', 'woocommerce' );
+			$message = __( 'When the customer checked out with another payment method, the WooPayments payment <a>%1$s</a> recorded on this order was still being processed. If both payments end up made, one of them needs a refund.', 'woocommerce' );
 		} else {
 			/* translators: %1$s: the ID of a WooPayments payment. */
-			$message = __( 'When the customer checked out with another payment method, the WooPayments payment <code>%1$s</code> recorded on this order held money. If both payments end up made, one of them needs a refund.', 'woocommerce' );
+			$message = __( 'When the customer checked out with another payment method, the WooPayments payment <a>%1$s</a> recorded on this order held money. If both payments end up made, one of them needs a refund.', 'woocommerce' );
 		}
 
-		$note = self::note_naming_intent( $message, $intent_id );
+		$note = $this->note_linking_intent( $message, $intent_id );
 		if ( (string) $order->get_transaction_id() === $intent_id ) {
 			$note .= ' ' . esc_html__( 'This order\'s transaction ID names that payment at this moment, so a refund or a dispute of it changes this order.', 'woocommerce' );
 		}
@@ -596,9 +601,9 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 	private function add_read_failed_note( WC_Order $order, string $intent_id ): void {
 		$this->get_note_service()->add_note_once(
 			$order,
-			self::note_naming_intent(
+			$this->note_linking_intent(
 				/* translators: %1$s: the ID of a WooPayments payment. */
-				__( 'The WooPayments payment <code>%1$s</code> could not be checked when the customer checked out with another payment method. Check whether it took money from the customer.', 'woocommerce' ),
+				__( 'The WooPayments payment <a>%1$s</a> could not be checked when the customer checked out with another payment method. Check whether it took money from the customer.', 'woocommerce' ),
 				$intent_id
 			),
 			'takeover_read_failed|' . $intent_id
@@ -618,9 +623,9 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 		}
 
 		$order->add_order_note(
-			self::note_naming_intent(
+			$this->note_linking_intent(
 				/* translators: %1$s: the ID of a WooPayments payment. */
-				__( 'The payment details of an earlier WooPayments attempt (<code>%1$s</code>) were not removed when the customer checked out with another payment method, because a WooPayments payment for this order was being recorded at that moment. Before fulfilling the order, check its payment details or the WooPayments transaction for <code>%1$s</code>.', 'woocommerce' ),
+				__( 'The payment details of an earlier WooPayments attempt (<a>%1$s</a>) were not removed when the customer checked out with another payment method, because a WooPayments payment for this order was being recorded at that moment. Before fulfilling the order, check its payment details or the WooPayments transaction for <a>%1$s</a>.', 'woocommerce' ),
 				$intent_id
 			)
 		);
@@ -668,5 +673,26 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 	 */
 	private static function note_naming_intent( string $message, string $intent_id ): string {
 		return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $message, array( 'code' => '<code>' ) ), esc_html( $intent_id ) );
+	}
+
+	/**
+	 * Build a note whose message names a WooPayments payment in its `<a>%1$s</a>` placeholder, linked to the payment's
+	 * transaction page, as the other-charge notes link theirs; a payment with no such page is named as code.
+	 *
+	 * @param string $message   The translated message.
+	 * @param string $intent_id The payment to name.
+	 * @return string
+	 */
+	private function note_linking_intent( string $message, string $intent_id ): string {
+		$transaction_url = esc_url( $this->get_note_service()->transaction_url( $intent_id, '' ) );
+
+		return sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				$message,
+				array( 'a' => '' !== $transaction_url ? '<a href="%2$s" target="_blank" rel="noopener noreferrer">' : '<code>' )
+			),
+			esc_html( $intent_id ),
+			$transaction_url
+		);
 	}
 }
