@@ -974,7 +974,12 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( $taken ? 'pending' : 'failed', $reloaded->get_status() );
 		$this->assertSame( '', $reloaded->get_transaction_id() );
 		$this->assertSame( 'pi_window', $reloaded->get_meta( '_intent_id', true ) );
-		$this->assertCount( $notes + ( $taken ? 0 : 2 ), wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'The failure note and the status change note, only on a WooPayments order.' );
+		$order_notes = wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' );
+		// The failure's own note; core's status change and its e-mail notes depend on what ran earlier in the process.
+		$this->assertCount( $taken ? 0 : 1, array_filter( $order_notes, static fn( string $note ): bool => false !== strpos( $note, '<strong>failed</strong> using WooPayments' ) ), 'The failure note, only on a WooPayments order.' );
+		if ( $taken ) {
+			$this->assertCount( $notes, $order_notes, 'Nothing is noted on an order another payment method takes.' );
+		}
 		$this->assertSame( ! $taken || 'intent error' === $path, $redirected, 'An intent error returns to checkout either way; otherwise only a written failure does.' );
 		$this->assertSame( $taken ? 1 : 0, $this->count_return_refusal_lines( $logger, $order ), 'One warning line for a refused request.' );
 	}
