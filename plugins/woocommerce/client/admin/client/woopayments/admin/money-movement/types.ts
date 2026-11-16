@@ -40,6 +40,8 @@ export interface WooPaymentsTransaction {
 	source?: string;
 	source_identifier?: string;
 	status?: string;
+	/** Set by the details page, not the API: the payment has no charge, so its amount is the intent's. */
+	has_no_charge?: boolean;
 }
 
 export interface WooPaymentsAuthorization {

@@ -1021,6 +1021,149 @@ describe( 'WooPayments payment details summary parity', () => {
 			).toBeInTheDocument();
 		} );
 	} );
+
+	// Client 11.3.0 `summary/index.tsx:96-102,291-293`: fees and net come from a charge, zeros without one.
+	describe( 'fees and net need a charge', () => {
+		const getBreakdown = () =>
+			Array.from(
+				getSummary().querySelectorAll(
+					'.woocommerce-woopayments-payment-summary__breakdown > div'
+				)
+			).map( ( line ) => line.textContent );
+		const renderRoute = ( route: string ) =>
+			render(
+				<MemoryRouter initialEntries={ [ route ] }>
+					<WooPaymentsTransactionDetailsPage />
+				</MemoryRouter>
+			);
+		const charge = (): WooPaymentsCharge => ( {
+			...getBaseCharge(),
+			balance_transaction: { amount: 2000, currency: 'usd', fee: 70 },
+		} );
+		const chargeWithoutIntent = (): WooPaymentsCharge => ( {
+			...charge(),
+			payment_intent: undefined,
+		} );
+
+		beforeEach( () => {
+			( getWooPaymentsCharge as jest.Mock ).mockReset();
+			( getWooPaymentsTransaction as jest.Mock ).mockReset();
+		} );
+
+		it( 'shows zero fees and net, and the intent amount, for a canceled payment with no charge', async () => {
+			window.wcSettings = {
+				...window.wcSettings,
+				admin: {
+					woopaymentsSettings: { shouldUseExplicitPrice: true },
+				},
+			} as typeof window.wcSettings;
+			mockGetPaymentIntent.mockResolvedValue( {
+				id: 'pi_abc',
+				status: 'canceled',
+				amount: 1099,
+				currency: 'usd',
+				created: 1568913840,
+				charges: { data: [] },
+			} as unknown as Awaited<
+				ReturnType< typeof getWooPaymentsPaymentIntent >
+			> );
+			renderDetailsPage();
+
+			expect(
+				await screen.findByText( 'Net: $0.00 USD' )
+			).toBeInTheDocument();
+			expect( getBreakdown() ).toEqual( [
+				'Fees: $0.00',
+				'Net: $0.00 USD',
+			] );
+			expect(
+				getSummary().querySelector(
+					'.woocommerce-woopayments-payment-summary__amount'
+				)
+			).toHaveTextContent( '$10.99USD' );
+		} );
+
+		it.each( [
+			[
+				'a payment with its charge',
+				'/woopayments/transactions/details?id=pi_abc',
+				() =>
+					mockGetPaymentIntent.mockResolvedValue( {
+						id: 'pi_abc',
+						status: 'succeeded',
+						amount: 2000,
+						currency: 'usd',
+						charge: charge(),
+					} ),
+				[ 'Fees: -$0.70', 'Net: $19.30' ],
+			],
+			[
+				'a payment with its charges list',
+				'/woopayments/transactions/details?id=pi_abc',
+				() =>
+					mockGetPaymentIntent.mockResolvedValue( {
+						id: 'pi_abc',
+						status: 'succeeded',
+						amount: 2000,
+						currency: 'usd',
+						charges: { data: [ charge() ] },
+					} as unknown as Awaited<
+						ReturnType< typeof getWooPaymentsPaymentIntent >
+					> ),
+				[ 'Fees: -$0.70', 'Net: $19.30' ],
+			],
+			[
+				'a charge',
+				'/woopayments/transactions/details?id=ch_38jdHA39KKA',
+				() =>
+					( getWooPaymentsCharge as jest.Mock ).mockResolvedValue(
+						chargeWithoutIntent()
+					),
+				[ 'Fees: -$0.70', 'Net: $19.30' ],
+			],
+			[
+				'a py_ charge',
+				'/woopayments/transactions/details?id=py_38jdHA39KKA',
+				() =>
+					( getWooPaymentsCharge as jest.Mock ).mockResolvedValue( {
+						...chargeWithoutIntent(),
+						id: 'py_38jdHA39KKA',
+					} ),
+				[ 'Fees: -$0.70', 'Net: $19.30' ],
+			],
+			[
+				// The platform's balance transaction carries no charge ID and no charge fee field the summary reads.
+				'a balance transaction',
+				'/woopayments/transactions/details?id=txn_abc',
+				() =>
+					(
+						getWooPaymentsTransaction as jest.Mock
+					 ).mockResolvedValue( {
+						id: 'txn_abc',
+						object: 'balance_transaction',
+						type: 'charge',
+						amount: 2000,
+						currency: 'usd',
+						fee: 70,
+						net: 1930,
+						status: 'available',
+						source: 'ch_38jdHA39KKA',
+					} ),
+				[ 'Fees: $0.00', 'Net: $20.00' ],
+			],
+		] )(
+			'computes fees and net for %s',
+			async ( _case, route, mockAnswer, breakdown ) => {
+				mockAnswer();
+				renderRoute( route );
+
+				expect(
+					await screen.findByText( breakdown[ 1 ] )
+				).toBeInTheDocument();
+				expect( getBreakdown() ).toEqual( breakdown );
+			}
+		);
+	} );
 	// Client 11.1.0 `payment-details/payment-method/card/index.js:34,175-183`: the Address prints the server's
 	// `billing_details.formatted_address` (WooCommerce's country format, no store-country line), never the raw fields.
 	it( 'prints the formatted billing address on the payment method card', async () => {

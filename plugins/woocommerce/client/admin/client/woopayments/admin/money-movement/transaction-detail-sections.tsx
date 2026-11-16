@@ -932,10 +932,17 @@ export const WooPaymentsPaymentSummarySection = ( {
 	reviewActions?: ReactNode;
 	children?: ReactNode;
 } ) => {
-	// Client 11.1.0 `summary/index.tsx:291-296`: amounts in the settlement currency, placeholders without an amount.
-	const balance = transaction.amount
-		? getChargeAmounts( transaction )
-		: { currency: 'USD', amount: 0, fee: 0, net: 0, refunded: 0 };
+	// Client 11.3.0 `summary/index.tsx:291-293`: amounts in the settlement currency, zeros without a charge.
+	const balance =
+		transaction.amount && ! transaction.has_no_charge
+			? getChargeAmounts( transaction )
+			: {
+					currency: transaction.currency || 'USD',
+					amount: 0,
+					fee: 0,
+					net: 0,
+					refunded: 0,
+				};
 	const hasDifferentBalanceCurrency = !! (
 		transaction.currency &&
 		balance.currency.toLowerCase() !== transaction.currency.toLowerCase()

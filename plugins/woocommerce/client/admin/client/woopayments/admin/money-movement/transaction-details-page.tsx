@@ -313,6 +313,8 @@ const normalizePaymentIntent = (
 		id: transaction.id || intent.id || fallbackId,
 		type: transaction.type || 'charge',
 		amount: transaction.amount ?? intent.amount,
+		has_no_charge:
+			transaction.amount === undefined || transaction.amount === null,
 		currency: transaction.currency || intent.currency,
 		created: transaction.created || intent.created,
 		metadata: {
