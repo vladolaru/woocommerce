@@ -1749,6 +1749,272 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A completed event skipped on an order in a paid status adds its paid-order note once, logs it, and leaves the order and the result as a skip.
+	 *
+	 * The order is paid with another method, so the log line's payment method shows the case the note is for. A second
+	 * delivery finds the note by its identity, adds nothing and logs no second line.
+	 */
+	public function test_paid_order_note_is_added_once_at_the_paid_skip(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_payment_method( 'bacs' );
+		$order->set_status( OrderStatus::PROCESSING );
+		$order->save();
+		$event = $this->event_with_paid_order_note( 'pi_paid_twice' );
+
+		$first  = $this->sut->apply( $order, $event, $this->persistence_vocabulary );
+		$second = $this->sut->apply( $order, $event, $this->persistence_vocabulary );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( array( OrderPaymentLifecycleService::RESULT_NOTE_NOT_ADDED, OrderPaymentLifecycleService::RESULT_NOTE_NOT_ADDED ), array( $first, $second ) );
+		$this->assertSame( OrderStatus::PROCESSING, $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_intention_status', true ), 'The skipped event writes none of its meta.' );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Payment pi_paid_twice reached an order already paid.' ) );
+		$this->assertGreaterThan( 0, wc_get_container()->get( OrderPaymentNotes::class )->find_by_identity( $order, 'paid_order_payment|pi_paid_twice', $this->persistence_vocabulary ) );
+		$skips = array_values( array_filter( $this->captured_logs, static fn( array $log ): bool => 'debug' === $log['level'] && 'order_paid' === ( $log['context']['reason'] ?? '' ) ) );
+		$this->assertCount( 2, $skips );
+		$this->assertTrue( $skips[0]['context']['paid_order_note_added'] ?? false, 'The first skip says it added the note.' );
+		$this->assertArrayNotHasKey( 'paid_order_note_added', $skips[1]['context'] );
+		$recorded = $this->paid_order_log_lines( 'paid_order_payment_recorded' );
+		$this->assertCount( 1, $recorded );
+		$this->assertSame( 'warning', $recorded[0]['level'] );
+		$this->assertSame( 'order-payments', $recorded[0]['context']['source'] ?? null );
+		$this->assertSame( $order->get_id(), $recorded[0]['context']['order_id'] ?? null );
+		$this->assertSame( 'pi_paid_twice', $recorded[0]['context']['payment_reference'] ?? null );
+		$this->assertSame( 'bacs', $recorded[0]['context']['payment_method'] ?? null );
+	}
+
+	/**
+	 * @testdox A paid skip that comes only from $_dataName adds no paid-order note: the object the event is decided on is On hold.
+	 *
+	 * @dataProvider paid_skips_not_from_the_decided_object
+	 *
+	 * @param string $entry_point Service method that applies the event: apply() reads the order again in place, apply_under_lock() does not.
+	 * @param string $passed      Status of the object passed, not saved.
+	 * @param string $stored      Status stored.
+	 */
+	public function test_paid_order_note_needs_the_decided_object_in_a_paid_status( string $entry_point, string $passed, string $stored ): void {
+		$order        = $this->create_woopayments_order();
+		$stored_order = wc_get_order( $order->get_id() );
+		$stored_order->set_status( $stored );
+		$stored_order->save();
+		$order->set_status( $passed );
+
+		$this->sut->{$entry_point}( $order, $this->event_with_paid_order_note( 'pi_hold' ), $this->persistence_vocabulary );
+
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment pi_hold reached an order already paid.' ) );
+		$this->assertCount( 1, array_filter( $this->captured_logs, static fn( array $log ): bool => 'order_paid' === ( $log['context']['reason'] ?? '' ) ), 'The event is still skipped as paid.' );
+		$this->assertCount( 0, $this->paid_order_log_lines( 'paid_order_payment_recorded' ) );
+	}
+
+	/**
+	 * Paid skips that do not come from the object the event is decided on.
+	 *
+	 * @return array<string,array{string,string,string}>
+	 */
+	public function paid_skips_not_from_the_decided_object(): array {
+		return array(
+			"the caller's copy, Processing, read again as On hold" => array( 'apply', OrderStatus::PROCESSING, OrderStatus::ON_HOLD ),
+			'the fresh read, Processing, of an On hold object'      => array( 'apply_under_lock', OrderStatus::ON_HOLD, OrderStatus::PROCESSING ),
+		);
+	}
+
+	/**
+	 * @testdox A paid order that already has the payment's $_dataName note gets no paid-order note.
+	 *
+	 * @dataProvider own_notes_of_the_payment
+	 *
+	 * @param int  $own_note_index Which own-note event's note is on the order.
+	 * @param bool $by_identity    Whether the note carries its identity, or is found by its text.
+	 */
+	public function test_paid_order_note_is_not_added_beside_one_of_the_payments_own_notes( int $own_note_index, bool $by_identity ): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( OrderStatus::PROCESSING );
+		$order->save();
+		$event    = $this->event_with_paid_order_note( 'pi_own' );
+		$own_note = $event->get_paid_order_note()['own_note_events'][ $own_note_index ];
+		wc_get_container()->get( OrderPaymentNotes::class )->add( $order, (string) $own_note->get_note(), $by_identity ? $own_note->get_note_identity() : '', $this->persistence_vocabulary );
+
+		$this->sut->apply( $order, $event, $this->persistence_vocabulary );
+
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment pi_own reached an order already paid.' ) );
+		$this->assertCount( 0, $this->paid_order_log_lines( 'paid_order_payment_recorded' ) );
+	}
+
+	/**
+	 * The payment's own notes, each alone on the order.
+	 *
+	 * @return array<string,array{int,bool}>
+	 */
+	public function own_notes_of_the_payment(): array {
+		return array(
+			'success'              => array( 0, true ),
+			'success, by its text' => array( 0, false ),
+			'capture'              => array( 1, true ),
+			'held'                 => array( 2, true ),
+			'authorized'           => array( 3, true ),
+		);
+	}
+
+	/**
+	 * @testdox A paid skip of $_dataName adds no paid-order note and logs only the skip, as before.
+	 *
+	 * @dataProvider events_that_carry_no_paid_order_note
+	 *
+	 * @param string $status          Lifecycle status of the event.
+	 * @param bool   $paid_order_note Whether the event carries a paid-order note.
+	 */
+	public function test_paid_skip_without_a_paid_order_note_on_a_completed_event_adds_none( string $status, bool $paid_order_note ): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( OrderStatus::PROCESSING );
+		$order->save();
+		$notes_before = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+
+		$this->sut->apply( $order, $this->event_with_paid_order_note( 'pi_none', $paid_order_note, $status ), $this->persistence_vocabulary );
+
+		$this->assertCount( $notes_before, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$skips = array_values( array_filter( $this->captured_logs, static fn( array $log ): bool => 'order_paid' === ( $log['context']['reason'] ?? '' ) ) );
+		$this->assertCount( 1, $skips );
+		$this->assertArrayNotHasKey( 'paid_order_note_added', $skips[0]['context'] );
+		$this->assertCount( 0, $this->paid_order_log_lines( 'paid_order_payment_recorded' ) );
+	}
+
+	/**
+	 * Events skipped on a paid order that carry no paid-order note for the lifecycle to add.
+	 *
+	 * @return array<string,array{string,bool}>
+	 */
+	public function events_that_carry_no_paid_order_note(): array {
+		return array(
+			'a completed event without one'    => array( PaymentLifecycleEvent::STATUS_COMPLETED, false ),
+			'an authorized event carrying one' => array( PaymentLifecycleEvent::STATUS_AUTHORIZED, true ),
+		);
+	}
+
+	/**
+	 * @testdox A completed event skipped on a paid order for an open dispute adds no paid-order note: the dispute skip comes before the paid check.
+	 */
+	public function test_paid_order_note_is_not_added_at_an_open_dispute_skip(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( OrderStatus::PROCESSING );
+		$order->update_meta_data( $this->persistence_vocabulary->get_open_dispute_ids_meta_key(), array( 'dp_1' ) );
+		$order->save();
+
+		$this->sut->apply( $order, $this->event_with_paid_order_note( 'pi_disputed' ), $this->persistence_vocabulary );
+
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment pi_disputed reached an order already paid.' ) );
+		$this->assertCount( 1, $this->paid_order_log_lines( 'open_dispute' ) );
+		$this->assertCount( 0, $this->paid_order_log_lines( 'paid_order_payment_recorded' ) );
+	}
+
+	/**
+	 * @testdox A paid-order note that is not saved is logged with the order and the payment, the event ends as a skip, and a later delivery adds the note.
+	 */
+	public function test_paid_order_note_not_saved_is_logged_and_added_by_a_later_delivery(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( OrderStatus::PROCESSING );
+		$order->save();
+		$notes = new class() extends OrderPaymentNotes {
+			/**
+			 * Adds still to refuse.
+			 *
+			 * @var int
+			 */
+			public int $refusals = 1;
+
+			/**
+			 * Refuse the first add, as a failed comment insert does, then add.
+			 *
+			 * @param WC_Order                               $order      Order object.
+			 * @param string                                 $note       Note text.
+			 * @param string                                 $identity   Note identity.
+			 * @param ProviderPersistenceVocabularyInterface $vocabulary Provider persistence vocabulary.
+			 * @return int
+			 */
+			public function add( WC_Order $order, string $note, string $identity, ProviderPersistenceVocabularyInterface $vocabulary ): int {
+				if ( 0 < $this->refusals ) {
+					--$this->refusals;
+					return 0;
+				}
+
+				return parent::add( $order, $note, $identity, $vocabulary );
+			}
+		};
+		$sut   = new OrderPaymentLifecycleService();
+		$sut->init( $this->order_payment_lock, $notes );
+		$event = $this->event_with_paid_order_note( 'pi_unsaved' );
+
+		$first = $sut->apply( $order, $event, $this->persistence_vocabulary );
+
+		$this->assertSame( OrderPaymentLifecycleService::RESULT_NOTE_NOT_ADDED, $first );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment pi_unsaved reached an order already paid.' ) );
+		$this->assertSame( OrderStatus::PROCESSING, wc_get_order( $order->get_id() )->get_status() );
+		$not_saved = $this->paid_order_log_lines( 'paid_order_note_not_saved' );
+		$this->assertCount( 1, $not_saved );
+		$this->assertSame( 'warning', $not_saved[0]['level'] );
+		$this->assertSame( $order->get_id(), $not_saved[0]['context']['order_id'] );
+		$this->assertSame( 'pi_unsaved', $not_saved[0]['context']['payment_reference'] );
+		$this->assertCount( 0, $this->paid_order_log_lines( 'paid_order_payment_recorded' ) );
+		$this->assertArrayNotHasKey( 'paid_order_note_added', $this->paid_order_log_lines( 'order_paid' )[0]['context'], 'The skip does not count a note that was not saved.' );
+		$this->assertFalse( $this->is_order_payment_lock_held_for( $order, $this->persistence_vocabulary, 'pi_unsaved' ) );
+
+		$sut->apply( $order, $event, $this->persistence_vocabulary );
+
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Payment pi_unsaved reached an order already paid.' ) );
+		$this->assertCount( 1, $this->paid_order_log_lines( 'paid_order_payment_recorded' ) );
+	}
+
+	/**
+	 * Build a completed event that leaves a paid order as it is, with or without a paid-order note.
+	 *
+	 * Its own note is a plain completion note, so none of the payment's own notes is the event's: each reaches the paid
+	 * skip and only the paid-order note's own-note events can stop the note.
+	 *
+	 * @param string $payment_reference Payment reference.
+	 * @param bool   $paid_order_note   Whether the event carries a paid-order note.
+	 * @param string $status            Lifecycle status.
+	 * @return PaymentLifecycleEvent
+	 */
+	private function event_with_paid_order_note( string $payment_reference, bool $paid_order_note = true, string $status = PaymentLifecycleEvent::STATUS_COMPLETED ): PaymentLifecycleEvent {
+		return new PaymentLifecycleEvent(
+			$status,
+			$payment_reference,
+			array( '_intention_status' => 'succeeded' ),
+			array(),
+			'Payment reported for ' . $payment_reference . '.',
+			PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_COMPLETE,
+			array(),
+			false,
+			false,
+			array(),
+			true,
+			false,
+			$paid_order_note
+				? array(
+					'note'            => 'Payment ' . $payment_reference . ' reached an order already paid.',
+					'identity'        => 'paid_order_payment|' . $payment_reference,
+					'own_note_events' => array(
+						new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, $payment_reference, array(), array(), 'Paid by ' . $payment_reference . '.', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS ),
+						new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, $payment_reference, array(), array(), 'Captured ' . $payment_reference . '.', PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS ),
+						new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, $payment_reference, array(), array(), 'Held ' . $payment_reference . '.', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_HELD ),
+						new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_AUTHORIZED, $payment_reference, array(), array(), 'Authorized ' . $payment_reference . '.', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_AUTHORIZED ),
+					),
+				)
+				: null
+		);
+	}
+
+	/**
+	 * The captured log lines with a reason.
+	 *
+	 * @param string $reason Log reason.
+	 * @return array<int,array{level:string,message:string,context:array}>
+	 */
+	private function paid_order_log_lines( string $reason ): array {
+		return array_values( array_filter( $this->captured_logs, static fn( array $log ): bool => ( $log['context']['reason'] ?? '' ) === $reason ) );
+	}
+
+	/**
 	 * Apply a lifecycle event with the WooPayments vocabulary unless a test supplies another one.
 	 *
 	 * @param WC_Order                                    $order               Order object.

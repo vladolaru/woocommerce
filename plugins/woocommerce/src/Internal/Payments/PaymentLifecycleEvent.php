@@ -214,6 +214,14 @@ class PaymentLifecycleEvent {
 	private bool $note_per_occurrence;
 
 	/**
+	 * Note added when the event is skipped because the order already has a paid status, with its identity and the events
+	 * whose notes mean the order already records the payment.
+	 *
+	 * @var array{note:string,identity:string,own_note_events:PaymentLifecycleEvent[]}|null
+	 */
+	private ?array $paid_order_note;
+
+	/**
 	 * Constructor.
 	 *
 	 * @since 11.0.0
@@ -233,9 +241,11 @@ class PaymentLifecycleEvent {
 	 *                                               an order already in a paid status as it is.
 	 * @param bool                $note_per_occurrence Whether the event's note is added for each occurrence, without checking the notes
 	 *                                                 already on the order (since 11.4.0).
+	 * @param array|null          $paid_order_note   Note for a completed event skipped on an order already in a paid status, as
+	 *                                               `note`, `identity` and `own_note_events` (since 11.4.0); see get_paid_order_note().
 	 * @throws InvalidArgumentException When an unknown status is supplied, or a hold on an event that is not completed.
 	 */
-	public function __construct( string $status, ?string $payment_reference = null, array $meta_to_update = array(), array $meta_to_delete = array(), ?string $note = null, ?string $note_type = null, array $note_equivalents = array(), bool $preserve_order_status = false, bool $hold_order = false, array $applied_alternatives = array(), bool $leave_paid_order = false, bool $note_per_occurrence = false ) {
+	public function __construct( string $status, ?string $payment_reference = null, array $meta_to_update = array(), array $meta_to_delete = array(), ?string $note = null, ?string $note_type = null, array $note_equivalents = array(), bool $preserve_order_status = false, bool $hold_order = false, array $applied_alternatives = array(), bool $leave_paid_order = false, bool $note_per_occurrence = false, ?array $paid_order_note = null ) {
 		if ( ! in_array( $status, $this->get_allowed_statuses(), true ) ) {
 			throw new InvalidArgumentException( esc_html( sprintf( 'Unknown payment lifecycle status: %s', $status ) ) );
 		}
@@ -261,6 +271,7 @@ class PaymentLifecycleEvent {
 		);
 		$this->leave_paid_order      = $leave_paid_order;
 		$this->note_per_occurrence   = $note_per_occurrence;
+		$this->paid_order_note       = self::normalize_paid_order_note( $paid_order_note );
 	}
 
 	/**
@@ -441,6 +452,21 @@ class PaymentLifecycleEvent {
 	}
 
 	/**
+	 * Get the note the payment lifecycle adds when it skips this completed event because the order already has a paid
+	 * status, or null when the event carries none.
+	 *
+	 * The lifecycle adds it only when the order it decides on has a paid status itself, none of the own-note events' notes
+	 * is on that order, and no note carries the identity, so it is added once per identity.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return array{note:string,identity:string,own_note_events:PaymentLifecycleEvent[]}|null
+	 */
+	public function get_paid_order_note(): ?array {
+		return $this->paid_order_note;
+	}
+
+	/**
 	 * Get the private identity of the event's order note: its payment reference, status and note type, or its text when
 	 * it has no type.
 	 *
@@ -519,6 +545,33 @@ class PaymentLifecycleEvent {
 
 		$encoded = wp_json_encode( $value );
 		return false === $encoded ? '' : $encoded;
+	}
+
+	/**
+	 * Keep a paid-order note with a note and an identity, and only its own-note events that have a note.
+	 *
+	 * @param array<string,mixed>|null $paid_order_note Raw paid-order note.
+	 * @return array{note:string,identity:string,own_note_events:PaymentLifecycleEvent[]}|null
+	 */
+	private static function normalize_paid_order_note( ?array $paid_order_note ): ?array {
+		$note     = $paid_order_note['note'] ?? '';
+		$identity = $paid_order_note['identity'] ?? '';
+		if ( ! is_string( $note ) || '' === $note || ! is_string( $identity ) || '' === $identity ) {
+			return null;
+		}
+
+		$own_note_events = is_array( $paid_order_note['own_note_events'] ?? null ) ? $paid_order_note['own_note_events'] : array();
+
+		return array(
+			'note'            => $note,
+			'identity'        => $identity,
+			'own_note_events' => array_values(
+				array_filter(
+					$own_note_events,
+					static fn( $own_note_event ): bool => $own_note_event instanceof self && null !== $own_note_event->get_note() && '' !== $own_note_event->get_note()
+				)
+			),
+		);
 	}
 
 	/**

@@ -290,7 +290,8 @@ class OrderPaymentLifecycleService {
 			?? $this->get_completed_event_skip_reason( $order, $event, $persistence_vocabulary, $caller_copy_was_paid, $order_was_read )
 			?? $this->get_authorized_event_skip_reason( $order, $event, $caller_copy_was_paid, $order_was_read );
 		if ( null !== $skip_reason ) {
-			$this->log_skipped_event( $order, $event, $skip_reason );
+			$paid_order_note_added = 'order_paid' === $skip_reason && $this->add_paid_order_note( $order, $event, $persistence_vocabulary );
+			$this->log_skipped_event( $order, $event, $skip_reason, $paid_order_note_added );
 			return self::RESULT_NOTE_NOT_ADDED;
 		}
 
@@ -678,13 +679,71 @@ class OrderPaymentLifecycleService {
 	}
 
 	/**
+	 * Add the paid-order note of a completed event skipped as `order_paid`, and log it whatever the logging setting.
+	 *
+	 * Only the object the event is decided on counts: a skip that comes only from the caller's copy or a fresh read adds
+	 * nothing. The note is not added when one of the payment's own notes or the note itself is already on the order. A note
+	 * that is not saved is logged and leaves nothing behind, so a later delivery of the event adds it.
+	 *
+	 * @param WC_Order                               $order                  Order object the event is decided on.
+	 * @param PaymentLifecycleEvent                  $event                  Lifecycle event skipped as `order_paid`.
+	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
+	 * @return bool Whether the note was added.
+	 */
+	private function add_paid_order_note( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): bool {
+		$paid_order_note = $event->get_paid_order_note();
+		if ( null === $paid_order_note || PaymentLifecycleEvent::STATUS_COMPLETED !== $event->get_status() || ! $this->has_paid_status( $order ) ) {
+			return false;
+		}
+
+		foreach ( $paid_order_note['own_note_events'] as $own_note_event ) {
+			if ( 0 < $this->find_lifecycle_note( $order, $own_note_event, $persistence_vocabulary ) ) {
+				return false;
+			}
+		}
+
+		if ( 0 < $this->order_payment_notes->find_by_identity( $order, $paid_order_note['identity'], $persistence_vocabulary ) ) {
+			return false;
+		}
+
+		$payment_reference = (string) $event->get_payment_reference();
+		if ( 0 >= $this->order_payment_notes->add( $order, $paid_order_note['note'], $paid_order_note['identity'], $persistence_vocabulary ) ) {
+			wc_get_logger()->warning(
+				sprintf( 'Order #%1$d already had a paid status when payment %2$s succeeded, and the note saying so could not be saved.', $order->get_id(), $payment_reference ),
+				array(
+					'source'            => 'order-payments',
+					'order_id'          => $order->get_id(),
+					'payment_reference' => $payment_reference,
+					'reason'            => 'paid_order_note_not_saved',
+				)
+			);
+
+			return false;
+		}
+
+		wc_get_logger()->warning(
+			sprintf( 'Order #%1$d already had a paid status when payment %2$s succeeded, so its status was not changed and a note says so. Its payment method is "%3$s".', $order->get_id(), $payment_reference, $order->get_payment_method() ),
+			array(
+				'source'            => 'order-payments',
+				'order_id'          => $order->get_id(),
+				'payment_reference' => $payment_reference,
+				'payment_method'    => $order->get_payment_method(),
+				'reason'            => 'paid_order_payment_recorded',
+			)
+		);
+
+		return true;
+	}
+
+	/**
 	 * Log debug context for a lifecycle event that was skipped before mutation.
 	 *
-	 * @param WC_Order              $order  Order object.
-	 * @param PaymentLifecycleEvent $event  Lifecycle event.
-	 * @param string                $reason Skip reason.
+	 * @param WC_Order              $order                 Order object.
+	 * @param PaymentLifecycleEvent $event                 Lifecycle event.
+	 * @param string                $reason                Skip reason.
+	 * @param bool                  $paid_order_note_added Whether the skip added the event's paid-order note.
 	 */
-	private function log_skipped_event( WC_Order $order, PaymentLifecycleEvent $event, string $reason ): void {
+	private function log_skipped_event( WC_Order $order, PaymentLifecycleEvent $event, string $reason, bool $paid_order_note_added = false ): void {
 		$messages = array(
 			'open_dispute'              => 'Completed payment event skipped: an open dispute keeps the order on hold.',
 			'order_paid'                => 'Payment event skipped: the order is already paid, so the event does not change it.',
@@ -693,16 +752,17 @@ class OrderPaymentLifecycleService {
 			'order_on_hold'             => 'Authorized payment event skipped: the order is already on hold.',
 		);
 		$message  = $messages[ $reason ] ?? 'Completed payment event skipped: the payment note is already on the order.';
-
-		wc_get_logger()->debug(
-			$message,
-			array(
-				'source'     => 'order-payments',
-				'order_id'   => $order->get_id(),
-				'event_type' => $event->get_status(),
-				'reason'     => $reason,
-			)
+		$context  = array(
+			'source'     => 'order-payments',
+			'order_id'   => $order->get_id(),
+			'event_type' => $event->get_status(),
+			'reason'     => $reason,
 		);
+		if ( $paid_order_note_added ) {
+			$context['paid_order_note_added'] = true;
+		}
+
+		wc_get_logger()->debug( $message, $context );
 	}
 
 	/**
