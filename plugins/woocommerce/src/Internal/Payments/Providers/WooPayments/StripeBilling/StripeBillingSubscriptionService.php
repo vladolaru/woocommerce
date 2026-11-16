@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsHtmlUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use WC_Coupon;
@@ -1095,12 +1096,16 @@ class StripeBillingSubscriptionService {
 			return self::CANCEL_FAILED;
 		}
 
+		// Same address as the WooPayments row's Get support link: src/Internal/Admin/Suggestions/PaymentsExtensionSuggestions.php, the WooPayments entry's support link.
+		$support_url = 'https://woocommerce.com/my-account/contact-support/?select=woopayments';
+		/* translators: %1$s: Stripe subscription ID, %2$d: number of attempts, %3$s: WooPayments support URL. <a> links to WooPayments support. */
+		$format = __( 'WooPayments could not cancel this subscription\'s Stripe Billing subscription (%1$s) after %2$d attempts, so the customer may still be charged each period. <a>Contact WooPayments support</a> with this ID to have it cancelled. Each charge it takes appears as a renewal order of this subscription, where you can refund it.', 'woocommerce' );
 		$subscription->add_order_note(
 			sprintf(
-				/* translators: %1$s: Stripe subscription ID, %2$d: number of attempts. */
-				__( 'WooPayments could not cancel this subscription\'s Stripe billing (%1$s) after %2$d attempts, so the customer may still be charged each period. Contact WooPayments support with this ID to stop it. Each charge it takes appears as a renewal order of this subscription, where you can refund it.', 'woocommerce' ),
+				WooPaymentsHtmlUtils::escape_interpolated_html( $format, array( 'a' => '<a href="%3$s" target="_blank" rel="noopener noreferrer">' ) ),
 				esc_html( $wcpay_subscription_id ),
-				$retry + 1
+				$retry + 1,
+				esc_url( $support_url )
 			)
 		);
 
@@ -1153,7 +1158,7 @@ class StripeBillingSubscriptionService {
 			$subscription->add_order_note(
 				sprintf(
 					/* translators: %s: Stripe subscription ID. */
-					__( 'This subscription\'s payment method is no longer WooPayments, so its Stripe billing (%s) was cancelled and Stripe no longer charges the customer for it. Renewals now use the payment method set on this subscription.', 'woocommerce' ),
+					__( 'This subscription\'s payment method was changed, so its Stripe Billing subscription (%s) was cancelled and Stripe Billing no longer charges the customer for it. Future renewals are paid with the payment method now set on this subscription, or by the customer if it is set to Manual Renewal.', 'woocommerce' ),
 					esc_html( $wcpay_subscription_id )
 				)
 			);
