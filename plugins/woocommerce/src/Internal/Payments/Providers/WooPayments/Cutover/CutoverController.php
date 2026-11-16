@@ -69,7 +69,7 @@ class CutoverController implements RegisterHooksInterface {
 	public const QUERY_ACTION = 'wc_woopayments_cutover_action';
 
 	/**
-	 * Admin action that dismisses a cutover notice (completion, bundled exclusion, reconnect or renewal plugins).
+	 * Admin action that dismisses a cutover notice (completion, bundled exclusion or renewal plugins).
 	 *
 	 * @var string
 	 */
@@ -219,9 +219,9 @@ class CutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Persist a store manager's dismissal of a cutover notice, then return to the same page: the completion, bundled
-	 * exclusion or reconnect notice on the durable record, "Not now" on the switch notice for 30 days, or the renewal
-	 * plugins notice for the renewal plugins active now.
+	 * Persist a store manager's dismissal of a cutover notice, then return to the same page: the completion or bundled
+	 * exclusion notice on the durable record, "Not now" on the switch notice for 30 days, or the renewal plugins notice
+	 * for the renewal plugins active now.
 	 */
 	private function dismiss_notice(): void {
 		$nonce = isset( $_GET[ self::NONCE_NAME ] ) ? sanitize_text_field( wp_unslash( $_GET[ self::NONCE_NAME ] ) ) : '';
@@ -616,10 +616,6 @@ class CutoverController implements RegisterHooksInterface {
 						$this->output_renewal_plugin_holdback_notice( $plugin_names, false );
 					}
 				}
-				// Shown until dismissed; rendering claims nothing, since some screens hide notices.
-				if ( $this->reconciliation_job->is_reconnect_notice_due( $record ) ) {
-					$this->output_reconnect_notice();
-				}
 				// A store manager's page brings a held switch's next attempt forward, at most about once a minute, so a merchant who
 				// cleared what holds it back sees it continue. After the lines above, which render the record as it was.
 				if ( StateStore::STATE_DEFERRED === $record['state'] ) {
@@ -699,18 +695,6 @@ class CutoverController implements RegisterHooksInterface {
 					</a>
 				</p>
 			<?php endif; ?>
-		</div>
-		<?php
-	}
-
-	/**
-	 * Output the notice telling a store whose connection owner is gone that the switch needs a reconnect.
-	 */
-	private function output_reconnect_notice(): void {
-		?>
-		<div class="notice notice-info" style="position:relative;">
-			<?php echo $this->get_dismiss_notice_link( ReconciliationJob::NOTICE_RECONNECT ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped when built. ?>
-			<p><?php esc_html_e( 'The connection owner is no longer available. Reconnect this site to continue the switch.', 'woocommerce' ); ?></p>
 		</div>
 		<?php
 	}

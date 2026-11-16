@@ -22,8 +22,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\Bundl
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\CutoverController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PreflightService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\ReconciliationJob;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PlatformConnectionService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 use WC_Payment_Token_CC;
@@ -55,6 +53,13 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	private const UPDATE_FIRST_SENTENCE = 'WooPayments is now part of WooCommerce. To switch, first update the WooPayments extension to the latest version.';
 
 	/**
+	 * A failure code that only defers the switch, for rows about a deferred switch rather than any one condition.
+	 *
+	 * @var string
+	 */
+	private const TEST_DEFERRAL_CODE = 'test_condition_unavailable';
+
+	/**
 	 * The System Under Test.
 	 *
 	 * @var CutoverController
@@ -69,20 +74,6 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	private PreflightService $preflight_service;
 
 	/**
-	 * Native WooPayments provider mock.
-	 *
-	 * @var WooPaymentsProvider&\PHPUnit\Framework\MockObject\MockObject
-	 */
-	private WooPaymentsProvider $provider;
-
-	/**
-	 * Platform connection readiness service mock.
-	 *
-	 * @var PlatformConnectionService&\PHPUnit\Framework\MockObject\MockObject
-	 */
-	private PlatformConnectionService $platform_connection_service;
-
-	/**
 	 * Native rate account boundary mock.
 	 *
 	 * @var WooPaymentsNativeAccountAdapter&\PHPUnit\Framework\MockObject\MockObject
@@ -95,27 +86,6 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	 * @var WooPaymentsNativeApiClientAdapter&\PHPUnit\Framework\MockObject\MockObject
 	 */
 	private WooPaymentsNativeApiClientAdapter $rate_api_client;
-
-	/**
-	 * Whether the native provider can process payments.
-	 *
-	 * @var bool
-	 */
-	private bool $builtin_provider_ready = false;
-
-	/**
-	 * Number of times the native provider readiness was checked.
-	 *
-	 * @var int
-	 */
-	private int $builtin_provider_readiness_calls = 0;
-
-	/**
-	 * Number of times the platform connection preflight was checked.
-	 *
-	 * @var int
-	 */
-	private int $platform_connection_preflight_calls = 0;
 
 	/**
 	 * Whether the WooPayments plugin should appear active.
@@ -167,32 +137,6 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 		// The owner is resolved once per request; a test that fakes the extension must not see one cached before it.
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		update_option( 'woocommerce_woocommerce_payments_version', '10.6.0' );
-
-		$this->provider = $this->getMockBuilder( WooPaymentsProvider::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'can_process_payments' ) )
-			->getMock();
-		$this->provider
-			->method( 'can_process_payments' )
-			->willReturnCallback(
-				function (): bool {
-					++$this->builtin_provider_readiness_calls;
-					return $this->builtin_provider_ready;
-				}
-			);
-
-		$this->platform_connection_service = $this->getMockBuilder( PlatformConnectionService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_preflight_failures' ) )
-			->getMock();
-		$this->platform_connection_service
-			->method( 'get_preflight_failures' )
-			->willReturnCallback(
-				function (): array {
-					++$this->platform_connection_preflight_calls;
-					return array();
-				}
-			);
 
 		$this->rate_account = $this->getMockBuilder( WooPaymentsNativeAccountAdapter::class )
 			->disableOriginalConstructor()
@@ -413,7 +357,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	public function test_notice_stays_until_a_manager_dismisses_it( string $notice, string $text ): void {
 		$this->fake_plugin_active( false );
 		$this->fake_current_user_caps( true );
-		$job        = $this->create_dismissable_notice_job( $notice );
+		$job        = $this->create_completed_notice_job();
 		$controller = $this->create_cutover_controller( $job );
 		$redirects  = array();
 		$capture    = static function ( string $location ) use ( &$redirects ): string {
@@ -449,15 +393,13 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * The notices a manager dismisses from the record: the completion notice, and the one reconnect notice of a switch that
-	 * cannot heal by itself.
+	 * The notices a manager dismisses from the record: the completion notice.
 	 *
 	 * @return array<string,array{string,string}>
 	 */
 	public function provide_dismissable_notices(): array {
 		return array(
 			'completion notice' => array( ReconciliationJob::NOTICE_SUCCESS, 'WooPayments is now built into WooCommerce. Everything works as before.' ),
-			'reconnect notice'  => array( ReconciliationJob::NOTICE_RECONNECT, 'The connection owner is no longer available. Reconnect this site to continue the switch.' ),
 		);
 	}
 
@@ -572,7 +514,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	public function test_dismissable_notices_are_for_store_managers_only( string $notice ): void {
 		$this->fake_plugin_active( false );
 		$this->fake_current_user_caps( true );
-		$job        = $this->create_dismissable_notice_job( $notice );
+		$job        = $this->create_completed_notice_job();
 		$controller = $this->create_cutover_controller( $job );
 		$notices    = $this->render_admin_notices( $controller );
 		$this->fake_current_user_caps( false );
@@ -597,7 +539,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	public function test_notice_dismissal_requires_a_valid_nonce( string $notice ): void {
 		$this->fake_plugin_active( false );
 		$this->fake_current_user_caps( true );
-		$job                                     = $this->create_dismissable_notice_job( $notice );
+		$job                                     = $this->create_completed_notice_job();
 		$controller                              = $this->create_cutover_controller( $job );
 		$_GET[ CutoverController::QUERY_ACTION ] = CutoverController::ACTION_DISMISS_NOTICE;
 		$_GET[ CutoverController::QUERY_NOTICE ] = $notice;
@@ -613,9 +555,12 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A switch deferred on a connection owner failure while the site is disconnected too shows no reconnect notice.
+	 * Records written before the WordPress.com connection stopped being a condition of the switch can still carry its codes
+	 * and the reconnect outcome. They read like any other deferred switch.
+	 *
+	 * @testdox A switch record that still carries a connection code and the old reconnect outcome shows only the in-progress line.
 	 */
-	public function test_disconnected_site_shows_no_reconnect_notice(): void {
+	public function test_record_with_a_connection_code_and_the_reconnect_outcome_shows_only_progress(): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
@@ -624,7 +569,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 			public function refresh_notice_record(): ?array {
 				return array(
 					'state'                  => StateStore::STATE_DEFERRED,
-					'deferred_codes'         => array( 'wpcom_connection_unavailable', 'wpcom_blog_id_unavailable', 'wpcom_connection_owner_unavailable' ),
+					'deferred_codes'         => array( 'builtin_transport_unavailable', 'wpcom_connection_owner_unavailable' ),
 					'informational_outcomes' => array( array( 'code' => 'reconnect_required' ) ),
 				);
 			}
@@ -633,7 +578,9 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 		$notice = $this->render_admin_notices( $this->create_cutover_controller( $job ) );
 
 		$this->assertStringContainsString( self::IN_PROGRESS_SENTENCE, $notice );
-		$this->assertStringNotContainsString( 'Reconnect this site', $notice );
+		$this->assertStringNotContainsString( 'connection owner', $notice );
+		$this->assertStringNotContainsString( 'Reconnect', $notice );
+		$this->assertSame( 1, substr_count( $notice, 'class="notice ' ), 'One notice, the in-progress one.' );
 	}
 
 	/**
@@ -849,8 +796,8 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 			'past the short retry, one hook'  => array( array( $code ), 15 * MINUTE_IN_SECONDS, array( 'wcpay_check_affected_auth_fee_orders' ), 'wcpay_check_affected_auth_fee_orders' ),
 			'past the short retry, two hooks' => array( array( $code ), 15 * MINUTE_IN_SECONDS, array( 'wcpay_check_affected_auth_fee_orders', 'wcpay_controller_test_other' ), '' ),
 			'within the short retry'          => array( array( $code ), MINUTE_IN_SECONDS, array( 'wcpay_check_affected_auth_fee_orders' ), null ),
-			'deferred for another reason'     => array( array( PreflightService::FAILURE_BUILTIN_TRANSPORT_UNAVAILABLE ), 15 * MINUTE_IN_SECONDS, array( 'wcpay_check_affected_auth_fee_orders' ), null ),
-			'queued tasks and another reason' => array( array( $code, PreflightService::FAILURE_BUILTIN_TRANSPORT_UNAVAILABLE ), 15 * MINUTE_IN_SECONDS, array( 'wcpay_check_affected_auth_fee_orders' ), 'wcpay_check_affected_auth_fee_orders' ),
+			'deferred for another reason'     => array( array( self::TEST_DEFERRAL_CODE ), 15 * MINUTE_IN_SECONDS, array( 'wcpay_check_affected_auth_fee_orders' ), null ),
+			'queued tasks and another reason' => array( array( $code, self::TEST_DEFERRAL_CODE ), 15 * MINUTE_IN_SECONDS, array( 'wcpay_check_affected_auth_fee_orders' ), 'wcpay_check_affected_auth_fee_orders' ),
 		);
 	}
 
@@ -907,7 +854,8 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 				$this->record = array(
 					'state'                  => $state,
 					'current_step'           => $current_step,
-					'deferred_codes'         => array( PreflightService::FAILURE_BUILTIN_TRANSPORT_UNAVAILABLE ),
+					// The test's own deferral code; this class cannot read the test class's private constant.
+					'deferred_codes'         => array( 'test_condition_unavailable' ),
 					'informational_outcomes' => array(),
 					'next_attempt_at'        => time() + 15 * MINUTE_IN_SECONDS,
 					'step_log'               => array(),
@@ -1898,11 +1846,23 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 
-		$failures = $this->preflight_service->get_failures();
+		$guard     = new class() extends BundledSubscriptionsGuard {
+			/** @var int Number of checks. */
+			public int $calls = 0;
+
+			/** Count the check. */
+			public function is_bundled_subscriptions_store(): bool {
+				++$this->calls;
+				return false;
+			}
+		};
+		$preflight = new PreflightService();
+		$this->init_preflight_service( $preflight, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ), $guard, $this->rate_account, $this->rate_api_client );
+
+		$failures = $preflight->get_failures();
 
 		$this->assertSame( array( 'builtin_runtime_disabled' ), $failures, 'Disabled native runtime should be the only preflight result.' );
-		$this->assertSame( 0, $this->builtin_provider_readiness_calls, 'Native transport readiness should not be checked while native runtime is disabled.' );
-		$this->assertSame( 0, $this->platform_connection_preflight_calls, 'Platform connection preflight should not run while native runtime is disabled.' );
+		$this->assertSame( 0, $guard->calls, 'The bundled subscriptions check should not run while native runtime is disabled.' );
 	}
 
 	/**
@@ -1917,9 +1877,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 			$preflight_service,
 			wc_get_container()->get( WooPaymentsRuntimeArbiter::class ),
 			wc_get_container()->get( LegacyProxy::class ),
-			$this->provider,
 			new BundledSubscriptionsGuard(),
-			$this->platform_connection_service,
 			$this->rate_account,
 			$this->rate_api_client
 		);
@@ -2057,50 +2015,6 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create the job double for a dismissable notice: a completed cutover, or a switch whose connection owner is gone.
-	 *
-	 * @param string $notice One of the ReconciliationJob::NOTICE_* constants.
-	 * @return ReconciliationJob&object{dismissed: string[]}
-	 */
-	private function create_dismissable_notice_job( string $notice ): ReconciliationJob {
-		if ( ReconciliationJob::NOTICE_SUCCESS === $notice ) {
-			return $this->create_completed_notice_job();
-		}
-
-		return new class() extends ReconciliationJob {
-			/** @var string[] Dismissed notices, in order. */
-			public array $dismissed = array();
-
-			/** @var array<string,mixed> Deferred record that needs a reconnect. */
-			private array $record = array(
-				'state'                  => StateStore::STATE_DEFERRED,
-				'current_step'           => 'deferred',
-				'deferred_codes'         => array( PlatformConnectionService::FAILURE_CONNECTION_OWNER_UNAVAILABLE ),
-				'informational_outcomes' => array( array( 'code' => 'reconnect_required' ) ),
-			);
-
-			/** @return array<string,mixed>|null */
-			public function refresh_notice_record(): ?array {
-				return $this->record;
-			}
-
-			/**
-			 * Record the dismissal the way the durable record does.
-			 *
-			 * @param string $notice Notice to dismiss.
-			 */
-			public function dismiss_notice( string $notice ): bool {
-				if ( self::NOTICE_RECONNECT !== $notice || ! $this->is_reconnect_notice_due( $this->record ) ) {
-					return false;
-				}
-				$this->dismissed[]                        = $notice;
-				$this->record['informational_outcomes'][] = array( 'code' => $notice . '_notice_dismissed' );
-				return true;
-			}
-		};
-	}
-
-	/**
 	 * Create a job whose record is excluded for the given code, recording dismissals the way the durable record does.
 	 *
 	 * @param string $code Exclusion code.
@@ -2199,11 +2113,10 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Make the native cutover preflight ready.
+	 * Turn the WooPayments feature on, which leaves the preflight nothing to hold back on this test store.
 	 */
 	private function enable_ready_cutover(): void {
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$this->builtin_provider_ready = true;
 	}
 
 	/**
@@ -2356,19 +2269,15 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	 * @param PreflightService                  $service                     The preflight service.
 	 * @param WooPaymentsRuntimeArbiter         $arbiter                     The runtime arbiter.
 	 * @param LegacyProxy                       $legacy_proxy                The legacy proxy.
-	 * @param WooPaymentsProvider               $provider                    The native provider.
 	 * @param BundledSubscriptionsGuard         $bundled_subscriptions_guard  The bundled subscriptions guard.
-	 * @param PlatformConnectionService         $platform_connection_service The platform connection readiness service.
 	 * @param WooPaymentsNativeAccountAdapter   $rate_account         The rate account boundary.
 	 * @param WooPaymentsNativeApiClientAdapter $rate_api_client      The rate API client boundary.
 	 */
-	private function init_preflight_service( PreflightService $service, WooPaymentsRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, WooPaymentsProvider $provider, BundledSubscriptionsGuard $bundled_subscriptions_guard, PlatformConnectionService $platform_connection_service, WooPaymentsNativeAccountAdapter $rate_account, WooPaymentsNativeApiClientAdapter $rate_api_client ): void {
+	private function init_preflight_service( PreflightService $service, WooPaymentsRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, BundledSubscriptionsGuard $bundled_subscriptions_guard, WooPaymentsNativeAccountAdapter $rate_account, WooPaymentsNativeApiClientAdapter $rate_api_client ): void {
 		$service->init( $arbiter, $legacy_proxy );
 
 		$collaborators = array(
-			'provider'                    => $provider,
 			'bundled_subscriptions_guard' => $bundled_subscriptions_guard,
-			'platform_connection_service' => $platform_connection_service,
 			'rate_account'                => $rate_account,
 			'rate_api_client'             => $rate_api_client,
 		);

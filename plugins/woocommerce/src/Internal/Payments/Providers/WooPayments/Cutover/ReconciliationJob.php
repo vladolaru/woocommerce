@@ -42,9 +42,6 @@ class ReconciliationJob implements RegisterHooksInterface {
 	/** Notice telling a store on the bundled subscriptions why it cannot switch yet. */
 	public const NOTICE_BUNDLED_EXCLUSION = 'bundled_exclusion';
 
-	/** Notice telling a store that the connection owner is gone, so the switch needs a reconnect. */
-	public const NOTICE_RECONNECT = 'reconnect';
-
 	/** Option holding the time until which the switch notice outside Payments settings stays hidden ("Not now"). */
 	public const START_NOTICE_SNOOZED_UNTIL_OPTION = 'woocommerce_woopayments_cutover_notice_snoozed_until';
 
@@ -570,7 +567,7 @@ class ReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Record a manager's dismissal of a cutover notice (completion, bundled exclusion or reconnect) on the durable record.
+	 * Record a manager's dismissal of a cutover notice (completion or bundled exclusion) on the durable record.
 	 *
 	 * @param string $notice One of the NOTICE_* constants.
 	 * @return bool True only for the request that recorded the dismissal.
@@ -578,9 +575,6 @@ class ReconciliationJob implements RegisterHooksInterface {
 	public function dismiss_notice( string $notice ): bool {
 		if ( self::NOTICE_BUNDLED_EXCLUSION === $notice ) {
 			return $this->consume_notice( fn( ?array $record ): bool => $this->is_bundled_exclusion_notice_due( $record ), $notice . '_notice_dismissed' );
-		}
-		if ( self::NOTICE_RECONNECT === $notice ) {
-			return $this->consume_notice( fn( ?array $record ): bool => $this->is_reconnect_notice_due( $record ), $notice . '_notice_dismissed' );
 		}
 
 		return $this->consume_notice( fn( ?array $record ): bool => $this->is_completion_notice_due( $record, $notice ), $notice . '_notice_dismissed' );
@@ -639,36 +633,6 @@ class ReconciliationJob implements RegisterHooksInterface {
 			},
 			false
 		);
-	}
-
-	/**
-	 * Tell whether a waiting switch still shows its reconnect notice, which stays until a manager dismisses it or the record
-	 * stops carrying the connection owner failure, as it does once the connection is back.
-	 *
-	 * @param array<string,mixed>|null $record Cutover record.
-	 * @return bool
-	 */
-	public function is_reconnect_notice_due( ?array $record ): bool {
-		return is_array( $record )
-			&& in_array( $record['state'] ?? null, array( StateStore::STATE_PENDING, StateStore::STATE_DEFERRED ), true )
-			&& is_array( $record['informational_outcomes'] ?? null )
-			&& in_array( array( 'code' => 'reconnect_required' ), $record['informational_outcomes'], true )
-			&& $this->needs_reconnect( (array) ( $record[ StateStore::BLOCKING_CODES_KEY ] ?? array() ) )
-			&& ! in_array( array( 'code' => self::NOTICE_RECONNECT . '_notice_dismissed' ), $record['informational_outcomes'], true );
-	}
-
-	/**
-	 * Tell whether the failure codes describe a connected site whose connection owner is gone.
-	 *
-	 * Jetpack reports a deleted owner, and an owner without a user token, as no owner. A site with no blog token has no
-	 * connection to repair from here, so it is not told to reconnect.
-	 *
-	 * @param array<int|string,mixed> $codes Failure codes.
-	 * @return bool
-	 */
-	private function needs_reconnect( array $codes ): bool {
-		return in_array( PlatformConnectionService::FAILURE_CONNECTION_OWNER_UNAVAILABLE, $codes, true )
-			&& ! in_array( PlatformConnectionService::FAILURE_CONNECTION_UNAVAILABLE, $codes, true );
 	}
 
 	/**
@@ -1095,11 +1059,7 @@ class ReconciliationJob implements RegisterHooksInterface {
 				return;
 			}
 
-			$outcomes = array();
-			if ( $this->needs_reconnect( $failures ) ) {
-				$outcomes[] = array( 'code' => 'reconnect_required' );
-			}
-			$outcomes = array_merge( $outcomes, $this->get_adopted_queue_action_outcomes() );
+			$outcomes = $this->get_adopted_queue_action_outcomes();
 
 			if ( array() !== $failures ) {
 				$this->defer( $claimed, $failures, $outcomes, $this->get_queued_action_retry_delay( $failures, null ) );

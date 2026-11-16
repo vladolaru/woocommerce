@@ -18,25 +18,16 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\Bundl
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\CutoverActionScheduler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PreflightService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\StateStore;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PlatformConnectionService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
+use Automattic\WooCommerce\Internal\Jetpack\JetpackConnection;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
+use Jetpack_Options;
 use WC_Unit_Test_Case;
 
 /**
  * Tests for the headless WooPayments cutover preflight service.
  */
 class PreflightServiceTest extends WC_Unit_Test_Case {
-
-	/**
-	 * Whether the provider can process payments.
-	 *
-	 * @var bool
-	 */
-	private bool $provider_ready = true;
-
-	/** @var string[] */
-	private array $platform_failures = array();
 
 	/** @var bool */
 	private bool $rate_api_client_connected = true;
@@ -95,8 +86,6 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function setUp(): void {
 		parent::setUp();
-		$this->provider_ready            = true;
-		$this->platform_failures         = array();
 		$this->rate_api_client_connected = true;
 		update_option( 'woocommerce_woocommerce_payments_version', '10.6.0' );
 		update_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) );
@@ -127,6 +116,11 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 			$this->read_failure->remove();
 			$this->read_failure = null;
 		}
+		remove_all_filters( 'pre_http_request' );
+		Jetpack_Options::delete_option( array( 'id', 'blog_token', 'user_tokens', 'master_user' ) );
+		JetpackConnection::get_manager()->reset_connection_status();
+		delete_option( 'wcpay_account_data' );
+		wc_get_container()->get( WooPaymentsAccountService::class )->clear_cache();
 		parent::tearDown();
 	}
 
@@ -135,6 +129,76 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_ready_store_reports_no_failures(): void {
 		$this->assertSame( array(), $this->create_sut()->get_failures() );
+	}
+
+	/**
+	 * A store whose WordPress.com connection is broken, or whose WooPayments account cannot take payments, switches like
+	 * any other: payments stay off on the built-in WooPayments, and the merchant finishes setup in Payments settings.
+	 *
+	 * @testdox The preflight holds no store back for its WordPress.com connection or its account ($_dataName).
+	 * @dataProvider provide_disconnected_stores
+	 *
+	 * @param string $state How the connected store with a working account is broken.
+	 */
+	public function test_preflight_holds_no_store_back_for_its_connection_or_its_account( string $state ): void {
+		$this->arrange_connected_store_that_takes_payments();
+		$account = get_option( 'wcpay_account_data' );
+		switch ( $state ) {
+			case 'no blog token':
+				Jetpack_Options::delete_option( 'blog_token' );
+				break;
+			case 'no blog ID':
+				Jetpack_Options::delete_option( 'id' );
+				break;
+			case 'no connection owner':
+				add_filter( 'pre_http_request', static fn() => new \WP_Error( 'blocked', 'No request to WordPress.com from a test.' ) );
+				require_once ABSPATH . 'wp-admin/includes/user.php';
+				wp_delete_user( (int) Jetpack_Options::get_option( 'master_user' ) );
+				break;
+			case 'never connected':
+				Jetpack_Options::delete_option( array( 'id', 'blog_token', 'user_tokens', 'master_user' ) );
+				delete_option( 'wcpay_account_data' );
+				break;
+			case 'no account':
+				unset( $account['data']['account_id'] );
+				break;
+			case 'no publishable key':
+				$account['data']['test_publishable_key'] = '';
+				$account['data']['live_publishable_key'] = '';
+				break;
+			case 'payments disabled':
+				$account['data']['payments_enabled'] = false;
+				break;
+			case 'details not submitted':
+				$account['data']['details_submitted'] = false;
+				break;
+		}
+		if ( 'never connected' !== $state ) {
+			update_option( 'wcpay_account_data', $account, false );
+		}
+		JetpackConnection::get_manager()->reset_connection_status();
+
+		$failures = $this->create_sut()->get_failures();
+
+		$this->assertSame( array(), array_intersect( $failures, array( 'builtin_transport_unavailable', 'wpcom_connection_unavailable', 'wpcom_blog_id_unavailable', 'wpcom_connection_owner_unavailable' ) ) );
+	}
+
+	/**
+	 * The connection breaks and the account states that cannot take payments.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function provide_disconnected_stores(): array {
+		return array(
+			'no blog token'         => array( 'no blog token' ),
+			'no blog ID'            => array( 'no blog ID' ),
+			'no connection owner'   => array( 'no connection owner' ),
+			'never connected'       => array( 'never connected' ),
+			'no account'            => array( 'no account' ),
+			'no publishable key'    => array( 'no publishable key' ),
+			'payments disabled'     => array( 'payments disabled' ),
+			'details not submitted' => array( 'details not submitted' ),
+		);
 	}
 
 	/**
@@ -251,15 +315,13 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The induced reconciliation vocabulary is exactly the 10 conditions a store can reach.
+	 * @testdox The induced reconciliation vocabulary is exactly the 6 conditions a store can reach.
 	 */
-	public function test_induced_reconciliation_vocabulary_is_exactly_the_ten_reachable_conditions(): void {
+	public function test_induced_reconciliation_vocabulary_is_exactly_the_six_reachable_conditions(): void {
 		$codes = array();
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 		$codes = array_merge( $codes, $this->create_sut()->get_failures() );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$this->provider_ready            = false;
-		$this->platform_failures         = array( 'wpcom_connection_unavailable', 'wpcom_blog_id_unavailable', 'wpcom_connection_owner_unavailable' );
 		$this->rate_api_client_connected = false;
 		update_option( 'woocommerce_woocommerce_payments_version', '10.5.2' );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
@@ -271,8 +333,8 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 
 		$unique_codes = array_values( array_unique( $codes ) );
 
-		$this->assertSame( array( 'builtin_runtime_disabled', 'woopayments_plugin_version_unsupported', 'builtin_transport_unavailable', 'wpcom_connection_unavailable', 'wpcom_blog_id_unavailable', 'wpcom_connection_owner_unavailable', 'multi_currency_rates_unavailable', 'operational_queue_hooks_unhandled', 'bundled_stripe_billing_subscriptions_present', 'extension_renewal_plugin_active' ), $unique_codes );
-		$this->assertCount( 10, $unique_codes );
+		$this->assertSame( array( 'builtin_runtime_disabled', 'woopayments_plugin_version_unsupported', 'multi_currency_rates_unavailable', 'operational_queue_hooks_unhandled', 'bundled_stripe_billing_subscriptions_present', 'extension_renewal_plugin_active' ), $unique_codes );
+		$this->assertCount( 6, $unique_codes );
 	}
 
 	/**
@@ -316,15 +378,17 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Invalidating the current blog memoization re-evaluates preflight facts.
 	 */
 	public function test_invalidate_current_blog_memoization_re_evaluates_facts(): void {
-		$this->provider_ready = false;
-		$sut                  = $this->create_sut();
+		// No installed extension files, so the recorded version decides alone.
+		$this->register_legacy_proxy_function_mocks( array( 'is_readable' => fn() => false ) );
+		update_option( 'woocommerce_woocommerce_payments_version', '10.5.2' );
+		$sut = $this->create_sut();
 
-		$this->assertContains( 'builtin_transport_unavailable', $sut->get_failures() );
-		$this->provider_ready = true;
-		$this->assertContains( 'builtin_transport_unavailable', $sut->get_failures() );
+		$this->assertContains( 'woopayments_plugin_version_unsupported', $sut->get_failures() );
+		update_option( 'woocommerce_woocommerce_payments_version', '10.6.0' );
+		$this->assertContains( 'woopayments_plugin_version_unsupported', $sut->get_failures() );
 
 		$sut->invalidate_current_blog_memoization();
-		$this->assertNotContains( 'builtin_transport_unavailable', $sut->get_failures() );
+		$this->assertNotContains( 'woopayments_plugin_version_unsupported', $sut->get_failures() );
 	}
 
 	/**
@@ -1326,18 +1390,6 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 		};
 
 		return array(
-			'the built-in provider cannot process payments' => array(
-				'builtin_transport_unavailable',
-				static function ( self $test ): void {
-					$test->provider_ready = false;
-				},
-			),
-			'the platform connection owner is unavailable' => array(
-				'wpcom_connection_owner_unavailable',
-				static function ( self $test ): void {
-					$test->platform_failures = array( 'wpcom_connection_owner_unavailable' );
-				},
-			),
 			'automatic multi-currency rates have no provider' => array(
 				'multi_currency_rates_unavailable',
 				static function ( self $test ): void {
@@ -1509,18 +1561,6 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	 * @return PreflightService
 	 */
 	private function create_sut( ?\wpdb $database = null ): PreflightService {
-		$provider = $this->getMockBuilder( WooPaymentsProvider::class )->disableOriginalConstructor()->onlyMethods( array( 'can_process_payments' ) )->getMock();
-		$provider->method( 'can_process_payments' )->willReturnCallback(
-			function (): bool {
-				return $this->provider_ready;
-			}
-		);
-		$platform_connection = $this->getMockBuilder( PlatformConnectionService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_preflight_failures' ) )->getMock();
-		$platform_connection->method( 'get_preflight_failures' )->willReturnCallback(
-			function (): array {
-				return $this->platform_failures;
-			}
-		);
 		$rate_account = $this->getMockBuilder( WooPaymentsNativeAccountAdapter::class )->disableOriginalConstructor()->onlyMethods( array( 'is_provider_connected', 'is_account_rejected' ) )->getMock();
 		$rate_account->method( 'is_provider_connected' )->willReturn( true );
 		$rate_account->method( 'is_account_rejected' )->willReturn( false );
@@ -1556,7 +1596,7 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 				return $this->database;
 			}
 		};
-		$this->init_preflight_service( $sut, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ), $provider, new BundledSubscriptionsGuard(), $platform_connection, $rate_account, $rate_api_client );
+		$this->init_preflight_service( $sut, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ), new BundledSubscriptionsGuard(), $rate_account, $rate_api_client );
 		return $sut;
 	}
 
@@ -1603,6 +1643,36 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 		update_option( '_wcpay_feature_customer_multi_currency', '1' );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
 		update_option( 'wcpay_multi_currency_exchange_rate_gbp', $rate_type );
+	}
+
+	/**
+	 * Connect the store the way Jetpack stores it (a blog ID, a blog token and an owner with a user token) and cache a
+	 * WooPayments account that can take payments in either mode.
+	 */
+	private function arrange_connected_store_that_takes_payments(): void {
+		$owner_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
+		Jetpack_Options::update_option( 'id', 123 );
+		Jetpack_Options::update_option( 'blog_token', 'blogkey.blogsecret' );
+		// A user token is "<key>.<secret>.<user ID>"; true also stores the owner as master_user.
+		JetpackConnection::get_manager()->get_tokens()->update_user_token( $owner_id, 'usersecret.userkey.' . $owner_id, true );
+		wc_get_container()->get( WooPaymentsAccountService::class )->clear_cache();
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'               => array(
+					'account_id'           => 'acct_preflight',
+					'is_live'              => true,
+					'test_publishable_key' => 'pk_test_preflight',
+					'live_publishable_key' => 'pk_live_preflight',
+					'payments_enabled'     => true,
+					'details_submitted'    => true,
+				),
+				'fetched'            => time(),
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			),
+			false
+		);
 	}
 
 	/**
@@ -1762,19 +1832,15 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	 * @param PreflightService                  $service                     The preflight service.
 	 * @param WooPaymentsRuntimeArbiter         $arbiter                     The runtime arbiter.
 	 * @param LegacyProxy                       $legacy_proxy                The legacy proxy.
-	 * @param WooPaymentsProvider               $provider                    The native provider.
 	 * @param BundledSubscriptionsGuard         $bundled_subscriptions_guard  The bundled subscriptions guard.
-	 * @param PlatformConnectionService         $platform_connection_service The platform connection readiness service.
 	 * @param WooPaymentsNativeAccountAdapter   $rate_account         The rate account boundary.
 	 * @param WooPaymentsNativeApiClientAdapter $rate_api_client      The rate API client boundary.
 	 */
-	private function init_preflight_service( PreflightService $service, WooPaymentsRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, WooPaymentsProvider $provider, BundledSubscriptionsGuard $bundled_subscriptions_guard, PlatformConnectionService $platform_connection_service, WooPaymentsNativeAccountAdapter $rate_account, WooPaymentsNativeApiClientAdapter $rate_api_client ): void {
+	private function init_preflight_service( PreflightService $service, WooPaymentsRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, BundledSubscriptionsGuard $bundled_subscriptions_guard, WooPaymentsNativeAccountAdapter $rate_account, WooPaymentsNativeApiClientAdapter $rate_api_client ): void {
 		$service->init( $arbiter, $legacy_proxy );
 
 		$collaborators = array(
-			'provider'                    => $provider,
 			'bundled_subscriptions_guard' => $bundled_subscriptions_guard,
-			'platform_connection_service' => $platform_connection_service,
 			'rate_account'                => $rate_account,
 			'rate_api_client'             => $rate_api_client,
 		);

@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\C
 use ActionScheduler;
 use ActionScheduler_QueueRunner;
 use ActionScheduler_Store;
+use Automattic\WooCommerce\Internal\Jetpack\JetpackConnection;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
@@ -49,6 +50,13 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @var string
 	 */
 	private const EXTENSION_CHECK_HOOK = 'wcpay_check_affected_auth_fee_orders';
+
+	/**
+	 * A failure code that only defers the switch, for rows about deferral itself rather than any one condition.
+	 *
+	 * @var string
+	 */
+	private const TEST_DEFERRAL_CODE = 'test_condition_unavailable';
 
 	/**
 	 * The System Under Test.
@@ -1167,7 +1175,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( 0, $this->scheduler->get_scheduled_action_id( $record['generation'], $record['attempt'] + 2 ), 'No further attempt of the switch is scheduled.' );
 		$this->assertSame( 0, $this->scheduler->get_scheduled_action_id( $after['generation'], 1 ), 'The rollback waits for a fresh merchant start.' );
 		if ( 'a retry finalize whose activation lost the write lock' === $shape ) {
-			$this->assertSame( $preflight_reads_before, $preflight_reads, 'The rollback comes before the preflight and the plugin update.' );
+			$this->assertSame( $preflight_reads_before, $preflight_reads, 'The rollback comes before the preflight.' );
 			$this->assertSame( $migration_runs_before, $migration_runs, 'The rollback comes before the data migration.' );
 		}
 
@@ -1587,12 +1595,12 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @return array<string,array{string,int,string}>
 	 */
 	public function provide_admin_page_moves(): array {
-		$transport = PreflightService::FAILURE_BUILTIN_TRANSPORT_UNAVAILABLE;
+		$deferral = self::TEST_DEFERRAL_CODE;
 		return array(
-			'past the floor'                         => array( $transport, 61, 'now' ),
-			'well past the floor'                    => array( $transport, 120, 'now' ),
-			'inside the floor'                       => array( $transport, 30, "the floor's end" ),
-			'exactly at the floor'                   => array( $transport, 60, "the floor's end" ),
+			'past the floor'                         => array( $deferral, 61, 'now' ),
+			'well past the floor'                    => array( $deferral, 120, 'now' ),
+			'inside the floor'                       => array( $deferral, 30, "the floor's end" ),
+			'exactly at the floor'                   => array( $deferral, 60, "the floor's end" ),
 			'tasks queued far ahead, past the floor' => array( PreflightService::FAILURE_QUEUE_HOOKS_UNHANDLED, 61, 'now' ),
 		);
 	}
@@ -1609,7 +1617,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @param bool                $feature_on Whether the WooPayments feature is on.
 	 */
 	public function test_an_admin_page_leaves_a_record_it_must_not_move( array $changes, int $age, bool $feature_on ): void {
-		$deferred = $this->create_deferred_record( $changes['deferred_codes'] ?? array( PreflightService::FAILURE_BUILTIN_TRANSPORT_UNAVAILABLE ) );
+		$deferred = $this->create_deferred_record( $changes['deferred_codes'] ?? array( self::TEST_DEFERRAL_CODE ) );
 		$now      = time();
 		$record   = $deferred;
 		foreach ( $changes as $key => $value ) {
@@ -1712,8 +1720,8 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @testdox Browsing runs one attempt per floor: a page moves it, the next pages do not, and after the attempt defers the next move is a floor later.
 	 */
 	public function test_browsing_runs_at_most_one_attempt_per_floor(): void {
-		$this->sut = $this->create_job_with_preflight( true, $this->create_preflight_with_failures( array( PreflightService::FAILURE_BUILTIN_TRANSPORT_UNAVAILABLE ) ) );
-		$deferred  = $this->age_record( $this->create_deferred_record( array( PreflightService::FAILURE_BUILTIN_TRANSPORT_UNAVAILABLE ) ), 30 );
+		$this->sut = $this->create_job_with_preflight( true, $this->create_preflight_with_failures( array( self::TEST_DEFERRAL_CODE ) ) );
+		$deferred  = $this->age_record( $this->create_deferred_record( array( self::TEST_DEFERRAL_CODE ) ), 30 );
 
 		try {
 			$this->assertTrue( $this->sut->bring_deferred_attempt_forward(), 'The first page moves the attempt to the floor\'s end.' );
@@ -1747,7 +1755,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	 */
 	public function test_an_admin_page_with_a_stale_record_cancels_and_schedules_nothing(): void {
 		global $wpdb;
-		$deferred = $this->age_record( $this->create_deferred_record( array( PreflightService::FAILURE_BUILTIN_TRANSPORT_UNAVAILABLE ) ), 120 );
+		$deferred = $this->age_record( $this->create_deferred_record( array( self::TEST_DEFERRAL_CODE ) ), 120 );
 		$this->assertSame( $deferred, $this->state_store->get_record() );
 		// Another request's move, written behind this request's cached copy.
 		$elsewhere               = $deferred;
@@ -2957,7 +2965,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 				break;
 			case 'another code is alongside':
 				$queue( $now + 10 );
-				$other_failures = array( PreflightService::FAILURE_BUILTIN_TRANSPORT_UNAVAILABLE );
+				$other_failures = array( self::TEST_DEFERRAL_CODE );
 				break;
 			case 'the database has no identifier placeholders':
 			case 'the queue query fails':
@@ -3895,14 +3903,10 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	 */
 	public function reconciliation_disposition_provider(): array {
 		return array(
-			'unsupported WooPayments version'            => array( 'woopayments_plugin_version_unsupported', StateStore::STATE_PENDING ),
-			'operational queue hooks'                    => array( 'operational_queue_hooks_unhandled', StateStore::STATE_DEFERRED ),
-			'bundled Stripe Billing subscriptions'       => array( 'bundled_stripe_billing_subscriptions_present', StateStore::STATE_EXCLUDED ),
-			'built-in transport unavailable'             => array( 'builtin_transport_unavailable', StateStore::STATE_DEFERRED ),
-			'multi-currency rates unavailable'           => array( 'multi_currency_rates_unavailable', StateStore::STATE_DEFERRED ),
-			'WordPress.com blog ID unavailable'          => array( 'wpcom_blog_id_unavailable', StateStore::STATE_DEFERRED ),
-			'WordPress.com connection unavailable'       => array( 'wpcom_connection_unavailable', StateStore::STATE_DEFERRED ),
-			'WordPress.com connection owner unavailable' => array( 'wpcom_connection_owner_unavailable', StateStore::STATE_DEFERRED ),
+			'unsupported WooPayments version'      => array( 'woopayments_plugin_version_unsupported', StateStore::STATE_PENDING ),
+			'operational queue hooks'              => array( 'operational_queue_hooks_unhandled', StateStore::STATE_DEFERRED ),
+			'bundled Stripe Billing subscriptions' => array( 'bundled_stripe_billing_subscriptions_present', StateStore::STATE_EXCLUDED ),
+			'multi-currency rates unavailable'     => array( 'multi_currency_rates_unavailable', StateStore::STATE_DEFERRED ),
 		);
 	}
 
@@ -3954,13 +3958,9 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		);
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		$preflight = new class() extends PreflightService {
-			/** Environment failures a unit test store always reports: no plugin files, no platform connection, no provider transport. */
+			/** Environment failures a unit test store always reports: no plugin files. */
 			private const ENVIRONMENT_FAILURES = array(
 				'woopayments_plugin_version_unsupported',
-				'builtin_transport_unavailable',
-				'wpcom_blog_id_unavailable',
-				'wpcom_connection_unavailable',
-				'wpcom_connection_owner_unavailable',
 			);
 
 			/** @var int */
@@ -4093,145 +4093,96 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	public function provide_version_rollbacks(): array {
 		return array(
 			'the version code alone'          => array( array( PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED ) ),
-			'the version code beside another' => array( array( PreflightService::FAILURE_BUILTIN_TRANSPORT_UNAVAILABLE, PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED ) ),
+			'the version code beside another' => array( array( self::TEST_DEFERRAL_CODE, PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED ) ),
 		);
 	}
 
 	/**
-	 * Jetpack reports a deleted connection owner, and an owner without a user token, as no owner, so the preflight of a
-	 * connected site records `wpcom_connection_owner_unavailable` alone (see PlatformConnectionServiceTest).
+	 * The WordPress.com connection is not a condition of the switch: a store whose connection owner is gone switches, and
+	 * reconnects afterwards from Payments settings.
 	 *
-	 * @testdox A missing connection owner on a connected site records the sanctioned reconnect information once while retrying, and its notice stays until a manager dismisses it.
+	 * @testdox A claimed switch on a store whose WordPress.com connection owner is gone reaches finalize, with no deferral and no reconnect outcome.
 	 */
-	public function test_missing_connection_owner_records_reconnect_information_once(): void {
-		$preflight = $this->create_preflight_with_failures( array( 'wpcom_connection_owner_unavailable' ) );
-		$sut       = $this->create_job_with_preflight( true, $preflight );
-		$sut->enqueue( 'merchant' );
-		$pending = $this->state_store->get_record();
-		$this->assertIsArray( $pending );
-		$this->scheduler->cancel( $pending['generation'], 1 );
-		$sut->register();
-		$sut->handle_reconcile( $pending['generation'], 1 );
+	public function test_claimed_switch_with_the_connection_owner_gone_reaches_finalize(): void {
+		$this->arrange_extension_era_store();
+		$owner_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
+		\Jetpack_Options::update_option( 'id', 123 );
+		\Jetpack_Options::update_option( 'blog_token', 'blogkey.blogsecret' );
+		$manager = JetpackConnection::get_manager();
+		$manager->get_tokens()->update_user_token( $owner_id, 'usersecret.userkey.' . $owner_id, true );
+		add_filter( 'pre_http_request', static fn() => new \WP_Error( 'blocked', 'No request to WordPress.com from a test.' ) );
+		require_once ABSPATH . 'wp-admin/includes/user.php';
+		wp_delete_user( $owner_id );
+		$manager->reset_connection_status();
 
-		$deferred = $this->state_store->get_record();
-		$this->assertIsArray( $deferred );
-		$this->assertSame( array( 'wpcom_connection_owner_unavailable' ), $deferred['deferred_codes'] );
-		$sut->handle_reconcile( $deferred['generation'], 2 );
+		try {
+			$this->assertFalse( $manager->has_connected_owner(), 'The connection has no owner.' );
+			$sut = $this->create_state_writing_job( true, $this->create_settings_reading_preflight() );
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			$pending = $this->state_store->get_record();
+			$this->assertIsArray( $pending );
+			$this->scheduler->cancel( $pending['generation'], 1 );
 
-		$replayed = $this->state_store->get_record();
-		$this->assertIsArray( $replayed );
-		$reconnect_outcomes = array_filter(
-			$replayed['informational_outcomes'],
-			static function ( $outcome ): bool {
-				return array( 'code' => 'reconnect_required' ) === $outcome;
-			}
-		);
-		$this->assertCount( 1, $reconnect_outcomes );
-		$this->assertSame( StateStore::STATE_DEFERRED, $deferred['state'] );
-		$reconnect = ReconciliationJob::NOTICE_RECONNECT;
-		for ( $page = 0; $page < 2; $page++ ) {
-			$this->assertTrue( $sut->is_reconnect_notice_due( $this->state_store->get_record() ), 'Every admin page shows the notice, since some screens hide it.' );
+			$sut->handle_reconcile( $pending['generation'], 1 );
+		} finally {
+			remove_all_filters( 'pre_http_request' );
+			\Jetpack_Options::delete_option( array( 'id', 'blog_token', 'user_tokens', 'master_user' ) );
+			$manager->reset_connection_status();
 		}
-		$this->assertSame( $replayed, $this->state_store->get_record(), 'Showing the notice must not change the record.' );
 
-		$this->assertTrue( $sut->dismiss_notice( $reconnect ) );
-		$this->assertFalse( $sut->dismiss_notice( $reconnect ), 'A dismissed notice stays dismissed.' );
-		wp_cache_flush();
-		$dismissed = $this->state_store->get_record();
-		$this->assertIsArray( $dismissed );
-		$this->assertContains( array( 'code' => 'reconnect_notice_dismissed' ), $dismissed['informational_outcomes'] );
-		$this->assertFalse( $sut->is_reconnect_notice_due( $dismissed ) );
-		$this->assertSame( StateStore::STATE_DEFERRED, $dismissed['state'], 'Dismissing information must not stop silent retries.' );
+		$after = $this->state_store->get_record();
+		$this->assertIsArray( $after );
+		$this->assertSame( 'verify_builtin_ownership', $after['current_step'], 'The switch is past finalize.' );
+		$this->assertSame( array(), $after['deferred_codes'] );
+		$this->assertNotContains( array( 'code' => 'reconnect_required' ), $after['informational_outcomes'] );
+		$this->assertSame( array(), $this->read_stored_active_plugins(), 'Finalize deactivated the extension.' );
 	}
 
 	/**
-	 * A reconnect that worked leaves the record deferred for another failure, or pending ownership verification, with no
-	 * connection owner failure among its codes. A site that lost its blog token as well has no connection to repair here.
+	 * Nothing shipped with the connection codes, so no migration removes them; a record written before they went still
+	 * carries them, or the reconnect outcome, and the next attempt reads it and goes on.
 	 *
-	 * @testdox The reconnect notice stops once the record no longer carries the connection owner failure on a connected site, with no dismissal ($_dataName).
-	 * @dataProvider provide_reconnect_records
+	 * @testdox A deferred record that carries $_dataName reads and continues to finalize on its next attempt, with no warning.
+	 * @dataProvider provide_records_with_removed_codes
 	 *
-	 * @param string   $state    Record state.
-	 * @param string[] $codes    The record's deferred codes.
-	 * @param bool     $expected Whether the notice is due.
+	 * @param string[]                      $codes    The record's deferred codes.
+	 * @param array<int,array{code:string}> $outcomes The record's informational outcomes.
 	 */
-	public function test_reconnect_notice_stops_once_the_connection_owner_failure_is_gone( string $state, array $codes, bool $expected ): void {
-		$record = array(
-			'state'                  => $state,
-			'deferred_codes'         => $codes,
-			'informational_outcomes' => array( array( 'code' => 'reconnect_required' ) ),
-		);
+	public function test_record_with_a_removed_code_reads_and_continues( array $codes, array $outcomes ): void {
+		$deferred                         = $this->create_deferred_record( $codes );
+		$stored                           = $deferred;
+		$stored['revision']               = $deferred['revision'] + 1;
+		$stored['informational_outcomes'] = $outcomes;
+		$this->assertTrue( $this->state_store->compare_and_set_record( $deferred, $stored ) );
+		$this->assertSame( $stored, $this->state_store->get_record(), 'The stored record reads back as written.' );
+		$sut = $this->create_job( true, $this->create_preflight_with_failures( array() ), null, true, $this->create_noop_normalization() );
+		$this->scheduler->cancel( $stored['generation'], 2 );
+		$logger = RecordingWcLogger::install();
 
-		$this->assertSame( $expected, $this->create_job( true )->is_reconnect_notice_due( $record ) );
+		try {
+			$sut->handle_reconcile( $stored['generation'], 2 );
+		} finally {
+			wc_get_container()->reset_all_replacements();
+		}
+
+		$after = $this->state_store->get_record();
+		$this->assertIsArray( $after );
+		$this->assertSame( 'verify_builtin_ownership', $after['current_step'] );
+		$this->assertSame( array(), $after['deferred_codes'] );
+		$this->assertSame( array(), array_filter( $logger->lines, static fn( array $line ): bool => in_array( $line[0], array( 'warning', 'error', 'critical', 'alert', 'emergency' ), true ) ), 'Recorded: ' . (string) wp_json_encode( $logger->lines ) );
 	}
 
 	/**
-	 * @return array<string,array{string,string[],bool}>
+	 * @return array<string,array{string[],array<int,array{code:string}>}>
 	 */
-	public function provide_reconnect_records(): array {
-		$owner = 'wpcom_connection_owner_unavailable';
-
+	public function provide_records_with_removed_codes(): array {
 		return array(
-			'still failing on the owner'                  => array( StateStore::STATE_DEFERRED, array( $owner ), true ),
-			'still failing on the owner and the version'  => array( StateStore::STATE_DEFERRED, array( 'woopayments_plugin_version_unsupported', $owner ), true ),
-			'the owner and the connection both failing'   => array( StateStore::STATE_DEFERRED, array( 'wpcom_connection_unavailable', 'wpcom_blog_id_unavailable', $owner ), false ),
-			'deferred for another failure only'           => array( StateStore::STATE_DEFERRED, array( 'woopayments_plugin_version_unsupported' ), false ),
-			'pending ownership verification, no failures' => array( StateStore::STATE_PENDING, array(), false ),
+			'the owner code and the reconnect outcome' => array( array( 'wpcom_connection_owner_unavailable' ), array( array( 'code' => 'reconnect_required' ) ) ),
+			'a dismissed reconnect notice'             => array( array( 'wpcom_connection_owner_unavailable' ), array( array( 'code' => 'reconnect_required' ), array( 'code' => 'reconnect_notice_dismissed' ) ) ),
+			'the transport code'                       => array( array( 'builtin_transport_unavailable' ), array() ),
+			'the connection and blog ID codes'         => array( array( 'wpcom_connection_unavailable', 'wpcom_blog_id_unavailable' ), array() ),
+			'the Multi-Currency rates code'            => array( array( 'multi_currency_rates_unavailable' ), array() ),
 		);
-	}
-
-	/**
-	 * A site with no working connection has no owner to replace either, so the attempt defers without the reconnect
-	 * information.
-	 *
-	 * @testdox A disconnected site, with no blog token, records no reconnect information while its connection owner is also gone.
-	 */
-	public function test_disconnected_site_records_no_reconnect_information(): void {
-		$preflight = $this->create_preflight_with_failures( array( 'wpcom_connection_unavailable', 'wpcom_blog_id_unavailable', 'wpcom_connection_owner_unavailable' ) );
-		$sut       = $this->create_job_with_preflight( true, $preflight );
-		$sut->enqueue( 'merchant' );
-		$pending = $this->state_store->get_record();
-		$this->assertIsArray( $pending );
-		$this->scheduler->cancel( $pending['generation'], 1 );
-		$sut->register();
-		$sut->handle_reconcile( $pending['generation'], 1 );
-
-		$deferred = $this->state_store->get_record();
-		$this->assertIsArray( $deferred );
-		$this->assertSame( StateStore::STATE_DEFERRED, $deferred['state'] );
-		$this->assertNotContains( array( 'code' => 'reconnect_required' ), $deferred['informational_outcomes'] );
-		$this->assertFalse( $sut->is_reconnect_notice_due( $deferred ) );
-	}
-
-	/** @testdox Dismissing a reconnect notice that is not due takes no cutover lease. */
-	public function test_reconnect_notice_dismissal_takes_no_lease_when_nothing_is_due(): void {
-		$sut = $this->create_job( true );
-		$this->assertTrue( $sut->enqueue( 'merchant' ) );
-		$lease_events = $this->capture_lease_write_events(
-			function () use ( $sut ): void {
-				$this->assertFalse( $sut->dismiss_notice( ReconciliationJob::NOTICE_RECONNECT ) );
-			}
-		);
-
-		$this->assertSame( array(), $lease_events, 'A stale dismissal link writes nothing.' );
-	}
-
-	/** @testdox Dismissing reconnect information cannot revise or fence a live worker claim. */
-	public function test_reconnect_notice_dismissal_does_not_revise_a_running_claim(): void {
-		$preflight = $this->create_preflight_with_failures( array( 'wpcom_connection_owner_unavailable' ) );
-		$sut       = $this->create_job_with_preflight( true, $preflight );
-		$this->assertTrue( $sut->enqueue( 'merchant' ) );
-		$pending = $this->state_store->get_record();
-		$this->assertIsArray( $pending );
-		$this->scheduler->cancel( $pending['generation'], 1 );
-		$sut->handle_reconcile( $pending['generation'], 1 );
-		$deferred = $this->state_store->get_record();
-		$this->assertIsArray( $deferred );
-		$this->scheduler->cancel( $deferred['generation'], $deferred['attempt'] + 1 );
-		$running = $this->create_running_record( $deferred );
-
-		$this->assertFalse( $sut->dismiss_notice( ReconciliationJob::NOTICE_RECONNECT ) );
-		$this->assertSame( $running, $this->state_store->get_record() );
 	}
 
 	/**
@@ -4922,7 +4873,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @param int $expected_delay Expected retry delay in seconds.
 	 */
 	public function test_defer_uses_the_retry_cadence_from_started_at( int $age, int $expected_delay ): void {
-		$sut       = $this->create_job_with_preflight( true, $this->create_preflight_with_failures( array( 'builtin_transport_unavailable' ) ) );
+		$sut       = $this->create_job_with_preflight( true, $this->create_preflight_with_failures( array( self::TEST_DEFERRAL_CODE ) ) );
 		$scheduler = $this->scheduler;
 		$sut->enqueue( 'merchant' );
 		$record = $this->state_store->get_record();
@@ -4942,7 +4893,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertIsArray( $deferred );
 		$this->assertSame( StateStore::STATE_DEFERRED, $deferred['state'] );
 		$this->assertSame( 2, $deferred['attempt'] );
-		$this->assertSame( array( 'builtin_transport_unavailable' ), $deferred['deferred_codes'] );
+		$this->assertSame( array( self::TEST_DEFERRAL_CODE ), $deferred['deferred_codes'] );
 		$this->assertGreaterThanOrEqual( $before + $expected_delay, $deferred['next_attempt_at'] );
 		$this->assertLessThanOrEqual( $after + $expected_delay, $deferred['next_attempt_at'] );
 		$this->assertSame( $deferred['action_id'], $scheduler->get_scheduled_action_id( $deferred['generation'], 3 ) );
@@ -4984,7 +4935,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	 */
 	public function test_late_register_replaces_a_dead_action( string $state, string $death ): void {
 		if ( 'deferred' === $state ) {
-			$sut = $this->create_job_with_preflight( true, $this->create_preflight_with_failures( array( 'builtin_transport_unavailable' ) ) );
+			$sut = $this->create_job_with_preflight( true, $this->create_preflight_with_failures( array( self::TEST_DEFERRAL_CODE ) ) );
 			$sut->enqueue( 'merchant' );
 			$pending = $this->state_store->get_record();
 			$this->assertIsArray( $pending );
@@ -5339,7 +5290,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			$current = $live_claim;
 		}
 
-		$this->assertFalse( $sut->defer( $stale, array( 'builtin_transport_unavailable' ) ) );
+		$this->assertFalse( $sut->defer( $stale, array( self::TEST_DEFERRAL_CODE ) ) );
 		$this->assertSame( $current, $this->state_store->get_record() );
 	}
 
@@ -5366,7 +5317,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			unset( $generation, $attempt );
 			$claimed = $this->state_store->get_record();
 			$this->assertIsArray( $claimed );
-			$sut->defer( $claimed, array( 'builtin_transport_unavailable' ) );
+			$sut->defer( $claimed, array( self::TEST_DEFERRAL_CODE ) );
 		};
 		add_action( 'woocommerce_woopayments_cutover_reconcile', $defer_callback, 20, 2 );
 		try {
@@ -5532,13 +5483,9 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	 */
 	private function create_settings_reading_preflight(): PreflightService {
 		$preflight = new class() extends PreflightService {
-			/** Environment failures a unit test store always reports: no plugin files, no platform connection, no provider transport. */
+			/** Environment failures a unit test store always reports: no plugin files. */
 			private const ENVIRONMENT_FAILURES = array(
 				'woopayments_plugin_version_unsupported',
-				'builtin_transport_unavailable',
-				'wpcom_blog_id_unavailable',
-				'wpcom_connection_unavailable',
-				'wpcom_connection_owner_unavailable',
 			);
 
 			/** @return string[] */

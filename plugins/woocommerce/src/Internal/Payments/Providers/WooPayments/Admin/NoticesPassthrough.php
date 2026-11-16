@@ -28,7 +28,7 @@ class NoticesPassthrough implements RegisterHooksInterface {
 	/**
 	 * Classes whose `admin_notices` callbacks are kept on the WooPayments routes.
 	 *
-	 * The cutover notices (switch in progress, reconnect, completed) are kept, so a merchant mid-switch sees them on every
+	 * The cutover notices (switch in progress, completed) are kept, so a merchant mid-switch sees them on every
 	 * WooPayments page. Multi-Currency's notices are not kept: they show on the Multi-currency tab and the other admin pages.
 	 */
 	private const KEPT_NOTICE_CLASSES = array(

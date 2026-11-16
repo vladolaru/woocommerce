@@ -17,7 +17,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAp
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudOrderTrackingService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStoreSetupReportController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
@@ -51,9 +50,6 @@ class PreflightService {
 
 	/** The recorded WooPayments extension version is below MINIMUM_CUTOVER_PLUGIN_VERSION. */
 	public const FAILURE_PLUGIN_VERSION_UNSUPPORTED = 'woopayments_plugin_version_unsupported';
-
-	/** The built-in WooPayments cannot process payments for this account yet. */
-	public const FAILURE_BUILTIN_TRANSPORT_UNAVAILABLE = 'builtin_transport_unavailable';
 
 	/** A currency on automatic exchange rates has no rate provider. */
 	public const FAILURE_MULTI_CURRENCY_RATES_UNAVAILABLE = 'multi_currency_rates_unavailable';
@@ -114,13 +110,6 @@ class PreflightService {
 	private LegacyProxy $legacy_proxy;
 
 	/**
-	 * Built-in WooPayments provider.
-	 *
-	 * @var WooPaymentsProvider|null
-	 */
-	private ?WooPaymentsProvider $provider = null;
-
-	/**
 	 * Plugins that charge renewals through the WooPayments extension.
 	 *
 	 * @var ExtensionBoundRenewalPlugins|null
@@ -133,13 +122,6 @@ class PreflightService {
 	 * @var BundledSubscriptionsGuard|null
 	 */
 	private ?BundledSubscriptionsGuard $bundled_subscriptions_guard = null;
-
-	/**
-	 * Platform connection readiness service.
-	 *
-	 * @var PlatformConnectionService|null
-	 */
-	private ?PlatformConnectionService $platform_connection_service = null;
 
 	/**
 	 * Rate account boundary.
@@ -220,10 +202,6 @@ class PreflightService {
 		if ( ! $this->is_woopayments_plugin_version_supported() ) {
 			$failures[] = self::FAILURE_PLUGIN_VERSION_UNSUPPORTED;
 		}
-		if ( ! $this->is_builtin_transport_ready() ) {
-			$failures[] = self::FAILURE_BUILTIN_TRANSPORT_UNAVAILABLE;
-		}
-		$failures = array_merge( $failures, $this->get_platform_connection_service()->get_preflight_failures() );
 		if ( $this->has_unavailable_multi_currency_rate_provider() ) {
 			$failures[] = self::FAILURE_MULTI_CURRENCY_RATES_UNAVAILABLE;
 		}
@@ -618,8 +596,8 @@ class PreflightService {
 
 	/**
 	 * Get the version of the WooPayments code a rollback would run. While the extension owns payments that is the version it
-	 * loaded, which a retry in the request that updated it also still runs; otherwise, or when the loaded extension declares
-	 * no version, the installed files' header.
+	 * loaded, which this request keeps running even if its files changed since; otherwise, or when the loaded extension
+	 * declares no version, the installed files' header.
 	 *
 	 * @return string The version, or an empty string when neither can be read.
 	 */
@@ -669,19 +647,6 @@ class PreflightService {
 		}
 
 		return $this->installed_plugin_versions[ $plugin_file ];
-	}
-
-	/**
-	 * Determine whether the built-in transport is ready.
-	 *
-	 * @return bool
-	 */
-	private function is_builtin_transport_ready(): bool {
-		try {
-			return $this->get_provider()->can_process_payments();
-		} catch ( \Throwable $e ) {
-			return false;
-		}
 	}
 
 	/**
@@ -767,7 +732,7 @@ class PreflightService {
 	 * Determine whether a plugin file belongs to WooPayments.
 	 *
 	 * Stricter than WooPaymentsRuntimeArbiter::is_woopayments_plugin_file(): a file outside the canonical folder also needs the
-	 * WooPayments header, because the switch deactivates and updates the file this finds.
+	 * WooPayments header, because the switch deactivates the file this finds.
 	 *
 	 * @param string $plugin_file Plugin file identifier.
 	 * @return bool
@@ -840,19 +805,6 @@ class PreflightService {
 	}
 
 	/**
-	 * Get the built-in WooPayments provider, resolving it on first use.
-	 *
-	 * @return WooPaymentsProvider
-	 */
-	private function get_provider(): WooPaymentsProvider {
-		if ( null === $this->provider ) {
-			$this->provider = wc_get_container()->get( WooPaymentsProvider::class );
-		}
-
-		return $this->provider;
-	}
-
-	/**
 	 * Get the plugins that charge renewals through the WooPayments extension, resolving them on first use.
 	 *
 	 * @return ExtensionBoundRenewalPlugins
@@ -876,19 +828,6 @@ class PreflightService {
 		}
 
 		return $this->bundled_subscriptions_guard;
-	}
-
-	/**
-	 * Get the platform connection readiness service, resolving it on first use.
-	 *
-	 * @return PlatformConnectionService
-	 */
-	private function get_platform_connection_service(): PlatformConnectionService {
-		if ( null === $this->platform_connection_service ) {
-			$this->platform_connection_service = wc_get_container()->get( PlatformConnectionService::class );
-		}
-
-		return $this->platform_connection_service;
 	}
 
 	/**

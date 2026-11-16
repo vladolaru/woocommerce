@@ -41,7 +41,7 @@ class NoticesPassthroughTest extends WC_Unit_Test_Case {
 	private $multi_currency_notices;
 
 	/**
-	 * Cutover notices callback owner (switch in progress, reconnect, completed).
+	 * Cutover notices callback owner (switch in progress, completed).
 	 *
 	 * @var CutoverController
 	 */
