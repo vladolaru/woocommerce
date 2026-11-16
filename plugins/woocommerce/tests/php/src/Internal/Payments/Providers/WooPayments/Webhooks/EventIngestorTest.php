@@ -3185,7 +3185,8 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( OrderStatus::PROCESSING, $order->get_status() );
 		$this->assertSame( $date_paid ? $date_paid->getTimestamp() : null, $order->get_date_paid() ? $order->get_date_paid()->getTimestamp() : null );
 		$this->assertSame( $intent_id, $order->get_transaction_id() );
-		$this->assertCount( $note_count, wc_get_order_notes( $notes ), 'The skipped event adds no note.' );
+		$this->assertCount( $note_count + 1, wc_get_order_notes( $notes ), 'The skipped event adds only the paid-order note.' );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'already had a paid status' ) );
 		$this->assertSame( 'order_paid', $this->get_logged_context( $logger, 'Payment event skipped: the order is already paid, so the event does not change it.' )['reason'] ?? '' );
 		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
 		$lines = array_values( array_filter( $logger->lines, static fn( array $line ): bool => false !== strpos( $line[1], 'the capture of an authorization, but the requires_capture status' ) ) );
@@ -3481,7 +3482,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A succeeded payment on an order already paid by it, with neither payment note, writes only the payment meta and its succeeded status: $_dataName.
+	 * @testdox A succeeded payment on an order already paid by it, with neither payment note, writes only the payment meta, its succeeded status and the paid-order note: $_dataName.
 	 *
 	 * Client 11.3.0's webhook writes the payment meta, then updates the order from the intent only while it is not paid
 	 * (class-wc-payments-webhook-processing-service.php:642-716, class-wc-payments-order-service.php:475, :3398-3410); it
@@ -3522,7 +3523,8 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( $completions, $this->count_completion_hooks( $status ), 'No completion hook fires.' );
 		$this->assertSame( (string) $event['data']['object']['charges']['data'][0]['id'], $order->get_meta( '_charge_id', true ), 'The payment meta is written.' );
 		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
-		$this->assertCount( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertCount( $notes + 1, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'already had a paid status' ) );
 	}
 
 	/** @return array<string,array{0:string,1:bool}> */
@@ -5801,6 +5803,9 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertCount( 0, $this->get_order_notes_containing( $order, 'successfully charged' ) );
 		$skips = array_filter( $logger->contexts, static fn( array $context ): bool => 'order_paid' === ( $context['reason'] ?? '' ) );
 		$this->assertCount( 2, $skips, 'Each delivery reaches the lifecycle, which leaves the paid order as it is.' );
+		$paid_notes = $this->get_order_notes_containing( $order, 'already had a paid status' );
+		$this->assertCount( 1, $paid_notes, 'The first delivery notes the payment that reached the paid order; the second adds nothing.' );
+		$this->assertStringNotContainsString( 'transaction ID names that payment', $paid_notes[0]->content, 'The empty transaction ID names no payment.' );
 	}
 
 	/**
@@ -5948,6 +5953,8 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'ch_A', $order->get_meta( '_charge_id', true ), 'The payment meta is written.' );
 		$this->assertSame( 'requires_action', $order->get_meta( '_intention_status', true ) );
+		// The held paid renewal is skipped on the paid order with the paid-order note; the invoice's intent never reaches the lifecycle.
+		$this->assertCount( 'invoice' === $path ? 0 : 1, $this->get_order_notes_containing( $order, 'already had a paid status' ) );
 	}
 
 	/**
@@ -5959,6 +5966,73 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		return array(
 			"a Stripe Billing invoice's intent" => array( 'invoice' ),
 			"Stripe Billing's paid renewal with an amount hold" => array( 'stripe billing' ),
+		);
+	}
+
+	/**
+	 * @testdox The webhook's success on an order in a paid status with none of the payment's notes adds the paid-order note only for an online payment the order owns: $_dataName.
+	 * @dataProvider successes_on_a_paid_order_without_the_payments_notes
+	 *
+	 * Client 11.3.0 leaves a paid order with no note (class-wc-payments-webhook-processing-service.php:716,
+	 * class-wc-payments-order-service.php:3292-3294). A payment taken in person, by a card reader or Interac, gets no note:
+	 * the merchant took it at the counter; an Interac sale for another amount than the order's total, which the in-person
+	 * route completed, stays Completed with no note. A success that is not the order's own is another charge's note.
+	 *
+	 * @param string $shape          `hand-paid` (a 3DS attempt marked paid by hand) or `paid` (a payment the route recorded).
+	 * @param string $status         Order status.
+	 * @param string $transaction_id Transaction ID the order stores.
+	 * @param string $charge_type    The payment's charge type.
+	 * @param int    $amount         The intent's amount in minor units; the order total is 10.99.
+	 * @param bool   $noted          Whether the paid-order note is written.
+	 * @param bool   $sentence_three Whether it says the transaction ID names the payment.
+	 */
+	public function test_webhook_success_on_a_paid_order_notes_only_an_online_payment_it_owns( string $shape, string $status, string $transaction_id, string $charge_type, int $amount, bool $noted, bool $sentence_three ): void {
+		$order = 'paid' === $shape
+			? StoredPaymentRecords::payment( $status, 'pi_A', 'ch_A' )
+			: StoredPaymentRecords::paid_by_hand_over_an_open_attempt( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $transaction_id );
+		$event = $this->create_payment_intent_event(
+			'payment_intent.succeeded',
+			$order,
+			array(
+				'id'      => 'pi_A',
+				'amount'  => $amount,
+				'charges' => array(
+					'data' => array(
+						array(
+							'id'                     => 'ch_A',
+							'payment_method_details' => array( 'type' => $charge_type ),
+						),
+					),
+				),
+			)
+		);
+
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( $status, $order->get_status() );
+		$notes = $this->get_order_notes_containing( $order, 'already had a paid status' );
+		$this->assertCount( $noted ? 1 : 0, $notes );
+		if ( $noted ) {
+			$this->assertSame( $sentence_three, str_contains( $notes[0]->content, 'transaction ID names that payment' ) );
+		}
+		$this->assertCount( 0, $this->get_order_notes_containing( $order, 'successfully charged' ) );
+	}
+
+	/**
+	 * Successes on a paid order that holds none of the payment's notes.
+	 *
+	 * @return array<string,array{string,string,string,string,int,bool,bool}>
+	 */
+	public function successes_on_a_paid_order_without_the_payments_notes(): array {
+		return array(
+			'an online card payment, own by its transaction ID' => array( 'hand-paid', OrderStatus::PROCESSING, 'pi_A', 'card', 1099, true, true ),
+			'an online card payment, an empty transaction ID' => array( 'hand-paid', OrderStatus::PROCESSING, '', 'card', 1099, true, false ),
+			'an online card payment, another attempt in the transaction ID' => array( 'hand-paid', OrderStatus::PROCESSING, 'pi_other', 'card', 1099, false, false ),
+			'an Interac sale'    => array( 'hand-paid', OrderStatus::PROCESSING, 'pi_A', 'interac_present', 1099, false, false ),
+			'a card reader sale' => array( 'hand-paid', OrderStatus::PROCESSING, 'pi_A', 'card_present', 1099, false, false ),
+			'an Interac sale for another amount, Completed by the in-person route' => array( 'paid', OrderStatus::COMPLETED, 'pi_A', 'interac_present', 1500, false, false ),
 		);
 	}
 

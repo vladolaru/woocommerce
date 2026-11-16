@@ -138,6 +138,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		WC()->cart = $this->cart_before_test;
+		unset( $GLOBALS['wp_post_statuses']['wc-shipped'] );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		$classic_checkout_fallback_hooks = new \ReflectionProperty( WooPaymentsGateway::class, 'classic_checkout_fallback_hooks_added' );
@@ -3915,6 +3916,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	public function test_process_payment_leaves_an_order_paid_during_the_charge( string $status ): void {
 		add_filter( 'wc_order_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'wc-shipped' => 'Shipped' ) ) );
 		add_filter( 'woocommerce_order_is_paid_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'shipped' ) ) );
+		// As an order status plugin does, so the order is stored as `wc-shipped` and an order query finds it.
+		register_post_status( 'wc-shipped', array( 'label' => 'Shipped' ) );
 		// The store takes test payments, as the recorded intent is one.
 		add_filter( 'wcpay_test_mode', '__return_true' );
 		$order = $this->create_order();
@@ -3976,7 +3979,9 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertSame( $status, $order->get_status() );
-		$this->assertCount( count( $notes ), wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'The webhook adds no note, an other-charge note included.' );
+		$paid_notes = array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $note ): bool => false !== strpos( $note, 'already had a paid status' ) );
+		$this->assertCount( count( $notes ) + count( $paid_notes ), wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'The webhook adds no note but the paid-order note, an other-charge note included.' );
+		$this->assertCount( 1, $paid_notes );
 		$this->assertSame( $completions, did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_payment_complete_order_status_' . $status ) );
 	}
 

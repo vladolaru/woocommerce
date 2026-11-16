@@ -371,7 +371,7 @@ class WooPaymentsIntentConfirmationService {
 			return array( $changes_nothing || $recorded_failure ? null : $built_event, $hold );
 		};
 		$result          = wc_get_container()->get( WooPaymentsCompositionDataSettler::class )->run_settled(
-			fn(): string => $this->fee_details_note_controller->apply_and_schedule_fee_details_with_lock( $order, $event, $build )
+			fn(): string => $this->fee_details_note_controller->apply_and_schedule_fee_details_with_lock( $order, $event, $build, $intent )
 		);
 		if ( OrderPaymentLifecycleService::RESULT_REFUSED === $result ) {
 			$stored_order = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
@@ -446,7 +446,8 @@ class WooPaymentsIntentConfirmationService {
 			fn(): string => $this->fee_details_note_controller->apply_and_schedule_fee_details_with_lock(
 				$order,
 				$event,
-				fn( WC_Order $stored_order ): array => $this->build_attached_lifecycle_event( $stored_order, $intent )
+				fn( WC_Order $stored_order ): array => $this->build_attached_lifecycle_event( $stored_order, $intent ),
+				$intent
 			)
 		);
 	}

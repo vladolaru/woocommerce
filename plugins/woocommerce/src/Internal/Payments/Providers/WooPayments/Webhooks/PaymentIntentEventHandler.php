@@ -325,7 +325,7 @@ class PaymentIntentEventHandler {
 		$notify_repeated_terminal_failure = false;
 		$this->lifecycle_service->reread_order_from_data_store( $order );
 		$is_charge_event = 'charge.expired' === $event_type;
-		$charge_id       = $is_charge_event ? $this->get_object_id( $event_object ) : $this->get_charge_id_from_intent( $event_object );
+		$charge_id       = $is_charge_event ? $this->get_object_id( $event_object ) : WooPaymentsIntentCodec::first_charge_id( $event_object );
 		$intent_id       = $is_charge_event ? $this->event_order_resolver->get_event_intent_id( $event_object, $order ) : $this->get_object_id( $event_object );
 		// A success or an authorization of an attempt the order abandoned when another payment method took it over leaves
 		// the order alone, before ownership and anything it writes (client 11.3.0
@@ -557,9 +557,9 @@ class PaymentIntentEventHandler {
 					$this->log_capture_over_another_intents_authorization( $order, $payment_intent, $stored_intent_id );
 				}
 				if ( $reports_intent_status ) {
-					$this->fee_details_note_controller->apply_intent_status_and_schedule_fee_details( $order, $lifecycle_event, $hold );
+					$this->fee_details_note_controller->apply_intent_status_and_schedule_fee_details( $order, $lifecycle_event, $hold, $payment_intent );
 				} else {
-					$this->fee_details_note_controller->apply_and_schedule_fee_details( $order, $lifecycle_event, $hold );
+					$this->fee_details_note_controller->apply_and_schedule_fee_details( $order, $lifecycle_event, $hold, $payment_intent );
 				}
 			}
 		);
@@ -627,7 +627,7 @@ class PaymentIntentEventHandler {
 	private function write_succeeded_payment_intent_meta( WC_Order $order, array $payment_intent ): void {
 		$values = array(
 			'_intent_id'             => $this->get_object_id( $payment_intent ),
-			'_charge_id'             => $this->get_charge_id_from_intent( $payment_intent ),
+			'_charge_id'             => WooPaymentsIntentCodec::first_charge_id( $payment_intent ),
 			'_payment_method_id'     => $this->get_payment_method_id_from_intent( $payment_intent ),
 			// Client 11.1.0 stores the event's raw, lowercase currency (class-wc-payments-webhook-processing-service.php:498,515).
 			'_wcpay_intent_currency' => isset( $payment_intent['currency'] ) ? (string) $payment_intent['currency'] : '',
@@ -639,7 +639,7 @@ class PaymentIntentEventHandler {
 			}
 		}
 
-		foreach ( WooPaymentsOrderEffects::webhook_fee_meta( $payment_intent, $this->get_first_charge_from_intent( $payment_intent ) ) as $key => $value ) {
+		foreach ( WooPaymentsOrderEffects::webhook_fee_meta( $payment_intent, WooPaymentsIntentCodec::first_charge( $payment_intent ) ) as $key => $value ) {
 			$order->update_meta_data( $key, $value );
 		}
 
@@ -697,9 +697,7 @@ class PaymentIntentEventHandler {
 	 * @return bool
 	 */
 	private function is_online_authorization( array $payment_intent ): bool {
-		$charge_type = $this->get_first_charge_from_intent( $payment_intent )['payment_method_details']['type'] ?? '';
-
-		return 'requires_capture' === ( $payment_intent['status'] ?? null ) && ! in_array( $charge_type, array( 'card_present', 'interac_present' ), true );
+		return 'requires_capture' === ( $payment_intent['status'] ?? null ) && ! WooPaymentsIntentCodec::is_in_person_charge( WooPaymentsIntentCodec::first_charge( $payment_intent ) );
 	}
 
 	/**
@@ -711,7 +709,7 @@ class PaymentIntentEventHandler {
 	 * @return PaymentLifecycleEvent
 	 */
 	private function build_succeeded_lifecycle_event( array $event_object, WC_Order $order, ?array $hold_note_candidates ): PaymentLifecycleEvent {
-		$charge                     = $this->get_first_charge_from_intent( $event_object );
+		$charge                     = WooPaymentsIntentCodec::first_charge( $event_object );
 		$balance_transaction_id     = WooPaymentsIntentCodec::balance_transaction_id( $charge['balance_transaction'] ?? null );
 		$captures_the_authorization = null === $hold_note_candidates && WooPaymentsOrderEffects::captures_the_authorization( $order, $event_object );
 		$meta                       = $this->get_succeeded_payment_intent_meta( $event_object, $order, $captures_the_authorization );
@@ -733,8 +731,8 @@ class PaymentIntentEventHandler {
 		// Client 11.3.0 completes an order that stores requires_capture with its capture writer, and any other with its
 		// success writer (class-wc-payments-order-service.php:484-489, :2193-2219).
 		$note_candidates = $captures_the_authorization
-			? $this->order_note_service->format_capture_success_note_candidates( $order, $this->get_object_id( $event_object ), $this->get_charge_id_from_intent( $event_object ), $balance_transaction_id )
-			: $this->order_note_service->format_payment_success_note_candidates( $order, $this->get_object_id( $event_object ), $this->get_charge_id_from_intent( $event_object ), $balance_transaction_id );
+			? $this->order_note_service->format_capture_success_note_candidates( $order, $this->get_object_id( $event_object ), WooPaymentsIntentCodec::first_charge_id( $event_object ), $balance_transaction_id )
+			: $this->order_note_service->format_payment_success_note_candidates( $order, $this->get_object_id( $event_object ), WooPaymentsIntentCodec::first_charge_id( $event_object ), $balance_transaction_id );
 
 		return new PaymentLifecycleEvent(
 			PaymentLifecycleEvent::STATUS_COMPLETED,
@@ -762,7 +760,7 @@ class PaymentIntentEventHandler {
 	 * @return array<string,string>
 	 */
 	private function get_succeeded_payment_intent_meta( array $event_object, WC_Order $order, bool $captures_the_authorization = false ): array {
-		$charge = $this->get_first_charge_from_intent( $event_object );
+		$charge = WooPaymentsIntentCodec::first_charge( $event_object );
 		$meta   = $this->without_empty_values(
 			array(
 				'_intention_status'  => isset( $event_object['status'] ) ? (string) $event_object['status'] : '',
@@ -841,7 +839,7 @@ class PaymentIntentEventHandler {
 					return null;
 				}
 
-				$charge_id       = $this->get_charge_id_from_intent( $event_object );
+				$charge_id       = WooPaymentsIntentCodec::first_charge_id( $event_object );
 				$note_candidates = 'card_present' === $payment_method_type
 					? $this->order_note_service->format_terminal_payment_failed_note_candidates( $order, $intent_id, $charge_id, $last_payment_error )
 					: $this->order_note_service->format_payment_failed_note_candidates( $order, $intent_id, $charge_id, $last_payment_error );
@@ -994,18 +992,6 @@ class PaymentIntentEventHandler {
 	}
 
 	/**
-	 * Get the first charge ID from a PaymentIntent object.
-	 *
-	 * @param array<string,mixed> $event_object PaymentIntent object.
-	 * @return string
-	 */
-	private function get_charge_id_from_intent( array $event_object ): string {
-		$charge_id = $event_object['charges']['data'][0]['id'] ?? '';
-
-		return is_string( $charge_id ) ? $charge_id : '';
-	}
-
-	/**
 	 * Get the payment method ID from a PaymentIntent object.
 	 *
 	 * @param array<string,mixed> $event_object PaymentIntent object.
@@ -1085,8 +1071,8 @@ class PaymentIntentEventHandler {
 	 * @return void
 	 */
 	private function maybe_send_ipp_receipt_email( WC_Order $order, array $event_object ): void {
-		$charge = $this->get_first_charge_from_intent( $event_object );
-		if ( ! $this->is_ipp_receipt_charge( $charge ) ) {
+		$charge = WooPaymentsIntentCodec::first_charge( $event_object );
+		if ( ! WooPaymentsIntentCodec::is_in_person_charge( $charge ) ) {
 			return;
 		}
 
@@ -1096,30 +1082,6 @@ class PaymentIntentEventHandler {
 		}
 
 		$email->trigger( $order, $this->get_ipp_receipt_merchant_settings(), $charge );
-	}
-
-	/**
-	 * Get the first charge from a PaymentIntent object.
-	 *
-	 * @param array<string,mixed> $event_object PaymentIntent object.
-	 * @return array<string,mixed>
-	 */
-	private function get_first_charge_from_intent( array $event_object ): array {
-		$charge = $event_object['charges']['data'][0] ?? array();
-
-		return is_array( $charge ) ? $charge : array();
-	}
-
-	/**
-	 * Tell whether a charge should send an IPP receipt email.
-	 *
-	 * @param array<string,mixed> $charge Charge payload.
-	 * @return bool
-	 */
-	private function is_ipp_receipt_charge( array $charge ): bool {
-		$type = $charge['payment_method_details']['type'] ?? '';
-
-		return in_array( $type, array( 'card_present', 'interac_present' ), true );
 	}
 
 	/**

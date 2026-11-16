@@ -889,6 +889,53 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
+	 * @testdox A payment the reader captured for another amount on an order already Processing adds no note, neither the paid-order note nor a success note, and the order is Completed: $_dataName.
+	 *
+	 * The hold is skipped on a paid order, as client 11.3.0's status writer returns on it before its hold
+	 * (class-wc-payments-order-service.php:484-489, :3292-3294); then the terminal completion runs (:929-942). The route
+	 * passes no intent to the lifecycle, so its events never carry the paid-order note, and its success note would state
+	 * the order's total, which is what differs.
+	 *
+	 * @testWith ["a charge with no type", ""]
+	 *           ["an Interac charge", "interac_present"]
+	 *
+	 * @param string $label       Row label.
+	 * @param string $charge_type The charge's payment method type, '' for none.
+	 */
+	public function test_capture_terminal_payment_for_another_amount_on_a_paid_order_adds_no_note( string $label, string $charge_type ): void {
+		unset( $label );
+		$order = $this->create_order( 12.34, 'USD' );
+		$order->set_status( 'processing' );
+		$order->save();
+		$charge = array( 'id' => 'ch_terminal_other_amount' );
+		if ( '' !== $charge_type ) {
+			$charge['payment_method_details'] = array( 'type' => $charge_type );
+		}
+		$this->api_client->payment_intention_response = array(
+			'id'       => 'pi_terminal_other_amount',
+			'status'   => 'succeeded',
+			'amount'   => 1000,
+			'currency' => 'usd',
+			'metadata' => array( 'order_id' => (string) $order->get_id() ),
+			'charges'  => array( 'data' => array( $charge ) ),
+		);
+		$notes                                        = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal_other_amount' );
+		$this->assertInstanceOf( WP_REST_Response::class, $this->sut->capture_terminal_payment( $request ) );
+
+		$order    = wc_get_order( $order->get_id() );
+		$contents = wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' );
+		$this->assertSame( 'completed', $order->get_status() );
+		$this->assertCount( 0, array_filter( $contents, static fn( string $note ): bool => false !== strpos( $note, 'already had a paid status' ) ) );
+		$this->assertCount( 0, array_filter( $contents, static fn( string $note ): bool => false !== strpos( $note, 'successfully charged' ) ) );
+		$this->assertCount( $notes + 1, $contents, 'Only the status change to Completed is noted.' );
+		$this->assertFalse( as_has_scheduled_action( WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION ) );
+	}
+
+	/**
 	 * @testdox Terminal capture persists the IPP channel before the order completes, so POS email suppression sees it.
 	 */
 	public function test_capture_terminal_payment_writes_ipp_channel_before_completion(): void {

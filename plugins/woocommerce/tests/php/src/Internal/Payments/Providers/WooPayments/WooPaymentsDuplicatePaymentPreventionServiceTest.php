@@ -361,10 +361,11 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	}
 
 	/**
-	 * @testdox An attached PaymentIntent whose order is paid between the intent read and the claim leaves the order as it is.
+	 * @testdox An attached PaymentIntent whose order is paid between the intent read and the claim leaves the order as it is, with only the paid-order note.
 	 *
 	 * Client 11.3.0's status writer changes nothing on a paid order, its caller's copy or a fresh read
-	 * (class-wc-payments-order-service.php:475, :3403-3416).
+	 * (class-wc-payments-order-service.php:475, :3403-3416), and writes no note there. The built-in notes the payment
+	 * that reached an order already paid.
 	 */
 	public function test_attached_intent_leaves_an_order_paid_after_the_intent_read(): void {
 		$order = $this->create_order( 'hash', 'pending' );
@@ -394,7 +395,9 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$this->assertSame( 'completed', $order->get_status() );
 		$this->assertSame( $completions, did_action( 'woocommerce_pre_payment_complete' ), 'No completion.' );
 		$this->assertSame( '', $order->get_meta( '_intention_status', true ) );
-		$this->assertSame( array(), array_values( array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $note ): bool => false !== strpos( $note, 'pi_existing' ) ) ), 'No note of the payment.' );
+		$payment_notes = array_values( array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $note ): bool => false !== strpos( $note, 'pi_existing' ) ) );
+		$this->assertCount( 1, $payment_notes, 'One note of the payment.' );
+		$this->assertStringContainsString( 'already had a paid status', $payment_notes[0] );
 		$this->assertSame( 'completed', $caller->get_status(), "The caller's object is the order as stored." );
 	}
 
@@ -433,10 +436,11 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	}
 
 	/**
-	 * @testdox An attached PaymentIntent on an order already in a paid status redirects as paid and leaves the order as it is.
+	 * @testdox An attached PaymentIntent on an order already in a paid status redirects as paid and leaves the order as it is, with only the paid-order note.
 	 *
 	 * Client 11.3.0 applies the attached intent through update_order_status_from_intent() (class-duplicate-payment-prevention-service.php:150),
-	 * which writes nothing on a paid order (class-wc-payments-order-service.php:475, :3398-3410).
+	 * which writes nothing on a paid order (class-wc-payments-order-service.php:475, :3398-3410). The built-in notes the
+	 * payment that reached an order already paid.
 	 */
 	public function test_attached_intent_on_a_paid_order_leaves_the_order(): void {
 		$order = $this->create_order( 'hash', 'processing' );
@@ -456,7 +460,8 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$this->assertSame( 'processing', $order->get_status() );
 		$this->assertSame( $completions, did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_payment_complete_order_status_processing' ), 'No completion hook fires.' );
 		$this->assertSame( '', $order->get_meta( '_intention_status', true ) );
-		$this->assertCount( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertCount( $notes + 1, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertCount( 1, array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $note ): bool => false !== strpos( $note, 'already had a paid status' ) ) );
 	}
 
 	/**

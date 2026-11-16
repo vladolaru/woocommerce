@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
@@ -14,9 +15,11 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\CapturedEventFeeNotes;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\StoredPaymentRecords;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Order;
 use WC_Unit_Test_Case;
@@ -312,6 +315,182 @@ class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A completed event skipped on a paid order through $entry gets the paid-order note only for an online payment's intent passed with it: $_dataName.
+	 *
+	 * Client 11.3.0 leaves a paid order with no note (class-wc-payments-order-service.php:3292-3294); the note is the
+	 * built-in's. The plain entry applies a plain success on a paid order, so it reaches the paid skip only with a held
+	 * event, the shape Stripe Billing's hold on a paid renewal sends. The intent is passed as the webhook, the confirmation
+	 * service and Stripe Billing pass it; the in-person route passes none.
+	 *
+	 * @dataProvider paid_order_note_entries_and_intents
+	 *
+	 * @param string      $entry       FDNC entry: `plain`, `intent status`, `lock`, or `lock with builder`.
+	 * @param string      $reference   The event's payment reference.
+	 * @param string|null $charge_type The passed intent's first charge type, '' for a charge with no type, `none` for no charge, null for no intent passed, or `plain completion` for a card intent whose event carries a plain completion note.
+	 * @param bool        $noted       Whether the note is written.
+	 */
+	public function test_paid_order_note_needs_an_online_payments_intent( string $entry, string $reference, ?string $charge_type, bool $noted ): void {
+		$order  = StoredPaymentRecords::payment( OrderStatus::PROCESSING, $reference, 'ch_paid' );
+		$intent = null === $charge_type ? null : $this->paid_order_intent( $reference, 1099, 'plain completion' === $charge_type ? 'card' : $charge_type );
+		$event  = 'plain completion' === $charge_type
+			? new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, $reference, array(), array(), 'Completed ' . $reference . '.', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_COMPLETE )
+			: $this->completed_payment_event( $reference, 'plain' === $entry );
+
+		$this->apply_through_entry( $entry, $order, $event, $intent );
+
+		$this->assertCount( $noted ? 1 : 0, $this->get_paid_order_notes( $order ) );
+	}
+
+	/**
+	 * Entries, references and intents, with whether the note is written.
+	 *
+	 * @return array<string,array{string,string,string|null,bool}>
+	 */
+	public function paid_order_note_entries_and_intents(): array {
+		$rows = array();
+		foreach ( array( 'plain', 'intent status', 'lock', 'lock with builder' ) as $entry ) {
+			$rows[ $entry . ', no intent passed' ]         = array( $entry, 'pi_paid', null, false );
+			$rows[ $entry . ', an online card intent' ]    = array( $entry, 'pi_paid', 'card', true );
+			$rows[ $entry . ', an Interac reader intent' ] = array( $entry, 'pi_paid', 'interac_present', false );
+			$rows[ $entry . ', a card reader intent' ]     = array( $entry, 'pi_paid', 'card_present', false );
+		}
+		$rows['intent status, a charge with no type']    = array( 'intent status', 'pi_paid', '', true );
+		$rows['intent status, an intent with no charge'] = array( 'intent status', 'pi_paid', 'none', false );
+		$rows['intent status, a setup intent']           = array( 'intent status', 'seti_paid', 'card', false );
+		$rows['intent status, a plain completion note']  = array( 'intent status', 'pi_paid', 'plain completion', false );
+
+		return $rows;
+	}
+
+	/**
+	 * @testdox The paid-order note names the payment and its charge, and says that the transaction ID names it only when the order's transaction ID and stored charge are this payment's: $_dataName.
+	 *
+	 * @dataProvider paid_order_payment_records
+	 *
+	 * @param string $transaction_id The order's transaction ID.
+	 * @param string $stored_charge  The order's stored charge.
+	 * @param bool   $sentence_three Whether the note says the transaction ID names the payment.
+	 */
+	public function test_paid_order_note_names_the_transaction_id_only_when_it_is_true( string $transaction_id, string $stored_charge, bool $sentence_three ): void {
+		$order = StoredPaymentRecords::payment( OrderStatus::PROCESSING, 'pi_paid', $stored_charge );
+		$order->set_transaction_id( $transaction_id );
+		$order->save();
+
+		$this->sut->apply_intent_status_and_schedule_fee_details( $order, $this->completed_payment_event( 'pi_paid', false ), null, $this->paid_order_intent( 'pi_paid', 1099, 'card' ) );
+
+		$notes = $this->get_paid_order_notes( $order );
+		$this->assertCount( 1, $notes );
+		$this->assertStringStartsWith( 'WooPayments payment <a href="', $notes[0] );
+		$this->assertStringContainsString( '>pi_paid</a> (charge <code>ch_paid</code>) for ', $notes[0] );
+		$this->assertStringContainsString( ' succeeded, but this order already had a paid status, so its status was not changed. If the customer also paid another way, one of the payments needs a refund.', $notes[0] );
+		$this->assertSame( $sentence_three, str_contains( $notes[0], 'At this moment, this order&#039;s transaction ID names that payment, so a refund or a dispute of it changes this order.' ) );
+		$this->assertStringEndsWith( $sentence_three ? 'changes this order.' : 'needs a refund.', $notes[0] );
+	}
+
+	/**
+	 * The order's transaction ID and stored charge, against the payment pi_paid with its charge ch_paid.
+	 *
+	 * @return array<string,array{string,string,bool}>
+	 */
+	public function paid_order_payment_records(): array {
+		return array(
+			'both name the payment'   => array( 'pi_paid', 'ch_paid', true ),
+			'another charge stored'   => array( 'pi_paid', 'ch_other', false ),
+			'no charge stored'        => array( 'pi_paid', '', false ),
+			'another transaction ID'  => array( 'pi_other', 'ch_paid', false ),
+			'an empty transaction ID' => array( '', 'ch_paid', false ),
+		);
+	}
+
+	/**
+	 * @testdox A paid order that already records the payment by its $_dataName gets no paid-order note.
+	 *
+	 * The payment lifecycle writes each of the payment's notes under its own identity (PaymentLifecycleEvent::get_note_identity());
+	 * a note the WooPayments extension wrote carries none and is found by its text. The event under test is one whose own
+	 * note is not the one on the order, so only the paid-order note's own-note events can stop it.
+	 *
+	 * @dataProvider notes_that_record_the_payment
+	 *
+	 * @param string $status    Status of the lifecycle event that wrote the note.
+	 * @param string $note_type Its note type, or `extension success` for the extension's success note, found by its text.
+	 * @param bool   $held      Whether the event under test is a held one, through the plain entry; else a success, through the intent-status entry.
+	 */
+	public function test_paid_order_note_is_not_added_on_an_order_that_records_the_payment( string $status, string $note_type, bool $held ): void {
+		$order = StoredPaymentRecords::payment( OrderStatus::PROCESSING, 'pi_paid', 'ch_paid' );
+		if ( 'extension success' === $note_type ) {
+			$text = wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_payment_success_note_candidates( $order, 'pi_paid', 'ch_paid' )[0];
+			$order->add_order_note( $text );
+		} else {
+			$written = new PaymentLifecycleEvent( $status, 'pi_paid', array(), array(), 'Recorded by the lifecycle.', $note_type );
+			$order->add_order_note( 'Recorded by the lifecycle.', 0, false, array( WooPaymentsPersistenceVocabulary::NOTE_IDENTITY_META_KEY => hash( 'sha256', $written->get_note_identity() ) ) );
+		}
+		$intent = $this->paid_order_intent( 'pi_paid', 1099, 'card' );
+
+		if ( $held ) {
+			$this->sut->apply_and_schedule_fee_details( $order, $this->completed_payment_event( 'pi_paid', true ), null, $intent );
+		} else {
+			$this->sut->apply_intent_status_and_schedule_fee_details( $order, $this->completed_payment_event( 'pi_paid', false ), null, $intent );
+		}
+
+		$this->assertCount( 0, $this->get_paid_order_notes( $order ) );
+	}
+
+	/**
+	 * Notes that mean the order records the payment, with the event that meets each.
+	 *
+	 * @return array<string,array{string,string,bool}>
+	 */
+	public function notes_that_record_the_payment(): array {
+		return array(
+			'success note'             => array( PaymentLifecycleEvent::STATUS_COMPLETED, PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS, true ),
+			"extension's success note" => array( PaymentLifecycleEvent::STATUS_COMPLETED, 'extension success', true ),
+			'capture note'             => array( PaymentLifecycleEvent::STATUS_COMPLETED, PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS, true ),
+			'authorized note'          => array( PaymentLifecycleEvent::STATUS_AUTHORIZED, PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_AUTHORIZED, true ),
+			'held note'                => array( PaymentLifecycleEvent::STATUS_COMPLETED, PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_HELD, false ),
+		);
+	}
+
+	/**
+	 * @testdox On an intent with two charge entries, the paid-order note reads the first, the one the webhook stores: its charge, the in-person test and the transaction ID sentence.
+	 *
+	 * The first entry is an online card charge the order stores; the last is a reader's Interac charge. Reading the last
+	 * would name the other charge, drop the transaction ID sentence, and withhold the note as an in-person payment.
+	 */
+	public function test_paid_order_note_reads_the_first_charge_entry(): void {
+		$order  = StoredPaymentRecords::payment( OrderStatus::PROCESSING, 'pi_paid', 'ch_paid' );
+		$intent = $this->paid_order_intent( 'pi_paid', 1099, 'card' );
+
+		$intent['charges']['data'][] = array(
+			'id'                     => 'ch_last',
+			'payment_method_details' => array( 'type' => 'interac_present' ),
+		);
+
+		$this->sut->apply_intent_status_and_schedule_fee_details( $order, $this->completed_payment_event( 'pi_paid', false ), null, $intent );
+
+		$notes = $this->get_paid_order_notes( $order );
+		$this->assertCount( 1, $notes, 'The first entry is not in person.' );
+		$this->assertStringContainsString( '(charge <code>ch_paid</code>)', $notes[0] );
+		$this->assertStringNotContainsString( 'ch_last', $notes[0] );
+		$this->assertStringContainsString( 'transaction ID names that payment', $notes[0], "The first entry is the order's stored charge." );
+	}
+
+	/**
+	 * @testdox A held payment on a paid order states the amount the payment charged, in its currency, not the order's total.
+	 *
+	 * The amount is read from the intent as the amount-mismatch hold reads it (WooPaymentsAmountMismatchHold::decide_hold()).
+	 */
+	public function test_paid_order_note_states_the_payments_amount(): void {
+		$order = StoredPaymentRecords::payment( OrderStatus::PROCESSING, 'pi_paid', 'ch_paid' );
+
+		$this->sut->apply_and_schedule_fee_details( $order, $this->completed_payment_event( 'pi_paid', true ), null, $this->paid_order_intent( 'pi_paid', 1500, 'card', 'eur' ) );
+
+		$notes = $this->get_paid_order_notes( $order );
+		$this->assertCount( 1, $notes );
+		$this->assertStringContainsString( ' for ' . wc_price( 15.0, array( 'currency' => 'EUR' ) ) . ' EUR succeeded', $notes[0] );
+		$this->assertStringNotContainsString( '10.99', $notes[0] );
+	}
+
+	/**
 	 * @testdox A runtime outcome's success note is checked before the lifecycle applies it, and the job is scheduled once it was added.
 	 */
 	public function test_outcome_note_check_and_schedule(): void {
@@ -577,6 +756,77 @@ class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 	 */
 	private function completed_event( string $payment_reference, string $note_type ): PaymentLifecycleEvent {
 		return new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, $payment_reference, array(), array(), 'A note.', $note_type );
+	}
+
+	/**
+	 * Build a completed event of a payment: a success, or a held payment.
+	 *
+	 * @param string $payment_reference Payment reference.
+	 * @param bool   $held              Whether the event holds the order.
+	 * @return PaymentLifecycleEvent
+	 */
+	private function completed_payment_event( string $payment_reference, bool $held ): PaymentLifecycleEvent {
+		return $held
+			? new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, $payment_reference, array(), array(), 'Held ' . $payment_reference . '.', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_HELD, array(), false, true )
+			: new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, $payment_reference, array(), array(), 'Paid ' . $payment_reference . '.', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS );
+	}
+
+	/**
+	 * A payment intent as the platform returns it, with one charge of the given type.
+	 *
+	 * @param string $intent_id   Intent ID.
+	 * @param int    $amount      Amount, in minor units.
+	 * @param string $charge_type The charge's payment method type, '' for none, or `none` for an intent with no charge.
+	 * @param string $currency    Currency.
+	 * @return array<string,mixed>
+	 */
+	private function paid_order_intent( string $intent_id, int $amount, string $charge_type, string $currency = 'usd' ): array {
+		$charge = array( 'id' => 'ch_paid' );
+		if ( '' !== $charge_type ) {
+			$charge['payment_method_details'] = array( 'type' => $charge_type );
+		}
+
+		return array(
+			'id'       => $intent_id,
+			'status'   => 'succeeded',
+			'amount'   => $amount,
+			'currency' => $currency,
+			'charges'  => array( 'data' => 'none' === $charge_type ? array() : array( $charge ) ),
+		);
+	}
+
+	/**
+	 * Apply an event with an intent through one of the controller's entries.
+	 *
+	 * @param string                   $entry  `plain`, `intent status`, `lock` or `lock with builder`.
+	 * @param WC_Order                 $order  Order.
+	 * @param PaymentLifecycleEvent    $event  Event.
+	 * @param array<string,mixed>|null $intent The intent passed, or null.
+	 */
+	private function apply_through_entry( string $entry, WC_Order $order, PaymentLifecycleEvent $event, ?array $intent ): void {
+		switch ( $entry ) {
+			case 'plain':
+				$this->sut->apply_and_schedule_fee_details( $order, $event, null, $intent );
+				return;
+			case 'intent status':
+				$this->sut->apply_intent_status_and_schedule_fee_details( $order, $event, null, $intent );
+				return;
+			case 'lock':
+				$this->sut->apply_and_schedule_fee_details_with_lock( $order, $event, null, $intent );
+				return;
+			default:
+				$this->sut->apply_and_schedule_fee_details_with_lock( $order, $event, static fn(): array => array( $event, null ), $intent );
+		}
+	}
+
+	/**
+	 * Get the order's paid-order notes.
+	 *
+	 * @param WC_Order $order Order.
+	 * @return string[]
+	 */
+	private function get_paid_order_notes( WC_Order $order ): array {
+		return array_values( array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $note ): bool => false !== strpos( $note, 'already had a paid status' ) ) );
 	}
 
 	/**

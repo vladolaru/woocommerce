@@ -578,6 +578,46 @@ class WooPaymentsIntentCodec {
 	}
 
 	/**
+	 * Get the first charge of an intent: the entry the webhook stores as the order's charge.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param array<string,mixed> $intention Provider intent response.
+	 * @return array<string,mixed>
+	 */
+	public static function first_charge( array $intention ): array {
+		$charge = $intention['charges']['data'][0] ?? array();
+
+		return is_array( $charge ) ? $charge : array();
+	}
+
+	/**
+	 * Get the ID of an intent's first charge, the charge the webhook stores on the order.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param array<string,mixed> $intention Provider intent response.
+	 * @return string The charge ID, or '' when the intent has none.
+	 */
+	public static function first_charge_id( array $intention ): string {
+		$charge_id = self::first_charge( $intention )['id'] ?? '';
+
+		return is_string( $charge_id ) ? $charge_id : '';
+	}
+
+	/**
+	 * Tell whether a charge was taken in person, by a card reader: card present or Interac present.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param array<string,mixed> $charge A charge, as the platform returns it.
+	 * @return bool
+	 */
+	public static function is_in_person_charge( array $charge ): bool {
+		return in_array( $charge['payment_method_details']['type'] ?? '', array( 'card_present', 'interac_present' ), true );
+	}
+
+	/**
 	 * Get a customer ID from an intent.
 	 *
 	 * A string, empty included, or an expanded customer's ID is read; any other value gives the fallback. The response

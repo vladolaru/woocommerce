@@ -966,12 +966,65 @@ class WooPaymentsOrderNoteService {
 					'a'      => '' !== $transaction_url ? '<a href="%5$s" target="_blank" rel="noopener noreferrer">' : '<code>',
 				)
 			),
-			wc_price( WooPaymentsCurrencyUtils::amount_from_minor_units( $charged_amount, $charged_currency ), array( 'currency' => $charged_currency ) ) . ' ' . $charged_currency,
+			$this->format_charged_amount( $charged_amount, $charged_currency ),
 			'WooPayments',
 			'' !== $intent_id ? $intent_id : $charge_id,
 			wc_price( (float) $order->get_total(), array( 'currency' => $order_currency ) ) . ' ' . $order_currency,
 			$transaction_url
 		);
+	}
+
+	/**
+	 * Format a payment's charged amount as the amount-mismatch hold note prints it: the price with its currency code.
+	 *
+	 * @param int    $charged_amount   Charged amount, in the provider's minor units.
+	 * @param string $charged_currency Charged currency, any case.
+	 * @return string
+	 */
+	private function format_charged_amount( int $charged_amount, string $charged_currency ): string {
+		$charged_currency = strtoupper( $charged_currency );
+
+		return wc_price( WooPaymentsCurrencyUtils::amount_from_minor_units( $charged_amount, $charged_currency ), array( 'currency' => $charged_currency ) ) . ' ' . $charged_currency;
+	}
+
+	/**
+	 * Build the note of a WooPayments payment that succeeded on an order already in a paid status, which the payment
+	 * lifecycle left as it was. Written in WooCommerce's text domain only; the WooPayments extension writes no such note.
+	 *
+	 * The last sentence is added only when, on the order passed, the transaction ID names the payment and the stored charge
+	 * is its charge, so it is true when the note is written.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param WC_Order $order            Order the note is for.
+	 * @param string   $intent_id        Payment intent ID.
+	 * @param string   $charge_id        Its charge, the one the webhook stores on the order.
+	 * @param int      $charged_amount   Charged amount, in the provider's minor units.
+	 * @param string   $charged_currency Charged currency.
+	 * @return string
+	 */
+	public function format_paid_order_payment_note( WC_Order $order, string $intent_id, string $charge_id, int $charged_amount, string $charged_currency ): string {
+		$transaction_url = esc_url( $this->transaction_url( $intent_id, $charge_id ) );
+		$note            = sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				/* translators: %1$s: the ID of a WooPayments payment, %2$s: the ID of its charge, %3$s: the amount it charged, with its currency, %4$s: transaction URL. */
+				__( 'WooPayments payment <a>%1$s</a> (charge <code>%2$s</code>) for %3$s succeeded, but this order already had a paid status, so its status was not changed.', 'woocommerce' ),
+				array(
+					'a'    => '' !== $transaction_url ? '<a href="%4$s" target="_blank" rel="noopener noreferrer">' : '<code>',
+					'code' => '<code>',
+				)
+			),
+			esc_html( $intent_id ),
+			esc_html( $charge_id ),
+			$this->format_charged_amount( $charged_amount, $charged_currency ),
+			$transaction_url
+		);
+		$note .= ' ' . esc_html__( 'If the customer also paid another way, one of the payments needs a refund.', 'woocommerce' );
+		if ( (string) $order->get_transaction_id() === $intent_id && (string) $order->get_meta( '_charge_id', true ) === $charge_id ) {
+			$note .= ' ' . esc_html__( 'At this moment, this order\'s transaction ID names that payment, so a refund or a dispute of it changes this order.', 'woocommerce' );
+		}
+
+		return $note;
 	}
 
 	/**

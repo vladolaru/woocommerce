@@ -495,7 +495,8 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'ch_return', $order->get_meta( '_charge_id', true ) );
 		$this->assertSame( 'cus_return', $order->get_meta( '_stripe_customer_id', true ) );
 		$this->assertSame( 'pi_return', $order->get_transaction_id() );
-		$this->assertCount( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		// A completed payment skipped on the paid order gets the paid-order note; an authorization gets none.
+		$this->assertCount( $notes + ( 'succeeded' === $intent_status ? 1 : 0 ), wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 	}
 
 	/**
