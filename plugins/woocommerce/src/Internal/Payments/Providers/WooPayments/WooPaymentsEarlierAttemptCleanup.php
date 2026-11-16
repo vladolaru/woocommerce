@@ -89,48 +89,6 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 	private const REASON_TRANSACTION_ID_NAMES_ANOTHER_INTENT = 'takeover_transaction_id_names_another_intent';
 
 	/**
-	 * Order lifecycle service.
-	 *
-	 * @var OrderPaymentLifecycleService
-	 */
-	private OrderPaymentLifecycleService $lifecycle_service;
-
-	/**
-	 * Order payment lock.
-	 *
-	 * @var OrderPaymentLock
-	 */
-	private OrderPaymentLock $order_payment_lock;
-
-	/**
-	 * WooPayments persistence vocabulary.
-	 *
-	 * @var WooPaymentsPersistenceVocabulary
-	 */
-	private WooPaymentsPersistenceVocabulary $persistence_vocabulary;
-
-	/**
-	 * WooPayments API client.
-	 *
-	 * @var Client
-	 */
-	private Client $api_client;
-
-	/**
-	 * WooPayments order note service.
-	 *
-	 * @var WooPaymentsOrderNoteService
-	 */
-	private WooPaymentsOrderNoteService $note_service;
-
-	/**
-	 * WooPayments logger.
-	 *
-	 * @var WooPaymentsLogger
-	 */
-	private WooPaymentsLogger $logger;
-
-	/**
 	 * The order whose pay action armed the cleanup on its save, or 0.
 	 *
 	 * @var int
@@ -143,27 +101,6 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 	 * @var array<int,array{intent_id:string,cancel:bool}>
 	 */
 	private array $attempts_to_finish = array();
-
-	/**
-	 * Initialize the class instance.
-	 *
-	 * @internal
-	 *
-	 * @param OrderPaymentLifecycleService     $lifecycle_service      Order lifecycle service.
-	 * @param OrderPaymentLock                 $order_payment_lock     Order payment lock.
-	 * @param WooPaymentsPersistenceVocabulary $persistence_vocabulary WooPayments persistence vocabulary.
-	 * @param Client                           $api_client             WooPayments API client.
-	 * @param WooPaymentsOrderNoteService      $note_service           WooPayments order note service.
-	 * @param WooPaymentsLogger                $logger                 WooPayments logger.
-	 */
-	final public function init( OrderPaymentLifecycleService $lifecycle_service, OrderPaymentLock $order_payment_lock, WooPaymentsPersistenceVocabulary $persistence_vocabulary, Client $api_client, WooPaymentsOrderNoteService $note_service, WooPaymentsLogger $logger ): void {
-		$this->lifecycle_service      = $lifecycle_service;
-		$this->order_payment_lock     = $order_payment_lock;
-		$this->persistence_vocabulary = $persistence_vocabulary;
-		$this->api_client             = $api_client;
-		$this->note_service           = $note_service;
-		$this->logger                 = $logger;
-	}
 
 	/**
 	 * Clean up at the two checkout hooks, at client 11.3.0's priority (class-wc-payments-order-service.php:345-346): below
@@ -264,7 +201,7 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 			try {
 				$this->finish_earlier_attempt( $order_id, $attempt['intent_id'], $attempt['cancel'] );
 			} catch ( Throwable $exception ) {
-				$this->logger->log_throwable_always( sprintf( 'The earlier WooPayments attempt of order #%d could not be finished.', $order_id ), $exception, array( 'order_id' => $order_id ) );
+				$this->get_logger()->log_throwable_always( sprintf( 'The earlier WooPayments attempt of order #%d could not be finished.', $order_id ), $exception, array( 'order_id' => $order_id ) );
 			}
 		}
 	}
@@ -283,7 +220,7 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 		try {
 			$this->clean_up( $order, $passed_order );
 		} catch ( Throwable $exception ) {
-			$this->logger->log_throwable_always( sprintf( 'The earlier WooPayments attempt of order #%d could not be cleaned up.', $order->get_id() ), $exception, array( 'order_id' => $order->get_id() ) );
+			$this->get_logger()->log_throwable_always( sprintf( 'The earlier WooPayments attempt of order #%d could not be cleaned up.', $order->get_id() ), $exception, array( 'order_id' => $order->get_id() ) );
 		}
 	}
 
@@ -312,16 +249,16 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 
 		$lock_token = $this->claim_order_payment_lock( $order, $intent_id );
 		if ( null === $lock_token ) {
-			$this->order_payment_lock->log_refusal( $order, $this->persistence_vocabulary, self::LOCK_OPERATION, null, array( 'reason' => self::REASON_LOCK_REFUSED ) );
+			$this->get_order_payment_lock()->log_refusal( $order, $this->get_persistence_vocabulary(), self::LOCK_OPERATION, null, array( 'reason' => self::REASON_LOCK_REFUSED ) );
 			$this->add_lock_refused_note( $order, $intent_id );
 			return;
 		}
 
 		try {
-			$fresh_order = $this->lifecycle_service->get_fresh_order_from_data_store( $order );
+			$fresh_order = $this->get_lifecycle_service()->get_fresh_order_from_data_store( $order );
 			$removed     = $this->clean_up_under_lock( $fresh_order, $intent_id, $stored_status, $read );
 		} finally {
-			$this->order_payment_lock->release( $order, $this->persistence_vocabulary, $lock_token );
+			$this->get_order_payment_lock()->release( $order, $this->get_persistence_vocabulary(), $lock_token );
 		}
 
 		if ( $removed && null !== $passed_order && $passed_order !== $fresh_order && $passed_order->get_id() === $fresh_order->get_id() ) {
@@ -456,20 +393,20 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 		$not_cleared = false;
 		$lock_token  = $this->claim_order_payment_lock( $order, $intent_id );
 		if ( null === $lock_token ) {
-			$this->order_payment_lock->log_refusal( $order, $this->persistence_vocabulary, self::LOCK_OPERATION, null, array( 'reason' => self::REASON_LOCK_REFUSED ) );
+			$this->get_order_payment_lock()->log_refusal( $order, $this->get_persistence_vocabulary(), self::LOCK_OPERATION, null, array( 'reason' => self::REASON_LOCK_REFUSED ) );
 			$not_cleared = (string) $order->get_transaction_id() === $intent_id;
 		} else {
 			try {
-				$fresh_order = $this->lifecycle_service->get_fresh_order_from_data_store( $order );
+				$fresh_order = $this->get_lifecycle_service()->get_fresh_order_from_data_store( $order );
 				// A transaction ID another gateway set stays (client 11.3.0 class-wc-payments-order-service.php:1420-1433).
 				if ( (string) $fresh_order->get_transaction_id() === $intent_id ) {
 					$fresh_order->set_transaction_id( '' );
 					$fresh_order->save();
 				}
 			} catch ( Throwable $exception ) {
-				$this->logger->log_throwable_always( sprintf( 'The transaction ID of order #%d could not be cleared.', $order_id ), $exception, array( 'order_id' => $order_id ) );
+				$this->get_logger()->log_throwable_always( sprintf( 'The transaction ID of order #%d could not be cleared.', $order_id ), $exception, array( 'order_id' => $order_id ) );
 			} finally {
-				$this->order_payment_lock->release( $order, $this->persistence_vocabulary, $lock_token );
+				$this->get_order_payment_lock()->release( $order, $this->get_persistence_vocabulary(), $lock_token );
 			}
 		}
 
@@ -491,14 +428,14 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 	 */
 	private function cancel_earlier_attempt( WC_Order $order, string $intent_id, bool $not_cleared ): void {
 		try {
-			$this->api_client->cancel_intention( $intent_id );
+			$this->get_api_client()->cancel_intention( $intent_id );
 			$message = $not_cleared
 				/* translators: %1$s: the ID of a WooPayments payment. */
 				? __( 'The earlier WooPayments payment <code>%1$s</code> was cancelled because the customer checked out with another payment method. The order\'s transaction ID was not cleared, because a WooPayments payment for this order was being recorded at that moment.', 'woocommerce' )
 				/* translators: %1$s: the ID of a WooPayments payment. */
 				: __( 'The earlier WooPayments payment <code>%1$s</code> was cancelled because the customer checked out with another payment method.', 'woocommerce' );
 		} catch ( Throwable $exception ) {
-			$this->logger->log_throwable_always( sprintf( 'The earlier WooPayments attempt of order #%d could not be cancelled.', $order->get_id() ), $exception, array( 'order_id' => $order->get_id() ) );
+			$this->get_logger()->log_throwable_always( sprintf( 'The earlier WooPayments attempt of order #%d could not be cancelled.', $order->get_id() ), $exception, array( 'order_id' => $order->get_id() ) );
 			$message = $not_cleared
 				/* translators: %1$s: the ID of a WooPayments payment. */
 				? __( 'The earlier WooPayments payment <code>%1$s</code> could not be cancelled when the customer checked out with another payment method. Check that it was not charged. The order\'s transaction ID was not cleared, because a WooPayments payment for this order was being recorded at that moment.', 'woocommerce' )
@@ -509,7 +446,7 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 		try {
 			$order->add_order_note( self::note_naming_intent( $message, $intent_id ) );
 		} catch ( Throwable $exception ) {
-			$this->logger->log_throwable_always( sprintf( 'The cancel of an earlier WooPayments attempt could not be noted on order #%d.', $order->get_id() ), $exception, array( 'order_id' => $order->get_id() ) );
+			$this->get_logger()->log_throwable_always( sprintf( 'The cancel of an earlier WooPayments attempt could not be noted on order #%d.', $order->get_id() ), $exception, array( 'order_id' => $order->get_id() ) );
 		}
 	}
 
@@ -522,7 +459,7 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 	 */
 	private function read_stored_payment( string $intent_id, string $order_mode ) {
 		try {
-			$intent = $this->api_client->get_payment_intention_for_mode( $intent_id, WooPaymentsOrderMode::TEST === $order_mode, self::READ_TIMEOUT_SECONDS );
+			$intent = $this->get_api_client()->get_payment_intention_for_mode( $intent_id, WooPaymentsOrderMode::TEST === $order_mode, self::READ_TIMEOUT_SECONDS );
 		} catch ( Throwable $exception ) {
 			return false;
 		}
@@ -539,13 +476,70 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 	 */
 	private function claim_order_payment_lock( WC_Order $order, string $intent_id ): ?string {
 		for ( $attempt = 1; ; ++$attempt ) {
-			$lock_token = $this->order_payment_lock->claim( $order, $this->persistence_vocabulary, '' === $intent_id ? null : $intent_id, self::LOCK_OPERATION );
+			$lock_token = $this->get_order_payment_lock()->claim( $order, $this->get_persistence_vocabulary(), '' === $intent_id ? null : $intent_id, self::LOCK_OPERATION );
 			if ( null !== $lock_token || self::LOCK_CLAIM_ATTEMPTS === $attempt ) {
 				return $lock_token;
 			}
 
 			$this->wait_before_lock_retry();
 		}
+	}
+
+	/**
+	 * Get the order lifecycle service.
+	 *
+	 * Each dependency is read from the container when a hook runs, not taken in init(): the cleanup is registered on
+	 * page views of a store whose WooPayments checkout is off, where nothing else builds these services.
+	 *
+	 * @return OrderPaymentLifecycleService
+	 */
+	private function get_lifecycle_service(): OrderPaymentLifecycleService {
+		return wc_get_container()->get( OrderPaymentLifecycleService::class );
+	}
+
+	/**
+	 * Get the order payment lock.
+	 *
+	 * @return OrderPaymentLock
+	 */
+	private function get_order_payment_lock(): OrderPaymentLock {
+		return wc_get_container()->get( OrderPaymentLock::class );
+	}
+
+	/**
+	 * Get the WooPayments persistence vocabulary.
+	 *
+	 * @return WooPaymentsPersistenceVocabulary
+	 */
+	private function get_persistence_vocabulary(): WooPaymentsPersistenceVocabulary {
+		return wc_get_container()->get( WooPaymentsPersistenceVocabulary::class );
+	}
+
+	/**
+	 * Get the WooPayments API client.
+	 *
+	 * @return Client
+	 */
+	private function get_api_client(): Client {
+		return wc_get_container()->get( Client::class );
+	}
+
+	/**
+	 * Get the WooPayments order note service.
+	 *
+	 * @return WooPaymentsOrderNoteService
+	 */
+	private function get_note_service(): WooPaymentsOrderNoteService {
+		return wc_get_container()->get( WooPaymentsOrderNoteService::class );
+	}
+
+	/**
+	 * Get the WooPayments logger.
+	 *
+	 * @return WooPaymentsLogger
+	 */
+	private function get_logger(): WooPaymentsLogger {
+		return wc_get_container()->get( WooPaymentsLogger::class );
 	}
 
 	/**
@@ -587,7 +581,7 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 			$note .= ' ' . esc_html__( 'This order\'s transaction ID names that payment at this moment, so a refund or a dispute of it changes this order.', 'woocommerce' );
 		}
 
-		$this->note_service->add_note_once( $order, $note, 'takeover_kept_payment|' . $intent_id );
+		$this->get_note_service()->add_note_once( $order, $note, 'takeover_kept_payment|' . $intent_id );
 	}
 
 	/**
@@ -597,7 +591,7 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 	 * @param string   $intent_id The kept payment's intent.
 	 */
 	private function add_read_failed_note( WC_Order $order, string $intent_id ): void {
-		$this->note_service->add_note_once(
+		$this->get_note_service()->add_note_once(
 			$order,
 			self::note_naming_intent(
 				/* translators: %1$s: the ID of a WooPayments payment. */
@@ -639,7 +633,7 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 	 */
 	private function log_reason( WC_Order $order, string $reason, string $phrase, string $intent_id ): void {
 		$printed_intent_id = WooPaymentsLogger::get_loggable_provider_id( $intent_id );
-		$this->logger->log_always(
+		$this->get_logger()->log_always(
 			sprintf( '%1$s: order %2$d, intent %3$s', $phrase, $order->get_id(), $printed_intent_id ),
 			'warning',
 			array(

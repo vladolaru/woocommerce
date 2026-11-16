@@ -4,20 +4,23 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Enums\OrderStatus;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\PaymentGatewayProviderInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventOrderResolver;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEarlierAttemptCleanup;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
+use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil;
 use Automattic\WooCommerce\StoreApi\Payments\PaymentContext;
 use Automattic\WooCommerce\StoreApi\Payments\PaymentResult;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\StoredPaymentRecords;
+use Automattic\WooCommerce\Testing\Tools\TestingContainer;
 use WC_Customer;
 use WC_Form_Handler;
 use WC_Order;
@@ -73,21 +76,54 @@ class WooPaymentsEarlierAttemptCleanupTest extends WC_Unit_Test_Case {
 		$api_client = new Client();
 		$api_client->init( $this->transport, $account_service, wc_get_container()->get( TransportLog::class ) );
 
+		wc_get_container()->replace( Client::class, $api_client );
+
 		$this->sut = new class() extends WooPaymentsEarlierAttemptCleanup {
 			/**
 			 * No wait between lock claims in tests.
 			 */
 			protected function wait_before_lock_retry(): void {}
 		};
-		$this->sut->init(
-			wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			wc_get_container()->get( OrderPaymentLock::class ),
-			wc_get_container()->get( WooPaymentsPersistenceVocabulary::class ),
-			$api_client,
-			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
-			wc_get_container()->get( WooPaymentsLogger::class )
-		);
 		$this->sut->register();
+	}
+
+	/**
+	 * Tear down test fixtures.
+	 */
+	public function tearDown(): void {
+		try {
+			$this->reset_container_replacements();
+		} finally {
+			parent::tearDown();
+		}
+	}
+
+	/**
+	 * @testdox On a front request of a store whose WooPayments checkout is off, the cleanup builds no class beyond itself: its dependencies are read when a hook runs.
+	 *
+	 * The classes the provider lists for that request are built as PaymentsBootstrap::register_classes() builds them, in a
+	 * container of their own, so the comparison counts what each build resolves.
+	 */
+	public function test_connected_front_request_builds_nothing_else_for_the_cleanup(): void {
+		$container = new TestingContainer( wc_get_container() );
+		$resolved  = static fn(): array => array_keys(
+			( function (): array {
+				return $this->resolved_cache;
+			} )->call( $container )
+		);
+		$listed    = WooPaymentsProvider::get_classes_by_setup_tier()[ WooPaymentsSetupTier::CONNECTED ][ RequestTypeUtil::FRONT ];
+		$this->assertContains( WooPaymentsEarlierAttemptCleanup::class, $listed );
+		foreach ( $listed as $class_name ) {
+			$built_by_bootstrap = ! is_a( $class_name, PaymentGatewayProviderInterface::class, true ) || is_a( $class_name, RegisterHooksInterface::class, true );
+			if ( WooPaymentsEarlierAttemptCleanup::class !== $class_name && $built_by_bootstrap ) {
+				$container->get( $class_name );
+			}
+		}
+		$before = $resolved();
+
+		$container->get( WooPaymentsEarlierAttemptCleanup::class );
+
+		$this->assertSame( array( WooPaymentsEarlierAttemptCleanup::class ), array_values( array_diff( $resolved(), $before ) ) );
 	}
 
 	/**
