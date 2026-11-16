@@ -178,6 +178,26 @@ class EventOrderResolver {
 	}
 
 	/**
+	 * Get the intent that may stand in for a paid order's empty transaction ID in is_own_payment(), from what the caller
+	 * read about the payment and the order.
+	 *
+	 * Only a payment's success, and only on an order in a paid status by the payment lifecycle's own test
+	 * (OrderPaymentLifecycleService::has_paid_status(), passed in by the caller), where the lifecycle leaves the order as
+	 * it is. On a paid date with a status that is not paid, a success would decide the order's status. A failure, an
+	 * authorization, a setup intent or an expiry is never evidence that the stored intent paid the order.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param string $intent_id             The payment's intent ID.
+	 * @param bool   $is_payment_success    Whether the caller reports the payment intent's success.
+	 * @param bool   $order_has_paid_status Whether the order read under the lock has a paid status by the lifecycle's test.
+	 * @return string The intent ID, or an empty string when the payment may not stand in.
+	 */
+	public function get_stand_in_intent_id( string $intent_id, bool $is_payment_success, bool $order_has_paid_status ): string {
+		return $is_payment_success && $order_has_paid_status ? $intent_id : '';
+	}
+
+	/**
 	 * Tell whether a charge, refund, dispute or early fraud warning event is the payment of the order it resolved to, as
 	 * is_own_payment() does, with the event's intent read here.
 	 *

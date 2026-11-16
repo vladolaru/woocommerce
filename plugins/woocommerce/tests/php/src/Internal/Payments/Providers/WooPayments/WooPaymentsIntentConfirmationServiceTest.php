@@ -5,6 +5,9 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\PaymentIntentEventHandler;
+use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
@@ -34,6 +37,16 @@ use WC_Unit_Test_Case;
 class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 
 	use OrderPaymentLockTestTrait;
+
+	/**
+	 * The recorded completed 3DS intent of REC-3DS-2 (`Fixtures/platform-3ds-challenge-results.json`, `classic_checkout_challenge_completed`).
+	 */
+	private const RECORDED_INTENT = 'pi_3UJjK4BzWlxcwgpP0xWpBE77';
+
+	/**
+	 * Its charge.
+	 */
+	private const RECORDED_CHARGE = 'ch_3UJjK4BzWlxcwgpP0EgZv2kl';
 
 	/**
 	 * @testdox Confirming an intent for an order fetches it once and saves its intent and payment method IDs on the order.
@@ -239,109 +252,205 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The order-status callback on an order $_dataName attaches nothing and applies no event, writes the card's display details once under the claim, saves the card, and logs only when the order does not already record the intent in its status.
+	 * @testdox U-O1: an own payment on an order marked paid by hand is attached by the callback, with its display details once under the claim and the paid-order note; its webhook then adds no second note.
 	 *
-	 * The callback leaves the payment to its webhook, as the redirect return does on these statuses
-	 * (WooPaymentsRedirectReturnController). Client 11.3.0's callback attaches whatever the order's status
-	 * (class-wc-payment-gateway-wcpay.php:4663, :4771). The intent is REC-3DS-2's completed challenge
-	 * (`Fixtures/platform-3ds-challenge-results.json`, pair `classic_checkout_challenge_completed`).
-	 *
-	 * @dataProvider orders_the_callback_leaves_to_the_webhook
-	 *
-	 * @param string $status         Order status when the callback arrives.
-	 * @param string $transaction_id Transaction ID the order stores: the intent's, a merchant's reference, or another one.
-	 * @param string $stored_status  Stored intent status.
-	 * @param string $stored_charge  Stored charge.
-	 * @param bool   $logs           Whether the refusal is logged.
-	 * @param string $intent_status  The confirmed intent's status: the recorded payment's, or an authorization's.
+	 * The callback asks the webhook's own-payment test (EventOrderResolver::is_own_payment()): the order's transaction ID
+	 * names the payment, so it is the order's own and the callback goes on as client 11.3.0's does
+	 * (class-wc-payment-gateway-wcpay.php:4663, :4771). The intent is REC-3DS-2's completed challenge.
 	 */
-	public function test_callback_leaves_an_order_in_a_paid_status_or_on_hold_to_the_webhook( string $status, string $transaction_id, string $stored_status, string $stored_charge, bool $logs, string $intent_status = 'succeeded' ): void {
-		$intent           = $this->load_recorded_manual_3ds_entry( 'classic_checkout_challenge_completed' )['body'];
-		$intent['status'] = $intent_status;
-		$order            = StoredPaymentRecords::paid_by_hand_over_an_open_attempt( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'intent' === $transaction_id ? (string) $intent['id'] : $transaction_id, (string) $intent['id'] );
-		$order->set_customer_id( self::factory()->user->create() );
-		$order->set_status( $status );
-		$order->update_meta_data( '_intention_status', $stored_status );
-		$order->update_meta_data( '_charge_id', $stored_charge );
-		$order->save();
-		$stored_txn      = $order->get_transaction_id();
+	public function test_callback_attaches_an_own_payment_on_a_paid_order_with_the_paid_order_note(): void {
+		$order           = StoredPaymentRecords::paid_by_hand_over_an_open_attempt( WooPaymentsPersistenceVocabulary::GATEWAY_ID, self::RECORDED_INTENT, self::RECORDED_INTENT );
+		$intent          = $this->own_rule_intent( $order );
 		$displays        = array();
 		$account_service = $this->create_account_service( false );
-		$token_service   = $this->create_token_service_with_saved_token_and_subscription( $this->create_woopayments_order( '10.99' ) );
+		$token_service   = $this->create_token_service();
 		$sut             = $this->create_intent_confirmation_service( wc_get_container()->get( Client::class ), $token_service, $account_service );
 		$this->replace_effect_applier(
 			$sut,
 			$account_service,
 			$token_service,
-			function ( WC_Order $displayed_order ) use ( &$displays, $intent ): void {
-				$displays[] = $this->is_order_payment_lock_held_for( $displayed_order, new WooPaymentsPersistenceVocabulary(), (string) $intent['id'] );
+			function ( WC_Order $displayed_order ) use ( &$displays ): void {
+				$displays[] = $this->is_order_payment_lock_held_for( $displayed_order, new WooPaymentsPersistenceVocabulary(), self::RECORDED_INTENT );
 			}
 		);
-		$logger     = RecordingWcLogger::install();
-		$notes      = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
-		$completion = did_action( 'woocommerce_pre_payment_complete' );
+		$logger = RecordingWcLogger::install();
 
-		$sut->confirm_fetched_intent_for_order( $order, $intent, true );
+		$sut->confirm_fetched_intent_for_order( $order, $intent, false, false, true );
+
+		$reloaded = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( OrderStatus::PROCESSING, $reloaded->get_status() );
+		$this->assertSame( self::RECORDED_INTENT, $reloaded->get_transaction_id() );
+		$this->assertSame( self::RECORDED_CHARGE, $reloaded->get_meta( '_charge_id', true ) );
+		$this->assertSame( 'succeeded', $reloaded->get_meta( '_intention_status', true ) );
+		$this->assertSame( '3220', $reloaded->get_meta( 'last4', true ) );
+		$this->assertSame( array( true ), $displays, 'The display details are written once, under the claim.' );
+		$paid_notes = $this->get_paid_order_notes( $reloaded );
+		$this->assertCount( 1, $paid_notes );
+		$this->assertStringContainsString( 'transaction ID names that payment', $paid_notes[0] );
+		$this->assertCount( 0, $this->get_not_own_lines( $logger ) );
+
+		wc_get_container()->get( PaymentIntentEventHandler::class )->process( 'payment_intent.succeeded', $intent );
+
+		$this->assertCount( 1, $this->get_paid_order_notes( $reloaded ), 'The webhook finds the note by its identity.' );
+	}
+
+	/**
+	 * @testdox U-O2: a payment over a reference the merchant typed on a paid order is left alone on $entry: nothing attached, no event, no display details, one line; its webhook then records it as another charge.
+	 *
+	 * The webhook's own-payment test calls it another charge (EventOrderResolver::is_own_payment(): a paid order's transaction
+	 * ID names neither the intent nor its charge). Client 11.3.0's callback attaches it over the reference
+	 * (class-wc-payment-gateway-wcpay.php:4663).
+	 *
+	 * @testWith ["callback"]
+	 *           ["redirect return"]
+	 *
+	 * @param string $entry The entry point.
+	 */
+	public function test_confirmation_leaves_a_payment_over_a_typed_reference_alone( string $entry ): void {
+		$order = StoredPaymentRecords::paid_by_hand_over_an_open_attempt( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'bank ref 1', self::RECORDED_INTENT );
+		$order->set_payment_method_title( 'Bank transfer' );
+		$order->save();
+		$intent = $this->own_rule_intent( $order );
+		$logger = RecordingWcLogger::install();
+		$notes  = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+
+		$this->confirm_through( $entry, $order, $intent );
+
+		$reloaded = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'bank ref 1', $reloaded->get_transaction_id() );
+		$this->assertSame( self::RECORDED_INTENT, $reloaded->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'requires_action', $reloaded->get_meta( '_intention_status', true ) );
+		$this->assertSame( '', $reloaded->get_meta( '_charge_id', true ) );
+		$this->assertSame( '', $reloaded->get_meta( 'last4', true ), 'No display details, under the claim or after it.' );
+		$this->assertSame( 'Bank transfer', $reloaded->get_payment_method_title() );
+		$this->assertCount( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'No event.' );
+		$lines = $this->get_not_own_lines( $logger );
+		$this->assertCount( 1, $lines );
+		$this->assertSame( $order->get_id(), $lines[0]['order_id'] ?? null );
+		$this->assertSame( self::RECORDED_INTENT, $lines[0]['intent_id'] ?? null );
+		$this->assertSame( OrderStatus::PROCESSING, $lines[0]['order_status'] ?? null );
+		$this->assertSame( 'callback' === $entry ? 'order-status callback' : 'redirect return', $lines[0]['entry_point'] ?? null );
+		$this->assertStringNotContainsString( 'bank ref 1', implode( ' ', array_column( $logger->lines, 1 ) ), 'The typed value is not logged.' );
+
+		wc_get_container()->get( PaymentIntentEventHandler::class )->process( 'payment_intent.succeeded', $intent );
+
+		$this->assertCount( 1, array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $note ): bool => false !== strpos( $note, 'does not pay this order' ) ) );
+	}
+
+	/**
+	 * @testdox U-O3: on a paid order whose transaction ID was cleared, $_dataName.
+	 *
+	 * The stand-in is the webhook's: a succeeded payment intent stands in for the empty transaction ID on an order in a paid
+	 * status, when the order stores no charge or this payment's first charge (EventOrderResolver::is_own_payment()).
+	 *
+	 * @dataProvider cleared_transaction_ids
+	 *
+	 * @param string $status        Order status.
+	 * @param string $stored_charge The order's stored charge.
+	 * @param bool   $second_entry  Whether the intent carries a second charge entry after its first.
+	 * @param bool   $own           Whether the payment is the order's own.
+	 */
+	public function test_callback_on_a_cleared_transaction_id_follows_the_webhooks_stand_in( string $status, string $stored_charge, bool $second_entry, bool $own ): void {
+		$order = StoredPaymentRecords::paid_by_hand_over_an_open_attempt( WooPaymentsPersistenceVocabulary::GATEWAY_ID, '', self::RECORDED_INTENT );
+		$order->set_status( $status );
+		$order->update_meta_data( '_charge_id', $stored_charge );
+		$order->save();
+		$this->assertNotNull( wc_get_order( $order->get_id() )->get_date_paid(), 'The order keeps its paid date.' );
+		$intent = $this->own_rule_intent( $order );
+		if ( $second_entry ) {
+			$intent['charges']['data'][] = array( 'id' => 'ch_second' );
+		}
+		$logger = RecordingWcLogger::install();
+
+		$this->confirm_through( 'callback', $order, $intent );
+
+		$reloaded = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( $own ? self::RECORDED_INTENT : '', $reloaded->get_transaction_id() );
+		$this->assertSame( $own ? 'succeeded' : 'requires_action', $reloaded->get_meta( '_intention_status', true ) );
+		$this->assertCount( $own ? 0 : 1, $this->get_not_own_lines( $logger ) );
+		$this->assertCount( $own && OrderStatus::PROCESSING === $status ? 1 : 0, $this->get_paid_order_notes( $reloaded ) );
+	}
+
+	/**
+	 * Cleared transaction IDs, with whether the payment is the order's own.
+	 *
+	 * @return array<string,array{string,string,bool,bool}>
+	 */
+	public function cleared_transaction_ids(): array {
+		return array(
+			'no stored charge: own, the attach fills the transaction ID' => array( OrderStatus::PROCESSING, '', false, true ),
+			"the payment's first charge stored, on a two-charge intent: own" => array( OrderStatus::PROCESSING, self::RECORDED_CHARGE, true, true ),
+			"another payment's charge stored: not own" => array( OrderStatus::PROCESSING, 'ch_other', false, false ),
+			'Pending with a paid date: not own, no stand-in off a paid status' => array( OrderStatus::PENDING, '', false, false ),
+		);
+	}
+
+	/**
+	 * @testdox U-O4: with manual capture, an authorization on an order $_dataName.
+	 *
+	 * The authorization's webhook writes nothing outside Pending and Failed (PaymentIntentEventHandler), so the callback is
+	 * where it is recorded when it is the order's own; an authorization never stands in for an empty transaction ID.
+	 *
+	 * @dataProvider authorizations_on_orders_set_by_hand
+	 *
+	 * @param string $status         Order status the merchant set.
+	 * @param string $transaction_id The order's transaction ID: `intent` for the attempt's, or ''.
+	 * @param bool   $own            Whether the authorization is the order's own.
+	 */
+	public function test_callback_records_an_own_authorization_on_an_order_set_by_hand( string $status, string $transaction_id, bool $own ): void {
+		$order = StoredPaymentRecords::paid_by_hand_over_an_open_attempt( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'intent' === $transaction_id ? self::RECORDED_INTENT : '', self::RECORDED_INTENT );
+		$order->set_status( $status );
+		$order->save();
+		$intent = $this->own_rule_intent( $order, 'requires_capture' );
+		$logger = RecordingWcLogger::install();
+
+		$this->confirm_through( 'callback', $order, $intent );
 
 		$reloaded = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $reloaded );
 		$this->assertSame( $status, $reloaded->get_status() );
-		$this->assertSame( $stored_txn, $reloaded->get_transaction_id(), 'Nothing is attached.' );
-		$this->assertSame( $stored_status, $reloaded->get_meta( '_intention_status', true ) );
-		$this->assertSame( $stored_charge, $reloaded->get_meta( '_charge_id', true ) );
-		$this->assertSame( $completion, did_action( 'woocommerce_pre_payment_complete' ), 'No event is applied.' );
-		$this->assertCount( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
-		$this->assertFalse( as_has_scheduled_action( WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION ) );
-		$this->assertSame( array( true ), $displays, 'The display details are written once, under the claim.' );
-		$this->assertSame( '3220', $reloaded->get_meta( 'last4', true ) );
-		$this->assertNotSame( '', $reloaded->get_meta( '_card_brand', true ) );
-		$this->assertCount( 1, $reloaded->get_payment_tokens(), 'The card is saved and attached.' );
-		$lines = array_values( array_filter( $logger->contexts, static fn( array $context ): bool => 'callback_refused_on_paid_order' === ( $context['reason'] ?? '' ) ) );
-		$this->assertCount( $logs ? 1 : 0, $lines );
-		if ( $logs ) {
-			$this->assertSame( $order->get_id(), $lines[0]['order_id'] ?? null );
-			$this->assertSame( $intent['id'], $lines[0]['intent_id'] ?? null );
-			$this->assertSame( $stored_status, $lines[0]['stored_intent_status'] ?? null );
-			$this->assertSame( $status, $lines[0]['order_status'] ?? null );
-			$this->assertSame( 'order-status callback', $lines[0]['entry_point'] ?? null );
-		}
+		$this->assertSame( $own ? 'requires_capture' : 'requires_action', $reloaded->get_meta( '_intention_status', true ), 'Capture and cancel read the recorded authorization.' );
+		$this->assertSame( $own ? self::RECORDED_CHARGE : '', $reloaded->get_meta( '_charge_id', true ) );
+		$this->assertCount( $own ? 0 : 1, $this->get_not_own_lines( $logger ) );
+		$this->assertCount( 0, $this->get_paid_order_notes( $reloaded ), 'An authorization gets no paid-order note.' );
 	}
 
 	/**
-	 * Orders the callback leaves to the webhook: hand-marked over the open attempt, and the ordinary order the webhook paid first.
+	 * Orders set by hand during the challenge, with whether the authorization is their own.
 	 *
-	 * @return array<string,array{0:string,1:string,2:string,3:string,4:bool,5?:string}>
+	 * @return array<string,array{string,string,bool}>
 	 */
-	public function orders_the_callback_leaves_to_the_webhook(): array {
+	public function authorizations_on_orders_set_by_hand(): array {
 		return array(
-			'Processing, marked paid by hand'            => array( OrderStatus::PROCESSING, 'intent', 'requires_action', '', true ),
-			'Completed, marked by hand'                  => array( OrderStatus::COMPLETED, 'intent', 'requires_action', '', true ),
-			'On hold, set by hand'                       => array( OrderStatus::ON_HOLD, 'intent', 'requires_action', '', true ),
-			"Processing, the merchant's reference typed" => array( OrderStatus::PROCESSING, 'bank ref 7', 'requires_action', '', true ),
-			'Processing, an empty transaction ID'        => array( OrderStatus::PROCESSING, '', 'requires_action', '', true ),
-			'Processing, paid first by its webhook'      => array( OrderStatus::PROCESSING, 'intent', 'succeeded', 'ch_3UJjK4BzWlxcwgpP0EgZv2kl', false ),
-			'On hold, authorized first by its webhook (manual capture)' => array( OrderStatus::ON_HOLD, 'intent', 'requires_capture', 'ch_3UJjK4BzWlxcwgpP0EgZv2kl', false, 'requires_capture' ),
+			'On hold, the transaction ID untouched: recorded'                 => array( OrderStatus::ON_HOLD, 'intent', true ),
+			'Processing, the transaction ID untouched: recorded, skipped'     => array( OrderStatus::PROCESSING, 'intent', true ),
+			'Processing, the transaction ID cleared: not own, no stand-in'    => array( OrderStatus::PROCESSING, '', false ),
 		);
 	}
 
 	/**
-	 * @testdox The order-status callback confirming a $0 order's setup intent on an order $_dataName goes on as before: it saves the payment method and applies the event, with no refusal line.
+	 * @testdox U-O5: a $0 order's setup intent on $_dataName.
 	 *
-	 * A setup intent has no webhook, so on a $0 order the callback is the only writer; the refusal covers only an intent the
-	 * callback attaches. Client 11.3.0 records the setup intent's payment method whatever it then does
-	 * (class-wc-payment-gateway-wcpay.php:4708-4715) and completes the order only while it is not paid (:4665-4700).
+	 * No webhook handles a setup intent, so the confirmation is its only writer; it never stands in for an empty transaction
+	 * ID. Client 11.3.0 records its payment method and completes an unpaid order (class-wc-payment-gateway-wcpay.php:4665-4715).
 	 *
-	 * @dataProvider orders_a_setup_intent_callback_meets
+	 * @dataProvider setup_intents_on_orders_set_by_hand
 	 *
-	 * @param string $status    Order status when the callback arrives.
-	 * @param bool   $completes Whether the event completes the order.
+	 * @param string $entry          The entry point.
+	 * @param string $status         Order status.
+	 * @param string $transaction_id The order's transaction ID.
+	 * @param bool   $own            Whether the setup intent is the order's own.
 	 */
-	public function test_callback_confirming_a_setup_intent_is_not_left_to_a_webhook( string $status, bool $completes ): void {
+	public function test_confirmation_of_a_setup_intent_follows_the_own_payment_test( string $entry, string $status, string $transaction_id, bool $own ): void {
 		$order = $this->create_woopayments_order( '0.00' );
 		$order->update_meta_data( '_intent_id', 'seti_held' );
+		$order->set_transaction_id( $transaction_id );
 		$order->set_status( $status );
 		$order->save();
-		$intent      = array(
+		$intent = array(
 			'id'             => 'seti_held',
 			'object'         => 'setup_intent',
 			'status'         => 'succeeded',
@@ -349,35 +458,133 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 			'payment_method' => 'pm_held',
 			'metadata'       => array( 'order_id' => (string) $order->get_id() ),
 		);
-		$logger      = RecordingWcLogger::install();
-		$completions = did_action( 'woocommerce_pre_payment_complete' );
+		$logger = RecordingWcLogger::install();
 
-		$this->create_intent_confirmation_service( wc_get_container()->get( Client::class ), null, $this->create_account_service( false ) )
-			->confirm_fetched_intent_for_order( $order, $intent, false, false, true );
+		$this->confirm_through( $entry, $order, $intent );
 
 		$reloaded = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $reloaded );
-		$this->assertSame( 'pm_held', $reloaded->get_meta( '_payment_method_id', true ), 'The payment method is saved.' );
-		$this->assertSame( $completes ? 1 : 0, did_action( 'woocommerce_pre_payment_complete' ) - $completions );
-		$this->assertTrue( $reloaded->has_status( wc_get_is_paid_statuses() ), 'The order ends in a paid status.' );
-		$this->assertCount( 0, array_filter( $logger->contexts, static fn( array $context ): bool => 'callback_refused_on_paid_order' === ( $context['reason'] ?? '' ) ) );
+		if ( $own ) {
+			$this->assertTrue( $reloaded->has_status( wc_get_is_paid_statuses() ), 'An own setup intent completes the On hold order.' );
+		} else {
+			$this->assertSame( $status, $reloaded->get_status() );
+		}
+		if ( 'callback' === $entry ) {
+			$this->assertSame( $own ? 'pm_held' : '', $reloaded->get_meta( '_payment_method_id', true ), 'The callback saves the payment method of its own setup intent.' );
+		} else {
+			$this->assertSame( $own ? 'seti_held' : $transaction_id, $reloaded->get_transaction_id(), 'The redirect return attaches its own setup intent.' );
+		}
+		$this->assertCount( $own ? 0 : 1, $this->get_not_own_lines( $logger ) );
 	}
 
 	/**
-	 * Orders a $0 setup intent's callback meets in the three statuses, with whether its event completes the order.
+	 * Setup intents on orders set by hand, with whether each is the order's own.
 	 *
-	 * @return array<string,array{string,bool}>
+	 * @return array<string,array{string,string,string,bool}>
 	 */
-	public function orders_a_setup_intent_callback_meets(): array {
+	public function setup_intents_on_orders_set_by_hand(): array {
 		return array(
-			'On hold, set while the challenge was open' => array( OrderStatus::ON_HOLD, true ),
-			'Processing'                                => array( OrderStatus::PROCESSING, false ),
-			'Completed'                                 => array( OrderStatus::COMPLETED, false ),
+			'the callback, an order set On hold' => array( 'callback', OrderStatus::ON_HOLD, '', true ),
+			"the redirect return's race, an order set On hold" => array( 'redirect return', OrderStatus::ON_HOLD, '', true ),
+			'the callback, a paid order with a typed reference' => array( 'callback', OrderStatus::PROCESSING, 'bank ref 5', false ),
+			'the callback, a paid order with no transaction ID: a setup intent never stands in' => array( 'callback', OrderStatus::PROCESSING, '', false ),
 		);
 	}
 
 	/**
-	 * @testdox The order-status callback on a Pending order still attaches the intent and completes the order.
+	 * @testdox U-O6: on a paid status a plugin adds, a payment the transaction ID names is attached with the paid-order note, and one over a typed reference is left alone: $_dataName.
+	 *
+	 * @testWith ["the transaction ID names the payment", "intent", true]
+	 *           ["a typed reference", "bank ref 6", false]
+	 *
+	 * @param string $label          Row label.
+	 * @param string $transaction_id The order's transaction ID: `intent` for the payment's.
+	 * @param bool   $own            Whether the payment is the order's own.
+	 */
+	public function test_callback_on_a_plugins_paid_status_follows_the_own_payment_test( string $label, string $transaction_id, bool $own ): void {
+		unset( $label );
+		add_filter( 'wc_order_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'wc-shipped' => 'Shipped' ) ) );
+		add_filter( 'woocommerce_order_is_paid_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'shipped' ) ) );
+		$order = StoredPaymentRecords::paid_by_hand_over_an_open_attempt( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'intent' === $transaction_id ? self::RECORDED_INTENT : $transaction_id, self::RECORDED_INTENT );
+		$order->set_status( 'shipped' );
+		$order->save();
+		$logger = RecordingWcLogger::install();
+
+		$this->confirm_through( 'callback', $order, $this->own_rule_intent( $order ) );
+
+		$reloaded = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'shipped', $reloaded->get_status() );
+		$this->assertSame( $own ? self::RECORDED_INTENT : $transaction_id, $reloaded->get_transaction_id() );
+		$this->assertCount( $own ? 1 : 0, $this->get_paid_order_notes( $reloaded ) );
+		$this->assertCount( $own ? 0 : 1, $this->get_not_own_lines( $logger ) );
+	}
+
+	/**
+	 * @testdox U-O7: when another operation holds the order payment lock, the fallback writes the charge details of an own payment and nothing for one over a typed reference: $_dataName.
+	 *
+	 * @testWith ["own, the transaction ID untouched", "intent", true]
+	 *           ["not own, a typed reference", "bank ref 7", false]
+	 *
+	 * @param string $label          Row label.
+	 * @param string $transaction_id The order's transaction ID: `intent` for the payment's.
+	 * @param bool   $own            Whether the payment is the order's own.
+	 */
+	public function test_claim_refused_fallback_follows_the_own_payment_test( string $label, string $transaction_id, bool $own ): void {
+		unset( $label );
+		$order      = StoredPaymentRecords::paid_by_hand_over_an_open_attempt( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'intent' === $transaction_id ? self::RECORDED_INTENT : $transaction_id, self::RECORDED_INTENT );
+		$lock       = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		$token      = $lock->claim( $order, $vocabulary, 'pi_another_operation', 'test' );
+		$this->assertNotNull( $token );
+		$logger = RecordingWcLogger::install();
+
+		try {
+			$this->confirm_through( 'callback', $order, $this->own_rule_intent( $order ) );
+		} finally {
+			$lock->release( $order, $vocabulary, (string) $token );
+		}
+
+		$reloaded = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( $own ? self::RECORDED_CHARGE : '', $reloaded->get_meta( '_charge_id', true ) );
+		$this->assertSame( $own, '' !== $reloaded->get_meta( '_charge_risk_level', true ) );
+		$this->assertSame( $own ? '3220' : '', $reloaded->get_meta( 'last4', true ), 'Display details after the claim only for an own payment.' );
+		$this->assertCount( $own ? 0 : 1, $this->get_not_own_lines( $logger ) );
+	}
+
+	/**
+	 * @testdox U-O8: the callback after its webhook recorded the payment, $_dataName, is the order's own: no paid-order note and no line.
+	 *
+	 * @testWith ["a payment (automatic capture)", "succeeded"]
+	 *           ["an authorization (manual capture)", "requires_capture"]
+	 *
+	 * @param string $label         Row label.
+	 * @param string $intent_status The intent's status.
+	 */
+	public function test_callback_after_its_webhook_is_own_and_quiet( string $label, string $intent_status ): void {
+		unset( $label );
+		$order   = 'succeeded' === $intent_status
+			? StoredPaymentRecords::payment( OrderStatus::PROCESSING, self::RECORDED_INTENT, self::RECORDED_CHARGE )
+			: StoredPaymentRecords::authorization( self::RECORDED_INTENT, self::RECORDED_CHARGE );
+		$written = new PaymentLifecycleEvent( 'succeeded' === $intent_status ? PaymentLifecycleEvent::STATUS_COMPLETED : PaymentLifecycleEvent::STATUS_AUTHORIZED, self::RECORDED_INTENT, array(), array(), 'Recorded by the webhook.', 'succeeded' === $intent_status ? PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS : PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_AUTHORIZED );
+		$order->add_order_note( 'Recorded by the webhook.', 0, false, array( WooPaymentsPersistenceVocabulary::NOTE_IDENTITY_META_KEY => hash( 'sha256', $written->get_note_identity() ) ) );
+		$status = $order->get_status();
+		$logger = RecordingWcLogger::install();
+
+		$this->confirm_through( 'callback', $order, $this->own_rule_intent( $order, $intent_status ) );
+
+		$reloaded = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( $status, $reloaded->get_status() );
+		$this->assertSame( self::RECORDED_INTENT, $reloaded->get_transaction_id() );
+		$this->assertSame( '3220', $reloaded->get_meta( 'last4', true ) );
+		$this->assertCount( 0, $this->get_paid_order_notes( $reloaded ) );
+		$this->assertCount( 0, $this->get_not_own_lines( $logger ) );
+	}
+
+	/**
+	 * @testdox U-O9: the order-status callback on a Pending order attaches the intent and completes the order.
 	 */
 	public function test_callback_on_a_pending_order_attaches_and_applies(): void {
 		$intent = $this->load_recorded_manual_3ds_entry( 'classic_checkout_challenge_completed' )['body'];
@@ -395,10 +602,64 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $reloaded );
 		$this->assertTrue( $reloaded->is_paid() );
 		$this->assertSame( 'succeeded', $reloaded->get_meta( '_intention_status', true ) );
-		$this->assertSame( 'ch_3UJjK4BzWlxcwgpP0EgZv2kl', $reloaded->get_meta( '_charge_id', true ) );
+		$this->assertSame( self::RECORDED_CHARGE, $reloaded->get_meta( '_charge_id', true ) );
 		$this->assertSame( '3220', $reloaded->get_meta( 'last4', true ) );
 		$this->assertCount( 1, array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $note ): bool => false !== strpos( $note, 'successfully charged' ) ) );
-		$this->assertCount( 0, array_filter( $logger->contexts, static fn( array $context ): bool => 'callback_refused_on_paid_order' === ( $context['reason'] ?? '' ) ) );
+		$this->assertCount( 0, $this->get_not_own_lines( $logger ) );
+	}
+
+	/**
+	 * The recorded completed 3DS intent, with its status and metadata naming the order.
+	 *
+	 * @param WC_Order $order  Order the intent pays.
+	 * @param string   $status Intent status.
+	 * @return array<string,mixed>
+	 */
+	private function own_rule_intent( WC_Order $order, string $status = 'succeeded' ): array {
+		$intent             = $this->load_recorded_manual_3ds_entry( 'classic_checkout_challenge_completed' )['body'];
+		$intent['status']   = $status;
+		$intent['metadata'] = array(
+			'order_id'  => (string) $order->get_id(),
+			'order_key' => $order->get_order_key(),
+		);
+
+		return $intent;
+	}
+
+	/**
+	 * Confirm an intent through an entry point, as the order-status callback or the redirect return calls the service.
+	 *
+	 * @param string              $entry  `callback` or `redirect return`.
+	 * @param WC_Order            $order  Order.
+	 * @param array<string,mixed> $intent Intent.
+	 */
+	private function confirm_through( string $entry, WC_Order $order, array $intent ): void {
+		$sut = $this->create_intent_confirmation_service( wc_get_container()->get( Client::class ), null, $this->create_account_service( false ) );
+		if ( 'callback' === $entry ) {
+			$sut->confirm_fetched_intent_for_order( $order, $intent, false, false, true );
+		} else {
+			$sut->confirm_fetched_intent_for_order( $order, $intent, false, true );
+		}
+	}
+
+	/**
+	 * The contexts of the lines of a payment the confirmation left alone.
+	 *
+	 * @param RecordingWcLogger $logger Logger.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function get_not_own_lines( RecordingWcLogger $logger ): array {
+		return array_values( array_filter( $logger->contexts, static fn( array $context ): bool => 'confirmation_left_payment_not_own' === ( $context['reason'] ?? '' ) ) );
+	}
+
+	/**
+	 * The order's paid-order notes.
+	 *
+	 * @param WC_Order $order Order.
+	 * @return string[]
+	 */
+	private function get_paid_order_notes( WC_Order $order ): array {
+		return array_values( array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $note ): bool => false !== strpos( $note, 'already had a paid status' ) ) );
 	}
 
 	/**

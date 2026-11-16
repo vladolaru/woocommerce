@@ -500,10 +500,12 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A redirect return reading a started payment on an order in a paid status a plugin adds attaches the intent and writes no started note or fraud box.
+	 * @testdox A redirect return reading a started payment on an order in a paid status a plugin adds, with no transaction ID, attaches nothing and writes no started note or fraud box.
 	 *
 	 * Client 11.3.0 attaches the intent (class-wc-payment-gateway-wcpay.php:2700), then its started writer returns unless the
-	 * order is Pending (class-wc-payments-order-service.php:2229-2241).
+	 * order is Pending (class-wc-payments-order-service.php:2229-2241). The built-in return first asks the webhook's
+	 * own-payment test (EventOrderResolver::is_own_payment()): a paid order with no transaction ID does not own a started
+	 * payment, so nothing is attached.
 	 */
 	public function test_handle_wp_writes_no_started_payment_on_an_order_in_another_paid_status(): void {
 		add_filter( 'wc_order_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'wc-shipped' => 'Shipped' ) ) );
@@ -526,8 +528,8 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'shipped', $order->get_status() );
 		$this->assertCount( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'No started note.' );
 		$this->assertSame( 'allow', $order->get_meta( '_wcpay_fraud_meta_box_type', true ), 'No started fraud box.' );
-		$this->assertSame( 'requires_action', $order->get_meta( '_intention_status', true ), 'The intent is attached.' );
-		$this->assertSame( 'pi_return', $order->get_transaction_id() );
+		$this->assertSame( '', $order->get_meta( '_intention_status', true ), 'Nothing is attached.' );
+		$this->assertSame( '', $order->get_transaction_id() );
 	}
 
 	/**

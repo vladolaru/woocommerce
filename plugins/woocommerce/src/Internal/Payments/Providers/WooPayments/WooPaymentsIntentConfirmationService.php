@@ -15,6 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventOrderResolver;
 use Throwable;
 use WC_Order;
 
@@ -227,26 +228,52 @@ class WooPaymentsIntentConfirmationService {
 	}
 
 	/**
-	 * Log, whatever the logging setting, a confirmation that left an intent to its webhook on an order already in a paid
-	 * status or On hold that does not record that intent in that status.
+	 * Tell whether a confirmed intent is the order's own payment, by the webhook's own test with the inputs the webhook
+	 * uses for it: the intent's ID, its first charge, and the intent standing in for an empty transaction ID only for a
+	 * succeeded payment intent on an order in a paid status (EventOrderResolver).
 	 *
-	 * @param WC_Order $order       Order read under the order payment lock.
-	 * @param string   $intent_id   The confirmed intent.
-	 * @param string   $entry_point `order-status callback` or `redirect return`.
+	 * @param WC_Order            $order  Order read under the order payment lock, or read fresh after a refused claim.
+	 * @param array<string,mixed> $intent Confirmed intent.
+	 * @return bool
 	 */
-	private function log_payment_left_to_the_webhook( WC_Order $order, string $intent_id, string $entry_point ): void {
-		$printed_intent = WooPaymentsLogger::get_loggable_provider_id( $intent_id );
-		$stored_status  = (string) $order->get_meta( '_intention_status', true );
+	private function is_order_payment( WC_Order $order, array $intent ): bool {
+		$intent_id = isset( $intent['id'] ) ? (string) $intent['id'] : '';
+		$status    = isset( $intent['status'] ) ? (string) $intent['status'] : '';
+		$resolver  = wc_get_container()->get( EventOrderResolver::class );
+
+		return $resolver->is_own_payment(
+			$order,
+			$intent_id,
+			WooPaymentsIntentCodec::first_charge_id( $intent ),
+			$resolver->get_stand_in_intent_id(
+				$intent_id,
+				'succeeded' === $status && 0 === strpos( $intent_id, 'pi_' ),
+				wc_get_container()->get( OrderPaymentLifecycleService::class )->has_paid_status( $order )
+			)
+		);
+	}
+
+	/**
+	 * Log, whatever the logging setting, a confirmation that left a payment alone because it is not the order's own.
+	 *
+	 * The order's transaction ID is not printed: a merchant can type anything there.
+	 *
+	 * @param WC_Order            $order              Order the decision was made on.
+	 * @param array<string,mixed> $intent             Confirmed intent.
+	 * @param bool                $is_redirect_return Whether the redirect return confirmed it.
+	 */
+	private function log_payment_not_own( WC_Order $order, array $intent, bool $is_redirect_return ): void {
+		$printed_intent = WooPaymentsLogger::get_loggable_provider_id( isset( $intent['id'] ) ? (string) $intent['id'] : '' );
+		$entry_point    = $is_redirect_return ? 'redirect return' : 'order-status callback';
 		wc_get_container()->get( WooPaymentsLogger::class )->log_always(
-			sprintf( '%1$s left payment %2$s to its webhook: order #%3$d is %4$s, and its stored intent status is "%5$s".', $entry_point, $printed_intent, $order->get_id(), $order->get_status(), $stored_status ),
+			sprintf( '%1$s left payment %2$s alone: it is not the own payment of order #%3$d (%4$s).', $entry_point, $printed_intent, $order->get_id(), $order->get_status() ),
 			'warning',
 			array(
-				'order_id'             => $order->get_id(),
-				'intent_id'            => $printed_intent,
-				'stored_intent_status' => $stored_status,
-				'order_status'         => $order->get_status(),
-				'entry_point'          => $entry_point,
-				'reason'               => 'callback_refused_on_paid_order',
+				'order_id'     => $order->get_id(),
+				'intent_id'    => $printed_intent,
+				'order_status' => $order->get_status(),
+				'entry_point'  => $entry_point,
+				'reason'       => 'confirmation_left_payment_not_own',
 			)
 		);
 	}
@@ -327,30 +354,24 @@ class WooPaymentsIntentConfirmationService {
 		// details written, and the event then built and the hold decided on that order as attached, as client 11.3.0
 		// attaches, titles the order and then updates it (class-wc-payment-gateway-wcpay.php:2700, :2705-2707; :4663,
 		// :4713-4715, :4758-4764, :4771; class-wc-payments-order-service.php:484-489). A started payment the order no longer
-		// waits for is nothing to apply. Nothing is written on an order whose payment method became another gateway's, read
-		// under the lock or, when another operation holds it, read fresh, and only the display details on one already in a
-		// paid status or On hold when the intent would be attached. The account the build reads is settled before the claim.
+		// waits for is nothing to apply. Nothing is written on an order whose payment method became another gateway's, nor on
+		// one whose payment this is not by the webhook's own test, read under the lock or, when another operation holds it,
+		// read fresh. The account the build reads is settled before the claim.
 		$attaches_intent = $is_redirect_return || ! $this->is_setup_intent_for_order( $intent, $order );
 		$displayed       = false;
 		$refusing_order  = null;
 		list( $event )   = $this->build_lifecycle_event_from_intent( $intent, $order, $zero_amount_plain_note );
-		$build           = function ( WC_Order $stored_order ) use ( $intent, $status, $is_redirect_return, $zero_amount_plain_note, $attaches_intent, $setup_payment_details, &$displayed, &$refusing_order ): array {
+		$build           = function ( WC_Order $stored_order ) use ( $intent, $is_redirect_return, $zero_amount_plain_note, $attaches_intent, $setup_payment_details, &$displayed, &$refusing_order ): array {
 			if ( $this->is_order_of_another_payment_method( $stored_order ) ) {
 				$refusing_order = $stored_order;
 				return array( null, null );
 			}
-			// An order already in a paid status or On hold is the redirect return's case for leaving the payment to its webhook
-			// (WooPaymentsRedirectReturnController); asked here under the claim, so the attach cannot replace a transaction ID the
-			// merchant wrote. Only the card's display details are written. A setup intent the callback confirms is not attached and
-			// has no webhook, so it goes on as before. Client 11.3.0 attaches and records the fee whatever the order's status
-			// (class-wc-payment-gateway-wcpay.php:4663, :4771).
-			if ( $attaches_intent && $stored_order->has_status( array( OrderStatus::PROCESSING, OrderStatus::COMPLETED, OrderStatus::ON_HOLD ) ) ) {
-				$this->apply_display_details( $stored_order, $intent, $setup_payment_details );
+			// A payment the webhook would record as another charge on this order, such as one over a reference the merchant
+			// typed on a paid order, is left to it: nothing is written, the display details included. Client 11.3.0 attaches
+			// whatever the order records (class-wc-payment-gateway-wcpay.php:4663, :4771).
+			if ( ! $this->is_order_payment( $stored_order, $intent ) ) {
 				$displayed = true;
-				// An order that already records this intent in this status, such as one its webhook recorded first, logs nothing.
-				if ( (string) $stored_order->get_meta( '_intent_id', true ) !== (string) ( $intent['id'] ?? '' ) || (string) $stored_order->get_meta( '_intention_status', true ) !== $status ) {
-					$this->log_payment_left_to_the_webhook( $stored_order, (string) ( $intent['id'] ?? '' ), $is_redirect_return ? 'redirect return' : 'order-status callback' );
-				}
+				$this->log_payment_not_own( $stored_order, $intent, $is_redirect_return );
 				return array( null, null );
 			}
 			if ( $attaches_intent ) {
@@ -377,6 +398,9 @@ class WooPaymentsIntentConfirmationService {
 			$stored_order = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
 			if ( $this->is_order_of_another_payment_method( $stored_order ) ) {
 				$refusing_order = $stored_order;
+			} elseif ( ! $this->is_order_payment( $stored_order, $intent ) ) {
+				$displayed = true;
+				$this->log_payment_not_own( $stored_order, $intent, $is_redirect_return );
 			} else {
 				$this->attach_charge_details_after_refusal( $stored_order, $event );
 			}

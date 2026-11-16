@@ -5809,6 +5809,59 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The webhook's stand-in for an empty transaction ID on an order with a paid date and its stored payment pi_A, ch_A: $_dataName.
+	 *
+	 * Only a success, and only on an order in a paid status by the payment lifecycle's test, stands in for the empty
+	 * transaction ID (EventOrderResolver::get_stand_in_intent_id()); every other event is recorded as another charge. The
+	 * answers are the same before and after the condition moved to the resolver, which the order-status callback also asks.
+	 *
+	 * @dataProvider stand_in_cases_of_the_webhook
+	 *
+	 * @param string              $event_type Event type.
+	 * @param string              $status     Order status.
+	 * @param array<string,mixed> $overrides  Intent overrides.
+	 * @param bool                $own        Whether the event is the order's own payment.
+	 */
+	public function test_webhook_stand_in_cases_on_an_order_without_transaction_id( string $event_type, string $status, array $overrides, bool $own ): void {
+		$order = StoredPaymentRecords::paid_without_transaction_id( OrderStatus::PROCESSING, 'pi_A', 'ch_A' );
+		$order->set_status( $status );
+		$order->save();
+		$logger = RecordingWcLogger::install();
+
+		$this->sut->process(
+			$this->create_payment_intent_event(
+				$event_type,
+				$order,
+				array_replace_recursive(
+					array(
+						'id'      => 'pi_A',
+						'amount'  => 1099,
+						'charges' => array( 'data' => array( array( 'id' => 'ch_A' ) ) ),
+					),
+					$overrides
+				)
+			)
+		);
+
+		$recorded = array_filter( array_column( $logger->lines, 1 ), static fn( string $line ): bool => 0 === strpos( $line, 'other charge recorded:' ) );
+		$this->assertCount( $own ? 0 : 1, $recorded );
+	}
+
+	/**
+	 * The webhook's stand-in cases: event type, order status and intent, with whether the event is the order's own.
+	 *
+	 * @return array<string,array{string,string,array<string,mixed>,bool}>
+	 */
+	public function stand_in_cases_of_the_webhook(): array {
+		return array(
+			'a success on a paid status: stands in'       => array( 'payment_intent.succeeded', OrderStatus::PROCESSING, array(), true ),
+			'a success on a paid date with Cancelled: does not' => array( 'payment_intent.succeeded', OrderStatus::CANCELLED, array(), false ),
+			'an authorization on a paid status: does not' => array( 'payment_intent.amount_capturable_updated', OrderStatus::PROCESSING, array( 'status' => 'requires_capture' ), false ),
+			'a failure on a paid status: does not'        => array( 'payment_intent.payment_failed', OrderStatus::PROCESSING, $this->get_card_failure_overrides(), false ),
+		);
+	}
+
+	/**
 	 * Paid statuses of an order with no transaction ID.
 	 *
 	 * @return array<string,array{string}>
