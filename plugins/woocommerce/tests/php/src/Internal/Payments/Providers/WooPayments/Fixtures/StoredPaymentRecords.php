@@ -55,6 +55,32 @@ final class StoredPaymentRecords {
 	}
 
 	/**
+	 * A paid order with no transaction ID: the stored intent names the payment, which succeeded, with its charge.
+	 *
+	 * Written by a merchant who clears the Transaction ID field on the order screen and saves (WC_Meta_Box_Order_Data::save());
+	 * or by a capture that kept the merchant's status before such captures wrote the transaction ID. In the WooPayments
+	 * extension by its status-change capture, which writes no transaction ID (client 11.3.0
+	 * class-wc-payments-order-service.php:2381-2418), and by its amount-mismatch hold (:2133-2135) once the merchant
+	 * completes the order.
+	 *
+	 * @param string $status    Order status; a paid status gets a paid date.
+	 * @param string $intent_id The payment's intent, the stored intent.
+	 * @param string $charge_id Its charge, or '' for none.
+	 * @return WC_Order
+	 */
+	public static function paid_without_transaction_id( string $status = OrderStatus::PROCESSING, string $intent_id = 'pi_A', string $charge_id = 'ch_A' ): WC_Order {
+		return self::create_order(
+			$status,
+			'',
+			array(
+				'_intent_id'        => $intent_id,
+				'_intention_status' => 'succeeded',
+				'_charge_id'        => $charge_id,
+			)
+		);
+	}
+
+	/**
 	 * An ordinary authorization: an On hold order whose transaction ID and stored intent name the authorized payment, which
 	 * waits for its capture.
 	 *

@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Webhooks;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
@@ -1433,6 +1434,29 @@ class DisputeEventHandlerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'on-hold', $order->get_status() );
 		$this->assertSame( array( 'dp_own_charge' ), $order->get_meta( '_wcpay_open_dispute_ids', true ) );
 		$this->assertCount( 1, $this->find_order_note( $order, 'Payment has been disputed' ) );
+	}
+
+	/**
+	 * @testdox A charge.dispute.created event on the stored payment of a paid order with no transaction ID holds it, records the dispute as open, and adds no other-charge note.
+	 *
+	 * The stored WooPayments payment stands in for the empty transaction ID: the dispute's charge is the stored one and its
+	 * own `payment_intent` is the stored intent (https://docs.stripe.com/api/disputes/object#dispute_object-payment_intent).
+	 * Client 11.3.0 holds the order its _charge_id finds (class-wc-payments-order-service.php:762-777).
+	 */
+	public function test_dispute_created_on_the_stored_payment_of_an_order_without_transaction_id_holds_it(): void {
+		$order                   = StoredPaymentRecords::paid_without_transaction_id( OrderStatus::PROCESSING, 'pi_a', 'ch_a' );
+		$event                   = $this->get_created_event_object( 'dp_stored_payment', 'needs_response' );
+		$event['charge']         = 'ch_a';
+		$event['payment_intent'] = 'pi_a';
+
+		$this->sut->process( 'charge.dispute.created', $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( \WC_Order::class, $order );
+		$this->assertSame( OrderStatus::ON_HOLD, $order->get_status() );
+		$this->assertSame( array( 'dp_stored_payment' ), $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$this->assertCount( 1, $this->find_order_note( $order, 'Payment has been disputed' ) );
+		$this->assertCount( 0, $this->find_order_note( $order, 'was opened on WooPayments charge' ) );
 	}
 
 	/**

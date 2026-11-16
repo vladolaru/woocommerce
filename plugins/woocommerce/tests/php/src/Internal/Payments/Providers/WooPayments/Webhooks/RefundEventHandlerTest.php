@@ -1365,6 +1365,32 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A partial charge.refunded on the stored payment of a paid order with no transaction ID adds the refund row and its note once, and no other-charge note.
+	 *
+	 * The stored WooPayments payment stands in for the empty transaction ID: the charge is the stored one and its own
+	 * `payment_intent` is the stored intent (https://docs.stripe.com/api/charges/object#charge_object-payment_intent).
+	 * Client 11.3.0 applies the refund to the order its _charge_id finds (class-wc-payments-webhook-processing-service.php:1273-1282).
+	 */
+	public function test_charge_refunded_on_the_stored_payment_of_an_order_without_transaction_id_adds_the_refund_row(): void {
+		$order                    = StoredPaymentRecords::paid_without_transaction_id( OrderStatus::PROCESSING, 'pi_a', 'ch_a' );
+		$charge                   = $this->get_successful_refund_charge();
+		$charge['id']             = 'ch_a';
+		$charge['payment_intent'] = 'pi_a';
+
+		$this->sut->process( 'charge.refunded', $charge );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$refunds = $order->get_refunds();
+		$this->assertCount( 1, $refunds );
+		$this->assertSame( '-4.00', $refunds[0]->get_total() );
+		$this->assertSame( 're_123', $refunds[0]->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( OrderStatus::PROCESSING, $order->get_status() );
+		$this->assertCount( 1, $this->get_notes_containing( $order, 'was successfully processed' ) );
+		$this->assertCount( 0, $this->get_notes_containing( $order, 'No refund was added to the order.' ) );
+	}
+
+	/**
 	 * @testdox A full charge.refunded on the payment of $_dataName refunds the order as today and writes $expected_lines own-payment line(s) naming another payment method.
 	 * @dataProvider provider_full_refund_on_a_kept_payment
 	 *

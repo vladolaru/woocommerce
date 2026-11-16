@@ -5773,6 +5773,252 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A succeeded intent of the stored payment on a paid order with no transaction ID, in $_dataName, is its own payment: no other-charge note, and the lifecycle leaves the order as it is on each delivery.
+	 * @dataProvider stored_payment_success_on_a_paid_status
+	 *
+	 * The stored WooPayments payment stands in for the empty transaction ID only on an order in a paid status by the
+	 * lifecycle's own test, which counts a status a plugin adds through woocommerce_order_is_paid_statuses. The lifecycle
+	 * skips the success there, so the transaction ID stays empty. Client 11.3.0 finds the order by its _intent_id and leaves
+	 * a paid order alone (class-wc-payments-webhook-processing-service.php:1135-1158; class-wc-payments-order-service.php:466-489).
+	 *
+	 * @param string $status Order status, a paid one.
+	 */
+	public function test_stored_payment_success_on_a_paid_status_without_transaction_id_is_its_own( string $status ): void {
+		add_filter( 'wc_order_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'wc-shipped' => 'Shipped' ) ) );
+		add_filter( 'woocommerce_order_is_paid_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'shipped' ) ) );
+		$order  = StoredPaymentRecords::paid_without_transaction_id( $status, 'pi_a', 'ch_a' );
+		$event  = $this->create_stored_payment_success_event( $order, 1099 );
+		$logger = RecordingWcLogger::install();
+
+		$this->sut->process( $event );
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( $status, $order->get_status() );
+		$this->assertSame( '', $order->get_transaction_id(), 'A success the lifecycle skips writes no transaction ID.' );
+		$this->assertSame( 'pi_a', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'ch_a', $order->get_meta( '_charge_id', true ) );
+		$this->assertCount( 0, $this->get_order_notes_containing( $order, 'does not pay this order' ) );
+		$this->assertCount( 0, $this->get_order_notes_containing( $order, 'successfully charged' ) );
+		$skips = array_filter( $logger->contexts, static fn( array $context ): bool => 'order_paid' === ( $context['reason'] ?? '' ) );
+		$this->assertCount( 2, $skips, 'Each delivery reaches the lifecycle, which leaves the paid order as it is.' );
+	}
+
+	/**
+	 * Paid statuses of an order with no transaction ID.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function stored_payment_success_on_a_paid_status(): array {
+		return array(
+			'Processing'                     => array( OrderStatus::PROCESSING ),
+			'a status a plugin adds as paid' => array( 'shipped' ),
+		);
+	}
+
+	/**
+	 * @testdox A redelivered succeeded intent of the stored payment on an order with a paid date and no transaction ID, $_dataName, is recorded as another charge and keeps the status.
+	 * @dataProvider stored_payment_success_on_a_status_that_is_not_paid
+	 *
+	 * A success stands in for the empty transaction ID only on a paid status by the lifecycle's own test, not the order's
+	 * is_paid(), which a filter can widen, and not a paid date: on a status the merchant moved the order to, owning it would
+	 * let the success complete the order or hold it for an amount that no longer matches.
+	 *
+	 * @param string $status        Status the merchant moved the paid order to.
+	 * @param int    $intent_amount The intent's amount in minor units; the order total is 10.99.
+	 * @param bool   $filter_paid   Whether a woocommerce_order_is_paid filter answers true for the order.
+	 */
+	public function test_redelivered_stored_payment_success_on_a_status_that_is_not_paid_is_recorded( string $status, int $intent_amount, bool $filter_paid ): void {
+		$order = StoredPaymentRecords::paid_without_transaction_id( OrderStatus::PROCESSING, 'pi_a', 'ch_a' );
+		$order->set_status( $status );
+		$order->save();
+		$this->assertNotNull( $order->get_date_paid(), 'The moved order keeps its paid date.' );
+		if ( $filter_paid ) {
+			add_filter( 'woocommerce_order_is_paid', static fn( $is_paid, $paid_order ): bool => $paid_order instanceof WC_Order && $paid_order->get_id() === $order->get_id() ? true : (bool) $is_paid, 10, 2 );
+		}
+		$completions = did_action( 'woocommerce_pre_payment_complete' );
+
+		$this->sut->process( $this->create_stored_payment_success_event( $order, $intent_amount ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( $status, $order->get_status() );
+		$this->assertSame( '', $order->get_transaction_id() );
+		$this->assertSame( 0, did_action( 'woocommerce_pre_payment_complete' ) - $completions );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'does not pay this order' ) );
+		$this->assertCount( 0, $this->get_order_notes_containing( $order, 'put <strong>on hold</strong>' ) );
+	}
+
+	/**
+	 * Statuses a merchant moves a paid order to, with the redelivered intent's amount.
+	 *
+	 * @return array<string,array{string,int,bool}>
+	 */
+	public function stored_payment_success_on_a_status_that_is_not_paid(): array {
+		return array(
+			'Cancelled, the amount equal to the total' => array( OrderStatus::CANCELLED, 1099, false ),
+			'Refunded, the amount different from the total' => array( OrderStatus::REFUNDED, 1500, false ),
+			'On hold, which a filter counts as paid'   => array( OrderStatus::ON_HOLD, 1099, true ),
+		);
+	}
+
+	/**
+	 * @testdox A succeeded intent of another attempt on a paid order with no transaction ID and no stored charge is recorded, and a refund of its charge adds no refund row.
+	 *
+	 * Only the stored intent stands in for the empty transaction ID: the other attempt's success writes nothing of its own
+	 * payment, so its charge never becomes the order's, and its refund, found by the charge's metadata, is recorded. The
+	 * charge is a Stripe Charge with its `payment_intent`, `metadata` and refunds list (https://docs.stripe.com/api/charges/object).
+	 */
+	public function test_another_attempts_success_on_an_order_without_transaction_id_and_stored_charge_is_recorded(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$order = StoredPaymentRecords::paid_without_transaction_id( OrderStatus::PROCESSING, 'pi_a', '' );
+
+		$this->sut->process(
+			$this->create_payment_intent_event(
+				'payment_intent.succeeded',
+				$order,
+				array(
+					'id'      => 'pi_c',
+					'charges' => array( 'data' => array( array( 'id' => 'ch_c' ) ) ),
+				)
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'does not pay this order' ) );
+		$this->assertCount( 0, $this->get_order_notes_containing( $order, 'successfully charged' ) );
+		$this->assertSame( 'pi_a', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( '', $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( '', $order->get_transaction_id() );
+
+		$refund_event                           = RecordedPlatformEvents::body( 'platform-charge-dispute-events.json', 'card_charge_refunded_in_full' );
+		$charge                                 = &$refund_event['data']['object'];
+		$charge['id']                           = 'ch_c';
+		$charge['payment_intent']               = 'pi_c';
+		$charge['metadata']['order_id']         = (string) $order->get_id();
+		$charge['metadata']['order_key']        = $order->get_order_key();
+		$charge['amount']                       = 1099;
+		$charge['refunds']['data'][0]['charge'] = 'ch_c';
+		$charge['refunds']['data'][0]['amount'] = 500;
+		$charge['refunds']['data'][0]['status'] = 'succeeded';
+		unset( $charge );
+
+		$this->sut->process( $refund_event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertCount( 0, $order->get_refunds() );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'No refund was added to the order.' ) );
+	}
+
+	/**
+	 * @testdox A late payment_intent.payment_failed of a refused attempt stored on an order marked paid by hand, then put on hold, with no transaction ID, is recorded and does not fail the order.
+	 *
+	 * A failure never stands in for the empty transaction ID: it is no evidence that the stored intent paid the order. The
+	 * event is a Stripe PaymentIntent with its `last_payment_error.payment_method`
+	 * (https://docs.stripe.com/api/payment_intents/object#payment_intent_object-last_payment_error).
+	 */
+	public function test_late_failure_of_the_stored_attempt_on_an_order_without_transaction_id_is_recorded(): void {
+		$order = StoredPaymentRecords::authorization_without_transaction_id( 'pi_declined', 'requires_payment_method', OrderStatus::PENDING, '' );
+		$order->update_meta_data( '_payment_method_id', 'pm_declined' );
+		$order->set_status( OrderStatus::PROCESSING );
+		$order->set_date_paid( time() );
+		$order->save();
+		$order->set_status( OrderStatus::ON_HOLD );
+		$order->save();
+		$this->assertNotNull( $order->get_date_paid(), 'The order marked paid by hand keeps its paid date.' );
+
+		$this->sut->process(
+			$this->create_payment_intent_event(
+				'payment_intent.payment_failed',
+				$order,
+				array(
+					'id'                 => 'pi_declined',
+					'status'             => 'requires_payment_method',
+					'last_payment_error' => array(
+						'payment_method' => array(
+							'id'   => 'pm_declined',
+							'type' => 'card',
+						),
+					),
+				)
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( OrderStatus::ON_HOLD, $order->get_status() );
+		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ) );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'that does not pay this order failed' ) );
+		$this->assertCount( 0, $this->get_order_notes_containing( $order, '<strong>failed</strong>' ) );
+	}
+
+	/**
+	 * @testdox charge.expired on the stored charge of a paid order with no transaction ID is recorded as today and reads nothing from the platform.
+	 *
+	 * An expiry never stands in for the empty transaction ID: an own expiry reads the intent from the platform. The event's
+	 * `payment_intent` is the Stripe Charge field (https://docs.stripe.com/api/charges/object#charge_object-payment_intent).
+	 */
+	public function test_expired_stored_charge_on_an_order_without_transaction_id_is_recorded_without_a_platform_read(): void {
+		$order = StoredPaymentRecords::paid_without_transaction_id( OrderStatus::PROCESSING, 'pi_a', 'ch_a' );
+		$sut   = $this->create_charge_expired_ingestor( array( 'status' => 'canceled' ), $requested_intents );
+
+		$sut->process(
+			array(
+				'id'   => 'evt_stored_expired',
+				'type' => 'charge.expired',
+				'data' => array(
+					'object' => array(
+						'id'             => 'ch_a',
+						'payment_intent' => 'pi_a',
+					),
+				),
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( OrderStatus::PROCESSING, $order->get_status() );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( array(), $requested_intents );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'which does not pay this order, expired' ) );
+	}
+
+	/**
+	 * @testdox payment_intent.amount_capturable_updated for the stored intent of a Pending order with a paid date and no transaction ID is recorded and does not hold the order.
+	 *
+	 * An authorization never stands in for the empty transaction ID: it is no evidence that the stored intent paid the order.
+	 * The event is a Stripe PaymentIntent awaiting capture (https://docs.stripe.com/api/payment_intents/object#payment_intent_object-status).
+	 */
+	public function test_authorization_of_the_stored_intent_on_an_order_without_transaction_id_is_recorded(): void {
+		$order = StoredPaymentRecords::paid_without_transaction_id( OrderStatus::PROCESSING, 'pi_a', '' );
+		$order->set_status( OrderStatus::PENDING );
+		$order->save();
+		$this->assertNotNull( $order->get_date_paid(), 'The moved order keeps its paid date.' );
+
+		$this->sut->process(
+			$this->create_payment_intent_event(
+				'payment_intent.amount_capturable_updated',
+				$order,
+				array(
+					'id'      => 'pi_a',
+					'status'  => 'requires_capture',
+					'amount'  => 1099,
+					'charges' => array( 'data' => array( array( 'id' => 'ch_a' ) ) ),
+				)
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( OrderStatus::PENDING, $order->get_status() );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'that does not pay this order was authorized' ) );
+		$this->assertCount( 0, $this->get_order_notes_containing( $order, 'was <strong>authorized</strong>' ) );
+	}
+
+	/**
 	 * @testdox payment_intent.payment_failed for an intent another gateway's paid order never recorded adds one note and changes nothing else.
 	 */
 	public function test_failed_intent_on_another_charge_adds_one_note(): void {
@@ -6199,6 +6445,25 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 					),
 				),
 			),
+		);
+	}
+
+	/**
+	 * Build a payment_intent.succeeded event for the order's stored intent and charge.
+	 *
+	 * @param WC_Order $order         Order whose `_intent_id` and `_charge_id` the intent and its charge carry.
+	 * @param int      $intent_amount Intent amount in minor units.
+	 * @return array<string,mixed>
+	 */
+	private function create_stored_payment_success_event( WC_Order $order, int $intent_amount ): array {
+		return $this->create_payment_intent_event(
+			'payment_intent.succeeded',
+			$order,
+			array(
+				'id'      => (string) $order->get_meta( '_intent_id', true ),
+				'amount'  => $intent_amount,
+				'charges' => array( 'data' => array( array( 'id' => (string) $order->get_meta( '_charge_id', true ) ) ) ),
+			)
 		);
 	}
 
