@@ -9,14 +9,10 @@ import { reload as navigate } from '@woocommerce/utils/navigation';
 import { recordWooPaymentsUserEvent, getTracksIdentity } from '../tracks';
 import {
 	buildAjaxUrl,
-	claimWooPayRedirect,
-	deleteSkipWooPayCookie,
 	getTargetElement,
 	handleEmailInput,
 	initWooPay as initWooPayRequest,
 	isPreviewing,
-	shouldSkipWooPay,
-	validateEmail,
 } from './protocol';
 import { getWooPayRequestArgs } from './request';
 
@@ -24,15 +20,6 @@ import { getWooPayRequestArgs } from './request';
  * The WooPay email check on the Blocks checkout: the shared WooPay protocol (./protocol) with the Blocks checkout's
  * fields, notices and requests.
  */
-
-export {
-	claimWooPayRedirect,
-	deleteSkipWooPayCookie,
-	getTargetElement,
-	isPreviewing,
-	shouldSkipWooPay,
-	validateEmail,
-};
 
 /**
  * Fire the init_woopay request.

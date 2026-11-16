@@ -9,10 +9,9 @@ import { reload as navigate } from '@woocommerce/utils/navigation';
 import {
 	handleWooPayEmailInput,
 	initWooPay,
-	isPreviewing,
 	shouldHandleWooPayEmailInput,
-	shouldSkipWooPay,
 } from '../email-input-iframe';
+import { isPreviewing, shouldSkipWooPay } from '../protocol';
 import { postFromWooPay } from '../protocol/test/utils/post-from-woopay';
 
 jest.mock( '@woocommerce/utils/navigation', () => ( { reload: jest.fn() } ) );

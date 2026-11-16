@@ -20,11 +20,8 @@ export {
 	dispatchAppearanceEvent,
 	getCachedAppearance,
 	getFontRulesFromPage,
-	isAppearanceValid,
-	maybePersistWooPayAppearance,
 	normalizeAppearanceForStripe,
 	normalizeAppearanceValueForStripe,
-	resolveCurrentColor,
 	setCachedAppearance,
 };
 
