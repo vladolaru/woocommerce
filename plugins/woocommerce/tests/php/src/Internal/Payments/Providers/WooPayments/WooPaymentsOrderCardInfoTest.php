@@ -198,9 +198,9 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A failed fetch is remembered for the request: rendering the order again (the second Failed order email) makes no fetch and no log line.
+	 * @testdox A failed fetch is remembered for the order: rendering it again (the second Failed order email) makes no fetch and no log line.
 	 */
-	public function test_a_failed_fetch_is_not_repeated_for_the_same_payment_method_in_the_request(): void {
+	public function test_a_failed_fetch_is_not_repeated_for_the_same_order_and_payment_method(): void {
 		$client = $this->create_payment_method_client_failing_for( array( 'pm_platform' ) );
 		$this->register_card_info_service( $client );
 		$logger   = RecordingWcLogger::install();
@@ -218,14 +218,33 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A failed fetch for one payment method does not stop the fetch for another one in the same request.
+	 * @testdox A failed fetch for one order does not hide the card on another order with the same payment method, as when a long-running process renders both.
 	 */
-	public function test_a_failed_fetch_does_not_stop_a_fetch_for_another_payment_method(): void {
-		$client = $this->create_payment_method_client_failing_for( array( 'pm_platform' ) );
+	public function test_a_failed_fetch_does_not_stop_a_fetch_for_another_order_with_the_same_payment_method(): void {
+		$client = $this->create_payment_method_client_failing_for( array( 'pm_shared' ), 1 );
 		$this->register_card_info_service( $client );
 
-		PaymentInfo::get_card_info( $this->create_card_info_order( 'pm_platform' ) );
-		$info = PaymentInfo::get_card_info( $this->create_card_info_order( 'pm_merchant' ) );
+		$first  = PaymentInfo::get_card_info( $this->create_card_info_order( 'pm_shared' ) );
+		$second = PaymentInfo::get_card_info( $this->create_card_info_order( 'pm_shared' ) );
+
+		$this->assertSame( array( 'pm_shared', 'pm_shared' ), $client->requested_ids );
+		$this->assertSame( '', $first['last4'] );
+		$this->assertSame( 'visa', $second['brand'] );
+		$this->assertSame( '4242', $second['last4'] );
+	}
+
+	/**
+	 * @testdox A failed fetch for an order's payment method does not stop the fetch for another payment method on the same order.
+	 */
+	public function test_a_failed_fetch_does_not_stop_a_fetch_for_another_payment_method_on_the_order(): void {
+		$client = $this->create_payment_method_client_failing_for( array( 'pm_platform' ) );
+		$this->register_card_info_service( $client );
+		$order = $this->create_card_info_order( 'pm_platform' );
+		PaymentInfo::get_card_info( $order );
+		$order->update_meta_data( '_payment_method_id', 'pm_merchant' );
+		$order->save();
+
+		$info = PaymentInfo::get_card_info( wc_get_order( $order->get_id() ) );
 
 		$this->assertSame( array( 'pm_platform', 'pm_merchant' ), $client->requested_ids );
 		$this->assertSame( 'visa', $info['brand'] );
@@ -233,13 +252,31 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Stored details are read before the failed fetch is remembered, so an order with them still shows its card.
+	 * @testdox A failed fetch for an order with no ID is not remembered: rendering it again fetches again.
 	 */
-	public function test_stored_details_are_read_for_a_payment_method_whose_fetch_failed(): void {
+	public function test_a_failed_fetch_for_an_order_with_no_id_is_not_remembered(): void {
+		$client = $this->create_payment_method_client_failing_for( array( 'pm_unsaved' ) );
+		$this->register_card_info_service( $client );
+		$order = new WC_Order();
+		$order->set_payment_method( 'woocommerce_payments' );
+		$order->update_meta_data( '_payment_method_id', 'pm_unsaved' );
+
+		PaymentInfo::get_card_info( $order );
+		$info = PaymentInfo::get_card_info( $order );
+
+		$this->assertSame( 0, $order->get_id() );
+		$this->assertSame( array( 'pm_unsaved', 'pm_unsaved' ), $client->requested_ids );
+		$this->assertSame( '', $info['last4'] );
+	}
+
+	/**
+	 * @testdox Stored details are read before the failed fetch is remembered, so the order still shows its card once they are stored.
+	 */
+	public function test_stored_details_are_read_for_an_order_whose_fetch_failed(): void {
 		$client = $this->create_payment_method_client_failing_for( array( 'pm_platform' ) );
 		$this->register_card_info_service( $client );
-		PaymentInfo::get_card_info( $this->create_card_info_order( 'pm_platform' ) );
 		$order = $this->create_card_info_order( 'pm_platform' );
+		PaymentInfo::get_card_info( $order );
 		$order->update_meta_data(
 			'_wcpay_payment_method_details',
 			wp_json_encode(
@@ -254,7 +291,7 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 		);
 		$order->save();
 
-		$info = PaymentInfo::get_card_info( $order );
+		$info = PaymentInfo::get_card_info( wc_get_order( $order->get_id() ) );
 
 		$this->assertSame( 'mastercard', $info['brand'] );
 		$this->assertSame( '4444', $info['last4'] );
@@ -352,17 +389,25 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 	 * Build an API client double that records the payment methods it is asked for, fails for the listed ones as the
 	 * platform does for a payment method another account owns, and returns a Visa card for the others.
 	 *
-	 * @param string[] $failing_ids Payment method IDs the platform cannot read.
+	 * @param string[] $failing_ids   Payment method IDs the platform cannot read.
+	 * @param int      $failures_left How many fetches of the listed IDs fail before the platform answers them.
 	 * @return Client
 	 */
-	private function create_payment_method_client_failing_for( array $failing_ids ): Client {
-		return new class( $failing_ids ) extends Client {
+	private function create_payment_method_client_failing_for( array $failing_ids, int $failures_left = PHP_INT_MAX ): Client {
+		return new class( $failing_ids, $failures_left ) extends Client {
 			/**
 			 * Payment method IDs the platform cannot read.
 			 *
 			 * @var string[]
 			 */
 			private array $failing_ids;
+
+			/**
+			 * How many more fetches of the listed IDs fail.
+			 *
+			 * @var int
+			 */
+			private int $failures_left;
 
 			/**
 			 * Payment method IDs the test double was asked for.
@@ -374,10 +419,12 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 			/**
 			 * Constructor.
 			 *
-			 * @param string[] $failing_ids Payment method IDs the platform cannot read.
+			 * @param string[] $failing_ids   Payment method IDs the platform cannot read.
+			 * @param int      $failures_left How many fetches of the listed IDs fail.
 			 */
-			public function __construct( array $failing_ids ) {
-				$this->failing_ids = $failing_ids;
+			public function __construct( array $failing_ids, int $failures_left ) {
+				$this->failing_ids   = $failing_ids;
+				$this->failures_left = $failures_left;
 			}
 
 			/**
@@ -389,7 +436,8 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 			 */
 			public function get_payment_method( string $payment_method_id ): array {
 				$this->requested_ids[] = $payment_method_id;
-				if ( in_array( $payment_method_id, $this->failing_ids, true ) ) {
+				if ( in_array( $payment_method_id, $this->failing_ids, true ) && $this->failures_left > 0 ) {
+					--$this->failures_left;
 					throw new ApiException( 'No such PaymentMethod', 'resource_missing', 400 );
 				}
 
