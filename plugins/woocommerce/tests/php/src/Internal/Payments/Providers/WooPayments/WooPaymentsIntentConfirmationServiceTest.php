@@ -332,7 +332,8 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( self::RECORDED_INTENT, $lines[0]['intent_id'] ?? null );
 		$this->assertSame( OrderStatus::PROCESSING, $lines[0]['order_status'] ?? null );
 		$this->assertSame( 'callback' === $entry ? 'order-status callback' : 'redirect return', $lines[0]['entry_point'] ?? null );
-		$this->assertStringNotContainsString( 'bank ref 1', implode( ' ', array_column( $logger->lines, 1 ) ), 'The typed value is not logged.' );
+		$this->assertStringNotContainsString( 'bank ref 1', implode( ' ', array_column( $logger->lines, 1 ) ), 'The typed value is not in a logged message.' );
+		$this->assertStringNotContainsString( 'bank ref 1', (string) wp_json_encode( $logger->contexts ), 'The typed value is not in a logged context.' );
 
 		wc_get_container()->get( PaymentIntentEventHandler::class )->process( 'payment_intent.succeeded', $intent );
 
