@@ -227,6 +227,31 @@ class WooPaymentsIntentConfirmationService {
 	}
 
 	/**
+	 * Log, whatever the logging setting, a confirmation that left an intent to its webhook on an order already in a paid
+	 * status or On hold that does not record that intent in that status.
+	 *
+	 * @param WC_Order $order       Order read under the order payment lock.
+	 * @param string   $intent_id   The confirmed intent.
+	 * @param string   $entry_point `order-status callback` or `redirect return`.
+	 */
+	private function log_payment_left_to_the_webhook( WC_Order $order, string $intent_id, string $entry_point ): void {
+		$printed_intent = WooPaymentsLogger::get_loggable_provider_id( $intent_id );
+		$stored_status  = (string) $order->get_meta( '_intention_status', true );
+		wc_get_container()->get( WooPaymentsLogger::class )->log_always(
+			sprintf( '%1$s left payment %2$s to its webhook: order #%3$d is %4$s, and its stored intent status is "%5$s".', $entry_point, $printed_intent, $order->get_id(), $order->get_status(), $stored_status ),
+			'warning',
+			array(
+				'order_id'             => $order->get_id(),
+				'intent_id'            => $printed_intent,
+				'stored_intent_status' => $stored_status,
+				'order_status'         => $order->get_status(),
+				'entry_point'          => $entry_point,
+				'reason'               => 'callback_refused_on_paid_order',
+			)
+		);
+	}
+
+	/**
 	 * Note on the order that the order-status callback ignored an intent ID that is not the order's payment.
 	 *
 	 * The wording is the client's for `intent_id_mismatch` and `empty_intent_id` (client 11.3.0 gw:4795-4811).
@@ -303,14 +328,29 @@ class WooPaymentsIntentConfirmationService {
 		// attaches, titles the order and then updates it (class-wc-payment-gateway-wcpay.php:2700, :2705-2707; :4663,
 		// :4713-4715, :4758-4764, :4771; class-wc-payments-order-service.php:484-489). A started payment the order no longer
 		// waits for is nothing to apply. Nothing is written on an order whose payment method became another gateway's, read
-		// under the lock or, when another operation holds it, read fresh. The account the build reads is settled before the claim.
+		// under the lock or, when another operation holds it, read fresh, and only the display details on one already in a
+		// paid status or On hold when the intent would be attached. The account the build reads is settled before the claim.
 		$attaches_intent = $is_redirect_return || ! $this->is_setup_intent_for_order( $intent, $order );
 		$displayed       = false;
 		$refusing_order  = null;
 		list( $event )   = $this->build_lifecycle_event_from_intent( $intent, $order, $zero_amount_plain_note );
-		$build           = function ( WC_Order $stored_order ) use ( $intent, $is_redirect_return, $zero_amount_plain_note, $attaches_intent, $setup_payment_details, &$displayed, &$refusing_order ): array {
+		$build           = function ( WC_Order $stored_order ) use ( $intent, $status, $is_redirect_return, $zero_amount_plain_note, $attaches_intent, $setup_payment_details, &$displayed, &$refusing_order ): array {
 			if ( $this->is_order_of_another_payment_method( $stored_order ) ) {
 				$refusing_order = $stored_order;
+				return array( null, null );
+			}
+			// An order already in a paid status or On hold is the redirect return's case for leaving the payment to its webhook
+			// (WooPaymentsRedirectReturnController); asked here under the claim, so the attach cannot replace a transaction ID the
+			// merchant wrote. Only the card's display details are written. A setup intent the callback confirms is not attached and
+			// has no webhook, so it goes on as before. Client 11.3.0 attaches and records the fee whatever the order's status
+			// (class-wc-payment-gateway-wcpay.php:4663, :4771).
+			if ( $attaches_intent && $stored_order->has_status( array( OrderStatus::PROCESSING, OrderStatus::COMPLETED, OrderStatus::ON_HOLD ) ) ) {
+				$this->apply_display_details( $stored_order, $intent, $setup_payment_details );
+				$displayed = true;
+				// An order that already records this intent in this status, such as one its webhook recorded first, logs nothing.
+				if ( (string) $stored_order->get_meta( '_intent_id', true ) !== (string) ( $intent['id'] ?? '' ) || (string) $stored_order->get_meta( '_intention_status', true ) !== $status ) {
+					$this->log_payment_left_to_the_webhook( $stored_order, (string) ( $intent['id'] ?? '' ), $is_redirect_return ? 'redirect return' : 'order-status callback' );
+				}
 				return array( null, null );
 			}
 			if ( $attaches_intent ) {

@@ -936,12 +936,13 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Order-status callback for a payment already recorded as succeeded keeps its record and writes the fee, net and exchange rate the intent now carries, zero included.
+	 * @testdox Order-status callback for a payment already recorded as succeeded on an order in a paid status keeps its record and leaves the fee, net and exchange rate to the webhook.
 	 *
 	 * Client 11.3.0's attach writes nothing once the stored intent status is succeeded (class-wc-payments-order-service.php:1820),
 	 * while the exchange rate and the fee and net are written beside it whatever that status (class-wc-payment-gateway-wcpay.php:4662, :4664).
+	 * The built-in callback attaches nothing on an order already in a paid status or On hold: its webhook records the payment.
 	 */
-	public function test_update_order_status_records_the_fee_of_a_payment_already_recorded(): void {
+	public function test_update_order_status_leaves_the_fee_of_a_paid_order_to_the_webhook(): void {
 		update_option( 'woocommerce_currency', 'USD' );
 		$order = $this->create_woopayments_order( '40.00' );
 		$order->set_currency( 'GBP' );
@@ -1002,9 +1003,9 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pi_settled', $order->get_transaction_id() );
 		$this->assertSame( 'cus_stored', $order->get_meta( '_stripe_customer_id', true ), "The payment's record is kept." );
 		$this->assertFalse( $order->meta_exists( '_charge_id' ), "The payment's record is kept." );
-		$this->assertSame( '0', $order->get_meta( '_wcpay_transaction_fee', true ), 'A zero fee is recorded.' );
-		$this->assertSame( '40', $order->get_meta( '_wcpay_net', true ) );
-		$this->assertSame( '1.33127', $order->get_meta( '_wcpay_multi_currency_stripe_exchange_rate', true ) );
+		$this->assertFalse( $order->meta_exists( '_wcpay_transaction_fee' ) );
+		$this->assertFalse( $order->meta_exists( '_wcpay_net' ) );
+		$this->assertFalse( $order->meta_exists( '_wcpay_multi_currency_stripe_exchange_rate' ) );
 	}
 
 	/**
@@ -1519,11 +1520,13 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Order-status callback answers with the return URL, records the intent and leaves an order already in a paid status as it is: $status, paid while the intent is fetched: $paid_while_fetching, $intent_status.
+	 * @testdox Order-status callback answers with the return URL and leaves an order already in a paid status as it is, recording the intent only on a paid status outside Processing and Completed: $status, paid while the intent is fetched: $paid_while_fetching, $intent_status.
 	 *
 	 * Client 11.3.0 attaches the intent to the order (class-wc-payment-gateway-wcpay.php:4663, class-wc-payments-order-service.php:1818-1884),
 	 * then updates the order from it only while it is not paid (class-wc-payment-gateway-wcpay.php:4771,
 	 * class-wc-payments-order-service.php:475, :3398-3410), then answers with the return URL (class-wc-payment-gateway-wcpay.php:4779-4790).
+	 * The built-in callback attaches nothing on a Processing, Completed or On hold order, the statuses the redirect return
+	 * leaves to the webhook; a paid status a plugin adds is not one of them.
 	 *
 	 * @testWith ["processing", false, "succeeded"]
 	 *           ["completed", false, "succeeded"]
@@ -1580,19 +1583,21 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( $status, $order->get_status() );
 		$this->assertSame( $completions, did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_payment_complete_order_status_' . $status ), 'No completion hook fires.' );
 		$this->assertSame( $holds, did_action( 'woocommerce_order_status_on-hold' ), 'The order is not held.' );
-		$this->assertSame( $intent_status, $order->get_meta( '_intention_status', true ), 'The intent is recorded with the status it reports.' );
+		$attaches = 'shipped' === $status;
+		$this->assertSame( $attaches ? $intent_status : ( 'requires_capture' === $intent_status ? 'requires_action' : '' ), $order->get_meta( '_intention_status', true ), 'The intent is recorded only where the callback attaches.' );
 		$this->assertSame( 'pi_paid', $order->get_transaction_id() );
-		$this->assertSame( 'pm_paid', $order->get_meta( '_payment_method_id', true ) );
-		$this->assertSame( 'cus_paid', $order->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( $attaches ? 'pm_paid' : '', $order->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( $attaches ? 'cus_paid' : '', $order->get_meta( '_stripe_customer_id', true ) );
 		$this->assertCount( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 	}
 
 	/**
-	 * @testdox Order-status callback records the intent whatever its status, and leaves a paid order's status, notes and hooks as they are: $intent_status, paid: $paid.
+	 * @testdox Order-status callback records the intent whatever its status on an unpaid order, and leaves a Processing order's record, status, notes and hooks as they are: $intent_status, paid: $paid.
 	 *
 	 * Client 11.3.0 attaches a PaymentIntent to the order whatever its status (class-wc-payment-gateway-wcpay.php:4663,
 	 * class-wc-payments-order-service.php:1818-1884), then updates the order from it only while it is not paid (:4771,
-	 * class-wc-payments-order-service.php:475, :3398-3410). The order started an authentication before the callback.
+	 * class-wc-payments-order-service.php:475, :3398-3410). The built-in callback attaches nothing on a Processing order:
+	 * its webhook records the payment. The order started an authentication before the callback.
 	 *
 	 * @dataProvider provider_callback_intent_statuses
 	 *
@@ -1635,14 +1640,13 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		);
 
 		$order = wc_get_order( $order->get_id() );
-		$this->assertSame( $intent_status, $order->get_meta( '_intention_status', true ), 'The intent is recorded with the status it reports.' );
-		$this->assertSame( 'pi_status', $order->get_transaction_id() );
-		$this->assertSame( 'ch_status', $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( $paid ? 'requires_action' : $intent_status, $order->get_meta( '_intention_status', true ), 'The intent is recorded with the status it reports, on an unpaid order.' );
+		$this->assertSame( $paid ? '' : 'pi_status', $order->get_transaction_id() );
+		$this->assertSame( $paid ? '' : 'ch_status', $order->get_meta( '_charge_id', true ) );
 		if ( $paid ) {
 			$this->assertSame( OrderStatus::PROCESSING, $order->get_status() );
 			$this->assertSame( $hooks, did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_order_status_on-hold' ) + did_action( 'woocommerce_order_status_failed' ) + did_action( 'woocommerce_order_status_cancelled' ), 'No completion or status hook fires.' );
-			// A released authorization on a paid order gets the payment lifecycle's own release note.
-			$this->assertCount( $notes + ( 'canceled' === $intent_status ? 1 : 0 ), wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+			$this->assertCount( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 		}
 	}
 
@@ -1680,12 +1684,12 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Order-status callback reading a started payment writes no started note or started meta on an order that is not Pending, and still attaches the intent: $_dataName.
+	 * @testdox Order-status callback reading a started payment writes no started note or started meta on an order that is not Pending, and attaches the intent except on a Processing or On hold order: $_dataName.
 	 *
 	 * Client 11.3.0 attaches the intent (class-wc-payment-gateway-wcpay.php:4663, class-wc-payments-order-service.php:1818-1884),
 	 * then its started writer returns unless the order is Pending, before its fraud box, note and intent status writes
-	 * (class-wc-payments-order-service.php:2229-2241). The order has that status before the request, or gets it while the
-	 * intent is read.
+	 * (class-wc-payments-order-service.php:2229-2241). The built-in callback attaches nothing on a Processing, Completed
+	 * or On hold order. The order has that status before the request, or gets it while the intent is read.
 	 *
 	 * @dataProvider provider_orders_a_started_payment_is_not_written_on
 	 *
@@ -1742,20 +1746,24 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ), "The settled record's status is kept." );
 			$this->assertSame( 'cus_settled', $order->get_meta( '_stripe_customer_id', true ) );
 			$this->assertSame( 'txn_settled', $order->get_meta( '_wcpay_payment_transaction_id', true ) );
+		} elseif ( in_array( $status, array( OrderStatus::PROCESSING, OrderStatus::ON_HOLD ), true ) ) {
+			$this->assertSame( '', $order->get_meta( '_intention_status', true ), 'Nothing is attached.' );
+			$this->assertSame( '', $order->get_meta( '_stripe_customer_id', true ) );
 		} else {
 			$this->assertSame( 'requires_action', $order->get_meta( '_intention_status', true ), 'The intent is attached.' );
 			$this->assertSame( 'cus_started', $order->get_meta( '_stripe_customer_id', true ) );
 		}
-		$this->assertSame( 'pi_started', $order->get_transaction_id() );
+		$this->assertSame( $settled_record || ! in_array( $status, array( OrderStatus::PROCESSING, OrderStatus::ON_HOLD ), true ) ? 'pi_started' : '', $order->get_transaction_id() );
 	}
 
 	/**
-	 * @testdox Order-status callback reading a started payment, while another payment's settled record with its own transaction ID reaches an order that had none, keeps that record and saves nothing after the attach.
+	 * @testdox Order-status callback reading a started payment, while another payment's settled record with its own transaction ID makes the order Processing, keeps that record and saves nothing.
 	 *
 	 * Client 11.3.0's attach writes nothing over a succeeded intent status (class-wc-payments-order-service.php:1820-1822),
-	 * and its started writer returns on an order that is not Pending (:2229-2233).
+	 * and its started writer returns on an order that is not Pending (:2229-2233). The built-in callback attaches nothing on
+	 * the Processing order it reads under the claim, and a started payment carries no display details.
 	 */
-	public function test_update_order_status_keeps_a_record_settled_during_the_fetch_and_saves_only_the_attach(): void {
+	public function test_update_order_status_keeps_a_record_settled_during_the_fetch_and_saves_nothing(): void {
 		// HPOS saves an order again after a meta write in a later second than its last save, to update its modified date
 		// (OrdersTableDataStore::after_meta_change()). That save carries no status, payment or note change, so it is not counted.
 		add_filter( 'woocommerce_orders_table_datastore_should_save_after_meta_change', '__return_false' );
@@ -1802,7 +1810,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
 		$this->assertSame( 'txn_other_settled', $order->get_meta( '_wcpay_payment_transaction_id', true ) );
 		$this->assertSame( OrderStatus::PROCESSING, $order->get_status() );
-		$this->assertSame( 1, $saves, 'Only the attach saves the order.' );
+		$this->assertSame( 0, $saves, 'Nothing saves the order.' );
 	}
 
 	/**
@@ -1939,12 +1947,13 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Order-status callback reading a PaymentIntent records its payment method when another payment's settled record reaches the order during the fetch, the attach keeps that record and the event changes nothing.
+	 * @testdox Order-status callback reading a PaymentIntent, when another payment's settled record makes the order Processing during the fetch, keeps that record and its payment method.
 	 *
 	 * Client 11.3.0's callback writes the intent's payment method after its attach, whatever that attach and the status
 	 * update write (class-wc-payment-gateway-wcpay.php:4663, :4708-4715; class-wc-payments-order-service.php:1820-1822, :475).
+	 * The built-in callback attaches and saves nothing on the Processing order it reads under the claim.
 	 */
-	public function test_update_order_status_records_the_payment_intent_payment_method_over_a_guarded_attach(): void {
+	public function test_update_order_status_keeps_a_settled_record_on_an_order_paid_during_the_fetch(): void {
 		$order = $this->create_order_for_intent_binding( 'payment' );
 		$order->update_meta_data( '_intent_id', 'pi_confirmed' );
 		$order->save();
@@ -1977,7 +1986,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertSame( OrderStatus::PROCESSING, $order->get_status() );
-		$this->assertSame( 'pm_confirmed', $order->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( 'pm_settled', $order->get_meta( '_payment_method_id', true ) );
 		$this->assertSame( 'pi_other_settled', $order->get_transaction_id(), "The attach keeps the settled record's transaction ID." );
 		$this->assertSame( 'cus_settled', $order->get_meta( '_stripe_customer_id', true ), "The attach keeps the settled record's customer." );
 	}

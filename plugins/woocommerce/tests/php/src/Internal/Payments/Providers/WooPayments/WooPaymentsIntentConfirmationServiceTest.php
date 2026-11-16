@@ -22,6 +22,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
+use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\StoredPaymentRecords;
 use WC_Order;
@@ -31,6 +32,8 @@ use WC_Unit_Test_Case;
  * Tests for the WooPaymentsIntentConfirmationService class.
  */
 class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
+
+	use OrderPaymentLockTestTrait;
 
 	/**
 	 * @testdox Confirming an intent for an order fetches it once and saves its intent and payment method IDs on the order.
@@ -233,6 +236,211 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 				'normal',
 			),
 		);
+	}
+
+	/**
+	 * @testdox The order-status callback on an order $_dataName attaches nothing and applies no event, writes the card's display details once under the claim, saves the card, and logs only when the order does not already record the intent in its status.
+	 *
+	 * The callback leaves the payment to its webhook, as the redirect return does on these statuses
+	 * (WooPaymentsRedirectReturnController). Client 11.3.0's callback attaches whatever the order's status
+	 * (class-wc-payment-gateway-wcpay.php:4663, :4771). The intent is REC-3DS-2's completed challenge
+	 * (`Fixtures/platform-3ds-challenge-results.json`, pair `classic_checkout_challenge_completed`).
+	 *
+	 * @dataProvider orders_the_callback_leaves_to_the_webhook
+	 *
+	 * @param string $status         Order status when the callback arrives.
+	 * @param string $transaction_id Transaction ID the order stores: the intent's, a merchant's reference, or another one.
+	 * @param string $stored_status  Stored intent status.
+	 * @param string $stored_charge  Stored charge.
+	 * @param bool   $logs           Whether the refusal is logged.
+	 * @param string $intent_status  The confirmed intent's status: the recorded payment's, or an authorization's.
+	 */
+	public function test_callback_leaves_an_order_in_a_paid_status_or_on_hold_to_the_webhook( string $status, string $transaction_id, string $stored_status, string $stored_charge, bool $logs, string $intent_status = 'succeeded' ): void {
+		$intent           = $this->load_recorded_manual_3ds_entry( 'classic_checkout_challenge_completed' )['body'];
+		$intent['status'] = $intent_status;
+		$order            = StoredPaymentRecords::paid_by_hand_over_an_open_attempt( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'intent' === $transaction_id ? (string) $intent['id'] : $transaction_id, (string) $intent['id'] );
+		$order->set_customer_id( self::factory()->user->create() );
+		$order->set_status( $status );
+		$order->update_meta_data( '_intention_status', $stored_status );
+		$order->update_meta_data( '_charge_id', $stored_charge );
+		$order->save();
+		$stored_txn      = $order->get_transaction_id();
+		$displays        = array();
+		$account_service = $this->create_account_service( false );
+		$token_service   = $this->create_token_service_with_saved_token_and_subscription( $this->create_woopayments_order( '10.99' ) );
+		$sut             = $this->create_intent_confirmation_service( wc_get_container()->get( Client::class ), $token_service, $account_service );
+		$this->replace_effect_applier(
+			$sut,
+			$account_service,
+			$token_service,
+			function ( WC_Order $displayed_order ) use ( &$displays, $intent ): void {
+				$displays[] = $this->is_order_payment_lock_held_for( $displayed_order, new WooPaymentsPersistenceVocabulary(), (string) $intent['id'] );
+			}
+		);
+		$logger     = RecordingWcLogger::install();
+		$notes      = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$completion = did_action( 'woocommerce_pre_payment_complete' );
+
+		$sut->confirm_fetched_intent_for_order( $order, $intent, true );
+
+		$reloaded = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( $status, $reloaded->get_status() );
+		$this->assertSame( $stored_txn, $reloaded->get_transaction_id(), 'Nothing is attached.' );
+		$this->assertSame( $stored_status, $reloaded->get_meta( '_intention_status', true ) );
+		$this->assertSame( $stored_charge, $reloaded->get_meta( '_charge_id', true ) );
+		$this->assertSame( $completion, did_action( 'woocommerce_pre_payment_complete' ), 'No event is applied.' );
+		$this->assertCount( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertFalse( as_has_scheduled_action( WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION ) );
+		$this->assertSame( array( true ), $displays, 'The display details are written once, under the claim.' );
+		$this->assertSame( '3220', $reloaded->get_meta( 'last4', true ) );
+		$this->assertNotSame( '', $reloaded->get_meta( '_card_brand', true ) );
+		$this->assertCount( 1, $reloaded->get_payment_tokens(), 'The card is saved and attached.' );
+		$lines = array_values( array_filter( $logger->contexts, static fn( array $context ): bool => 'callback_refused_on_paid_order' === ( $context['reason'] ?? '' ) ) );
+		$this->assertCount( $logs ? 1 : 0, $lines );
+		if ( $logs ) {
+			$this->assertSame( $order->get_id(), $lines[0]['order_id'] ?? null );
+			$this->assertSame( $intent['id'], $lines[0]['intent_id'] ?? null );
+			$this->assertSame( $stored_status, $lines[0]['stored_intent_status'] ?? null );
+			$this->assertSame( $status, $lines[0]['order_status'] ?? null );
+			$this->assertSame( 'order-status callback', $lines[0]['entry_point'] ?? null );
+		}
+	}
+
+	/**
+	 * Orders the callback leaves to the webhook: hand-marked over the open attempt, and the ordinary order the webhook paid first.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string,3:string,4:bool,5?:string}>
+	 */
+	public function orders_the_callback_leaves_to_the_webhook(): array {
+		return array(
+			'Processing, marked paid by hand'            => array( OrderStatus::PROCESSING, 'intent', 'requires_action', '', true ),
+			'Completed, marked by hand'                  => array( OrderStatus::COMPLETED, 'intent', 'requires_action', '', true ),
+			'On hold, set by hand'                       => array( OrderStatus::ON_HOLD, 'intent', 'requires_action', '', true ),
+			"Processing, the merchant's reference typed" => array( OrderStatus::PROCESSING, 'bank ref 7', 'requires_action', '', true ),
+			'Processing, an empty transaction ID'        => array( OrderStatus::PROCESSING, '', 'requires_action', '', true ),
+			'Processing, paid first by its webhook'      => array( OrderStatus::PROCESSING, 'intent', 'succeeded', 'ch_3UJjK4BzWlxcwgpP0EgZv2kl', false ),
+			'On hold, authorized first by its webhook (manual capture)' => array( OrderStatus::ON_HOLD, 'intent', 'requires_capture', 'ch_3UJjK4BzWlxcwgpP0EgZv2kl', false, 'requires_capture' ),
+		);
+	}
+
+	/**
+	 * @testdox The order-status callback confirming a $0 order's setup intent on an order $_dataName goes on as before: it saves the payment method and applies the event, with no refusal line.
+	 *
+	 * A setup intent has no webhook, so on a $0 order the callback is the only writer; the refusal covers only an intent the
+	 * callback attaches. Client 11.3.0 records the setup intent's payment method whatever it then does
+	 * (class-wc-payment-gateway-wcpay.php:4708-4715) and completes the order only while it is not paid (:4665-4700).
+	 *
+	 * @dataProvider orders_a_setup_intent_callback_meets
+	 *
+	 * @param string $status    Order status when the callback arrives.
+	 * @param bool   $completes Whether the event completes the order.
+	 */
+	public function test_callback_confirming_a_setup_intent_is_not_left_to_a_webhook( string $status, bool $completes ): void {
+		$order = $this->create_woopayments_order( '0.00' );
+		$order->update_meta_data( '_intent_id', 'seti_held' );
+		$order->set_status( $status );
+		$order->save();
+		$intent      = array(
+			'id'             => 'seti_held',
+			'object'         => 'setup_intent',
+			'status'         => 'succeeded',
+			'customer'       => 'cus_held',
+			'payment_method' => 'pm_held',
+			'metadata'       => array( 'order_id' => (string) $order->get_id() ),
+		);
+		$logger      = RecordingWcLogger::install();
+		$completions = did_action( 'woocommerce_pre_payment_complete' );
+
+		$this->create_intent_confirmation_service( wc_get_container()->get( Client::class ), null, $this->create_account_service( false ) )
+			->confirm_fetched_intent_for_order( $order, $intent, false, false, true );
+
+		$reloaded = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'pm_held', $reloaded->get_meta( '_payment_method_id', true ), 'The payment method is saved.' );
+		$this->assertSame( $completes ? 1 : 0, did_action( 'woocommerce_pre_payment_complete' ) - $completions );
+		$this->assertTrue( $reloaded->has_status( wc_get_is_paid_statuses() ), 'The order ends in a paid status.' );
+		$this->assertCount( 0, array_filter( $logger->contexts, static fn( array $context ): bool => 'callback_refused_on_paid_order' === ( $context['reason'] ?? '' ) ) );
+	}
+
+	/**
+	 * Orders a $0 setup intent's callback meets in the three statuses, with whether its event completes the order.
+	 *
+	 * @return array<string,array{string,bool}>
+	 */
+	public function orders_a_setup_intent_callback_meets(): array {
+		return array(
+			'On hold, set while the challenge was open' => array( OrderStatus::ON_HOLD, true ),
+			'Processing'                                => array( OrderStatus::PROCESSING, false ),
+			'Completed'                                 => array( OrderStatus::COMPLETED, false ),
+		);
+	}
+
+	/**
+	 * @testdox The order-status callback on a Pending order still attaches the intent and completes the order.
+	 */
+	public function test_callback_on_a_pending_order_attaches_and_applies(): void {
+		$intent = $this->load_recorded_manual_3ds_entry( 'classic_checkout_challenge_completed' )['body'];
+		$order  = $this->create_woopayments_order( '10.99' );
+		$order->set_transaction_id( (string) $intent['id'] );
+		$order->update_meta_data( '_intent_id', (string) $intent['id'] );
+		$order->update_meta_data( '_intention_status', 'requires_action' );
+		$order->save();
+		$logger = RecordingWcLogger::install();
+
+		$this->create_intent_confirmation_service( wc_get_container()->get( Client::class ), null, $this->create_account_service( false ) )
+			->confirm_fetched_intent_for_order( $order, $intent, false );
+
+		$reloaded = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertTrue( $reloaded->is_paid() );
+		$this->assertSame( 'succeeded', $reloaded->get_meta( '_intention_status', true ) );
+		$this->assertSame( 'ch_3UJjK4BzWlxcwgpP0EgZv2kl', $reloaded->get_meta( '_charge_id', true ) );
+		$this->assertSame( '3220', $reloaded->get_meta( 'last4', true ) );
+		$this->assertCount( 1, array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $note ): bool => false !== strpos( $note, 'successfully charged' ) ) );
+		$this->assertCount( 0, array_filter( $logger->contexts, static fn( array $context ): bool => 'callback_refused_on_paid_order' === ( $context['reason'] ?? '' ) ) );
+	}
+
+	/**
+	 * Give the service an effect applier that reports each display details write.
+	 *
+	 * @param WooPaymentsIntentConfirmationService $sut             Service under test.
+	 * @param WooPaymentsAccountService            $account_service Account service.
+	 * @param WooPaymentsTokenService              $token_service   Token service.
+	 * @param callable                             $on_display      Gets the order each display write is for.
+	 */
+	private function replace_effect_applier( WooPaymentsIntentConfirmationService $sut, WooPaymentsAccountService $account_service, WooPaymentsTokenService $token_service, callable $on_display ): void {
+		$effect_applier             = new class() extends WooPaymentsOrderEffectApplier {
+			/**
+			 * Gets the order each display write is for.
+			 *
+			 * @var callable|null
+			 */
+			public $on_display = null;
+
+			/**
+			 * Report the write, then write.
+			 *
+			 * @param WC_Order            $order           Order being updated.
+			 * @param array<string,mixed> $result          Intent response.
+			 * @param string              $account_country Account country.
+			 */
+			public function apply_payment_method_display_details( WC_Order $order, array $result, string $account_country = '' ): void {
+				( $this->on_display )( $order );
+				parent::apply_payment_method_display_details( $order, $result, $account_country );
+			}
+		};
+		$effect_applier->on_display = $on_display;
+		$effect_applier->init(
+			$token_service,
+			new WooPaymentsOrderDataService(),
+			$account_service,
+			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
+			new PaymentMethodRegistry(),
+			wc_get_container()->get( WooPaymentsActionSchedulerService::class ),
+			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService::class )
+		);
+		$sut->init( wc_get_container()->get( Client::class ), wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class ), $token_service, $account_service, $effect_applier );
 	}
 
 	/**
