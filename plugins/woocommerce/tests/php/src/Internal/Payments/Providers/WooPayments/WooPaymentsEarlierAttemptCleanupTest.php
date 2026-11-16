@@ -411,6 +411,35 @@ class WooPaymentsEarlierAttemptCleanupTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox When the earlier attempt became paid after the hook's object was loaded, the stored values under the lock keep it whole with no read: nothing removed, listed or left for shutdown, and the change is logged.
+	 *
+	 * The route's object still stores requires_action, so no read is made; the attempt's success, applied under its own
+	 * claim before the cleanup's, stored succeeded and its transaction ID. Client 11.3.0 keeps an order whose stored status
+	 * is paid (class-wc-payments-order-service.php:1284-1288).
+	 */
+	public function test_payment_that_became_paid_before_the_claim_is_kept(): void {
+		$logger = RecordingWcLogger::install();
+		$order  = StoredPaymentRecords::attempt_before_a_takeover( 'requires_action', 'pi_A' );
+		$paid   = wc_get_order( $order->get_id() );
+		$paid->update_meta_data( '_intention_status', 'succeeded' );
+		$paid->set_transaction_id( 'pi_A' );
+		$paid->set_status( OrderStatus::PROCESSING );
+		$paid->save();
+		$keys = self::read_keys( $paid );
+
+		do_action( 'woocommerce_store_api_checkout_order_processed', $order );
+
+		$stored = wc_get_order( $order->get_id() );
+		$this->assertSame( $keys, self::read_keys( $stored ) );
+		$this->assertSame( 'pi_A', $stored->get_transaction_id() );
+		$this->assertSame( '', $stored->get_meta( WooPaymentsPersistenceVocabulary::SUPERSEDED_INTENT_IDS_META_KEY, true ) );
+		$this->assertSame( '', $stored->get_meta( WooPaymentsPersistenceVocabulary::PAYMENT_DETAILS_REMOVED_META_KEY, true ) );
+		$this->assertSame( 0, $this->transport->request_count );
+		$this->assertFalse( has_action( 'shutdown', array( $this->sut, 'finish_earlier_attempts' ) ), 'Nothing is left for shutdown.' );
+		$this->assertCount( 1, array_filter( $logger->contexts, static fn( array $context ): bool => 'takeover_values_changed' === ( $context['reason'] ?? '' ) ) );
+	}
+
+	/**
 	 * @testdox When a WooPayments operation holds the order payment lock at the checkout, nothing is removed, the refusal is logged and the order says where to check ($_dataName).
 	 * @dataProvider provide_lock_refusals
 	 *
