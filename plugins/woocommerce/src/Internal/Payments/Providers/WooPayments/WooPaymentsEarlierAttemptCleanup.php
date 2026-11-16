@@ -571,6 +571,9 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 		} elseif ( 'requires_capture' === $intent['status'] ) {
 			/* translators: %1$s: the ID of a WooPayments payment. */
 			$message = __( 'When the customer checked out with another payment method, the WooPayments payment <code>%1$s</code> recorded on this order was authorized and not captured. If both payments end up made, one of them needs a refund.', 'woocommerce' );
+		} elseif ( 'processing' === $intent['status'] ) {
+			/* translators: %1$s: the ID of a WooPayments payment. */
+			$message = __( 'When the customer checked out with another payment method, the WooPayments payment <code>%1$s</code> recorded on this order was still being processed. If both payments end up made, one of them needs a refund.', 'woocommerce' );
 		} else {
 			/* translators: %1$s: the ID of a WooPayments payment. */
 			$message = __( 'When the customer checked out with another payment method, the WooPayments payment <code>%1$s</code> recorded on this order held money. If both payments end up made, one of them needs a refund.', 'woocommerce' );

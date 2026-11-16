@@ -289,7 +289,8 @@ class WooPaymentsEarlierAttemptCleanupTest extends WC_Unit_Test_Case {
 	 * transaction ID names it. A refunded or disputed payment still reads succeeded, so its charges decide that state. The
 	 * answers are the recorded intents of Fixtures/platform-intention-basic-card.json (succeeded) and
 	 * Fixtures/platform-manual-capture.json (requires_capture); the refunded and disputed ones set the recorded charge's
-	 * `refunded` or `disputed` flag, a model of the platform's charge object, not a recording.
+	 * `refunded` or `disputed` flag, a model of the platform's charge object, not a recording; the processing one, as an
+	 * asynchronous method's payment reads before it settles, sets the recorded intent's status.
 	 *
 	 * @param array<string,mixed> $intent         The read's answer.
 	 * @param string              $transaction_id The order's transaction ID.
@@ -323,9 +324,11 @@ class WooPaymentsEarlierAttemptCleanupTest extends WC_Unit_Test_Case {
 		$authorized = self::recorded_intent( 'platform-manual-capture.json', 'authorize_manual_capture' );
 		$refunded   = $succeeded;
 		$disputed   = $succeeded;
+		$processing = $succeeded;
 
 		$refunded['charges']['data'][0]['refunded'] = true;
 		$disputed['charges']['data'][0]['disputed'] = true;
+		$processing['status']                       = 'processing';
 
 		$intent_id = (string) $succeeded['id'];
 		$sentence  = ' This order&#039;s transaction ID names that payment at this moment, so a refund or a dispute of it changes this order.';
@@ -339,6 +342,7 @@ class WooPaymentsEarlierAttemptCleanupTest extends WC_Unit_Test_Case {
 			'authorized and not captured'                 => array( $authorized, (string) $authorized['id'], sprintf( $opening, (string) $authorized['id'] ) . 'was authorized and not captured.' . $both . $sentence ),
 			'refunded in full'                            => array( $refunded, $intent_id, sprintf( $opening, $intent_id ) . 'had been refunded in full.' . $both . $sentence ),
 			'disputed'                                    => array( $disputed, $intent_id, sprintf( $opening, $intent_id ) . 'was disputed.' . $both . $sentence ),
+			'still being processed'                       => array( $processing, $intent_id, sprintf( $opening, $intent_id ) . 'was still being processed.' . $both . $sentence ),
 		);
 	}
 
