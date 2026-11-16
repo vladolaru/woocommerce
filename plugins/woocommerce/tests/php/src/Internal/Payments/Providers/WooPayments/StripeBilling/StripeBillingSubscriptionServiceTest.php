@@ -1097,8 +1097,9 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 		$messages = array_column( $logger->lines, 1 );
 		$this->assertSame( $expected_confirmed ? 1 : 0, count( array_keys( $messages, self::NOT_FOUND_LINE, true ) ) );
 		$this->assertSame( $expected_confirmed ? 0 : 1, count( array_keys( $messages, 'There was a problem canceling the subscription on WooPayments server.', true ) ) );
-		$this->assertSame( array(), $this->get_notes_starting_with( $saved, self::CANCELLED_NOTE_START ), 'Neither a not-found nor a failure is said to be a cancel.' );
 		if ( $expected_confirmed ) {
+			// A failure keeps the ID, so only the not-found row can carry a note.
+			$this->assertSame( array(), $this->get_notes_starting_with( $saved, self::CANCELLED_NOTE_START ), 'Stripe answers the same for another account, so no cancel note.' );
 			$context = $this->get_logged_context( $logger, self::NOT_FOUND_LINE );
 			$this->assertSame( array( $subscription->get_id(), self::MAIN_SUBSCRIPTION_ID, 1, 404, 'resource_missing' ), array( $context['subscription_id'], $context['wcpay_subscription_id'], $context['attempt'], $context['http_status'], $context['error_code'] ) );
 			$this->assert_log_holds_no_provider_text( $logger );
@@ -1337,8 +1338,9 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 0, $this->http_client->request_count, 'No platform request inside the save.' );
 		$jobs = $this->get_pending_cancel_jobs( $subscription );
-		$this->assertSame( array( 0 ), array_keys( $jobs ), 'One job, for the first attempt.' );
-		$this->assertEqualsWithDelta( 0, $jobs[0], 5, 'Due now.' );
+		$this->assertCount( 1, $jobs, 'One job.' );
+		$this->assertSame( 0, $jobs[0]['args']['retry'], 'For the first attempt.' );
+		$this->assertEqualsWithDelta( time(), $jobs[0]['due'], 5, 'Due now.' );
 		$this->assertSame( self::MAIN_SUBSCRIPTION_ID, wc_get_order( $subscription->get_id() )->get_meta( '_wcpay_subscription_id', true ), 'The ID stays until Stripe confirms.' );
 	}
 
@@ -1401,6 +1403,9 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Saving a subscription off WooPayments asks no second job while a cancel job at attempt $retry is $state.
+	 *
+	 * A pending job stays the same action, due when it was: the save neither adds a job nor replaces it with one due now.
+	 *
 	 * @testWith [0, "pending"]
 	 *           [1, "pending"]
 	 *           [2, "pending"]
@@ -1413,15 +1418,12 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	public function test_a_save_asks_nothing_while_a_cancel_job_is_pending_or_running( int $retry, string $state ): void {
 		$subscription = $this->create_subscription( array( '_wcpay_subscription_id' => self::MAIN_SUBSCRIPTION_ID ) );
 		$this->register_stripe_billing_module();
-		$action_id = as_schedule_single_action(
-			time() + HOUR_IN_SECONDS,
-			StripeBillingSubscriptionService::RETRY_CANCEL_ACTION,
-			array(
-				'subscription_id' => $subscription->get_id(),
-				'retry'           => $retry,
-			),
-			'woocommerce_payments'
+		$due       = time() + HOUR_IN_SECONDS;
+		$args      = array(
+			'subscription_id' => $subscription->get_id(),
+			'retry'           => $retry,
 		);
+		$action_id = as_schedule_single_action( $due, StripeBillingSubscriptionService::RETRY_CANCEL_ACTION, $args, 'woocommerce_payments' );
 		if ( 'running' === $state ) {
 			\ActionScheduler::store()->log_execution( $action_id );
 		}
@@ -1429,7 +1431,14 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 		$subscription->set_payment_method( 'stripe' );
 		$subscription->save();
 
-		$this->assertSame( 'pending' === $state ? array( $retry ) : array(), array_keys( $this->get_pending_cancel_jobs( $subscription ) ), 'Only the existing job.' );
+		$expected = 'pending' === $state ? array(
+			array(
+				'id'   => $action_id,
+				'args' => $args,
+				'due'  => $due,
+			),
+		) : array();
+		$this->assertSame( $expected, $this->get_pending_cancel_jobs( $subscription ), 'Only the existing job, as it was.' );
 	}
 
 	/**
@@ -1452,28 +1461,42 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 		$subscription->set_billing_email( 'renewed@example.com' );
 		$subscription->save();
 
-		$this->assertSame( array( 0 ), array_keys( $this->get_pending_cancel_jobs( $subscription ) ) );
+		$jobs = $this->get_pending_cancel_jobs( $subscription );
+		$this->assertCount( 1, $jobs );
+		$this->assertSame( 0, $jobs[0]['args']['retry'] );
 	}
 
 	/**
-	 * @testdox A save that fails in the data store asks for nothing: the ask runs after the write.
+	 * @testdox A save that throws $_dataName asks for nothing: the ask runs only after a save that completes.
+	 *
+	 * Core catches the exception, so save() returns. Before the write, nothing is stored. After it, the new method is stored
+	 * but the save did not complete; the next save or invoice asks instead.
+	 *
+	 * @testWith ["before the write", "woocommerce_before_subscription_object_save", "woocommerce_payments"]
+	 *           ["after the write", "woocommerce_update_order", "stripe"]
+	 *
+	 * @param string $name            Case name.
+	 * @param string $hook            Hook that throws: the last listener before the data store write, or the data store's own.
+	 * @param string $expected_stored Payment method stored afterwards.
 	 */
-	public function test_a_failed_save_asks_for_nothing(): void {
+	public function test_a_save_that_throws_asks_for_nothing( string $name, string $hook, string $expected_stored ): void {
+		unset( $name );
 		$subscription = $this->create_subscription( array( '_wcpay_subscription_id' => self::MAIN_SUBSCRIPTION_ID ) );
 		$this->register_stripe_billing_module();
 		$fail = static function (): void {
-			throw new \Exception( 'Data store write failed.' );
+			throw new \Exception( 'Save failed.' );
 		};
-		add_action( 'woocommerce_update_order', $fail );
+		add_action( $hook, $fail, PHP_INT_MAX );
 
 		try {
 			$subscription->set_payment_method( 'stripe' );
 			$subscription->save();
 		} finally {
-			remove_action( 'woocommerce_update_order', $fail );
+			remove_action( $hook, $fail, PHP_INT_MAX );
 		}
 
 		$this->assertNotNull( $subscription->get_last_save_error(), 'The save failed.' );
+		$this->assertSame( $expected_stored, wc_get_order( $subscription->get_id() )->get_payment_method() );
 		$this->assertSame( array(), $this->get_pending_cancel_jobs( $subscription ) );
 	}
 
@@ -2238,10 +2261,10 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Get a subscription's pending cancel jobs: how long after now each runs, by attempt.
+	 * Get a subscription's pending cancel jobs, one entry per action in action ID order, so duplicates show.
 	 *
 	 * @param WC_Order $subscription Subscription.
-	 * @return array<int,int>
+	 * @return array<int,array{id:int,args:array<string,mixed>,due:int}>
 	 */
 	private function get_pending_cancel_jobs( WC_Order $subscription ): array {
 		$jobs = array();
@@ -2252,15 +2275,19 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 				'status'   => \ActionScheduler_Store::STATUS_PENDING,
 				'per_page' => -1,
 			)
-		) as $action ) {
+		) as $action_id => $action ) {
 			$args = $action->get_args();
 			if ( $subscription->get_id() === ( $args['subscription_id'] ?? null ) ) {
-				$jobs[ (int) $args['retry'] ] = $action->get_schedule()->get_date()->getTimestamp() - time();
+				$jobs[ (int) $action_id ] = array(
+					'id'   => (int) $action_id,
+					'args' => $args,
+					'due'  => $action->get_schedule()->get_date()->getTimestamp(),
+				);
 			}
 		}
 		ksort( $jobs );
 
-		return $jobs;
+		return array_values( $jobs );
 	}
 
 	/**

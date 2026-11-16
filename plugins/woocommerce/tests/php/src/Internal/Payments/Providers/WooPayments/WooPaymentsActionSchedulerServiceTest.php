@@ -143,6 +143,29 @@ class WooPaymentsActionSchedulerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A job is found while pending or running with one of the argument sets, matched exactly, and never before Action Scheduler initializes.
+	 */
+	public function test_has_scheduled_job_matches_exact_arguments_once_action_scheduler_runs(): void {
+		$args    = static fn( int $id, int $retry ): array => array(
+			'id'    => $id,
+			'retry' => $retry,
+		);
+		as_schedule_single_action( time() + HOUR_IN_SECONDS, $this->hook, $args( 86420, 1 ), WooPaymentsActionSchedulerService::GROUP_ID );
+		$running = as_schedule_single_action( time() + HOUR_IN_SECONDS, $this->hook, $args( 7, 0 ), WooPaymentsActionSchedulerService::GROUP_ID );
+		ActionScheduler::store()->log_execution( $running );
+
+		$this->assertTrue( $this->sut->has_scheduled_job( $this->hook, array( $args( 86420, 0 ), $args( 86420, 1 ) ) ), 'Pending, second set.' );
+		$this->assertTrue( $this->sut->has_scheduled_job( $this->hook, array( $args( 7, 0 ) ) ), 'Running.' );
+		$this->assertFalse( $this->sut->has_scheduled_job( $this->hook, array( $args( 8642, 1 ) ) ), 'Another ID that is a prefix of a pending one.' );
+		$this->assertFalse( $this->sut->has_scheduled_job( $this->hook, array( $args( 86420, 1 ) ), 'woocommerce-payments' ), 'Another group.' );
+		$this->while_action_scheduler_is_not_initialized(
+			function () use ( $args ): void {
+				$this->assertFalse( $this->sut->has_scheduled_job( $this->hook, array( $args( 86420, 1 ) ) ), 'Nothing is found before Action Scheduler initializes.' );
+			}
+		);
+	}
+
+	/**
 	 * Run a callback while WordPress reports that action_scheduler_init has not fired.
 	 *
 	 * @param callable $callback Callback.
