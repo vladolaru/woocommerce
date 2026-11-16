@@ -102,8 +102,7 @@ class ReconciliationJob implements RegisterHooksInterface {
 	/**
 	 * Retry delay in the first day after the merchant's start (FAST_RETRY_WINDOW), for a held switch no store manager is
 	 * looking at: an admin page brings the attempt forward sooner (ADMIN_PAGE_ATTEMPT_FLOOR) for a record before the
-	 * hand-over, a version-held one only once its files are supported, and so do the events that clear a code
-	 * (bring_deferred_attempt_forward()).
+	 * hand-over, and so do the events that clear a code (bring_deferred_attempt_forward()).
 	 *
 	 * Cost: 96 attempts a day, each running the preflight, two queue scans, three record writes and one queued action. It
 	 * buys a blocker that clears with nothing the switch hears, on a store nobody is looking at, continuing within 15 minutes.
@@ -170,17 +169,6 @@ class ReconciliationJob implements RegisterHooksInterface {
 	private const SECOND_READING_DELAY = 15 * MINUTE_IN_SECONDS;
 
 	/**
-	 * Retry delay after the job, or a store manager by hand, updated the extension to a supported version, which the
-	 * extension records on its next request.
-	 *
-	 * Not zero: Action Scheduler keeps claiming due actions in the same run, which still has the old extension loaded. Not
-	 * 5 s: a request that starts after the update can still run the old code, in another PHP pool whose opcache revalidates
-	 * on an interval or on a second web server that has not yet received the new files. That attempt reads the old version
-	 * and can fall to the retry cadence; a minute gives both time to catch up.
-	 */
-	private const UPDATED_PLUGIN_RETRY_DELAY = MINUTE_IN_SECONDS;
-
-	/**
 	 * Retry delay for a switch that waits only for queued WooPayments actions that are due now or within this delay, such as
 	 * the extension's affected-orders check, which it queues 10 s ahead from an admin page.
 	 *
@@ -233,12 +221,6 @@ class ReconciliationJob implements RegisterHooksInterface {
 
 	/** Source used for cutover diagnostics. */
 	private const LOG_SOURCE = 'woopayments-cutover';
-
-	/** WordPress core upgrader lock name for the filesystem-global plugin update. */
-	private const PLUGIN_UPDATE_LOCK_NAME = 'woocommerce_woopayments_cutover_plugin_update_lock';
-
-	/** Maximum duration for the plugin-update lock. */
-	private const PLUGIN_UPDATE_LOCK_TTL = 5 * MINUTE_IN_SECONDS;
 
 	/**
 	 * Queued WooPayments actions the cutover carries over: their callbacks continue after the cutover.
@@ -887,15 +869,10 @@ class ReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Bring a deferred switch's next attempt forward after an event that can clear what holds it back, or, with no code, on
-	 * a store manager's admin page.
-	 *
-	 * With a code, only a deferred record carrying it moves; the job's own work runs inside a running claim, which this
-	 * leaves alone. A deactivated renewal plugin or a finished per-site conversion clears its condition at once, so the
-	 * attempt is due now. An extension update takes UPDATED_PLUGIN_RETRY_DELAY, since the updating request still runs the
-	 * old code; the hand-over time is not touched. The attempt re-runs every check, so the bound is one attempt per event.
-	 * With no code, a switch held before the hand-over moves no sooner than ADMIN_PAGE_ATTEMPT_FLOOR after its last write,
-	 * so browsing runs at most about one attempt a minute (get_admin_page_attempt_target()).
+	 * Bring a deferred switch's next attempt forward: with a code, to now after an event that clears it (a renewal plugin
+	 * deactivated, a per-site conversion finished), for a deferred record carrying it only; with none, on a store manager's
+	 * admin page, no sooner than ADMIN_PAGE_ATTEMPT_FLOOR after the last write (get_admin_page_attempt_target()). The
+	 * attempt re-runs every check, so the bound is one attempt per event, and the hand-over time is not touched.
 	 *
 	 * @since 11.4.0
 	 *
@@ -909,26 +886,25 @@ class ReconciliationJob implements RegisterHooksInterface {
 		if ( ! $this->is_deferred_for( $this->state_store->get_record(), $code ) || ! $this->arbiter->is_builtin_enabled() ) {
 			return false;
 		}
-		$delay = PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED === $code ? self::UPDATED_PLUGIN_RETRY_DELAY : 0;
 		$now   = time();
 		$moved = $this->with_write_lock(
 			$now,
-			function () use ( $code, $delay, $now ): bool {
+			function () use ( $code, $now ): bool {
 				$record = $this->state_store->get_record();
 				if ( ! is_array( $record ) || ! $this->is_deferred_for( $record, $code ) ) {
 					return false;
 				}
-				if ( is_int( $record['next_attempt_at'] ) && $record['next_attempt_at'] <= $now + $delay ) {
+				if ( is_int( $record['next_attempt_at'] ) && $record['next_attempt_at'] <= $now ) {
 					return true;
 				}
 
-				return $this->move_next_attempt( $record, $now + $delay, $now );
+				return $this->move_next_attempt( $record, $now, $now );
 			},
 			false
 		);
 		// The event's request is not a queue runner: once it ends, after WordPress has written the plugin list, a fresh
 		// runner takes the attempt now due. A request switched into another site would dispatch for its own site.
-		if ( $moved && 0 === $delay && ! ( is_multisite() && ms_is_switched() ) ) {
+		if ( $moved && ! ( is_multisite() && ms_is_switched() ) ) {
 			add_action( 'shutdown', array( $this->scheduler, 'dispatch_async' ) );
 		}
 
@@ -968,14 +944,9 @@ class ReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the time a store manager's admin page moves a held switch's next attempt to, or null to leave it.
-	 *
-	 * Only a deferred record with no hand-over token moves: past the hand-over the switch keeps its own timing. The target is
-	 * at least ADMIN_PAGE_ATTEMPT_FLOOR after the record's last write, and the attempt only ever moves sooner. A record held
-	 * by the extension version moves once the installed files carry a supported version, read last, and like the update
-	 * event to UPDATED_PLUGIN_RETRY_DELAY from now, so a page never moves a record that still needs the update. The attempt
-	 * itself reads the loaded code's version: on a host whose old opcode outlives that minute it can run the updater once a
-	 * minute while a manager browses, installing nothing.
+	 * Get the time a store manager's admin page moves a held switch's next attempt to, or null to leave it. Only a deferred
+	 * record with no hand-over token moves: past the hand-over the switch keeps its own timing. The target is at least
+	 * ADMIN_PAGE_ATTEMPT_FLOOR after the record's last write, and the attempt only ever moves sooner.
 	 *
 	 * @param array<string,mixed> $record Cutover record.
 	 * @param int                 $now    Current UTC timestamp.
@@ -989,9 +960,8 @@ class ReconciliationJob implements RegisterHooksInterface {
 		) {
 			return null;
 		}
-		$held_by_version = in_array( PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED, (array) $record[ StateStore::BLOCKING_CODES_KEY ], true );
-		$target          = max( $now + ( $held_by_version ? self::UPDATED_PLUGIN_RETRY_DELAY : 0 ), $record['updated_at'] + self::ADMIN_PAGE_ATTEMPT_FLOOR );
-		if ( $record['next_attempt_at'] <= $target || ( $held_by_version && ! $this->is_installed_woopayments_plugin_version_supported() ) ) {
+		$target = max( $now, $record['updated_at'] + self::ADMIN_PAGE_ATTEMPT_FLOOR );
+		if ( $record['next_attempt_at'] <= $target ) {
 			return null;
 		}
 
@@ -1109,13 +1079,19 @@ class ReconciliationJob implements RegisterHooksInterface {
 			$past_finalize = null !== ( $claimed['request_origin_token'] ?? null );
 			$this->preflight_service->invalidate_current_blog_memoization();
 			$failures = $this->preflight_service->get_failures();
-			// Past finalize the extension's classes never load again, so a plugin that renews through them has nothing left
-			// to hold back.
+			// Past finalize the extension's classes never load again, so neither a plugin that renews through them nor their
+			// version has anything left to hold back.
 			if ( $past_finalize ) {
-				$failures = array_values( array_diff( $failures, array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE ) ) );
+				$failures = array_values( array_diff( $failures, array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE, PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED ) ) );
 			}
 			if ( ! $past_finalize && in_array( PreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $failures, true ) ) {
 				$this->exclude( $claimed, PreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS );
+				return;
+			}
+			// The switch never updates the extension. One too old to switch from before the hand-over, for example files
+			// replaced by older ones since the start, sends the switch back to the start notice, which asks for the update.
+			if ( in_array( PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED, $failures, true ) ) {
+				$this->roll_back_claim( $claimed );
 				return;
 			}
 
@@ -1123,22 +1099,10 @@ class ReconciliationJob implements RegisterHooksInterface {
 			if ( $this->needs_reconnect( $failures ) ) {
 				$outcomes[] = array( 'code' => 'reconnect_required' );
 			}
-
-			$plugin_update_succeeded = false;
-			if ( in_array( PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED, $failures, true ) ) {
-				$plugin_update_succeeded = $this->update_woopayments_plugin();
-			}
-
 			$outcomes = array_merge( $outcomes, $this->get_adopted_queue_action_outcomes() );
 
-			// The extension records its new version only on its next request, so check the installed files instead.
-			$plugin_updated_to_supported = $plugin_update_succeeded && $this->is_installed_woopayments_plugin_version_supported();
-			if ( $plugin_update_succeeded && ! $plugin_updated_to_supported ) {
-				$this->log_error( 'WooPayments cutover extension update completed without installing a supported version.' );
-			}
-
 			if ( array() !== $failures ) {
-				$this->defer( $claimed, $failures, $outcomes, $plugin_updated_to_supported ? self::UPDATED_PLUGIN_RETRY_DELAY : $this->get_queued_action_retry_delay( $failures, null ) );
+				$this->defer( $claimed, $failures, $outcomes, $this->get_queued_action_retry_delay( $failures, null ) );
 				return;
 			}
 
@@ -1267,7 +1231,8 @@ class ReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Roll back this worker's claim as the merchant's choice of the WooPayments extension.
+	 * Roll back this worker's claim to a generation awaiting the merchant's start: the merchant chose the WooPayments
+	 * extension again, or it is now too old to switch from.
 	 *
 	 * @param array<string,mixed> $claimed Exact running state owned by this worker.
 	 */
@@ -1521,151 +1486,6 @@ class ReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Update the resolved active WooPayments extension with WordPress core APIs.
-	 *
-	 * Runs only where the site allows automatic file changes: the upgrader classes do not check DISALLOW_FILE_MODS or the
-	 * `file_mod_allowed` filter, so this asks the same question core's background updater asks first.
-	 *
-	 * @return bool True only when WordPress reports a completed plugin upgrade.
-	 */
-	private function update_woopayments_plugin(): bool {
-		if ( ! wp_is_file_mod_allowed( 'automatic_updater' ) ) {
-			$this->log_error( 'WooPayments cutover cannot update the WooPayments extension because this site does not allow file changes.' );
-			return false;
-		}
-
-		$plugin_file = $this->preflight_service->get_active_woopayments_plugin_file();
-		if ( '' === $plugin_file ) {
-			$this->log_error( 'WooPayments cutover could not resolve the active plugin file for updating.' );
-			return false;
-		}
-
-		try {
-			// The same two files core's own background updater loads before upgrading (`wp_maybe_auto_update()`).
-			require_once ABSPATH . 'wp-admin/includes/admin.php';
-			require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
-
-			$switched = $this->switch_to_main_site();
-			if ( null === $switched ) {
-				$this->log_error( 'WooPayments cutover could not resolve the network main site for the shared plugin update lock.' );
-				return false;
-			}
-
-			$lock_created = false;
-			try {
-				$lock_created = \WP_Upgrader::create_lock( self::PLUGIN_UPDATE_LOCK_NAME, self::PLUGIN_UPDATE_LOCK_TTL );
-				if ( ! $lock_created ) {
-					$this->log_error( 'WooPayments cutover deferred because another site is updating the shared WooPayments extension files.' );
-					return false;
-				}
-
-				$this->refresh_plugin_update_metadata();
-				$result = $this->upgrade_woopayments_plugin_file( $plugin_file );
-				if ( ! is_array( $result ) ) {
-					$this->log_error( 'WooPayments cutover extension update did not complete.', array( 'plugin_file' => $plugin_file ) );
-					return false;
-				}
-				return true;
-			} finally {
-				try {
-					if ( $lock_created ) {
-						\WP_Upgrader::release_lock( self::PLUGIN_UPDATE_LOCK_NAME );
-					}
-				} finally {
-					$this->restore_from_main_site( $switched );
-				}
-			}
-		} catch ( \Throwable $error ) {
-			$this->log_error(
-				'WooPayments cutover extension update failed.',
-				array_merge( array( 'plugin_file' => $plugin_file ), WooPaymentsLogger::get_failure_context( $error ) )
-			);
-			return false;
-		}
-	}
-
-	/**
-	 * Refresh WordPress plugin update metadata before upgrading WooPayments.
-	 */
-	protected function refresh_plugin_update_metadata(): void {
-		wp_update_plugins();
-	}
-
-	/**
-	 * Upgrade one resolved WooPayments plugin file with WordPress core.
-	 *
-	 * Uses `bulk_upgrade()`, core's own AJAX "Update now" path. Unlike `Plugin_Upgrader::upgrade()`, it
-	 * never deactivates the active extension outside WP-Cron (it uses maintenance mode instead), so the
-	 * extension keeps owning payments through a deferred update instead of being silently deactivated with
-	 * nothing to reactivate it.
-	 *
-	 * @param string $plugin_file Active WooPayments plugin file.
-	 * @return mixed WordPress upgrader result for this plugin file (an array on a completed install).
-	 */
-	protected function upgrade_woopayments_plugin_file( string $plugin_file ) {
-		$upgrader = new \Plugin_Upgrader( new \Automatic_Upgrader_Skin() );
-		$results  = $upgrader->bulk_upgrade( array( $plugin_file ) );
-		return is_array( $results ) ? ( $results[ $plugin_file ] ?? false ) : false;
-	}
-
-	/**
-	 * Tell whether the installed WooPayments extension files carry a cutover-supported version.
-	 *
-	 * @return bool
-	 */
-	public function is_installed_woopayments_plugin_version_supported(): bool {
-		$plugin_file = $this->preflight_service->get_active_woopayments_plugin_file();
-		$version     = '' === $plugin_file ? '' : $this->get_installed_plugin_version( $plugin_file );
-
-		return '' !== $version && version_compare( $version, PreflightService::MINIMUM_CUTOVER_PLUGIN_VERSION, '>=' );
-	}
-
-	/**
-	 * Read the header version of an installed plugin file.
-	 *
-	 * @since 11.2.0
-	 *
-	 * @param string $plugin_file Plugin file relative to the plugins directory.
-	 * @return string Header version, or an empty string when unreadable.
-	 */
-	protected function get_installed_plugin_version( string $plugin_file ): string {
-		$plugin_path = WP_PLUGIN_DIR . '/' . $plugin_file;
-		if ( ! is_readable( $plugin_path ) ) {
-			return '';
-		}
-		// WordPress 6.8+ loads this file on every request (#62244); kept as WooCommerce's own pattern (see src/Admin/PluginsHelper.php).
-		if ( ! function_exists( 'get_plugin_data' ) ) {
-			require_once ABSPATH . 'wp-admin/includes/plugin.php';
-		}
-		$plugin_data = get_plugin_data( $plugin_path, false, false );
-
-		return trim( $plugin_data['Version'] );
-	}
-
-	/**
-	 * Switch to the current network's main site, where the shared plugin update lock lives; the update check and the upgrade
-	 * then run there too.
-	 *
-	 * @return bool|null Whether the current blog must be restored afterward, or null when no main site is available.
-	 */
-	private function switch_to_main_site(): ?bool {
-		if ( ! is_multisite() ) {
-			return false;
-		}
-
-		$main_site_id = get_main_site_id( get_current_network_id() );
-		if ( $main_site_id < 1 ) {
-			return null;
-		}
-		if ( get_current_blog_id() === $main_site_id ) {
-			return false;
-		}
-
-		switch_to_blog( $main_site_id );
-		return true;
-	}
-
-	/**
 	 * Run work while holding the cutover state store's write lock.
 	 *
 	 * Takes the lock, calls $work with the lock token and releases the lock afterwards, also when $work throws. While another
@@ -1686,17 +1506,6 @@ class ReconciliationJob implements RegisterHooksInterface {
 			return $work( $token );
 		} finally {
 			$this->state_store->release_write_lock( $token );
-		}
-	}
-
-	/**
-	 * Restore the calling blog after the main-site plugin update.
-	 *
-	 * @param bool $switched Whether this worker switched to the main site.
-	 */
-	private function restore_from_main_site( bool $switched ): void {
-		if ( $switched ) {
-			restore_current_blog();
 		}
 	}
 

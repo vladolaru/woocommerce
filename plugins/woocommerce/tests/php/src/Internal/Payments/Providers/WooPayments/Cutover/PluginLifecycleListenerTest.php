@@ -50,7 +50,6 @@ class PluginLifecycleListenerTest extends WC_Unit_Test_Case {
 		remove_action( 'activate_plugin', array( $this->sut, 'guard_woopayments_activation' ) );
 		remove_action( 'activated_plugin', array( $this->sut, 'handle_plugin_activated' ), 10 );
 		remove_action( 'deactivated_plugin', array( $this->sut, 'handle_plugin_deactivated' ), 10 );
-		remove_action( 'upgrader_process_complete', array( $this->sut, 'handle_upgrader_process_complete' ), 10 );
 		wc_get_container()->reset_replacement( CutoverController::class );
 		parent::tearDown();
 	}
@@ -109,53 +108,6 @@ class PluginLifecycleListenerTest extends WC_Unit_Test_Case {
 			'network-wide activation'        => array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, true, 0 ),
 			'a plugin with a similar folder' => array( 'woocommerce-payments-dev-tools/woocommerce-payments-dev-tools.php', false, 0 ),
 			'a plugin with a similar name'   => array( 'woocommerce-payments.php-helper/helper.php', false, 0 ),
-		);
-	}
-
-	/**
-	 * @testdox A finished update of the WooPayments extension reaches the controller, and other updates do not ($_dataName).
-	 * @dataProvider upgrade_cases
-	 *
-	 * @param mixed $hook_extra What the upgrader reports.
-	 * @param int   $calls      Expected controller calls.
-	 */
-	public function test_woopayments_update_reaches_the_controller( $hook_extra, int $calls ): void {
-		$this->controller->expects( $this->exactly( $calls ) )->method( 'handle_woopayments_updated' );
-
-		$this->assertSame( 10, has_action( 'upgrader_process_complete', array( $this->sut, 'handle_upgrader_process_complete' ) ) );
-		// Called directly: core's own callbacks on this hook check for updates over HTTP.
-		$this->sut->handle_upgrader_process_complete( null, $hook_extra );
-	}
-
-	/**
-	 * @return array<string,array{mixed,int}>
-	 */
-	public function upgrade_cases(): array {
-		$update = array(
-			'action' => 'update',
-			'type'   => 'plugin',
-		);
-		return array(
-			'a bulk update with WooPayments'  => array( $update + array( 'plugins' => array( 'hello.php', WooPaymentsRuntimeArbiter::PLUGIN_FILE ) ), 1 ),
-			'one update of a renamed folder'  => array( $update + array( 'plugin' => 'renamed-wcpay/woocommerce-payments.php' ), 1 ),
-			'an update of another plugin'     => array( $update + array( 'plugins' => array( 'hello.php' ) ), 0 ),
-			'an install of WooPayments'       => array(
-				array(
-					'action'  => 'install',
-					'type'    => 'plugin',
-					'plugins' => array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ),
-				),
-				0,
-			),
-			'a theme update'                  => array(
-				array(
-					'action' => 'update',
-					'type'   => 'theme',
-					'themes' => array( 'storefront' ),
-				),
-				0,
-			),
-			'a malformed value from a caller' => array( 'update', 0 ),
 		);
 	}
 

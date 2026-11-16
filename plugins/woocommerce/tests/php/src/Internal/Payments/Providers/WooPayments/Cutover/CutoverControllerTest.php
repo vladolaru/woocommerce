@@ -41,15 +41,11 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	private const LOADED_OUTSIDE_PLUGIN_LISTS_SENTENCE = "WooPayments is now part of WooCommerce, but this store can't switch yet. The WooPayments extension is loaded by this site's setup, not activated in Plugins, so the switch can't turn it off. WooPayments keeps running from the extension.";
 
 	/**
-	 * The sentences telling a store that the switch waits for the WooPayments extension to be updated.
+	 * The prompt telling a store whose active WooPayments extension is too old to switch from to update it first.
 	 *
-	 * @var array<string,string>
+	 * @var string
 	 */
-	private const EXTENSION_UPDATE_SENTENCES = array(
-		'file changes blocked' => 'The switch needs a newer version of the WooPayments extension, but this site does not allow automatic plugin updates. Update WooPayments to continue the switch.',
-		'update failed'        => 'The switch needs a newer version of the WooPayments extension, but it could not be updated automatically. Update WooPayments to continue the switch.',
-		'extension inactive'   => 'The switch needs a newer version of the WooPayments extension. Activate WooPayments in Plugins, then update it to continue the switch.',
-	);
+	private const UPDATE_FIRST_SENTENCE = 'WooPayments is now part of WooCommerce. To switch, first update the WooPayments extension to the latest version.';
 
 	/**
 	 * The System Under Test.
@@ -634,132 +630,6 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * The job tries to update the extension itself, and the update can fail where file changes are allowed too (a host that
-	 * asks for FTP credentials, no update offered, a release that needs a newer WordPress or PHP). The warning follows the
-	 * installed files, not the reason. An inactive extension cannot be updated into the switch, so it is asked to be activated first.
-	 *
-	 * @testdox A switch deferred on the WooPayments version tells the merchant to update WooPayments while the installed extension is below the supported version ($_dataName).
-	 * @dataProvider provide_extension_update_warnings
-	 *
-	 * @param bool        $extension_active  Whether the WooPayments extension is active on this site.
-	 * @param string      $hold_code         The code that holds the switch.
-	 * @param bool        $file_mods_blocked Whether the site disallows automatic file changes.
-	 * @param bool        $installed_current Whether the installed extension files carry a supported version.
-	 * @param string|null $warning           The sentence the warning shows, or null when none shows.
-	 */
-	public function test_deferred_extension_update_explains_the_waiting_switch( bool $extension_active, string $hold_code, bool $file_mods_blocked, bool $installed_current, ?string $warning ): void {
-		// The extension last recorded a version below the floor; an update by hand records the new one only once it runs.
-		update_option( WooPaymentsRuntimeArbiter::EXTENSION_VERSION_OPTION, '10.5.2' );
-		$this->fake_plugin_active( $extension_active );
-		$this->fake_current_user_caps( true );
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
-		add_filter(
-			'file_mod_allowed',
-			static function ( $allowed, $context ) use ( $file_mods_blocked ) {
-				return 'automatic_updater' === $context ? ! $file_mods_blocked : $allowed;
-			},
-			10,
-			2
-		);
-		$job = new class( $hold_code, $installed_current ) extends ReconciliationJob {
-			/** @var string */
-			private string $hold_code;
-
-			/** @var bool */
-			private bool $installed_current;
-
-			/**
-			 * @param string $hold_code         The code that holds the switch.
-			 * @param bool   $installed_current Whether the installed extension files carry a supported version.
-			 */
-			public function __construct( string $hold_code, bool $installed_current ) {
-				$this->hold_code         = $hold_code;
-				$this->installed_current = $installed_current;
-			}
-
-			/** @return array<string,mixed>|null */
-			public function refresh_notice_record(): ?array {
-				return array(
-					'state'                  => StateStore::STATE_DEFERRED,
-					'deferred_codes'         => array( $this->hold_code ),
-					'informational_outcomes' => array(),
-				);
-			}
-
-			/** Report the installed extension version the row sets. */
-			public function is_installed_woopayments_plugin_version_supported(): bool {
-				return $this->installed_current;
-			}
-		};
-
-		$notice = $this->render_admin_notices( $this->create_cutover_controller( $job ) );
-
-		$this->assertStringContainsString( 'Switch in progress', $notice );
-		foreach ( self::EXTENSION_UPDATE_SENTENCES as $sentence ) {
-			if ( $sentence === $warning ) {
-				$this->assertStringContainsString( '<div class="notice notice-warning"><p>' . esc_html( $sentence ) . '</p></div>', $notice );
-			} else {
-				$this->assertStringNotContainsString( esc_html( $sentence ), $notice );
-			}
-		}
-	}
-
-	/**
-	 * @return array<string,array{bool,string,bool,bool,string|null}>
-	 */
-	public function provide_extension_update_warnings(): array {
-		$version  = PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED;
-		$renewal  = PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE;
-		$blocked  = self::EXTENSION_UPDATE_SENTENCES['file changes blocked'];
-		$failed   = self::EXTENSION_UPDATE_SENTENCES['update failed'];
-		$activate = self::EXTENSION_UPDATE_SENTENCES['extension inactive'];
-
-		return array(
-			'file changes disallowed, extension below the floor' => array( true, $version, true, false, $blocked ),
-			'file changes allowed but the update failed'   => array( true, $version, false, false, $failed ),
-			'file changes allowed, extension at the floor' => array( true, $version, false, true, null ),
-			'file changes disallowed, extension updated by hand' => array( true, $version, true, true, null ),
-			'extension inactive, file changes allowed'     => array( false, $version, false, false, $activate ),
-			'extension inactive, file changes disallowed'  => array( false, $version, true, false, $activate ),
-			'another hold code, extension active'          => array( true, $renewal, false, false, null ),
-			'another hold code, extension inactive'        => array( false, $renewal, false, false, null ),
-		);
-	}
-
-	/**
-	 * The extension records its version when it runs (client 11.1.0 includes/class-wc-payments.php:1564-1580), and a
-	 * deactivation keeps it, while the installed files can only be read from an active extension.
-	 *
-	 * @testdox A switch deferred on the WooPayments version asks for no update once the merchant updated the extension by hand, ran it and deactivated it again.
-	 */
-	public function test_deferred_extension_update_is_not_asked_for_after_an_update_by_hand_and_a_deactivation(): void {
-		update_option( WooPaymentsRuntimeArbiter::EXTENSION_VERSION_OPTION, '11.1.0' );
-		$this->fake_plugin_active( false );
-		$this->fake_current_user_caps( true );
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
-		$job               = new class() extends ReconciliationJob {
-			/** @return array<string,mixed>|null */
-			public function refresh_notice_record(): ?array {
-				return array(
-					'state'                  => StateStore::STATE_DEFERRED,
-					'deferred_codes'         => array( 'woopayments_plugin_version_unsupported' ),
-					'informational_outcomes' => array(),
-				);
-			}
-		};
-		$preflight_service = $this->create_preflight_service();
-		$job->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( StateStore::class ), wc_get_container()->get( CutoverActionScheduler::class ), $preflight_service, wc_get_container()->get( DataMigration::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
-		$this->assertFalse( $job->is_installed_woopayments_plugin_version_supported(), 'With the extension inactive, no installed version can be read.' );
-
-		$notice = $this->render_admin_notices( $this->create_cutover_controller( $job, $preflight_service ) );
-
-		$this->assertStringContainsString( 'Switch in progress', $notice );
-		$this->assertStringNotContainsString( 'Update WooPayments', $notice );
-	}
-
-	/**
 	 * An mu-plugin or a host loader can include the extension with no entry in the plugin lists; the switch's deactivation
 	 * could not turn it off, so the switch is not offered there.
 	 *
@@ -978,7 +848,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A plugin deactivation brings forward a switch held back by a renewal plugin, and a WooPayments update one waiting for a newer extension.
+	 * @testdox A plugin deactivation brings forward a switch held back by a renewal plugin.
 	 */
 	public function test_plugin_events_bring_the_waiting_switch_forward(): void {
 		$job        = new class() extends ReconciliationJob {
@@ -998,9 +868,8 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 		$controller = $this->create_cutover_controller( $job );
 
 		$controller->handle_plugin_deactivated( 'yith-woocommerce-subscription-premium/init.php' );
-		$controller->handle_woopayments_updated();
 
-		$this->assertSame( array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE, PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED ), $job->codes );
+		$this->assertSame( array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE ), $job->codes );
 	}
 
 	/**
@@ -1490,69 +1359,89 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * The switch's version check reads the recorded version, which only a running extension
-	 * updates, so a click on such a store would defer forever.
+	 * The switch never updates the extension, so below its minimum version no user is offered the switch, whatever they may
+	 * update, and the store is told to update it first. One row per start state of the switch's start rule.
 	 *
-	 * @testdox A store waiting for its switch that last ran an extension below the switch's minimum is told to activate and update it, and is offered no click.
-	 */
-	public function test_store_waiting_with_an_old_extension_is_told_to_update_it_first(): void {
-		update_option( 'woocommerce_woocommerce_payments_version', '10.5.2' );
-		$this->fake_plugin_active( false );
-		$this->fake_current_user_caps( true );
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
-		$controller = $this->create_cutover_controller();
-
-		$notices = $this->render_admin_notices( $controller );
-
-		$this->assertTrue( wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_awaiting_switch() );
-		$this->assertStringContainsString( 'To switch, first activate the WooPayments extension in Plugins and update it to the latest version.', $notices );
-		$this->assertStringNotContainsString( 'Start the switch', $notices );
-		$this->assertFalse( $controller->enqueue_merchant_start() );
-	}
-
-	/**
-	 * Below the minimum, the switch's job updates the extension files, which every site of a network shares.
-	 *
-	 * @testdox Below the switch's minimum extension version, only a user who may update plugins starts the switch, and others are told to have the extension updated first ($_dataName).
-	 * @dataProvider provide_update_rights_around_the_minimum_version
+	 * @testdox A store manager sees the notice the state names, and is offered and starts the switch only at or above the minimum extension version ($_dataName).
+	 * @dataProvider provide_start_states
 	 *
 	 * @param string   $version      The extension version the store last ran.
+	 * @param string   $store        The extension's state: active, deactivated, network active, loaded outside, excluded or feature off.
 	 * @param string[] $capabilities The user's capabilities among manage_woocommerce, activate_plugins and update_plugins.
-	 * @param bool     $starts       Whether the user starts the switch.
+	 * @param string   $notice       A sentence the notices show, or an empty string for no notice at all.
+	 * @param bool     $starts       Whether the user is offered the switch and a Start click queues it.
 	 */
-	public function test_starting_the_switch_below_the_minimum_version_needs_update_rights( string $version, array $capabilities, bool $starts ): void {
+	public function test_start_state_decides_the_notice_and_the_start( string $version, string $store, array $capabilities, string $notice, bool $starts ): void {
 		update_option( 'woocommerce_woocommerce_payments_version', $version );
+		$this->fake_plugin_active( in_array( $store, array( 'active', 'loaded outside' ), true ), 'network active' === $store );
+		if ( 'loaded outside' === $store ) {
+			// The extension's code runs with no entry in the plugin lists.
+			update_option( 'active_plugins', array() );
+		}
 		$this->fake_current_user_capabilities( $capabilities );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'feature off' === $store ? 'no' : 'yes' );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		$job        = 'excluded' === $store ? $this->create_excluded_notice_job( PreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS ) : $this->create_start_recording_job();
+		$controller = $this->create_cutover_controller( $job );
 
-		$this->assert_start_offered_to_the_current_user( $starts );
+		$notices = $this->render_admin_notices( $controller );
+		$queued  = $controller->enqueue_merchant_start();
+
+		if ( '' === $notice ) {
+			$this->assertSame( '', trim( $notices ) );
+		} else {
+			$this->assertStringContainsString( esc_html( $notice ), $notices );
+		}
+		if ( $starts ) {
+			$this->assertStringContainsString( 'Start the switch', $notices );
+		} else {
+			$this->assertStringNotContainsString( 'Start the switch', $notices );
+		}
+		$this->assertSame( $starts, $queued );
 	}
 
 	/**
-	 * @return array<string,array{0:string,1:string[],2:bool}>
+	 * Start states of the switch on a single site: the extension version the store last ran, the extension's state, the
+	 * user's capabilities, a sentence the notices show and whether the user starts the switch.
+	 *
+	 * @return array<string,array{string,string,string[],string,bool}>
 	 */
-	public function provide_update_rights_around_the_minimum_version(): array {
+	public function provide_start_states(): array {
+		$manager  = array( 'manage_woocommerce', 'activate_plugins' );
+		$updater  = array( 'manage_woocommerce', 'activate_plugins', 'update_plugins' );
+		$activate = 'WooPayments is now part of WooCommerce. To switch, first activate the WooPayments extension in Plugins and update it to the latest version.';
+		$sitewide = "This store can't switch yet because the WooPayments extension is active for every site of the network.";
+		$excluded = 'Its subscriptions are billed through Stripe Billing';
+
 		return array(
-			'below the minimum, without update_plugins' => array( '10.5.2', array( 'manage_woocommerce', 'activate_plugins' ), false ),
-			'below the minimum, with update_plugins'    => array( '10.5.2', array( 'manage_woocommerce', 'activate_plugins', 'update_plugins' ), true ),
-			'at the minimum, without update_plugins'    => array( '10.6.0', array( 'manage_woocommerce', 'activate_plugins' ), true ),
-			'above the minimum, without update_plugins' => array( '11.1.0', array( 'manage_woocommerce', 'activate_plugins' ), true ),
+			'at the minimum, active'                       => array( '10.6.0', 'active', $manager, 'Start the switch', true ),
+			'above the minimum, active'                    => array( '11.1.0', 'active', $manager, 'Start the switch', true ),
+			'at the minimum, waiting for the switch'       => array( '10.6.0', 'deactivated', $manager, 'Start the switch', true ),
+			'below, active, a user who may update plugins' => array( '10.5.2', 'active', $updater, self::UPDATE_FIRST_SENTENCE, false ),
+			'below, active, a user who may not update plugins' => array( '10.5.2', 'active', $manager, self::UPDATE_FIRST_SENTENCE, false ),
+			'below, waiting for the switch'                => array( '10.5.2', 'deactivated', $updater, $activate, false ),
+			'below, active for every site'                 => array( '10.5.2', 'network active', $updater, $sitewide, false ),
+			'below, loaded outside the plugin lists'       => array( '10.5.2', 'loaded outside', $updater, self::UPDATE_FIRST_SENTENCE, false ),
+			'at the minimum, loaded outside the plugin lists' => array( '10.6.0', 'loaded outside', $updater, self::LOADED_OUTSIDE_PLUGIN_LISTS_SENTENCE, false ),
+			'below, excluded for bundled subscriptions'    => array( '10.5.2', 'excluded', $updater, $excluded, false ),
+			'below, a shop manager'                        => array( '10.5.2', 'active', array( 'manage_woocommerce' ), '', false ),
+			'below, the WooPayments feature off'           => array( '10.5.2', 'feature off', $updater, '', false ),
 		);
 	}
 
 	/**
 	 * On a multisite whose Network Settings give site admins the Plugins menu, a site administrator may activate plugins but
-	 * not update them; only a super admin may (WordPress 7.1.3 wp-includes/capabilities.php:619-635 and 654-666).
+	 * not update them, and a super admin may do both (WordPress 7.1.3 wp-includes/capabilities.php:619-635 and 654-666).
+	 * Below the minimum version neither starts the switch, since the switch never updates the extension.
 	 *
-	 * @testdox On a network that gives site admins the Plugins menu, below the switch's minimum extension version a $who sees whether they may start the switch.
+	 * @testdox On a network that gives site admins the Plugins menu, below the switch's minimum extension version a $who is told a super admin first updates the extension, and a Start click queues nothing.
 	 * @group multisite
-	 * @testWith ["site administrator", false]
-	 *           ["super admin", true]
+	 * @testWith ["site administrator"]
+	 *           ["super admin"]
 	 *
-	 * @param string $who    The current user: a site administrator or a super admin.
-	 * @param bool   $starts Whether the user starts the switch.
+	 * @param string $who The current user: a site administrator or a super admin.
 	 */
-	public function test_on_a_network_a_super_admin_updates_the_extension_before_the_switch( string $who, bool $starts ): void {
+	public function test_on_a_network_below_the_minimum_no_user_starts_the_switch( string $who ): void {
 		if ( ! is_multisite() ) {
 			$this->markTestSkipped( 'Test only runs on Multisite.' );
 		}
@@ -1566,32 +1455,25 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 		$capabilities = array_values( array_filter( array( 'manage_woocommerce', 'activate_plugins', 'update_plugins' ), 'current_user_can' ) );
 		$this->assertContains( 'activate_plugins', $capabilities, 'The Plugins menu lets the user activate plugins.' );
 		$this->fake_current_user_capabilities( $capabilities );
+		$this->fake_plugin_active();
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		$job        = $this->create_start_recording_job();
+		$controller = $this->create_cutover_controller( $job );
 
 		try {
-			$this->assert_start_offered_to_the_current_user( $starts );
+			$notices = $this->render_admin_notices( $controller );
+			$queued  = $controller->enqueue_merchant_start();
 		} finally {
 			revoke_super_admin( $user_id );
 			wp_set_current_user( 0 );
 			delete_site_option( 'menu_items' );
 		}
-	}
 
-	/**
-	 * The old-version rule guards the start action only; the bundled-exclusion notice is information.
-	 *
-	 * @testdox A store waiting for its switch with an old extension that is excluded for bundled Stripe Billing subscriptions is still told why, with no start button.
-	 */
-	public function test_old_extension_store_excluded_for_bundled_subscriptions_is_told_why(): void {
-		update_option( 'woocommerce_woocommerce_payments_version', '10.5.2' );
-		$this->fake_plugin_active( false );
-		$this->fake_current_user_caps( true );
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
-
-		$notices = $this->render_admin_notices( $this->create_cutover_controller( $this->create_excluded_notice_job( 'bundled_stripe_billing_subscriptions_present' ) ) );
-
-		$this->assertStringContainsString( 'this store can&#039;t switch yet. Its subscriptions are billed through Stripe Billing', $notices );
+		$this->assertStringContainsString( 'WooPayments is now part of WooCommerce. To switch, a super admin first needs to update the WooPayments extension to the latest version.', $notices );
 		$this->assertStringNotContainsString( 'Start the switch', $notices );
+		$this->assertFalse( $queued );
+		$this->assertSame( array(), $job->sources, 'The click queues nothing.' );
 	}
 
 	/**
@@ -1745,38 +1627,52 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox With mandatory cutover $label, an admin page on a store still running the extension queues $expected.
-	 * @testWith ["on", true, ["mandatory"]]
-	 *           ["off by default", false, []]
+	 * The switch never updates the extension, so the lever starts nothing below the minimum version and the store keeps the
+	 * update-first prompt. The version is read last, so a store with the lever off reads none.
+	 *
+	 * @testdox With mandatory cutover $label, an admin page on a store still running extension $version queues $expected.
+	 * @testWith ["on", true, "10.6.0", ["mandatory"]]
+	 *           ["on", true, "10.5.2", []]
+	 *           ["off by default", false, "10.5.2", []]
 	 *
 	 * @param string   $label     Readable case name.
 	 * @param bool     $mandatory Whether the mandatory cutover filter is turned on.
+	 * @param string   $version   The extension version the store last ran.
 	 * @param string[] $expected  Sources the job is asked to queue.
 	 */
-	public function test_mandatory_cutover_queues_the_switch_only_when_turned_on( string $label, bool $mandatory, array $expected ): void {
+	public function test_mandatory_cutover_queues_the_switch_only_when_turned_on( string $label, bool $mandatory, string $version, array $expected ): void {
 		unset( $label );
+		update_option( 'woocommerce_woocommerce_payments_version', $version );
 		$this->fake_plugin_active();
+		$this->fake_current_user_caps( true );
 		$this->enable_ready_cutover();
 		if ( $mandatory ) {
 			add_filter( CutoverController::FILTER_MANDATORY_CUTOVER_ENABLED, '__return_true' );
 		}
-		$job        = new class() extends ReconciliationJob {
-			/** @var string[] */
-			public array $sources = array();
-
-			/**
-			 * @param string $source Trigger source.
-			 */
-			public function enqueue( string $source ): bool {
-				$this->sources[] = $source;
-				return true;
-			}
+		$job           = $this->create_start_recording_job();
+		$controller    = $this->create_cutover_controller( $job );
+		$version_reads = 0;
+		$count         = static function ( $value ) use ( &$version_reads ) {
+			++$version_reads;
+			return $value;
 		};
-		$controller = $this->create_cutover_controller( $job );
 
-		$controller->handle_admin_init();
+		add_filter( 'option_woocommerce_woocommerce_payments_version', $count );
+		try {
+			$controller->handle_admin_init();
+		} finally {
+			remove_filter( 'option_woocommerce_woocommerce_payments_version', $count );
+		}
 
 		$this->assertSame( $expected, $job->sources );
+		if ( ! $mandatory ) {
+			$this->assertSame( 0, $version_reads, 'A store with the lever off reads no version.' );
+		}
+		if ( array() === $expected ) {
+			$notices = $this->render_admin_notices( $controller );
+			$this->assertStringContainsString( self::UPDATE_FIRST_SENTENCE, $notices );
+			$this->assertStringNotContainsString( 'Start the switch', $notices );
+		}
 	}
 
 	/**
@@ -2281,57 +2177,6 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 			$_GET[ $key ] = $value;
 		}
 		$controller->handle_admin_init();
-	}
-
-	/**
-	 * Render the notices of a store whose WooPayments extension is active with the feature on, then click the start, and
-	 * assert whether the current user is offered and starts the switch or is told to have the extension updated first.
-	 *
-	 * @param bool $starts Whether the current user starts the switch.
-	 */
-	private function assert_start_offered_to_the_current_user( bool $starts ): void {
-		$this->fake_plugin_active();
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
-		$job        = new class() extends ReconciliationJob {
-			/** @var string[] */
-			public array $sources = array();
-
-			/** Return no record, as on a store that never started the switch. */
-			public function refresh_notice_record(): ?array {
-				return null;
-			}
-
-			/** Offer a new generation. */
-			public function can_offer_start(): bool {
-				return true;
-			}
-
-			/**
-			 * @param string $source Trigger source.
-			 */
-			public function enqueue( string $source ): bool {
-				$this->sources[] = $source;
-				return true;
-			}
-		};
-		$controller = $this->create_cutover_controller( $job );
-
-		$notices = $this->render_admin_notices( $controller );
-		$controller->enqueue_merchant_start();
-
-		$warning = is_multisite()
-			? 'WooPayments is now part of WooCommerce. To switch, a super admin first needs to update the WooPayments extension to the latest version.'
-			: 'WooPayments is now part of WooCommerce. To switch, first update the WooPayments extension to the latest version.';
-		if ( $starts ) {
-			$this->assertStringContainsString( 'Start the switch', $notices );
-			$this->assertStringNotContainsString( 'to the latest version', $notices );
-			$this->assertSame( array( 'merchant' ), $job->sources );
-		} else {
-			$this->assertStringContainsString( $warning, $notices );
-			$this->assertStringNotContainsString( 'Start the switch', $notices );
-			$this->assertSame( array(), $job->sources, 'The click queues nothing.' );
-		}
 	}
 
 	/**

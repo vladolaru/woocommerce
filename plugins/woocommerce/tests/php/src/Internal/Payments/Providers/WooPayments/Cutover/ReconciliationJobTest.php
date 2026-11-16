@@ -20,7 +20,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\Cutov
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PreflightService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\DataMigration;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PluginLifecycleListener;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\ExtensionBoundRenewalPlugins;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteWordingSnapshot;
@@ -1476,16 +1475,14 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 
 	/**
 	 * A merchant who cleared what held the switch back must not wait the cadence. A renewal plugin's deactivation and a
-	 * finished per-site conversion clear it at once; an extension update is read on the next request, which runs the new code.
+	 * finished per-site conversion clear it at once.
 	 *
-	 * @testdox An event that can clear a deferred switch's code brings its next attempt forward by $expected_delay s, without a hand-over time: $code.
+	 * @testdox An event that can clear a deferred switch's code brings its next attempt forward to now, without a hand-over time, and starts a queue runner as the request ends: $code.
 	 * @dataProvider deferred_attempt_forward_provider
 	 *
-	 * @param string $code           The deferral code the event can clear.
-	 * @param int    $expected_delay Seconds until the next attempt.
-	 * @param bool   $dispatches     Whether the request dispatches a queue runner as it ends.
+	 * @param string $code The deferral code the event can clear.
 	 */
-	public function test_an_event_brings_the_deferred_attempt_forward( string $code, int $expected_delay, bool $dispatches ): void {
+	public function test_an_event_brings_the_deferred_attempt_forward( string $code ): void {
 		$deferred = $this->create_deferred_record( array( $code ) );
 		$old      = $deferred['action_id'];
 
@@ -1499,27 +1496,26 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			$this->assertSame( StateStore::STATE_DEFERRED, $moved['state'] );
 			$this->assertSame( $deferred['attempt'], $moved['attempt'] );
 			$this->assertSame( $deferred['step_log'], $moved['step_log'] );
-			$this->assertGreaterThanOrEqual( $before + $expected_delay, $moved['next_attempt_at'] );
-			$this->assertLessThanOrEqual( $after + $expected_delay, $moved['next_attempt_at'] );
+			$this->assertGreaterThanOrEqual( $before, $moved['next_attempt_at'] );
+			$this->assertLessThanOrEqual( $after, $moved['next_attempt_at'] );
 			$this->assertArrayNotHasKey( StateStore::HANDED_OVER_AT_KEY, $moved );
 			$this->assertNotSame( $old, $moved['action_id'] );
 			$this->assertSame( $moved['action_id'], $this->scheduler->get_scheduled_action_id( $moved['generation'], 2 ) );
 			$this->assertSame( ActionScheduler_Store::STATUS_CANCELED, ActionScheduler::store()->get_status( $old ) );
 			$this->assertSame( $moved['next_attempt_at'], ActionScheduler::store()->fetch_action( $moved['action_id'] )->get_schedule()->get_date()->getTimestamp() );
-			$this->assertSame( $dispatches, is_int( has_action( 'shutdown', array( $this->scheduler, 'dispatch_async' ) ) ) );
+			$this->assertIsInt( has_action( 'shutdown', array( $this->scheduler, 'dispatch_async' ) ) );
 		} finally {
 			remove_action( 'shutdown', array( $this->scheduler, 'dispatch_async' ) );
 		}
 	}
 
 	/**
-	 * @return array<string,array{string,int,bool}>
+	 * @return array<string,array{string}>
 	 */
 	public function deferred_attempt_forward_provider(): array {
 		return array(
-			'a renewal plugin deactivated'          => array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE, 0, true ),
-			'the per-site conversion done'          => array( ReconciliationJob::CODE_PLUGIN_ACTIVE_SITEWIDE, 0, true ),
-			'the extension updated by the merchant' => array( PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED, 60, false ),
+			'a renewal plugin deactivated' => array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE ),
+			'the per-site conversion done' => array( ReconciliationJob::CODE_PLUGIN_ACTIVE_SITEWIDE ),
 		);
 	}
 
@@ -1550,35 +1546,19 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An extension update leaves an attempt already due within its minute as it is.
-	 */
-	public function test_an_update_leaves_an_attempt_due_sooner_as_it_is(): void {
-		$deferred                  = $this->create_deferred_record( array( PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED ) );
-		$sooner                    = $deferred;
-		$sooner['revision']        = $deferred['revision'] + 1;
-		$sooner['next_attempt_at'] = time() + 30;
-		$this->assertTrue( $this->state_store->compare_and_set_record( $deferred, $sooner ) );
-
-		$this->assertTrue( $this->sut->bring_deferred_attempt_forward( PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED ) );
-		$this->assertSame( $sooner, $this->state_store->get_record() );
-	}
-
-	/**
 	 * A merchant who cleared a blocker no event reports sees the switch continue within about a minute of a store manager's
-	 * admin page. A page inside the minute after the last write moves the attempt to the minute's end instead of skipping it,
-	 * and a record held by the extension version waits the update minute, as the update event does.
+	 * admin page. A page inside the minute after the last write moves the attempt to the minute's end instead of skipping it.
 	 *
 	 * @testdox A store manager's admin page brings a held switch's next attempt forward to $expected: $_dataName.
 	 * @dataProvider provide_admin_page_moves
 	 *
 	 * @param string $code     The deferral code.
 	 * @param int    $age      Seconds since the record's last write.
-	 * @param string $expected "now", "the floor's end" or "the update minute".
+	 * @param string $expected "now" or "the floor's end".
 	 */
 	public function test_an_admin_page_brings_a_held_switch_forward( string $code, int $age, string $expected ): void {
-		$this->sut = $this->create_job( true, null, $this->create_installed_version_job( true ) );
-		$deferred  = $this->age_record( $this->create_deferred_record( array( $code ) ), $age );
-		$old       = $deferred['action_id'];
+		$deferred = $this->age_record( $this->create_deferred_record( array( $code ) ), $age );
+		$old      = $deferred['action_id'];
 
 		try {
 			$this->assertTrue( $this->sut->bring_deferred_attempt_forward() );
@@ -1586,9 +1566,8 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			$moved = $this->state_store->get_record();
 			$this->assertIsArray( $moved );
 			$expected_at = array(
-				'now'               => $moved['updated_at'],
-				"the floor's end"   => $deferred['updated_at'] + 61,
-				'the update minute' => $moved['updated_at'] + MINUTE_IN_SECONDS,
+				'now'             => $moved['updated_at'],
+				"the floor's end" => $deferred['updated_at'] + 61,
 			)[ $expected ];
 			$this->assertSame( $expected_at, $moved['next_attempt_at'] );
 			$this->assertSame( StateStore::STATE_DEFERRED, $moved['state'] );
@@ -1609,15 +1588,12 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	 */
 	public function provide_admin_page_moves(): array {
 		$transport = PreflightService::FAILURE_BUILTIN_TRANSPORT_UNAVAILABLE;
-		$version   = PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED;
 		return array(
-			'past the floor'                              => array( $transport, 61, 'now' ),
-			'well past the floor'                         => array( $transport, 120, 'now' ),
-			'inside the floor'                            => array( $transport, 30, "the floor's end" ),
-			'exactly at the floor'                        => array( $transport, 60, "the floor's end" ),
-			'tasks queued far ahead, past the floor'      => array( PreflightService::FAILURE_QUEUE_HOOKS_UNHANDLED, 61, 'now' ),
-			'the version code, installed files supported' => array( $version, 61, 'the update minute' ),
-			'the version code inside the floor, files supported' => array( $version, 30, 'the update minute' ),
+			'past the floor'                         => array( $transport, 61, 'now' ),
+			'well past the floor'                    => array( $transport, 120, 'now' ),
+			'inside the floor'                       => array( $transport, 30, "the floor's end" ),
+			'exactly at the floor'                   => array( $transport, 60, "the floor's end" ),
+			'tasks queued far ahead, past the floor' => array( PreflightService::FAILURE_QUEUE_HOOKS_UNHANDLED, 61, 'now' ),
 		);
 	}
 
@@ -1628,12 +1604,11 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @testdox A store manager's admin page leaves a record it must not move, with no query: $_dataName.
 	 * @dataProvider provide_admin_page_non_moves
 	 *
-	 * @param array<string,mixed> $changes             Record fields to set; time fields are offsets from now.
-	 * @param int                 $age                 Seconds since the record's last write.
-	 * @param bool                $feature_on          Whether the WooPayments feature is on.
-	 * @param bool                $installed_supported Whether the installed extension files carry a supported version.
+	 * @param array<string,mixed> $changes    Record fields to set; time fields are offsets from now.
+	 * @param int                 $age        Seconds since the record's last write.
+	 * @param bool                $feature_on Whether the WooPayments feature is on.
 	 */
-	public function test_an_admin_page_leaves_a_record_it_must_not_move( array $changes, int $age, bool $feature_on, bool $installed_supported ): void {
+	public function test_an_admin_page_leaves_a_record_it_must_not_move( array $changes, int $age, bool $feature_on ): void {
 		$deferred = $this->create_deferred_record( $changes['deferred_codes'] ?? array( PreflightService::FAILURE_BUILTIN_TRANSPORT_UNAVAILABLE ) );
 		$now      = time();
 		$record   = $deferred;
@@ -1643,7 +1618,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$record['revision'] = $deferred['revision'] + 1;
 		$this->assertTrue( $this->state_store->compare_and_set_record( $deferred, $record ) );
 		$record = $this->age_record( $record, $age );
-		$job    = $this->create_job( $feature_on, null, $this->create_installed_version_job( $installed_supported ) );
+		$job    = $this->create_job( $feature_on );
 		$this->state_store->get_record();
 		$queries = 0;
 		$count   = static function ( $query ) use ( &$queries ) {
@@ -1666,14 +1641,14 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @return array<string,array{array<string,mixed>,int,bool,bool}>
+	 * @return array<string,array{array<string,mixed>,int,bool}>
 	 */
 	public function provide_admin_page_non_moves(): array {
 		$token = array( 'request_origin_token' => 'hand-over-token' );
 		return array(
-			'past the hand-over, plugin_deactivation_failed' => array( $token + array( 'deferred_codes' => array( 'plugin_deactivation_failed' ) ), 120, true, true ),
-			'past the hand-over, builtin_ownership_unverified' => array( $token + array( 'deferred_codes' => array( 'builtin_ownership_unverified' ) ), 120, true, true ),
-			'past the hand-over, another code' => array( $token, 120, true, true ),
+			'past the hand-over, plugin_deactivation_failed' => array( $token + array( 'deferred_codes' => array( 'plugin_deactivation_failed' ) ), 120, true ),
+			'past the hand-over, builtin_ownership_unverified' => array( $token + array( 'deferred_codes' => array( 'builtin_ownership_unverified' ) ), 120, true ),
+			'past the hand-over, another code' => array( $token, 120, true ),
 			'awaiting the merchant start'      => array(
 				array(
 					'state'          => StateStore::STATE_PENDING,
@@ -1681,7 +1656,6 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 					'deferred_codes' => array(),
 				),
 				120,
-				true,
 				true,
 			),
 			'the ownership check pending'      => array(
@@ -1692,7 +1666,6 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 					StateStore::HANDED_OVER_AT_KEY => -120,
 				),
 				120,
-				true,
 				true,
 			),
 			'running'                          => array(
@@ -1705,7 +1678,6 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 				),
 				120,
 				true,
-				true,
 			),
 			'done'                             => array(
 				array(
@@ -1715,7 +1687,6 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 					'next_attempt_at' => null,
 				),
 				120,
-				true,
 				true,
 			),
 			'excluded'                         => array(
@@ -1727,12 +1698,10 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 				),
 				120,
 				true,
-				true,
 			),
-			'already due'                      => array( array( 'next_attempt_at' => 0 ), 120, true, true ),
-			'due at the floor\'s end'          => array( array( 'next_attempt_at' => 31 ), 30, true, true ),
-			'the version code, installed files unsupported' => array( array( 'deferred_codes' => array( PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED ) ), 120, true, false ),
-			'the WooPayments feature off'      => array( array(), 120, false, true ),
+			'already due'                      => array( array( 'next_attempt_at' => 0 ), 120, true ),
+			'due at the floor\'s end'          => array( array( 'next_attempt_at' => 31 ), 30, true ),
+			'the WooPayments feature off'      => array( array(), 120, false ),
 		);
 	}
 
@@ -1831,31 +1800,6 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$moved = $this->state_store->get_record();
 		$this->assertIsArray( $moved );
 		$this->assertTrue( $this->sut->is_waiting_for_queued_actions( $moved ), 'The next page renders the line too.' );
-	}
-
-	/**
-	 * Create a job double whose installed extension files carry a supported version, or not.
-	 *
-	 * @param bool $supported Whether the installed files carry a supported version.
-	 * @return ReconciliationJob
-	 */
-	private function create_installed_version_job( bool $supported ): ReconciliationJob {
-		return new class( $supported ) extends ReconciliationJob {
-			/** @var bool */
-			private bool $supported;
-
-			/**
-			 * @param bool $supported Whether the installed files carry a supported version.
-			 */
-			public function __construct( bool $supported ) {
-				$this->supported = $supported;
-			}
-
-			/** Report the installed version the row sets. */
-			public function is_installed_woopayments_plugin_version_supported(): bool {
-				return $this->supported;
-			}
-		};
 	}
 
 	/**
@@ -3951,7 +3895,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	 */
 	public function reconciliation_disposition_provider(): array {
 		return array(
-			'unsupported WooPayments version'            => array( 'woopayments_plugin_version_unsupported', StateStore::STATE_DEFERRED ),
+			'unsupported WooPayments version'            => array( 'woopayments_plugin_version_unsupported', StateStore::STATE_PENDING ),
 			'operational queue hooks'                    => array( 'operational_queue_hooks_unhandled', StateStore::STATE_DEFERRED ),
 			'bundled Stripe Billing subscriptions'       => array( 'bundled_stripe_billing_subscriptions_present', StateStore::STATE_EXCLUDED ),
 			'built-in transport unavailable'             => array( 'builtin_transport_unavailable', StateStore::STATE_DEFERRED ),
@@ -4066,15 +4010,19 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Past finalize the extension is off and its classes never load again, so the holdback has nothing left to protect.
+	 * Past finalize the extension is off and its classes never load again, so neither a plugin that renews through them nor
+	 * their version has anything left to hold back, and a rollback there would leave the store with no owner.
 	 *
-	 * @testdox A deferred claim past finalize whose re-run preflight finds a plugin that renews through the WooPayments extension goes on to the ownership check instead of retrying.
+	 * @testdox A deferred claim past finalize whose re-run preflight finds $_dataName goes on to the ownership check instead of retrying or rolling back.
+	 * @dataProvider provide_codes_ignored_past_finalize
+	 *
+	 * @param string $code The code the re-run preflight finds.
 	 */
-	public function test_extension_renewal_plugin_past_finalize_does_not_hold_the_switch_back(): void {
+	public function test_extension_codes_past_finalize_do_not_hold_the_switch_back( string $code ): void {
 		// A store that ran the extension, which finalize deactivated.
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
-		$sut = $this->create_job( true, $this->create_preflight_with_failures( array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE ) ), null, false, $this->create_noop_normalization() );
+		$sut = $this->create_job( true, $this->create_preflight_with_failures( array( $code ) ), null, false, $this->create_noop_normalization() );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
 		$queued = $this->state_store->get_record();
 		$this->assertIsArray( $queued );
@@ -4095,8 +4043,58 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 
 		$after = $this->state_store->get_record();
 		$this->assertIsArray( $after );
-		$this->assertSame( 'verify_builtin_ownership', $after['current_step'], 'Past finalize the plugin no longer holds the switch back.' );
+		$this->assertSame( $deferred['generation'], $after['generation'], 'Past finalize the switch is not rolled back.' );
+		$this->assertSame( 'verify_builtin_ownership', $after['current_step'], 'Past finalize the code no longer holds the switch back.' );
 		$this->assertSame( array(), $after['deferred_codes'] );
+	}
+
+	/**
+	 * @return array<string,array{string}>
+	 */
+	public function provide_codes_ignored_past_finalize(): array {
+		return array(
+			'a plugin that renews through the WooPayments extension' => array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE ),
+			'an extension too old to switch from' => array( PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED ),
+		);
+	}
+
+	/**
+	 * The switch never updates the extension. A started switch can still meet one too old to switch from, for one when its
+	 * files were replaced by older ones after the click, so it goes back to waiting for a start, whose notice asks for the
+	 * update.
+	 *
+	 * @testdox Before the hand-over, an attempt whose preflight finds the extension too old to switch from rolls the switch back to waiting for a start, with no deferral and no further attempt ($_dataName).
+	 * @dataProvider provide_version_rollbacks
+	 *
+	 * @param string[] $failures The preflight's failures.
+	 */
+	public function test_an_extension_too_old_before_the_hand_over_rolls_the_switch_back( array $failures ): void {
+		$sut = $this->create_job_with_preflight( true, $this->create_preflight_with_failures( $failures ) );
+		$this->assertTrue( $sut->enqueue( 'merchant' ) );
+		$pending = $this->state_store->get_record();
+		$this->assertIsArray( $pending );
+		$this->scheduler->cancel( $pending['generation'], 1 );
+
+		$sut->handle_reconcile( $pending['generation'], 1 );
+
+		$after = $this->state_store->get_record();
+		$this->assertIsArray( $after );
+		$this->assertSame( $pending['generation'] + 1, $after['generation'], 'The switch is rolled back.' );
+		$this->assertTrue( $sut->is_awaiting_start( $after ) );
+		$this->assertSame( array( 'source' => 'rollback' ), $after['step_log'][0]['context'] ?? null );
+		$this->assertSame( array(), $after['deferred_codes'] ?? array(), 'The rollback is not a deferral.' );
+		$this->assertSame( 0, $this->scheduler->get_scheduled_action_id( $pending['generation'], 2 ), 'No further attempt of the switch is scheduled.' );
+		$this->assertSame( 0, $this->scheduler->get_scheduled_action_id( $after['generation'], 1 ), 'The rollback waits for a fresh start.' );
+	}
+
+	/**
+	 * @return array<string,array{string[]}>
+	 */
+	public function provide_version_rollbacks(): array {
+		return array(
+			'the version code alone'          => array( array( PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED ) ),
+			'the version code beside another' => array( array( PreflightService::FAILURE_BUILTIN_TRANSPORT_UNAVAILABLE, PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED ) ),
+		);
 	}
 
 	/**
@@ -4427,243 +4425,6 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			),
 			$deferred['informational_outcomes']
 		);
-	}
-
-	/**
-	 * @testdox A plugin update the site cannot run defers the switch with the version code, and the updater never runs or prepares: $_dataName.
-	 * @dataProvider provide_blocked_plugin_updates
-	 *
-	 * @param string $blocker What stops the update: file mods or lock.
-	 */
-	public function test_plugin_update_the_site_cannot_run_defers_without_running_the_updater( string $blocker ): void {
-		$job       = new class() extends ReconciliationJob {
-			/** @var int */
-			public int $upgrade_count = 0;
-
-			/** @var int */
-			public int $metadata_refreshes = 0;
-
-			/** Record any update preparation. */
-			protected function refresh_plugin_update_metadata(): void {
-				++$this->metadata_refreshes;
-			}
-
-			/**
-			 * Record any unexpected core update call.
-			 *
-			 * @param string $plugin_file Active WooPayments plugin file.
-			 * @return bool
-			 */
-			protected function upgrade_woopayments_plugin_file( string $plugin_file ): bool {
-				unset( $plugin_file );
-				++$this->upgrade_count;
-				return true;
-			}
-		};
-		$preflight = $this->create_preflight_with_failures( array( 'woopayments_plugin_version_unsupported' ), false, array(), 'woocommerce-payments/woocommerce-payments.php' );
-		$sut       = $this->create_job( true, $preflight, $job );
-		$lock_name = 'woocommerce_woopayments_cutover_plugin_update_lock';
-		if ( 'lock' === $blocker ) {
-			require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
-			$this->assertTrue( \WP_Upgrader::create_lock( $lock_name, 5 * MINUTE_IN_SECONDS ) );
-		} else {
-			// DISALLOW_FILE_MODS and hosts set this policy through wp_is_file_mod_allowed(); the upgrader classes do not check it.
-			add_filter(
-				'file_mod_allowed',
-				static function ( $allowed, $context ) {
-					return 'automatic_updater' === $context ? false : $allowed;
-				},
-				10,
-				2
-			);
-		}
-
-		try {
-			$sut->enqueue( 'merchant' );
-			$pending = $this->state_store->get_record();
-			$this->assertIsArray( $pending );
-			$this->scheduler->cancel( $pending['generation'], 1 );
-			$sut->handle_reconcile( $pending['generation'], 1 );
-		} finally {
-			if ( 'lock' === $blocker ) {
-				\WP_Upgrader::release_lock( $lock_name );
-			}
-		}
-
-		$deferred = $this->state_store->get_record();
-		$this->assertIsArray( $deferred );
-		$this->assertSame( StateStore::STATE_DEFERRED, $deferred['state'] );
-		$this->assertSame( array( 'woopayments_plugin_version_unsupported' ), $deferred['deferred_codes'] );
-		$this->assertSame( 0, $job->upgrade_count );
-		$this->assertSame( 0, $job->metadata_refreshes, 'Nothing is prepared for an update the site cannot run.' );
-	}
-
-	/**
-	 * What stops the plugin update: a site that disallows file changes, or another request holding the WordPress core upgrader lock.
-	 *
-	 * @return array<string,array{0:string}>
-	 */
-	public function provide_blocked_plugin_updates(): array {
-		return array(
-			'file modifications disallowed'         => array( 'file mods' ),
-			'upgrader lock held by another request' => array( 'lock' ),
-		);
-	}
-
-	/**
-	 * @testdox On a multisite, a plugin update uses the main site's core lock and restores the calling site.
-	 * @group multisite
-	 */
-	public function test_multisite_plugin_update_lock_uses_the_main_site_and_restores_the_calling_blog(): void {
-		if ( ! is_multisite() ) {
-			$this->markTestSkipped( 'Test only runs on Multisite.' );
-		}
-
-		$main_site_id = get_main_site_id();
-		$this->assertGreaterThan( 0, $main_site_id );
-		$subsite_id = self::factory()->blog->create();
-		$this->assertIsInt( $subsite_id );
-		switch_to_blog( $subsite_id );
-		try {
-			$job       = new class() extends ReconciliationJob {
-				/** @var int[] */
-				private array $upgrade_blogs = array();
-
-				/** @var bool[] */
-				private array $lock_observations = array();
-
-				/** Refresh controlled update metadata. */
-				protected function refresh_plugin_update_metadata(): void {
-				}
-
-				/**
-				 * Return a controlled unsuccessful update.
-				 *
-				 * @param string $plugin_file Active plugin file.
-				 * @return bool
-				 */
-				protected function upgrade_woopayments_plugin_file( string $plugin_file ): bool {
-					$this->upgrade_blogs[]     = get_current_blog_id();
-					$this->lock_observations[] = false !== get_option( 'woocommerce_woopayments_cutover_plugin_update_lock.lock', false );
-					return false;
-				}
-
-				/** @return int[] */
-				public function get_upgrade_blogs(): array {
-					return $this->upgrade_blogs;
-				}
-
-				/** @return bool[] */
-				public function get_lock_observations(): array {
-					return $this->lock_observations;
-				}
-			};
-			$preflight = $this->create_preflight_with_failures( array( 'woopayments_plugin_version_unsupported' ), false, array(), 'woocommerce-payments/woocommerce-payments.php' );
-			$this->create_job( true, $preflight, $job );
-			$this->assertSame( $subsite_id, get_current_blog_id() );
-			$method = new \ReflectionMethod( ReconciliationJob::class, 'update_woopayments_plugin' );
-			$method->setAccessible( true );
-			$this->assertFalse( $method->invoke( $job ) );
-
-			$this->assertSame( array( $main_site_id ), $job->get_upgrade_blogs() );
-			$this->assertSame( array( true ), $job->get_lock_observations() );
-			$this->assertFalse( get_option( 'woocommerce_woopayments_cutover_plugin_update_lock.lock', false ) );
-			$this->assertSame( $subsite_id, get_current_blog_id() );
-		} finally {
-			while ( ms_is_switched() ) {
-				restore_current_blog();
-			}
-		}
-	}
-
-	/**
-	 * @testdox A throwing core lock release still restores the calling multisite blog.
-	 * @group multisite
-	 */
-	public function test_throwing_multisite_plugin_update_lock_release_restores_the_calling_blog(): void {
-		if ( ! is_multisite() ) {
-			$this->markTestSkipped( 'Test only runs on Multisite.' );
-		}
-
-		$main_site_id = get_main_site_id();
-		$this->assertGreaterThan( 0, $main_site_id );
-		$subsite_id = self::factory()->blog->create();
-		$this->assertIsInt( $subsite_id );
-		switch_to_blog( $subsite_id );
-		$lock_name   = 'woocommerce_woopayments_cutover_plugin_update_lock';
-		$delete_hook = 'delete_option_' . $lock_name . '.lock';
-		$thrower     = static function (): void {
-			throw new \RuntimeException( 'Expected core lock release failure.' );
-		};
-		try {
-			$job       = new class() extends ReconciliationJob {
-				/** @var array<int,array<string,mixed>> */
-				private array $errors = array();
-
-				/** Refresh controlled update metadata. */
-				protected function refresh_plugin_update_metadata(): void {
-				}
-
-				/**
-				 * Return a controlled unsuccessful update.
-				 *
-				 * @param string $plugin_file Active WooPayments plugin file.
-				 * @return bool
-				 */
-				protected function upgrade_woopayments_plugin_file( string $plugin_file ): bool {
-					unset( $plugin_file );
-					return false;
-				}
-
-				/**
-				 * Record the handled release failure without relying on the global logger.
-				 *
-				 * @param string              $message Error message.
-				 * @param array<string,mixed> $context Error context.
-				 */
-				protected function write_log_error( string $message, array $context ): void {
-					$this->errors[] = array(
-						'message' => $message,
-						'context' => $context,
-					);
-				}
-
-				/** @return array<int,array<string,mixed>> */
-				public function get_errors(): array {
-					return $this->errors;
-				}
-			};
-			$preflight = $this->create_preflight_with_failures( array( 'woopayments_plugin_version_unsupported' ), false, array(), 'woocommerce-payments/woocommerce-payments.php' );
-			$this->create_job( true, $preflight, $job );
-			add_action( $delete_hook, $thrower );
-
-			$method = new \ReflectionMethod( ReconciliationJob::class, 'update_woopayments_plugin' );
-			$method->setAccessible( true );
-			$this->assertFalse( $method->invoke( $job ) );
-
-			$this->assertSame( $subsite_id, get_current_blog_id() );
-			$this->assertCount( 2, $job->get_errors() );
-			$this->assertSame( 'WooPayments cutover extension update failed.', $job->get_errors()[1]['message'] );
-			$update_failure = $job->get_errors()[1]['context'];
-			$this->assertSame( array( 'woocommerce-payments/woocommerce-payments.php', \RuntimeException::class, 0 ), array( $update_failure['plugin_file'] ?? '', $update_failure['exception'] ?? '', $update_failure['code'] ?? null ) );
-			$this->assertNotSame( '', $update_failure['trace'] ?? '' );
-			$this->assertStringNotContainsString( 'Expected core lock release failure', (string) wp_json_encode( $update_failure ) );
-		} finally {
-			remove_action( $delete_hook, $thrower );
-			if ( get_current_blog_id() !== $main_site_id ) {
-				switch_to_blog( $main_site_id );
-				$cleanup_switched = true;
-			} else {
-				$cleanup_switched = false;
-			}
-			\WP_Upgrader::release_lock( $lock_name );
-			if ( $cleanup_switched ) {
-				restore_current_blog();
-			}
-			while ( ms_is_switched() ) {
-				restore_current_blog();
-			}
-		}
 	}
 
 	/**
@@ -5150,666 +4911,6 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$sut->handle_reconcile( $excluded['generation'], $excluded['attempt'] );
 
 		$this->assertSame( $excluded, $this->state_store->get_record() );
-	}
-
-	/**
-	 * @testdox Plugin update failures defer one attempt without installing another plugin copy.
-	 *
-	 * @dataProvider plugin_update_result_provider
-	 *
-	 * @param mixed  $result           Upgrade result.
-	 * @param bool   $throws           Whether the core upgrader throws.
-	 * @param string $expected_message Expected logged error message for this result.
-	 */
-	public function test_plugin_update_failures_defer_without_a_second_install( $result, bool $throws, string $expected_message ): void {
-		$job       = new class( $result, $throws ) extends ReconciliationJob {
-			/** @var mixed */
-			private $upgrade_result;
-
-			/** @var bool */
-			private bool $throws;
-
-			/** @var int */
-			private int $metadata_refreshes = 0;
-
-			/** @var string[] */
-			private array $upgraded_plugin_files = array();
-
-			/** @var bool[] */
-			private array $lock_observations = array();
-
-			/** @var array<int,array<string,mixed>> */
-			private array $errors = array();
-
-			/**
-			 * Initialize the controlled core updater result.
-			 *
-			 * @param mixed $upgrade_result Upgrade result.
-			 * @param bool  $throws         Whether the core upgrader throws.
-			 */
-			public function __construct( $upgrade_result, bool $throws ) {
-				$this->upgrade_result = $upgrade_result;
-				$this->throws         = $throws;
-			}
-
-			/** Refresh controlled update metadata. */
-			protected function refresh_plugin_update_metadata(): void {
-				++$this->metadata_refreshes;
-			}
-
-			/**
-			 * Return the controlled core upgrader result.
-			 *
-			 * @param string $plugin_file Active plugin file.
-			 * @return mixed
-			 */
-			protected function upgrade_woopayments_plugin_file( string $plugin_file ) {
-				$this->upgraded_plugin_files[] = $plugin_file;
-				$this->lock_observations[]     = false !== get_option( 'woocommerce_woopayments_cutover_plugin_update_lock.lock', false );
-				if ( $this->throws ) {
-					throw new \RuntimeException( 'Expected core upgrader failure.' );
-				}
-				return $this->upgrade_result;
-			}
-
-			/**
-			 * Report that the installed plugin files still carry an unsupported version.
-			 *
-			 * @param string $plugin_file Active plugin file.
-			 * @return string
-			 */
-			protected function get_installed_plugin_version( string $plugin_file ): string {
-				unset( $plugin_file ); // Avoid parameter not used PHPCS errors.
-				return '10.4.0';
-			}
-
-			/**
-			 * Record the handled release failure without relying on the global logger.
-			 *
-			 * @param string              $message Error message.
-			 * @param array<string,mixed> $context Error context.
-			 */
-			protected function write_log_error( string $message, array $context ): void {
-				$this->errors[] = array(
-					'message' => $message,
-					'context' => $context,
-				);
-			}
-
-			/** @return int */
-			public function get_metadata_refresh_count(): int {
-				return $this->metadata_refreshes;
-			}
-
-			/** @return string[] */
-			public function get_upgraded_plugin_files(): array {
-				return $this->upgraded_plugin_files;
-			}
-
-			/** @return bool[] */
-			public function get_lock_observations(): array {
-				return $this->lock_observations;
-			}
-
-			/** @return array<int,array<string,mixed>> */
-			public function get_errors(): array {
-				return $this->errors;
-			}
-		};
-		$preflight = $this->create_preflight_with_failures( array( 'woopayments_plugin_version_unsupported' ), false, array(), 'woocommerce-payments/woocommerce-payments.php' );
-		$sut       = $this->create_job( true, $preflight, $job );
-		$sut->enqueue( 'merchant' );
-		$pending = $this->state_store->get_record();
-		$this->assertIsArray( $pending );
-		$this->scheduler->cancel( $pending['generation'], 1 );
-
-		$before = time();
-		$sut->handle_reconcile( $pending['generation'], 1 );
-		$after = time();
-
-		$deferred = $this->state_store->get_record();
-		$this->assertIsArray( $deferred );
-		$this->assertSame( StateStore::STATE_DEFERRED, $deferred['state'] );
-		$this->assertSame( array( 'woopayments_plugin_version_unsupported' ), $deferred['deferred_codes'] );
-		$this->assertGreaterThanOrEqual( $before + 15 * MINUTE_IN_SECONDS, $deferred['next_attempt_at'], 'An update that did not install a supported version keeps the retry cadence.' );
-		$this->assertLessThanOrEqual( $after + 15 * MINUTE_IN_SECONDS, $deferred['next_attempt_at'] );
-		$this->assertSame( 1, $job->get_metadata_refresh_count() );
-		$this->assertSame( array( 'woocommerce-payments/woocommerce-payments.php' ), $job->get_upgraded_plugin_files() );
-		$this->assertSame( array( true ), $job->get_lock_observations() );
-		$this->assertFalse( get_option( 'woocommerce_woopayments_cutover_plugin_update_lock.lock', false ) );
-
-		$this->assertCount( 1, $job->get_errors(), 'Every plugin update result must log exactly one outcome message.' );
-		$this->assertSame( $expected_message, $job->get_errors()[0]['message'] );
-	}
-
-	/**
-	 * @testdox A successful plugin update defers quietly until the plugin records its new version, then finalizes without a second update.
-	 *
-	 * Source: client 11.1.0 `includes/class-wc-payments.php:376` bumps the recorded version on the plugin's next `init`,
-	 * so the request that ran the update still reads the old version.
-	 */
-	public function test_successful_plugin_update_is_not_repeated_after_the_version_blocker_clears(): void {
-		$preflight     = new class() extends PreflightService {
-			/** @var bool */
-			private bool $version_unsupported = true;
-
-			/** @var int */
-			public int $deactivation_calls = 0;
-
-			/** @return string[] */
-			public function get_failures(): array {
-				return $this->version_unsupported ? array( 'woopayments_plugin_version_unsupported' ) : array();
-			}
-
-			/** Clear the controlled version failure, as the plugin's own next request does. */
-			public function mark_plugin_version_supported(): void {
-				$this->version_unsupported = false;
-			}
-
-			/** Invalidate the controlled preflight result. */
-			public function invalidate_current_blog_memoization(): void {
-			}
-
-			/** @return array<int,array{action_id:int,hook:string,group:string}> */
-			public function get_queued_operational_actions(): array {
-				return array();
-			}
-
-			/** Return the controlled active plugin file. */
-			public function get_active_woopayments_plugin_file(): string {
-				return 'woocommerce-payments/woocommerce-payments.php';
-			}
-
-			/** Record the finalization deactivation. */
-			public function deactivate_woopayments_plugin(): bool {
-				++$this->deactivation_calls;
-				return true;
-			}
-
-			/**
-			 * Report the controlled site-local activation state.
-			 *
-			 * The real implementation reads through `$legacy_proxy`, which this
-			 * isolated double never initializes; this scenario is site-local, so
-			 * the answer is fixed.
-			 */
-			public function is_woopayments_network_active(): bool {
-				return false;
-			}
-
-			/** Active on the site until the job deactivates it. */
-			public function is_woopayments_stored_site_active(): bool {
-				return ! $this->is_woopayments_network_active();
-			}
-		};
-		$job           = new class() extends ReconciliationJob {
-			/** @var int */
-			private int $metadata_refreshes = 0;
-
-			/** @var string[] */
-			private array $upgraded_plugin_files = array();
-
-			/** @var bool[] */
-			private array $lock_observations = array();
-
-			/** @var array<int,array<string,mixed>> */
-			private array $errors = array();
-
-			/** Refresh controlled update metadata. */
-			protected function refresh_plugin_update_metadata(): void {
-				++$this->metadata_refreshes;
-			}
-
-			/**
-			 * Complete one controlled core plugin update.
-			 *
-			 * Returns an array, the real shape `Plugin_Upgrader::bulk_upgrade()` reports for a completed
-			 * install. The recorded version option does not move here: the plugin bumps it on its next request.
-			 *
-			 * @param string $plugin_file Active plugin file.
-			 * @return array<string,mixed>
-			 */
-			protected function upgrade_woopayments_plugin_file( string $plugin_file ): array {
-				$this->upgraded_plugin_files[] = $plugin_file;
-				$this->lock_observations[]     = false !== get_option( 'woocommerce_woopayments_cutover_plugin_update_lock.lock', false );
-				// Core's upgrader_process_complete reaches the listener when the update finishes; the job's own update runs
-				// inside its claim, which the listener leaves alone. Called directly: core's own callbacks there check for
-				// updates over HTTP.
-				$record = get_option( StateStore::OPTION_NAME );
-				( new PluginLifecycleListener() )->handle_upgrader_process_complete(
-					null,
-					array(
-						'action'  => 'update',
-						'type'    => 'plugin',
-						'bulk'    => true,
-						'plugins' => array( $plugin_file ),
-					)
-				);
-				$this->records_unchanged_by_the_update_hook[] = get_option( StateStore::OPTION_NAME ) === $record;
-				return array( 'destination_name' => 'woocommerce-payments' );
-			}
-
-			/** @var bool[] Whether the record was the same after core's update hook ran. */
-			public array $records_unchanged_by_the_update_hook = array();
-
-			/**
-			 * Report the header version of the freshly installed plugin files.
-			 *
-			 * @param string $plugin_file Active plugin file.
-			 * @return string
-			 */
-			protected function get_installed_plugin_version( string $plugin_file ): string {
-				unset( $plugin_file ); // Avoid parameter not used PHPCS errors.
-				return '11.1.0';
-			}
-
-			/**
-			 * Record logged errors without relying on the global logger.
-			 *
-			 * @param string              $message Error message.
-			 * @param array<string,mixed> $context Error context.
-			 */
-			protected function write_log_error( string $message, array $context ): void {
-				$this->errors[] = array(
-					'message' => $message,
-					'context' => $context,
-				);
-			}
-
-			/** @return int */
-			public function get_metadata_refresh_count(): int {
-				return $this->metadata_refreshes;
-			}
-
-			/** @return string[] */
-			public function get_upgraded_plugin_files(): array {
-				return $this->upgraded_plugin_files;
-			}
-
-			/** @return bool[] */
-			public function get_lock_observations(): array {
-				return $this->lock_observations;
-			}
-
-			/** @return array<int,array<string,mixed>> */
-			public function get_errors(): array {
-				return $this->errors;
-			}
-		};
-		$normalization = new class() extends DataMigration {
-			/** @return array{changes:string[]} */
-			public function run_for_switch(): array {
-				return array(
-					'changes' => array(),
-				);
-			}
-		};
-		$sut           = $this->create_job( true, $preflight, $job, true, $normalization );
-		$sut->enqueue( 'merchant' );
-		$pending = $this->state_store->get_record();
-		$this->assertIsArray( $pending );
-		$this->scheduler->cancel( $pending['generation'], 1 );
-		// The listener reaches the container's job, which acts only with the feature on.
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-
-		$before = time();
-		try {
-			$sut->handle_reconcile( $pending['generation'], 1 );
-		} finally {
-			delete_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION );
-		}
-		$after = time();
-		$this->assertSame( array( true ), $job->records_unchanged_by_the_update_hook, "The job's own update does not bring its attempt forward." );
-
-		$first = $this->state_store->get_record();
-		$this->assertIsArray( $first );
-		$this->assertSame( StateStore::STATE_DEFERRED, $first['state'] );
-		$this->assertSame( array( 'woopayments_plugin_version_unsupported' ), $first['deferred_codes'] );
-		// One minute, not now: Action Scheduler would claim a due retry in this run, which still has the old extension loaded.
-		$this->assertGreaterThanOrEqual( $before + MINUTE_IN_SECONDS, $first['next_attempt_at'], 'The retry after a supported update comes a minute later.' );
-		$this->assertLessThanOrEqual( $after + MINUTE_IN_SECONDS, $first['next_attempt_at'] );
-		$this->assertSame( $first['action_id'], $this->scheduler->get_scheduled_action_id( $first['generation'], 2 ) );
-		$this->assertSame( array(), $job->get_errors(), 'A completed update that installed a supported version must not log an error.' );
-		$this->assertSame( 1, $job->get_metadata_refresh_count() );
-		$this->assertSame( array( 'woocommerce-payments/woocommerce-payments.php' ), $job->get_upgraded_plugin_files() );
-		$this->assertSame( array( true ), $job->get_lock_observations() );
-		$this->assertFalse( get_option( 'woocommerce_woopayments_cutover_plugin_update_lock.lock', false ) );
-		$this->assertSame( 0, $preflight->deactivation_calls );
-
-		$preflight->mark_plugin_version_supported();
-		$this->scheduler->cancel( $first['generation'], 2 );
-		$sut->handle_reconcile( $first['generation'], 2 );
-
-		$second = $this->state_store->get_record();
-		$this->assertIsArray( $second );
-		$this->assertSame( StateStore::STATE_PENDING, $second['state'] );
-		$this->assertSame( 'verify_builtin_ownership', $second['current_step'] );
-		$this->assertSame( 1, $preflight->deactivation_calls );
-		$this->assertSame( 1, $job->get_metadata_refresh_count() );
-		$this->assertSame( array( 'woocommerce-payments/woocommerce-payments.php' ), $job->get_upgraded_plugin_files() );
-		$this->assertSame( array(), $job->get_errors() );
-	}
-
-	/**
-	 * Provide installed plugin headers around the minimum cutover version.
-	 *
-	 * @return array<string,array{?string,string,int}>
-	 */
-	public function installed_plugin_version_provider(): array {
-		return array(
-			'the minimum supported version' => array( '10.6.0', '10.6.0', 0 ),
-			'the last release below it'     => array( '10.5.2', '10.5.2', 1 ),
-			'a missing plugin file'         => array( null, '', 1 ),
-		);
-	}
-
-	/**
-	 * @testdox The installed plugin header decides whether a completed update logs a failed version install.
-	 *
-	 * @dataProvider installed_plugin_version_provider
-	 *
-	 * @param string|null $header_version   Version header written to the fixture plugin file, or null for no file.
-	 * @param string      $expected_version Expected version read from the installed file.
-	 * @param int         $expected_errors  Expected number of logged errors after the completed update.
-	 */
-	public function test_installed_plugin_header_decides_the_completed_update_log( ?string $header_version, string $expected_version, int $expected_errors ): void {
-		// A fixture directory no real plugin uses, so a mounted WooPayments install is never read or touched.
-		$plugin_file     = 'woopayments-cutover-version-fixture/woocommerce-payments.php';
-		$plugin_absolute = WP_PLUGIN_DIR . '/' . $plugin_file;
-		if ( null !== $header_version ) {
-			wp_mkdir_p( dirname( $plugin_absolute ) );
-			file_put_contents( $plugin_absolute, "<?php\n/**\n * Plugin Name: WooPayments Fixture\n * Version: {$header_version}\n */\n" ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Test fixture written to the test install's own plugins directory.
-		}
-
-		$job = new class() extends ReconciliationJob {
-			/** @var array<int,array<string,mixed>> */
-			private array $errors = array();
-
-			/** No-op controlled update metadata refresh, so the real wordpress.org API is never called. */
-			protected function refresh_plugin_update_metadata(): void {
-			}
-
-			/**
-			 * Complete one controlled core plugin update without touching the fixture file.
-			 *
-			 * @param string $plugin_file Active plugin file.
-			 * @return array<string,mixed>
-			 */
-			protected function upgrade_woopayments_plugin_file( string $plugin_file ): array {
-				unset( $plugin_file ); // Avoid parameter not used PHPCS errors.
-				return array( 'destination_name' => 'woocommerce-payments' );
-			}
-
-			/**
-			 * Record logged errors without relying on the global logger.
-			 *
-			 * @param string              $message Error message.
-			 * @param array<string,mixed> $context Error context.
-			 */
-			protected function write_log_error( string $message, array $context ): void {
-				$this->errors[] = array(
-					'message' => $message,
-					'context' => $context,
-				);
-			}
-
-			/**
-			 * Read the installed header through the real seam.
-			 *
-			 * @param string $plugin_file Plugin file relative to the plugins directory.
-			 * @return string
-			 */
-			public function read_installed_plugin_version( string $plugin_file ): string {
-				return $this->get_installed_plugin_version( $plugin_file );
-			}
-
-			/** @return array<int,array<string,mixed>> */
-			public function get_errors(): array {
-				return $this->errors;
-			}
-		};
-
-		try {
-			$installed_version = $job->read_installed_plugin_version( $plugin_file );
-
-			$preflight = $this->create_preflight_with_failures( array( 'woopayments_plugin_version_unsupported' ), false, array(), $plugin_file );
-			$sut       = $this->create_job( true, $preflight, $job );
-			$sut->enqueue( 'merchant' );
-			$pending = $this->state_store->get_record();
-			$this->assertIsArray( $pending );
-			$this->scheduler->cancel( $pending['generation'], 1 );
-
-			$sut->handle_reconcile( $pending['generation'], 1 );
-		} finally {
-			if ( null !== $header_version ) {
-				wp_delete_file( $plugin_absolute );
-				@rmdir( dirname( $plugin_absolute ) ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Best-effort cleanup of a directory this test created.
-			}
-		}
-
-		$this->assertSame( $expected_version, $installed_version );
-		$deferred = $this->state_store->get_record();
-		$this->assertIsArray( $deferred );
-		$this->assertSame( StateStore::STATE_DEFERRED, $deferred['state'] );
-		$this->assertSame( array( 'woopayments_plugin_version_unsupported' ), $deferred['deferred_codes'] );
-		$this->assertCount( $expected_errors, $job->get_errors() );
-		if ( $expected_errors > 0 ) {
-			$this->assertSame( 'WooPayments cutover extension update completed without installing a supported version.', $job->get_errors()[0]['message'] );
-		}
-	}
-
-	/**
-	 * Provide the real-world request contexts a plugin-update attempt can run in.
-	 *
-	 * @return array<string,array{bool}>
-	 */
-	public function plugin_update_request_context_provider(): array {
-		return array(
-			'the async admin-ajax runner (not WP-Cron)' => array( false ),
-			'a WP-Cron run, where core already protects the plugin' => array( true ),
-		);
-	}
-
-	/**
-	 * @testdox A deferred version-blocked update must leave the plugin active and owning, because WordPress core's real upgrader silently deactivates an active plugin outside WP-Cron and nothing restores it.
-	 *
-	 * @dataProvider plugin_update_request_context_provider
-	 *
-	 * @param bool $doing_cron Whether to force the WP-Cron request-context signal WordPress core's upgrader checks.
-	 */
-	public function test_deferred_plugin_update_does_not_deactivate_the_still_owning_plugin( bool $doing_cron ): void {
-		if ( ! class_exists( '\ZipArchive' ) ) {
-			$this->markTestSkipped( 'ZipArchive is required to build the test package.' );
-		}
-
-		// The upgrader runs core's update checks, and WooCommerce.com's extension update check; answer them with "no updates", since this case is about deactivation.
-		// Incidental: no assertion reads the WooCommerce.com answer, it only keeps the request offline. The empty list is decoded
-		// to an empty product map, which means no updates (includes/admin/helper/class-wc-helper-updater.php:741 and :772).
-		add_filter(
-			'pre_http_request',
-			static function ( $response, $args, $url ) {
-				unset( $args );
-				$no_updates = array(
-					'api.wordpress.org/core/version-check/'   => array(
-						'offers'       => array(),
-						'translations' => array(),
-					),
-					'api.wordpress.org/plugins/update-check/' => array(
-						'plugins'      => array(),
-						'translations' => array(),
-						'no_update'    => array(),
-					),
-					'api.wordpress.org/themes/update-check/'  => array(
-						'themes'       => array(),
-						'translations' => array(),
-						'no_update'    => array(),
-					),
-					'woocommerce.com/wp-json/helper/1.0/update-check-public' => array(),
-				);
-				foreach ( $no_updates as $path => $body ) {
-					if ( false === $response && false !== strpos( $url, $path ) ) {
-						return array(
-							'headers'  => array(),
-							'body'     => wp_json_encode( $body ),
-							'response' => array(
-								'code'    => 200,
-								'message' => 'OK',
-							),
-							'cookies'  => array(),
-							'filename' => null,
-						);
-					}
-				}
-
-				return $response;
-			},
-			10,
-			3
-		);
-
-		// This PHPUnit environment does not mount the real WooPayments plugin (only the browser/e2e
-		// environments do), so create a minimal fixture plugin under the test install's own plugins
-		// directory. Only remove what this test itself created, so a real mounted plugin is never touched.
-		$plugin_file       = 'woocommerce-payments/woocommerce-payments.php';
-		$plugin_absolute   = WP_PLUGIN_DIR . '/' . $plugin_file;
-		$fixture_directory = null;
-		if ( ! file_exists( $plugin_absolute ) ) {
-			$fixture_directory = dirname( $plugin_absolute );
-			wp_mkdir_p( $fixture_directory );
-			file_put_contents( $plugin_absolute, "<?php\n/**\n * Plugin Name: WooPayments Fixture\n * Version: 10.4.0\n */\n" ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Test fixture written to the test install's own plugins directory.
-		}
-
-		update_option( 'active_plugins', array( $plugin_file ) );
-
-		// Build a tiny real package so WordPress core's real upgrader can run its real install flow up to
-		// (but never through) the copy step: the pre-install observer below always stops it there, so this
-		// works the same whether the plugin above is a fixture this test wrote or a real mounted install.
-		$package = wp_tempnam( 'woocommerce-payments-fixture.zip' );
-		// `unpack_package()` unzips into this working directory (`WP_Upgrader::unpack_package()`'s own name
-		// derivation) and only removes it once `install_package()` reaches its `clear_working` step, which
-		// the pre-install stop below never reaches; clean it up ourselves.
-		$upgrade_working_dir = trailingslashit( WP_CONTENT_DIR ) . 'upgrade/' . basename( basename( $package, '.tmp' ), '.zip' );
-		$zip                 = new \ZipArchive();
-		$zip->open( $package, \ZipArchive::OVERWRITE );
-		$zip->addFromString( $plugin_file, "<?php\n/**\n * Plugin Name: WooPayments Fixture\n * Version: 10.6.0\n */\n" );
-		$zip->close();
-
-		set_site_transient(
-			'update_plugins',
-			(object) array(
-				'response' => array(
-					$plugin_file => (object) array(
-						'package'     => $package,
-						'new_version' => '10.6.0',
-						'slug'        => 'woocommerce-payments',
-					),
-				),
-			)
-		);
-
-		$download = static function () use ( $package ) {
-			return $package;
-		};
-		add_filter( 'upgrader_pre_download', $download );
-
-		// Observe activation right at the point core's real upgrader would copy files in, one priority
-		// after core's own `deactivate_plugin_before_upgrade()` (added at priority 10 by `upgrade()`), then
-		// stop before any write happens, so nothing is ever copied into the plugin directory.
-		$active_at_pre_install = null;
-		$observe               = function () use ( $plugin_file, &$active_at_pre_install ) {
-			$active_at_pre_install = is_plugin_active( $plugin_file );
-			return new \WP_Error( 'test_stop_before_copy', 'Stop before the copy step so nothing is written to the plugin directory.' );
-		};
-		add_filter( 'upgrader_pre_install', $observe, 20 );
-
-		if ( $doing_cron ) {
-			add_filter( 'wp_doing_cron', '__return_true' );
-		}
-
-		$ob_level                  = ob_get_level();
-		$active_after_attempt      = null;
-		$owner_after_attempt       = null;
-		$maintenance_after_attempt = null;
-		try {
-			$job       = new class() extends ReconciliationJob {
-				/** No-op controlled update metadata refresh, so the real wordpress.org API is never called. */
-				protected function refresh_plugin_update_metadata(): void {
-				}
-			};
-			$preflight = $this->create_preflight_with_failures( array( 'woopayments_plugin_version_unsupported' ), false, array(), $plugin_file );
-			$sut       = $this->create_job( true, $preflight, $job );
-			$sut->enqueue( 'merchant' );
-			$pending = $this->state_store->get_record();
-			$this->assertIsArray( $pending );
-			$this->scheduler->cancel( $pending['generation'], 1 );
-
-			$sut->handle_reconcile( $pending['generation'], 1 );
-
-			// Capture post-attempt state before the cleanup below resets `active_plugins`.
-			$active_after_attempt = is_plugin_active( $plugin_file );
-			$arbiter              = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
-			$arbiter->invalidate();
-			$owner_after_attempt = $arbiter->get_runtime_owner();
-			$arbiter->invalidate();
-			// `bulk_upgrade()` turns maintenance mode on for the copy in every request context (unlike
-			// `upgrade()`, which only did so in WP-Cron) and always turns it back off after the loop; the
-			// pre-install stop above never reaches that point, so this must still be off on its own.
-			$maintenance_after_attempt = file_exists( ABSPATH . '.maintenance' );
-		} finally {
-			remove_filter( 'upgrader_pre_download', $download );
-			remove_filter( 'upgrader_pre_install', $observe, 20 );
-			if ( $doing_cron ) {
-				remove_filter( 'wp_doing_cron', '__return_true' );
-			}
-			wp_delete_file( $package );
-			update_option( 'active_plugins', array() );
-			if ( null !== $fixture_directory ) {
-				wp_delete_file( $plugin_absolute );
-				@rmdir( $fixture_directory ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Best-effort cleanup of a directory this test created.
-			}
-			// Safety net in case the upgrader above left maintenance mode on (see the capture above).
-			if ( file_exists( ABSPATH . '.maintenance' ) ) {
-				wp_delete_file( ABSPATH . '.maintenance' );
-			}
-			global $wp_filesystem;
-			if ( $wp_filesystem instanceof \WP_Filesystem_Base && $wp_filesystem->is_dir( $upgrade_working_dir ) ) {
-				$wp_filesystem->delete( $upgrade_working_dir, true );
-			}
-			while ( ob_get_level() > $ob_level ) {
-				ob_end_clean();
-			}
-		}
-
-		$deferred = $this->state_store->get_record();
-		$this->assertIsArray( $deferred );
-		$this->assertSame( StateStore::STATE_DEFERRED, $deferred['state'] );
-		$this->assertSame( array( 'woopayments_plugin_version_unsupported' ), $deferred['deferred_codes'] );
-
-		$this->assertTrue( $active_at_pre_install, 'The plugin must still be active at the pre-install point: a deferred update must keep the plugin owning payments until a later attempt finalizes.' );
-		$this->assertTrue( $active_after_attempt, 'A deferred version-blocked update must leave the plugin active; only finalize() may deactivate it.' );
-		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_EXTENSION, $owner_after_attempt, 'The plugin must still own the runtime while the version blocker defers the cutover.' );
-		$this->assertFalse( $maintenance_after_attempt, 'bulk_upgrade() must always turn maintenance mode back off, even though this attempt stops before install.' );
-	}
-
-	/**
-	 * Provide WordPress core updater result shapes and the message each must log.
-	 *
-	 * `true` is `bulk_upgrade()`'s "up to date" result (no update was offered), not a completed
-	 * install: only an array result (the real `install_package()` shape) counts as completed.
-	 *
-	 * @return array<string,array{mixed,bool,string}>
-	 */
-	public function plugin_update_result_provider(): array {
-		$did_not_complete = 'WooPayments cutover extension update did not complete.';
-
-		return array(
-			'false result'                   => array( false, false, $did_not_complete ),
-			'null result'                    => array( null, false, $did_not_complete ),
-			'WordPress error result'         => array( new \WP_Error( 'upgrade_failed' ), false, $did_not_complete ),
-			'up to date result'              => array( true, false, $did_not_complete ),
-			'completed but still old result' => array( array( 'destination_name' => 'woocommerce-payments' ), false, 'WooPayments cutover extension update completed without installing a supported version.' ),
-			'thrown result'                  => array( null, true, 'WooPayments cutover extension update failed.' ),
-		);
 	}
 
 	/**

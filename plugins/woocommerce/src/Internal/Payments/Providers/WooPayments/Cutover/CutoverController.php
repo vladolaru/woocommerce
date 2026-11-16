@@ -339,18 +339,6 @@ class CutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Bring forward a switch that waits for a newer WooPayments extension, once a store manager updated it by hand, as the
-	 * update warning asks.
-	 *
-	 * @internal
-	 *
-	 * @since 11.4.0
-	 */
-	public function handle_woopayments_updated(): void {
-		$this->reconciliation_job->bring_deferred_attempt_forward( PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED );
-	}
-
-	/**
 	 * Open a new generation when activating the WooPayments extension again rolls back a completed cutover.
 	 *
 	 * An activation for every site of a multisite is recorded for each site by PerSiteActivationController, which
@@ -418,13 +406,15 @@ class CutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Queue the mandatory cutover when the lever is on and the WooPayments extension owns the store.
+	 * Queue the mandatory cutover when the lever is on and the WooPayments extension owns the store at a version the switch
+	 * supports: the switch never updates the extension. The version is read last, so a store with the lever off reads none.
 	 */
 	private function enqueue_mandatory_cutover(): void {
 		if (
 			! $this->is_mandatory_cutover_enabled() ||
 			! $this->arbiter->is_extension_owner() ||
-			Constants::is_true( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' )
+			Constants::is_true( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' ) ||
+			! $this->preflight_service->is_woopayments_plugin_version_supported()
 		) {
 			return;
 		}
@@ -450,9 +440,8 @@ class CutoverController implements RegisterHooksInterface {
 
 	/**
 	 * Tell whether this request may start the switch: it may manage it, the WooPayments extension is not active for every
-	 * site (a switch deactivates it on its own site only), the extension version the store last ran either supports the
-	 * switch or can be updated by the switch for this user, and the extension is not loaded from outside Plugins, where the
-	 * switch could not turn it off.
+	 * site (a switch deactivates it on its own site only), the store last ran an extension version the switch supports, and
+	 * the extension is not loaded from outside Plugins, where the switch could not turn it off.
 	 *
 	 * @return bool
 	 */
@@ -464,24 +453,14 @@ class CutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether the store last ran a WooPayments extension too old to switch from, and the switch cannot update it for
-	 * this user.
-	 *
-	 * While the extension owns payments the switch updates it, which changes the plugin files every site of a network
-	 * shares, so the user must be allowed to update plugins. A store waiting for its switch cannot be updated by the switch:
-	 * the extension's version is recorded only when it runs, so the switch's version check fails until the merchant
-	 * activates and updates it.
+	 * Tell whether the store last ran a WooPayments extension too old to switch from, so the merchant must update it before
+	 * the switch: the switch never updates it. The extension records its version only when it runs, so a store waiting for
+	 * its switch is asked to activate it and update it.
 	 *
 	 * @return bool
 	 */
 	private function needs_extension_update_first(): bool {
-		if ( $this->preflight_service->is_woopayments_plugin_version_supported() ) {
-			return false;
-		}
-
-		return $this->arbiter->is_extension_owner()
-			? ! $this->legacy_proxy->call_function( 'current_user_can', 'update_plugins' )
-			: $this->arbiter->is_awaiting_switch();
+		return ! $this->preflight_service->is_woopayments_plugin_version_supported();
 	}
 
 	/**
@@ -564,8 +543,7 @@ class CutoverController implements RegisterHooksInterface {
 
 	/**
 	 * Offer the switch, or say what stands in the way: the WooPayments extension is active for every site, the store last
-	 * ran an extension too old to switch from that the switch cannot update for this user, or the extension is loaded from
-	 * outside Plugins.
+	 * ran an extension too old to switch from, or the extension is loaded from outside Plugins.
 	 */
 	private function output_start_notice(): void {
 		if ( $this->preflight_service->is_woopayments_network_active() ) {
@@ -597,7 +575,7 @@ class CutoverController implements RegisterHooksInterface {
 
 	/**
 	 * Output the warning telling a store manager to update the WooPayments extension before the switch: activate and update
-	 * it on a store waiting for its switch, or have it updated while it runs, by a super admin on a multisite.
+	 * it on a store waiting for its switch, or update it while it runs, which a super admin does on a multisite.
 	 */
 	private function output_update_first_warning(): void {
 		if ( ! $this->arbiter->is_extension_owner() ) {
@@ -630,12 +608,6 @@ class CutoverController implements RegisterHooksInterface {
 				// A switch whose extension became active for every site after its start waits for the per-site activation, and stops saying so once it no longer is.
 				if ( StateStore::STATE_DEFERRED === $record['state'] && $this->preflight_service->is_woopayments_network_active() && in_array( ReconciliationJob::CODE_PLUGIN_ACTIVE_SITEWIDE, (array) ( $record[ StateStore::BLOCKING_CODES_KEY ] ?? array() ), true ) ) {
 					$this->output_sitewide_refusal_notice();
-				}
-				// The job could not bring the extension files up to the supported version, so retries alone never finish. An
-				// extension updated by hand clears it: its files carry the new version at once, and the version it records once
-				// it runs stays recorded after a deactivation, which leaves no active file to read.
-				if ( StateStore::STATE_DEFERRED === $record['state'] && in_array( PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED, (array) ( $record[ StateStore::BLOCKING_CODES_KEY ] ?? array() ), true ) && ! $this->preflight_service->is_woopayments_plugin_version_supported() && ! $this->reconciliation_job->is_installed_woopayments_plugin_version_supported() ) {
-					$this->output_extension_update_warning();
 				}
 				// A started switch held back by such a plugin retries, and stops saying so once the plugin is no longer active.
 				if ( StateStore::STATE_DEFERRED === $record['state'] && in_array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE, (array) ( $record[ StateStore::BLOCKING_CODES_KEY ] ?? array() ), true ) ) {
@@ -729,21 +701,6 @@ class CutoverController implements RegisterHooksInterface {
 			<?php endif; ?>
 		</div>
 		<?php
-	}
-
-	/**
-	 * Output the warning telling a store that the switch waits for the merchant to update the WooPayments extension.
-	 * With the extension inactive on this site, it asks the merchant to activate WooPayments before updating it.
-	 */
-	private function output_extension_update_warning(): void {
-		if ( ! $this->arbiter->is_extension_owner() ) {
-			$message = __( 'The switch needs a newer version of the WooPayments extension. Activate WooPayments in Plugins, then update it to continue the switch.', 'woocommerce' );
-		} elseif ( wp_is_file_mod_allowed( 'automatic_updater' ) ) {
-			$message = __( 'The switch needs a newer version of the WooPayments extension, but it could not be updated automatically. Update WooPayments to continue the switch.', 'woocommerce' );
-		} else {
-			$message = __( 'The switch needs a newer version of the WooPayments extension, but this site does not allow automatic plugin updates. Update WooPayments to continue the switch.', 'woocommerce' );
-		}
-		echo '<div class="notice notice-warning"><p>' . esc_html( $message ) . '</p></div>';
 	}
 
 	/**
