@@ -128,13 +128,16 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * A store whose WordPress.com connection is broken, or whose WooPayments account cannot take payments, switches like
 	 * any other: payments stay off on the built-in WooPayments, and the merchant finishes setup in Payments settings.
+	 * Nothing else stands in the way here, so the preflight reports no failure at all.
 	 *
-	 * @testdox The preflight holds no store back for its WordPress.com connection or its account ($_dataName).
+	 * @testdox The preflight holds no store back for its WordPress.com connection, its account or its exchange rates ($_dataName).
 	 * @dataProvider provide_disconnected_stores
 	 *
 	 * @param string $state How the connected store with a working account is broken.
 	 */
 	public function test_preflight_holds_no_store_back_for_its_connection_or_its_account( string $state ): void {
+		// No installed extension files, so the recorded version decides alone.
+		$this->register_legacy_proxy_function_mocks( array( 'is_readable' => fn() => false ) );
 		$this->arrange_connected_store_that_takes_payments();
 		$account = get_option( 'wcpay_account_data' );
 		switch ( $state ) {
@@ -166,32 +169,39 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 			case 'details not submitted':
 				$account['data']['details_submitted'] = false;
 				break;
+			case 'never connected, automatic exchange rates':
+				Jetpack_Options::delete_option( array( 'id', 'blog_token', 'user_tokens', 'master_user' ) );
+				delete_option( 'wcpay_account_data' );
+				$this->enable_multi_currency_with_rate_type( 'automatic' );
+				break;
 		}
-		if ( 'never connected' !== $state ) {
+		if ( 0 !== strpos( $state, 'never connected' ) ) {
 			update_option( 'wcpay_account_data', $account, false );
 		}
 		JetpackConnection::get_manager()->reset_connection_status();
 
 		$failures = $this->create_sut()->get_failures();
 
-		$this->assertSame( array(), array_intersect( $failures, array( 'builtin_transport_unavailable', 'wpcom_connection_unavailable', 'wpcom_blog_id_unavailable', 'wpcom_connection_owner_unavailable' ) ) );
+		$this->assertSame( array(), $failures );
 	}
 
 	/**
-	 * The connection breaks and the account states that cannot take payments.
+	 * The connection breaks, the account states that cannot take payments, and a store with no connection whose
+	 * Multi-Currency has a currency on automatic exchange rates.
 	 *
 	 * @return array<string,array{string}>
 	 */
 	public function provide_disconnected_stores(): array {
 		return array(
-			'no blog token'         => array( 'no blog token' ),
-			'no blog ID'            => array( 'no blog ID' ),
-			'no connection owner'   => array( 'no connection owner' ),
-			'never connected'       => array( 'never connected' ),
-			'no account'            => array( 'no account' ),
-			'no publishable key'    => array( 'no publishable key' ),
-			'payments disabled'     => array( 'payments disabled' ),
-			'details not submitted' => array( 'details not submitted' ),
+			'no blog token'                             => array( 'no blog token' ),
+			'no blog ID'                                => array( 'no blog ID' ),
+			'no connection owner'                       => array( 'no connection owner' ),
+			'never connected'                           => array( 'never connected' ),
+			'no account'                                => array( 'no account' ),
+			'no publishable key'                        => array( 'no publishable key' ),
+			'payments disabled'                         => array( 'payments disabled' ),
+			'details not submitted'                     => array( 'details not submitted' ),
+			'never connected, automatic exchange rates' => array( 'never connected, automatic exchange rates' ),
 		);
 	}
 
