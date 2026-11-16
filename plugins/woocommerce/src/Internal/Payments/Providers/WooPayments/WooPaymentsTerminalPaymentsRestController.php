@@ -758,13 +758,21 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 
 		// The terminal capture holds the order payment lock. The client records the authorization, or an intent the reader
 		// captured, from the intent's status (class-wc-rest-payments-orders-controller.php:217), and a capture through its
-		// capture writer (:228).
+		// capture writer (:228). Here only the authorization is recorded from the intent's status: a payment the reader
+		// captured is recorded as the capture is, so on an order already Processing it is applied, not skipped as paid.
 		$event                       = new PaymentLifecycleEvent( $status, $intent_id, $meta, array(), $candidates[0], $note_type, $candidates, false, $hold_order );
 		$fee_details_note_controller = wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class );
-		if ( PaymentLifecycleEvent::STATUS_AUTHORIZED === $status || $already_captured ) {
+		if ( PaymentLifecycleEvent::STATUS_AUTHORIZED === $status ) {
 			$fee_details_note_controller->apply_intent_status_and_schedule_fee_details( $order, $event, $hold );
-		} else {
-			$fee_details_note_controller->apply_and_schedule_fee_details( $order, $event, $hold );
+			return;
+		}
+
+		$fee_details_note_controller->apply_and_schedule_fee_details( $order, $event, $hold );
+		// On an order that was already Processing the lifecycle completes the payment but withholds its note, since this
+		// route's attach already wrote the payment's transaction ID; the success note is added here, with the lifecycle's
+		// identity. A held payment gets none: the note would state the order's total, which is what differs.
+		if ( $already_captured && null === $hold && $this->note_service->add_note_once( $order, $candidates[0], $event->get_note_identity(), $candidates ) ) {
+			$fee_details_note_controller->schedule( $order, $intent_id );
 		}
 	}
 

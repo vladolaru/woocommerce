@@ -4,6 +4,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
+use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventOrderResolver;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -663,20 +665,21 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
-	 * @testdox A terminal payment on an order already in a paid status completes a capture but not an intent the reader captured: $intent_status.
+	 * @testdox A terminal payment on an order already in a paid status completes the payment once, with its own note and the Fee details job: $intent_status.
 	 *
-	 * The client records an intent the reader captured from its status, which leaves a paid order as it is
-	 * (class-wc-rest-payments-orders-controller.php:217, class-wc-payments-order-service.php:475), and a capture through its
-	 * capture writer, which has no paid check (:228, class-wc-payments-order-service.php:529-532); both then store the
-	 * terminal completion (:281).
+	 * The client records an intent the reader captured (Interac) from its status, which leaves a paid order as it is and
+	 * writes no note (class-wc-rest-payments-orders-controller.php:217, class-wc-payments-order-service.php:475), and a
+	 * capture through its capture writer, which has no paid check (:228, class-wc-payments-order-service.php:529-532); both
+	 * then store the terminal completion (:281). The built-in records the reader's payment as it records the capture, so a
+	 * "Pay in person" order that was already Processing names its payment.
 	 *
-	 * @testWith ["succeeded", false]
-	 *           ["requires_capture", true]
+	 * @testWith ["succeeded", "successfully charged"]
+	 *           ["requires_capture", "successfully captured"]
 	 *
 	 * @param string $intent_status Status of the intent the app sends.
-	 * @param bool   $completes     Whether the payment lifecycle completes the order.
+	 * @param string $note          What the payment's note says.
 	 */
-	public function test_capture_terminal_payment_on_a_paid_order( string $intent_status, bool $completes ): void {
+	public function test_capture_terminal_payment_on_a_paid_order( string $intent_status, string $note ): void {
 		$order = $this->create_order( 12.34, 'USD' );
 		$order->set_status( 'processing' );
 		$order->save();
@@ -700,10 +703,24 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 
 		$order    = wc_get_order( $order->get_id() );
 		$contents = implode( ' ', wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ) );
-		$this->assertSame( $completes ? 1 : 0, did_action( 'woocommerce_pre_payment_complete' ) - $completions );
-		$this->assertSame( $completes ? 1 : 0, substr_count( $contents, 'successfully captured' ) );
-		$this->assertStringNotContainsString( 'successfully charged', $contents );
+		$this->assertSame( 1, did_action( 'woocommerce_pre_payment_complete' ) - $completions );
+		$this->assertSame( 1, substr_count( $contents, $note ) );
+		$this->assertSame( 1, substr_count( $contents, 'successfully c' ), 'One payment note.' );
+		$this->assertStringNotContainsString( 'already had a paid status', $contents );
 		$this->assertStringNotContainsString( 'was <strong>authorized</strong>', $contents, 'The authorization is not recorded on the paid order.' );
+		$completed_status_note = new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, 'pi_terminal_paid', array(), array(), 'x', 'succeeded' === $intent_status ? PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS : PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS );
+		$this->assertGreaterThan( 0, wc_get_container()->get( OrderPaymentNotes::class )->find_by_identity( $order, $completed_status_note->get_note_identity(), new WooPaymentsPersistenceVocabulary() ), "The payment's note carries the lifecycle's identity, so its webhook finds it." );
+		$this->assertTrue(
+			as_has_scheduled_action(
+				WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
+				array(
+					'order_id'     => $order->get_id(),
+					'intent_id'    => 'pi_terminal_paid',
+					'is_test_mode' => false,
+				),
+				'woocommerce_payments'
+			)
+		);
 		$this->assertSame( $holds, did_action( 'woocommerce_order_status_on-hold' ), 'The paid order is not held.' );
 		$this->assertSame( 'completed', $order->get_status(), 'The terminal completion runs.' );
 		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
