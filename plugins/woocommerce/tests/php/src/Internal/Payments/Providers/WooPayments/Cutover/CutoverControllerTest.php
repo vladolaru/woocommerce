@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Cutover;
 
 use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\StateStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\DataMigration;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\ExtensionBoundRenewalPlugins;
@@ -44,6 +45,41 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	private const IN_PROGRESS_SENTENCE = 'WooPayments is now part of WooCommerce. This store is switching to the built-in WooPayments.';
 
 	/**
+	 * The in-progress line on a store that waits for its switch, where nothing takes payments.
+	 *
+	 * @var string
+	 */
+	private const AWAITING_IN_PROGRESS_SENTENCE = 'WooPayments is now part of WooCommerce. This store is switching to the built-in WooPayments. Until the switch finishes, this store can\'t take WooPayments payments.';
+
+	/**
+	 * The switch notice while the WooPayments extension owns payments.
+	 *
+	 * @var string
+	 */
+	private const START_SENTENCE = 'WooPayments is now part of WooCommerce. Start the switch: we will migrate what is needed and disable the WooPayments extension.';
+
+	/**
+	 * The switch notice on a store that waits for its switch, where nothing takes payments.
+	 *
+	 * @var string
+	 */
+	private const AWAITING_START_SENTENCE = 'WooPayments is now part of WooCommerce. This store can\'t take WooPayments payments while the WooPayments extension is deactivated. Start the switch to take them with the built-in WooPayments: we will migrate what is needed.';
+
+	/**
+	 * The completion notice on a store that can take WooPayments payments.
+	 *
+	 * @var string
+	 */
+	private const COMPLETION_SENTENCE = 'WooPayments is now built into WooCommerce. Everything works as before.';
+
+	/**
+	 * The completion notice on a store that cannot take WooPayments payments yet.
+	 *
+	 * @var string
+	 */
+	private const COMPLETION_SETUP_SENTENCE = 'WooPayments is now built into WooCommerce. This store can\'t take WooPayments payments yet. Go to Payments settings to finish setting it up.';
+
+	/**
 	 * The prompt telling a store whose active WooPayments extension is too old to switch from to update it first.
 	 *
 	 * @var string
@@ -70,6 +106,20 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	 * @var PreflightService
 	 */
 	private PreflightService $preflight_service;
+
+	/**
+	 * Whether the WooPayments account can take payments, as the account service double reads it.
+	 *
+	 * @var bool
+	 */
+	private bool $account_can_take_payments = true;
+
+	/**
+	 * Number of times the account service double was asked whether the account can take payments.
+	 *
+	 * @var int
+	 */
+	private int $account_reads = 0;
 
 	/**
 	 * Whether the WooPayments plugin should appear active.
@@ -370,7 +420,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function provide_dismissable_notices(): array {
 		return array(
-			'completion notice' => array( ReconciliationJob::NOTICE_SUCCESS, 'WooPayments is now built into WooCommerce. Everything works as before.' ),
+			'completion notice' => array( ReconciliationJob::NOTICE_SUCCESS, self::COMPLETION_SENTENCE ),
 		);
 	}
 
@@ -1176,6 +1226,138 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * A store that deactivated the extension takes no payments until the built-in WooPayments takes over at the hand-over.
+	 *
+	 * @testdox The in-progress line says payments are off only while the store waits for its switch ($_dataName).
+	 * @dataProvider provide_in_progress_owners
+	 *
+	 * @param string $owner    Who owns payments: nobody while the store waits, the extension, or the built-in past the hand-over.
+	 * @param string $expected The in-progress line.
+	 */
+	public function test_in_progress_line_says_payments_are_off_only_while_the_store_waits( string $owner, string $expected ): void {
+		$this->fake_plugin_active( 'extension' === $owner );
+		$this->fake_current_user_caps( true );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$record = array(
+			'state'                  => StateStore::STATE_PENDING,
+			'current_step'           => 'queued',
+			'informational_outcomes' => array(),
+		);
+		if ( 'built-in' === $owner ) {
+			// Finalize deactivated the extension and left its token; the ownership check is due.
+			$record['current_step']         = 'verify_builtin_ownership';
+			$record['request_origin_token'] = 'finalize-token';
+			update_option( StateStore::OPTION_NAME, $record );
+		}
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+
+		try {
+			$notices = $this->render_admin_notices( $this->create_cutover_controller( $this->create_record_notice_job( $record ) ) );
+		} finally {
+			delete_option( StateStore::OPTION_NAME );
+		}
+
+		$this->assertSame( array( $expected ), $this->read_paragraphs( $notices, 'WooPayments is now part of WooCommerce.' ) );
+	}
+
+	/**
+	 * @return array<string,array{string,string}>
+	 */
+	public function provide_in_progress_owners(): array {
+		return array(
+			'waiting for the switch, nothing owns payments' => array( 'none', self::AWAITING_IN_PROGRESS_SENTENCE ),
+			'the extension owns payments' => array( 'extension', self::IN_PROGRESS_SENTENCE ),
+			'past the hand-over, the built-in owns payments' => array( 'built-in', self::IN_PROGRESS_SENTENCE ),
+		);
+	}
+
+	/**
+	 * @testdox The switch notice says payments are off only while the store waits for its switch, with "Not now" outside Payments settings ($_dataName).
+	 * @dataProvider provide_switch_offer_sentences
+	 *
+	 * @param string $store    "extension active" or "waiting for the switch".
+	 * @param string $expected The switch notice's sentence.
+	 */
+	public function test_switch_notice_says_payments_are_off_only_while_the_store_waits( string $store, string $expected ): void {
+		$this->arrange_switch_offer( $store );
+
+		$notices = $this->render_admin_notices( $this->create_cutover_controller() );
+
+		$this->assertSame( array( $expected ), $this->read_paragraphs( $notices, 'WooPayments is now part of WooCommerce.' ) );
+		$this->assertStringContainsString( 'Start the switch', $notices );
+		$this->assertStringContainsString( 'Not now', $notices );
+	}
+
+	/**
+	 * @return array<string,array{string,string}>
+	 */
+	public function provide_switch_offer_sentences(): array {
+		return array(
+			'waiting for the switch, nothing owns payments' => array( 'waiting for the switch', self::AWAITING_START_SENTENCE ),
+			'the extension owns payments' => array( 'extension active', self::START_SENTENCE ),
+		);
+	}
+
+	/**
+	 * @testdox The completion notice reads $_dataName.
+	 * @dataProvider provide_completion_notices
+	 *
+	 * @param bool        $can_take_payments Whether the account can take payments.
+	 * @param string      $expected          The completion notice's sentence.
+	 * @param string|null $link              The link's URL, or null for no link.
+	 */
+	public function test_completion_notice_follows_whether_the_store_can_take_payments( bool $can_take_payments, string $expected, ?string $link ): void {
+		$this->fake_plugin_active( false );
+		$this->fake_current_user_caps( true );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$this->account_can_take_payments = $can_take_payments;
+
+		$notices = $this->render_admin_notices( $this->create_cutover_controller( $this->create_completed_notice_job() ) );
+
+		$this->assertSame( array( $expected ), $this->read_paragraphs( $notices, 'WooPayments is now built into WooCommerce.' ) );
+		preg_match_all( '#<a href="([^"]*)">Payments settings</a>#', $notices, $links );
+		$this->assertSame( null === $link ? array() : array( $link ), array_map( 'html_entity_decode', $links[1] ) );
+	}
+
+	/**
+	 * @return array<string,array{bool,string,string|null}>
+	 */
+	public function provide_completion_notices(): array {
+		return array(
+			'that everything works as before, for a store that can take payments' => array( true, self::COMPLETION_SENTENCE, null ),
+			'where to finish setup, for a store that cannot take payments yet'  => array( false, self::COMPLETION_SETUP_SENTENCE, Utils::wc_payments_settings_url() ),
+		);
+	}
+
+	/**
+	 * The notice follows the account cache on every page and keeps nothing of its own, so it corrects itself once setup is
+	 * done, and again if the account stops taking payments.
+	 *
+	 * @testdox The completion notice follows the account read on each page load and writes no option or record field.
+	 */
+	public function test_completion_notice_follows_the_account_read_on_each_page_load_and_writes_nothing(): void {
+		global $wpdb;
+		$this->fake_plugin_active( false );
+		$this->fake_current_user_caps( true );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$job        = $this->create_completed_notice_job();
+		$controller = $this->create_cutover_controller( $job );
+		$record     = $job->refresh_notice_record();
+		$options    = $wpdb->get_results( "SELECT option_name, option_value FROM {$wpdb->options} ORDER BY option_name", ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- The stored rows are what the test compares.
+		$pages      = array();
+
+		foreach ( array( false, true, false ) as $can_take_payments ) {
+			$this->account_can_take_payments = $can_take_payments;
+			$pages[]                         = $this->read_paragraphs( $this->render_admin_notices( $controller ), 'WooPayments is now built into WooCommerce.' );
+		}
+
+		$this->assertSame( array( array( self::COMPLETION_SETUP_SENTENCE ), array( self::COMPLETION_SENTENCE ), array( self::COMPLETION_SETUP_SENTENCE ) ), $pages );
+		$this->assertSame( 3, $this->account_reads, 'Each page load reads the account once.' );
+		$this->assertSame( $record, $job->refresh_notice_record(), 'No record field changes.' );
+		$this->assertSame( $options, $wpdb->get_results( "SELECT option_name, option_value FROM {$wpdb->options} ORDER BY option_name", ARRAY_A ), 'No option changes.' ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- The stored rows are what the test compares.
+	}
+
+	/**
 	 * @testdox An awaiting generation offers the start only to a user who may start the switch.
 	 */
 	public function test_awaiting_generation_offers_the_start_only_to_who_may_start_it(): void {
@@ -1662,7 +1844,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 		);
 		$preflight->init( $arbiter, $preflight_proxy );
 		$controller = new CutoverController();
-		$controller->init( $arbiter, $legacy_proxy, $preflight, $job, $this->create_renewal_plugins( array() ) );
+		$controller->init( $arbiter, $legacy_proxy, $preflight, $job, $this->create_renewal_plugins( array() ), $this->create_account_service() );
 		$redirects        = array();
 		$capture_redirect = static function ( string $location ) use ( &$redirects ): string {
 			$redirects[] = $location;
@@ -1941,9 +2123,83 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 			$job->init( $arbiter, wc_get_container()->get( StateStore::class ), wc_get_container()->get( CutoverActionScheduler::class ), $preflight_service, wc_get_container()->get( DataMigration::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
 		}
 		$controller = new CutoverController();
-		$controller->init( $arbiter, $legacy_proxy, $preflight_service, $job, $renewal_plugins ?? $this->create_renewal_plugins( array() ) );
+		$controller->init( $arbiter, $legacy_proxy, $preflight_service, $job, $renewal_plugins ?? $this->create_renewal_plugins( array() ), $this->create_account_service() );
 
 		return $controller;
+	}
+
+	/**
+	 * Create an account service double that answers whether the account can take payments from this test's flag.
+	 *
+	 * @return WooPaymentsAccountService
+	 */
+	private function create_account_service(): WooPaymentsAccountService {
+		return new class( fn(): bool => $this->account_can_take_payments, fn() => ++$this->account_reads ) extends WooPaymentsAccountService {
+			/** @var callable(): bool Reads the test's flag. */
+			private $can_take_payments;
+
+			/** @var callable Counts the reads. */
+			private $count_read;
+
+			/**
+			 * @param callable $can_take_payments Reads the test's flag.
+			 * @param callable $count_read        Counts the reads.
+			 */
+			public function __construct( callable $can_take_payments, callable $count_read ) {
+				$this->can_take_payments = $can_take_payments;
+				$this->count_read        = $count_read;
+			}
+
+			/** Answer from the test's flag. */
+			public function can_process_payments(): bool {
+				( $this->count_read )();
+				return ( $this->can_take_payments )();
+			}
+		};
+	}
+
+	/**
+	 * Create a job double whose notice record is the given one.
+	 *
+	 * @param array<string,mixed> $record The record the notices read.
+	 * @return ReconciliationJob
+	 */
+	private function create_record_notice_job( array $record ): ReconciliationJob {
+		return new class( $record ) extends ReconciliationJob {
+			/** @var array<string,mixed> The record the notices read. */
+			private array $record;
+
+			/**
+			 * @param array<string,mixed> $record The record the notices read.
+			 */
+			public function __construct( array $record ) {
+				$this->record = $record;
+			}
+
+			/** @return array<string,mixed>|null */
+			public function refresh_notice_record(): ?array {
+				return $this->record;
+			}
+
+			/** Offer a new generation. */
+			public function can_offer_start(): bool {
+				return true;
+			}
+		};
+	}
+
+	/**
+	 * Read the text of the rendered paragraph that starts the WooPayments notices, as a merchant reads it.
+	 *
+	 * @param string $notices Rendered notice markup.
+	 * @param string $starts  How the paragraph starts.
+	 * @return string[] Each matching paragraph's text.
+	 */
+	private function read_paragraphs( string $notices, string $starts ): array {
+		preg_match_all( '#<p>(.*?)</p>#s', $notices, $matches );
+		$texts = array_map( static fn( string $html ): string => trim( html_entity_decode( wp_strip_all_tags( $html ), ENT_QUOTES ) ), $matches[1] );
+
+		return array_values( array_filter( $texts, static fn( string $text ): bool => 0 === strpos( $text, $starts ) ) );
 	}
 
 	/**

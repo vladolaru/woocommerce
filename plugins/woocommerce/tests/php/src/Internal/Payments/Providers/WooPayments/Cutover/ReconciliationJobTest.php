@@ -941,7 +941,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$deactivations_before  = $deactivations;
 		$migration_runs_before = $migration_runs;
 		$controller            = new CutoverController();
-		$controller->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ), $preflight, $job_for_activation, wc_get_container()->get( ExtensionBoundRenewalPlugins::class ) );
+		$controller->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ), $preflight, $job_for_activation, wc_get_container()->get( ExtensionBoundRenewalPlugins::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
 
 		$controller->handle_plugin_activated( WooPaymentsRuntimeArbiter::PLUGIN_FILE, false );
 

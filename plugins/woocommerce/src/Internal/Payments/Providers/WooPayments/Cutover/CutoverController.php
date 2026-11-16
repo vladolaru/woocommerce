@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover
 
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -156,6 +157,13 @@ class CutoverController implements RegisterHooksInterface {
 	private ExtensionBoundRenewalPlugins $renewal_plugins;
 
 	/**
+	 * WooPayments account state.
+	 *
+	 * @var WooPaymentsAccountService
+	 */
+	private WooPaymentsAccountService $account_service;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -165,19 +173,22 @@ class CutoverController implements RegisterHooksInterface {
 	 * @param PreflightService             $preflight_service  Cutover preflight service.
 	 * @param ReconciliationJob            $reconciliation_job Durable reconciliation workflow.
 	 * @param ExtensionBoundRenewalPlugins $renewal_plugins    Plugins that charge renewals through the WooPayments extension.
+	 * @param WooPaymentsAccountService    $account_service    WooPayments account state.
 	 */
 	final public function init(
 		WooPaymentsRuntimeArbiter $arbiter,
 		LegacyProxy $legacy_proxy,
 		PreflightService $preflight_service,
 		ReconciliationJob $reconciliation_job,
-		ExtensionBoundRenewalPlugins $renewal_plugins
+		ExtensionBoundRenewalPlugins $renewal_plugins,
+		WooPaymentsAccountService $account_service
 	): void {
 		$this->arbiter            = $arbiter;
 		$this->legacy_proxy       = $legacy_proxy;
 		$this->preflight_service  = $preflight_service;
 		$this->reconciliation_job = $reconciliation_job;
 		$this->renewal_plugins    = $renewal_plugins;
+		$this->account_service    = $account_service;
 	}
 
 	/**
@@ -494,15 +505,19 @@ class CutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Output the notice that offers the switch, with "Not now" outside Payments settings.
+	 * Output the notice that offers the switch, with "Not now" outside Payments settings. On a store waiting for its switch
+	 * nothing takes payments, so the notice says so.
 	 *
 	 * @param bool $can_snooze Whether the notice offers "Not now".
 	 */
 	private function output_start_switch_notice( bool $can_snooze ): void {
+		$message = $this->arbiter->is_awaiting_switch()
+			? __( "WooPayments is now part of WooCommerce. This store can't take WooPayments payments while the WooPayments extension is deactivated. Start the switch to take them with the built-in WooPayments: we will migrate what is needed.", 'woocommerce' )
+			: __( 'WooPayments is now part of WooCommerce. Start the switch: we will migrate what is needed and disable the WooPayments extension.', 'woocommerce' );
 		?>
 		<div class="notice notice-info">
 			<p>
-				<?php esc_html_e( 'WooPayments is now part of WooCommerce. Start the switch: we will migrate what is needed and disable the WooPayments extension.', 'woocommerce' ); ?>
+				<?php echo esc_html( $message ); ?>
 			</p>
 			<p>
 				<a class="button button-primary" href="<?php echo esc_url( $this->get_start_url() ); ?>">
@@ -599,7 +614,11 @@ class CutoverController implements RegisterHooksInterface {
 				return;
 			}
 			if ( in_array( $record['state'], array( StateStore::STATE_PENDING, StateStore::STATE_RUNNING, StateStore::STATE_DEFERRED ), true ) ) {
-				echo '<div class="notice notice-info"><p>' . esc_html__( 'WooPayments is now part of WooCommerce. This store is switching to the built-in WooPayments.', 'woocommerce' ) . '</p>';
+				// Until the built-in WooPayments takes over, a store that deactivated the extension takes no payments.
+				$line = $this->arbiter->is_awaiting_switch()
+					? __( "WooPayments is now part of WooCommerce. This store is switching to the built-in WooPayments. Until the switch finishes, this store can't take WooPayments payments.", 'woocommerce' )
+					: __( 'WooPayments is now part of WooCommerce. This store is switching to the built-in WooPayments.', 'woocommerce' );
+				echo '<div class="notice notice-info"><p>' . esc_html( $line ) . '</p>';
 				// Past the short retry, a switch waiting for queued extension tasks says what it waits for.
 				if ( $this->reconciliation_job->is_waiting_for_queued_actions( $record ) ) {
 					$this->output_queued_actions_line();
@@ -801,13 +820,26 @@ class CutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Output the successful cutover notice.
+	 * Output the successful cutover notice. A store that cannot take WooPayments payments, read from the account cache on
+	 * each page, is sent to Payments settings to finish setup instead of being told everything works as before.
 	 */
 	private function output_success_notice(): void {
+		if ( $this->account_service->can_process_payments() ) {
+			$message = esc_html__( 'WooPayments is now built into WooCommerce. Everything works as before.', 'woocommerce' );
+		} else {
+			$message = wp_kses(
+				sprintf(
+					/* translators: %s: URL of the Payments settings page. */
+					__( 'WooPayments is now built into WooCommerce. This store can\'t take WooPayments payments yet. Go to <a href="%s">Payments settings</a> to finish setting it up.', 'woocommerce' ),
+					esc_url( Utils::wc_payments_settings_url() )
+				),
+				array( 'a' => array( 'href' => array() ) )
+			);
+		}
 		?>
 		<div class="notice notice-success" style="position:relative;">
 			<?php echo $this->get_dismiss_notice_link( ReconciliationJob::NOTICE_SUCCESS ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped when built. ?>
-			<p><?php esc_html_e( 'WooPayments is now built into WooCommerce. Everything works as before.', 'woocommerce' ); ?></p>
+			<p><?php echo $message; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped when built. ?></p>
 		</div>
 		<?php
 	}
