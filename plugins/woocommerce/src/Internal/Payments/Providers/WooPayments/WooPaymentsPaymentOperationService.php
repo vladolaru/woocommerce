@@ -736,6 +736,10 @@ class WooPaymentsPaymentOperationService {
 	/**
 	 * Return the order's own kept charge key, or keep the candidate as that key and return it.
 	 *
+	 * The save that keeps the key also writes the mode of the attempt it starts, before the intent request, as client
+	 * 11.3.0 writes it before any other value of an attempt (class-wc-payment-gateway-wcpay.php:1962-1964): a declined
+	 * attempt keeps it, so the takeover cleanup reads it as the sign of a WooPayments attempt.
+	 *
 	 * @param WC_Order $order     Order being charged.
 	 * @param string   $candidate Current checkout invocation key.
 	 * @return string
@@ -753,6 +757,7 @@ class WooPaymentsPaymentOperationService {
 
 		$order->delete_meta_data( self::CHARGE_AMBIGUITY_META );
 		$order->update_meta_data( self::CHARGE_IDEMPOTENCY_KEY_META, $candidate );
+		$order->update_meta_data( '_wcpay_mode', $this->account_service->get_order_mode() );
 		$order->save_meta_data();
 
 		return $candidate;
@@ -1333,7 +1338,12 @@ class WooPaymentsPaymentOperationService {
 	 * Build the failed outcome of a SetupIntent request, with the request's payment method and customer, as client 11.1.0
 	 * writes both before the request (class-wc-payment-gateway-wcpay.php:1672-1677); Sift order tracking reads the payment method.
 	 *
-	 * A subscription whose payment method is being changed keeps its own: the declined card never becomes its payment method.
+	 * The outcome's meta also carries the attempt's mode, which the lifecycle's failure save writes, since a card save keeps
+	 * no charge key to ride on: client 11.3.0 writes the mode before the request (class-wc-payment-gateway-wcpay.php:1962-1964),
+	 * so the takeover cleanup removes these values when another gateway pays the order.
+	 *
+	 * A subscription whose payment method is being changed keeps its own: the declined card never becomes its payment
+	 * method, and its mode is left as it is.
 	 *
 	 * @param PaymentOperationContext $context      Payment context.
 	 * @param ApiException            $exception    Transport exception.
@@ -1343,7 +1353,7 @@ class WooPaymentsPaymentOperationService {
 	private function failed_setup_intent_outcome( PaymentOperationContext $context, ApiException $exception, array $request_data ): PaymentOutcome {
 		$is_change = ! empty( $context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE ] );
 
-		return $this->failed_charge_outcome(
+		$outcome = $this->failed_charge_outcome(
 			$context->get_order(),
 			$exception,
 			false,
@@ -1351,6 +1361,17 @@ class WooPaymentsPaymentOperationService {
 			false,
 			$is_change ? '' : (string) ( $request_data['payment_method'] ?? '' )
 		);
+		if ( $is_change ) {
+			return $outcome;
+		}
+
+		$data = $outcome->get_data();
+		$meta = isset( $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ) && is_array( $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ) ? $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] : array();
+
+		$meta['_wcpay_mode']                                        = $this->account_service->get_order_mode();
+		$data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] = $meta;
+
+		return new PaymentOutcome( $outcome->get_status(), $outcome->get_provider_payment_id(), $outcome->get_redirect_url(), $outcome->get_payment_method_id(), $outcome->get_customer_id(), $data );
 	}
 
 	/**

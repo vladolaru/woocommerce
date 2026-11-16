@@ -4866,6 +4866,50 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A card declined at checkout, or at the card save of a $0 checkout, stores the mode the attempt ran in: $_dataName.
+	 *
+	 * Client 11.3.0 writes the mode before any other value of an attempt, "so their save persists it: the takeover cleanup
+	 * reads the mode as the sign of a new WooPayments attempt" (class-wc-payment-gateway-wcpay.php:1962-1964), and as test
+	 * or prod (:1964). The decline is REC-1's recorded generic_decline envelope (Fixtures/platform-intention-declines.json),
+	 * or REC-2's for the $0 rows (Fixtures/platform-setup-intent-declines.json), raised as an error, so no attach writes it.
+	 *
+	 * @testWith ["a checkout in test mode", false, true, "test"]
+	 *           ["a checkout in live mode", false, false, "prod"]
+	 *           ["a $0 card save in test mode", true, true, "test"]
+	 *           ["a $0 card save in live mode", true, false, "prod"]
+	 *
+	 * @param string $label                  Row label.
+	 * @param bool   $zero_total_saving_card Whether the order is $0 and saves the card, so a SetupIntent is sent.
+	 * @param bool   $test_mode              Whether WooPayments runs in test mode.
+	 * @param string $expected_mode          The mode the declined order stores.
+	 */
+	public function test_declined_attempt_stores_the_mode_it_ran_in( string $label, bool $zero_total_saving_card, bool $test_mode, string $expected_mode ): void {
+		unset( $label );
+		$order          = $this->create_woopayments_order( $zero_total_saving_card ? '0.00' : '10.00' );
+		$recorded       = $zero_total_saving_card ? $this->load_recorded_decline_entry( 'generic_decline', 'platform-setup-intent-declines.json' ) : $this->load_recorded_decline_entry( 'generic_decline' );
+		$payment_method = (string) ( $zero_total_saving_card ? $recorded['error']['setup_intent']['last_setup_error'] : $recorded['error']['payment_intent']['last_payment_error'] )['payment_method']['id'];
+		$provider       = $this->create_provider_declining_checkout( $recorded, $this->create_account_service( $test_mode ) );
+
+		wc_get_container()->get( PaymentProcessingService::class )->process_checkout_outcome(
+			PaymentOperationContext::for_checkout(
+				$order,
+				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+				$payment_method,
+				$zero_total_saving_card ? array(
+					'payment_token'       => 'new',
+					'save_payment_method' => true,
+				) : array()
+			),
+			$provider
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( OrderStatus::FAILED, $order->get_status() );
+		$this->assertSame( $expected_mode, $order->get_meta( '_wcpay_mode', true ) );
+	}
+
+	/**
 	 * @testdox Two identical card declines at checkout on one order, $_dataName, leave two decline notes.
 	 *
 	 * Client 11.3.0 adds the decline note in process_payment()'s catch on every decline, with no check for one already on the
