@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Webhooks;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableController;
 use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
@@ -16,6 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPlatformEvents;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\StoredPaymentRecords;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Utilities\OrderUtil;
 use WC_Order;
@@ -382,6 +384,39 @@ class EarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 			static fn( $note ): bool => false !== strpos( (string) $note->content, 'Made with stolen card' )
 		);
 		$this->assertCount( 1, $warning_notes );
+	}
+
+	/**
+	 * The stored WooPayments payment stands in for the empty transaction ID: the warning's charge is the stored one and its
+	 * own `payment_intent` is the stored intent
+	 * (https://docs.stripe.com/api/radar/early_fraud_warnings/object#early_fraud_warning_object-payment_intent). Client 11.3.0
+	 * stores the warning on the order its _charge_id finds (class-wc-payments-webhook-processing-service.php:867-901).
+	 *
+	 * @testdox Should store a warning on the stored charge of a paid order whose transaction ID was cleared, with no other-charge note.
+	 */
+	public function test_stores_a_warning_on_the_stored_payment_of_an_order_without_transaction_id(): void {
+		$order                   = StoredPaymentRecords::paid_without_transaction_id( OrderStatus::PROCESSING, 'pi_early_warning', 'ch_early_warning' );
+		$event                   = $this->valid_event_object();
+		$event['payment_intent'] = 'pi_early_warning';
+		$logger                  = RecordingWcLogger::install();
+
+		$this->create_handler()->process( 'radar.early_fraud_warning.created', $event );
+
+		$fresh_order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $fresh_order );
+		$this->assertSame(
+			array(
+				'efw_id'         => 'efw_123',
+				'efw_actionable' => true,
+				'efw_type'       => 'made_with_stolen_card',
+				'created'        => 123,
+			),
+			$fresh_order->get_meta( '_wcpay_early_fraud_warning', true )
+		);
+		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+		$this->assertCount( 1, array_filter( $notes, static fn( $note ): bool => false !== strpos( (string) $note->content, 'Made with stolen card' ) ) );
+		$this->assertCount( 0, array_filter( $notes, static fn( $note ): bool => false !== strpos( (string) $note->content, 'was raised on WooPayments charge' ) ) );
+		$this->assertCount( 0, array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'other charge recorded:' ) ) );
 	}
 
 	/**
