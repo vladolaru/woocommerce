@@ -41,6 +41,13 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	private const LOADED_OUTSIDE_PLUGIN_LISTS_SENTENCE = "WooPayments is now part of WooCommerce, but this store can't switch yet. The WooPayments extension is loaded by this site's setup, not activated in Plugins, so the switch can't turn it off. WooPayments keeps running from the extension.";
 
 	/**
+	 * The line telling a store manager that the switch is in progress.
+	 *
+	 * @var string
+	 */
+	private const IN_PROGRESS_SENTENCE = 'WooPayments is now part of WooCommerce. This store is switching to the built-in WooPayments.';
+
+	/**
 	 * The prompt telling a store whose active WooPayments extension is too old to switch from to update it first.
 	 *
 	 * @var string
@@ -295,7 +302,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A switch deferred for the extension being active for every site says why under Switch in progress while it is, and stops once it is not: $scope.
+	 * @testdox A switch deferred for the extension being active for every site says why under the in-progress line while it is, and stops once it is not: $scope.
 	 * @testWith ["active for every site", true]
 	 *           ["active per site after the conversion", false]
 	 *
@@ -320,7 +327,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 
 		$notice = $this->render_admin_notices( $this->create_cutover_controller( $job ) );
 
-		$this->assertStringContainsString( 'Switch in progress', $notice );
+		$this->assertStringContainsString( self::IN_PROGRESS_SENTENCE, $notice );
 		$sentence = 'This store can&#039;t switch yet because the WooPayments extension is active for every site of the network. A super admin first needs to activate WooPayments on each site instead.';
 		if ( $sitewide_active ) {
 			$this->assertStringContainsString( $sentence, $notice );
@@ -625,7 +632,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 
 		$notice = $this->render_admin_notices( $this->create_cutover_controller( $job ) );
 
-		$this->assertStringContainsString( 'Switch in progress', $notice );
+		$this->assertStringContainsString( self::IN_PROGRESS_SENTENCE, $notice );
 		$this->assertStringNotContainsString( 'Reconnect this site', $notice );
 	}
 
@@ -694,7 +701,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Under Switch in progress, a switch waiting for scheduled WooPayments tasks past the short retry says so, with a link to them ($_dataName).
+	 * @testdox Under the in-progress line, a switch waiting for scheduled WooPayments tasks past the short retry says so, with a link to them ($_dataName).
 	 * @dataProvider provide_queued_action_waits
 	 *
 	 * @param string[]    $codes     The deferral's codes.
@@ -758,8 +765,8 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 			}
 		}
 
-		$this->assertStringContainsString( 'Switch in progress', $notice );
-		$sentence = 'The switch is waiting for scheduled WooPayments tasks to finish. It continues on its own once they have run.';
+		$this->assertStringContainsString( self::IN_PROGRESS_SENTENCE, $notice );
+		$sentence = 'The switch to the built-in WooPayments is waiting for scheduled WooPayments tasks to finish. It continues on its own once they have run.';
 		if ( null === $link_hook ) {
 			$this->assertStringNotContainsString( $sentence, $notice );
 			return;
@@ -984,7 +991,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 		$deferred['action_id']       = $scheduler->schedule( $deferred['next_attempt_at'], $queued['generation'], 2 );
 		$this->assertTrue( $state_store->compare_and_set_record( $queued, $deferred ) );
 		$controller = $this->create_cutover_controller( $job, $preflight_service );
-		$sentence   = 'The switch is waiting for scheduled WooPayments tasks to finish.';
+		$sentence   = 'The switch to the built-in WooPayments is waiting for scheduled WooPayments tasks to finish.';
 
 		try {
 			$moving_page = $this->render_admin_notices( $controller );
@@ -1037,7 +1044,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A switch deferred by a plugin that renews through the WooPayments extension says why under Switch in progress while the plugin is active, and stops once it is not ($_dataName).
+	 * @testdox A switch deferred by a plugin that renews through the WooPayments extension says why under the in-progress line while the plugin is active, and stops once it is not ($_dataName).
 	 * @dataProvider provide_deferred_renewal_plugin_holdbacks
 	 *
 	 * @param string   $code  The deferral code on the record.
@@ -1071,7 +1078,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 
 		$notice = $this->render_admin_notices( $this->create_cutover_controller( $job, null, $this->create_renewal_plugins( array_combine( $names, $names ) ) ) );
 
-		$this->assertStringContainsString( 'Switch in progress', $notice );
+		$this->assertStringContainsString( self::IN_PROGRESS_SENTENCE, $notice );
 		if ( $shown ) {
 			$this->assertStringContainsString( esc_html( "WooPayments is now part of WooCommerce, but this store can't switch yet. Order Subscriptions for WooCommerce charges renewals and scheduled payments through the WooPayments extension, so the switch waits while it is active. Until then nothing changes and WooPayments keeps running from the WooPayments extension." ), $notice );
 			$this->assertStringNotContainsString( 'Not now', $notice );
@@ -1244,7 +1251,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 
 		$notice = $this->render_admin_notices( $this->create_cutover_controller( $job ) );
 
-		$this->assertStringContainsString( 'Switch in progress', $notice );
+		$this->assertStringContainsString( self::IN_PROGRESS_SENTENCE, $notice );
 		$this->assertStringNotContainsString( 'Start the switch', $notice );
 		$this->assertStringNotContainsString( 'not ready', $notice );
 	}
@@ -1269,7 +1276,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 		$notice = $this->render_admin_notices( $this->create_cutover_controller( $job ) );
 
 		$this->assertStringNotContainsString( 'Start the switch', $notice );
-		$this->assertStringNotContainsString( 'Switch in progress', $notice );
+		$this->assertStringNotContainsString( self::IN_PROGRESS_SENTENCE, $notice );
 	}
 
 	/**
@@ -1999,7 +2006,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 				return false;
 			}
 		};
-		// A deferred record under Switch in progress calls the job's own bring-forward, which reads the job's store. Doubles that
+		// A deferred record under the in-progress line calls the job's own bring-forward, which reads the job's store. Doubles that
 		// only stub what the notice reads get the real services, where no record waits, so nothing moves.
 		$job_state_store = new \ReflectionProperty( ReconciliationJob::class, 'state_store' );
 		$job_state_store->setAccessible( true );

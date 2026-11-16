@@ -599,7 +599,7 @@ class CutoverController implements RegisterHooksInterface {
 				return;
 			}
 			if ( in_array( $record['state'], array( StateStore::STATE_PENDING, StateStore::STATE_RUNNING, StateStore::STATE_DEFERRED ), true ) ) {
-				echo '<div class="notice notice-info"><p>' . esc_html__( 'Switch in progress', 'woocommerce' ) . '</p>';
+				echo '<div class="notice notice-info"><p>' . esc_html__( 'WooPayments is now part of WooCommerce. This store is switching to the built-in WooPayments.', 'woocommerce' ) . '</p>';
 				// Past the short retry, a switch waiting for queued extension tasks says what it waits for.
 				if ( $this->reconciliation_job->is_waiting_for_queued_actions( $record ) ) {
 					$this->output_queued_actions_line();
@@ -677,7 +677,7 @@ class CutoverController implements RegisterHooksInterface {
 		}
 		?>
 		<p>
-			<?php esc_html_e( 'The switch is waiting for scheduled WooPayments tasks to finish. It continues on its own once they have run.', 'woocommerce' ); ?>
+			<?php esc_html_e( 'The switch to the built-in WooPayments is waiting for scheduled WooPayments tasks to finish. It continues on its own once they have run.', 'woocommerce' ); ?>
 			<a href="<?php echo esc_url( add_query_arg( $query, admin_url( 'admin.php' ) ) ); ?>"><?php esc_html_e( 'View scheduled tasks', 'woocommerce' ); ?></a>
 		</p>
 		<?php

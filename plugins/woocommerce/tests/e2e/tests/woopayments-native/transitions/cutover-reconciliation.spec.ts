@@ -31,6 +31,8 @@ const CURRENCY = 'USD';
 const PAID_ORDER_STATUSES = [ 'processing', 'completed' ];
 const CARD = { brand: 'visa', last4: '4242' };
 const PRODUCTS_ROUTE = 'wc/v3/products';
+const SWITCH_IN_PROGRESS =
+	'WooPayments is now part of WooCommerce. This store is switching to the built-in WooPayments.';
 const ORDERS_ROUTE = 'wc/v3/orders';
 
 interface CutoverRecord {
@@ -296,7 +298,7 @@ test.describe( 'WooPayments transition: cutover reconciliation', () => {
 				.toBe( true );
 			await page.goto( 'wp-admin/' );
 			await expect(
-				page.getByText( 'Switch in progress', { exact: true } )
+				page.getByText( SWITCH_IN_PROGRESS, { exact: true } )
 			).toBeVisible();
 
 			const started = await readCutoverStatus( migratorActionId );
@@ -339,7 +341,7 @@ test.describe( 'WooPayments transition: cutover reconciliation', () => {
 
 			await page.goto( 'wp-admin/plugins.php' );
 			await expect(
-				page.getByText( 'Switch in progress', { exact: true } )
+				page.getByText( SWITCH_IN_PROGRESS, { exact: true } )
 			).toHaveCount( 0 );
 
 			// The payment below proves a fresh guest checkout on the exact
