@@ -526,9 +526,10 @@ class StripeBillingEventHandler {
 	 * Tell whether a renewal that no longer needs payment records another payment than the invoice's.
 	 *
 	 * A renewal on another payment method does, whatever its status. A WooPayments renewal does once it has a paid status
-	 * or a paid date and its transaction ID names neither the invoice's intent nor its charge, as EventOrderResolver's
-	 * ownership rule reads a paid order; an empty transaction ID names no payment. An unpaid renewal's transaction ID may
-	 * name an attempt that took nothing, so it is not read. The stored intent status is never read.
+	 * or a paid date and its transaction ID names neither the invoice's intent nor its charge, as EventOrderResolver reads a
+	 * paid order whose transaction ID is set; an empty transaction ID names no payment here, where the resolver now asks the
+	 * stored payment. An unpaid renewal's transaction ID may name an attempt that took nothing, so it is not read. The
+	 * stored intent status is never read.
 	 *
 	 * @param WC_Order $order     Renewal order, read under the lock.
 	 * @param string   $intent_id The invoice's payment intent ID.

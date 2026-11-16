@@ -1994,7 +1994,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 			$this->assertSame( 'pi_terminal', $failed->get_meta( '_intent_id', true ) );
 			$this->assertSame( 'ch_terminal', $failed->get_meta( '_charge_id', true ) );
 			$this->assertSame( 'succeeded', $failed->get_meta( '_intention_status', true ) );
-			$this->assertTrue( ( new EventOrderResolver() )->is_own_payment( $failed, 'pi_terminal', 'ch_terminal' ), "The payment's webhook finds the order its own." );
+			$this->assertTrue( ( new EventOrderResolver() )->is_own_payment( $failed, 'pi_terminal', 'ch_terminal', 'pi_terminal' ), "The payment's webhook finds the order its own." );
 
 			// The app retries the same intent, which the platform now reads as captured.
 			$this->api_client->payment_intention_response['status'] = 'succeeded';

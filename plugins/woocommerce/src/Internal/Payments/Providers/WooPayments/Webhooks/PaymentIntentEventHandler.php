@@ -329,7 +329,7 @@ class PaymentIntentEventHandler {
 		// An order found by the charge's metadata is recorded only while it still does not hold the charge: one that
 		// saved it before this claim is decided like any order found by its charge.
 		$record_only    = $record_only && $charge_id !== (string) $order->get_meta( '_charge_id', true );
-		$is_own_payment = ! $record_only && $this->event_order_resolver->is_own_payment( $order, $intent_id, $charge_id );
+		$is_own_payment = ! $record_only && $this->event_order_resolver->is_own_payment( $order, $intent_id, $charge_id, $this->get_stand_in_intent_id( $event_type, $order, $intent_id ) );
 		// An authorization or a payment failure changes only an order paid with WooPayments, so a stored attempt that another
 		// payment method replaced cannot hold or fail the order. For an authorization this check stands for client 11.3.0's
 		// superseded-attempt skip, which leaves an order paid another way (class-wc-payments-webhook-processing-service.php:464-471);
@@ -393,6 +393,23 @@ class PaymentIntentEventHandler {
 				'reason'            => 'order_locked',
 			)
 		);
+	}
+
+	/**
+	 * Get the intent an event may stand in with for a paid order's empty transaction ID (EventOrderResolver::is_own_payment()).
+	 *
+	 * Only a success, and only on an order in a paid status by the lifecycle's own test, where the lifecycle leaves the
+	 * order as it is: there it removes a false other-charge note and records the payment's meta. On a paid date with a
+	 * status that is not paid, a redelivered success would decide the order's status. A failure, an authorization or an
+	 * expiry is never evidence that the stored intent paid the order, and an own expiry would read the platform.
+	 *
+	 * @param string   $event_type Event type.
+	 * @param WC_Order $order      Order read under the order payment lock.
+	 * @param string   $intent_id  The event's payment intent ID: the intent object's own ID for a success.
+	 * @return string The intent ID, or an empty string when the event may not stand in.
+	 */
+	private function get_stand_in_intent_id( string $event_type, WC_Order $order, string $intent_id ): string {
+		return 'payment_intent.succeeded' === $event_type && $this->lifecycle_service->has_paid_status( $order ) ? $intent_id : '';
 	}
 
 	/**

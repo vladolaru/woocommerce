@@ -817,7 +817,7 @@ class DisputeEventHandler {
 			$fresh_order = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
 			$resolver    = $this->event_order_resolver;
 			$intent_id   = $resolver->get_event_intent_id( $event_object, $fresh_order );
-			if ( ! $resolver->is_own_payment( $fresh_order, $intent_id, $charge_id ) ) {
+			if ( ! $resolver->is_own_payment_for_event( $fresh_order, $event_object, $charge_id ) ) {
 				$this->other_charge_recorder->record(
 					$fresh_order,
 					$event_type,

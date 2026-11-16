@@ -147,20 +147,27 @@ class EventOrderResolver {
 	/**
 	 * Tell whether an event's payment intent or charge is the payment of the order it resolved to.
 	 *
-	 * A paid order's own payment is the one its transaction ID names, by intent ID or charge ID. An order not yet paid is
-	 * waiting for its payment: the intent it recorded in `_intent_id`, whatever its payment method, or any WooPayments
-	 * payment while WooPayments is its payment method. An empty ID matches nothing. Any other event is on another charge.
+	 * A paid order's own payment is the one its transaction ID names, by intent ID or charge ID. When that transaction ID
+	 * is empty, the order's stored WooPayments payment stands in for it (is_stored_woopayments_payment()). An order not yet
+	 * paid is waiting for its payment: the intent it recorded in `_intent_id`, whatever its payment method, or any
+	 * WooPayments payment while WooPayments is its payment method. An empty ID matches nothing. Any other event is on
+	 * another charge.
 	 *
-	 * @param WC_Order $order     Order read under the order payment lock.
-	 * @param string   $intent_id The event's payment intent ID.
-	 * @param string   $charge_id The event's charge ID.
+	 * @param WC_Order $order              Order read under the order payment lock.
+	 * @param string   $intent_id          The event's payment intent ID.
+	 * @param string   $charge_id          The event's charge ID.
+	 * @param string   $stand_in_intent_id The event's own payment intent, read from the event and never from the order, or an
+	 *                                     empty string when the event may not stand in for an empty transaction ID.
 	 * @return bool
 	 */
-	public function is_own_payment( WC_Order $order, string $intent_id, string $charge_id ): bool {
+	public function is_own_payment( WC_Order $order, string $intent_id, string $charge_id, string $stand_in_intent_id ): bool {
 		if ( $order->is_paid() || null !== $order->get_date_paid() ) {
 			$transaction_id = (string) $order->get_transaction_id();
+			if ( '' === $transaction_id ) {
+				return $this->is_stored_woopayments_payment( $order, $stand_in_intent_id, $charge_id );
+			}
 
-			return '' !== $transaction_id && ( $transaction_id === $intent_id || $transaction_id === $charge_id );
+			return $transaction_id === $intent_id || $transaction_id === $charge_id;
 		}
 
 		if ( '' !== $intent_id && $intent_id === (string) $order->get_meta( '_intent_id', true ) ) {
@@ -168,6 +175,25 @@ class EventOrderResolver {
 		}
 
 		return WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() );
+	}
+
+	/**
+	 * Tell whether a charge, refund, dispute or early fraud warning event is the payment of the order it resolved to, as
+	 * is_own_payment() does, with the event's intent read here.
+	 *
+	 * A set transaction ID is compared with get_event_intent_id(), which falls back to the order's `_intent_id` when the
+	 * event names no intent. An empty one is stood in for only by the event's own `payment_intent` field, so that fallback
+	 * never counts as the event's own intent.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param WC_Order            $order        Order read under the order payment lock.
+	 * @param array<string,mixed> $event_object Charge, refund, dispute or early fraud warning object.
+	 * @param string              $charge_id    The event's charge ID.
+	 * @return bool
+	 */
+	public function is_own_payment_for_event( WC_Order $order, array $event_object, string $charge_id ): bool {
+		return $this->is_own_payment( $order, $this->get_event_intent_id( $event_object, $order ), $charge_id, $this->get_payment_intent_field( $event_object ) );
 	}
 
 	/**
@@ -202,6 +228,33 @@ class EventOrderResolver {
 				'reason'         => self::REASON_OWN_PAYMENT_EVENT_ON_ANOTHER_PAYMENT_METHOD,
 			)
 		);
+	}
+
+	/**
+	 * Tell whether a paid order's stored WooPayments payment is the event's, standing in for an empty transaction ID.
+	 *
+	 * The order's payment method is a WooPayments gateway, the event's own intent is its `_intent_id`, and its `_charge_id`,
+	 * when it stores one, is the event's charge. An empty transaction ID on a paid order means the payment is unknown, not
+	 * that there is none: an earlier capture that kept the merchant's status, the WooPayments extension's amount hold
+	 * completed by the merchant, or a field cleared by hand. No amount and no stored status are compared.
+	 *
+	 * @param WC_Order $order              Paid order whose transaction ID is empty.
+	 * @param string   $stand_in_intent_id The event's own payment intent, or an empty string when it may not stand in.
+	 * @param string   $charge_id          The event's charge ID.
+	 * @return bool
+	 */
+	private function is_stored_woopayments_payment( WC_Order $order, string $stand_in_intent_id, string $charge_id ): bool {
+		if ( ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) ) {
+			return false;
+		}
+
+		if ( '' === $stand_in_intent_id || $stand_in_intent_id !== (string) $order->get_meta( '_intent_id', true ) ) {
+			return false;
+		}
+
+		$stored_charge_id = (string) $order->get_meta( '_charge_id', true );
+
+		return '' === $stored_charge_id || $stored_charge_id === $charge_id;
 	}
 
 	/**

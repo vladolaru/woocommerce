@@ -3,7 +3,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Webhooks;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventOrderResolver;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -200,6 +202,9 @@ class EventOrderResolverTest extends WC_Unit_Test_Case {
 	 * @testdox An event with intent "$intent_id" and charge "$charge_id" is the own payment of a $status order (paid date: $has_paid_date, method $payment_method, transaction ID "$transaction_id", _intent_id "$order_intent_id"): $expected.
 	 * @dataProvider own_payment_provider
 	 *
+	 * The event's intent is also given as the stand-in for an empty transaction ID, as an intent event gives it; a set
+	 * transaction ID and an unpaid order decide without it.
+	 *
 	 * @param string $status          Order status.
 	 * @param bool   $has_paid_date   Whether the order has a paid date.
 	 * @param string $payment_method  Order payment method.
@@ -210,18 +215,9 @@ class EventOrderResolverTest extends WC_Unit_Test_Case {
 	 * @param bool   $expected        Whether the event is the order's own payment.
 	 */
 	public function test_tells_whether_an_event_is_the_orders_own_payment( string $status, bool $has_paid_date, string $payment_method, string $transaction_id, string $order_intent_id, string $intent_id, string $charge_id, bool $expected ): void {
-		$order = wc_create_order();
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->set_payment_method( $payment_method );
-		$order->set_status( $status );
-		$order->set_transaction_id( $transaction_id );
-		$order->update_meta_data( '_intent_id', $order_intent_id );
-		$order->set_date_paid( $has_paid_date ? time() : null );
-		$order->save();
-		$order = wc_get_order( $order->get_id() );
-		$this->assertSame( $has_paid_date, null !== $order->get_date_paid(), 'The fixture must have the paid date the case names.' );
+		$order = $this->create_order_in_state( $status, $has_paid_date, $payment_method, $transaction_id, array( '_intent_id' => $order_intent_id ) );
 
-		$this->assertSame( $expected, $this->sut->is_own_payment( $order, $intent_id, $charge_id ) );
+		$this->assertSame( $expected, $this->sut->is_own_payment( $order, $intent_id, $charge_id, $intent_id ) );
 	}
 
 	/**
@@ -234,7 +230,6 @@ class EventOrderResolverTest extends WC_Unit_Test_Case {
 			'paid, transaction ID is the intent'   => array( 'processing', true, 'bacs', 'pi_a', '', 'pi_a', 'ch_a', true ),
 			'paid, transaction ID is the charge'   => array( 'processing', true, 'bacs', 'ch_a', '', 'pi_a', 'ch_a', true ),
 			'paid, another transaction ID'         => array( 'processing', true, 'woocommerce_payments', 'pi_b', 'pi_a', 'pi_a', 'ch_a', false ),
-			'paid, no transaction ID'              => array( 'processing', true, 'woocommerce_payments', '', 'pi_a', 'pi_a', 'ch_a', false ),
 			'paid, no IDs at all'                  => array( 'processing', true, 'woocommerce_payments', '', '', '', '', false ),
 			'paid status without a paid date'      => array( 'processing', false, 'woocommerce_payments', 'pi_a', 'pi_b', 'pi_b', 'ch_b', false ),
 			'refunded, its own intent'             => array( 'refunded', true, 'woocommerce_payments', 'pi_a', 'pi_a', 'pi_a', 'ch_a', true ),
@@ -246,6 +241,104 @@ class EventOrderResolverTest extends WC_Unit_Test_Case {
 			'unpaid, no recorded intent'           => array( 'pending', false, 'bacs', '', '', 'pi_c', 'ch_c', false ),
 			'unpaid, event without intent'         => array( 'pending', false, 'bacs', '', '', '', 'ch_c', false ),
 		);
+	}
+
+	/**
+	 * @testdox A paid $status order (method $payment_method, empty transaction ID, _intent_id "$stored_intent_id", _charge_id "$stored_charge_id") owns an event standing in with intent "$stand_in_intent_id" and charge "$charge_id": $expected ($_dataName).
+	 * @dataProvider stored_payment_provider
+	 *
+	 * On a paid order with an empty transaction ID, the stored WooPayments payment stands in for it: the payment method is a
+	 * WooPayments gateway, the stand-in intent is the stored _intent_id, and a stored _charge_id is the event's charge. An
+	 * empty value matches nothing. The client applies refunds and disputes to the order its _charge_id finds and intent
+	 * events to the order its _intent_id finds, with none of the three checks (client 11.3.0
+	 * class-wc-payments-webhook-processing-service.php:1135-1158, :1273-1282).
+	 *
+	 * @param string $status             Order status; the order has a paid date.
+	 * @param string $payment_method     Order payment method.
+	 * @param string $stored_intent_id   Order `_intent_id`, or '' for none.
+	 * @param string $stored_charge_id   Order `_charge_id`, or '' for none.
+	 * @param string $intent_id          The event's payment intent as the caller passes it, the stored one when the event names none.
+	 * @param string $stand_in_intent_id The event's own payment intent, or '' when it may not stand in.
+	 * @param string $charge_id          The event's charge ID.
+	 * @param bool   $expected           Whether the event is the order's own payment.
+	 */
+	public function test_a_paid_order_without_transaction_id_owns_its_stored_payment( string $status, string $payment_method, string $stored_intent_id, string $stored_charge_id, string $intent_id, string $stand_in_intent_id, string $charge_id, bool $expected ): void {
+		$order = $this->create_order_in_state(
+			$status,
+			true,
+			$payment_method,
+			'',
+			array(
+				'_intent_id' => $stored_intent_id,
+				'_charge_id' => $stored_charge_id,
+			)
+		);
+
+		$this->assertSame( $expected, $this->sut->is_own_payment( $order, $intent_id, $charge_id, $stand_in_intent_id ) );
+	}
+
+	/**
+	 * Paid orders with an empty transaction ID and the event they meet, with whether the event is the order's own payment.
+	 *
+	 * @return array<string,array{string,string,string,string,string,string,string,bool}>
+	 */
+	public function stored_payment_provider(): array {
+		$gateway_id = WooPaymentsPersistenceVocabulary::GATEWAY_ID;
+
+		return array(
+			'its stored payment and charge'                => array( OrderStatus::PROCESSING, $gateway_id, 'pi_a', 'ch_a', 'pi_a', 'pi_a', 'ch_a', true ),
+			'paid, no transaction ID, no stored charge'    => array( OrderStatus::PROCESSING, $gateway_id, 'pi_a', '', 'pi_a', 'pi_a', 'ch_a', true ),
+			'a split WooPayments gateway ID'               => array( OrderStatus::PROCESSING, 'woocommerce_payments_bancontact', 'pi_a', 'ch_a', 'pi_a', 'pi_a', 'ch_a', true ),
+			'a paid date, on hold'                         => array( OrderStatus::ON_HOLD, $gateway_id, 'pi_a', 'ch_a', 'pi_a', 'pi_a', 'ch_a', true ),
+			'a paid date, cancelled'                       => array( OrderStatus::CANCELLED, $gateway_id, 'pi_a', 'ch_a', 'pi_a', 'pi_a', 'ch_a', true ),
+			'a paid date, refunded'                        => array( OrderStatus::REFUNDED, $gateway_id, 'pi_a', 'ch_a', 'pi_a', 'pi_a', 'ch_a', true ),
+			'a paid date, pending'                         => array( OrderStatus::PENDING, $gateway_id, 'pi_a', 'ch_a', 'pi_a', 'pi_a', 'ch_a', true ),
+			'paid another way'                             => array( OrderStatus::PROCESSING, 'cod', 'pi_a', 'ch_a', 'pi_a', 'pi_a', 'ch_a', false ),
+			'an event without its own intent'              => array( OrderStatus::PROCESSING, $gateway_id, 'pi_a', 'ch_a', 'pi_a', '', 'ch_a', false ),
+			'nothing stored'                               => array( OrderStatus::PROCESSING, $gateway_id, '', '', 'pi_a', 'pi_a', 'ch_a', false ),
+			'nothing stored, an event without intent'      => array( OrderStatus::PROCESSING, $gateway_id, '', '', '', '', 'ch_a', false ),
+			"another payment's charge beside another intent" => array( OrderStatus::PROCESSING, $gateway_id, 'pi_b', 'ch_c', 'pi_c', 'pi_c', 'ch_c', false ),
+			"another payment's charge, no stored intent"   => array( OrderStatus::PROCESSING, $gateway_id, '', 'ch_c', 'pi_c', 'pi_c', 'ch_c', false ),
+			'a stored charge that differs'                 => array( OrderStatus::PROCESSING, $gateway_id, 'pi_a', 'ch_old', 'pi_a', 'pi_a', 'ch_new', false ),
+			'an event with no charge'                      => array( OrderStatus::PROCESSING, $gateway_id, 'pi_a', 'ch_a', 'pi_a', 'pi_a', '', false ),
+			'marked paid by hand after its intent paid'    => array( OrderStatus::PROCESSING, $gateway_id, 'pi_e', '', 'pi_e', 'pi_e', 'ch_e', true ),
+			'a copy or import carrying the stored payment' => array( OrderStatus::PROCESSING, $gateway_id, 'pi_x', 'ch_x', 'pi_x', 'pi_x', 'ch_x', true ),
+			"a renewal copy carrying its parent's payment" => array( OrderStatus::PROCESSING, $gateway_id, 'pi_parent', 'ch_parent', 'pi_parent', 'pi_parent', 'ch_parent', true ),
+		);
+	}
+
+	/**
+	 * @testdox is_own_payment_for_event() reads the event's payment_intent field as $field_case: the stored payment stands in on an empty transaction ID ($owns_without_transaction_id), and the transaction ID compares with the event's intent or its stored fallback ($owns_with_transaction_id).
+	 * @testWith ["an ID", "pi_a", true, true]
+	 *           ["an expanded object", {"id": "pi_a"}, true, true]
+	 *           ["missing", null, false, true]
+	 *           ["empty", "", false, true]
+	 *
+	 * The refund, dispute and early fraud warning handlers pass the event object, so the stored intent the order's
+	 * _intent_id gives when the event names none never stands in for an empty transaction ID, and still names the
+	 * payment a set transaction ID is compared with. The field is a Stripe expandable `payment_intent`
+	 * (https://docs.stripe.com/api/charges/object#charge_object-payment_intent).
+	 *
+	 * @param string            $field_case                  Field case.
+	 * @param string|array|null $payment_intent              The event's `payment_intent` field.
+	 * @param bool              $owns_without_transaction_id Expected on a paid order with an empty transaction ID storing pi_a and ch_a.
+	 * @param bool              $owns_with_transaction_id    Expected on a paid order whose transaction ID and _intent_id are pi_a.
+	 */
+	public function test_own_payment_for_event_reads_the_event_intent( string $field_case, $payment_intent, bool $owns_without_transaction_id, bool $owns_with_transaction_id ): void {
+		unset( $field_case );
+		$stored       = array(
+			'_intent_id' => 'pi_a',
+			'_charge_id' => 'ch_a',
+		);
+		$event_object = array( 'id' => 'ch_a' );
+		if ( null !== $payment_intent ) {
+			$event_object['payment_intent'] = $payment_intent;
+		}
+		$without_transaction_id = $this->create_order_in_state( OrderStatus::PROCESSING, true, WooPaymentsPersistenceVocabulary::GATEWAY_ID, '', $stored );
+		$with_transaction_id    = $this->create_order_in_state( OrderStatus::PROCESSING, true, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_a', $stored );
+
+		$this->assertSame( $owns_without_transaction_id, $this->sut->is_own_payment_for_event( $without_transaction_id, $event_object, 'ch_a' ) );
+		$this->assertSame( $owns_with_transaction_id, $this->sut->is_own_payment_for_event( $with_transaction_id, $event_object, 'ch_a' ) );
 	}
 
 	/**
@@ -270,6 +363,35 @@ class EventOrderResolverTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertSame( $expected, $this->sut->get_event_intent_id( $event_object, $order ) );
+	}
+
+	/**
+	 * Create an order with a status, a paid date or none, a payment method, a transaction ID and payment meta, read back.
+	 *
+	 * @param string               $status         Order status.
+	 * @param bool                 $has_paid_date  Whether the order has a paid date.
+	 * @param string               $payment_method Order payment method.
+	 * @param string               $transaction_id Order transaction ID.
+	 * @param array<string,string> $meta           Order meta; an empty value is not written.
+	 * @return WC_Order
+	 */
+	private function create_order_in_state( string $status, bool $has_paid_date, string $payment_method, string $transaction_id, array $meta ): WC_Order {
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->set_payment_method( $payment_method );
+		$order->set_status( $status );
+		$order->set_transaction_id( $transaction_id );
+		foreach ( array_filter( $meta, static fn( string $value ): bool => '' !== $value ) as $key => $value ) {
+			$order->update_meta_data( $key, $value );
+		}
+		$order->set_date_paid( $has_paid_date ? time() : null );
+		$order->save();
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( $has_paid_date, null !== $order->get_date_paid(), 'The fixture must have the paid date the case names.' );
+		$this->assertSame( $status, $order->get_status(), 'The fixture must have the status the case names.' );
+
+		return $order;
 	}
 
 	/**

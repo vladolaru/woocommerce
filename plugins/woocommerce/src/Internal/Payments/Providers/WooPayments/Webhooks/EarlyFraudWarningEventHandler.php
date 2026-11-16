@@ -141,7 +141,7 @@ class EarlyFraudWarningEventHandler {
 			// updates find no stored warning, as an update without a created warning finds none on the order's own charge.
 			$resolver  = $this->event_order_resolver;
 			$intent_id = $resolver->get_event_intent_id( $event_object, $fresh_order );
-			if ( ! $resolver->is_own_payment( $fresh_order, $intent_id, $warning['charge'] ) ) {
+			if ( ! $resolver->is_own_payment_for_event( $fresh_order, $event_object, $warning['charge'] ) ) {
 				if ( 'radar.early_fraud_warning.created' === $event_type ) {
 					$this->other_charge_recorder->record(
 						$fresh_order,

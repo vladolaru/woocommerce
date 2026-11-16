@@ -588,9 +588,7 @@ class RefundEventHandler {
 	 * @return bool
 	 */
 	private function is_own_payment( WC_Order $order, array $event_object, string $charge_id ): bool {
-		$resolver = $this->event_order_resolver;
-
-		return $resolver->is_own_payment( $order, $resolver->get_event_intent_id( $event_object, $order ), $charge_id );
+		return $this->event_order_resolver->is_own_payment_for_event( $order, $event_object, $charge_id );
 	}
 
 	/**
