@@ -176,6 +176,53 @@ class DebugToolsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The delete test orders tool deletes an order whose stored mode is test only while its payment method is a WooPayments one ($_dataName), and reports the count it deleted.
+	 * @dataProvider provide_test_order_stores
+	 *
+	 * The WooPayments extension's tool deletes every order whose mode is test (client 11.3.0
+	 * includes/class-wc-payments-status.php:155-175); the built-in one also needs a WooPayments payment method, so an order
+	 * another payment method paid after a test-mode attempt stays.
+	 *
+	 * @param array<int,array{string,string}> $orders          Payment method and stored mode of each order.
+	 * @param array<int,bool>                 $deleted         Whether each order is deleted.
+	 * @param string                          $expected_report The tool's report.
+	 */
+	public function test_delete_test_orders_deletes_only_woopayments_test_orders( array $orders, array $deleted, string $expected_report ): void {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		$order_ids = array();
+		foreach ( $orders as list( $payment_method, $mode ) ) {
+			$order = wc_create_order();
+			$order->set_payment_method( $payment_method );
+			$order->update_meta_data( '_wcpay_mode', $mode );
+			$order->save();
+			$order_ids[] = $order->get_id();
+		}
+
+		$report = $this->get_sut()->delete_test_orders();
+
+		$this->assertSame( $expected_report, $report );
+		$this->assertSame( $deleted, array_map( static fn( int $order_id ): bool => ! wc_get_order( $order_id ) instanceof \WC_Order, $order_ids ) );
+	}
+
+	/**
+	 * @return array<string,array{array<int,array{string,string}>,array<int,bool>,string}>
+	 */
+	public function provide_test_order_stores(): array {
+		return array(
+			'test orders of the card gateway and a split method among others' => array(
+				array( array( 'woocommerce_payments', 'test' ), array( 'woocommerce_payments_klarna', 'test' ), array( 'bacs', 'test' ), array( 'woocommerce_payments', 'prod' ) ),
+				array( true, true, false, false ),
+				'2 test orders have been permanently deleted.',
+			),
+			'only another payment method\'s order with the test mode' => array(
+				array( array( 'bacs', 'test' ) ),
+				array( false ),
+				'No test orders found.',
+			),
+		);
+	}
+
+	/**
 	 * Get the System Under Test.
 	 *
 	 * @return DebugTools

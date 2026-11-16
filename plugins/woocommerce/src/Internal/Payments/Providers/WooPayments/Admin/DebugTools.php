@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderMode;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Exception;
@@ -167,7 +168,12 @@ class DebugTools {
 	}
 
 	/**
-	 * Delete test-mode WooPayments orders.
+	 * Delete test-mode WooPayments orders: orders whose stored mode is test and whose payment method is a WooPayments one.
+	 *
+	 * The stored mode marks an order a WooPayments attempt was made on, and the attempt writes it before it is known to
+	 * pay. An order another payment method then paid keeps the mode when the takeover cleanup did not run, so the
+	 * payment method decides, as the tool's description promises. The WooPayments extension's tool deletes by mode alone
+	 * (client 11.3.0 includes/class-wc-payments-status.php:155-175).
 	 *
 	 * @return string Result message.
 	 */
@@ -187,14 +193,15 @@ class DebugTools {
 					'return'     => 'objects',
 				)
 			);
+			$orders        = is_array( $orders ) ? array_filter( $orders, static fn( $order ): bool => $order instanceof WC_Order && WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) ) : array();
 			$deleted_count = 0;
 
-			if ( ! is_array( $orders ) || empty( $orders ) ) {
+			if ( empty( $orders ) ) {
 				return __( 'No test orders found.', 'woocommerce' );
 			}
 
 			foreach ( $orders as $order ) {
-				if ( $order instanceof WC_Order && $order->delete( true ) ) {
+				if ( $order->delete( true ) ) {
 					++$deleted_count;
 				}
 			}
