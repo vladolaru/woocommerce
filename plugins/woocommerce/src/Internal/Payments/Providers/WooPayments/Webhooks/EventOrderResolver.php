@@ -197,6 +197,43 @@ class EventOrderResolver {
 	}
 
 	/**
+	 * Tell whether an event's intent belongs to a WooPayments attempt the order abandoned when another payment method took
+	 * it over (WooPaymentsEarlierAttemptCleanup), as client 11.3.0's is_intent_from_superseded_attempt() does
+	 * (class-wc-payments-order-service.php:1366-1380).
+	 *
+	 * The intent the order stores at this moment is never superseded: the cleanup removed the stored intent, so one stored
+	 * since is an attempt the order recorded after the takeover, such as an in-person payment. Otherwise the cleanup's list
+	 * names the abandoned intents. An older attempt the order no longer named at the takeover is told apart by its creation
+	 * time against the takeover time, while no WooPayments attempt has written the mode back; that compares the platform's
+	 * clock with the store's, so an attempt started within their difference can be missed.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param WC_Order $order             Order read under the order payment lock.
+	 * @param string   $intent_id         The event's payment intent ID.
+	 * @param int      $intent_created_at When the intent was created, as a Unix time; 0 when unknown, which leaves the list only.
+	 * @return bool
+	 */
+	public function is_superseded_attempt( WC_Order $order, string $intent_id, int $intent_created_at ): bool {
+		if ( '' === $intent_id || $intent_id === (string) $order->get_meta( '_intent_id', true ) ) {
+			return false;
+		}
+
+		$superseded_intent_ids = $order->get_meta( WooPaymentsPersistenceVocabulary::SUPERSEDED_INTENT_IDS_META_KEY, true );
+		if ( is_array( $superseded_intent_ids ) && in_array( $intent_id, $superseded_intent_ids, true ) ) {
+			return true;
+		}
+
+		if ( '' !== (string) $order->get_meta( '_wcpay_mode', true ) ) {
+			return false;
+		}
+
+		$taken_over_at = (int) $order->get_meta( WooPaymentsPersistenceVocabulary::PAYMENT_DETAILS_REMOVED_META_KEY, true );
+
+		return 0 < $taken_over_at && 0 < $intent_created_at && $intent_created_at < $taken_over_at;
+	}
+
+	/**
 	 * Log a refund or dispute event applied as the order's own payment, when the order's payment method is not a
 	 * WooPayments one.
 	 *

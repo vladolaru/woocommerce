@@ -6449,6 +6449,221 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A success or an authorization of an intent the takeover listed leaves the order alone before ownership, with one note however often it is delivered: $_dataName.
+	 * @dataProvider provide_skipped_superseded_attempts
+	 *
+	 * Client 11.3.0 asks its superseded-attempt predicate in the success and the authorization handlers before anything
+	 * they write (class-wc-payments-webhook-processing-service.php:464-470, :632-640) and notes the skip (:1112-1121); the
+	 * built-in asks it under the claim, before ownership, so the success's prelude never rewrites the stored payment. The
+	 * wording says the customer checked out with another payment method. The client notes every delivery; the built-in
+	 * writes the note once per event type and intent, as its other-charge note. The authorization is the recorded
+	 * manual_capture_amount_capturable_updated event (Fixtures/platform-payment-intent-events.json).
+	 *
+	 * @param string $kind          Which event, `success` or `authorization`.
+	 * @param string $order_status  Order status.
+	 * @param string $method        The order's payment method.
+	 * @param string $expected_note The note, with %1$s for the intent and %2$s for the charge.
+	 */
+	public function test_listed_attempt_event_is_skipped( string $kind, string $order_status, string $method, string $expected_note ): void {
+		// The recorded authorization is a test-mode event, which the ingestor applies only in test mode.
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$order     = StoredPaymentRecords::after_a_takeover_cleanup( array(), time(), $order_status, '', 'ch_A', $method );
+		$event     = 'success' === $kind
+			? $this->create_payment_intent_event(
+				'payment_intent.succeeded',
+				$order,
+				array(
+					'id'      => 'pi_A',
+					'charges' => array( 'data' => array( array( 'id' => 'ch_late' ) ) ),
+				)
+			)
+			: $this->recorded_authorization_event( $order );
+		$intent_id = (string) $event['data']['object']['id'];
+		$charge_id = (string) $event['data']['object']['charges']['data'][0]['id'];
+		$order->set_transaction_id( 'success' === $kind ? $intent_id : '' );
+		$order->update_meta_data( WooPaymentsPersistenceVocabulary::SUPERSEDED_INTENT_IDS_META_KEY, array( $intent_id ) );
+		$order->update_meta_data( '_wcpay_transaction_fee', '0.62' );
+		$order->update_meta_data( '_wcpay_net', '10.37' );
+		$order->save();
+
+		$this->sut->process( $event );
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( $order_status, $order->get_status() );
+		$this->assertSame(
+			array( '', 'ch_A', '0.62', '10.37' ),
+			array( $order->get_meta( '_intent_id', true ), $order->get_meta( '_charge_id', true ), $order->get_meta( '_wcpay_transaction_fee', true ), $order->get_meta( '_wcpay_net', true ) ),
+			'Nothing of the payment is written.'
+		);
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, sprintf( $expected_note, $intent_id, $charge_id ) ) );
+		$this->assertCount( 0, $this->get_order_notes_containing( $order, 'does not pay this order' ) );
+	}
+
+	/**
+	 * Skipped events and the orders they arrive on.
+	 *
+	 * @return array<string,array{string,string,string,string}>
+	 */
+	public function provide_skipped_superseded_attempts(): array {
+		return array(
+			'a success on a paid order whose transaction ID names it' => array( 'success', OrderStatus::PROCESSING, 'bacs', 'A WooPayments payment <code>%1$s</code> (charge <code>%2$s</code>) succeeded after the customer checked out with another payment method, so the order was not updated. Check whether the payment needs a refund.' ),
+			'an authorization on a Pending WooPayments order'         => array( 'authorization', OrderStatus::PENDING, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'A WooPayments payment <code>%1$s</code> was authorized after the customer checked out with another payment method, so the order was not updated. The authorization was not captured and expires on its own.' ),
+		);
+	}
+
+	/**
+	 * @testdox A success of an intent created before the takeover time is skipped and listed while no mode is stored, and goes to ownership once a later attempt stored one: $_dataName.
+	 * @dataProvider provide_takeover_time_catches
+	 *
+	 * Client 11.3.0 catches an older attempt the order no longer named by its creation time against the takeover time,
+	 * and stops once a new WooPayments attempt writes the mode back (class-wc-payments-order-service.php:1355-1358,
+	 * :1372-1380); the built-in also lists the caught intent, so its later events are told apart by the list. The success
+	 * is the recorded card_checkout_succeeded event (Fixtures/platform-payment-intent-events.json), whose `created` is its
+	 * intent's creation time.
+	 *
+	 * @param string $mode    The mode a later attempt stored, or '' for none.
+	 * @param bool   $skipped Whether the success is skipped.
+	 */
+	public function test_success_caught_by_the_takeover_time( string $mode, bool $skipped ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$event = $this->create_recorded_card_succeeded_event( wc_create_order() );
+		$order = StoredPaymentRecords::after_a_takeover_cleanup( array( 'pi_other' ), (int) $event['data']['object']['created'] + 60, OrderStatus::PENDING, '', '', 'bacs', '', $mode );
+		$event = $this->create_recorded_card_succeeded_event( $order );
+
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::PENDING, $order->get_status() );
+		$this->assertSame( $skipped ? array( 'pi_other', (string) $event['data']['object']['id'] ) : array( 'pi_other' ), $order->get_meta( WooPaymentsPersistenceVocabulary::SUPERSEDED_INTENT_IDS_META_KEY, true ) );
+		$this->assertCount( $skipped ? 1 : 0, $this->get_order_notes_containing( $order, 'succeeded after the customer checked out with another payment method' ) );
+		$this->assertCount( $skipped ? 0 : 1, $this->get_order_notes_containing( $order, 'does not pay this order' ) );
+	}
+
+	/**
+	 * Stored modes when an older attempt's success arrives.
+	 *
+	 * @return array<string,array{string,bool}>
+	 */
+	public function provide_takeover_time_catches(): array {
+		return array(
+			'no mode'                         => array( '', true ),
+			'a later attempt stored its mode' => array( 'test', false ),
+		);
+	}
+
+	/**
+	 * @testdox An in-person success after a takeover cleanup completes the order: $_dataName.
+	 * @dataProvider provide_in_person_after_a_takeover
+	 *
+	 * The in-person route sets the WooPayments method and stores its intent before the capture, and the mode only after it
+	 * (WooPaymentsTerminalPaymentsRestController), so a webhook of a payment whose route failed in between meets no mode.
+	 * Client 11.3.0's predicate reads only the list, the mode and the time (class-wc-payments-order-service.php:1366-1380),
+	 * so at the clock edge it skips such a payment; the built-in never skips the intent the order stores, and keeps the
+	 * client's time comparison for any other. The event is the recorded card_present success
+	 * (Fixtures/platform-card-present-succeeded-event.json). This store has no simulated reader, so no live row covers it.
+	 *
+	 * @param int  $time_offset   Seconds the takeover time is after the intent's creation; negative for before it.
+	 * @param bool $stores_intent Whether the order stores the in-person intent and names it in its transaction ID.
+	 */
+	public function test_in_person_success_after_a_takeover_completes_the_order( int $time_offset, bool $stores_intent ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$event     = $this->create_recorded_in_person_succeeded_event( wc_create_order(), 'card_present' );
+		$intent_id = (string) $event['data']['object']['id'];
+		$order     = StoredPaymentRecords::after_a_takeover_cleanup( array( 'pi_old' ), (int) $event['data']['object']['created'] + $time_offset, $stores_intent ? OrderStatus::ON_HOLD : OrderStatus::PENDING, $stores_intent ? $intent_id : '', '', WooPaymentsPersistenceVocabulary::GATEWAY_ID, $stores_intent ? $intent_id : '' );
+
+		$event = $this->create_recorded_in_person_succeeded_event( $order, 'card_present' );
+		// The stored-record orders total 10.99.
+		$event['data']['object']['amount']          = 1099;
+		$event['data']['object']['amount_received'] = 1099;
+
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::COMPLETED, $order->get_status(), 'The payment completes the order, which has nothing to ship.' );
+		$this->assertSame( array( 'pi_old' ), $order->get_meta( WooPaymentsPersistenceVocabulary::SUPERSEDED_INTENT_IDS_META_KEY, true ) );
+		$this->assertCount( 0, $this->get_order_notes_containing( $order, 'after the customer checked out with another payment method' ) );
+	}
+
+	/**
+	 * In-person payments after a takeover.
+	 *
+	 * @return array<string,array{int,bool}>
+	 */
+	public function provide_in_person_after_a_takeover(): array {
+		return array(
+			'an intent created after the takeover, not yet stored' => array( -60, false ),
+			'an intent created before the takeover, stored by the route' => array( 60, true ),
+		);
+	}
+
+	/**
+	 * @testdox An Interac success that arrives before its in-person route, at the takeover's clock edge, is skipped and listed; once the route stores it, its redelivery is not skipped.
+	 *
+	 * The first delivery's note is the recorded residual: the route then records the payment. The redelivery reaches the
+	 * list, which yields to the intent the order now stores. The event derives from the recorded card_present success as
+	 * create_recorded_in_person_succeeded_event() describes.
+	 */
+	public function test_interac_success_before_its_route_is_skipped_until_the_route_stores_it(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$event = $this->create_recorded_in_person_succeeded_event( wc_create_order(), 'interac_present' );
+		$order = StoredPaymentRecords::after_a_takeover_cleanup( array(), (int) $event['data']['object']['created'] + 60 );
+		$event = $this->create_recorded_in_person_succeeded_event( $order, 'interac_present' );
+		// The stored-record orders total 10.99.
+		$event['data']['object']['amount']          = 1099;
+		$event['data']['object']['amount_received'] = 1099;
+
+		$this->sut->process( $event );
+
+		$intent_id = (string) $event['data']['object']['id'];
+		$order     = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::PENDING, $order->get_status() );
+		$this->assertSame( array( $intent_id ), $order->get_meta( WooPaymentsPersistenceVocabulary::SUPERSEDED_INTENT_IDS_META_KEY, true ) );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'succeeded after the customer checked out with another payment method' ) );
+
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_transaction_id( $intent_id );
+		$order->update_meta_data( '_intent_id', $intent_id );
+		$order->save();
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::COMPLETED, $order->get_status() );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'succeeded after the customer checked out with another payment method' ), 'The stored intent is not skipped.' );
+	}
+
+	/**
+	 * @testdox An expiry of a listed intent's kept charge, on an order a later WooPayments attempt made its own again, is recorded as another charge before ownership, with no platform read.
+	 *
+	 * The expiry asks the takeover's list at the intent-event call site, as the success, the failure and the authorization
+	 * do there. Its producer: an authorization left under a stale status is cleaned up with no cancel and keeps its charge,
+	 * a WooPayments retry ends in a raised decline that stores its own intent, and the hold expires about seven days later.
+	 */
+	public function test_expiry_of_a_listed_attempts_kept_charge_is_another_charge(): void {
+		$order = StoredPaymentRecords::after_a_takeover_cleanup( array( 'pi_A' ), time() - DAY_IN_SECONDS, OrderStatus::FAILED, '', 'ch_A', WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_B', 'test' );
+		$sut   = $this->create_charge_expired_ingestor( array( 'status' => 'canceled' ), $requested_intents );
+
+		$sut->process(
+			array(
+				'id'   => 'evt_expired_listed',
+				'type' => 'charge.expired',
+				'data' => array(
+					'object' => array(
+						'id'             => 'ch_A',
+						'payment_intent' => 'pi_A',
+					),
+				),
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::FAILED, $order->get_status() );
+		$this->assertSame( array(), $requested_intents );
+		$this->assertSame( 'pi_B', $order->get_meta( '_intent_id', true ) );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'which does not pay this order, expired' ) );
+	}
+
+	/**
 	 * Build a payment_intent.succeeded event for the order's stored intent and charge.
 	 *
 	 * @param WC_Order $order         Order whose `_intent_id` and `_charge_id` the intent and its charge carry.

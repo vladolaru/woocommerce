@@ -332,6 +332,46 @@ final class StoredPaymentRecords {
 	}
 
 	/**
+	 * An order after a takeover cleanup: the abandoned intents listed and the takeover time stored, the five removed values
+	 * gone, and what stayed or came later: the kept charge, a transaction ID the shutdown step did not clear, or a later
+	 * attempt's stored intent and mode.
+	 *
+	 * Written by the cleanup (WooPaymentsEarlierAttemptCleanup; client 11.3.0 class-wc-payments-order-service.php:1304-1322),
+	 * then, for a later attempt, by its own writers: a raised decline's failed outcome stores its intent and the charge key's
+	 * save its mode (WooPaymentsOutcomeMetadataMapper, WooPaymentsPaymentOperationService); the in-person route stores its
+	 * intent and transaction ID before the capture and the mode after it (WooPaymentsTerminalPaymentsRestController).
+	 *
+	 * @param string[] $superseded_intent_ids The listed intents.
+	 * @param int      $taken_over_at         The takeover time, as a Unix time.
+	 * @param string   $order_status          Order status; a paid status gets a paid date.
+	 * @param string   $transaction_id        The transaction ID, or '' for none.
+	 * @param string   $charge_id             The stored charge, or '' for none.
+	 * @param string   $payment_method        The order's payment method.
+	 * @param string   $stored_intent         A later attempt's stored intent, or '' for none.
+	 * @param string   $mode                  A later attempt's stored mode, or '' for none.
+	 * @return WC_Order
+	 */
+	public static function after_a_takeover_cleanup( array $superseded_intent_ids, int $taken_over_at, string $order_status = OrderStatus::PENDING, string $transaction_id = '', string $charge_id = '', string $payment_method = 'bacs', string $stored_intent = '', string $mode = '' ): WC_Order {
+		$order = self::create_order(
+			$order_status,
+			$transaction_id,
+			array(
+				'_charge_id'  => $charge_id,
+				'_intent_id'  => $stored_intent,
+				'_wcpay_mode' => $mode,
+				WooPaymentsPersistenceVocabulary::PAYMENT_DETAILS_REMOVED_META_KEY => (string) $taken_over_at,
+			),
+			$payment_method
+		);
+		if ( array() !== $superseded_intent_ids ) {
+			$order->update_meta_data( WooPaymentsPersistenceVocabulary::SUPERSEDED_INTENT_IDS_META_KEY, $superseded_intent_ids );
+			$order->save();
+		}
+
+		return $order;
+	}
+
+	/**
 	 * Create and save an order with the given status, transaction ID, stored values and payment method.
 	 *
 	 * @param string               $status         Order status; a paid status gets a paid date.

@@ -21,6 +21,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAm
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCompositionDataSettler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsHtmlUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentConfirmationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIppReceiptEmail;
@@ -326,14 +327,26 @@ class PaymentIntentEventHandler {
 		$is_charge_event = 'charge.expired' === $event_type;
 		$charge_id       = $is_charge_event ? $this->get_object_id( $event_object ) : $this->get_charge_id_from_intent( $event_object );
 		$intent_id       = $is_charge_event ? $this->event_order_resolver->get_event_intent_id( $event_object, $order ) : $this->get_object_id( $event_object );
+		// A success or an authorization of an attempt the order abandoned when another payment method took it over leaves
+		// the order alone, before ownership and anything it writes (client 11.3.0
+		// class-wc-payments-webhook-processing-service.php:464-470, :632-640).
+		if ( in_array( $event_type, array( 'payment_intent.succeeded', 'payment_intent.amount_capturable_updated' ), true ) && $this->event_order_resolver->is_superseded_attempt( $order, $intent_id, is_numeric( $event_object['created'] ?? null ) ? (int) $event_object['created'] : 0 ) ) {
+			$this->skip_superseded_attempt( $order, $event_type, $intent_id, $charge_id );
+
+			return array( false, false );
+		}
+
 		// An order found by the charge's metadata is recorded only while it still does not hold the charge: one that
 		// saved it before this claim is decided like any order found by its charge.
-		$record_only    = $record_only && $charge_id !== (string) $order->get_meta( '_charge_id', true );
-		$is_own_payment = ! $record_only && $this->event_order_resolver->is_own_payment( $order, $intent_id, $charge_id, $this->get_stand_in_intent_id( $event_type, $order, $intent_id ) );
+		$record_only = $record_only && $charge_id !== (string) $order->get_meta( '_charge_id', true );
+		// An expiry of an abandoned attempt's kept charge is another charge, asked by the takeover's list as the other
+		// intent events are; a charge carries no intent creation time.
+		$is_superseded_expiry = $is_charge_event && $this->event_order_resolver->is_superseded_attempt( $order, $intent_id, 0 );
+		$is_own_payment       = ! $record_only && ! $is_superseded_expiry && $this->event_order_resolver->is_own_payment( $order, $intent_id, $charge_id, $this->get_stand_in_intent_id( $event_type, $order, $intent_id ) );
 		// An authorization or a payment failure changes only an order paid with WooPayments, so a stored attempt that another
-		// payment method replaced cannot hold or fail the order. For an authorization this check stands for client 11.3.0's
-		// superseded-attempt skip, which leaves an order paid another way (class-wc-payments-webhook-processing-service.php:464-471);
-		// the client's failed handler has no such check (:511-560).
+		// payment method replaced cannot hold or fail the order, also when no takeover cleanup listed it, unlike client
+		// 11.3.0, whose authorization handler has only the superseded-attempt skip above
+		// (class-wc-payments-webhook-processing-service.php:464-471); the client's failed handler has no such check (:511-560).
 		if ( in_array( $event_type, array( 'payment_intent.amount_capturable_updated', 'payment_intent.payment_failed' ), true ) && ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) ) {
 			$is_own_payment = false;
 		}
@@ -361,6 +374,50 @@ class PaymentIntentEventHandler {
 		}
 
 		return array( $is_own_payment, $notify_repeated_terminal_failure );
+	}
+
+	/**
+	 * Note a success or an authorization of an abandoned attempt on the order it leaves alone, and list an intent the
+	 * takeover time caught, so its later events are told apart by the list (client 11.3.0
+	 * class-wc-payments-webhook-processing-service.php:1112-1121). The note is written once per event type and intent: a
+	 * redelivery is not news, as the other-charge note is written once; the client adds it on every delivery.
+	 *
+	 * @param WC_Order $order      Order read under the order payment lock.
+	 * @param string   $event_type `payment_intent.succeeded` or `payment_intent.amount_capturable_updated`.
+	 * @param string   $intent_id  The event's intent.
+	 * @param string   $charge_id  The event's charge.
+	 */
+	private function skip_superseded_attempt( WC_Order $order, string $event_type, string $intent_id, string $charge_id ): void {
+		$superseded_intent_ids = $order->get_meta( WooPaymentsPersistenceVocabulary::SUPERSEDED_INTENT_IDS_META_KEY, true );
+		$superseded_intent_ids = is_array( $superseded_intent_ids ) ? $superseded_intent_ids : array();
+		if ( ! in_array( $intent_id, $superseded_intent_ids, true ) ) {
+			$superseded_intent_ids[] = $intent_id;
+			$order->update_meta_data( WooPaymentsPersistenceVocabulary::SUPERSEDED_INTENT_IDS_META_KEY, $superseded_intent_ids );
+			$order->save_meta_data();
+		}
+
+		if ( 'payment_intent.succeeded' === $event_type ) {
+			$note = sprintf(
+				WooPaymentsHtmlUtils::escape_interpolated_html(
+					/* translators: %1$s: the ID of a WooPayments payment, %2$s: the ID of its charge. */
+					__( 'A WooPayments payment <code>%1$s</code> (charge <code>%2$s</code>) succeeded after the customer checked out with another payment method, so the order was not updated. Check whether the payment needs a refund.', 'woocommerce' ),
+					array( 'code' => '<code>' )
+				),
+				esc_html( $intent_id ),
+				esc_html( $charge_id )
+			);
+		} else {
+			$note = sprintf(
+				WooPaymentsHtmlUtils::escape_interpolated_html(
+					/* translators: %1$s: the ID of a WooPayments payment. */
+					__( 'A WooPayments payment <code>%1$s</code> was authorized after the customer checked out with another payment method, so the order was not updated. The authorization was not captured and expires on its own.', 'woocommerce' ),
+					array( 'code' => '<code>' )
+				),
+				esc_html( $intent_id )
+			);
+		}
+
+		$this->order_note_service->add_note_once( $order, $note, 'takeover_skipped|' . $event_type . '|' . $intent_id );
 	}
 
 	/**
