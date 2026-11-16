@@ -42,6 +42,16 @@ class WooPaymentsOrderCardInfo implements RegisterHooksInterface {
 	private WooPaymentsPaymentMethodDetailsService $payment_method_details_service;
 
 	/**
+	 * Payment method IDs whose fetch failed in this request, as keys.
+	 *
+	 * A declined WooPay checkout leaves a payment method only the platform account can read, and both Failed order emails
+	 * render it in the same request; the second render answers no card info without asking or logging again.
+	 *
+	 * @var array<string,true>
+	 */
+	private array $failed_payment_method_ids = array();
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -79,15 +89,21 @@ class WooPaymentsOrderCardInfo implements RegisterHooksInterface {
 			if ( '' === $payment_method_id ) {
 				return $card_info;
 			}
+			if ( is_string( $payment_method_id ) && isset( $this->failed_payment_method_ids[ $payment_method_id ] ) ) {
+				return self::NO_CARD_INFO;
+			}
 
 			// Rendering an order must survive a failed fetch, as core's own fallback does (PaymentInfo::get_wcpay_card_info()),
 			// with the same always-on 'payment-info' line for an Exception or a PHP Error, but the failure's
 			// class, code and platform status instead of its message. A failure answers with empty card fields, so that
-			// fallback does not fetch a second time.
+			// fallback does not fetch a second time, and is remembered for this request only: nothing is stored on the order.
 			try {
 				$details = $this->payment_method_details_service->fetch_payment_method_details( $payment_method_id );
 			} catch ( Throwable $exception ) {
 				self::log_fetch_failure( $order, $payment_method_id, $exception );
+				if ( is_string( $payment_method_id ) ) {
+					$this->failed_payment_method_ids[ $payment_method_id ] = true;
+				}
 				$details = array();
 			}
 			if ( array() === $details ) {

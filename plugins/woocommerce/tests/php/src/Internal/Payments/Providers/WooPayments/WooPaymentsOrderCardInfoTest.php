@@ -198,6 +198,70 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A failed fetch is remembered for the request: rendering the order again (the second Failed order email) makes no fetch and no log line.
+	 */
+	public function test_a_failed_fetch_is_not_repeated_for_the_same_payment_method_in_the_request(): void {
+		$client = $this->create_payment_method_client_failing_for( array( 'pm_platform' ) );
+		$this->register_card_info_service( $client );
+		$logger   = RecordingWcLogger::install();
+		$order_id = $this->create_card_info_order( 'pm_platform' )->get_id();
+
+		$first  = PaymentInfo::get_card_info( wc_get_order( $order_id ) );
+		$second = PaymentInfo::get_card_info( wc_get_order( $order_id ) );
+
+		$this->assertSame( array( 'pm_platform' ), $client->requested_ids, 'One fetch for both renders, by neither this class nor core\'s fallback.' );
+		$this->assertCount( 1, array_filter( $logger->lines, static fn( array $line ): bool => 'payment-info' === $line[2] ) );
+		$this->assertSame( '', $first['last4'] );
+		$this->assertSame( '', $second['brand'] );
+		$this->assertSame( '', $second['last4'] );
+		$this->assertSame( '', wc_get_order( $order_id )->get_meta( '_wcpay_payment_method_details', true ), 'Nothing is stored on the order.' );
+	}
+
+	/**
+	 * @testdox A failed fetch for one payment method does not stop the fetch for another one in the same request.
+	 */
+	public function test_a_failed_fetch_does_not_stop_a_fetch_for_another_payment_method(): void {
+		$client = $this->create_payment_method_client_failing_for( array( 'pm_platform' ) );
+		$this->register_card_info_service( $client );
+
+		PaymentInfo::get_card_info( $this->create_card_info_order( 'pm_platform' ) );
+		$info = PaymentInfo::get_card_info( $this->create_card_info_order( 'pm_merchant' ) );
+
+		$this->assertSame( array( 'pm_platform', 'pm_merchant' ), $client->requested_ids );
+		$this->assertSame( 'visa', $info['brand'] );
+		$this->assertSame( '4242', $info['last4'] );
+	}
+
+	/**
+	 * @testdox Stored details are read before the failed fetch is remembered, so an order with them still shows its card.
+	 */
+	public function test_stored_details_are_read_for_a_payment_method_whose_fetch_failed(): void {
+		$client = $this->create_payment_method_client_failing_for( array( 'pm_platform' ) );
+		$this->register_card_info_service( $client );
+		PaymentInfo::get_card_info( $this->create_card_info_order( 'pm_platform' ) );
+		$order = $this->create_card_info_order( 'pm_platform' );
+		$order->update_meta_data(
+			'_wcpay_payment_method_details',
+			wp_json_encode(
+				array(
+					'type' => 'card',
+					'card' => array(
+						'brand' => 'mastercard',
+						'last4' => '4444',
+					),
+				)
+			)
+		);
+		$order->save();
+
+		$info = PaymentInfo::get_card_info( $order );
+
+		$this->assertSame( 'mastercard', $info['brand'] );
+		$this->assertSame( '4444', $info['last4'] );
+		$this->assertSame( array( 'pm_platform' ), $client->requested_ids );
+	}
+
+	/**
 	 * @testdox A filtered order meta value that is not a string is ignored rather than breaking the render.
 	 */
 	public function test_card_info_ignores_non_string_filtered_meta(): void {
@@ -280,6 +344,62 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 				$this->requested_ids[] = $payment_method_id;
 
 				return $this->details;
+			}
+		};
+	}
+
+	/**
+	 * Build an API client double that records the payment methods it is asked for, fails for the listed ones as the
+	 * platform does for a payment method another account owns, and returns a Visa card for the others.
+	 *
+	 * @param string[] $failing_ids Payment method IDs the platform cannot read.
+	 * @return Client
+	 */
+	private function create_payment_method_client_failing_for( array $failing_ids ): Client {
+		return new class( $failing_ids ) extends Client {
+			/**
+			 * Payment method IDs the platform cannot read.
+			 *
+			 * @var string[]
+			 */
+			private array $failing_ids;
+
+			/**
+			 * Payment method IDs the test double was asked for.
+			 *
+			 * @var string[]
+			 */
+			public array $requested_ids = array();
+
+			/**
+			 * Constructor.
+			 *
+			 * @param string[] $failing_ids Payment method IDs the platform cannot read.
+			 */
+			public function __construct( array $failing_ids ) {
+				$this->failing_ids = $failing_ids;
+			}
+
+			/**
+			 * Get a payment method.
+			 *
+			 * @param string $payment_method_id Payment method ID.
+			 * @return array<string,mixed>
+			 * @throws ApiException For a listed payment method ID.
+			 */
+			public function get_payment_method( string $payment_method_id ): array {
+				$this->requested_ids[] = $payment_method_id;
+				if ( in_array( $payment_method_id, $this->failing_ids, true ) ) {
+					throw new ApiException( 'No such PaymentMethod', 'resource_missing', 400 );
+				}
+
+				return array(
+					'type' => 'card',
+					'card' => array(
+						'brand' => 'visa',
+						'last4' => '4242',
+					),
+				);
 			}
 		};
 	}
