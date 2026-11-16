@@ -614,6 +614,98 @@ class WooPaymentsEarlierAttemptCleanupTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox On the classic pay page, the result of another gateway's successful payment cleans up the order once and comes back unchanged: $_dataName.
+	 * @dataProvider provide_pay_page_results
+	 *
+	 * WC_Form_Handler::pay_action() fires the before-pay action, saves the chosen method, runs the gateway and, on success
+	 * only, applies woocommerce_payment_successful_result before it redirects (class-wc-form-handler.php:761, :794-807).
+	 * Client 11.3.0 hooks neither (class-wc-payments-order-service.php:345-346); the built-in cleans up there too. The
+	 * callback never reads the result.
+	 *
+	 * @param mixed $result The gateway's result.
+	 */
+	public function test_pay_page_success_cleans_up_once_and_returns_the_result( $result ): void {
+		$order = StoredPaymentRecords::attempt_before_a_takeover( 'requires_payment_method', 'pi_A' );
+
+		do_action( 'woocommerce_before_pay_action', $order );
+		$returned = apply_filters( 'woocommerce_payment_successful_result', $result, $order->get_id() );
+
+		$this->assertSame( $result, $returned );
+		$this->assertSame( array( '', '', '', '', '' ), self::read_keys( wc_get_order( $order->get_id() ) ) );
+		$this->assertSame( 1, self::count_notes( $order, 'The payment details of an earlier WooPayments attempt (<code>pi_A</code>) were removed because the customer checked out with another payment method.' ) );
+	}
+
+	/**
+	 * @return array<string,array{mixed}>
+	 */
+	public function provide_pay_page_results(): array {
+		return array(
+			'a redirect result'            => array(
+				array(
+					'result'   => 'success',
+					'redirect' => 'https://example.org/checkout/order-received/1/',
+				),
+			),
+			'a value that is not an array' => array( 'unexpected' ),
+		);
+	}
+
+	/**
+	 * @testdox A pay page whose gateway fails or throws reaches no successful result, so nothing is cleaned up.
+	 *
+	 * The pay action fires woocommerce_after_pay_action instead (class-wc-form-handler.php:823).
+	 */
+	public function test_pay_page_failure_cleans_up_nothing(): void {
+		$order = StoredPaymentRecords::attempt_before_a_takeover( 'requires_payment_method', 'pi_A' );
+		$keys  = self::read_keys( $order );
+
+		do_action( 'woocommerce_before_pay_action', $order );
+		do_action( 'woocommerce_after_pay_action', $order );
+
+		$this->assertSame( $keys, self::read_keys( wc_get_order( $order->get_id() ) ) );
+	}
+
+	/**
+	 * @testdox On the classic checkout, which applies the same result filter after its hook, only the hook cleans up.
+	 *
+	 * WC_Checkout::process_order_payment() applies woocommerce_payment_successful_result after the gateway's success
+	 * (class-wc-checkout.php:1467) without the before-pay action.
+	 */
+	public function test_classic_checkout_result_makes_no_second_cleanup(): void {
+		$order = StoredPaymentRecords::attempt_before_a_takeover( 'succeeded', 'pi_A', 'pi_A', 'ch_A' );
+		$keys  = self::read_keys( $order );
+
+		apply_filters( 'woocommerce_payment_successful_result', array( 'result' => 'success' ), $order->get_id() );
+
+		$this->assertSame( 0, $this->transport->request_count, 'The filter makes no read.' );
+		$this->assertSame( $keys, self::read_keys( wc_get_order( $order->get_id() ) ) );
+		$this->assertSame( array(), self::takeover_notes( $order ) );
+	}
+
+	/**
+	 * @testdox On the pay page, a WooPayments success applied while the other gateway's payment ran is kept, with one read and the takeover note.
+	 *
+	 * The stored intent's success completes the order as a WooPayments payment while the pay action runs the other gateway
+	 * (the method is saved first, class-wc-form-handler.php:794-795); the filter then reads the stored payment and keeps it.
+	 * The read answers the recorded intent of Fixtures/platform-intention-basic-card.json.
+	 */
+	public function test_pay_page_keeps_a_payment_that_succeeded_meanwhile(): void {
+		$intent                    = self::recorded_intent( 'platform-intention-basic-card.json', 'basic_card_usd_create_and_confirm' );
+		$intent_id                 = (string) $intent['id'];
+		$order                     = StoredPaymentRecords::attempt_before_a_takeover( 'succeeded', $intent_id, $intent_id, 'ch_A', OrderStatus::PROCESSING );
+		$keys                      = self::read_keys( $order );
+		$this->transport->response = self::platform_answer( 200, $intent );
+
+		do_action( 'woocommerce_before_pay_action', $order );
+		apply_filters( 'woocommerce_payment_successful_result', array( 'result' => 'success' ), $order->get_id() );
+
+		$this->assertSame( 1, $this->transport->request_count );
+		$this->assertSame( $keys, self::read_keys( wc_get_order( $order->get_id() ) ) );
+		$this->assertSame( OrderStatus::PROCESSING, wc_get_order( $order->get_id() )->get_status() );
+		$this->assertCount( 1, self::takeover_notes( $order ) );
+	}
+
+	/**
 	 * Read the five keys the cleanup removes.
 	 *
 	 * @param WC_Order $order Order.

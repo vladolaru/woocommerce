@@ -159,10 +159,12 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 	/**
 	 * Clean up at the two checkout hooks, at client 11.3.0's priority (class-wc-payments-order-service.php:345-346): below
 	 * WooCommerce Subscriptions' subscription creation at 100, which copies the order's meta into the new subscription.
+	 * The classic pay page fires neither, so its successful payment result cleans up too, which the client does not.
 	 */
 	public function register(): void {
 		add_action( 'woocommerce_checkout_order_processed', array( $this, 'clean_up_after_classic_checkout' ), 10, 3 );
 		add_action( 'woocommerce_store_api_checkout_order_processed', array( $this, 'clean_up_after_store_api_checkout' ) );
+		add_filter( 'woocommerce_payment_successful_result', array( $this, 'clean_up_after_pay_action' ), 10, 2 );
 	}
 
 	/**
@@ -192,6 +194,28 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 		if ( $order instanceof WC_Order ) {
 			$this->clean_up_safely( $order, $order );
 		}
+	}
+
+	/**
+	 * Clean up an order the classic pay page took with another payment method, once its gateway answered success, and
+	 * return the result as given.
+	 *
+	 * WC_Form_Handler::pay_action() applies the filter only after the gateway's success, then redirects; classic checkout
+	 * applies it too, after its own hook already cleaned up, so the cleanup runs only once the before-pay action fired in
+	 * this request. The result is never read.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $result   The gateway's payment result.
+	 * @param mixed $order_id Order ID.
+	 * @return mixed The result, unchanged.
+	 */
+	public function clean_up_after_pay_action( $result, $order_id = 0 ) {
+		if ( did_action( 'woocommerce_before_pay_action' ) ) {
+			$this->clean_up_safely( wc_get_order( absint( $order_id ) ), null );
+		}
+
+		return $result;
 	}
 
 	/**
