@@ -616,14 +616,16 @@ class Client {
 	/**
 	 * Retrieve a WooPayments PaymentIntent in an explicit account mode.
 	 *
-	 * Historical order readers use this instead of inheriting the store's current mode.
+	 * Historical order readers use this instead of inheriting the store's current mode. A reader that runs inside a
+	 * shopper's request can bound the read with a shorter timeout.
 	 *
-	 * @param string $intent_id Intent ID.
-	 * @param bool   $test_mode Whether to read test-mode data.
+	 * @param string   $intent_id       Intent ID.
+	 * @param bool     $test_mode       Whether to read test-mode data.
+	 * @param int|null $timeout_seconds Seconds the read may take, or null for the default request timeout.
 	 * @return array<string,mixed>
 	 */
-	public function get_payment_intention_for_mode( string $intent_id, bool $test_mode ): array {
-		return $this->request( array( 'test_mode' => $test_mode ), 'intentions/' . rawurlencode( $intent_id ), 'GET' );
+	public function get_payment_intention_for_mode( string $intent_id, bool $test_mode, ?int $timeout_seconds = null ): array {
+		return $this->request( array( 'test_mode' => $test_mode ), 'intentions/' . rawurlencode( $intent_id ), 'GET', true, false, true, true, false, false, $timeout_seconds );
 	}
 
 	/**
@@ -2409,11 +2411,12 @@ class Client {
 	 * @param bool                    $include_test_mode_param Whether to add test mode to request params.
 	 * @param bool                    $return_raw_response Whether to return the raw transport response.
 	 * @param bool                    $use_v2_api Whether to use the Transact API root.
+	 * @param int|null                $timeout_seconds Seconds the request may take, retries included, or null for the default.
 	 * @return array<string,mixed>
 	 * @throws ApiException When the request fails.
 	 */
-	private function request( array $params, string $api, string $method, bool $is_site_scoped = true, bool $use_user_token = false, bool $blocking = true, bool $include_test_mode_param = true, bool $return_raw_response = false, bool $use_v2_api = false ): array {
-		$decoded_body = $this->request_decoded( $params, $api, $method, $is_site_scoped, $use_user_token, $blocking, $include_test_mode_param, $return_raw_response, $use_v2_api );
+	private function request( array $params, string $api, string $method, bool $is_site_scoped = true, bool $use_user_token = false, bool $blocking = true, bool $include_test_mode_param = true, bool $return_raw_response = false, bool $use_v2_api = false, ?int $timeout_seconds = null ): array {
+		$decoded_body = $this->request_decoded( $params, $api, $method, $is_site_scoped, $use_user_token, $blocking, $include_test_mode_param, $return_raw_response, $use_v2_api, $timeout_seconds );
 
 		return is_array( $decoded_body ) ? $decoded_body : array();
 	}
@@ -2430,10 +2433,13 @@ class Client {
 	 * @param bool                    $include_test_mode_param Whether to add test mode to request params.
 	 * @param bool                    $return_raw_response Whether to return the raw transport response.
 	 * @param bool                    $use_v2_api Whether to use the Transact API root.
+	 * @param int|null                $timeout_seconds Seconds the request may take, retries included, or null for the default.
 	 * @return mixed Decoded body; the raw transport response when asked for; an empty array for a non-blocking request.
 	 * @throws ApiException When the request fails.
 	 */
-	private function request_decoded( array $params, string $api, string $method, bool $is_site_scoped = true, bool $use_user_token = false, bool $blocking = true, bool $include_test_mode_param = true, bool $return_raw_response = false, bool $use_v2_api = false ) {
+	private function request_decoded( array $params, string $api, string $method, bool $is_site_scoped = true, bool $use_user_token = false, bool $blocking = true, bool $include_test_mode_param = true, bool $return_raw_response = false, bool $use_v2_api = false, ?int $timeout_seconds = null ) {
+		$timeout_seconds = $timeout_seconds ?? self::REQUEST_TIMEOUT_SECONDS;
+
 		if ( ! $this->is_available() ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
 			throw new ApiException( __( 'Site is not connected to WordPress.com.', 'woocommerce' ), 'wcpay_wpcom_not_connected', 409 );
@@ -2525,7 +2531,7 @@ class Client {
 			}
 		}
 
-		$stop_trying_at = time() + self::REQUEST_TIMEOUT_SECONDS;
+		$stop_trying_at = time() + $timeout_seconds;
 		$retries        = 0;
 		$retries_limit  = $blocking && array_key_exists( 'Idempotency-Key', $headers ) ? self::REQUEST_RETRIES_LIMIT : 0;
 
@@ -2543,7 +2549,7 @@ class Client {
 				$path,
 				$headers,
 				$body,
-				self::REQUEST_TIMEOUT_SECONDS,
+				$timeout_seconds,
 				$use_user_token,
 				$blocking
 			);

@@ -2711,6 +2711,26 @@ class ClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A historical intent read sends the timeout its caller passes to the transport, and the default request timeout when it passes none ($_dataName).
+	 *
+	 * @testWith ["a 5-second read", 5, 5]
+	 *           ["no timeout passed", null, 70]
+	 *
+	 * @param string   $label            Row label.
+	 * @param int|null $timeout_seconds  Timeout the caller passes.
+	 * @param int      $expected_timeout Timeout the transport receives.
+	 */
+	public function test_get_payment_intention_for_mode_sends_the_callers_timeout( string $label, ?int $timeout_seconds, int $expected_timeout ): void {
+		unset( $label );
+		list( $sut, $http_client ) = $this->make_sut( false, array( 'id' => 'pi_history' ) );
+
+		$sut->get_payment_intention_for_mode( 'pi_history', true, $timeout_seconds );
+
+		$this->assertSame( 1, $http_client->request_count );
+		$this->assertSame( $expected_timeout, $http_client->last_timeout );
+	}
+
+	/**
 	 * @testdox Should ignore malformed structured error metadata without warnings or diagnostic loss.
 	 */
 	public function test_request_ignores_malformed_structured_error_metadata(): void {

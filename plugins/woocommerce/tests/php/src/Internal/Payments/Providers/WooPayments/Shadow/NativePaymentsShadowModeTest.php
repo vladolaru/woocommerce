@@ -873,11 +873,13 @@ class NativePaymentsShadowModeTest extends WC_Unit_Test_Case {
 			/**
 			 * Retrieve a WooPayments PaymentIntent in an explicit account mode.
 			 *
-			 * @param string $intent_id Intent ID.
-			 * @param bool   $test_mode Whether to read test-mode data.
+			 * @param string   $intent_id       Intent ID.
+			 * @param bool     $test_mode       Whether to read test-mode data.
+			 * @param int|null $timeout_seconds Seconds the read may take, or null for the default.
 			 * @return array<string,mixed>
 			 */
-			public function get_payment_intention_for_mode( string $intent_id, bool $test_mode ): array {
+			public function get_payment_intention_for_mode( string $intent_id, bool $test_mode, ?int $timeout_seconds = null ): array {
+				unset( $timeout_seconds );
 				$this->test_modes[] = $test_mode;
 
 				return $this->get_payment_intention( $intent_id );
