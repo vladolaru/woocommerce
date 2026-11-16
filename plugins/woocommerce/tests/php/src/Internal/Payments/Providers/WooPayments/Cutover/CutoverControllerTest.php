@@ -21,6 +21,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\Bundl
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\CutoverController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PreflightService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\ReconciliationJob;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\NavigationController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 use WC_Payment_Token_CC;
@@ -73,11 +75,18 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	private const COMPLETION_SENTENCE = 'WooPayments is now built into WooCommerce. Everything works as before.';
 
 	/**
-	 * The completion notice on a store that cannot take WooPayments payments yet.
+	 * The completion notice on a store that cannot take WooPayments payments, whose store manager may open the WooPayments overview.
 	 *
 	 * @var string
 	 */
-	private const COMPLETION_SETUP_SENTENCE = 'WooPayments is now built into WooCommerce. This store can\'t take WooPayments payments yet. Go to Payments settings to finish setting it up.';
+	private const COMPLETION_OVERVIEW_SENTENCE = 'WooPayments is now built into WooCommerce. This store can\'t take WooPayments payments. Go to the WooPayments overview for details.';
+
+	/**
+	 * The completion notice on a store that cannot take WooPayments payments, whose store manager may not open the WooPayments overview.
+	 *
+	 * @var string
+	 */
+	private const COMPLETION_SETTINGS_SENTENCE = 'WooPayments is now built into WooCommerce. This store can\'t take WooPayments payments. Go to Payments settings for details.';
 
 	/**
 	 * The prompt telling a store whose active WooPayments extension is too old to switch from to update it first.
@@ -120,6 +129,20 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	 * @var int
 	 */
 	private int $account_reads = 0;
+
+	/**
+	 * Whether the WooPayments navigation double lets the store manager open the WooPayments overview.
+	 *
+	 * @var bool
+	 */
+	private bool $overview_allowed = false;
+
+	/**
+	 * Number of times the WooPayments navigation double was asked for the pages' availability.
+	 *
+	 * @var int
+	 */
+	private int $availability_reads = 0;
 
 	/**
 	 * Whether the WooPayments plugin should appear active.
@@ -191,6 +214,8 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 		remove_all_filters( CutoverController::FILTER_MANDATORY_CUTOVER_ENABLED );
 		remove_all_filters( 'wp_die_handler' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
+		wc_get_container()->reset_replacement( NavigationController::class );
 		Constants::clear_single_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' );
 		$this->reset_legacy_proxy_mocks();
 
@@ -1302,57 +1327,68 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	 * @testdox The completion notice reads $_dataName.
 	 * @dataProvider provide_completion_notices
 	 *
-	 * @param bool        $can_take_payments Whether the account can take payments.
-	 * @param string      $expected          The completion notice's sentence.
-	 * @param string|null $link              The link's URL, or null for no link.
+	 * @param bool        $can_take_payments  Whether the account can take payments.
+	 * @param string      $tier               The store's setup tier after the switch.
+	 * @param bool        $overview_allowed   Whether the WooPayments navigation lets the store manager open the overview.
+	 * @param string      $expected           The completion notice's sentence.
+	 * @param string|null $link               The link's URL, or null for no link.
+	 * @param int         $availability_reads How many times the WooPayments navigation is asked.
 	 */
-	public function test_completion_notice_follows_whether_the_store_can_take_payments( bool $can_take_payments, string $expected, ?string $link ): void {
-		$this->fake_plugin_active( false );
+	public function test_completion_notice_follows_whether_the_store_can_take_payments( bool $can_take_payments, string $tier, bool $overview_allowed, string $expected, ?string $link, int $availability_reads ): void {
 		$this->fake_current_user_caps( true );
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$this->arrange_switched_store( $tier );
 		$this->account_can_take_payments = $can_take_payments;
+		$this->overview_allowed          = $overview_allowed;
 
 		$notices = $this->render_admin_notices( $this->create_cutover_controller( $this->create_completed_notice_job() ) );
 
 		$this->assertSame( array( $expected ), $this->read_paragraphs( $notices, 'WooPayments is now built into WooCommerce.' ) );
-		preg_match_all( '#<a href="([^"]*)">Payments settings</a>#', $notices, $links );
+		preg_match_all( '#<a href="([^"]*)">(?:Payments settings|WooPayments overview)</a>#', $notices, $links );
 		$this->assertSame( null === $link ? array() : array( $link ), array_map( 'html_entity_decode', $links[1] ) );
+		$this->assertSame( $availability_reads, $this->availability_reads, 'The navigation is asked only when the store cannot take payments and its tier serves the overview.' );
 	}
 
 	/**
-	 * @return array<string,array{bool,string,string|null}>
+	 * @return array<string,array{bool,string,bool,string,string|null,int}>
 	 */
 	public function provide_completion_notices(): array {
+		$overview = Utils::wc_payments_settings_url( NavigationController::PATH_OVERVIEW );
+		$settings = Utils::wc_payments_settings_url();
+
 		return array(
-			'that everything works as before, for a store that can take payments' => array( true, self::COMPLETION_SENTENCE, null ),
-			'where to finish setup, for a store that cannot take payments yet'  => array( false, self::COMPLETION_SETUP_SENTENCE, Utils::wc_payments_settings_url() ),
+			'that everything works as before, for a store that can take payments' => array( true, WooPaymentsSetupTier::ACTIVE, true, self::COMPLETION_SENTENCE, null, 0 ),
+			'the WooPayments overview link, for an active store that cannot take payments and may open it' => array( false, WooPaymentsSetupTier::ACTIVE, true, self::COMPLETION_OVERVIEW_SENTENCE, $overview, 1 ),
+			'the WooPayments overview link, for a connected store that cannot take payments and may open it' => array( false, WooPaymentsSetupTier::CONNECTED, true, self::COMPLETION_OVERVIEW_SENTENCE, $overview, 1 ),
+			'the Payments settings link, for an active store that cannot take payments and may not open the overview' => array( false, WooPaymentsSetupTier::ACTIVE, false, self::COMPLETION_SETTINGS_SENTENCE, $settings, 1 ),
+			'the Payments settings link, for an available store, without asking the navigation' => array( false, WooPaymentsSetupTier::AVAILABLE, true, self::COMPLETION_SETTINGS_SENTENCE, $settings, 0 ),
 		);
 	}
 
 	/**
-	 * The notice follows the account cache on every page and keeps nothing of its own, so it corrects itself once setup is
-	 * done, and again if the account stops taking payments.
+	 * The notice follows the account cache and the overview's availability on every page and keeps nothing of its own, so it
+	 * corrects itself once setup is done, and again if the account stops taking payments.
 	 *
-	 * @testdox The completion notice follows the account read on each page load and writes no option or record field.
+	 * @testdox The completion notice follows the account read and the overview's availability on each page load and writes no option or record field.
 	 */
 	public function test_completion_notice_follows_the_account_read_on_each_page_load_and_writes_nothing(): void {
 		global $wpdb;
-		$this->fake_plugin_active( false );
 		$this->fake_current_user_caps( true );
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$this->arrange_switched_store( WooPaymentsSetupTier::ACTIVE );
 		$job        = $this->create_completed_notice_job();
 		$controller = $this->create_cutover_controller( $job );
 		$record     = $job->refresh_notice_record();
 		$options    = $wpdb->get_results( "SELECT option_name, option_value FROM {$wpdb->options} ORDER BY option_name", ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- The stored rows are what the test compares.
 		$pages      = array();
 
-		foreach ( array( false, true, false ) as $can_take_payments ) {
+		foreach ( array( array( false, true ), array( true, true ), array( false, false ) ) as list( $can_take_payments, $overview_allowed ) ) {
 			$this->account_can_take_payments = $can_take_payments;
+			$this->overview_allowed          = $overview_allowed;
 			$pages[]                         = $this->read_paragraphs( $this->render_admin_notices( $controller ), 'WooPayments is now built into WooCommerce.' );
 		}
 
-		$this->assertSame( array( array( self::COMPLETION_SETUP_SENTENCE ), array( self::COMPLETION_SENTENCE ), array( self::COMPLETION_SETUP_SENTENCE ) ), $pages );
+		$this->assertSame( array( array( self::COMPLETION_OVERVIEW_SENTENCE ), array( self::COMPLETION_SENTENCE ), array( self::COMPLETION_SETTINGS_SENTENCE ) ), $pages );
 		$this->assertSame( 3, $this->account_reads, 'Each page load reads the account once.' );
+		$this->assertSame( 2, $this->availability_reads, 'Each page load that cannot take payments asks the navigation once.' );
 		$this->assertSame( $record, $job->refresh_notice_record(), 'No record field changes.' );
 		$this->assertSame( $options, $wpdb->get_results( "SELECT option_name, option_value FROM {$wpdb->options} ORDER BY option_name", ARRAY_A ), 'No option changes.' ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- The stored rows are what the test compares.
 	}
@@ -2342,6 +2378,57 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	 */
 	private function enable_ready_cutover(): void {
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+	}
+
+	/**
+	 * Arrange a store that switched to the built-in WooPayments on the given setup tier, with a WooPayments navigation double
+	 * that answers the overview's availability from this test's flag and counts the reads.
+	 *
+	 * @param string $tier Setup tier.
+	 */
+	private function arrange_switched_store( string $tier ): void {
+		$this->fake_plugin_active( false );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		update_option(
+			StateStore::OPTION_NAME,
+			array(
+				'state'                  => StateStore::STATE_DONE,
+				'informational_outcomes' => array(),
+			)
+		);
+		update_option( WooPaymentsSetupTier::OPTION_NAME, $tier );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
+
+		wc_get_container()->replace(
+			NavigationController::class,
+			new class( fn(): bool => $this->overview_allowed, fn() => ++$this->availability_reads ) extends NavigationController {
+				/** @var callable(): bool Reads the test's flag. */
+				private $overview_allowed;
+
+				/** @var callable Counts the reads. */
+				private $count_read;
+
+				/**
+				 * @param callable $overview_allowed Reads the test's flag.
+				 * @param callable $count_read       Counts the reads.
+				 */
+				public function __construct( callable $overview_allowed, callable $count_read ) {
+					$this->overview_allowed = $overview_allowed;
+					$this->count_read       = $count_read;
+				}
+
+				/** @return array{gatewayEnabled:bool,accountState:string,allowedRoutes:array<string,bool>} */
+				public function get_admin_route_availability(): array {
+					( $this->count_read )();
+					return array(
+						'gatewayEnabled' => true,
+						'accountState'   => '',
+						'allowedRoutes'  => array( NavigationController::PATH_OVERVIEW => ( $this->overview_allowed )() ),
+					);
+				}
+			}
+		);
 	}
 
 	/**

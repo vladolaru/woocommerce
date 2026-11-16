@@ -9,8 +9,10 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover
 
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\NavigationController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 
@@ -821,16 +823,25 @@ class CutoverController implements RegisterHooksInterface {
 
 	/**
 	 * Output the successful cutover notice. A store that cannot take WooPayments payments, read from the account cache on
-	 * each page, is sent to Payments settings to finish setup instead of being told everything works as before.
+	 * each page, is told so and sent to the WooPayments overview when the store manager may open it, else to Payments settings.
 	 */
 	private function output_success_notice(): void {
 		if ( $this->account_service->can_process_payments() ) {
 			$message = esc_html__( 'WooPayments is now built into WooCommerce. Everything works as before.', 'woocommerce' );
+		} elseif ( $this->can_open_overview() ) {
+			$message = wp_kses(
+				sprintf(
+					/* translators: %s: URL of the WooPayments overview page. */
+					__( 'WooPayments is now built into WooCommerce. This store can\'t take WooPayments payments. Go to the <a href="%s">WooPayments overview</a> for details.', 'woocommerce' ),
+					esc_url( Utils::wc_payments_settings_url( NavigationController::PATH_OVERVIEW ) )
+				),
+				array( 'a' => array( 'href' => array() ) )
+			);
 		} else {
 			$message = wp_kses(
 				sprintf(
 					/* translators: %s: URL of the Payments settings page. */
-					__( 'WooPayments is now built into WooCommerce. This store can\'t take WooPayments payments yet. Go to <a href="%s">Payments settings</a> to finish setting it up.', 'woocommerce' ),
+					__( 'WooPayments is now built into WooCommerce. This store can\'t take WooPayments payments. Go to <a href="%s">Payments settings</a> for details.', 'woocommerce' ),
 					esc_url( Utils::wc_payments_settings_url() )
 				),
 				array( 'a' => array( 'href' => array() ) )
@@ -842,6 +853,24 @@ class CutoverController implements RegisterHooksInterface {
 			<p><?php echo $message; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped when built. ?></p>
 		</div>
 		<?php
+	}
+
+	/**
+	 * Tell whether the store manager may open the WooPayments overview, as the WooPayments navigation decides it.
+	 *
+	 * The navigation serves the overview only on the connected and active tiers, so it is not built on any other.
+	 *
+	 * @return bool
+	 */
+	private function can_open_overview(): bool {
+		$tier = wc_get_container()->get( WooPaymentsSetupTier::class )->get_effective_tier();
+		if ( ! in_array( $tier, array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true ) ) {
+			return false;
+		}
+
+		$availability = wc_get_container()->get( NavigationController::class )->get_admin_route_availability();
+
+		return true === ( $availability['allowedRoutes'][ NavigationController::PATH_OVERVIEW ] ?? false );
 	}
 
 	/**
