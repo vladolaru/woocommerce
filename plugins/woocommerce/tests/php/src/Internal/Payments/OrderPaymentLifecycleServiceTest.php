@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
@@ -1448,6 +1449,102 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( $stored_status, $order->get_status() );
 		$this->assertSame( '', $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment complete.' ) );
+	}
+
+	/**
+	 * @testdox A completed event that leaves a paid order reads the paid status through has_paid_status() at each site of the paid rule: $_dataName.
+	 *
+	 * The service's has_paid_status() answers true for one order object only, an On hold order the status itself does not
+	 * count as paid, so the event is skipped only when the site under test asks the method. The webhook's stand-in for an
+	 * empty transaction ID asks the same method, so the lifecycle's skip and that check cannot drift apart.
+	 *
+	 * @dataProvider paid_status_sites
+	 *
+	 * @param string   $entry_point  Service method that applies the event.
+	 * @param callable $answers_paid Gets the order asked about, the order passed and whether the asked order was read again in place, and answers whether it is paid.
+	 */
+	public function test_completed_event_leaving_a_paid_order_reads_the_paid_status_method( string $entry_point, callable $answers_paid ): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( OrderStatus::ON_HOLD );
+		$order->save();
+		$sut = new class( $order, $answers_paid ) extends OrderPaymentLifecycleService {
+			/**
+			 * Order passed to the service.
+			 *
+			 * @var WC_Order
+			 */
+			private WC_Order $passed;
+
+			/**
+			 * Answers whether an order is paid.
+			 *
+			 * @var callable
+			 */
+			private $answers_paid;
+
+			/**
+			 * Object IDs of the orders read again in place.
+			 *
+			 * @var array<int,bool>
+			 */
+			private array $read_again = array();
+
+			/**
+			 * Constructor.
+			 *
+			 * @param WC_Order $passed       Order passed to the service.
+			 * @param callable $answers_paid Answers whether an order is paid.
+			 */
+			public function __construct( WC_Order $passed, callable $answers_paid ) {
+				$this->passed       = $passed;
+				$this->answers_paid = $answers_paid;
+			}
+
+			/**
+			 * Note the order as read again, then read it.
+			 *
+			 * @param WC_Order $order Order object.
+			 */
+			public function reread_order_from_data_store( WC_Order $order ): void {
+				$this->read_again[ spl_object_id( $order ) ] = true;
+				parent::reread_order_from_data_store( $order );
+			}
+
+			/**
+			 * Answer for the order the row names.
+			 *
+			 * @param WC_Order $order Order object.
+			 * @return bool
+			 */
+			public function has_paid_status( WC_Order $order ): bool {
+				return ( $this->answers_paid )( $order, $this->passed, isset( $this->read_again[ spl_object_id( $order ) ] ) );
+			}
+		};
+		$sut->init( $this->order_payment_lock, wc_get_container()->get( OrderPaymentNotes::class ) );
+		$event = new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, 'pi_paid_status', array( '_intention_status' => 'succeeded' ), array(), 'Paid by pi_paid_status.', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS, array(), false, false, array(), true );
+
+		$sut->{$entry_point}( $order, $event, $this->persistence_vocabulary );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( OrderStatus::ON_HOLD, $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Paid by pi_paid_status.' ) );
+		$skips = array_filter( $this->captured_logs, static fn( array $log ): bool => 'debug' === $log['level'] && 'order_paid' === ( $log['context']['reason'] ?? '' ) );
+		$this->assertCount( 1, $skips, 'The event is skipped as one on a paid order.' );
+	}
+
+	/**
+	 * The three sites of the paid rule, each with the one order object has_paid_status() counts as paid.
+	 *
+	 * @return array<string,array{string,callable}>
+	 */
+	public function paid_status_sites(): array {
+		return array(
+			"apply(): the caller's copy, before it is read again" => array( 'apply', static fn( WC_Order $asked, WC_Order $passed, bool $was_read_again ): bool => $asked === $passed && ! $was_read_again ),
+			'apply_under_lock(): the order passed' => array( 'apply_under_lock', static fn( WC_Order $asked, WC_Order $passed ): bool => $asked === $passed ),
+			'apply_under_lock(): the fresh copy the paid rule reads' => array( 'apply_under_lock', static fn( WC_Order $asked, WC_Order $passed ): bool => $asked !== $passed ),
+		);
 	}
 
 	/**

@@ -139,7 +139,7 @@ class OrderPaymentLifecycleService {
 		}
 
 		try {
-			$caller_copy_was_paid = $order->has_status( wc_get_is_paid_statuses() );
+			$caller_copy_was_paid = $this->has_paid_status( $order );
 			$this->reread_order_from_data_store( $order );
 
 			if ( null !== $rebuild ) {
@@ -211,6 +211,21 @@ class OrderPaymentLifecycleService {
 	}
 
 	/**
+	 * Whether the order is in a paid status, as the payment lifecycle decides it when it leaves a paid order alone.
+	 *
+	 * This is the lifecycle's own test and does not run the order's `woocommerce_order_is_paid` filter; callers that must
+	 * agree with the lifecycle use it.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param WC_Order $order Order object.
+	 * @return bool
+	 */
+	public function has_paid_status( WC_Order $order ): bool {
+		return $order->has_status( wc_get_is_paid_statuses() );
+	}
+
+	/**
 	 * Log a warning when a lifecycle event is skipped because the order payment lock is contested.
 	 *
 	 * A lifecycle event can arrive while a checkout, refund or capture holds the order payment lock; it is skipped, and
@@ -251,7 +266,7 @@ class OrderPaymentLifecycleService {
 	 *                otherwise.
 	 */
 	public function apply_under_lock( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): string {
-		return $this->apply_event_under_lock( $order, $event, $persistence_vocabulary, $order->has_status( wc_get_is_paid_statuses() ), false );
+		return $this->apply_event_under_lock( $order, $event, $persistence_vocabulary, $this->has_paid_status( $order ), false );
 	}
 
 	/**
@@ -485,7 +500,7 @@ class OrderPaymentLifecycleService {
 			return true;
 		}
 
-		return ( $order_was_read ? $order : $this->get_fresh_order_from_data_store( $order ) )->has_status( wc_get_is_paid_statuses() );
+		return $this->has_paid_status( $order_was_read ? $order : $this->get_fresh_order_from_data_store( $order ) );
 	}
 
 	/**
