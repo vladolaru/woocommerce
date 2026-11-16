@@ -18,7 +18,10 @@ use Automattic\WooCommerce\StoreApi\Payments\PaymentContext;
 use Automattic\WooCommerce\StoreApi\Payments\PaymentResult;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\StoredPaymentRecords;
+use WC_Customer;
+use WC_Form_Handler;
 use WC_Order;
+use WC_Payment_Gateway;
 use WC_Unit_Test_Case;
 use WP_Error;
 
@@ -443,14 +446,21 @@ class WooPaymentsEarlierAttemptCleanupTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A merchant's change of a WooPayments-paid order's payment method in admin runs no cleanup, so its payment stays the order's own.
+	 * @testdox A save that sets another payment method outside the order's pay action runs no cleanup, so a WooPayments payment stays the order's own ($_dataName).
+	 * @dataProvider provide_saves_outside_the_pay_action
 	 *
-	 * No checkout hook fires on an admin save, so the values stay and a refund of the payment, named by the transaction ID,
-	 * is the order's own (EventOrderResolver::is_own_payment_for_event()).
+	 * A merchant changes a WooPayments-paid order's payment method in admin: only the pay action arms the cleanup on an
+	 * order's save, and only for its own order, so the values stay and a refund of the payment, named by the transaction
+	 * ID, is the order's own (EventOrderResolver::is_own_payment_for_event()).
+	 *
+	 * @param bool $other_pay_action Whether a pay action for another order ran in the same request.
 	 */
-	public function test_admin_payment_method_change_runs_no_cleanup(): void {
+	public function test_save_outside_the_pay_action_runs_no_cleanup( bool $other_pay_action ): void {
 		$order = StoredPaymentRecords::attempt_before_a_takeover( 'succeeded', 'pi_A', 'pi_A', 'ch_A', OrderStatus::PROCESSING, WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$keys  = self::read_keys( $order );
+		if ( $other_pay_action ) {
+			do_action( 'woocommerce_before_pay_action', StoredPaymentRecords::attempt_before_a_takeover( 'requires_payment_method', 'pi_B', '', '', OrderStatus::PENDING, WooPaymentsPersistenceVocabulary::GATEWAY_ID ) );
+		}
 
 		$order->set_payment_method( 'bacs' );
 		$order->save();
@@ -468,6 +478,16 @@ class WooPaymentsEarlierAttemptCleanupTest extends WC_Unit_Test_Case {
 				),
 				'ch_A'
 			)
+		);
+	}
+
+	/**
+	 * @return array<string,array{bool}>
+	 */
+	public function provide_saves_outside_the_pay_action(): array {
+		return array(
+			'no pay action'                   => array( false ),
+			'the pay action of another order' => array( true ),
 		);
 	}
 
@@ -614,95 +634,184 @@ class WooPaymentsEarlierAttemptCleanupTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox On the classic pay page, the result of another gateway's successful payment cleans up the order once and comes back unchanged: $_dataName.
-	 * @dataProvider provide_pay_page_results
+	 * @testdox On the classic pay page, the cleanup runs at the save of another gateway's method, before its payment: the values that gateway writes under the same names stay, and the earlier attempt's go ($_dataName).
+	 * @dataProvider provide_pay_page_payments
 	 *
-	 * WC_Form_Handler::pay_action() fires the before-pay action, saves the chosen method, runs the gateway and, on success
-	 * only, applies woocommerce_payment_successful_result before it redirects (class-wc-form-handler.php:761, :794-807).
-	 * Client 11.3.0 hooks neither (class-wc-payments-order-service.php:345-346); the built-in cleans up there too. The
-	 * callback never reads the result.
+	 * WC_Form_Handler::pay_action() fires the before-pay action, saves the chosen method, then runs the gateway
+	 * (class-wc-form-handler.php:761, :794-801), as the two checkout hooks run before the payment. The gateway writes its own
+	 * customer and payment method under the names WooCommerce Stripe uses, which client 11.3.0's cleanup leaves because it
+	 * runs first (class-wc-payments-order-service.php:1270-1282). A failed payment is still cleaned up, as at checkout.
 	 *
-	 * @param mixed $result The gateway's result.
+	 * @param bool $succeeds Whether the other gateway's payment succeeds.
 	 */
-	public function test_pay_page_success_cleans_up_once_and_returns_the_result( $result ): void {
-		$order = StoredPaymentRecords::attempt_before_a_takeover( 'requires_payment_method', 'pi_A' );
+	public function test_pay_page_cleans_up_before_the_other_gateways_payment( bool $succeeds ): void {
+		$order = StoredPaymentRecords::attempt_before_a_takeover( 'requires_payment_method', 'pi_A', '', '', OrderStatus::FAILED, WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 
-		do_action( 'woocommerce_before_pay_action', $order );
-		$returned = apply_filters( 'woocommerce_payment_successful_result', $result, $order->get_id() );
+		$payment = $this->pay_with_another_gateway( $order, $succeeds );
 
-		$this->assertSame( $result, $returned );
-		$this->assertSame( array( '', '', '', '', '' ), self::read_keys( wc_get_order( $order->get_id() ) ) );
+		$stored = wc_get_order( $order->get_id() );
+		$this->assertSame( $succeeds, $payment['redirected'], 'The pay action reached the outcome of this case.' );
+		$this->assertSame( array( 'cus_other', 'pm_other', '', '', '' ), self::read_keys( $stored ), 'The gateway\'s own values stay; the earlier attempt\'s go.' );
+		$this->assertSame( array( '', '', '', '', '' ), $payment['seen'], 'The gateway\'s payment starts on a cleaned order.' );
+		$this->assertSame( array( 'pi_A' ), $stored->get_meta( WooPaymentsPersistenceVocabulary::SUPERSEDED_INTENT_IDS_META_KEY, true ) );
 		$this->assertSame( 1, self::count_notes( $order, 'The payment details of an earlier WooPayments attempt (<code>pi_A</code>) were removed because the customer checked out with another payment method.' ) );
 	}
 
 	/**
-	 * @return array<string,array{mixed}>
+	 * @return array<string,array{bool}>
 	 */
-	public function provide_pay_page_results(): array {
+	public function provide_pay_page_payments(): array {
 		return array(
-			'a redirect result'            => array(
-				array(
-					'result'   => 'success',
-					'redirect' => 'https://example.org/checkout/order-received/1/',
-				),
-			),
-			'a value that is not an array' => array( 'unexpected' ),
+			'the payment succeeds' => array( true ),
+			'the payment fails'    => array( false ),
 		);
 	}
 
 	/**
-	 * @testdox A pay page whose gateway fails or throws reaches no successful result, so nothing is cleaned up.
-	 *
-	 * The pay action fires woocommerce_after_pay_action instead (class-wc-form-handler.php:823).
+	 * @testdox On the classic pay page, a save of the order that still shows the WooPayments method, made by a callback of the before-pay action, does not use up the cleanup.
 	 */
-	public function test_pay_page_failure_cleans_up_nothing(): void {
-		$order = StoredPaymentRecords::attempt_before_a_takeover( 'requires_payment_method', 'pi_A' );
-		$keys  = self::read_keys( $order );
+	public function test_pay_page_save_with_the_woopayments_method_does_not_use_up_the_cleanup(): void {
+		$order = StoredPaymentRecords::attempt_before_a_takeover( 'requires_payment_method', 'pi_A', '', '', OrderStatus::FAILED, WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		add_action(
+			'woocommerce_before_pay_action',
+			static function ( $paying ) {
+				$paying->update_meta_data( '_earlier_callback', 'saved' );
+				$paying->save();
+			},
+			20
+		);
 
-		do_action( 'woocommerce_before_pay_action', $order );
-		do_action( 'woocommerce_after_pay_action', $order );
+		$payment = $this->pay_with_another_gateway( $order, false );
 
-		$this->assertSame( $keys, self::read_keys( wc_get_order( $order->get_id() ) ) );
+		$this->assertSame( array( '', '', '', '', '' ), $payment['seen'] );
+		$this->assertSame( 'saved', wc_get_order( $order->get_id() )->get_meta( '_earlier_callback', true ) );
 	}
 
 	/**
-	 * @testdox On the classic checkout, which applies the same result filter after its hook, only the hook cleans up.
+	 * @testdox On the classic pay page, a payment the read finds holding money is kept and read once, however often the other gateway saves the order during its payment.
 	 *
-	 * WC_Checkout::process_order_payment() applies woocommerce_payment_successful_result after the gateway's success
-	 * (class-wc-checkout.php:1467) without the before-pay action.
+	 * The cleanup stops listening before it runs, so the gateway's saves, which still show its method and the kept mode,
+	 * make no second read. The read answers the recorded intent of Fixtures/platform-intention-basic-card.json.
 	 */
-	public function test_classic_checkout_result_makes_no_second_cleanup(): void {
-		$order = StoredPaymentRecords::attempt_before_a_takeover( 'succeeded', 'pi_A', 'pi_A', 'ch_A' );
-		$keys  = self::read_keys( $order );
-
-		apply_filters( 'woocommerce_payment_successful_result', array( 'result' => 'success' ), $order->get_id() );
-
-		$this->assertSame( 0, $this->transport->request_count, 'The filter makes no read.' );
-		$this->assertSame( $keys, self::read_keys( wc_get_order( $order->get_id() ) ) );
-		$this->assertSame( array(), self::takeover_notes( $order ) );
-	}
-
-	/**
-	 * @testdox On the pay page, a WooPayments success applied while the other gateway's payment ran is kept, with one read and the takeover note.
-	 *
-	 * The stored intent's success completes the order as a WooPayments payment while the pay action runs the other gateway
-	 * (the method is saved first, class-wc-form-handler.php:794-795); the filter then reads the stored payment and keeps it.
-	 * The read answers the recorded intent of Fixtures/platform-intention-basic-card.json.
-	 */
-	public function test_pay_page_keeps_a_payment_that_succeeded_meanwhile(): void {
+	public function test_pay_page_reads_a_kept_payment_once(): void {
 		$intent                    = self::recorded_intent( 'platform-intention-basic-card.json', 'basic_card_usd_create_and_confirm' );
 		$intent_id                 = (string) $intent['id'];
-		$order                     = StoredPaymentRecords::attempt_before_a_takeover( 'succeeded', $intent_id, $intent_id, 'ch_A', OrderStatus::PROCESSING );
-		$keys                      = self::read_keys( $order );
+		$order                     = StoredPaymentRecords::attempt_before_a_takeover( 'succeeded', $intent_id, $intent_id, 'ch_A', OrderStatus::PENDING, WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$this->transport->response = self::platform_answer( 200, $intent );
 
-		do_action( 'woocommerce_before_pay_action', $order );
-		apply_filters( 'woocommerce_payment_successful_result', array( 'result' => 'success' ), $order->get_id() );
+		$this->pay_with_another_gateway( $order, true );
 
+		$stored = wc_get_order( $order->get_id() );
 		$this->assertSame( 1, $this->transport->request_count );
-		$this->assertSame( $keys, self::read_keys( wc_get_order( $order->get_id() ) ) );
-		$this->assertSame( OrderStatus::PROCESSING, wc_get_order( $order->get_id() )->get_status() );
+		$this->assertSame( array( $intent_id, 'succeeded', 'test' ), array( $stored->get_meta( '_intent_id', true ), $stored->get_meta( '_intention_status', true ), $stored->get_meta( '_wcpay_mode', true ) ) );
 		$this->assertCount( 1, self::takeover_notes( $order ) );
+	}
+
+	/**
+	 * Pay the order on the classic pay page, through WC_Form_Handler::pay_action(), with a gateway that writes its own
+	 * customer and payment method under the names WooCommerce Stripe uses, then saves the order.
+	 *
+	 * Core redirects and exits after a successful payment; the redirect throws instead, which the pay action catches as a
+	 * payment error, so the test goes on.
+	 *
+	 * @param WC_Order $order    The order to pay.
+	 * @param bool     $succeeds Whether the gateway's payment succeeds.
+	 * @return array{seen:array<int,string>,redirected:bool} The five keys as the gateway's payment found them, and whether
+	 *                                                       the pay action redirected.
+	 */
+	private function pay_with_another_gateway( WC_Order $order, bool $succeeds ): array {
+		global $wp;
+
+		$gateway             = new class() extends WC_Payment_Gateway {
+			/**
+			 * The five keys as the payment found them.
+			 *
+			 * @var array<int,string>
+			 */
+			public array $seen = array();
+
+			/**
+			 * Whether the payment succeeds.
+			 *
+			 * @var bool
+			 */
+			public bool $succeeds = true;
+
+			/**
+			 * Name the gateway.
+			 */
+			public function __construct() {
+				$this->id      = 'other_gateway';
+				$this->enabled = 'yes';
+			}
+
+			/**
+			 * Store the gateway's own customer and payment method, then answer.
+			 *
+			 * @param int $order_id Order ID.
+			 * @return array<string,string>
+			 */
+			public function process_payment( $order_id ) {
+				$order      = wc_get_order( $order_id );
+				$this->seen = WooPaymentsEarlierAttemptCleanupTest::keys_of( $order );
+				$order->update_meta_data( '_stripe_customer_id', 'cus_other' );
+				$order->update_meta_data( '_payment_method_id', 'pm_other' );
+				$order->save();
+
+				return $this->succeeds ? array(
+					'result'   => 'success',
+					'redirect' => 'https://example.org/checkout/order-received/',
+				) : array( 'result' => 'failure' );
+			}
+		};
+		$gateway->succeeds   = $succeeds;
+		$redirected          = false;
+		$saved_globals       = array( $_POST, $_GET, $_REQUEST ); // phpcs:ignore WordPress.Security.NonceVerification -- Saved to restore after the test.
+		$saved_query_vars    = $wp->query_vars;
+		$_POST               = array(
+			'woocommerce_pay' => '1',
+			'payment_method'  => 'other_gateway',
+		);
+		$_GET                = array( 'key' => $order->get_order_key() );
+		$_REQUEST            = array( 'woocommerce-pay-nonce' => wp_create_nonce( 'woocommerce-pay' ) );
+		$wp->query_vars      = array( 'order-pay' => $order->get_id() );
+		$customer            = WC()->customer;
+		WC()->customer       = new WC_Customer( 0, true );
+		$output_buffer_level = ob_get_level();
+		add_filter( 'woocommerce_available_payment_gateways', static fn( $gateways ) => array_merge( (array) $gateways, array( 'other_gateway' => $gateway ) ) );
+		add_filter(
+			'wp_redirect',
+			static function () use ( &$redirected ) {
+				$redirected = true;
+				throw new \Exception( 'Redirect stopped by the test.' );
+			}
+		);
+
+		try {
+			WC_Form_Handler::pay_action();
+		} finally {
+			while ( ob_get_level() > $output_buffer_level ) {
+				ob_end_clean();
+			}
+			list( $_POST, $_GET, $_REQUEST ) = $saved_globals;
+			$wp->query_vars                  = $saved_query_vars;
+			WC()->customer                   = $customer;
+		}
+
+		return array(
+			'seen'       => $gateway->seen,
+			'redirected' => $redirected,
+		);
+	}
+
+	/**
+	 * Read the five keys the cleanup removes, for the test gateway.
+	 *
+	 * @param WC_Order $order Order.
+	 * @return array<int,string>
+	 */
+	public static function keys_of( WC_Order $order ): array {
+		return self::read_keys( $order );
 	}
 
 	/**

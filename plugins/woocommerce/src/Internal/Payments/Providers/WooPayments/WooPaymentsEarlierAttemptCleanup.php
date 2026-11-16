@@ -24,8 +24,10 @@ defined( 'ABSPATH' ) || exit;
  *
  * WooCommerce reuses a Pending or Failed order at checkout, which keeps what an earlier WooPayments attempt stored on it.
  * Every attempt stores its mode first, so a mode on an order of another payment method means an attempt since the last
- * cleanup. The stored values are written on a fresh copy of the order, under the order payment lock, never through the
- * checkout's own object, and then marked deleted on that object in memory only, so its later readers see them gone.
+ * cleanup. The cleanup runs before the other gateway's payment, so that gateway's own values of the same names stay: at
+ * the two checkout hooks, and on the classic pay page at the save of the chosen payment method. The stored values are
+ * written on a fresh copy of the order, under the order payment lock, never through the checkout's own object, and then
+ * marked deleted on that object in memory only, so its later readers see them gone.
  *
  * @since 11.4.0
  * @internal
@@ -129,6 +131,13 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 	private WooPaymentsLogger $logger;
 
 	/**
+	 * The order whose pay action armed the cleanup on its save, or 0.
+	 *
+	 * @var int
+	 */
+	private int $pay_action_order_id = 0;
+
+	/**
 	 * Earlier attempts to finish at shutdown, keyed by order ID.
 	 *
 	 * @var array<int,array{intent_id:string,cancel:bool}>
@@ -159,12 +168,12 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 	/**
 	 * Clean up at the two checkout hooks, at client 11.3.0's priority (class-wc-payments-order-service.php:345-346): below
 	 * WooCommerce Subscriptions' subscription creation at 100, which copies the order's meta into the new subscription.
-	 * The classic pay page fires neither, so its successful payment result cleans up too, which the client does not.
+	 * The classic pay page fires neither, so its pay action arms a cleanup on the order's save, which the client does not.
 	 */
 	public function register(): void {
 		add_action( 'woocommerce_checkout_order_processed', array( $this, 'clean_up_after_classic_checkout' ), 10, 3 );
 		add_action( 'woocommerce_store_api_checkout_order_processed', array( $this, 'clean_up_after_store_api_checkout' ) );
-		add_filter( 'woocommerce_payment_successful_result', array( $this, 'clean_up_after_pay_action' ), 10, 2 );
+		add_action( 'woocommerce_before_pay_action', array( $this, 'arm_pay_action_cleanup' ) );
 	}
 
 	/**
@@ -197,25 +206,44 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Clean up an order the classic pay page took with another payment method, once its gateway answered success, and
-	 * return the result as given.
+	 * Arm the classic pay page's cleanup for the order its pay action is about to take.
 	 *
-	 * WC_Form_Handler::pay_action() applies the filter only after the gateway's success, then redirects; classic checkout
-	 * applies it too, after its own hook already cleaned up, so the cleanup runs only once the before-pay action fired in
-	 * this request. The result is never read.
+	 * WC_Form_Handler::pay_action() saves the chosen payment method on the order, then runs that gateway's payment
+	 * (class-wc-form-handler.php:794-801), and fires no hook of its own in between. So the cleanup listens to the order's
+	 * saves from here, and runs on the first save that shows another payment method, before that gateway's payment, as
+	 * at the two checkout hooks.
 	 *
 	 * @internal
 	 *
-	 * @param mixed $result   The gateway's payment result.
-	 * @param mixed $order_id Order ID.
-	 * @return mixed The result, unchanged.
+	 * @param mixed $order The order the pay action takes.
 	 */
-	public function clean_up_after_pay_action( $result, $order_id = 0 ) {
-		if ( did_action( 'woocommerce_before_pay_action' ) ) {
-			$this->clean_up_safely( wc_get_order( absint( $order_id ) ), null );
+	public function arm_pay_action_cleanup( $order ): void {
+		if ( $order instanceof WC_Order ) {
+			$this->pay_action_order_id = $order->get_id();
+			add_action( 'woocommerce_after_order_object_save', array( $this, 'clean_up_after_pay_action_method_save' ) );
+		}
+	}
+
+	/**
+	 * Clean up the pay action's order on its first save that shows another payment method, then stop listening.
+	 *
+	 * A save that still shows a WooPayments method leaves the listener armed: anything hooked on the before-pay action can
+	 * save the order before the pay action saves the chosen method. This runs inside the order's save hook: the cleanup's
+	 * own writes are a meta save on a fresh copy and a note, neither of which fires that hook, and the listener is removed
+	 * first. The removals in memory go on the object being saved, which the pay action does not save again before the
+	 * payment. When that gateway's field validation then fails, the order stays cleaned with that gateway as its method.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $order The saved order.
+	 */
+	public function clean_up_after_pay_action_method_save( $order ): void {
+		if ( ! $order instanceof WC_Order || $order->get_id() !== $this->pay_action_order_id || WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) ) {
+			return;
 		}
 
-		return $result;
+		remove_action( 'woocommerce_after_order_object_save', array( $this, 'clean_up_after_pay_action_method_save' ) );
+		$this->clean_up_safely( $order, $order );
 	}
 
 	/**
