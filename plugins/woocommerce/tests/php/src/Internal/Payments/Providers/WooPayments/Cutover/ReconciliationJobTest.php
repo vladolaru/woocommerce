@@ -3906,7 +3906,6 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			'unsupported WooPayments version'      => array( 'woopayments_plugin_version_unsupported', StateStore::STATE_PENDING ),
 			'operational queue hooks'              => array( 'operational_queue_hooks_unhandled', StateStore::STATE_DEFERRED ),
 			'bundled Stripe Billing subscriptions' => array( 'bundled_stripe_billing_subscriptions_present', StateStore::STATE_EXCLUDED ),
-			'multi-currency rates unavailable'     => array( 'multi_currency_rates_unavailable', StateStore::STATE_DEFERRED ),
 		);
 	}
 

@@ -16,8 +16,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PerSi
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeAccountAdapter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeApiClientAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\BundledSubscriptionsGuard;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\CutoverController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PreflightService;
@@ -74,20 +72,6 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	private PreflightService $preflight_service;
 
 	/**
-	 * Native rate account boundary mock.
-	 *
-	 * @var WooPaymentsNativeAccountAdapter&\PHPUnit\Framework\MockObject\MockObject
-	 */
-	private WooPaymentsNativeAccountAdapter $rate_account;
-
-	/**
-	 * Native rate API client boundary mock.
-	 *
-	 * @var WooPaymentsNativeApiClientAdapter&\PHPUnit\Framework\MockObject\MockObject
-	 */
-	private WooPaymentsNativeApiClientAdapter $rate_api_client;
-
-	/**
 	 * Whether the WooPayments plugin should appear active.
 	 *
 	 * @var bool
@@ -137,19 +121,6 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 		// The owner is resolved once per request; a test that fakes the extension must not see one cached before it.
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		update_option( 'woocommerce_woocommerce_payments_version', '10.6.0' );
-
-		$this->rate_account = $this->getMockBuilder( WooPaymentsNativeAccountAdapter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_provider_connected', 'is_account_rejected' ) )
-			->getMock();
-		$this->rate_account->method( 'is_provider_connected' )->willReturn( true );
-		$this->rate_account->method( 'is_account_rejected' )->willReturn( false );
-
-		$this->rate_api_client = $this->getMockBuilder( WooPaymentsNativeApiClientAdapter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_server_connected' ) )
-			->getMock();
-		$this->rate_api_client->method( 'is_server_connected' )->willReturn( false );
 
 		$this->preflight_service = $this->create_preflight_service();
 		$this->sut               = $this->create_cutover_controller( null, $this->preflight_service );
@@ -1857,7 +1828,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 			}
 		};
 		$preflight = new PreflightService();
-		$this->init_preflight_service( $preflight, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ), $guard, $this->rate_account, $this->rate_api_client );
+		$this->init_preflight_service( $preflight, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ), $guard );
 
 		$failures = $preflight->get_failures();
 
@@ -1877,9 +1848,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 			$preflight_service,
 			wc_get_container()->get( WooPaymentsRuntimeArbiter::class ),
 			wc_get_container()->get( LegacyProxy::class ),
-			new BundledSubscriptionsGuard(),
-			$this->rate_account,
-			$this->rate_api_client
+			new BundledSubscriptionsGuard()
 		);
 
 		return $preflight_service;
@@ -2266,25 +2235,16 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * The service resolves them when a preflight runs, so the test doubles are set on the instance after init.
 	 *
-	 * @param PreflightService                  $service                     The preflight service.
-	 * @param WooPaymentsRuntimeArbiter         $arbiter                     The runtime arbiter.
-	 * @param LegacyProxy                       $legacy_proxy                The legacy proxy.
-	 * @param BundledSubscriptionsGuard         $bundled_subscriptions_guard  The bundled subscriptions guard.
-	 * @param WooPaymentsNativeAccountAdapter   $rate_account         The rate account boundary.
-	 * @param WooPaymentsNativeApiClientAdapter $rate_api_client      The rate API client boundary.
+	 * @param PreflightService          $service                     The preflight service.
+	 * @param WooPaymentsRuntimeArbiter $arbiter                     The runtime arbiter.
+	 * @param LegacyProxy               $legacy_proxy                The legacy proxy.
+	 * @param BundledSubscriptionsGuard $bundled_subscriptions_guard The bundled subscriptions guard.
 	 */
-	private function init_preflight_service( PreflightService $service, WooPaymentsRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, BundledSubscriptionsGuard $bundled_subscriptions_guard, WooPaymentsNativeAccountAdapter $rate_account, WooPaymentsNativeApiClientAdapter $rate_api_client ): void {
+	private function init_preflight_service( PreflightService $service, WooPaymentsRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, BundledSubscriptionsGuard $bundled_subscriptions_guard ): void {
 		$service->init( $arbiter, $legacy_proxy );
 
-		$collaborators = array(
-			'bundled_subscriptions_guard' => $bundled_subscriptions_guard,
-			'rate_account'                => $rate_account,
-			'rate_api_client'             => $rate_api_client,
-		);
-		foreach ( $collaborators as $property => $collaborator ) {
-			$reflection = new \ReflectionProperty( PreflightService::class, $property );
-			$reflection->setAccessible( true );
-			$reflection->setValue( $service, $collaborator );
-		}
+		$reflection = new \ReflectionProperty( PreflightService::class, 'bundled_subscriptions_guard' );
+		$reflection->setAccessible( true );
+		$reflection->setValue( $service, $bundled_subscriptions_guard );
 	}
 }

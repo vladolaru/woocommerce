@@ -12,8 +12,6 @@ use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeAccountAdapter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeApiClientAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\BundledSubscriptionsGuard;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\CutoverActionScheduler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PreflightService;
@@ -28,9 +26,6 @@ use WC_Unit_Test_Case;
  * Tests for the headless WooPayments cutover preflight service.
  */
 class PreflightServiceTest extends WC_Unit_Test_Case {
-
-	/** @var bool */
-	private bool $rate_api_client_connected = true;
 
 	/**
 	 * Action Scheduler hooks scheduled by tests.
@@ -86,7 +81,6 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function setUp(): void {
 		parent::setUp();
-		$this->rate_api_client_connected = true;
 		update_option( 'woocommerce_woocommerce_payments_version', '10.6.0' );
 		update_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
@@ -315,14 +309,13 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The induced reconciliation vocabulary is exactly the 6 conditions a store can reach.
+	 * @testdox The induced reconciliation vocabulary is exactly the 5 conditions a store can reach.
 	 */
-	public function test_induced_reconciliation_vocabulary_is_exactly_the_six_reachable_conditions(): void {
+	public function test_induced_reconciliation_vocabulary_is_exactly_the_five_reachable_conditions(): void {
 		$codes = array();
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 		$codes = array_merge( $codes, $this->create_sut()->get_failures() );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$this->rate_api_client_connected = false;
 		update_option( 'woocommerce_woocommerce_payments_version', '10.5.2' );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
 		$this->create_bundled_stripe_billing_subscription( 'active' );
@@ -333,8 +326,8 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 
 		$unique_codes = array_values( array_unique( $codes ) );
 
-		$this->assertSame( array( 'builtin_runtime_disabled', 'woopayments_plugin_version_unsupported', 'multi_currency_rates_unavailable', 'operational_queue_hooks_unhandled', 'bundled_stripe_billing_subscriptions_present', 'extension_renewal_plugin_active' ), $unique_codes );
-		$this->assertCount( 6, $unique_codes );
+		$this->assertSame( array( 'builtin_runtime_disabled', 'woopayments_plugin_version_unsupported', 'operational_queue_hooks_unhandled', 'bundled_stripe_billing_subscriptions_present', 'extension_renewal_plugin_active' ), $unique_codes );
+		$this->assertCount( 5, $unique_codes );
 	}
 
 	/**
@@ -1390,13 +1383,6 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 		};
 
 		return array(
-			'automatic multi-currency rates have no provider' => array(
-				'multi_currency_rates_unavailable',
-				static function ( self $test ): void {
-					$test->enable_multi_currency_with_rate_type( 'automatic' );
-					$test->rate_api_client_connected = false;
-				},
-			),
 			'the recorded WooPayments version is missing'  => array( 'woopayments_plugin_version_unsupported', $unsupported_version( '' ) ),
 			'the recorded WooPayments version is malformed' => array( 'woopayments_plugin_version_unsupported', $unsupported_version( 'not-a-version' ) ),
 			'the recorded WooPayments version is older than the floor' => array( 'woopayments_plugin_version_unsupported', $unsupported_version( '10.5.2' ) ),
@@ -1449,25 +1435,18 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Stores close to a failure that must not report it: manual rates, an available rate provider, queued actions the
-	 * built-in WooPayments handles, and Stripe Billing leftovers a migration leaves behind.
+	 * Stores close to a failure that must not report it: automatic exchange rates with no usable rate provider, queued
+	 * actions the built-in WooPayments handles, and Stripe Billing leftovers a migration leaves behind.
 	 *
 	 * @return array<string,array{string,callable}>
 	 */
 	public function unreported_failure_provider(): array {
 		$rows = array(
-			'manual multi-currency rates without a rate provider'           => array(
-				'multi_currency_rates_unavailable',
-				static function ( self $test ): void {
-					$test->enable_multi_currency_with_rate_type( 'manual' );
-					$test->rate_api_client_connected = false;
-				},
-			),
-			'automatic multi-currency rates with an available rate provider' => array(
+			// Both runtimes keep serving the cached rates in that state, and the built-in shows its own notice for it.
+			'automatic multi-currency rates with no usable rate provider' => array(
 				'multi_currency_rates_unavailable',
 				static function ( self $test ): void {
 					$test->enable_multi_currency_with_rate_type( 'automatic' );
-					$test->rate_api_client_connected = true;
 				},
 			),
 		);
@@ -1561,15 +1540,6 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	 * @return PreflightService
 	 */
 	private function create_sut( ?\wpdb $database = null ): PreflightService {
-		$rate_account = $this->getMockBuilder( WooPaymentsNativeAccountAdapter::class )->disableOriginalConstructor()->onlyMethods( array( 'is_provider_connected', 'is_account_rejected' ) )->getMock();
-		$rate_account->method( 'is_provider_connected' )->willReturn( true );
-		$rate_account->method( 'is_account_rejected' )->willReturn( false );
-		$rate_api_client = $this->getMockBuilder( WooPaymentsNativeApiClientAdapter::class )->disableOriginalConstructor()->onlyMethods( array( 'is_server_connected' ) )->getMock();
-		$rate_api_client->method( 'is_server_connected' )->willReturnCallback(
-			function (): bool {
-				return $this->rate_api_client_connected;
-			}
-		);
 		$sut = null === $database ? new PreflightService() : new class( $database ) extends PreflightService {
 			/**
 			 * WordPress database connection.
@@ -1596,7 +1566,7 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 				return $this->database;
 			}
 		};
-		$this->init_preflight_service( $sut, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ), new BundledSubscriptionsGuard(), $rate_account, $rate_api_client );
+		$this->init_preflight_service( $sut, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ), new BundledSubscriptionsGuard() );
 		return $sut;
 	}
 
@@ -1829,25 +1799,16 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * The service resolves them when a preflight runs, so the test doubles are set on the instance after init.
 	 *
-	 * @param PreflightService                  $service                     The preflight service.
-	 * @param WooPaymentsRuntimeArbiter         $arbiter                     The runtime arbiter.
-	 * @param LegacyProxy                       $legacy_proxy                The legacy proxy.
-	 * @param BundledSubscriptionsGuard         $bundled_subscriptions_guard  The bundled subscriptions guard.
-	 * @param WooPaymentsNativeAccountAdapter   $rate_account         The rate account boundary.
-	 * @param WooPaymentsNativeApiClientAdapter $rate_api_client      The rate API client boundary.
+	 * @param PreflightService          $service                     The preflight service.
+	 * @param WooPaymentsRuntimeArbiter $arbiter                     The runtime arbiter.
+	 * @param LegacyProxy               $legacy_proxy                The legacy proxy.
+	 * @param BundledSubscriptionsGuard $bundled_subscriptions_guard The bundled subscriptions guard.
 	 */
-	private function init_preflight_service( PreflightService $service, WooPaymentsRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, BundledSubscriptionsGuard $bundled_subscriptions_guard, WooPaymentsNativeAccountAdapter $rate_account, WooPaymentsNativeApiClientAdapter $rate_api_client ): void {
+	private function init_preflight_service( PreflightService $service, WooPaymentsRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, BundledSubscriptionsGuard $bundled_subscriptions_guard ): void {
 		$service->init( $arbiter, $legacy_proxy );
 
-		$collaborators = array(
-			'bundled_subscriptions_guard' => $bundled_subscriptions_guard,
-			'rate_account'                => $rate_account,
-			'rate_api_client'             => $rate_api_client,
-		);
-		foreach ( $collaborators as $property => $collaborator ) {
-			$reflection = new \ReflectionProperty( PreflightService::class, $property );
-			$reflection->setAccessible( true );
-			$reflection->setValue( $service, $collaborator );
-		}
+		$reflection = new \ReflectionProperty( PreflightService::class, 'bundled_subscriptions_guard' );
+		$reflection->setAccessible( true );
+		$reflection->setValue( $service, $bundled_subscriptions_guard );
 	}
 }

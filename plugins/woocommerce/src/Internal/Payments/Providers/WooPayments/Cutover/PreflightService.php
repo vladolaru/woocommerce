@@ -7,10 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeAccountAdapter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeApiClientAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountMilestonesController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsApplePayDomainService;
@@ -50,9 +46,6 @@ class PreflightService {
 
 	/** The recorded WooPayments extension version is below MINIMUM_CUTOVER_PLUGIN_VERSION. */
 	public const FAILURE_PLUGIN_VERSION_UNSUPPORTED = 'woopayments_plugin_version_unsupported';
-
-	/** A currency on automatic exchange rates has no rate provider. */
-	public const FAILURE_MULTI_CURRENCY_RATES_UNAVAILABLE = 'multi_currency_rates_unavailable';
 
 	/** A queued WooPayments action has no built-in handler. */
 	public const FAILURE_QUEUE_HOOKS_UNHANDLED = 'operational_queue_hooks_unhandled';
@@ -124,20 +117,6 @@ class PreflightService {
 	private ?BundledSubscriptionsGuard $bundled_subscriptions_guard = null;
 
 	/**
-	 * Rate account boundary.
-	 *
-	 * @var WooPaymentsNativeAccountAdapter|null
-	 */
-	private ?WooPaymentsNativeAccountAdapter $rate_account = null;
-
-	/**
-	 * Rate API client boundary.
-	 *
-	 * @var WooPaymentsNativeApiClientAdapter|null
-	 */
-	private ?WooPaymentsNativeApiClientAdapter $rate_api_client = null;
-
-	/**
 	 * Request-local reconciliation failures keyed by blog ID.
 	 *
 	 * @var array<int,array<int,string>>
@@ -201,9 +180,6 @@ class PreflightService {
 		$failures = array();
 		if ( ! $this->is_woopayments_plugin_version_supported() ) {
 			$failures[] = self::FAILURE_PLUGIN_VERSION_UNSUPPORTED;
-		}
-		if ( $this->has_unavailable_multi_currency_rate_provider() ) {
-			$failures[] = self::FAILURE_MULTI_CURRENCY_RATES_UNAVAILABLE;
 		}
 		if ( array() !== $this->get_unhandled_queue_hooks() ) {
 			$failures[] = self::FAILURE_QUEUE_HOOKS_UNHANDLED;
@@ -650,44 +626,6 @@ class PreflightService {
 	}
 
 	/**
-	 * Determine whether automatic multi-currency rates lack a provider.
-	 *
-	 * @return bool
-	 */
-	private function has_unavailable_multi_currency_rate_provider(): bool {
-		if ( ! $this->has_automatic_multi_currency_rate_currencies() ) {
-			return false;
-		}
-		return ! ( $this->get_rate_api_client()->is_server_connected() && $this->get_rate_account()->is_provider_connected() && ! $this->get_rate_account()->is_account_rejected() );
-	}
-
-	/**
-	 * Determine whether any enabled currencies use automatic rates.
-	 *
-	 * @return bool
-	 */
-	private function has_automatic_multi_currency_rate_currencies(): bool {
-		if ( '1' !== (string) get_option( MultiCurrencyFeatureController::WOOPAYMENTS_MULTI_CURRENCY_FLAG_OPTION, '1' ) ) {
-			return false;
-		}
-		$enabled_currencies = get_option( StateBuilder::ENABLED_CURRENCIES_OPTION, array() );
-		if ( ! is_array( $enabled_currencies ) || array() === $enabled_currencies ) {
-			return false;
-		}
-		$store_currency = strtoupper( (string) get_option( 'woocommerce_currency', 'USD' ) );
-		foreach ( $enabled_currencies as $currency_code ) {
-			if ( ! is_scalar( $currency_code ) ) {
-				continue;
-			}
-			$currency_code = strtoupper( trim( (string) $currency_code ) );
-			if ( '' !== $currency_code && $store_currency !== $currency_code && 'manual' !== (string) get_option( 'wcpay_multi_currency_exchange_rate_' . strtolower( $currency_code ), 'automatic' ) ) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	/**
 	 * Get the queued WooPayments hooks the built-in WooPayments does not handle, without running the other checks.
 	 *
 	 * The reconciliation job asks again just before finalize, for an extension action queued since the preflight ran.
@@ -828,31 +766,5 @@ class PreflightService {
 		}
 
 		return $this->bundled_subscriptions_guard;
-	}
-
-	/**
-	 * Get the rate account boundary, resolving it on first use.
-	 *
-	 * @return WooPaymentsNativeAccountAdapter
-	 */
-	private function get_rate_account(): WooPaymentsNativeAccountAdapter {
-		if ( null === $this->rate_account ) {
-			$this->rate_account = wc_get_container()->get( WooPaymentsNativeAccountAdapter::class );
-		}
-
-		return $this->rate_account;
-	}
-
-	/**
-	 * Get the rate API client boundary, resolving it on first use.
-	 *
-	 * @return WooPaymentsNativeApiClientAdapter
-	 */
-	private function get_rate_api_client(): WooPaymentsNativeApiClientAdapter {
-		if ( null === $this->rate_api_client ) {
-			$this->rate_api_client = wc_get_container()->get( WooPaymentsNativeApiClientAdapter::class );
-		}
-
-		return $this->rate_api_client;
 	}
 }
