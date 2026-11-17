@@ -59,7 +59,97 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		delete_transient( UsageDetector::HAS_MC_ORDERS_TRANSIENT );
 		wp_set_current_user( $this->previous_user_id );
 		$_GET = array();
+		wc_get_container()->reset_all_replacements();
 		parent::tear_down();
+	}
+
+	/**
+	 * @testdox Should rebuild the cached shipping rates once per takeover of Multi-Currency from the extension: $_dataName.
+	 *
+	 * The extension rebuilds them once on its 11.3.0 update by refreshing the shipping cache version every package hash
+	 * includes (client 11.3.0 `tests/unit/migrations/test-class-invalidate-cached-shipping-rates.php:30-62`, cached version
+	 * `1700000000.000000`). The module bumps the same version where it takes over: the claimed handover, and a seed that adds
+	 * the feature option, both only with stored Multi-Currency setup. The seed also skips while the extension owns payments,
+	 * a guard the extension does not need: its update runs inside the extension, while the module's upgrade callback can run
+	 * on a store whose payments the extension still owns, whose later handover bumps instead.
+	 *
+	 * @dataProvider provide_takeovers
+	 *
+	 * @param bool     $stored_setup            Whether Multi-Currency setup is stored.
+	 * @param bool     $extension_owns_payments Whether the WooPayments extension owns payments.
+	 * @param string[] $steps                   The takeover calls, in order.
+	 * @param int      $expected_bumps          Times the shipping cache version is refreshed.
+	 */
+	public function test_rebuilds_cached_shipping_rates_once_per_takeover( bool $stored_setup, bool $extension_owns_payments, array $steps, int $expected_bumps ): void {
+		include_once WC_ABSPATH . 'includes/wc-update-functions.php';
+		wc_get_container()->replace( MultiCurrencyRuntimeArbiter::class, $this->create_runtime_arbiter( $extension_owns_payments ) );
+		if ( $stored_setup ) {
+			// The plugin stores a list of currency codes (client 11.1.0 `includes/multi-currency/MultiCurrency.php:767-783`).
+			update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		}
+		set_transient( 'shipping-transient-version', '1700000000.000000' );
+		$bumps = $this->count_shipping_cache_bumps();
+
+		foreach ( $steps as $step ) {
+			switch ( $step ) {
+				case 'handover':
+					// A request without the extension after one it owned.
+					update_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION, MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_EXTENSION );
+					MultiCurrencyFeatureController::sync_payments_owner( false, true );
+					break;
+				case 'request':
+					MultiCurrencyFeatureController::sync_payments_owner( false, true );
+					break;
+				case 'seed':
+					MultiCurrencyFeatureController::seed_from_prior_use();
+					break;
+				case 'update callback':
+					wc_update_1140_seed_multi_currency_feature();
+					break;
+			}
+		}
+
+		$this->assertSame( $expected_bumps, $bumps->count, 'Bumps.' );
+		$version = \WC_Cache_Helper::get_transient_version( 'shipping' );
+		$this->assertSame( 0 === $expected_bumps, '1700000000.000000' === $version, 'The cached version is kept only without a bump.' );
+	}
+
+	/**
+	 * Takeovers with the shipping cache bumps each makes.
+	 *
+	 * @return array<string,array{0:bool,1:bool,2:string[],3:int}>
+	 */
+	public function provide_takeovers(): array {
+		return array(
+			'the handover'                               => array( true, false, array( 'handover' ), 1 ),
+			'the handover, then another request'         => array( true, false, array( 'handover', 'request' ), 1 ),
+			'the handover without stored setup'          => array( false, false, array( 'handover' ), 0 ),
+			'the seed'                                   => array( true, false, array( 'seed' ), 1 ),
+			'the seed, then a seed finding it seeded'    => array( true, false, array( 'seed', 'seed' ), 1 ),
+			'the seed while the extension owns payments' => array( true, true, array( 'seed' ), 0 ),
+			'the seed without stored setup'              => array( false, false, array( 'seed' ), 0 ),
+			'the upgrade callback'                       => array( true, false, array( 'update callback' ), 1 ),
+			'a first built-in request without a marker'  => array( true, false, array( 'request' ), 1 ),
+			'the upgrade callback, then that first request' => array( true, false, array( 'update callback', 'request' ), 1 ),
+		);
+	}
+
+	/**
+	 * Count the refreshes of the shipping cache version from now on.
+	 *
+	 * @return \stdClass Its `count` property holds the refreshes so far.
+	 */
+	private function count_shipping_cache_bumps(): \stdClass {
+		$bumps        = new \stdClass();
+		$bumps->count = 0;
+		add_action(
+			'set_transient_shipping-transient-version',
+			static function () use ( $bumps ) {
+				++$bumps->count;
+			}
+		);
+
+		return $bumps;
 	}
 
 	/**
@@ -112,6 +202,7 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		update_option( $marker, MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_EXTENSION );
 		// The plugin stores a list of currency codes (client 11.1.0 `includes/multi-currency/MultiCurrency.php:767-783`).
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		$bumps = $this->count_shipping_cache_bumps();
 
 		// Request A hands over; the merchant then turns Multi-Currency off.
 		MultiCurrencyFeatureController::sync_payments_owner( false, true );
@@ -129,6 +220,7 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'no', get_option( $option ), 'Only the request that claims the transition hands over.' );
 		$this->assertSame( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_BUILTIN, get_option( $marker ) );
+		$this->assertSame( 1, $bumps->count, 'Only the request that claims the transition rebuilds the cached shipping rates.' );
 	}
 
 	/**

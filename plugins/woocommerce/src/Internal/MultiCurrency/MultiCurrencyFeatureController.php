@@ -85,13 +85,20 @@ class MultiCurrencyFeatureController {
 	 * Turn the feature on for a store with stored Multi-Currency setup, unless a choice is already stored.
 	 *
 	 * Runs at upgrade, and from sync_payments_owner() on the first request the built-in WooPayments owns payments with no
-	 * owner recorded. Without stored setup the option stays unset, so the feature stays off.
+	 * owner recorded. Without stored setup the option stays unset, so the feature stays off. A seed that adds the option
+	 * also rebuilds the cached shipping rates, unless the WooPayments extension still owns payments: the upgrade can run
+	 * while it does, and its handover rebuilds them when it stops.
 	 *
 	 * @since 11.2.0
 	 */
 	public static function seed_from_prior_use(): void {
-		if ( self::has_stored_multi_currency_setup() ) {
-			self::add_option_if_absent( self::FEATURE_ENABLE_OPTION, 'yes' );
+		if ( ! self::has_stored_multi_currency_setup() ) {
+			return;
+		}
+
+		$seeded = self::add_option_if_absent( self::FEATURE_ENABLE_OPTION, 'yes' );
+		if ( $seeded && ! wc_get_container()->get( MultiCurrencyRuntimeArbiter::class )->is_payments_extension_owner() ) {
+			self::rebuild_cached_shipping_rates();
 		}
 	}
 
@@ -103,12 +110,13 @@ class MultiCurrencyFeatureController {
 	 *
 	 * @param string $option Option name.
 	 * @param string $value  Option value.
+	 * @return bool True when this call added the row.
 	 */
-	private static function add_option_if_absent( string $option, string $value ): void {
+	private static function add_option_if_absent( string $option, string $value ): bool {
 		global $wpdb;
 
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- An insert-only write; the caches are cleared below.
-		$wpdb->query(
+		$added = $wpdb->query(
 			$wpdb->prepare(
 				"INSERT INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE option_name = option_name",
 				$option,
@@ -119,6 +127,21 @@ class MultiCurrencyFeatureController {
 		wp_cache_delete( $option, 'options' );
 		wp_cache_delete( 'alloptions', 'options' );
 		wp_cache_delete( 'notoptions', 'options' );
+
+		// MySQL counts one affected row for an insert and none for a duplicate key left as it was.
+		return 1 === $added;
+	}
+
+	/**
+	 * Make every cart build its shipping rates again, once, by refreshing the shipping cache version every package hash
+	 * includes, as the WooPayments extension does on its 11.3.0 update (client 11.3.0
+	 * `includes/migrations/class-invalidate-cached-shipping-rates.php:30-35`).
+	 *
+	 * Rates the extension cached before then carry no currency marker, so a rate built in another currency could match a
+	 * store-currency package.
+	 */
+	private static function rebuild_cached_shipping_rates(): void {
+		\WC_Cache_Helper::get_transient_version( 'shipping', true );
 	}
 
 	/**
@@ -190,14 +213,15 @@ class MultiCurrencyFeatureController {
 	 * Hand the WooPayments extension's Multi-Currency state over to the feature option.
 	 *
 	 * With stored Multi-Currency setup the option becomes "yes", replacing a stored value: while the extension owns payments the option
-	 * does not control prices (a Features page save stores "no"). Without stored setup only an existing "yes" is turned off; an unset
-	 * option stays unset.
+	 * does not control prices (a Features page save stores "no"), and the cached shipping rates are rebuilt. Without stored setup only
+	 * an existing "yes" is turned off; an unset option stays unset.
 	 *
 	 * @since 11.2.0
 	 */
 	public static function hand_over_extension_state(): void {
 		if ( self::has_stored_multi_currency_setup() ) {
 			update_option( self::FEATURE_ENABLE_OPTION, 'yes', true );
+			self::rebuild_cached_shipping_rates();
 		} elseif ( 'yes' === get_option( self::FEATURE_ENABLE_OPTION ) ) {
 			update_option( self::FEATURE_ENABLE_OPTION, 'no', true );
 		}
