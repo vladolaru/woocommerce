@@ -49,6 +49,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		'query_loop_block_query_vars',
 		'wcpay_multi_currency_should_convert_product_price',
 		'wcpay_multi_currency_should_convert_coupon_amount',
+		'wcpay_multi_currency_should_convert_coupon_min_max_amount',
 		'wcpay_multi_currency_should_convert_shipping_amount',
 	);
 
@@ -95,8 +96,8 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 					'query_loop_block_query_vars'        => array( 'maybe_modify_price_ranges_query_var' => array( 10, 3 ) ),
 					'rest_post_dispatch'                 => array( 'maybe_modify_price_ranges_rest_response' => array( 10, 3 ) ),
 					'woocommerce_coupon_get_amount'      => array( 'get_coupon_amount' => array( 99, 2 ) ),
-					'woocommerce_coupon_get_maximum_amount' => array( 'get_coupon_min_max_amount' => array( 99, 1 ) ),
-					'woocommerce_coupon_get_minimum_amount' => array( 'get_coupon_min_max_amount' => array( 99, 1 ) ),
+					'woocommerce_coupon_get_maximum_amount' => array( 'get_coupon_min_max_amount' => array( 99, 2 ) ),
+					'woocommerce_coupon_get_minimum_amount' => array( 'get_coupon_min_max_amount' => array( 99, 2 ) ),
 					'woocommerce_evaluate_shipping_cost_args' => array( 'convert_shipping_cost_args_to_store_currency' => array( 99, 3 ) ),
 					'woocommerce_get_variation_prices_hash' => array( 'add_exchange_rate_to_variation_prices_hash' => array( 99, 1 ) ),
 					'woocommerce_new_order'              => array( 'add_order_meta' => array( 99, 2 ) ),
@@ -594,6 +595,53 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( '5.00', $sut->get_coupon_amount( '5.00', $this->create_coupon() ) );
 		$this->assertSame( '5.00', $sut->get_coupon_amount( '5.00', $this->create_coupon( true ) ) );
 		$this->assertSame( 0, $sut->get_coupon_min_max_amount( 0 ) );
+	}
+
+	/**
+	 * @testdox Should convert a coupon's spend limit only when the spend limit filter allows it: $_dataName.
+	 *
+	 * Client 11.3.0 `tests/unit/multi-currency/test-class-frontend-prices.php:931-949` and `includes/multi-currency/Compatibility.php:178-193`:
+	 * a filter answering false keeps `'5.0'` and receives the coupon; a true answer converts the limit as a product price (the
+	 * client's mock answers 12.5; this fixture converts products by 2.0); without a coupon the filter is not asked.
+	 *
+	 * @dataProvider provide_coupon_spend_limit_filter_answers
+	 *
+	 * @param bool         $with_coupon Whether the getter passes a coupon.
+	 * @param bool         $answer      The filter's answer.
+	 * @param string|float $expected    Expected spend limit; a string is the unconverted limit, a number the converted one.
+	 * @param bool         $asked       Whether the filter is asked.
+	 */
+	public function test_converts_a_coupon_spend_limit_only_when_the_filter_allows( bool $with_coupon, bool $answer, $expected, bool $asked ): void {
+		$sut      = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
+		$coupon   = $with_coupon ? $this->create_coupon() : null;
+		$received = array();
+		add_filter(
+			'wcpay_multi_currency_should_convert_coupon_min_max_amount',
+			static function ( $should_convert, $filtered_coupon ) use ( $answer, &$received ) {
+				unset( $should_convert );
+				$received[] = $filtered_coupon;
+
+				return $answer;
+			},
+			10,
+			2
+		);
+
+		$this->assertSame( $expected, $sut->get_coupon_min_max_amount( '5.0', $coupon ) );
+		$this->assertSame( $asked ? array( $coupon ) : array(), $received, 'The filter receives the coupon.' );
+	}
+
+	/**
+	 * Spend limit filter answers: with or without a coupon, the answer, the expected limit, and whether the filter is asked.
+	 *
+	 * @return array<string,array{0:bool,1:bool,2:string|float,3:bool}>
+	 */
+	public function provide_coupon_spend_limit_filter_answers(): array {
+		return array(
+			'the filter keeps the limit'         => array( true, false, '5.0', true ),
+			'the filter converts the limit'      => array( true, true, 10.0, true ),
+			'no coupon, the filter is not asked' => array( false, false, 10.0, false ),
+		);
 	}
 
 	/**
