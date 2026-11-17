@@ -155,24 +155,44 @@ class RequestContext {
 	 * @return bool
 	 */
 	public function is_call_in_backtrace( array $calls ): bool {
+		return $this->is_call_in_backtrace_within( $calls, 0 );
+	}
+
+	/**
+	 * Tell whether any of the given calls appears within the innermost frames of the current backtrace.
+	 *
+	 * For a call that always sits a fixed, shallow distance below the caller, so the cost stays bounded however deep the stack
+	 * is (client 11.3.0 `includes/multi-currency/Utils.php:52-62`).
+	 *
+	 * @param string[] $calls Expected calls, as `Class->method`, `Class::method` or `function`.
+	 * @param int      $limit Most frames to read, innermost first; 0 reads them all.
+	 * @return bool
+	 */
+	public function is_call_in_backtrace_within( array $calls, int $limit ): bool {
 		$expected_lookup = array_fill_keys( $calls, true );
 
 		// Cheaper equivalent of wp_debug_backtrace_summary( null, 0, false ) + in_array():
 		// DEBUG_BACKTRACE_IGNORE_ARGS skips capturing argument values, and the loop early-returns
 		// on the first matching frame instead of formatting the whole stack into a summary array.
-		foreach ( debug_backtrace( DEBUG_BACKTRACE_IGNORE_ARGS ) as $frame ) { // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_debug_backtrace -- Compatibility guard on the price/cart hot path.
-			if ( empty( $frame['function'] ) ) {
-				continue;
-			}
-
-			$call = isset( $frame['class'] ) ? $frame['class'] . ( $frame['type'] ?? '::' ) . $frame['function'] : $frame['function'];
-
-			if ( isset( $expected_lookup[ $call ] ) ) {
+		foreach ( debug_backtrace( DEBUG_BACKTRACE_IGNORE_ARGS, $limit ) as $frame ) { // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_debug_backtrace -- Compatibility guard on the price/cart hot path.
+			if ( isset( $expected_lookup[ self::get_frame_call( $frame ) ] ) ) {
 				return true;
 			}
 		}
 
 		return false;
+	}
+
+	/**
+	 * Get a backtrace frame's call, as `Class->method`, `Class::method` or `function`.
+	 *
+	 * @param array<string,mixed> $frame Backtrace frame.
+	 * @return string
+	 */
+	private static function get_frame_call( array $frame ): string {
+		$function = (string) ( $frame['function'] ?? '' );
+
+		return isset( $frame['class'] ) ? $frame['class'] . ( $frame['type'] ?? '::' ) . $function : $function;
 	}
 
 	/**

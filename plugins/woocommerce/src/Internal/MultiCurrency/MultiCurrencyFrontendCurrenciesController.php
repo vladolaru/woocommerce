@@ -23,6 +23,12 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterface {
 
 	/**
+	 * Most backtrace frames read to find the order constructor below a decimals read, as client 11.3.0
+	 * (`includes/multi-currency/FrontendCurrencies.php:20-28`): the constructor sits a short, fixed distance below the read.
+	 */
+	private const ORDER_READ_BACKTRACE_DEPTH = 40;
+
+	/**
 	 * Runtime owner arbiter.
 	 *
 	 * @var MultiCurrencyRuntimeArbiter
@@ -72,6 +78,36 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	private bool $is_converting_woocommerce_currency = false;
 
 	/**
+	 * Whether init_order_currency() is reading an order, so a call nested in that read returns early.
+	 *
+	 * @var bool
+	 */
+	private bool $initializing_order_currency = false;
+
+	/**
+	 * Whether an order may be loading from the data store, set right before the order factory reads one.
+	 *
+	 * @var bool
+	 */
+	private bool $maybe_loading_order = false;
+
+	/**
+	 * ID of the order the page's query vars name whose currency is memoized, 0 for none.
+	 *
+	 * @var int
+	 */
+	private int $query_var_order_id = 0;
+
+	/**
+	 * Currency of the order the page's query vars name, read only while an order loads.
+	 *
+	 * Kept apart from the order currency above, which formats every later price in the request once set.
+	 *
+	 * @var string|null
+	 */
+	private ?string $query_var_order_currency = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -110,6 +146,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 			add_filter( 'option_woocommerce_currency_pos', array( $this, 'get_woocommerce_currency_pos' ), 900 );
 			add_filter( 'woocommerce_order_get_total', array( $this, 'maybe_init_order_currency_from_order_total_prop' ), 900, 2 );
 			add_filter( 'woocommerce_get_formatted_order_total', array( $this, 'maybe_clear_order_currency_after_formatted_order_total' ), 900, 4 );
+			add_filter( 'woocommerce_order_class', array( $this, 'flag_order_loading' ), 900 );
 
 			add_action( 'before_woocommerce_pay', array( $this, 'init_order_currency_from_query_vars' ) );
 			add_action( 'woocommerce_blocks_enqueue_cart_block_scripts_after', array( $this, 'enqueue_blocks_totals_script' ) );
@@ -168,6 +205,11 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	 * @return int
 	 */
 	public function get_price_decimals( $decimals ): int {
+		// An order read from the data store keeps the precision its amounts were stored with.
+		if ( $this->is_loading_order() ) {
+			return $this->get_display_service()->get_loading_order_price_decimals( absint( $decimals ), $this->order_currency ?? $this->get_query_var_order_currency() );
+		}
+
 		// The Analytics import rounds amounts converted to the store currency, which keep the store's decimals.
 		if ( doing_filter( 'woocommerce_analytics_update_order_stats_data' ) ) {
 			return absint( $decimals );
@@ -237,18 +279,24 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	 * Initialize order-context currency from WooCommerce order query vars.
 	 */
 	public function init_order_currency_from_query_vars(): void {
-		global $wp;
-
-		if ( ! $wp instanceof \WP ) {
-			return;
+		$order_id = $this->order_context_service->get_order_id_from_query_vars();
+		if ( null !== $order_id ) {
+			$this->init_order_currency( $order_id );
 		}
+	}
 
-		foreach ( array( 'order-pay', 'order-received', 'view-order' ) as $query_var ) {
-			if ( ! empty( $wp->query_vars[ $query_var ] ) ) {
-				$this->init_order_currency( $wp->query_vars[ $query_var ] );
-				return;
-			}
-		}
+	/**
+	 * Flag that an order may be loading: `WC_Order_Factory` asks for the order class right before it reads the order.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $classname Order class name.
+	 * @return mixed The class name, unchanged.
+	 */
+	public function flag_order_loading( $classname ) {
+		$this->maybe_loading_order = true;
+
+		return $classname;
 	}
 
 	/**
@@ -292,16 +340,11 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	 * @return mixed
 	 */
 	public function init_order_currency( $order_id ) {
-		if ( null !== $this->order_currency ) {
+		if ( null !== $this->order_currency || $this->initializing_order_currency ) {
 			return $order_id;
 		}
 
-		$removed_filters = $this->remove_frontend_currency_format_filters();
-		try {
-			$order = $order_id instanceof \WC_Order ? $order_id : wc_get_order( $order_id );
-		} finally {
-			$this->restore_frontend_currency_format_filters( $removed_filters );
-		}
+		$order = $order_id instanceof \WC_Order ? $order_id : $this->read_order( $order_id );
 
 		if ( $order ) {
 			$this->order_currency = $order->get_currency();
@@ -372,6 +415,67 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	}
 
 	/**
+	 * Read an order with the format filters off, as their callbacks can call init_order_currency() again.
+	 *
+	 * The decimals filter stays on: the read sets the order's amounts and the order factory caches the order, so a read at
+	 * the store's decimals would hand a rounded copy to every later read in the request (client 11.3.0
+	 * `includes/multi-currency/FrontendCurrencies.php:427-456`). A call nested in the read returns early.
+	 *
+	 * @param mixed $order_id Order ID.
+	 * @return \WC_Order|\WC_Order_Refund|false
+	 */
+	private function read_order( $order_id ) {
+		$removed_filters                   = $this->remove_frontend_currency_format_filters();
+		$this->initializing_order_currency = true;
+		try {
+			return wc_get_order( $order_id );
+		} finally {
+			$this->initializing_order_currency = false;
+			$this->restore_frontend_currency_format_filters( $removed_filters );
+		}
+	}
+
+	/**
+	 * Get the currency of the order the page's query vars name, read once per order and request.
+	 *
+	 * @return string|null The currency, or null when the page names no order, it cannot be read, or an order read is running.
+	 */
+	private function get_query_var_order_currency(): ?string {
+		$order_id = $this->order_context_service->get_order_id_from_query_vars();
+		if ( null === $order_id || $this->initializing_order_currency ) {
+			return null;
+		}
+
+		if ( $order_id !== $this->query_var_order_id ) {
+			$order                          = $this->read_order( $order_id );
+			$this->query_var_order_id       = $order_id;
+			$this->query_var_order_currency = $order ? $order->get_currency() : null;
+		}
+
+		return $this->query_var_order_currency;
+	}
+
+	/**
+	 * Tell whether an order is being read from the data store.
+	 *
+	 * No hook marks the end of a factory read, so the flag holds until a read finds the factory gone from the backtrace. An
+	 * order woken from a persistent object cache is read again by its constructor without the factory, so the constructor
+	 * is looked for within the innermost frames (client 11.3.0 `includes/multi-currency/FrontendCurrencies.php:702-715`).
+	 *
+	 * @return bool
+	 */
+	private function is_loading_order(): bool {
+		if ( $this->maybe_loading_order ) {
+			$this->maybe_loading_order = $this->request_context->is_call_in_backtrace( array( 'WC_Order_Factory::get_order', 'WC_Order_Factory::get_orders' ) );
+			if ( $this->maybe_loading_order ) {
+				return true;
+			}
+		}
+
+		return $this->request_context->is_call_in_backtrace_within( array( 'WC_Abstract_Order->__construct' ), self::ORDER_READ_BACKTRACE_DEPTH );
+	}
+
+	/**
 	 * Remove frontend currency format filters during order lookup.
 	 *
 	 * @return array<string,int|false> Removed filter priorities keyed by hook.
@@ -416,7 +520,6 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 			'woocommerce_price_format'        => array( $this, 'get_woocommerce_price_format' ),
 			'wc_get_price_thousand_separator' => array( $this, 'get_price_thousand_separator' ),
 			'wc_get_price_decimal_separator'  => array( $this, 'get_price_decimal_separator' ),
-			'wc_get_price_decimals'           => array( $this, 'get_price_decimals' ),
 		);
 	}
 }

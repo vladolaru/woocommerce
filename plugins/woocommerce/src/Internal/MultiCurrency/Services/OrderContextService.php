@@ -55,6 +55,32 @@ class OrderContextService {
 	}
 
 	/**
+	 * Get the ID of the order a single-order page names: order-pay, then order-received, then view-order.
+	 *
+	 * As client 11.3.0 `FrontendCurrencies::get_order_id_from_query_vars()` (`includes/multi-currency/FrontendCurrencies.php:475-485`):
+	 * the first of those vars that is set decides, and a value that is not a positive integer names no order.
+	 *
+	 * @return int|null The order ID, or null when the page names no order.
+	 */
+	public function get_order_id_from_query_vars(): ?int {
+		global $wp;
+
+		if ( ! $wp instanceof \WP ) {
+			return null;
+		}
+
+		foreach ( array( 'order-pay', 'order-received', 'view-order' ) as $query_var ) {
+			if ( ! empty( $wp->query_vars[ $query_var ] ) ) {
+				$order_id = absint( $wp->query_vars[ $query_var ] );
+
+				return 0 < $order_id ? $order_id : null;
+			}
+		}
+
+		return null;
+	}
+
+	/**
 	 * Tell whether the current request has one of the given page and query vars.
 	 *
 	 * @param array<int, string> $pages Page slugs.

@@ -121,6 +121,30 @@ class DisplayService {
 	}
 
 	/**
+	 * Get the number of price decimals an order is read from the data store with.
+	 *
+	 * The stored amounts are already rounded to the order's own currency, so a read only raises the precision: the most of
+	 * the passed value, the order currency's and every enabled currency's, since a route that names no order (the Store API)
+	 * cannot tell which currency the order is in (client 11.3.0 `includes/multi-currency/FrontendCurrencies.php:298-313`).
+	 *
+	 * @param int         $decimals       Original decimal count.
+	 * @param string|null $order_currency Currency of the order the page names, if any.
+	 * @return int
+	 */
+	public function get_loading_order_price_decimals( int $decimals, ?string $order_currency = null ): int {
+		$currency_codes = array_keys( $this->state_builder->build()->get_enabled_currencies() );
+		if ( is_string( $order_currency ) && '' !== $order_currency ) {
+			$currency_codes[] = strtoupper( $order_currency );
+		}
+
+		foreach ( $currency_codes as $currency_code ) {
+			$decimals = max( $decimals, absint( $this->localization_service->get_currency_format( (string) $currency_code )['num_decimals'] ) );
+		}
+
+		return $decimals;
+	}
+
+	/**
 	 * Get the price decimal separator of this request's currency.
 	 *
 	 * @param string      $separator      Original separator.

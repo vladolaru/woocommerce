@@ -44,6 +44,13 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	);
 
 	/**
+	 * Currency the selected-currency override answers, for tests on the real services.
+	 *
+	 * @var string
+	 */
+	private string $selected_currency = 'USD';
+
+	/**
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
@@ -91,6 +98,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 					'woocommerce_cart_hash'           => array( 'add_currency_to_cart_hash' => array( 900, 1 ) ),
 					'woocommerce_currency'            => array( 'get_woocommerce_currency' => array( 900, 1 ) ),
 					'woocommerce_get_formatted_order_total' => array( 'maybe_clear_order_currency_after_formatted_order_total' => array( 900, 4 ) ),
+					'woocommerce_order_class'         => array( 'flag_order_loading' => array( 900, 1 ) ),
 					'woocommerce_order_get_total'     => array( 'maybe_init_order_currency_from_order_total_prop' => array( 900, 2 ) ),
 					'woocommerce_price_format'        => array( 'get_woocommerce_price_format' => array( 900, 1 ) ),
 					'woocommerce_shipping_method_add_rate_args' => array( 'fix_price_decimals_for_shipping_rates' => array( 900, 2 ) ),
@@ -135,6 +143,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 		$this->assertFalse( has_filter( 'woocommerce_currency', array( $sut, 'get_woocommerce_currency' ) ) );
 		$this->assertFalse( has_filter( 'wc_get_price_decimals', array( $sut, 'get_price_decimals' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_order_get_total', array( $sut, 'maybe_init_order_currency_from_order_total_prop' ) ) );
+		$this->assertFalse( has_filter( 'woocommerce_order_class', array( $sut, 'flag_order_loading' ) ) );
 		$this->assertFalse( has_action( 'before_woocommerce_pay', array( $sut, 'init_order_currency_from_query_vars' ) ) );
 		$this->assertSame( 10, has_filter( 'woocommerce_thankyou_order_id', array( $sut, 'init_order_currency' ) ) );
 		$this->assertSame( 9, has_action( 'woocommerce_account_view-order_endpoint', array( $sut, 'init_order_currency' ) ) );
@@ -326,7 +335,10 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should remove frontend currency filters while resolving order IDs.
+	 * @testdox Should remove the format filters but keep the decimals filter while resolving order IDs.
+	 *
+	 * The read sets the order's amounts and the order factory caches the order, so the decimals filter stays on for it
+	 * (client 11.3.0 `includes/multi-currency/FrontendCurrencies.php:432-447`).
 	 */
 	public function test_removes_frontend_currency_filters_while_resolving_order_ids(): void {
 		$order = wc_create_order();
@@ -356,7 +368,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertSame(
 			array(
-				'wc_get_price_decimals'           => false,
+				'wc_get_price_decimals'           => 900,
 				'wc_get_price_decimal_separator'  => false,
 				'wc_get_price_thousand_separator' => false,
 				'woocommerce_price_format'        => false,
@@ -516,6 +528,238 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should read an order at the precision its amounts were stored with, whatever is selected: $_dataName.
+	 * @dataProvider provide_order_reads
+	 *
+	 * A USD 10.49 order on a USD store with JPY and EUR enabled. Expected values from client 11.3.0
+	 * `tests/unit/multi-currency/test-class-frontend-currencies.php:632-663` (read through the factory), `:665-692` (woken
+	 * from a persistent object cache, which skips the factory), `:694-724` (an order-pay var that is not an ID) and
+	 * `:726-756` (an order-received var naming another order in JPY).
+	 *
+	 * @param string             $read       How the order is read: 'factory' or 'wake'.
+	 * @param array<string,bool> $query_vars Query vars set to the other order's ID (true) or to 'x' (false).
+	 * @param string             $selected   Currency selected when the order is read.
+	 */
+	public function test_reads_an_order_at_its_stored_precision( string $read, array $query_vars, string $selected ): void {
+		$order_id       = $this->create_saved_order( 'USD', '10.49' );
+		$other_order_id = $this->create_saved_order( 'JPY', '1500' );
+		$this->register_on_real_services( array( 'JPY', 'EUR' ) );
+		$this->selected_currency = $selected;
+
+		$this->with_query_vars(
+			array_map( static fn( bool $names_other ) => $names_other ? $other_order_id : 'x', $query_vars ),
+			function () use ( $order_id, $read ): void {
+				wp_cache_flush();
+				$order = wc_get_order( $order_id );
+				if ( 'wake' === $read ) {
+					wp_cache_flush();
+					$order = unserialize( serialize( $order ) ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_serialize, WordPress.PHP.DiscouragedPHPFunctions.serialize_unserialize -- What a persistent object cache does on a hit.
+				}
+
+				$this->assertSame( '10.49', $order->get_total() );
+			}
+		);
+	}
+
+	/** @return array<string,array{string,array<string,bool>,string}> */
+	public static function provide_order_reads(): array {
+		return array(
+			'read through the factory'                => array( 'factory', array(), 'JPY' ),
+			'woken from a persistent cache'           => array( 'wake', array(), 'JPY' ),
+			'an order-pay var that is not an ID'      => array( 'factory', array( 'order-pay' => false ), 'JPY' ),
+			'an order-received var for another order' => array( 'factory', array( 'order-received' => true ), 'USD' ),
+		);
+	}
+
+	/**
+	 * @testdox Should read the order a single-order page names at its own currency's precision while it loads.
+	 *
+	 * A BHD order (3 decimals) through order-pay, with USD and JPY enabled (2 and 0 at most): client 11.3.0
+	 * `tests/unit/multi-currency/test-class-frontend-currencies.php:462-490`, a stored 10.499 not rounded to 10.50.
+	 */
+	public function test_reads_the_named_order_at_its_own_currency_precision(): void {
+		update_option( 'woocommerce_price_num_decimals', '3' );
+		$order_id = $this->create_saved_order( 'BHD', '10.499' );
+		update_option( 'woocommerce_price_num_decimals', '2' );
+		$this->register_on_real_services( array( 'JPY' ) );
+
+		$this->with_query_vars(
+			array( 'order-pay' => $order_id ),
+			function () use ( $order_id ): void {
+				wp_cache_flush();
+
+				$this->assertSame( '10.499', wc_get_order( $order_id )->get_total() );
+			}
+		);
+	}
+
+	/**
+	 * @testdox Should cache the named order at its precision when it is read while another order loads.
+	 *
+	 * With HPOS the order factory caches every order it reads, so the named order read for its currency during another
+	 * order's load must keep its precision on a store set to zero decimals (client 11.3.0
+	 * `tests/unit/multi-currency/test-class-frontend-currencies.php:758-793`). On posts storage the named order is read again
+	 * and the same rule gives the same total.
+	 */
+	public function test_caches_the_named_order_at_its_precision_when_read_during_another_load(): void {
+		$named_order_id  = $this->create_saved_order( 'USD', '10.49' );
+		$loaded_order_id = $this->create_saved_order( 'USD', '20.00' );
+		update_option( 'woocommerce_price_num_decimals', '0' );
+		$this->register_on_real_services( array( 'JPY' ) );
+
+		$this->with_query_vars(
+			array( 'order-received' => $named_order_id ),
+			function () use ( $named_order_id, $loaded_order_id ): void {
+				wp_cache_flush();
+				wc_get_order( $loaded_order_id );
+
+				$this->assertSame( '10.49', wc_get_order( $named_order_id )->get_total() );
+			}
+		);
+	}
+
+	/**
+	 * @testdox Should use the selected currency's decimals again once the order has loaded.
+	 *
+	 * Client 11.3.0 `tests/unit/multi-currency/test-class-frontend-currencies.php:492-526`.
+	 */
+	public function test_uses_the_selected_decimals_again_once_the_order_has_loaded(): void {
+		$order_id = $this->create_saved_order( 'USD', '10.49' );
+		$this->register_on_real_services( array( 'JPY' ) );
+		$this->selected_currency = 'JPY';
+		wp_cache_flush();
+
+		$this->assertSame( '10.49', wc_get_order( $order_id )->get_total() );
+		$this->assertSame( 0, wc_get_price_decimals() );
+	}
+
+	/**
+	 * @testdox Should keep the store's decimals for the Analytics stats while an order loaded during them keeps its own.
+	 *
+	 * The Analytics import rounds amounts converted to the store currency with the store's decimals; an order read inside
+	 * that filter is read first (client 11.3.0 `includes/multi-currency/FrontendCurrencies.php:298-313` checks the load
+	 * before anything else). A store set to zero decimals shows both.
+	 */
+	public function test_keeps_store_decimals_for_analytics_while_an_order_loads_inside_them(): void {
+		$order_id = $this->create_saved_order( 'USD', '10.49' );
+		update_option( 'woocommerce_price_num_decimals', '0' );
+		$this->register_on_real_services( array( 'JPY' ) );
+		$this->selected_currency = 'JPY';
+		$observed                = array();
+		add_filter(
+			'woocommerce_analytics_update_order_stats_data',
+			static function ( $data ) use ( $order_id, &$observed ) {
+				wp_cache_flush();
+				$observed = array( wc_get_price_decimals(), wc_get_order( $order_id )->get_total(), wc_get_price_decimals() );
+
+				return $data;
+			}
+		);
+
+		apply_filters( 'woocommerce_analytics_update_order_stats_data', array() );
+
+		$this->assertSame( array( 0, '10.49', 0 ), $observed );
+	}
+
+	/**
+	 * @testdox Should resolve an order-pay var with trailing characters to its order.
+	 *
+	 * Client 11.3.0 `tests/unit/multi-currency/test-class-frontend-currencies.php:975-985`: the var is read as a positive
+	 * integer.
+	 */
+	public function test_resolves_an_order_pay_var_with_trailing_characters(): void {
+		$order_id = $this->create_saved_order( 'EUR', '10.00' );
+		$sut      = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
+
+		$this->with_query_vars(
+			array( 'order-pay' => $order_id . 'x' ),
+			function () use ( $sut ): void {
+				$sut->init_order_currency_from_query_vars();
+
+				$this->assertSame( 'EUR', $sut->get_woocommerce_currency( 'USD' ) );
+			}
+		);
+	}
+
+	/**
+	 * @testdox Should return early from an order-currency read nested in the order read.
+	 *
+	 * Reading the order can reach the formatting filters, and through them init_order_currency() again (client 11.3.0
+	 * `includes/multi-currency/FrontendCurrencies.php:432-439`); the nested call reads nothing, so the order is read once.
+	 */
+	public function test_returns_early_from_an_order_currency_read_nested_in_the_order_read(): void {
+		$order_id = $this->create_saved_order( 'EUR', '10.00' );
+		$sut      = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
+		$reads    = 0;
+		add_filter(
+			'woocommerce_order_class',
+			static function ( $classname ) use ( $sut, $order_id, &$reads ) {
+				++$reads;
+				if ( $reads < 3 ) {
+					$sut->init_order_currency( $order_id );
+				}
+
+				return $classname;
+			}
+		);
+		wp_cache_flush();
+
+		$sut->init_order_currency( $order_id );
+
+		$this->assertSame( 1, $reads );
+		$this->assertSame( 'EUR', $sut->get_woocommerce_currency( 'USD' ) );
+	}
+
+	/**
+	 * @testdox Should restore the format filters and read again after an order read throws.
+	 *
+	 * Client 11.3.0 `tests/unit/multi-currency/test-class-frontend-currencies.php:795-819`.
+	 */
+	public function test_restores_the_filters_and_reads_again_after_an_order_read_throws(): void {
+		$order_id = $this->create_saved_order( 'EUR', '10.00' );
+		wc_get_container()->get( OrderCache::class )->remove( $order_id );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
+		$sut->register();
+		$throw_on_read = static function () {
+			throw new \Exception( 'Order read failed.' );
+		};
+		add_filter( 'woocommerce_order_class', $throw_on_read, 1 );
+
+		try {
+			$sut->init_order_currency( $order_id );
+			$this->fail( 'The order read was expected to throw.' );
+		} catch ( \Exception $e ) {
+			$this->assertSame( 'Order read failed.', $e->getMessage() );
+		}
+		remove_filter( 'woocommerce_order_class', $throw_on_read, 1 );
+
+		$filters = array(
+			'wc_get_price_decimals'           => 'get_price_decimals',
+			'wc_get_price_decimal_separator'  => 'get_price_decimal_separator',
+			'wc_get_price_thousand_separator' => 'get_price_thousand_separator',
+			'woocommerce_price_format'        => 'get_woocommerce_price_format',
+		);
+		foreach ( $filters as $hook => $callback ) {
+			$this->assertSame( 900, has_filter( $hook, array( $sut, $callback ) ), $hook );
+		}
+		$sut->init_order_currency( $order_id );
+		$this->assertSame( 'EUR', $sut->get_woocommerce_currency( 'USD' ) );
+	}
+
+	/**
+	 * @testdox Should still find the WooCommerce frames the order checks look for.
+	 *
+	 * The checks match `WC_Order_Factory::get_order`, `WC_Order_Factory::get_orders` and `WC_Abstract_Order->__construct` by
+	 * name on the backtrace, which names a method by the class that declares it (client 11.3.0
+	 * `tests/unit/multi-currency/test-class-frontend-currencies.php:359-380`).
+	 */
+	public function test_still_finds_the_woocommerce_frames_the_order_checks_look_for(): void {
+		$this->assertTrue( ( new \ReflectionMethod( \WC_Order_Factory::class, 'get_order' ) )->isStatic() );
+		$this->assertTrue( ( new \ReflectionMethod( \WC_Order_Factory::class, 'get_orders' ) )->isStatic() );
+		$this->assertSame( 'WC_Abstract_Order', ( new \ReflectionMethod( \WC_Order::class, '__construct' ) )->getDeclaringClass()->getName() );
+	}
+
+	/**
 	 * @testdox Should round a converted shipping rate to the selected currency's decimals: $selected_currency, rounding $rounding.
 	 *
 	 * The amounts are a recorded store run's: a JPY store with no decimals, USD at a manual 0.0067, a 500 JPY flat rate
@@ -582,6 +826,50 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 		);
 
 		return $controller;
+	}
+
+	/**
+	 * Register the controller on the real services: a USD store with the given currencies enabled at manual rates, and
+	 * the selection read from $selected_currency on every read.
+	 *
+	 * @param string[] $currency_codes Enabled currencies besides USD.
+	 * @return MultiCurrencyFrontendCurrenciesController
+	 */
+	private function register_on_real_services( array $currency_codes ): MultiCurrencyFrontendCurrenciesController {
+		$rates = array(
+			'EUR' => '0.9',
+			'ISK' => '140',
+			'JPY' => '150',
+		);
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array_merge( array( 'USD' ), $currency_codes ) );
+		foreach ( $currency_codes as $currency_code ) {
+			update_option( 'wcpay_multi_currency_exchange_rate_' . strtolower( $currency_code ), 'manual' );
+			update_option( 'wcpay_multi_currency_manual_rate_' . strtolower( $currency_code ), $rates[ $currency_code ] );
+		}
+		add_filter( 'wcpay_multi_currency_override_selected_currency', fn() => $this->selected_currency );
+
+		$sut = new MultiCurrencyFrontendCurrenciesController();
+		$sut->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ), wc_get_container()->get( ServiceFactory::class ), wc_get_container()->get( RequestContext::class ), wc_get_container()->get( OrderContextService::class ) );
+		$sut->register();
+
+		return $sut;
+	}
+
+	/**
+	 * Save an order in a currency with a total, before any currency filter runs.
+	 *
+	 * @param string $currency Order currency.
+	 * @param string $total    Order total.
+	 * @return int The order ID.
+	 */
+	private function create_saved_order( string $currency, string $total ): int {
+		$order = wc_create_order();
+		$order->set_currency( $currency );
+		$order->set_total( $total );
+		$order->save();
+
+		return $order->get_id();
 	}
 
 	/**
@@ -739,6 +1027,19 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 			 */
 			public function get_price_decimals( int $decimals, ?string $order_currency = null ): int {
 				return 'JPY' === $order_currency ? 0 : 2;
+			}
+
+			/**
+			 * Project the number of price decimals an order is read with.
+			 *
+			 * @param int         $decimals       Original decimal count.
+			 * @param string|null $order_currency Currency of the order the page names.
+			 * @return int
+			 */
+			public function get_loading_order_price_decimals( int $decimals, ?string $order_currency = null ): int {
+				unset( $order_currency );
+
+				return $decimals;
 			}
 
 			/**
