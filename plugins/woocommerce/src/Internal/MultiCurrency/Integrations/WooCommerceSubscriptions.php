@@ -654,17 +654,25 @@ class WooCommerceSubscriptions implements RegisterHooksInterface {
 	 * Cached per request: the lookup only reads cart/session state, which is stable until the
 	 * cart mutates, and the invalidation hooks registered in register_subscription_filters()
 	 * clear the cache on every cart change. This keeps the hot price/cart path from traversing
-	 * the whole cart and session on every filter invocation.
+	 * the whole cart and session on every filter invocation. An answer computed before the request
+	 * has a cart or a session to read is not remembered, as get_initial_payment_order_currency()
+	 * remembers nothing before post types exist.
 	 *
 	 * @param string $type Subscription cart type.
 	 * @return array<int,array<string,mixed>>
 	 */
 	private function get_subscription_cart_items( string $type ): array {
-		if ( ! array_key_exists( $type, $this->subscription_type_cache ) ) {
-			$this->subscription_type_cache[ $type ] = $this->resolve_subscription_cart_items( $type );
+		if ( array_key_exists( $type, $this->subscription_type_cache ) ) {
+			return $this->subscription_type_cache[ $type ];
 		}
 
-		return $this->subscription_type_cache[ $type ];
+		$cart_items  = $this->resolve_subscription_cart_items( $type );
+		$woocommerce = WC();
+		if ( $woocommerce->cart instanceof \WC_Cart || $woocommerce->session instanceof \WC_Session ) {
+			$this->subscription_type_cache[ $type ] = $cart_items;
+		}
+
+		return $cart_items;
 	}
 
 	/**

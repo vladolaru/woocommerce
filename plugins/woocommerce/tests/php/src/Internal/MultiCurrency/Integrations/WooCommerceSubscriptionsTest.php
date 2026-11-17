@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Integrations;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
@@ -15,6 +16,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
+use Automattic\WooCommerce\StoreApi\Utilities\DraftOrderTrait;
 use WC_Unit_Test_Case;
 use Automattic\WooCommerce\Tests\Internal\MultiCurrency\CallStack;
 use Automattic\WooCommerce\Tests\Internal\MultiCurrency\RegisteredHooks;
@@ -380,6 +382,137 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 			'EUR enabled'                   => array( true ),
 			'EUR disabled after the signup' => array( false ),
 		);
+	}
+
+	/**
+	 * @testdox Should find a $type item in the session cart after a lookup made before the request had a cart or a session.
+	 * @testWith ["initial_payment"]
+	 *           ["renewal"]
+	 *
+	 * A Store API request reads the selected currency at widgets_init, before it starts the session (rest_pre_dispatch) and
+	 * loads the cart. That lookup has nothing to read, so its empty answer must not stand for the session cart.
+	 *
+	 * @param string $type Subscriptions cart type.
+	 */
+	public function test_finds_a_session_cart_item_after_a_lookup_before_the_session( string $type ): void {
+		$item = 'initial_payment' === $type ? $this->get_initial_payment_cart_item( $this->create_order_in_currency( 'EUR' ) ) : array(
+			'subscription_renewal' => array( 'subscription_id' => 31 ),
+			'product_id'           => 0,
+			'key'                  => 'abc123',
+		);
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'function_exists'      => static fn( string $function_name ): bool => 'wcs_get_subscription' === $function_name || function_exists( $function_name ),
+				'wcs_get_subscription' => fn() => $this->create_subscription( 'EUR' ),
+			)
+		);
+		$sut     = $this->create_real_controller();
+		$cart    = WC()->cart;
+		$session = WC()->session;
+		$cart->set_cart_contents( array() );
+		$session->set( 'cart', array( 'abc123' => $item ) );
+
+		WC()->cart    = null;
+		WC()->session = null;
+		try {
+			$early = $sut->override_selected_currency( false );
+			// The request starts the session; the cart is not loaded yet.
+			WC()->session = $session;
+			$later        = $sut->override_selected_currency( false );
+		} finally {
+			WC()->cart    = $cart;
+			WC()->session = $session;
+		}
+
+		$this->assertSame( array( false, 'EUR' ), array( $early, $later ) );
+	}
+
+	/**
+	 * @testdox Should write the cart hash the Store API checkout checks on a signup order re-saved when the cart loads.
+	 *
+	 * WooCommerce Subscriptions 9.4.1 is not loaded in these tests, so its restore is modelled on the same hook, added
+	 * before the integration's: at woocommerce_cart_loaded_from_session it names the failed signup order as the draft and
+	 * re-saves it with the cart hash (`includes/core/class-wcs-cart-renewal.php:266-286`, `:1272-1302`). The Checkout route
+	 * then reads the draft through DraftOrderTrait (`Checkout.php:847`), which reuses a failed order only when the hashes
+	 * match. The selected currency is read first at widgets_init, before the session starts. USD is the store currency.
+	 */
+	public function test_writes_the_cart_hash_the_store_api_checks_on_a_signup_order_paid_again(): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.9' );
+		$product = \WC_Helper_Product::create_simple_product( true, array( 'regular_price' => '9' ) );
+		$order   = wc_create_order();
+		$order->set_currency( 'EUR' );
+		$order->set_total( '9.00' );
+		$order->set_status( OrderStatus::FAILED );
+		$order->save();
+		$order_id = $order->get_id();
+		$cart     = WC()->cart;
+		$session  = WC()->session;
+		$cart->set_cart_contents( array() );
+		$session->set(
+			'cart',
+			array(
+				'abc123' => array(
+					'key'                          => 'abc123',
+					'product_id'                   => $product->get_id(),
+					'variation_id'                 => 0,
+					'variation'                    => array(),
+					'quantity'                     => 1,
+					'subscription_initial_payment' => array( 'order_id' => $order_id ),
+				),
+			)
+		);
+		$session->set( 'cart_totals', array( 'total' => '9.00' ) );
+		add_action(
+			'woocommerce_cart_loaded_from_session',
+			static function () use ( $order_id ) {
+				WC()->session->set( 'store_api_draft_order', $order_id );
+				$order = wc_get_order( $order_id );
+				$order->set_cart_hash( WC()->cart->get_cart_hash() );
+				$order->save();
+			}
+		);
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => static fn( string $class_name, bool $autoload = true ): bool => 'WC_Subscriptions' === $class_name || class_exists( $class_name, $autoload ),
+			)
+		);
+		$this->create_real_controller()->register();
+		add_filter( 'woocommerce_cart_hash', array( wc_get_container()->get( ServiceFactory::class )->create_display_service(), 'add_currency_to_cart_hash' ), 900 );
+		$draft_orders = new class() {
+			use DraftOrderTrait;
+
+			/**
+			 * Read the draft order as the Checkout route does.
+			 *
+			 * @return \WC_Order|null
+			 */
+			public function read(): ?\WC_Order {
+				return $this->get_draft_order();
+			}
+		};
+
+		WC()->cart    = null;
+		WC()->session = null;
+		try {
+			$early = wc_get_container()->get( StateBuilderFactory::class )->get_state_builder()->build()->get_selected_currency()->get_code();
+			// rest_pre_dispatch starts the session, then the Store API loads the cart from it.
+			WC()->session = $session;
+			WC()->cart    = $cart;
+			( new \WC_Cart_Session( $cart ) )->get_cart_from_session();
+		} finally {
+			WC()->cart    = $cart;
+			WC()->session = $session;
+		}
+		$checked_hash = $cart->get_cart_hash();
+		$draft        = $draft_orders->read();
+		$base         = md5( wp_json_encode( ( new \WC_Cart_Session( $cart ) )->get_cart_for_session() ) . $cart->get_total( 'edit' ) );
+
+		$this->assertSame( 'USD', $early, 'The read before the session has no signup order to pay.' );
+		$this->assertSame( array( md5( $base . 'EUR0.9' ), md5( $base . 'EUR0.9' ) ), array( wc_get_order( $order_id )->get_cart_hash(), $checked_hash ), 'The re-saved order holds the hash the checkout computes.' );
+		$this->assertSame( $order_id, $draft ? $draft->get_id() : null, 'The checkout reuses the failed signup order.' );
 	}
 
 	/**
@@ -1030,7 +1163,7 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should cache the cart subscription-type lookup per request until the cart changes.
+	 * @testdox Should cache the cart subscription-type lookup per request until the cart changes, and only once there is a cart to read.
 	 */
 	public function test_caches_cart_subscription_type_until_invalidated(): void {
 		$sut = new class() extends WooCommerceSubscriptions {
@@ -1083,7 +1216,7 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 		$this->assertSame( $renewal, $sut->lookup( 'renewal' ) );
 		$this->assertSame( 1, $sut->resolve_calls );
 
-		// A null result is cached too, so an early "no subscription" answer is not recomputed.
+		// An empty answer is cached too while the cart is there to read.
 		$sut->next_value = null;
 		$this->assertNull( $sut->lookup( 'switch' ) );
 		$this->assertNull( $sut->lookup( 'switch' ) );
@@ -1096,6 +1229,26 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( $updated_renewal, $sut->lookup( 'renewal' ) );
 		$this->assertSame( 3, $sut->resolve_calls );
+
+		// Before the request has a cart or a session, each lookup answers and nothing is kept.
+		$sut->clear_subscription_type_cache();
+		$cart         = WC()->cart;
+		$session      = WC()->session;
+		WC()->cart    = null;
+		WC()->session = null;
+		try {
+			$sut->lookup( 'renewal' );
+			$sut->lookup( 'renewal' );
+			$calls_without_a_cart = $sut->resolve_calls;
+			WC()->session         = $session;
+			$sut->lookup( 'renewal' );
+			$sut->lookup( 'renewal' );
+		} finally {
+			WC()->cart    = $cart;
+			WC()->session = $session;
+		}
+
+		$this->assertSame( array( 5, 6 ), array( $calls_without_a_cart, $sut->resolve_calls ), 'Two walks without a cart or a session, then one kept with the session.' );
 	}
 
 	/**
