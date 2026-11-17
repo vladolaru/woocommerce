@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendCurrenciesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendPricesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
@@ -41,6 +42,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		'woocommerce_coupon_get_amount',
 		'woocommerce_coupon_get_minimum_amount',
 		'woocommerce_coupon_get_maximum_amount',
+		'woocommerce_order_recalculate_coupons_coupon_object',
 		'woocommerce_new_order',
 		'woocommerce_order_refunded',
 		'rest_post_dispatch',
@@ -98,6 +100,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 					'woocommerce_evaluate_shipping_cost_args' => array( 'convert_shipping_cost_args_to_store_currency' => array( 99, 3 ) ),
 					'woocommerce_get_variation_prices_hash' => array( 'add_exchange_rate_to_variation_prices_hash' => array( 99, 1 ) ),
 					'woocommerce_new_order'              => array( 'add_order_meta' => array( 99, 2 ) ),
+					'woocommerce_order_recalculate_coupons_coupon_object' => array( 'set_order_coupon' => array( 99, 4 ) ),
 					'woocommerce_product_get_price'      => array( 'get_product_price_string' => array( 99, 2 ) ),
 					'woocommerce_product_get_regular_price' => array( 'get_product_price_string' => array( 99, 2 ) ),
 					'woocommerce_product_get_sale_price' => array( 'get_product_price_string' => array( 99, 2 ) ),
@@ -594,6 +597,124 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should convert a coupon an order re-applies in the order's currency: $_dataName.
+	 * @dataProvider provide_reapplied_coupons
+	 *
+	 * A USD store with JPY at 150 and EUR at 0.9 enabled, EUR selected, and a JPY order re-applying its coupon. Rows from
+	 * client 11.3.0 `tests/unit/multi-currency/test-class-frontend-prices.php`: a live coupon (`:646-688`), a coupon rebuilt
+	 * with no stored amount (`:732-751`), one rebuilt from legacy `coupon_data` as an array or an object (`:753-799`), one
+	 * rebuilt from `coupon_info` (`includes/multi-currency/FrontendPrices.php:546-563`), another coupon (`:806-820`), a
+	 * standard REST order write (`:822-851`) and the Store API (`:853-888`); a percent coupon and the should-convert filter
+	 * are asked first, as before.
+	 *
+	 * @param string              $kind     Coupon: 'live', 'rebuilt' (virtual), 'percent', or 'another' read after a live one.
+	 * @param array<string,mixed> $meta     Coupon line meta.
+	 * @param string              $path     Request path.
+	 * @param bool                $convert  What the should-convert filter answers.
+	 * @param string              $amount   Amount the coupon reads.
+	 * @param string|float        $expected Amount after the filter.
+	 */
+	public function test_converts_a_reapplied_coupon_in_the_order_currency( string $kind, array $meta, string $path, bool $convert, string $amount, $expected ): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'JPY', 'EUR' ) );
+		foreach ( array(
+			'jpy' => '150',
+			'eur' => '0.9',
+		) as $code => $rate ) {
+			update_option( 'wcpay_multi_currency_exchange_rate_' . $code, 'manual' );
+			update_option( 'wcpay_multi_currency_manual_rate_' . $code, $rate );
+		}
+		add_filter( 'wcpay_multi_currency_override_selected_currency', static fn() => 'EUR' );
+		if ( ! $convert ) {
+			add_filter( 'wcpay_multi_currency_should_convert_coupon_amount', '__return_false' );
+		}
+		$order = wc_create_order();
+		$order->set_currency( 'JPY' );
+		$coupon = $this->create_coupon( 'percent' === $kind );
+		$coupon->set_virtual( 'rebuilt' === $kind );
+		$coupon_item = new \WC_Order_Item_Coupon();
+		foreach ( $meta as $key => $value ) {
+			$coupon_item->add_meta_data( $key, $value );
+		}
+		$sut = new MultiCurrencyFrontendPricesController();
+		$sut->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ), wc_get_container()->get( ServiceFactory::class ), wc_get_container()->get( RequestContext::class ) );
+		$original_uri = $_SERVER['REQUEST_URI'] ?? null; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized,WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- Restored below.
+
+		try {
+			$_SERVER['REQUEST_URI'] = $path;
+
+			$this->assertSame( $coupon, $sut->set_order_coupon( $coupon, 'code', $coupon_item, $order ) );
+			$read = 'another' === $kind ? $this->create_coupon() : $coupon;
+			$this->assertSame( $expected, $sut->get_coupon_amount( $amount, $read ) );
+		} finally {
+			if ( null === $original_uri ) {
+				unset( $_SERVER['REQUEST_URI'] );
+			} else {
+				$_SERVER['REQUEST_URI'] = $original_uri;
+			}
+		}
+	}
+
+	/** @return array<string,array{string,array<string,mixed>,string,bool,string,string|float}> */
+	public static function provide_reapplied_coupons(): array {
+		$legacy = array(
+			'id'            => 0,
+			'code'          => 'legacy5',
+			'discount_type' => 'fixed_cart',
+			'amount'        => 5,
+		);
+		$info   = array(
+			'coupon_info' => '[0,"legacy5","fixed_cart",750]',
+			'coupon_data' => $legacy,
+		);
+
+		return array(
+			'a live coupon'                          => array( 'live', array(), '/', true, '10', 1500.0 ),
+			'a coupon rebuilt with no stored amount' => array( 'rebuilt', array(), '/', true, '1500', '1500' ),
+			'rebuilt from legacy data, an array'     => array( 'rebuilt', array( 'coupon_data' => $legacy ), '/', true, '5', 750.0 ),
+			'rebuilt from legacy data, an object'    => array( 'rebuilt', array( 'coupon_data' => (object) $legacy ), '/', true, '5', 750.0 ),
+			'rebuilt from coupon info'               => array( 'rebuilt', $info, '/', true, '750', '750' ),
+			'another coupon'                         => array( 'another', array(), '/', true, '10', 9.0 ),
+			'a standard REST order write'            => array( 'live', array(), '/wp-json/wc/v3/orders', true, '10', 9.0 ),
+			'the Store API'                          => array( 'live', array(), '/wp-json/wc/store/v1/checkout/1', true, '10', 1500.0 ),
+			'a percent coupon'                       => array( 'percent', array(), '/', true, '10', '10' ),
+			'the should-convert filter off'          => array( 'live', array(), '/', false, '10', '10' ),
+		);
+	}
+
+	/**
+	 * @testdox Should take a fixed coupon re-applied to a USD order in dollars while JPY is selected.
+	 *
+	 * Client 11.3.0 `tests/unit/multi-currency/test-class-frontend-prices.php:890-925`: four 10.00 lines and 10.00 shipping
+	 * with a saved 5.00 coupon give a 5.00 discount and a 45.00 total, where the selection's rate took 750 off.
+	 */
+	public function test_takes_a_reapplied_coupon_in_the_order_currency_while_another_is_selected(): void {
+		$coupon = new \WC_Coupon();
+		$coupon->set_code( 'take5' );
+		$coupon->set_discount_type( 'fixed_cart' );
+		$coupon->set_amount( 5 );
+		$coupon->save();
+		$order       = \WC_Helper_Order::create_order();
+		$coupon_item = new \WC_Order_Item_Coupon();
+		$coupon_item->set_code( 'take5' );
+		$order->add_item( $coupon_item );
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'JPY' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_jpy', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_jpy', '150' );
+		add_filter( 'wcpay_multi_currency_override_selected_currency', static fn() => 'JPY' );
+		$sut = new MultiCurrencyFrontendPricesController();
+		$sut->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ), wc_get_container()->get( ServiceFactory::class ), wc_get_container()->get( RequestContext::class ) );
+		$sut->register();
+
+		$order->recalculate_coupons();
+
+		$this->assertSame( 'USD', $order->get_currency() );
+		$this->assertEquals( 5, $order->get_discount_total() );
+		$this->assertEquals( 45, $order->get_total() );
+	}
+
+	/**
 	 * @testdox Should leave the Multi-Currency meta of an order Subscriptions creates to the subscription's copy.
 	 *
 	 * WooCommerce Subscriptions 9.3.0 creates renewal orders, the early renewal modal's included, with `created_via`
@@ -896,11 +1017,13 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 			/**
 			 * Project a converted price for the selected currency.
 			 *
-			 * @param mixed  $price Price.
-			 * @param string $type  Price type.
+			 * @param mixed                      $price    Price.
+			 * @param string                     $type     Price type.
+			 * @param MultiCurrencyCurrency|null $currency Currency to convert to.
 			 * @return float
 			 */
-			public function get_price( $price, string $type ): float {
+			public function get_price( $price, string $type, ?MultiCurrencyCurrency $currency = null ): float {
+				unset( $currency );
 				$multipliers = array(
 					'product'       => 2.0,
 					'shipping'      => 3.0,

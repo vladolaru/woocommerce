@@ -105,6 +105,66 @@ class PriceConverterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should convert an existing order's amount in the currency its code finds: $_dataName.
+	 * @dataProvider provide_order_currencies
+	 *
+	 * A USD store with JPY enabled at 150 and EUR disabled since checkout, available at its automatic 0.88. Rows from client
+	 * 11.3.0 `tests/unit/multi-currency/test-class-frontend-prices.php:646-688` (enabled, then available, then the store
+	 * currency) and `:693-730` (the enabled EUR carries the merchant's manual 0.9 over the automatic 0.88: 1.37 USD is 1.23
+	 * EUR, not 1.21). The selection is GBP throughout.
+	 *
+	 * @param bool   $eur_enabled    Whether EUR is enabled, at a manual 0.9.
+	 * @param string $order_currency Order currency.
+	 * @param string $amount         Store-currency amount.
+	 * @param string $expected_code  Currency the amount converts to.
+	 * @param float  $expected       Converted amount.
+	 */
+	public function test_converts_an_order_amount_in_the_currency_its_code_finds( bool $eur_enabled, string $order_currency, string $amount, string $expected_code, float $expected ): void {
+		$usd           = $this->create_currency( 'USD', 1.0, true );
+		$jpy           = $this->create_currency( 'JPY', 150.0, false );
+		$gbp           = $this->create_currency( 'GBP', 0.82, false );
+		$available     = array(
+			'USD' => $usd,
+			'JPY' => $jpy,
+			'GBP' => $gbp,
+			'EUR' => $this->create_currency( 'EUR', 0.88, false ),
+		);
+		$enabled       = array(
+			'USD' => $usd,
+			'JPY' => $jpy,
+			'GBP' => $gbp,
+		);
+		$enabled_euros = $eur_enabled ? array( 'EUR' => $this->create_currency( 'EUR', 0.9, false ) ) : array();
+		$sut           = $this->create_service( new MultiCurrencyState( $available, $enabled + $enabled_euros, $usd, $gbp ) );
+
+		$currency = $sut->get_currency_for_order( $order_currency );
+
+		$this->assertSame( $expected_code, $currency->get_code() );
+		$this->assertSame( $expected, $sut->get_price( $amount, 'coupon', $currency ) );
+	}
+
+	/** @return array<string,array{bool,string,string,string,float}> */
+	public static function provide_order_currencies(): array {
+		return array(
+			'the store currency'                     => array( false, 'USD', '10', 'USD', 10.0 ),
+			'an enabled currency, lower case'        => array( false, 'jpy', '10.37', 'JPY', 1556.0 ),
+			'a currency disabled since checkout'     => array( false, 'EUR', '1.37', 'EUR', 1.21 ),
+			'an enabled currency at its manual rate' => array( true, 'EUR', '1.37', 'EUR', 1.23 ),
+			'a currency the store does not offer'    => array( false, 'BTC', '10', 'USD', 10.0 ),
+		);
+	}
+
+	/**
+	 * @testdox Should convert to the selected currency when no currency is given.
+	 */
+	public function test_converts_to_the_selected_currency_when_no_currency_is_given(): void {
+		$sut = $this->create_service( $this->create_state( 'CAD' ) );
+
+		$this->assertSame( 12.5, $sut->get_price( '10', 'coupon' ) );
+		$this->assertSame( 12.5, $sut->get_price( '10', 'coupon', null ) );
+	}
+
+	/**
 	 * @testdox Should report whether selected and default currencies differ.
 	 */
 	public function test_reports_whether_selected_currency_differs_from_default(): void {
@@ -314,7 +374,7 @@ class PriceConverterTest extends WC_Unit_Test_Case {
 					'currency_pos' => 'left',
 					'thousand_sep' => ',',
 					'decimal_sep'  => '.',
-					'num_decimals' => 2,
+					'num_decimals' => 'JPY' === strtoupper( $currency_code ) ? 0 : 2,
 				);
 			}
 

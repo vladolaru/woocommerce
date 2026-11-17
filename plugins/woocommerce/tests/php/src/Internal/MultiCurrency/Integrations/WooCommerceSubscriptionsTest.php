@@ -1265,12 +1265,13 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 			/**
 			 * Project a converted price for the selected currency.
 			 *
-			 * @param mixed  $price Price.
-			 * @param string $type  Price type.
+			 * @param mixed                      $price    Price.
+			 * @param string                     $type     Price type.
+			 * @param MultiCurrencyCurrency|null $currency Currency to convert to.
 			 * @return float
 			 */
-			public function get_price( $price, string $type ): float {
-				unset( $type );
+			public function get_price( $price, string $type, ?MultiCurrencyCurrency $currency = null ): float {
+				unset( $type, $currency );
 
 				return (float) $price * $this->rate;
 			}

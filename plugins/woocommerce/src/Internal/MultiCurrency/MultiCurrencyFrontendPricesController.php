@@ -63,6 +63,27 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	private static ?object $store_currency_cost_method = null;
 
 	/**
+	 * The coupon an order is re-applying while it recalculates, whose amount converts to the order's currency.
+	 *
+	 * @var object|null
+	 */
+	private ?object $order_coupon = null;
+
+	/**
+	 * The currency the re-applied coupon's amount converts to.
+	 *
+	 * @var MultiCurrencyCurrency|null
+	 */
+	private ?MultiCurrencyCurrency $order_coupon_currency = null;
+
+	/**
+	 * Whether the re-applied coupon's amount is still in the store currency.
+	 *
+	 * @var bool
+	 */
+	private bool $order_coupon_needs_conversion = false;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -106,6 +127,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 		add_filter( 'woocommerce_coupon_get_amount', array( $this, 'get_coupon_amount' ), 99, 2 );
 		add_filter( 'woocommerce_coupon_get_minimum_amount', array( $this, 'get_coupon_min_max_amount' ), 99 );
 		add_filter( 'woocommerce_coupon_get_maximum_amount', array( $this, 'get_coupon_min_max_amount' ), 99 );
+		add_filter( 'woocommerce_order_recalculate_coupons_coupon_object', array( $this, 'set_order_coupon' ), 99, 4 );
 		add_action( 'woocommerce_new_order', array( $this, 'add_order_meta' ), 99, 2 );
 		add_filter( 'rest_post_dispatch', array( $this, 'maybe_modify_price_ranges_rest_response' ), 10, 3 );
 		add_filter( 'query_loop_block_query_vars', array( $this, 'maybe_modify_price_ranges_query_var' ), 10, 3 );
@@ -245,7 +267,51 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 			return $amount;
 		}
 
+		// A coupon re-applied to an existing order converts to the order's currency, whatever is selected now.
+		if ( null !== $this->order_coupon && $coupon === $this->order_coupon ) {
+			return $this->order_coupon_needs_conversion
+				? $this->get_price_converter()->get_price( $amount, 'coupon', $this->order_coupon_currency )
+				: $amount;
+		}
+
 		return $this->get_price_converter()->get_price( $amount, 'coupon' );
+	}
+
+	/**
+	 * Remember the coupon an order is about to re-apply while it recalculates, so its amount converts to the order's currency.
+	 *
+	 * As client 11.3.0 `FrontendPrices::set_order_coupon()` (`includes/multi-currency/FrontendPrices.php:531-566`): a REST
+	 * request that is neither Store API nor a Store API batch keeps the selection, as it already prices orders in the store
+	 * currency. A live coupon's amount is in the store currency. A deleted coupon is rebuilt from the order line: its
+	 * `coupon_info` amount was converted at checkout, a legacy `coupon_data` amount was not, and a rebuild with no stored
+	 * amount takes the order line's discount, already in the order's currency.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $coupon      Coupon about to be re-applied.
+	 * @param mixed $code        Coupon code.
+	 * @param mixed $coupon_item The order's coupon line.
+	 * @param mixed $order       The order recalculating.
+	 * @return mixed The coupon, unchanged.
+	 */
+	public function set_order_coupon( $coupon, $code, $coupon_item, $order ) {
+		unset( $code );
+		$this->order_coupon = null;
+
+		if ( $this->request_context->should_register_rest_request_overrides() || ! is_object( $coupon ) || ! $order instanceof \WC_Abstract_Order ) {
+			return $coupon;
+		}
+
+		// Cast as WC_Abstract_Order::get_temporary_coupon() does, which also takes object-valued meta.
+		$legacy_data     = $coupon_item instanceof \WC_Order_Item_Coupon ? (array) $coupon_item->get_meta( 'coupon_data', true ) : array();
+		$legacy_amount   = (float) ( $legacy_data['amount'] ?? 0 );
+		$has_coupon_info = $coupon_item instanceof \WC_Order_Item_Coupon && (bool) $coupon_item->get_meta( 'coupon_info', true );
+
+		$this->order_coupon                  = $coupon;
+		$this->order_coupon_currency         = $this->get_price_converter()->get_currency_for_order( (string) $order->get_currency() );
+		$this->order_coupon_needs_conversion = $coupon instanceof \WC_Coupon && ( ! $coupon->get_virtual() || ( ! $has_coupon_info && $legacy_amount > 0 ) );
+
+		return $coupon;
 	}
 
 	/**

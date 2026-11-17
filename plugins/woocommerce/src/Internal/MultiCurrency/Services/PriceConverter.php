@@ -49,14 +49,16 @@ class PriceConverter {
 	}
 
 	/**
-	 * Convert a price to the selected currency.
+	 * Convert a price to the selected currency, or to the given one (client 11.3.0 `MultiCurrency::get_price()`,
+	 * `includes/multi-currency/MultiCurrency.php:1215-1251`).
 	 *
-	 * @param mixed  $price Price.
-	 * @param string $type  Price type.
+	 * @param mixed                      $price    Price.
+	 * @param string                     $type     Price type.
+	 * @param MultiCurrencyCurrency|null $currency Currency to convert to; the selected one when null.
 	 * @return float
 	 */
-	public function get_price( $price, string $type ): float {
-		$currency                     = $this->state_builder->build()->get_selected_currency();
+	public function get_price( $price, string $type, ?MultiCurrencyCurrency $currency = null ): float {
+		$currency                     = $currency ?? $this->state_builder->build()->get_selected_currency();
 		$apply_charm_only_to_products = true;
 
 		// The client asks only when a product or shipping price is converted (client 11.1.0 `includes/multi-currency/MultiCurrency.php:943-967`).
@@ -72,6 +74,23 @@ class PriceConverter {
 		}
 
 		return $this->price_calculator->get_price( $price, $type, $currency, $apply_charm_only_to_products );
+	}
+
+	/**
+	 * Get the currency an existing order's amounts convert to: the enabled one, which carries the merchant's manual rate as
+	 * at checkout, else the available one, which has only the automatic rate (a currency disabled since checkout), else the
+	 * store currency (client 11.3.0 `includes/multi-currency/FrontendPrices.php:540-545`).
+	 *
+	 * @param string $order_currency Order currency code.
+	 * @return MultiCurrencyCurrency
+	 */
+	public function get_currency_for_order( string $order_currency ): MultiCurrencyCurrency {
+		$state          = $this->state_builder->build();
+		$order_currency = strtoupper( $order_currency );
+
+		return $state->get_enabled_currencies()[ $order_currency ]
+			?? $state->get_available_currencies()[ $order_currency ]
+			?? $state->get_default_currency();
 	}
 
 	/**
