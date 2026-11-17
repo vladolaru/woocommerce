@@ -44,22 +44,6 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	 */
 	public const TOKENIZED_CART_NONCE_ACTION = 'woopayments_tokenized_cart_nonce';
 
-	private const CART_SESSION_KEYS = array(
-		'cart',
-		'cart_totals',
-		'applied_coupons',
-		'coupon_discount_totals',
-		'coupon_discount_tax_totals',
-		'removed_cart_contents',
-		'chosen_shipping_methods',
-		'shipping_method_counts',
-		'shipping_for_package_0',
-		'shipping_for_package_1',
-		'shipping_for_package_2',
-		'shipping_for_package_3',
-		'shipping_for_package_4',
-	);
-
 	/**
 	 * Express checkout address normalizer.
 	 *
@@ -94,7 +78,11 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 		add_filter( 'rest_pre_dispatch', array( $this, 'maybe_reject_invalid_tokenized_cart_session' ), 10, 3 );
 
 		if ( $this->is_custom_session_order_received_request() ) {
-			add_action( 'wp', array( $this, 'save_old_cart_data_for_restore' ), 1 );
+			// The page empties the cart. With core's cart session hooks off, the stored cart is neither cleared nor saved again,
+			// and the restore keeps it in memory for the rest of the page (client class-wc-payments-payment-request-session.php:47-58).
+			add_filter( 'woocommerce_persistent_cart_enabled', array( $this, 'disable_persistent_cart' ) );
+			add_filter( 'woocommerce_cart_session_initialize', '__return_false' );
+			add_action( 'woocommerce_before_cart_emptied', array( $this, 'save_old_cart_data_for_restore' ) );
 			add_action( 'woocommerce_cart_emptied', array( $this, 'restore_old_cart_data' ) );
 			add_filter( 'woocommerce_should_clear_cart_after_payment', array( $this, 'preserve_cart_after_tokenized_payment' ) );
 		}
@@ -134,7 +122,7 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	}
 
 	/**
-	 * Disable persistent cart merges for isolated tokenized sessions.
+	 * Turn the persistent cart off for isolated tokenized sessions and for the order-received page they return to.
 	 *
 	 * @return bool
 	 */
@@ -237,7 +225,7 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	}
 
 	/**
-	 * Save the real cart data before WooCommerce empties the checkout cart on order-received.
+	 * Save the shopper's cart before WooCommerce empties it on the order-received page.
 	 */
 	public function save_old_cart_data_for_restore(): void {
 		$this->saved_cart_data = array(
@@ -247,12 +235,11 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 			'coupon_discount_totals'     => WC()->cart->get_coupon_discount_totals(),
 			'coupon_discount_tax_totals' => WC()->cart->get_coupon_discount_tax_totals(),
 			'totals'                     => WC()->cart->get_totals(),
-			'session_data'               => $this->get_cart_session_snapshot(),
 		);
 	}
 
 	/**
-	 * Restore the real cart data after WooCommerce empties the checkout cart on order-received.
+	 * Put the shopper's cart back in memory after WooCommerce empties it on the order-received page, for the rest of the page.
 	 */
 	public function restore_old_cart_data(): void {
 		if ( null === $this->saved_cart_data ) {
@@ -265,7 +252,6 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 		WC()->cart->set_coupon_discount_totals( $this->saved_cart_data['coupon_discount_totals'] ?? array() );
 		WC()->cart->set_coupon_discount_tax_totals( $this->saved_cart_data['coupon_discount_tax_totals'] ?? array() );
 		WC()->cart->set_totals( $this->saved_cart_data['totals'] ?? array() );
-		$this->restore_cart_session_snapshot( $this->saved_cart_data['session_data'] ?? array() );
 		$this->saved_cart_data = null;
 	}
 
@@ -276,43 +262,6 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	 */
 	public function preserve_cart_after_tokenized_payment(): bool {
 		return false;
-	}
-
-	/**
-	 * Snapshot cart-related session state that direct order-received empty-cart calls clear.
-	 *
-	 * @return array<string,mixed>
-	 */
-	private function get_cart_session_snapshot(): array {
-		$session  = WC()->session;
-		$snapshot = array();
-		// get_session_data() is declared by WooCommerce's session handlers, not by the WC_Session base that the
-		// woocommerce_session_handler filter may swap in.
-		if ( is_callable( array( $session, 'get_session_data' ) ) ) {
-			foreach ( (array) $session->get_session_data() as $key => $value ) {
-				$snapshot[ (string) $key ] = maybe_unserialize( $value );
-			}
-		}
-
-		foreach ( self::CART_SESSION_KEYS as $key ) {
-			$value = $session->get( $key, null );
-			if ( null !== $value ) {
-				$snapshot[ $key ] = $value;
-			}
-		}
-
-		return $snapshot;
-	}
-
-	/**
-	 * Restore a cart-related session snapshot.
-	 *
-	 * @param array<string,mixed> $snapshot Session values to restore.
-	 */
-	private function restore_cart_session_snapshot( array $snapshot ): void {
-		foreach ( $snapshot as $key => $value ) {
-			WC()->session->set( (string) $key, $value );
-		}
 	}
 
 	/**
@@ -391,13 +340,21 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	}
 
 	/**
-	 * Tell whether the current order-received request originated from a tokenized product cart session.
+	 * Tell whether the current request is the order-received page a tokenized product cart session returns to.
+	 *
+	 * Matches the store's order-received endpoint slug, falling back to the default slug when the setting is empty, as
+	 * wc_get_endpoint_url() does (client class-wc-payments-payment-request-session.php:110-114 matches the default slug only).
 	 *
 	 * @return bool
 	 */
 	private function is_custom_session_order_received_request(): bool {
 		$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( (string) $_SERVER['REQUEST_URI'] ) ) : '';
+		if ( false === strpos( $request_uri, self::RETURN_URL_MARKER . '=1' ) ) {
+			return false;
+		}
 
-		return false !== strpos( $request_uri, self::RETURN_URL_MARKER . '=1' );
+		$endpoint = get_option( 'woocommerce_checkout_order_received_endpoint', 'order-received' );
+
+		return false !== strpos( $request_uri, is_string( $endpoint ) && '' !== $endpoint ? $endpoint : 'order-received' );
 	}
 }

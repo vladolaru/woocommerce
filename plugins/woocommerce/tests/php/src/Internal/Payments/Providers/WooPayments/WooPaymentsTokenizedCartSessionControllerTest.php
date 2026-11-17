@@ -31,6 +31,13 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 	private $original_session;
 
 	/**
+	 * Original WooCommerce cart object.
+	 *
+	 * @var \WC_Cart|null
+	 */
+	private $original_cart;
+
+	/**
 	 * Original request URI.
 	 *
 	 * @var string|null
@@ -43,6 +50,7 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 		$this->original_session     = WC()->session;
+		$this->original_cart        = WC()->cart;
 		$this->original_request_uri = isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( (string) $_SERVER['REQUEST_URI'] ) ) : null;
 	}
 
@@ -61,7 +69,11 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 		}
 
 		WC()->session = $this->original_session;
+		WC()->cart    = $this->original_cart;
 		unset(
+			$GLOBALS['wp']->query_vars['order-received'],
+			$_COOKIE[ 'wp_woocommerce_session_' . COOKIEHASH ],
+			$_GET['key'],
 			$_SERVER['HTTP_X_WOOPAYMENTS_TOKENIZED_CART_SESSION_NONCE'],
 			$_SERVER['HTTP_X_WOOPAYMENTS_TOKENIZED_CART_SESSION'],
 			$_SERVER['HTTP_X_WOOPAYMENTS_TOKENIZED_CART'],
@@ -70,6 +82,7 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 			$_GET['rest_route']
 		);
 		$_SERVER['REQUEST_URI'] = $this->original_request_uri ?? '/';
+		wp_set_current_user( 0 );
 		parent::tearDown();
 	}
 
@@ -290,37 +303,104 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should restore the shopper cart and session state after tokenized order-received empty-cart calls.
+	 * @testdox Should keep the shopper's saved cart through the order-received page of an express payment, and empty it on any other order-received page: $_dataName.
+	 *
+	 * The checkout shortcode empties the cart on the order-received page (WC_Shortcode_Checkout::order_received()). The
+	 * extension keeps core's cart session hooks off on the page an express payment returns to, so the stored cart is
+	 * never cleared there (client class-wc-payments-payment-request-session.php:47-58); every other order-received page
+	 * empties the cart as core does.
+	 *
+	 * @dataProvider provide_order_received_pages
+	 *
+	 * @param string $marker     Query argument appended to the order-received address.
+	 * @param bool   $keeps_cart Whether the shopper's cart is kept.
 	 */
-	public function test_restores_cart_session_state_after_tokenized_order_received_empty_cart(): void {
-		$product = \WC_Helper_Product::create_simple_product();
-		WC()->cart->empty_cart();
+	public function test_order_received_page_keeps_the_saved_cart_only_after_an_express_payment( string $marker, bool $keeps_cart ): void {
+		$product    = \WC_Helper_Product::create_simple_product();
+		$guest_id   = wc_rand_hash( 't_', 30 );
+		$expiration = time() + 2 * DAY_IN_SECONDS;
+		\WC_Helper_Coupon::create_coupon( 'save10' );
+
+		$_COOKIE[ 'wp_woocommerce_session_' . COOKIEHASH ] = $guest_id . '|' . $expiration . '|' . ( time() + DAY_IN_SECONDS ) . '|' . hash_hmac( 'md5', $guest_id . '|' . $expiration, wp_hash( $guest_id . '|' . $expiration ) );
+		$this->start_request();
 		WC()->cart->add_to_cart( $product->get_id(), 2 );
-		WC()->cart->set_applied_coupons( array( 'save10' ) );
-		WC()->cart->set_coupon_discount_totals( array( 'save10' => 5.0 ) );
-		WC()->cart->set_coupon_discount_tax_totals( array( 'save10' => 1.0 ) );
-		WC()->cart->set_totals(
-			array(
-				'subtotal' => 20,
-				'total'    => 15,
-			)
+		WC()->cart->apply_coupon( 'save10' );
+		WC()->session->save_data();
+		$saved_before = $this->get_stored_session( $guest_id );
+		$this->assertSame( 2, $this->get_stored_quantity( $saved_before ), 'The shopper starts with two items in the saved cart.' );
+
+		$this->render_order_received_page( $marker );
+
+		$saved_after = $this->get_stored_session( $guest_id );
+		$this->assertSame( $keeps_cart ? 2 : 0, $this->get_stored_quantity( $saved_after ), 'Items in the saved cart after the page.' );
+		$this->assertSame( $keeps_cart ? $saved_before['cart'] : null, $saved_after['cart'] ?? null );
+		$this->assertSame( $keeps_cart ? $saved_before['cart_totals'] : null, $saved_after['cart_totals'] ?? null );
+		$this->assertSame( $keeps_cart ? $saved_before['applied_coupons'] : null, $saved_after['applied_coupons'] ?? null );
+		$this->assertSame( $keeps_cart ? array( $product->get_id() => 2 ) : array(), array_column( WC()->cart->get_cart(), 'quantity', 'product_id' ), 'Items in the cart for the rest of the page.' );
+		$this->assertSame( $keeps_cart ? array( 'save10' ) : array(), WC()->cart->get_applied_coupons(), 'Coupons in the cart for the rest of the page.' );
+	}
+
+	/**
+	 * Order-received pages: the one an express payment from a product page returns to, and an ordinary one.
+	 *
+	 * @return array<string,array{0:string,1:bool}>
+	 */
+	public function provide_order_received_pages(): array {
+		return array(
+			'express payment from a product page' => array( '&woopayments-custom-session=1', true ),
+			'ordinary order-received page'        => array( '', false ),
 		);
-		WC()->session->set( 'chosen_shipping_methods', array( 'flat_rate:1' ) );
-		WC()->session->set( 'shipping_for_package_0', array( 'package_hash' => 'package-hash' ) );
+	}
 
-		$this->sut = $this->create_controller();
-		$this->sut->save_old_cart_data_for_restore();
+	/**
+	 * @testdox Should keep a customer's saved cart only on the order-received page an express payment returns to, when the cart is emptied with its saved copy: $_dataName.
+	 *
+	 * The extension turns core's cart session hooks and the persistent cart off only on that page (client
+	 * class-wc-payments-payment-request-session.php:47-58, :110-114), so an empty_cart() that also clears the saved copy, as
+	 * wc_clear_cart_after_payment() does, keeps both there. Any other address carrying the marker keeps core's hooks.
+	 *
+	 * @dataProvider provide_marked_addresses
+	 *
+	 * @param string      $request_uri Request URI.
+	 * @param string|null $endpoint    The order-received endpoint setting, or null for the default.
+	 * @param bool        $keeps_cart  Whether the customer's cart is kept.
+	 */
+	public function test_express_payment_order_received_page_keeps_the_customer_saved_cart( string $request_uri, ?string $endpoint, bool $keeps_cart ): void {
+		if ( null !== $endpoint ) {
+			update_option( 'woocommerce_checkout_order_received_endpoint', $endpoint );
+		}
+		$product = \WC_Helper_Product::create_simple_product();
+		$user_id = $this->factory->user->create( array( 'role' => 'customer' ) );
+		wp_set_current_user( $user_id );
+		$this->start_request();
+		WC()->cart->add_to_cart( $product->get_id(), 2 );
+		WC()->session->save_data();
+		$meta_key = '_woocommerce_persistent_cart_' . get_current_blog_id();
+		$this->assertSame( 2, $this->get_stored_quantity( get_user_meta( $user_id, $meta_key, true ) ), 'The customer starts with two items saved in their account.' );
 
-		WC()->cart->empty_cart( false );
-		$this->sut->restore_old_cart_data();
+		$_SERVER['REQUEST_URI'] = $request_uri;
+		$this->sut              = $this->create_controller();
+		$this->sut->register();
+		$this->start_request();
+		WC()->cart->get_cart_contents_count();
+		WC()->cart->empty_cart();
+		WC()->session->save_data();
 
-		$this->assertSame( 2, WC()->cart->get_cart_contents_count() );
-		$this->assertSame( array( 'save10' ), WC()->cart->get_applied_coupons() );
-		$this->assertSame( array( 'save10' => 5.0 ), WC()->cart->get_coupon_discount_totals() );
-		$this->assertSame( array( 'save10' => 1.0 ), WC()->cart->get_coupon_discount_tax_totals() );
-		$this->assertSame( 15, WC()->cart->get_totals()['total'] );
-		$this->assertSame( array( 'flat_rate:1' ), WC()->session->get( 'chosen_shipping_methods' ) );
-		$this->assertSame( array( 'package_hash' => 'package-hash' ), WC()->session->get( 'shipping_for_package_0' ) );
+		$this->assertSame( $keeps_cart ? 2 : 0, $this->get_stored_quantity( get_user_meta( $user_id, $meta_key, true ) ), 'Items saved in the account after the page.' );
+		$this->assertSame( $keeps_cart ? 2 : 0, $this->get_stored_quantity( $this->get_stored_session( (string) $user_id ) ), 'Items in the saved cart after the page.' );
+	}
+
+	/**
+	 * Addresses carrying the express payment's marker, with the order-received endpoint setting.
+	 *
+	 * @return array<string,array{0:string,1:string|null,2:bool}>
+	 */
+	public function provide_marked_addresses(): array {
+		return array(
+			'order-received page'                      => array( '/checkout/order-received/1/?key=wc_order_key&woopayments-custom-session=1', null, true ),
+			'order-received page under a renamed slug' => array( '/checkout/thank-you/1/?key=wc_order_key&woopayments-custom-session=1', 'thank-you', true ),
+			'cart page'                                => array( '/cart/?woopayments-custom-session=1', null, false ),
+		);
 	}
 
 	/**
@@ -348,6 +428,78 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 		$payload = JsonWebToken::get_parts( $headers['X-WooPayments-Tokenized-Cart-Session'] )->payload;
 		$this->assertSame( 't_native_product_session', $payload->session_id );
 		$this->assertSame( 'woopayments/product-page', $payload->iss );
+	}
+
+	/**
+	 * Start a storefront request: the session handler loads the shopper's session, then the cart is built, as on init.
+	 * Nothing has loaded the cart from the session yet.
+	 */
+	private function start_request(): void {
+		// A request builds one cart, so the hooks of carts built earlier in this process go first.
+		foreach ( $GLOBALS['wp_filter'] as $hook_name => $hook ) {
+			foreach ( $hook->callbacks as $priority => $callbacks ) {
+				foreach ( $callbacks as $callback ) {
+					if ( is_array( $callback['function'] ) && ( $callback['function'][0] instanceof \WC_Cart || $callback['function'][0] instanceof \WC_Cart_Session ) ) {
+						remove_action( $hook_name, $callback['function'], $priority );
+					}
+				}
+			}
+		}
+
+		$session = new \WC_Session_Handler();
+		$session->init();
+		WC()->session = $session;
+		WC()->cart    = new \WC_Cart();
+		unset( $GLOBALS['wp_actions']['woocommerce_load_cart_from_session'] );
+	}
+
+	/**
+	 * Request a guest order's order-received page through the checkout shortcode, then save the session as at shutdown.
+	 *
+	 * @param string $marker Query argument appended to the order-received address.
+	 */
+	private function render_order_received_page( string $marker ): void {
+		$order                  = \WC_Helper_Order::create_order( 0 );
+		$_SERVER['REQUEST_URI'] = '/checkout/order-received/' . $order->get_id() . '/?key=' . $order->get_order_key() . $marker;
+		$this->sut              = $this->create_controller();
+		$this->sut->register();
+		$this->start_request();
+
+		// The page header's cart count loads the cart before the content renders, as a classic theme's header cart does.
+		WC()->cart->get_cart_contents_count();
+		$GLOBALS['wp']->query_vars['order-received'] = $order->get_id();
+		$_GET['key']                                 = $order->get_order_key();
+		ob_start();
+		\WC_Shortcode_Checkout::output( array() );
+		ob_end_clean();
+
+		WC()->session->save_data();
+	}
+
+	/**
+	 * Read a stored session straight from the database, bypassing the object cache.
+	 *
+	 * @param string $customer_id Session key.
+	 * @return array<string,mixed>
+	 */
+	private function get_stored_session( string $customer_id ): array {
+		global $wpdb;
+
+		$value = $wpdb->get_var( $wpdb->prepare( "SELECT session_value FROM {$wpdb->prefix}woocommerce_sessions WHERE session_key = %s", $customer_id ) );
+
+		return (array) maybe_unserialize( $value );
+	}
+
+	/**
+	 * Count the items of a stored cart: a session row, or the persistent cart saved in user meta.
+	 *
+	 * @param mixed $stored Stored data holding a 'cart' entry.
+	 * @return int
+	 */
+	private function get_stored_quantity( $stored ): int {
+		$cart = is_array( $stored ) ? maybe_unserialize( $stored['cart'] ?? array() ) : array();
+
+		return (int) array_sum( array_column( (array) $cart, 'quantity' ) );
 	}
 
 	/**
