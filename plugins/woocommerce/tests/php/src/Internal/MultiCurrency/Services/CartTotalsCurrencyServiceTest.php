@@ -39,18 +39,18 @@ class CartTotalsCurrencyTestSession extends WC_Session {
  */
 class CartTotalsCurrencyServiceTest extends WC_Unit_Test_Case {
 
-	private const CART_PRODUCT_PRICE         = 100;
-	private const STORE_CURRENCY_CART_TOTAL  = '100.00';
-	private const CACHED_SHIPPING_RATES_KEY  = 'shipping_for_package_0';
-	private const CACHED_SHIPPING_RATES      = array( 'package_hash' => 'wc_ship_cached' );
-	private const REBUILT_SHIPPING_RATES     = array( 'package_hash' => 'wc_ship_rebuilt' );
-	private const STORE_API_CART_ROUTE       = '/wc/store/v1/cart';
-	private const STOREFRONT_REQUEST_URI     = '/shop/';
-	private const LATER_CALLBACK_PRIORITY    = 5000;
-	private const OTHER_CART_SAVE_PRIORITY   = 1500;
-	private const CURRENCY_SESSION_KEY       = 'wcpay_cart_totals_currency';
-	private const HASH_SESSION_KEY           = 'wcpay_cart_totals_hash';
-	private const SELECTED_CURRENCY_KEY      = 'wcpay_currency';
+	private const CART_PRODUCT_PRICE        = 100;
+	private const STORE_CURRENCY_CART_TOTAL = '100.00';
+	private const CACHED_SHIPPING_RATES_KEY = 'shipping_for_package_0';
+	private const CACHED_SHIPPING_RATES     = array( 'package_hash' => 'wc_ship_cached' );
+	private const REBUILT_SHIPPING_RATES    = array( 'package_hash' => 'wc_ship_rebuilt' );
+	private const STORE_API_CART_ROUTE      = '/wc/store/v1/cart';
+	private const STOREFRONT_REQUEST_URI    = '/shop/';
+	private const LATER_CALLBACK_PRIORITY   = 5000;
+	private const OTHER_CART_SAVE_PRIORITY  = 1500;
+	private const CURRENCY_SESSION_KEY      = 'wcpay_cart_totals_currency';
+	private const HASH_SESSION_KEY          = 'wcpay_cart_totals_hash';
+	private const SELECTED_CURRENCY_KEY     = 'wcpay_currency';
 
 	/**
 	 * The System Under Test.
@@ -169,8 +169,8 @@ class CartTotalsCurrencyServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @dataProvider provide_page_views
 	 *
-	 * @param bool                $switched_here Whether this page view selected GBP before the cart loaded.
-	 * @param array<int,mixed>    $expected      Recalculations, the cart total and the stamp after the load.
+	 * @param bool             $switched_here Whether this page view selected GBP before the cart loaded.
+	 * @param array<int,mixed> $expected      Recalculations, the cart total and the stamp after the load.
 	 */
 	public function test_page_view_recalculates_stale_totals_only_when_it_selected_the_currency( bool $switched_here, array $expected ): void {
 		$this->add_product_to_cart();
@@ -235,11 +235,11 @@ class CartTotalsCurrencyServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function provide_saves(): array {
 		return array(
-			'saved by the main cart'                     => array( 'saved by the main cart', 'GBP' ),
-			'changed in memory after the save'           => array( 'changed in memory after the save', 'GBP' ),
-			'not saved'                                  => array( 'not saved', null ),
-			'another cart saved after the main save'     => array( 'another cart saved after the main save', null ),
-			'another cart saved, the main save skipped'  => array( 'another cart saved, the main save skipped', null ),
+			'saved by the main cart'                    => array( 'saved by the main cart', 'GBP' ),
+			'changed in memory after the save'          => array( 'changed in memory after the save', 'GBP' ),
+			'not saved'                                 => array( 'not saved', null ),
+			'another cart saved after the main save'    => array( 'another cart saved after the main save', null ),
+			'another cart saved, the main save skipped' => array( 'another cart saved, the main save skipped', null ),
 		);
 	}
 
@@ -304,10 +304,10 @@ class CartTotalsCurrencyServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function provide_saved_totals(): array {
 		return array(
-			'stamped as calculated'                   => array( 'stamped as calculated', 0 ),
-			'saved where Multi-Currency did not run'  => array( 'saved where Multi-Currency did not run', 1 ),
-			'unstamped'                               => array( 'unstamped', 1 ),
-			'none saved'                              => array( 'none saved', 0 ),
+			'stamped as calculated'                  => array( 'stamped as calculated', 0 ),
+			'saved where Multi-Currency did not run' => array( 'saved where Multi-Currency did not run', 1 ),
+			'unstamped'                              => array( 'unstamped', 1 ),
+			'none saved'                             => array( 'none saved', 0 ),
 		);
 	}
 
