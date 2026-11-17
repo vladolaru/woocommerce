@@ -1895,8 +1895,9 @@ class WooPaymentsOrderNoteService {
 	 * order's stored intent, is not shown to be the order's own.
 	 *
 	 * The reason follows the platform's record of the intent: it names another order, it names no order, or it could
-	 * not be read. A payment ID is printed only when it is a payment intent, linked to its transaction page; the other
-	 * order is linked when it is on this store. The payment the order last recorded is named when it differs.
+	 * not be looked up. A payment ID is printed only when it is a payment intent, linked to its transaction page unless
+	 * it could not be looked up, since that payment may not exist; the other order is linked when it is on this store.
+	 * The payment the order last recorded is named when it differs.
 	 *
 	 * @since 11.4.0
 	 *
@@ -1909,19 +1910,19 @@ class WooPaymentsOrderNoteService {
 	 */
 	public function format_operation_target_refusal( WC_Order $order, string $operation, string $intent_id, ?int $owner_order_id ): array {
 		$is_capture = 'capture' === $operation;
-		$payment    = $this->format_payment_reference( $intent_id );
+		$payment    = $this->format_payment_reference( $intent_id, true, null !== $owner_order_id );
 
 		if ( null === $owner_order_id ) {
 			$reason = $is_capture
 				/* translators: %s: a WooPayments payment, such as "payment pi_123", or "the value in Transaction ID". */
-				? __( 'WooPayments did not capture this payment, because it could not check %s with WooPayments.', 'woocommerce' )
+				? __( 'WooPayments did not capture this payment, because it could not look up %s.', 'woocommerce' )
 				/* translators: %s: a WooPayments payment, such as "payment pi_123", or "the value in Transaction ID". */
-				: __( 'WooPayments did not cancel the authorization, because it could not check %s with WooPayments.', 'woocommerce' );
+				: __( 'WooPayments did not cancel the authorization, because it could not look up %s.', 'woocommerce' );
 			$reason  = sprintf( esc_html( $reason ), $payment );
 			$action  = __( 'Check the transaction ID, then try again.', 'woocommerce' );
 			$message = $is_capture
-				? __( 'WooPayments did not capture this payment: it could not check the payment with WooPayments. Try again later.', 'woocommerce' )
-				: __( 'WooPayments did not cancel the authorization: it could not check the payment with WooPayments. Try again later.', 'woocommerce' );
+				? __( 'WooPayments did not capture this payment: it could not look up the payment. Check the transaction ID, then try again.', 'woocommerce' )
+				: __( 'WooPayments did not cancel the authorization: it could not look up the payment. Check the transaction ID, then try again.', 'woocommerce' );
 		} elseif ( 0 === $owner_order_id ) {
 			$reason = $is_capture
 				/* translators: %s: a WooPayments payment, such as "payment pi_123", or "the value in Transaction ID". */
@@ -1964,22 +1965,25 @@ class WooPaymentsOrderNoteService {
 	}
 
 	/**
-	 * Format a payment for a note: "payment" and its ID linked to its transaction page when it is a payment intent, else
-	 * "the value in Transaction ID", so a value a merchant typed is never printed.
+	 * Format a payment for a note: "payment" and its ID when it is a payment intent, the ID linked to its transaction
+	 * page unless `$with_link` is false; else "the value in Transaction ID", so a value a merchant typed is never printed.
 	 *
 	 * @param string $intent_id    Intent ID, or a typed value.
 	 * @param bool   $with_keyword Whether a payment intent is preceded by "payment".
+	 * @param bool   $with_link    Whether a payment intent is linked to its transaction page.
 	 * @return string HTML.
 	 */
-	private function format_payment_reference( string $intent_id, bool $with_keyword = true ): string {
+	private function format_payment_reference( string $intent_id, bool $with_keyword = true, bool $with_link = true ): string {
 		if ( 1 !== preg_match( self::PRINTABLE_INTENT_ID_PATTERN, $intent_id ) ) {
 			return esc_html__( 'the value in Transaction ID', 'woocommerce' );
 		}
 
-		$link = sprintf( '<a href="%1$s" target="_blank" rel="noopener noreferrer">%2$s</a>', esc_url( $this->transaction_url( $intent_id, '' ) ), esc_html( $intent_id ) );
+		$reference = $with_link
+			? sprintf( '<a href="%1$s" target="_blank" rel="noopener noreferrer">%2$s</a>', esc_url( $this->transaction_url( $intent_id, '' ) ), esc_html( $intent_id ) )
+			: esc_html( $intent_id );
 
 		/* translators: %s: the ID of a WooPayments payment. */
-		return $with_keyword ? sprintf( esc_html__( 'payment %s', 'woocommerce' ), $link ) : $link;
+		return $with_keyword ? sprintf( esc_html__( 'payment %s', 'woocommerce' ), $reference ) : $reference;
 	}
 
 	/**

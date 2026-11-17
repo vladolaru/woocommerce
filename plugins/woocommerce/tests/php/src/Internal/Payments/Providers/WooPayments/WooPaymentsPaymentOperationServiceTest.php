@@ -10741,7 +10741,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$messages = array(
 			'another order' => 'the transaction ID names a payment of another order. See the order notes.',
 			'no order'      => 'it could not confirm that the payment belongs to this order. See the order notes.',
-			'not read'      => 'it could not check the payment with WooPayments. Try again later.',
+			'not read'      => 'it could not look up the payment. Check the transaction ID, then try again.',
 		);
 		$data     = $outcome->get_data();
 		$this->assertSame(
@@ -10760,7 +10760,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			array(
 				'another order' => 'which belongs to order <a href="' . esc_url( OrderUtil::get_order_admin_edit_url( $other_order->get_id() ) ) . '">#' . $other_order->get_order_number() . '</a>, not to this order.',
 				'no order'      => 'because it could not confirm that',
-				'not read'      => 'because it could not check',
+				'not read'      => 'because it could not look up',
 			)[ $reason ],
 			$refusal_notes[0]
 		);

@@ -774,10 +774,11 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The note and message of an operation refused for its target name the reason, link each payment ID and the other order: $_dataName.
+	 * @testdox The note and message of an operation refused for its target name the reason, the payment IDs and the other order: $_dataName.
 	 *
-	 * A payment ID is printed only when it is a payment intent, so a value a merchant typed is never printed; the other
-	 * order is linked when it is on this store; the payment the order last recorded is named when it differs.
+	 * A payment ID is printed only when it is a payment intent, so a value a merchant typed is never printed; it is linked
+	 * unless it could not be looked up, since that payment may not exist; the other order is linked when it is on this
+	 * store; the payment the order last recorded is named, linked, when it differs.
 	 *
 	 * @dataProvider provide_operation_target_refusals
 	 *
@@ -785,7 +786,8 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 	 * @param string      $target           The intent the operation would have acted on.
 	 * @param string      $stored_intent_id The order's stored intent.
 	 * @param string|null $owner            'other order', 'missing order', 'none' or null for a failed read.
-	 * @param string      $expected_note    Expected note, with `%target%`, `%stored%` and `%order%` for the links.
+	 * @param string      $expected_note    Expected note, with `%target%`, `%stored%` and `%order%` for the links, and
+	 *                                      `%unlinked_target%` for the target printed without a link.
 	 * @param string      $expected_message Expected message.
 	 */
 	public function test_formats_operation_target_refusal( string $operation, string $target, string $stored_intent_id, ?string $owner, string $expected_note, string $expected_message ): void {
@@ -808,17 +810,23 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 		$refusal = $sut->format_operation_target_refusal( $order, $operation, $target, $owner_order_id );
 
 		$this->assertSame(
-			strtr(
-				$expected_note,
-				array(
-					'%target%' => $link( $target ),
-					'%stored%' => $link( $stored_intent_id ),
-					'%order%'  => '<a href="' . esc_url( OrderUtil::get_order_admin_edit_url( $other_order->get_id() ) ) . '">#' . $other_order->get_order_number() . '</a>',
-				)
+			array(
+				'note'    => strtr(
+					$expected_note,
+					array(
+						'%unlinked_target%' => $target,
+						'%target%'          => $link( $target ),
+						'%stored%'          => $link( $stored_intent_id ),
+						'%order%'           => '<a href="' . esc_url( OrderUtil::get_order_admin_edit_url( $other_order->get_id() ) ) . '">#' . $other_order->get_order_number() . '</a>',
+					)
+				),
+				'message' => $expected_message,
 			),
-			$refusal['note']
+			array(
+				'note'    => $refusal['note'],
+				'message' => $refusal['message'],
+			)
 		);
-		$this->assertSame( $expected_message, $refusal['message'] );
 	}
 
 	/**
@@ -865,16 +873,32 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 				'order_123',
 				'pi_A',
 				null,
-				'WooPayments did not capture this payment, because it could not check the value in Transaction ID with WooPayments. Nothing was charged. The payment this order last recorded is %stored%. Check the transaction ID, then try again.',
-				'WooPayments did not capture this payment: it could not check the payment with WooPayments. Try again later.',
+				'WooPayments did not capture this payment, because it could not look up the value in Transaction ID. Nothing was charged. The payment this order last recorded is %stored%. Check the transaction ID, then try again.',
+				'WooPayments did not capture this payment: it could not look up the payment. Check the transaction ID, then try again.',
+			),
+			'a payment that could not be read beside the stored payment, capture' => array(
+				'capture',
+				'pi_B',
+				'pi_A',
+				null,
+				'WooPayments did not capture this payment, because it could not look up payment %unlinked_target%. Nothing was charged. The payment this order last recorded is %stored%. Check the transaction ID, then try again.',
+				'WooPayments did not capture this payment: it could not look up the payment. Check the transaction ID, then try again.',
+			),
+			'a payment that could not be read beside the stored payment, cancel' => array(
+				'cancel',
+				'pi_B',
+				'pi_A',
+				null,
+				'WooPayments did not cancel the authorization, because it could not look up payment %unlinked_target%. Nothing was released. The payment this order last recorded is %stored%. Check the transaction ID, then try again.',
+				'WooPayments did not cancel the authorization: it could not look up the payment. Check the transaction ID, then try again.',
 			),
 			'a payment that could not be read beside no stored intent, cancel' => array(
 				'cancel',
 				'pi_B',
 				'',
 				null,
-				'WooPayments did not cancel the authorization, because it could not check payment %target% with WooPayments. Nothing was released. Check the transaction ID, then try again.',
-				'WooPayments did not cancel the authorization: it could not check the payment with WooPayments. Try again later.',
+				'WooPayments did not cancel the authorization, because it could not look up payment %unlinked_target%. Nothing was released. Check the transaction ID, then try again.',
+				'WooPayments did not cancel the authorization: it could not look up the payment. Check the transaction ID, then try again.',
 			),
 			'a payment beside a stored value that is not a payment, capture' => array(
 				'capture',

@@ -1246,7 +1246,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 			$rows[ "another order's payment is refused by the route's read alone, $action" ]     = array( $action, array( 'another order' ), 409, 'wcpay_intent_order_mismatch', '' );
 			$rows[ "the order's own payment is read twice and sent, $action" ]                   = array( $action, array( 'this order', 'this order' ), 200, '', '' );
 			$rows[ "a second read naming another order answers the refusal's message, $action" ] = array( $action, array( 'this order', 'another order' ), 502, $error, 'the transaction ID names a payment of another order. See the order notes.' );
-			$rows[ "a failed second read answers the refusal's message, $action" ]               = array( $action, array( 'this order', 'failure' ), 502, $error, 'it could not check the payment with WooPayments. Try again later.' );
+			$rows[ "a failed second read answers the refusal's message, $action" ]               = array( $action, array( 'this order', 'failure' ), 502, $error, 'it could not look up the payment. Check the transaction ID, then try again.' );
 		}
 
 		return $rows;
