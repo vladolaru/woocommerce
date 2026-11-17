@@ -6,6 +6,8 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Services;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\LocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\CartTotalsCurrencyService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\SelectedCurrencyPersistenceService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use WC_Unit_Test_Case;
@@ -100,7 +102,7 @@ class SelectedCurrencyPersistenceServiceTest extends WC_Unit_Test_Case {
 	public function test_preserves_selected_eur_when_unenabled_cad_is_requested(): void {
 		$session      = $this->create_session();
 		WC()->session = $session;
-		$sut          = new SelectedCurrencyPersistenceService( $this->create_state_builder_from_state( $this->create_storefront_state() ) );
+		$sut          = new SelectedCurrencyPersistenceService( $this->create_state_builder_from_state( $this->create_storefront_state() ), $this->create_cart_totals_currency_service() );
 
 		$this->assertTrue( $sut->update_selected_currency( 'EUR' ), 'Enabled EUR should be selected through the URL entry point.' );
 		$this->assertSame( 'EUR', WC()->session->get( 'wcpay_currency' ) );
@@ -172,11 +174,12 @@ class SelectedCurrencyPersistenceServiceTest extends WC_Unit_Test_Case {
 	 * @param int         $recalculations Cart calculations the update to GBP makes.
 	 */
 	public function test_recalculates_the_cart_only_on_a_real_currency_change( bool $logged_in, ?string $stored, int $recalculations ): void {
+		global $wp_actions;
 		$cart          = $this->create_cart();
 		WC()->cart     = $cart;
 		WC()->session  = $this->create_session( $logged_in ? null : $stored );
 		$state_builder = $this->create_state_builder( 'USD' );
-		$sut           = new SelectedCurrencyPersistenceService( $state_builder );
+		$sut           = new SelectedCurrencyPersistenceService( $state_builder, $this->create_cart_totals_currency_service() );
 		if ( $logged_in ) {
 			$user_id = self::factory()->user->create();
 			wp_set_current_user( $user_id );
@@ -185,7 +188,15 @@ class SelectedCurrencyPersistenceServiceTest extends WC_Unit_Test_Case {
 			}
 		}
 
-		$sut->update_selected_currency( 'GBP' );
+		// With the cart loaded, a change recalculates at once.
+		$loaded = $wp_actions['woocommerce_cart_loaded_from_session'] ?? null;
+		$wp_actions['woocommerce_cart_loaded_from_session'] = 1; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restored below.
+
+		try {
+			$sut->update_selected_currency( 'GBP' );
+		} finally {
+			$wp_actions['woocommerce_cart_loaded_from_session'] = $loaded; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restoring the count read above.
+		}
 
 		$this->assertSame( array( $recalculations, 1 ), array( $cart->calculate_totals_calls, $state_builder->reset_calls ) );
 	}
@@ -235,7 +246,7 @@ class SelectedCurrencyPersistenceServiceTest extends WC_Unit_Test_Case {
 		$user_id             = self::factory()->user->create();
 		$original_session    = WC()->session;
 		$state_builder       = $this->create_state_builder( 'USD' );
-		$sut                 = new SelectedCurrencyPersistenceService( $state_builder );
+		$sut                 = new SelectedCurrencyPersistenceService( $state_builder, $this->create_cart_totals_currency_service() );
 		$storage_snapshotter = static function () use ( $user_id, $option_values ): string {
 			$options = array();
 			foreach ( array_keys( $option_values ) as $option_name ) {
@@ -286,7 +297,19 @@ class SelectedCurrencyPersistenceServiceTest extends WC_Unit_Test_Case {
 	 * @return SelectedCurrencyPersistenceService
 	 */
 	private function create_service( string $selected_code ): SelectedCurrencyPersistenceService {
-		return new SelectedCurrencyPersistenceService( $this->create_state_builder( $selected_code ) );
+		return new SelectedCurrencyPersistenceService( $this->create_state_builder( $selected_code ), $this->create_cart_totals_currency_service() );
+	}
+
+	/**
+	 * Create the cart totals currency service of a new request.
+	 *
+	 * @return CartTotalsCurrencyService
+	 */
+	private function create_cart_totals_currency_service(): CartTotalsCurrencyService {
+		$service = new CartTotalsCurrencyService();
+		$service->init( wc_get_container()->get( RequestContext::class ) );
+
+		return $service;
 	}
 
 	/**

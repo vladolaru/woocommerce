@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\IntegrationsController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySelectedCurrencyController;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\CartTotalsCurrencyService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\GeolocationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
@@ -52,6 +53,11 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 		'init',
 		'rest_pre_dispatch',
 		'wp_footer',
+		'woocommerce_after_calculate_totals',
+		'woocommerce_before_calculate_totals',
+		'woocommerce_cart_emptied',
+		'woocommerce_cart_loaded_from_session',
+		'woocommerce_cart_updated',
 		'woocommerce_created_customer',
 		'woocommerce_edit_account_form',
 		'woocommerce_init',
@@ -142,16 +148,21 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 			'core owns'          => array(
 				MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 				array(
-					'init'                               => array(
+					'init'                                 => array(
 						'handle_geolocation_init' => array( 12, 1 ),
 						'handle_init'             => array( 11, 1 ),
 						'handle_simulation_init'  => array( 13, 1 ),
 					),
-					'woocommerce_created_customer'       => array( 'handle_woocommerce_created_customer' => array( 10, 1 ) ),
-					'woocommerce_edit_account_form'      => array( 'handle_woocommerce_edit_account_form' => array( 10, 1 ) ),
-					'woocommerce_load_cart_from_session' => array( 'handle_woocommerce_load_cart_from_session' => array( 10, 0 ) ),
-					'woocommerce_rest_prepare_customer'  => array( 'handle_woocommerce_rest_prepare_customer' => array( 10, 3 ) ),
-					'woocommerce_save_account_details'   => array( 'handle_woocommerce_save_account_details' => array( 10, 1 ) ),
+					'woocommerce_after_calculate_totals'   => array( 'handle_woocommerce_after_calculate_totals' => array( PHP_INT_MAX, 1 ) ),
+					'woocommerce_before_calculate_totals'  => array( 'handle_woocommerce_before_calculate_totals' => array( PHP_INT_MIN, 1 ) ),
+					'woocommerce_cart_emptied'             => array( 'handle_woocommerce_cart_emptied' => array( 10, 0 ) ),
+					'woocommerce_cart_loaded_from_session' => array( 'handle_woocommerce_cart_loaded_from_session' => array( PHP_INT_MAX, 0 ) ),
+					'woocommerce_cart_updated'             => array( 'handle_woocommerce_cart_updated' => array( PHP_INT_MAX, 0 ) ),
+					'woocommerce_created_customer'         => array( 'handle_woocommerce_created_customer' => array( 10, 1 ) ),
+					'woocommerce_edit_account_form'        => array( 'handle_woocommerce_edit_account_form' => array( 10, 1 ) ),
+					'woocommerce_load_cart_from_session'   => array( 'handle_woocommerce_load_cart_from_session' => array( 10, 0 ) ),
+					'woocommerce_rest_prepare_customer'    => array( 'handle_woocommerce_rest_prepare_customer' => array( 10, 3 ) ),
+					'woocommerce_save_account_details'     => array( 'handle_woocommerce_save_account_details' => array( 10, 1 ) ),
 				),
 			),
 			'the extension owns' => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, array() ),
@@ -159,7 +170,10 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register only account hooks in blocked request context.
+	 * @testdox Should register only the account hooks and the cart totals stamp in blocked request context.
+	 *
+	 * There the currency in effect is not the selection, so a recalculation would save totals in it under the selected
+	 * currency; the stamp still records whatever is calculated (client 11.3.0 `includes/multi-currency/MultiCurrency.php:352-368`).
 	 */
 	public function test_registers_only_account_hooks_in_blocked_request_context(): void {
 		$service = $this->create_persistence_service();
@@ -179,6 +193,8 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 		$this->assertFalse( has_action( 'woocommerce_created_customer', array( $sut, 'handle_woocommerce_created_customer' ) ) );
 		$this->assertSame( 10, has_action( 'woocommerce_edit_account_form', array( $sut, 'handle_woocommerce_edit_account_form' ) ) );
 		$this->assertSame( 10, has_action( 'woocommerce_save_account_details', array( $sut, 'handle_woocommerce_save_account_details' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_cart_loaded_from_session', array( $sut, 'handle_woocommerce_cart_loaded_from_session' ) ) );
+		$this->assertSame( PHP_INT_MAX, has_action( 'woocommerce_after_calculate_totals', array( $sut, 'handle_woocommerce_after_calculate_totals' ) ) );
 	}
 
 	/**
@@ -200,6 +216,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 11, has_action( 'init', array( $sut, 'handle_init' ) ) );
 		$this->assertSame( 12, has_action( 'init', array( $sut, 'handle_geolocation_init' ) ) );
 		$this->assertSame( 10, has_action( 'woocommerce_created_customer', array( $sut, 'handle_woocommerce_created_customer' ) ) );
+		$this->assertSame( PHP_INT_MAX, has_action( 'woocommerce_cart_loaded_from_session', array( $sut, 'handle_woocommerce_cart_loaded_from_session' ) ) );
 	}
 
 	/**
@@ -423,17 +440,19 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A currency link recalculates the cart before the cart is used when it names an enabled currency, the selected one included: $_dataName.
+	 * @testdox A currency link naming an enabled currency, the selected one included, recalculates stale totals when the cart loads on a page view: $_dataName.
 	 *
-	 * Client 11.3.0 `update_selected_currency_by_url()` asks for the recalculation for any enabled code while the cart has
-	 * not loaded (`includes/multi-currency/MultiCurrency.php:1149-1159`), on top of the one a real change makes.
+	 * Client 11.3.0 `update_selected_currency_by_url()` marks any enabled code as selected before the cart loads
+	 * (`includes/multi-currency/MultiCurrency.php:1149-1159`), so the page view's cart load recalculates totals stamped in
+	 * another currency and leaves the others alone (`:1423-1453`; tests `tests/unit/multi-currency/test-class-multi-currency.php:1025-1072`).
 	 *
 	 * @dataProvider provide_currency_links
 	 *
 	 * @param string $link           The `currency` query parameter; the customer has EUR stored, and USD and EUR are enabled.
-	 * @param int    $recalculations Cart calculations once WordPress has loaded.
+	 * @param string $stamp          Currency the saved totals are stamped with; this request calculates in USD.
+	 * @param int    $recalculations Cart calculations when the cart loads.
 	 */
-	public function test_a_currency_link_recalculates_the_cart_for_an_enabled_currency( string $link, int $recalculations ): void {
+	public function test_a_currency_link_recalculates_stale_totals_when_the_cart_loads( string $link, string $stamp, int $recalculations ): void {
 		global $wp_actions;
 		update_option( 'woocommerce_currency', 'USD' );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
@@ -442,28 +461,37 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 		$customer_id = self::factory()->user->create( array( 'role' => 'customer' ) );
 		wp_set_current_user( $customer_id );
 		update_user_meta( $customer_id, 'wcpay_currency', 'EUR' );
-		$cart             = $this->create_counting_cart();
-		$service          = wc_get_container()->get( ServiceFactory::class )->create_selected_currency_persistence_service();
-		$sut              = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, $this->create_request_context( true, false ) );
+		// A request starts with no currency selected before its cart loads: no earlier test's selection carries over.
+		wc_get_container()->reset_all_resolved();
+		$service = wc_get_container()->get( ServiceFactory::class )->create_selected_currency_persistence_service();
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, $this->create_request_context( true, false ) );
+		$sut->register();
+		WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product()->get_id(), 1 );
+		WC()->cart->calculate_totals();
+		WC()->session->set( CartTotalsCurrencyService::CURRENCY_SESSION_KEY, $stamp );
 		$_GET['currency'] = $link;
-		// The link is read on init, before WordPress has loaded; only what the link schedules runs on wp_loaded here.
-		remove_all_actions( 'wp_loaded' );
-		$loaded = $wp_actions['wp_loaded'] ?? null;
-		unset( $wp_actions['wp_loaded'] );
-
-		try {
-			WC()->cart = $cart;
-			try {
-				$sut->handle_init();
-			} finally {
-				$wp_actions['wp_loaded'] = $loaded; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restoring the count read above.
-			}
-			do_action( 'wp_loaded' ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
-		} finally {
-			WC()->cart = $this->original_cart;
+		// The link is read on init, before the cart loads.
+		$actions  = array( 'wp_loaded', 'woocommerce_cart_loaded_from_session' );
+		$original = array_intersect_key( $wp_actions, array_flip( $actions ) );
+		foreach ( $actions as $action ) {
+			unset( $wp_actions[ $action ] );
 		}
 
-		$this->assertSame( $recalculations, $cart->calculate_totals_calls );
+		try {
+			$sut->handle_init();
+		} finally {
+			foreach ( $original as $action => $count ) {
+				$wp_actions[ $action ] = $count; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restoring the counts read above.
+			}
+		}
+		$calculations = 0;
+		$count        = static function () use ( &$calculations ): void {
+			++$calculations;
+		};
+		add_action( 'woocommerce_after_calculate_totals', $count );
+		$sut->handle_woocommerce_cart_loaded_from_session();
+
+		$this->assertSame( $recalculations, $calculations );
 	}
 
 	/**
@@ -473,9 +501,10 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function provide_currency_links(): array {
 		return array(
-			'the selected currency'    => array( 'eur', 1 ),
-			'another enabled currency' => array( 'USD', 1 ),
-			'a currency not enabled'   => array( 'GBP', 0 ),
+			'the selected currency, totals stamped as calculated'       => array( 'eur', 'USD', 0 ),
+			'the selected currency, totals stamped in another currency' => array( 'eur', 'JPY', 1 ),
+			'another enabled currency, totals stamped as calculated'    => array( 'USD', 'USD', 0 ),
+			'a currency not enabled, totals stamped in another currency' => array( 'GBP', 'JPY', 0 ),
 		);
 	}
 
@@ -1180,7 +1209,8 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 				)
 			),
 			wc_get_container()->get( IntegrationsController::class ),
-			$request_context ?? wc_get_container()->get( RequestContext::class )
+			$request_context ?? wc_get_container()->get( RequestContext::class ),
+			wc_get_container()->get( CartTotalsCurrencyService::class )
 		);
 
 		return $controller;
@@ -1348,6 +1378,16 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 				$this->persist_flags[]      = $persist_change;
 
 				return true;
+			}
+
+			/**
+			 * Persist a currency named by a link, recorded as any other update.
+			 *
+			 * @param string $currency_code Currency code.
+			 * @return bool
+			 */
+			public function update_selected_currency_by_url( string $currency_code ): bool {
+				return $this->update_selected_currency( $currency_code );
 			}
 
 			/**
@@ -1569,34 +1609,6 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 			 */
 			public function is_store_api_request(): bool {
 				return $this->is_store_api_request;
-			}
-		};
-	}
-
-	/**
-	 * Create a cart that counts its calculations and registers no cart hooks.
-	 *
-	 * @return \WC_Cart&object{calculate_totals_calls: int}
-	 */
-	private function create_counting_cart(): \WC_Cart {
-		return new class() extends \WC_Cart {
-			/**
-			 * Calculate totals call count.
-			 *
-			 * @var int
-			 */
-			public int $calculate_totals_calls = 0;
-
-			/**
-			 * Skip the parent constructor so the double registers no cart hooks.
-			 */
-			public function __construct() {}
-
-			/**
-			 * Count a calculation.
-			 */
-			public function calculate_totals(): void {
-				++$this->calculate_totals_calls;
 			}
 		};
 	}

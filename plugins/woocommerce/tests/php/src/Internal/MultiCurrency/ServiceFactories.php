@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\CartTotalsCurrencyService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
@@ -23,7 +24,7 @@ final class ServiceFactories {
 	public static function with( TestCase $test, array $services ): ServiceFactory {
 		$services = array_filter( $services, static fn( $service ): bool => null !== $service );
 		$factory  = $test->getMockBuilder( ServiceFactory::class )->onlyMethods( array_keys( $services ) )->getMock();
-		$factory->init( wc_get_container()->get( StateBuilderFactory::class ) );
+		$factory->init( wc_get_container()->get( StateBuilderFactory::class ), wc_get_container()->get( CartTotalsCurrencyService::class ) );
 		foreach ( $services as $creator => $service ) {
 			$factory->method( $creator )->willReturn( $service );
 		}

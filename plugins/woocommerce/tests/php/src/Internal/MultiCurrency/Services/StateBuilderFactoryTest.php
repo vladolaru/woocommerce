@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendCurrencie
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendPricesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySelectedCurrencyController;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\CartTotalsCurrencyService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\DatabaseCache;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\RateService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
@@ -273,7 +274,7 @@ class StateBuilderFactoryTest extends WC_Unit_Test_Case {
 		$factory             = wc_get_container()->get( StateBuilderFactory::class );
 		$frontend_builder    = $factory->get_state_builder();
 		$persistence_builder = $factory->get_state_builder();
-		$persistence         = new SelectedCurrencyPersistenceService( $persistence_builder );
+		$persistence         = new SelectedCurrencyPersistenceService( $persistence_builder, wc_get_container()->get( CartTotalsCurrencyService::class ) );
 
 		$this->assertSame( 'USD', $frontend_builder->build()->get_selected_currency()->get_code() );
 		$this->assertTrue( $persistence->update_selected_currency( 'GBP' ) );
@@ -414,7 +415,7 @@ class StateBuilderFactoryTest extends WC_Unit_Test_Case {
 
 		return array(
 			$frontend_builder,
-			new SelectedCurrencyPersistenceService( $persistence_builder ),
+			new SelectedCurrencyPersistenceService( $persistence_builder, wc_get_container()->get( CartTotalsCurrencyService::class ) ),
 		);
 	}
 
@@ -430,7 +431,8 @@ class StateBuilderFactoryTest extends WC_Unit_Test_Case {
 			$this->create_core_owning_arbiter(),
 			ServiceFactories::with( $this, array( 'create_selected_currency_persistence_service' => $persistence ) ),
 			wc_get_container()->get( IntegrationsController::class ),
-			$this->create_store_api_request_context()
+			$this->create_store_api_request_context(),
+			wc_get_container()->get( CartTotalsCurrencyService::class )
 		);
 
 		return $controller;

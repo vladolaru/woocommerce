@@ -26,14 +26,23 @@ class ServiceFactory {
 	private StateBuilderFactory $state_builder_factory;
 
 	/**
+	 * Cart totals currency service, shared by the request.
+	 *
+	 * @var CartTotalsCurrencyService
+	 */
+	private CartTotalsCurrencyService $cart_totals_currency;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param StateBuilderFactory $state_builder_factory State builder factory.
+	 * @param StateBuilderFactory       $state_builder_factory State builder factory.
+	 * @param CartTotalsCurrencyService $cart_totals_currency  Cart totals currency service.
 	 */
-	final public function init( StateBuilderFactory $state_builder_factory ): void {
+	final public function init( StateBuilderFactory $state_builder_factory, CartTotalsCurrencyService $cart_totals_currency ): void {
 		$this->state_builder_factory = $state_builder_factory;
+		$this->cart_totals_currency  = $cart_totals_currency;
 	}
 
 	/**
@@ -78,7 +87,7 @@ class ServiceFactory {
 	 * @return SelectedCurrencyPersistenceService
 	 */
 	public function create_selected_currency_persistence_service(): SelectedCurrencyPersistenceService {
-		return new SelectedCurrencyPersistenceService( $this->state_builder_factory->get_state_builder() );
+		return new SelectedCurrencyPersistenceService( $this->state_builder_factory->get_state_builder(), $this->cart_totals_currency );
 	}
 
 	/**

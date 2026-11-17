@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\CartTotalsCurrencyService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\DisplayService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\GeolocationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
@@ -17,8 +18,8 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\IntegrationsController;
 
 /**
- * Sets the shopper's selected currency from the URL, geolocation, the My Account field or checkout, and runs the settings
- * Preview simulation.
+ * Sets the shopper's selected currency from the URL, geolocation, the My Account field or checkout, runs the settings
+ * Preview simulation, and keeps the cart's saved totals from being used in another currency.
  *
  * @since 11.0.0
  * @internal
@@ -87,6 +88,13 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	private IntegrationsController $integrations_controller;
 
 	/**
+	 * Cart totals currency service.
+	 *
+	 * @var CartTotalsCurrencyService
+	 */
+	private CartTotalsCurrencyService $cart_totals_currency;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -95,12 +103,14 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	 * @param ServiceFactory              $service_factory          Multi-Currency service factory.
 	 * @param IntegrationsController      $integrations_controller Integrations controller.
 	 * @param RequestContext              $request_context          Request context.
+	 * @param CartTotalsCurrencyService   $cart_totals_currency     Cart totals currency service.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, ServiceFactory $service_factory, IntegrationsController $integrations_controller, RequestContext $request_context ): void {
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, ServiceFactory $service_factory, IntegrationsController $integrations_controller, RequestContext $request_context, CartTotalsCurrencyService $cart_totals_currency ): void {
 		$this->arbiter                 = $arbiter;
 		$this->service_factory         = $service_factory;
 		$this->integrations_controller = $integrations_controller;
 		$this->request_context         = $request_context;
+		$this->cart_totals_currency    = $cart_totals_currency;
 	}
 
 	/**
@@ -112,6 +122,11 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 		}
 
 		add_filter( 'woocommerce_rest_prepare_customer', array( $this, 'handle_woocommerce_rest_prepare_customer' ), 10, 3 );
+		// The stamp runs wherever totals are calculated: last, after WC_Cart_Session::set_session() (priority 1000) saved them.
+		add_action( 'woocommerce_before_calculate_totals', array( $this, 'handle_woocommerce_before_calculate_totals' ), PHP_INT_MIN );
+		add_action( 'woocommerce_cart_updated', array( $this, 'handle_woocommerce_cart_updated' ), PHP_INT_MAX, 0 );
+		add_action( 'woocommerce_after_calculate_totals', array( $this, 'handle_woocommerce_after_calculate_totals' ), PHP_INT_MAX );
+		add_action( 'woocommerce_cart_emptied', array( $this, 'handle_woocommerce_cart_emptied' ), 10, 0 );
 
 		if ( $this->request_context->should_register_selected_currency_entry_hooks() ) {
 			if ( $this->request_context->is_store_api_request() ) {
@@ -119,6 +134,9 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 			} else {
 				add_action( 'woocommerce_load_cart_from_session', array( $this, 'handle_woocommerce_load_cart_from_session' ), 10, 0 );
 			}
+
+			// Only here does the currency in effect reflect the selection; last, after other callbacks changed the loaded cart.
+			add_action( 'woocommerce_cart_loaded_from_session', array( $this, 'handle_woocommerce_cart_loaded_from_session' ), PHP_INT_MAX, 0 );
 
 			add_action( 'init', array( $this, 'handle_init' ), 11 );
 			add_action( 'init', array( $this, 'handle_geolocation_init' ), 12 );
@@ -159,6 +177,55 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 		$this->prepare_selected_currency_state_for_session( true );
 
 		return $result;
+	}
+
+	/**
+	 * Start tracking the main cart's totals saved during its calculation.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $cart The cart about to be calculated.
+	 */
+	public function handle_woocommerce_before_calculate_totals( $cart = null ): void {
+		$this->cart_totals_currency->start_cart_totals_calculation( $cart );
+	}
+
+	/**
+	 * Note the totals WooCommerce saved to the session.
+	 *
+	 * @internal
+	 */
+	public function handle_woocommerce_cart_updated(): void {
+		$this->cart_totals_currency->note_cart_totals_saved();
+	}
+
+	/**
+	 * Stamp the main cart's saved totals with the currency they were calculated in.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $cart The cart whose totals were calculated.
+	 */
+	public function handle_woocommerce_after_calculate_totals( $cart = null ): void {
+		$this->cart_totals_currency->record_cart_totals_currency( $cart );
+	}
+
+	/**
+	 * Remove the stamp of an emptied cart, so it does not keep an otherwise empty session alive.
+	 *
+	 * @internal
+	 */
+	public function handle_woocommerce_cart_emptied(): void {
+		$this->cart_totals_currency->clear_cart_totals_currency();
+	}
+
+	/**
+	 * Recalculate a loaded cart whose saved totals were calculated in another currency.
+	 *
+	 * @internal
+	 */
+	public function handle_woocommerce_cart_loaded_from_session(): void {
+		$this->cart_totals_currency->maybe_recalculate_cart_for_currency();
 	}
 
 	/**

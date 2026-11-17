@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySelectedCurrencyController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyStorefrontIntegrationController;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\CartTotalsCurrencyService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\DisplayService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\GeolocationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\LocalizationService;
@@ -1004,7 +1005,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	private function probe_mc_notice(): void {
 		$fixture     = $this->build_multi_currency_fixture();
 		$controller  = new MultiCurrencySelectedCurrencyController();
-		$persistence = new SelectedCurrencyPersistenceService( $fixture['builder'] );
+		$persistence = new SelectedCurrencyPersistenceService( $fixture['builder'], wc_get_container()->get( CartTotalsCurrencyService::class ) );
 		$controller->init(
 			wc_get_container()->get( MultiCurrencyRuntimeArbiter::class ),
 			ServiceFactories::with(
@@ -1015,7 +1016,8 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 				)
 			),
 			wc_get_container()->get( IntegrationsController::class ),
-			wc_get_container()->get( RequestContext::class )
+			wc_get_container()->get( RequestContext::class ),
+			wc_get_container()->get( CartTotalsCurrencyService::class )
 		);
 		$controller->handle_wp_footer();
 	}

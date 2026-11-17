@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
 /**
  * Stores the shopper's selected currency under the `wcpay_currency` key, in user meta for a logged-in customer or in the
- * session for a guest, and recalculates the cart when the stored currency changes.
+ * session for a guest, and has the cart recalculated when the stored currency changes.
  *
  * @since 11.0.0
  * @internal
@@ -24,14 +24,23 @@ class SelectedCurrencyPersistenceService {
 	private StateBuilder $state_builder;
 
 	/**
+	 * Cart totals currency service.
+	 *
+	 * @var CartTotalsCurrencyService
+	 */
+	private CartTotalsCurrencyService $cart_totals_currency;
+
+	/**
 	 * Constructor.
 	 *
-	 * @param StateBuilder $state_builder State builder.
+	 * @param StateBuilder              $state_builder        State builder.
+	 * @param CartTotalsCurrencyService $cart_totals_currency Cart totals currency service.
 	 *
 	 * @since 11.0.0
 	 */
-	public function __construct( StateBuilder $state_builder ) {
-		$this->state_builder = $state_builder;
+	public function __construct( StateBuilder $state_builder, CartTotalsCurrencyService $cart_totals_currency ) {
+		$this->state_builder        = $state_builder;
+		$this->cart_totals_currency = $cart_totals_currency;
 	}
 
 	/**
@@ -70,7 +79,7 @@ class SelectedCurrencyPersistenceService {
 
 		$this->state_builder->reset();
 		if ( $currency_changed ) {
-			$this->recalculate_cart_or_schedule();
+			$this->cart_totals_currency->recalculate_for_currency_change();
 		}
 
 		return true;
@@ -79,8 +88,8 @@ class SelectedCurrencyPersistenceService {
 	/**
 	 * Persist a currency named by the `currency` URL parameter.
 	 *
-	 * A link read before WordPress has loaded recalculates the cart on `wp_loaded` for any enabled code, the stored one
-	 * included, as client 11.3.0 `update_selected_currency_by_url()` does while the cart has not loaded
+	 * For any enabled code the link names, the stored one included, totals saved in another currency are recalculated when
+	 * the cart loads later in the request, on a page view too, as client 11.3.0 `update_selected_currency_by_url()` does
 	 * (`includes/multi-currency/MultiCurrency.php:1149-1159`).
 	 *
 	 * @param string $currency_code Three-letter currency code.
@@ -91,9 +100,7 @@ class SelectedCurrencyPersistenceService {
 			return false;
 		}
 
-		if ( ! did_action( 'wp_loaded' ) ) {
-			$this->schedule_cart_recalculation();
-		}
+		$this->cart_totals_currency->recalculate_stale_totals_on_cart_load();
 
 		return true;
 	}
@@ -183,17 +190,6 @@ class SelectedCurrencyPersistenceService {
 	}
 
 	/**
-	 * Recalculate cart totals.
-	 *
-	 * @internal
-	 */
-	public function recalculate_cart(): void {
-		if ( WC()->cart instanceof \WC_Cart ) {
-			WC()->cart->calculate_totals();
-		}
-	}
-
-	/**
 	 * Persist the selected guest currency to session.
 	 *
 	 * @param string $currency_code  Currency code.
@@ -232,27 +228,6 @@ class SelectedCurrencyPersistenceService {
 		$currency_code = WC()->session->get( StateBuilder::CURRENCY_STORAGE_KEY );
 
 		return is_string( $currency_code ) ? $currency_code : '';
-	}
-
-	/**
-	 * Recalculate cart totals now or after WordPress finishes loading.
-	 */
-	private function recalculate_cart_or_schedule(): void {
-		if ( did_action( 'wp_loaded' ) ) {
-			$this->recalculate_cart();
-			return;
-		}
-
-		$this->schedule_cart_recalculation();
-	}
-
-	/**
-	 * Recalculate cart totals once WordPress finishes loading, once per request.
-	 */
-	private function schedule_cart_recalculation(): void {
-		if ( ! has_action( 'wp_loaded', array( $this, 'recalculate_cart' ) ) ) {
-			add_action( 'wp_loaded', array( $this, 'recalculate_cart' ) );
-		}
 	}
 
 	/**
