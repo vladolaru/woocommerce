@@ -357,7 +357,8 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * The extension turns core's cart session hooks and the persistent cart off only on that page (client
 	 * class-wc-payments-payment-request-session.php:47-58, :110-114), so an empty_cart() that also clears the saved copy, as
-	 * wc_clear_cart_after_payment() does, keeps both there. Any other address carrying the marker keeps core's hooks.
+	 * wc_clear_cart_after_payment() does, keeps both there. Any other address carrying the marker keeps core's hooks, and,
+	 * as on the extension, a renamed endpoint is not recognised.
 	 *
 	 * @dataProvider provide_marked_addresses
 	 *
@@ -397,9 +398,10 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function provide_marked_addresses(): array {
 		return array(
-			'order-received page'                      => array( '/checkout/order-received/1/?key=wc_order_key&woopayments-custom-session=1', null, true ),
-			'order-received page under a renamed slug' => array( '/checkout/thank-you/1/?key=wc_order_key&woopayments-custom-session=1', 'thank-you', true ),
-			'cart page'                                => array( '/cart/?woopayments-custom-session=1', null, false ),
+			'order-received page'                         => array( '/checkout/order-received/1/?key=wc_order_key&woopayments-custom-session=1', null, true ),
+			'renamed slug thank-you: not matched'         => array( '/checkout/thank-you/1/?key=wc_order_key&woopayments-custom-session=1', 'thank-you', false ),
+			'cart page'                                   => array( '/cart/?woopayments-custom-session=1', null, false ),
+			'cart page with the endpoint set to payments' => array( '/cart/?woopayments-custom-session=1', 'payments', false ),
 		);
 	}
 

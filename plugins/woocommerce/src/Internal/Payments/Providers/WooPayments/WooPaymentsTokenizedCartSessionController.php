@@ -342,8 +342,9 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	/**
 	 * Tell whether the current request is the order-received page a tokenized product cart session returns to.
 	 *
-	 * Matches the store's order-received endpoint slug, falling back to the default slug when the setting is empty, as
-	 * wc_get_endpoint_url() does (client class-wc-payments-payment-request-session.php:110-114 matches the default slug only).
+	 * Checks the marker, then the literal default order-received slug in the address, as the client does
+	 * (class-wc-payments-payment-request-session.php:110-114). A store's configured slug is not used: it could match inside
+	 * the marker or a query value. A renamed or filtered endpoint is not recognised, as on the client.
 	 *
 	 * @return bool
 	 */
@@ -353,8 +354,6 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 			return false;
 		}
 
-		$endpoint = get_option( 'woocommerce_checkout_order_received_endpoint', 'order-received' );
-
-		return false !== strpos( $request_uri, is_string( $endpoint ) && '' !== $endpoint ? $endpoint : 'order-received' );
+		return false !== strpos( $request_uri, 'order-received' );
 	}
 }
