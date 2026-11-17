@@ -213,6 +213,159 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should pay a signup order again in its currency, read from the session cart, with switching off.
+	 *
+	 * WooCommerce Subscriptions 9.4.1 rebuilds a failed or pending signup order's cart with items keyed
+	 * `subscription_initial_payment` holding the `order_id`. Client 11.3.0
+	 * `tests/unit/multi-currency/compatibility/test-class-woocommerce-subscriptions.php:479-506` (the order's currency) and
+	 * `:1247-1255` (switching disabled).
+	 */
+	public function test_pays_a_signup_order_again_in_its_currency(): void {
+		$order_id = $this->create_order_in_currency( 'EUR' );
+		$sut      = $this->create_real_controller();
+		WC()->cart->set_cart_contents( array() );
+		WC()->session->set( 'cart', array( 'abc123' => $this->get_initial_payment_cart_item( $order_id ) ) );
+
+		$this->assertSame( 'EUR', $sut->override_selected_currency( false ) );
+		$this->assertTrue( $sut->should_disable_currency_switching( false ) );
+	}
+
+	/**
+	 * @testdox Should keep a signup order paid again in its currency after the merchant disabled it.
+	 *
+	 * Modelled on the renewal row above: the order's currency is marked as an existing order's, so GBP at its manual 0.73
+	 * is selected. Client 11.3.0 returns the bare code here and falls back to the store currency.
+	 */
+	public function test_keeps_a_signup_order_in_a_disabled_currency(): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'JPY' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_jpy', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_jpy', '150' );
+		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_gbp', '0.73' );
+		$sut = $this->create_controller();
+		$sut->set_initial_payment_cart_item( $this->create_order_in_currency( 'GBP' ) );
+		$sut->register();
+
+		$selected = wc_get_container()->get( StateBuilderFactory::class )->get_state_builder()->build()->get_selected_currency();
+
+		$this->assertSame( array( 'GBP', 0.73 ), array( $selected->get_code(), $selected->get_rate() ) );
+	}
+
+	/**
+	 * @testdox Should load the signup order once for every read in a request.
+	 *
+	 * The selected currency is asked on every price read, so the order's currency is kept per order (client 11.3.0
+	 * `tests/unit/multi-currency/compatibility/test-class-woocommerce-subscriptions.php:479-506`).
+	 */
+	public function test_loads_the_signup_order_once_per_request(): void {
+		$order_id = $this->create_order_in_currency( 'EUR' );
+		$sut      = $this->create_controller();
+		$sut->set_initial_payment_cart_item( $order_id );
+		$loads = 0;
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'wc_get_order' => static function ( $id ) use ( &$loads ) {
+					++$loads;
+					return wc_get_order( $id );
+				},
+			)
+		);
+
+		$this->assertSame( array( 'EUR', 'EUR' ), array( $sut->override_selected_currency( false ), $sut->override_selected_currency( false ) ) );
+		$this->assertSame( 1, $loads );
+	}
+
+	/**
+	 * @testdox Should skip a read nested in the signup order's load, and read again after it.
+	 *
+	 * Loading the order reads the selected currency again; that read returns what it was given (client 11.3.0
+	 * `tests/unit/multi-currency/compatibility/test-class-woocommerce-subscriptions.php:510-537`).
+	 */
+	public function test_skips_a_read_nested_in_the_signup_order_load(): void {
+		$order_id = $this->create_order_in_currency( 'EUR' );
+		$sut      = $this->create_controller();
+		$sut->set_initial_payment_cart_item( $order_id );
+		$nested = array();
+		add_filter(
+			'woocommerce_order_class',
+			static function ( $classname ) use ( $sut, &$nested ) {
+				if ( array() === $nested ) {
+					$nested[] = $sut->override_selected_currency( false );
+				}
+
+				return $classname;
+			}
+		);
+		wp_cache_flush();
+
+		$this->assertSame( 'EUR', $sut->override_selected_currency( false ) );
+		$this->assertSame( array( false ), $nested );
+		$this->assertSame( 'EUR', $sut->override_selected_currency( false ) );
+	}
+
+	/**
+	 * @testdox Should release the override after a signup order load throws.
+	 */
+	public function test_releases_the_override_after_a_signup_order_load_throws(): void {
+		$sut = $this->create_controller();
+		$sut->set_initial_payment_cart_item( $this->create_order_in_currency( 'EUR' ) );
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'wc_get_order' => static function () {
+					throw new \Exception( 'Order read failed.' );
+				},
+			)
+		);
+
+		try {
+			$sut->override_selected_currency( false );
+			$this->fail( 'The order read was expected to throw.' );
+		} catch ( \Exception $e ) {
+			$this->assertSame( 'Order read failed.', $e->getMessage() );
+		}
+		$this->reset_legacy_proxy_mocks();
+
+		$this->assertSame( 'EUR', $sut->override_selected_currency( false ) );
+	}
+
+	/**
+	 * @testdox Should leave the selection alone when the cart pays no readable signup order: $_dataName.
+	 * @dataProvider provide_carts_without_a_signup_order_currency
+	 *
+	 * Client 11.3.0 `tests/unit/multi-currency/compatibility/test-class-woocommerce-subscriptions.php:539-546` (a missing
+	 * order); an incoming currency and a renewal item are asked first (client
+	 * `includes/multi-currency/Compatibility/WooCommerceSubscriptions.php:205-233`).
+	 *
+	 * @param string       $cart     Cart: 'missing order', 'renewal first' or 'ordinary'.
+	 * @param string|false $incoming Currency the filter receives.
+	 * @param string|false $expected Currency the override returns.
+	 * @param bool         $switches Whether the switcher stays on.
+	 */
+	public function test_leaves_the_selection_without_a_signup_order_currency( string $cart, $incoming, $expected, bool $switches ): void {
+		$sut = $this->create_controller();
+		if ( 'ordinary' !== $cart ) {
+			$sut->set_initial_payment_cart_item( 'missing order' === $cart ? PHP_INT_MAX : $this->create_order_in_currency( 'EUR' ) );
+		}
+		if ( 'renewal first' === $cart ) {
+			$sut->set_subscription_cart_item( 'renewal', $this->create_subscription( 'GBP' ) );
+		}
+
+		$this->assertSame( $expected, $sut->override_selected_currency( $incoming ) );
+		$this->assertSame( ! $switches, $sut->should_disable_currency_switching( false ) );
+	}
+
+	/** @return array<string,array{string,string|false,string|false,bool}> */
+	public static function provide_carts_without_a_signup_order_currency(): array {
+		return array(
+			'a missing signup order'          => array( 'missing order', false, false, false ),
+			'an incoming currency'            => array( 'signup order', 'JPY', 'JPY', false ),
+			'a renewal item before the order' => array( 'renewal first', false, 'GBP', false ),
+			'an ordinary cart'                => array( 'ordinary', false, false, true ),
+		);
+	}
+
+	/**
 	 * @testdox Should override selected currency while a My Account subscription total is formatting.
 	 */
 	public function test_overrides_selected_currency_while_my_account_subscription_total_is_formatting(): void {
@@ -1108,6 +1261,20 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 			}
 
 			/**
+			 * Set a cart item paying a signup order again, as WooCommerce Subscriptions 9.4.1 adds it.
+			 *
+			 * @param int $order_id Signup order ID.
+			 */
+			public function set_initial_payment_cart_item( int $order_id ): void {
+				$this->cart_items['initial_payment'] = array(
+					'subscription_initial_payment' => array( 'order_id' => $order_id ),
+					'product_id'                   => 0,
+					'variation_id'                 => 0,
+				);
+				$this->clear_subscription_type_cache();
+			}
+
+			/**
 			 * Set a deterministic switch request subscription.
 			 *
 			 * @param object $subscription Subscription object.
@@ -1178,13 +1345,59 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			new LegacyProxy(),
+			wc_get_container()->get( LegacyProxy::class ),
 			ServiceFactories::state_builder( $this, $this->create_state_builder( $has_additional_currencies_enabled ) ),
 			ServiceFactories::with( $this, array( 'create_price_converter' => $this->create_price_converter( $rate ) ) ),
 			CallStack::request_context()
 		);
 
 		return $controller;
+	}
+
+	/**
+	 * Create the integration on the real services and the real cart and session reads.
+	 *
+	 * @return WooCommerceSubscriptions
+	 */
+	private function create_real_controller(): WooCommerceSubscriptions {
+		$sut = new WooCommerceSubscriptions();
+		$sut->init(
+			$this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ),
+			wc_get_container()->get( LegacyProxy::class ),
+			wc_get_container()->get( StateBuilderFactory::class ),
+			wc_get_container()->get( ServiceFactory::class ),
+			CallStack::request_context()
+		);
+
+		return $sut;
+	}
+
+	/**
+	 * Save an order in a currency.
+	 *
+	 * @param string $currency Order currency.
+	 * @return int The order ID.
+	 */
+	private function create_order_in_currency( string $currency ): int {
+		$order = wc_create_order();
+		$order->set_currency( $currency );
+		$order->save();
+
+		return $order->get_id();
+	}
+
+	/**
+	 * A cart item paying a signup order again, as WooCommerce Subscriptions 9.4.1 stores it in the session.
+	 *
+	 * @param int $order_id Signup order ID.
+	 * @return array<string,mixed>
+	 */
+	private function get_initial_payment_cart_item( int $order_id ): array {
+		return array(
+			'subscription_initial_payment' => array( 'order_id' => $order_id ),
+			'product_id'                   => 0,
+			'key'                          => 'abc123',
+		);
 	}
 
 	/**

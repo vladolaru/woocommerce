@@ -29,6 +29,13 @@ class WooCommerceSubscriptions implements RegisterHooksInterface {
 	private const SUBSCRIPTION_TYPES = array( 'renewal', 'resubscribe', 'switch' );
 
 	/**
+	 * Cart item types that pay an existing order again: their items hold an `order_id`, not a `subscription_id`, so they are
+	 * kept apart from the subscription types (client 11.3.0
+	 * `includes/multi-currency/Compatibility/WooCommerceSubscriptions.php:25-30`).
+	 */
+	private const ORDER_PAYMENT_TYPES = array( 'initial_payment' );
+
+	/**
 	 * Cart-lifecycle hooks that invalidate the per-request subscription cart-type cache.
 	 *
 	 * Covers loading the cart from session (so an early null lookup is not served after the
@@ -160,6 +167,13 @@ class WooCommerceSubscriptions implements RegisterHooksInterface {
 	 * @var bool
 	 */
 	private bool $running_override_selected_currency_filters = false;
+
+	/**
+	 * Currencies of signup orders paid through the cart, keyed by order ID; null when the order cannot be read.
+	 *
+	 * @var array<int,string|null>
+	 */
+	private array $initial_payment_order_currencies = array();
 
 	/**
 	 * Per-request cache of subscription cart items keyed by cart type.
@@ -307,9 +321,45 @@ class WooCommerceSubscriptions implements RegisterHooksInterface {
 			return null === $currency_code ? $selected_currency : $this->mark_order_currency( $currency_code );
 		}
 
+		// A failed or pending signup order is paid again through a cart rebuilt from it, in the order's currency.
+		$currency_code = $this->get_initial_payment_order_currency();
+		if ( null !== $currency_code ) {
+			return $this->mark_order_currency( $currency_code );
+		}
+
 		$currency_code = $this->get_subscription_currency( $this->get_subscription_from_switch_request() );
 
 		return null === $currency_code ? $selected_currency : $this->mark_order_currency( $currency_code );
+	}
+
+	/**
+	 * Get the currency of the signup order the cart pays again, read once per order and request.
+	 *
+	 * The order loads with the override off, since loading it reads the selected currency again; the flag is released
+	 * even when the load throws (client 11.3.0 `includes/multi-currency/Compatibility/WooCommerceSubscriptions.php:530-548`,
+	 * `:587-598`).
+	 *
+	 * @return string|null The currency, or null when the cart pays no signup order or the order cannot be read.
+	 */
+	private function get_initial_payment_order_currency(): ?string {
+		$cart_item = $this->get_subscription_type_from_cart( 'initial_payment' );
+		$order_id  = absint( $cart_item['subscription_initial_payment']['order_id'] ?? 0 );
+		if ( 0 === $order_id ) {
+			return null;
+		}
+
+		if ( ! array_key_exists( $order_id, $this->initial_payment_order_currencies ) ) {
+			$this->running_override_selected_currency_filters = true;
+			try {
+				$order = $this->legacy_proxy->call_function( 'wc_get_order', $order_id );
+			} finally {
+				$this->running_override_selected_currency_filters = false;
+			}
+
+			$this->initial_payment_order_currencies[ $order_id ] = $this->get_subscription_currency( $order );
+		}
+
+		return $this->initial_payment_order_currencies[ $order_id ];
 	}
 
 	/**
@@ -629,7 +679,7 @@ class WooCommerceSubscriptions implements RegisterHooksInterface {
 	 * @return array<int,array<string,mixed>>
 	 */
 	protected function resolve_subscription_cart_items( string $type ): array {
-		if ( ! in_array( $type, self::SUBSCRIPTION_TYPES, true ) ) {
+		if ( ! in_array( $type, array_merge( self::SUBSCRIPTION_TYPES, self::ORDER_PAYMENT_TYPES ), true ) ) {
 			return array();
 		}
 
@@ -788,12 +838,12 @@ class WooCommerceSubscriptions implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether any subscription cart item is present.
+	 * Tell whether any subscription cart item, or a signup order paid again, is present.
 	 *
 	 * @return bool
 	 */
 	private function has_subscription_cart_context(): bool {
-		foreach ( self::SUBSCRIPTION_TYPES as $type ) {
+		foreach ( array_merge( self::SUBSCRIPTION_TYPES, self::ORDER_PAYMENT_TYPES ) as $type ) {
 			if ( null !== $this->get_subscription_type_from_cart( $type ) ) {
 				return true;
 			}
@@ -819,9 +869,9 @@ class WooCommerceSubscriptions implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get a subscription currency code.
+	 * Get the currency code of a subscription or an order.
 	 *
-	 * @param mixed $subscription Subscription, which extends WC_Order.
+	 * @param mixed $subscription Subscription or order; a subscription extends WC_Order.
 	 * @return string|null
 	 */
 	private function get_subscription_currency( $subscription ): ?string {
