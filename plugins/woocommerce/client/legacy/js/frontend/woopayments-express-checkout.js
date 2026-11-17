@@ -478,6 +478,8 @@
 
 	// `event.reject()` only surfaces the wallet's generic "address
 	// unsupported" message, so the real reason is also surfaced as a notice.
+	// The Blocks express module builds the same sentence in its getCurrencyMismatchMessage()
+	// (client/blocks/assets/js/extensions/payment-methods/woopayments/express-checkout/index.js); keep the two in step.
 	function getCurrencyMismatchMessage( cartData ) {
 		var from = ( elementCurrency || '' ).toUpperCase();
 		var to = cartData.totals.currency_code.toUpperCase();

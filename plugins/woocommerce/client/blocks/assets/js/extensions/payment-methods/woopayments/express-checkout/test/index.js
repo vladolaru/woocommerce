@@ -2284,6 +2284,68 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			);
 		} );
 
+		// Client 11.3.0 getCurrencyMismatchMessage() (express-checkout/event-handlers.js:59-69), used for an address pick
+		// (:106) and a rate pick (:161): after event.reject() the sheet shows only the wallet's generic message.
+		describe( 'a sheet event that returns the cart in another currency', () => {
+			const currencyMismatchMessage =
+				'This express payment started in USD and cannot switch to EUR for the address you selected. Choose a different shipping address, or use the regular checkout to pay in EUR.';
+
+			const openSheet = async () => {
+				const setExpressPaymentError = jest.fn();
+				renderWallet( 'applePay', { setExpressPaymentError } );
+				await waitFor( () => {
+					expect( expressElement.mount ).toHaveBeenCalledTimes( 1 );
+				} );
+				apiFetch.mockResolvedValueOnce( eurCart );
+
+				return setExpressPaymentError;
+			};
+
+			it( 'rejects an address pick and names both currencies in the notice', async () => {
+				const setExpressPaymentError = await openSheet();
+				const event = {
+					name: 'Ada Lovelace',
+					address: {
+						line1: '2 Wallet Way',
+						city: 'Berlin',
+						postal_code: '10115',
+						country: 'DE',
+					},
+					resolve: jest.fn(),
+					reject: jest.fn(),
+				};
+
+				await act( async () => {
+					await expressHandlers.shippingaddresschange( event );
+				} );
+
+				expect( event.reject ).toHaveBeenCalledTimes( 1 );
+				expect( event.resolve ).not.toHaveBeenCalled();
+				expect( setExpressPaymentError.mock.calls ).toEqual( [
+					[ currencyMismatchMessage ],
+				] );
+			} );
+
+			it( 'rejects a rate pick and names both currencies in the notice', async () => {
+				const setExpressPaymentError = await openSheet();
+				const event = {
+					shippingRate: { id: 'flat_rate:1' },
+					resolve: jest.fn(),
+					reject: jest.fn(),
+				};
+
+				await act( async () => {
+					await expressHandlers.shippingratechange( event );
+				} );
+
+				expect( event.reject ).toHaveBeenCalledTimes( 1 );
+				expect( event.resolve ).not.toHaveBeenCalled();
+				expect( setExpressPaymentError.mock.calls ).toEqual( [
+					[ currencyMismatchMessage ],
+				] );
+			} );
+		} );
+
 		// react-stripe-js 6.3.0 ignores a throw from destroy() on unmount (dist/react-stripe.js:678-688).
 		it( 'mounts the new Element when destroying the old one throws', async () => {
 			const rerenderWallet = renderWallet( 'googlePay' );

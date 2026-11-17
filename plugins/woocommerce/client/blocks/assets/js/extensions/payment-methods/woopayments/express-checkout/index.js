@@ -9,7 +9,7 @@ import { reload as navigate } from '@woocommerce/utils/navigation';
 import { decodeEntities } from '@wordpress/html-entities';
 import { dispatch } from '@wordpress/data';
 import { applyFilters } from '@wordpress/hooks';
-import { __ } from '@wordpress/i18n';
+import { __, sprintf } from '@wordpress/i18n';
 import { useCallback, useEffect, useRef } from '@wordpress/element';
 import apiFetch from '@wordpress/api-fetch';
 import { addQueryArgs } from '@wordpress/url';
@@ -901,6 +901,20 @@ const getCartCurrencyMismatch = ( expectedCurrency, cart ) => {
 	);
 };
 
+// `event.reject()` only shows the wallet's generic message, so the reason also goes to the express error notice.
+// Client 11.3.0 express-checkout/event-handlers.js:59-69. The classic express script builds the same sentence in its
+// getCurrencyMismatchMessage() (client/legacy/js/frontend/woopayments-express-checkout.js); keep the two in step.
+const getCurrencyMismatchMessage = ( elementCurrency, cart ) =>
+	sprintf(
+		/* translators: %1$s: currency the express payment started in, %2$s: currency required by the selected address. */
+		__(
+			'This express payment started in %1$s and cannot switch to %2$s for the address you selected. Choose a different shipping address, or use the regular checkout to pay in %2$s.',
+			'woocommerce'
+		),
+		elementCurrency.toUpperCase(),
+		getCartTotalsCurrency( cart ).toUpperCase()
+	);
+
 const getOrderNotes = () =>
 	window.wp?.data?.select?.( 'wc/store/checkout' )?.getOrderNotes?.() || '';
 
@@ -1356,9 +1370,9 @@ const ExpressCheckoutElement = ( {
 						getCartCurrencyMismatch( elementCurrency, updatedCart )
 					) {
 						setExpressPaymentError?.(
-							__(
-								'The cart currency changed for the selected shipping address. Use the regular checkout to continue.',
-								'woocommerce'
+							getCurrencyMismatchMessage(
+								elementCurrency,
+								updatedCart
 							)
 						);
 						event.reject();
@@ -1419,9 +1433,9 @@ const ExpressCheckoutElement = ( {
 
 				if ( getCartCurrencyMismatch( elementCurrency, updatedCart ) ) {
 					setExpressPaymentError?.(
-						__(
-							'The cart currency changed for the selected shipping rate. Use the regular checkout to continue.',
-							'woocommerce'
+						getCurrencyMismatchMessage(
+							elementCurrency,
+							updatedCart
 						)
 					);
 					event.reject();
