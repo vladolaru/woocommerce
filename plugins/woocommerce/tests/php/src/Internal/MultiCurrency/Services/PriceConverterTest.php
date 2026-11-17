@@ -111,7 +111,8 @@ class PriceConverterTest extends WC_Unit_Test_Case {
 	 * A USD store with JPY enabled at 150 and EUR disabled since checkout, available at its automatic 0.88. Rows from client
 	 * 11.3.0 `tests/unit/multi-currency/test-class-frontend-prices.php:646-688` (enabled, then available, then the store
 	 * currency) and `:693-730` (the enabled EUR carries the merchant's manual 0.9 over the automatic 0.88: 1.37 USD is 1.23
-	 * EUR, not 1.21). The selection is GBP throughout.
+	 * EUR, not 1.21). The selection is GBP throughout. The JPY amount keeps its product off a half: from PHP 8.4, round()
+	 * takes a float just under a half down, so 10.37 at 150 (1555.4999999999998) gives 1555 there and 1556 before.
 	 *
 	 * @param bool   $eur_enabled    Whether EUR is enabled, at a manual 0.9.
 	 * @param string $order_currency Order currency.
@@ -147,7 +148,7 @@ class PriceConverterTest extends WC_Unit_Test_Case {
 	public static function provide_order_currencies(): array {
 		return array(
 			'the store currency'                     => array( false, 'USD', '10', 'USD', 10.0 ),
-			'an enabled currency, lower case'        => array( false, 'jpy', '10.37', 'JPY', 1556.0 ),
+			'an enabled currency, lower case'        => array( false, 'jpy', '10.36', 'JPY', 1554.0 ),
 			'a currency disabled since checkout'     => array( false, 'EUR', '1.37', 'EUR', 1.21 ),
 			'an enabled currency at its manual rate' => array( true, 'EUR', '1.37', 'EUR', 1.23 ),
 			'a currency the store does not offer'    => array( false, 'BTC', '10', 'USD', 10.0 ),
