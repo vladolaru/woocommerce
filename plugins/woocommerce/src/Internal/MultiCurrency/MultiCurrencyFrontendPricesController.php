@@ -64,6 +64,16 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	private static ?object $store_currency_cost_method = null;
 
 	/**
+	 * The shipping method whose `[fee]` shortcode is being worked out, from the moment its fee() reads its attributes until
+	 * the shortcode ends or the next cart calculation starts.
+	 *
+	 * Static because the currency controller's decimals filter reads it.
+	 *
+	 * @var \WC_Shipping_Method|null
+	 */
+	private static ?\WC_Shipping_Method $shipping_method_rendering_fee = null;
+
+	/**
 	 * The coupon an order is re-applying while it recalculates, whose amount converts to the order's currency.
 	 *
 	 * @var object|null
@@ -125,6 +135,11 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 		add_filter( 'woocommerce_shipping_zone_shipping_methods', array( $this, 'convert_free_shipping_method_min_amount' ), 99 );
 		add_filter( 'woocommerce_shipping_method_add_rate_args', array( $this, 'convert_shipping_method_rate_cost' ), 99, 2 );
 		add_filter( 'woocommerce_evaluate_shipping_cost_args', array( $this, 'convert_shipping_cost_args_to_store_currency' ), 99, 3 );
+		add_filter( 'wc_get_price_decimal_separator', array( $this, 'use_store_decimal_separator_during_shipping_fee' ), 990 );
+		add_filter( 'shortcode_atts_fee', array( $this, 'start_shipping_fee_rendering' ) );
+		add_filter( 'do_shortcode_tag', array( $this, 'end_shipping_fee_rendering' ), PHP_INT_MIN, 2 );
+		// PHP_INT_MIN so the fee state is cleared before plugins that set item prices on the same action read a format.
+		add_action( 'woocommerce_before_calculate_totals', array( $this, 'reset_shipping_fee_rendering' ), PHP_INT_MIN );
 		add_filter( 'woocommerce_coupon_get_amount', array( $this, 'get_coupon_amount' ), 99, 2 );
 		add_filter( 'woocommerce_coupon_get_minimum_amount', array( $this, 'get_coupon_min_max_amount' ), 99, 2 );
 		add_filter( 'woocommerce_coupon_get_maximum_amount', array( $this, 'get_coupon_min_max_amount' ), 99, 2 );
@@ -238,22 +253,85 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	/**
 	 * Tell whether core is computing a percent fee in store units, so the fee keeps at least the store's decimals.
 	 *
-	 * Core's flat rate registers the `[fee]` shortcode for the method only while it evaluates that method's cost, and its
-	 * `fee()` is the only decimals reader in that window. The memory clears at the next cost evaluation or on the first
-	 * read after the window closes.
+	 * True inside the `[fee]` shortcode of the method whose cost arguments were converted to the store currency, as client
+	 * 11.3.0 `FrontendPrices::use_store_currency_decimals_during_shipping_fee()` (`includes/multi-currency/FrontendPrices.php:373-384`).
 	 *
 	 * @return bool
 	 */
 	public static function is_computing_store_currency_fee(): bool {
-		global $shortcode_tags;
+		return null !== self::$shipping_method_rendering_fee && self::$shipping_method_rendering_fee === self::$store_currency_cost_method;
+	}
 
-		if ( null !== self::$store_currency_cost_method && shortcode_exists( 'fee' ) && array( self::$store_currency_cost_method, 'fee' ) === $shortcode_tags['fee'] ) {
-			return true;
+	/**
+	 * Read a shipping method's `[fee]` numbers with the store's decimal separator while another currency is selected.
+	 *
+	 * The merchant types `percent`, `min_fee` and `max_fee` in the store's number format, and core's flat-rate fee() parses
+	 * them with wc_get_price_decimal_separator(), which otherwise answers the selected currency's separator. As client 11.3.0
+	 * (`includes/multi-currency/FrontendPrices.php:395-406`), whether or not the method's cost was converted.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $separator The decimal separator earlier filters answered.
+	 * @return mixed
+	 */
+	public function use_store_decimal_separator_during_shipping_fee( $separator ) {
+		if ( null === self::$shipping_method_rendering_fee || ! $this->get_price_converter()->should_convert_between_selected_and_default_currency() ) {
+			return $separator;
 		}
 
-		self::$store_currency_cost_method = null;
+		// wc_get_price_decimal_separator() falls back to a dot when the option is empty.
+		return (string) get_option( 'woocommerce_price_decimal_sep' );
+	}
 
-		return false;
+	/**
+	 * Note the shipping method whose `[fee]` shortcode is being worked out.
+	 *
+	 * Core's fee() reads its attributes first, so a shortcode another callback short-circuits never counts. A fee() override
+	 * that skips shortcode_atts() keeps the selected currency's format; one that throws keeps the store's format until another
+	 * `[fee]` ends or the next cart calculation starts (client 11.3.0 `includes/multi-currency/FrontendPrices.php:408-431`).
+	 *
+	 * @internal
+	 *
+	 * @param mixed $atts The `[fee]` attributes, returned unchanged.
+	 * @return mixed
+	 */
+	public function start_shipping_fee_rendering( $atts ) {
+		global $shortcode_tags;
+
+		$callback = $shortcode_tags['fee'] ?? null;
+		if ( is_array( $callback ) && ( $callback[0] ?? null ) instanceof \WC_Shipping_Method ) {
+			self::$shipping_method_rendering_fee = $callback[0];
+		}
+
+		return $atts;
+	}
+
+	/**
+	 * Note the end of a `[fee]` shortcode.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $output The shortcode output, returned unchanged.
+	 * @param mixed $tag    The shortcode tag.
+	 * @return mixed
+	 */
+	public function end_shipping_fee_rendering( $output, $tag ) {
+		if ( 'fee' === $tag ) {
+			self::$shipping_method_rendering_fee = null;
+		}
+
+		return $output;
+	}
+
+	/**
+	 * Clear the `[fee]` state before a cart calculation, so a fee() that threw and was caught leaves no store format on
+	 * while the item totals are taken (client 11.3.0 `includes/multi-currency/FrontendPrices.php:449-459`).
+	 *
+	 * @internal
+	 */
+	public function reset_shipping_fee_rendering(): void {
+		self::$shipping_method_rendering_fee = null;
+		self::$store_currency_cost_method    = null;
 	}
 
 	/**

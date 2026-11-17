@@ -51,7 +51,18 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		'wcpay_multi_currency_should_convert_coupon_amount',
 		'wcpay_multi_currency_should_convert_coupon_min_max_amount',
 		'wcpay_multi_currency_should_convert_shipping_amount',
+		'wc_get_price_decimal_separator',
+		'shortcode_atts_fee',
+		'do_shortcode_tag',
+		'woocommerce_before_calculate_totals',
 	);
+
+	/**
+	 * The customer's address before a real cart was calculated, restored after the case.
+	 *
+	 * @var array<string,string>|null
+	 */
+	private ?array $customer_address = null;
 
 	/**
 	 * Tear down test fixtures.
@@ -61,6 +72,15 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 			remove_all_filters( $hook );
 		}
 		remove_all_filters( 'wcpay_multi_currency_override_selected_currency' );
+		// A fee that threw leaves its shortcode registered, and the fee state is static.
+		remove_shortcode( 'fee' );
+		( new MultiCurrencyFrontendPricesController() )->reset_shipping_fee_rendering();
+		if ( null !== $this->customer_address ) {
+			WC()->cart->empty_cart();
+			WC()->session->__unset( 'chosen_shipping_methods' );
+			WC()->session->__unset( 'shipping_for_package_0' );
+			WC()->customer->set_props( $this->customer_address );
+		}
 
 		parent::tearDown();
 	}
@@ -93,24 +113,28 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 				MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 				true,
 				array(
-					'query_loop_block_query_vars'        => array( 'maybe_modify_price_ranges_query_var' => array( 10, 3 ) ),
-					'rest_post_dispatch'                 => array( 'maybe_modify_price_ranges_rest_response' => array( 10, 3 ) ),
-					'woocommerce_coupon_get_amount'      => array( 'get_coupon_amount' => array( 99, 2 ) ),
+					'do_shortcode_tag'                    => array( 'end_shipping_fee_rendering' => array( PHP_INT_MIN, 2 ) ),
+					'query_loop_block_query_vars'         => array( 'maybe_modify_price_ranges_query_var' => array( 10, 3 ) ),
+					'rest_post_dispatch'                  => array( 'maybe_modify_price_ranges_rest_response' => array( 10, 3 ) ),
+					'shortcode_atts_fee'                  => array( 'start_shipping_fee_rendering' => array( 10, 1 ) ),
+					'wc_get_price_decimal_separator'      => array( 'use_store_decimal_separator_during_shipping_fee' => array( 990, 1 ) ),
+					'woocommerce_before_calculate_totals' => array( 'reset_shipping_fee_rendering' => array( PHP_INT_MIN, 1 ) ),
+					'woocommerce_coupon_get_amount'       => array( 'get_coupon_amount' => array( 99, 2 ) ),
 					'woocommerce_coupon_get_maximum_amount' => array( 'get_coupon_min_max_amount' => array( 99, 2 ) ),
 					'woocommerce_coupon_get_minimum_amount' => array( 'get_coupon_min_max_amount' => array( 99, 2 ) ),
 					'woocommerce_evaluate_shipping_cost_args' => array( 'convert_shipping_cost_args_to_store_currency' => array( 99, 3 ) ),
 					'woocommerce_get_variation_prices_hash' => array( 'add_exchange_rate_to_variation_prices_hash' => array( 99, 1 ) ),
-					'woocommerce_new_order'              => array( 'add_order_meta' => array( 99, 2 ) ),
+					'woocommerce_new_order'               => array( 'add_order_meta' => array( 99, 2 ) ),
 					'woocommerce_order_recalculate_coupons_coupon_object' => array( 'set_order_coupon' => array( 99, 4 ) ),
-					'woocommerce_product_get_price'      => array( 'get_product_price_string' => array( 99, 2 ) ),
+					'woocommerce_product_get_price'       => array( 'get_product_price_string' => array( 99, 2 ) ),
 					'woocommerce_product_get_regular_price' => array( 'get_product_price_string' => array( 99, 2 ) ),
-					'woocommerce_product_get_sale_price' => array( 'get_product_price_string' => array( 99, 2 ) ),
+					'woocommerce_product_get_sale_price'  => array( 'get_product_price_string' => array( 99, 2 ) ),
 					'woocommerce_product_variation_get_price' => array( 'get_product_price_string' => array( 99, 2 ) ),
 					'woocommerce_product_variation_get_regular_price' => array( 'get_product_price_string' => array( 99, 2 ) ),
 					'woocommerce_product_variation_get_sale_price' => array( 'get_product_price_string' => array( 99, 2 ) ),
 					'woocommerce_shipping_method_add_rate_args' => array( 'convert_shipping_method_rate_cost' => array( 99, 2 ) ),
 					'woocommerce_shipping_zone_shipping_methods' => array( 'convert_free_shipping_method_min_amount' => array( 99, 1 ) ),
-					'woocommerce_variation_prices_price' => array( 'get_product_price_string' => array( 99, 1 ) ),
+					'woocommerce_variation_prices_price'  => array( 'get_product_price_string' => array( 99, 1 ) ),
 					'woocommerce_variation_prices_regular_price' => array( 'get_product_price_string' => array( 99, 1 ) ),
 					'woocommerce_variation_prices_sale_price' => array( 'get_product_price_string' => array( 99, 1 ) ),
 				),
@@ -579,6 +603,170 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		$shipping_method->rates = array();
 		$shipping_method->calculate_shipping( $package );
 		$this->assertSame( '1550', $shipping_method->rates['flat_rate:7']->get_cost(), '10% of ¥1,553 is ¥155, times 10 is ¥1,550.' );
+	}
+
+	/**
+	 * @testdox Should read a shipping fee's numbers in the store's number format while another currency is selected: $_dataName.
+	 *
+	 * A USD store with a comma decimal separator and dot thousands, GBP at a manual 0.8 with no rounding, the cart contents in
+	 * GBP. Expected values from client 11.3.0: 2.5% of $1000 is $25, so 20.00 GBP
+	 * (`tests/unit/multi-currency/test-class-multi-currency-shipping-formula-conversion.php:234-240`); a method that keeps its
+	 * cost in GBP reads the same separator (`test-class-frontend-prices.php:506-512`), so 2.5% of 800 GBP is 20.00 GBP; 10% of
+	 * $225 is $22.50, under the $22.90 cap, so 18.00 GBP (shipping-formula test `:247-253`).
+	 *
+	 * @dataProvider provide_fee_numbers_in_the_store_format
+	 *
+	 * @param string $cost          Flat-rate cost as the merchant types it.
+	 * @param float  $contents_cost Cart contents cost, in GBP.
+	 * @param bool   $convert       Whether the shipping method lets Multi-Currency convert its cost.
+	 * @param float  $expected      Rate the shopper pays, in GBP.
+	 */
+	public function test_reads_shipping_fee_numbers_in_the_store_number_format( string $cost, float $contents_cost, bool $convert, float $expected ): void {
+		$this->select_gbp_on_a_comma_decimal_store();
+		update_option(
+			'woocommerce_flat_rate_7_settings',
+			array(
+				'title'      => 'Flat rate',
+				'tax_status' => 'none',
+				'cost'       => $cost,
+				'type'       => 'class',
+			)
+		);
+		if ( ! $convert ) {
+			add_filter( 'wcpay_multi_currency_should_convert_shipping_amount', '__return_false' );
+		}
+		$this->register_storefront_controllers();
+
+		$shipping_method = new \WC_Shipping_Flat_Rate( 7 );
+		$shipping_method->calculate_shipping(
+			array(
+				'contents'      => array(),
+				'contents_cost' => $contents_cost,
+			)
+		);
+
+		$this->assertSame( $expected, (float) $shipping_method->rates['flat_rate:7']->get_cost() );
+	}
+
+	/**
+	 * Fee formulas typed in the store's number format, with the rate the client charges.
+	 *
+	 * @return array<string,array{0:string,1:float,2:bool,3:float}>
+	 */
+	public function provide_fee_numbers_in_the_store_format(): array {
+		return array(
+			'a percent with a comma'                   => array( '[fee percent="2,5"]', 800.0, true, 20.0 ),
+			'a percent with a comma, cost kept in GBP' => array( '[fee percent="2,5"]', 800.0, false, 20.0 ),
+			'a maximum fee with a comma above the fee' => array( '[fee percent="10" max_fee="22,9"]', 180.0, true, 18.0 ),
+		);
+	}
+
+	/**
+	 * @testdox Should answer the store's decimal separator only inside a shipping method's fee, and only for another currency: $_dataName.
+	 *
+	 * As client 11.3.0 `tests/unit/multi-currency/test-class-frontend-prices.php:487-519`, with the same stand-in for the
+	 * selected currency's dot separator that the currency filters would otherwise give.
+	 *
+	 * @testWith ["GBP", true, [","], "a shipping method's fee in GBP"]
+	 *           ["USD", true, ["."], "a shipping method's fee in the store currency"]
+	 *           ["GBP", false, ["."], "a fee no shipping method registered"]
+	 *
+	 * @param string   $selected        Selected currency.
+	 * @param bool     $shipping_method Whether a shipping method registered the fee.
+	 * @param string[] $expected        Separators read inside each fee.
+	 * @param string   $label           Case label.
+	 */
+	public function test_answers_the_store_separator_only_inside_a_shipping_method_fee( string $selected, bool $shipping_method, array $expected, string $label ): void {
+		unset( $label );
+		$this->select_gbp_on_a_comma_decimal_store();
+		add_filter( 'wcpay_multi_currency_override_selected_currency', fn() => $selected );
+		add_filter( 'wc_get_price_decimal_separator', fn() => '.', 900 );
+		$sut = new MultiCurrencyFrontendPricesController();
+		$sut->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ), wc_get_container()->get( ServiceFactory::class ), wc_get_container()->get( RequestContext::class ) );
+		$sut->register();
+		$method = $this->create_fee_reading_method();
+		$seen   = array();
+
+		add_shortcode(
+			'fee',
+			$shipping_method ? array( $method, 'fee' ) : function ( $atts ) use ( &$seen ) {
+				shortcode_atts( array(), $atts, 'fee' );
+				$seen[] = wc_get_price_decimal_separator();
+				return '';
+			}
+		);
+		do_shortcode( '[fee percent="2,5"]' );
+		remove_shortcode( 'fee' );
+
+		$this->assertSame( $expected, $shipping_method ? $method->seen : $seen );
+		$this->assertSame( '.', wc_get_price_decimal_separator(), 'Outside the fee the selected currency\'s separator applies.' );
+	}
+
+	/**
+	 * @testdox Should take the next cart calculation in the selected currency's format after a fee that threw was caught.
+	 *
+	 * Client 11.3.0 `tests/unit/multi-currency/test-class-multi-currency-shipping-formula-conversion.php:338-385`: a USD store
+	 * with a comma separator, JPY at 150, a $1000 item with a 10% fee; after a fee() override throws and its caller catches it,
+	 * the next calculation totals 150,000 JPY of items plus 15,000 JPY of shipping, and a plugin that sets item prices when
+	 * the calculation starts reads JPY's dot. The client's row removes the `fee` shortcode by hand after the catch; a real
+	 * caught throw leaves it registered to the throwing method, so this row leaves it there, and the tear-down removes it.
+	 */
+	public function test_takes_the_next_cart_calculation_in_the_selected_format_after_a_fee_that_threw(): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'woocommerce_price_decimal_sep', ',' );
+		update_option( 'woocommerce_price_thousand_sep', '.' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'JPY' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_jpy', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_jpy', '150' );
+		add_filter( 'wcpay_multi_currency_override_selected_currency', fn() => 'JPY' );
+		$this->register_storefront_controllers();
+		$this->assertSame( 15000.0, $this->get_cart_shipping_total( '[fee percent="10"]', '1000' ) );
+		$method = new class() extends \WC_Shipping_Flat_Rate {
+			/**
+			 * Read the attributes as core's fee() does, then fail.
+			 *
+			 * @param array $atts Attributes.
+			 * @throws \RuntimeException Always.
+			 */
+			public function fee( $atts ) {
+				shortcode_atts( array( 'percent' => '' ), $atts, 'fee' );
+				throw new \RuntimeException( 'The fee could not be worked out.' );
+			}
+
+			/**
+			 * Evaluate a cost formula.
+			 *
+			 * @param string $formula Cost formula.
+			 * @param float  $cost    Package cost.
+			 * @return string
+			 */
+			public function evaluate( string $formula, float $cost ) {
+				return $this->evaluate_cost(
+					$formula,
+					array(
+						'qty'  => 1,
+						'cost' => $cost,
+					)
+				);
+			}
+		};
+
+		try {
+			$method->evaluate( '[fee percent="10"]', 15000 );
+		} catch ( \RuntimeException $e ) {
+			unset( $e );
+		}
+		$separator_seen_by_pricing_plugins = null;
+		add_action(
+			'woocommerce_before_calculate_totals',
+			function () use ( &$separator_seen_by_pricing_plugins ) {
+				$separator_seen_by_pricing_plugins = wc_get_price_decimal_separator();
+			}
+		);
+		WC()->session->__unset( 'shipping_for_package_0' );
+		WC()->cart->calculate_totals();
+
+		$this->assertSame( array( 165000.0, '.' ), array( (float) WC()->cart->get_total( 'edit' ), $separator_seen_by_pricing_plugins ) );
 	}
 
 	/**
@@ -1188,6 +1376,94 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		}
 
 		return $currencies;
+	}
+
+	/**
+	 * Select GBP, at a manual 0.8 with no rounding, on a USD store that writes numbers with a comma decimal separator.
+	 */
+	private function select_gbp_on_a_comma_decimal_store(): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'woocommerce_price_decimal_sep', ',' );
+		update_option( 'woocommerce_price_thousand_sep', '.' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'GBP' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_gbp', '0.8' );
+		update_option( 'wcpay_multi_currency_price_rounding_gbp', '0.00' );
+		add_filter( 'wcpay_multi_currency_override_selected_currency', fn() => 'GBP' );
+	}
+
+	/**
+	 * Create a flat rate whose fee() reads its attributes as core's does, then records the decimal separator it sees.
+	 *
+	 * @return \WC_Shipping_Flat_Rate
+	 */
+	private function create_fee_reading_method(): \WC_Shipping_Flat_Rate {
+		return new class() extends \WC_Shipping_Flat_Rate {
+			/**
+			 * Separators seen inside each fee.
+			 *
+			 * @var string[]
+			 */
+			public array $seen = array();
+
+			/**
+			 * Record the separator inside the fee.
+			 *
+			 * @param array $atts Attributes.
+			 * @return string
+			 */
+			public function fee( $atts ) {
+				shortcode_atts( array(), $atts, 'fee' );
+				$this->seen[] = wc_get_price_decimal_separator();
+				return '';
+			}
+		};
+	}
+
+	/**
+	 * Calculate a real cart holding one shippable product, shipped at a rest-of-world flat rate, and return its shipping total.
+	 *
+	 * @param string $cost  Flat-rate cost as the merchant types it.
+	 * @param string $price Product price, in the store currency.
+	 * @return float
+	 */
+	private function get_cart_shipping_total( string $cost, string $price ): float {
+		$product = \WC_Helper_Product::create_simple_product();
+		$product->set_regular_price( $price );
+		$product->set_price( $price );
+		$product->set_tax_status( 'none' );
+		$product->set_virtual( false );
+		$product->save();
+		$zone        = \WC_Shipping_Zones::get_zone( 0 );
+		$instance_id = $zone->add_shipping_method( 'flat_rate' );
+		$zone->save();
+		update_option(
+			\WC_Shipping_Zones::get_shipping_method( $instance_id )->get_instance_option_key(),
+			array(
+				'title'      => 'Flat rate',
+				'tax_status' => 'none',
+				'cost'       => $cost,
+			)
+		);
+		\WC_Cache_Helper::get_transient_version( 'shipping', true );
+		$this->customer_address = $this->customer_address ?? array(
+			'shipping_country' => WC()->customer->get_shipping_country(),
+			'shipping_state'   => WC()->customer->get_shipping_state(),
+			'billing_country'  => WC()->customer->get_billing_country(),
+		);
+		WC()->customer->set_props(
+			array(
+				'shipping_country' => 'US',
+				'shipping_state'   => 'NY',
+				'billing_country'  => 'US',
+			)
+		);
+
+		WC()->cart->add_to_cart( $product->get_id(), 1 );
+		WC()->session->set( 'chosen_shipping_methods', array( 'flat_rate:' . $instance_id ) );
+		WC()->cart->calculate_totals();
+
+		return (float) WC()->cart->get_shipping_total();
 	}
 
 	/**
