@@ -1192,7 +1192,6 @@ const ExpressCheckoutElement = ( {
 	const appliedElementsOptionsRef = useRef( null );
 	const latestCartDataRef = useRef( null );
 	const walletMutatedCartRef = useRef( false );
-	const clickLockedPageRef = useRef( false );
 	const methodConfig = METHOD_CONFIG[ method ];
 
 	const markWalletCartMutation = useCallback( () => {
@@ -1298,7 +1297,6 @@ const ExpressCheckoutElement = ( {
 			// Client 11.1.0 locks the page while the wallet sheet is open (block-buttons/hooks/use-express-checkout.js:141-143,
 			// onClickHandler() at event-handlers.js:304-310); a cancel or a failed payment unlocks it.
 			lockPage();
-			clickLockedPageRef.current = true;
 			if ( methodConfig.clickEvent ) {
 				recordWooPaymentsUserEvent(
 					getTrackingSettings(),
@@ -1327,7 +1325,6 @@ const ExpressCheckoutElement = ( {
 		// which the server cart already holds. Client 11.1.0 refreshes only after an address pick (event-handlers.js:319-325).
 		expressElementRef.current.on( 'cancel', () => {
 			// Client 11.1.0 onCancelHandler() (event-handlers.js:320-326, block-buttons/hooks/use-express-checkout.js:47-50).
-			clickLockedPageRef.current = false;
 			unlockPage();
 			refreshCartAfterWalletMutation( refreshBlocksCartUi );
 			onClose?.();
@@ -1532,8 +1529,6 @@ const ExpressCheckoutElement = ( {
 					throw new Error( getCheckoutErrorMessage( response ) );
 				}
 
-				// From here completePayment() owns the page lock, so an unmount leaves it up.
-				clickLockedPageRef.current = false;
 				await redirectToOrder( response, api );
 			} catch ( error ) {
 				const message =
@@ -1545,7 +1540,6 @@ const ExpressCheckoutElement = ( {
 
 				// Client 11.1.0 abortPayment() unlocks the page on every failure, a navigation that throws included
 				// (event-handlers.js:254-271, onAbortPaymentHandler() at :312-314, block-buttons/hooks/use-express-checkout.js:57-63).
-				clickLockedPageRef.current = false;
 				unlockPage();
 				refreshCartAfterWalletMutation();
 				setExpressPaymentError?.( message );
@@ -1591,18 +1585,14 @@ const ExpressCheckoutElement = ( {
 		}
 	}, [ liveElementsOptions ] );
 
-	// Runs only on unmount. A sheet may still be open, and whether its destroyed Element sends `cancel` is not
-	// documented, so this click's page lock is released here. The Element is destroyed as react-stripe-js 6.3.0 does on
-	// unmount, ignoring a throw (client 11.3.0 express-checkout-container.js:123-127).
+	// Runs only on unmount: destroys the Element and clears its reference, ignoring a throw, as react-stripe-js 6.3.0
+	// does (client 11.3.0 express-checkout-container.js:123-127). A second run of the creation effect then creates a
+	// new Element.
 	useEffect(
 		() => () => {
-			if ( clickLockedPageRef.current ) {
-				clickLockedPageRef.current = false;
-				unlockPage();
-			}
-
 			try {
 				expressElementRef.current?.destroy?.();
+				expressElementRef.current = null;
 			} catch {
 				// Nothing to recover: the Element is going away.
 			}

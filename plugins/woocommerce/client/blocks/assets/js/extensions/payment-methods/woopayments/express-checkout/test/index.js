@@ -2,7 +2,7 @@
  * External dependencies
  */
 import { act, render, waitFor } from '@testing-library/react';
-import { createElement } from '@wordpress/element';
+import { createElement, StrictMode } from '@wordpress/element';
 import { registerExpressPaymentMethod } from '@woocommerce/blocks-registry';
 import apiFetch from '@wordpress/api-fetch';
 import { reload as navigate } from '@woocommerce/utils/navigation';
@@ -2284,6 +2284,52 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			);
 		} );
 
+		// react-stripe-js 6.3.0 ignores a throw from destroy() on unmount (dist/react-stripe.js:678-688).
+		it( 'mounts the new Element when destroying the old one throws', async () => {
+			const rerenderWallet = renderWallet( 'googlePay' );
+			await waitFor( () => {
+				expect( expressElement.mount ).toHaveBeenCalledTimes( 1 );
+			} );
+			createdElements[ 0 ].destroy.mockImplementation( () => {
+				throw new Error( 'The Element was already destroyed.' );
+			} );
+
+			rerenderWallet( eurBilling, eurCart );
+
+			expect( createdElements[ 0 ].destroy ).toHaveBeenCalledTimes( 1 );
+			expect( createdElements ).toHaveLength( 2 );
+			expect( expressElement.mount ).toHaveBeenCalledTimes( 2 );
+		} );
+
+		// React's StrictMode runs each effect's setup, its cleanup and its setup again when a component mounts
+		// (https://react.dev/reference/react/StrictMode). react-stripe-js 6.3.0 clears its reference in that cleanup
+		// (dist/react-stripe.js:678-688), so the second setup creates the Element again.
+		it( 'creates the Element again when strict mode runs its effects twice', () => {
+			const registration = getRegistration(
+				'woocommerce_payments_express_checkout_applePay'
+			);
+
+			render(
+				createElement(
+					StrictMode,
+					null,
+					createElement( registration.content.type, {
+						...registration.content.props,
+						billing,
+						...getPaymentMethodInterfaceProps(),
+						onClick: jest.fn(),
+						onClose: jest.fn(),
+						setExpressPaymentError: jest.fn(),
+					} )
+				)
+			);
+
+			expect( createdElements ).toHaveLength( 2 );
+			expect( createdElements[ 0 ].destroy ).toHaveBeenCalledTimes( 1 );
+			expect( createdElements[ 1 ].destroy ).not.toHaveBeenCalled();
+			expect( expressElement.mount ).toHaveBeenCalledTimes( 2 );
+		} );
+
 		describe( 'with jQuery BlockUI on the page', () => {
 			let pageLock;
 
@@ -2299,141 +2345,6 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 				delete window.jQuery;
 			} );
 
-			const clickWallet = () =>
-				act( () => {
-					expressHandlers.click( {
-						expressPaymentType: 'google_pay',
-						resolve: jest.fn(),
-					} );
-				} );
-
-			// Client 11.3.0 releases the click's lock only on cancel or failure (event-handlers.js:304-326); whether a
-			// destroyed Element still sends either is not documented, so the remount releases this click's lock itself.
-			it( 'releases the page lock its own click put up when the Element remounts', async () => {
-				const rerenderWallet = renderWallet( 'googlePay' );
-				await waitFor( () => {
-					expect( expressHandlers.click ).toBeDefined();
-				} );
-				clickWallet();
-				expect( pageLock.isLocked() ).toBe( true );
-
-				rerenderWallet( eurBilling, eurCart );
-
-				expect( window.jQuery.unblockUI ).toHaveBeenCalledTimes( 1 );
-				expect( pageLock.isLocked() ).toBe( false );
-				expect( createdElements ).toHaveLength( 2 );
-			} );
-
-			// react-stripe-js 6.3.0 ignores a throw from destroy() on unmount (dist/react-stripe.js:678-688).
-			it( 'releases the page lock and mounts the new Element when destroying the old one throws', async () => {
-				const rerenderWallet = renderWallet( 'googlePay' );
-				await waitFor( () => {
-					expect( expressHandlers.click ).toBeDefined();
-				} );
-				clickWallet();
-				createdElements[ 0 ].destroy.mockImplementation( () => {
-					throw new Error( 'The Element was already destroyed.' );
-				} );
-
-				rerenderWallet( eurBilling, eurCart );
-
-				expect( createdElements[ 0 ].destroy ).toHaveBeenCalledTimes(
-					1
-				);
-				expect( createdElements ).toHaveLength( 2 );
-				expect( expressElement.mount ).toHaveBeenCalledTimes( 2 );
-				expect( pageLock.isLocked() ).toBe( false );
-			} );
-
-			it( 'leaves a page lock its own click did not put up when the Element remounts', async () => {
-				const rerenderApplePay = renderWallet( 'applePay' );
-				await waitFor( () => {
-					expect( expressElement.mount ).toHaveBeenCalledTimes( 1 );
-				} );
-
-				// Another script's overlay.
-				window.jQuery.blockUI( { message: 'Another script is busy' } );
-				rerenderApplePay( eurBilling, eurCart );
-				expect( createdElements ).toHaveLength( 2 );
-				expect( window.jQuery.unblockUI ).not.toHaveBeenCalled();
-				expect( pageLock.isLocked() ).toBe( true );
-				pageLock.unblockUI();
-
-				// The Google Pay button's sheet is open while the Apple Pay button remounts.
-				renderWallet( 'googlePay' );
-				await waitFor( () => {
-					expect( expressElement.mount ).toHaveBeenCalledTimes( 3 );
-				} );
-				clickWallet();
-				expect( pageLock.isLocked() ).toBe( true );
-
-				rerenderApplePay( billing, blocksCart );
-				expect( createdElements ).toHaveLength( 4 );
-				expect( window.jQuery.unblockUI ).not.toHaveBeenCalled();
-				expect( pageLock.isLocked() ).toBe( true );
-			} );
-
-			// A cancel or a failed payment releases the click's lock (client 11.3.0 event-handlers.js:312-326); a later
-			// remount of that button leaves the lock another wallet's click put up.
-			it.each( [
-				[
-					'the sheet is canceled',
-					async () => {
-						act( () => {
-							expressHandlers.cancel();
-						} );
-					},
-				],
-				[
-					'the payment fails',
-					async () => {
-						// Store API checkout error (AbstractRoute::error_to_response()), a declined payment
-						// (src/StoreApi/Utilities/CheckoutTrait.php:135).
-						apiFetch.mockRejectedValueOnce( {
-							code: 'woocommerce_rest_checkout_process_payment_error',
-							message: 'Your card was declined.',
-							data: { status: 400 },
-						} );
-						await act( async () => {
-							await expressHandlers.confirm( {
-								paymentFailed: jest.fn(),
-								billingDetails: {
-									email: 'shopper@example.test',
-									name: 'Ada Lovelace',
-								},
-							} );
-						} );
-					},
-				],
-			] )(
-				'leaves the page lock of another wallet when the Element remounts after %s',
-				async ( _, endPayment ) => {
-					const rerenderGooglePay = renderWallet( 'googlePay' );
-					await waitFor( () => {
-						expect( expressHandlers.click ).toBeDefined();
-					} );
-					clickWallet();
-					await endPayment();
-					expect( pageLock.isLocked() ).toBe( false );
-
-					renderWallet( 'applePay' );
-					await waitFor( () => {
-						expect( expressElement.mount ).toHaveBeenCalledTimes(
-							2
-						);
-					} );
-					clickWallet();
-					expect( pageLock.isLocked() ).toBe( true );
-					window.jQuery.unblockUI.mockClear();
-
-					rerenderGooglePay( eurBilling, eurCart );
-
-					expect( createdElements ).toHaveLength( 3 );
-					expect( window.jQuery.unblockUI ).not.toHaveBeenCalled();
-					expect( pageLock.isLocked() ).toBe( true );
-				}
-			);
-
 			// Client 11.3.0 locks the page before it leaves for the order (event-handlers.js:316-318); the Checkout block
 			// can still re-render the button while the order page loads.
 			it( 'keeps the page locked for the order page when the Element remounts after the payment', async () => {
@@ -2441,7 +2352,12 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 				await waitFor( () => {
 					expect( expressHandlers.click ).toBeDefined();
 				} );
-				clickWallet();
+				act( () => {
+					expressHandlers.click( {
+						expressPaymentType: 'google_pay',
+						resolve: jest.fn(),
+					} );
+				} );
 				await act( async () => {
 					await expressHandlers.confirm( {
 						billingDetails: {
