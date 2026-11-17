@@ -299,7 +299,7 @@ const displayLoginConfirmation = ( expressPaymentType ) => {
 
 	// eslint-disable-next-line no-alert
 	if ( window.confirm( message ) ) {
-		window.location.href = loginConfirmation.redirect_url;
+		navigate( loginConfirmation.redirect_url );
 	}
 };
 
@@ -1172,7 +1172,7 @@ const refreshBlocksCartUi = () =>
 		data: {},
 	} ).catch( refreshBlocksCartData );
 
-const ExpressCheckoutContent = ( {
+const ExpressCheckoutElement = ( {
 	method,
 	api,
 	billing,
@@ -1192,6 +1192,7 @@ const ExpressCheckoutContent = ( {
 	const appliedElementsOptionsRef = useRef( null );
 	const latestCartDataRef = useRef( null );
 	const walletMutatedCartRef = useRef( false );
+	const clickLockedPageRef = useRef( false );
 	const methodConfig = METHOD_CONFIG[ method ];
 
 	const markWalletCartMutation = useCallback( () => {
@@ -1297,6 +1298,7 @@ const ExpressCheckoutContent = ( {
 			// Client 11.1.0 locks the page while the wallet sheet is open (block-buttons/hooks/use-express-checkout.js:141-143,
 			// onClickHandler() at event-handlers.js:304-310); a cancel or a failed payment unlocks it.
 			lockPage();
+			clickLockedPageRef.current = true;
 			if ( methodConfig.clickEvent ) {
 				recordWooPaymentsUserEvent(
 					getTrackingSettings(),
@@ -1325,6 +1327,7 @@ const ExpressCheckoutContent = ( {
 		// which the server cart already holds. Client 11.1.0 refreshes only after an address pick (event-handlers.js:319-325).
 		expressElementRef.current.on( 'cancel', () => {
 			// Client 11.1.0 onCancelHandler() (event-handlers.js:320-326, block-buttons/hooks/use-express-checkout.js:47-50).
+			clickLockedPageRef.current = false;
 			unlockPage();
 			refreshCartAfterWalletMutation( refreshBlocksCartUi );
 			onClose?.();
@@ -1529,6 +1532,8 @@ const ExpressCheckoutContent = ( {
 					throw new Error( getCheckoutErrorMessage( response ) );
 				}
 
+				// From here completePayment() owns the page lock, so an unmount leaves it up.
+				clickLockedPageRef.current = false;
 				await redirectToOrder( response, api );
 			} catch ( error ) {
 				const message =
@@ -1540,6 +1545,7 @@ const ExpressCheckoutContent = ( {
 
 				// Client 11.1.0 abortPayment() unlocks the page on every failure, a navigation that throws included
 				// (event-handlers.js:254-271, onAbortPaymentHandler() at :312-314, block-buttons/hooks/use-express-checkout.js:57-63).
+				clickLockedPageRef.current = false;
 				unlockPage();
 				refreshCartAfterWalletMutation();
 				setExpressPaymentError?.( message );
@@ -1585,6 +1591,25 @@ const ExpressCheckoutContent = ( {
 		}
 	}, [ liveElementsOptions ] );
 
+	// Runs only on unmount. A sheet may still be open, and whether its destroyed Element sends `cancel` is not
+	// documented, so this click's page lock is released here. The Element is destroyed as react-stripe-js 6.3.0 does on
+	// unmount, ignoring a throw (client 11.3.0 express-checkout-container.js:123-127).
+	useEffect(
+		() => () => {
+			if ( clickLockedPageRef.current ) {
+				clickLockedPageRef.current = false;
+				unlockPage();
+			}
+
+			try {
+				expressElementRef.current?.destroy?.();
+			} catch {
+				// Nothing to recover: the Element is going away.
+			}
+		},
+		[]
+	);
+
 	return (
 		<div className="woopayments-express-checkout-container">
 			<div
@@ -1594,6 +1619,20 @@ const ExpressCheckoutContent = ( {
 		</div>
 	);
 };
+
+/**
+ * Keyed on the cart currency, so a currency change mounts a new Element in a new Elements group: Stripe takes a new
+ * currency through elements.update() without re-checking which wallets support it (client 11.3.0
+ * express-checkout-container.js:117-133).
+ *
+ * @param {Object} props Express payment method props from the Checkout block.
+ */
+const ExpressCheckoutContent = ( props ) => (
+	<ExpressCheckoutElement
+		key={ getCartCurrency( props.billing ) }
+		{ ...props }
+	/>
+);
 
 const getExpressPaymentMethod = ( method ) => {
 	const methodConfig = METHOD_CONFIG[ method ];

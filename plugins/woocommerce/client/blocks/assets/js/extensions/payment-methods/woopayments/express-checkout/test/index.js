@@ -442,6 +442,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 				}
 			} ),
 			unmount: jest.fn(),
+			destroy: jest.fn(),
 			on: jest.fn( ( eventName, handler ) => {
 				expressHandlers[ eventName ] = handler;
 			} ),
@@ -1444,6 +1445,39 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		expect( event.resolve ).not.toHaveBeenCalled();
 	} );
 
+	// Client 11.3.0 redirects to the login page when the shopper accepts the dialog
+	// (express-checkout/utils/login-confirmation.ts:42-45).
+	it( 'leaves for the login page when the shopper accepts the login confirmation dialog', async () => {
+		baseExpressCheckoutParams.login_confirmation = {
+			message: 'To pay with **the selected payment method**, log in.',
+			redirect_url: 'https://shop.test/login-redirect/',
+		};
+		window.confirm = jest.fn( () => true );
+
+		registerExpressCheckout();
+		renderExpressPaymentMethod(
+			getRegistration( 'woocommerce_payments_express_checkout_googlePay' )
+		);
+
+		await waitFor( () => {
+			expect( expressHandlers.click ).toBeDefined();
+		} );
+
+		const event = {
+			expressPaymentType: 'google_pay',
+			resolve: jest.fn(),
+		};
+		await act( async () => {
+			expressHandlers.click( event );
+		} );
+
+		expect( navigate ).toHaveBeenCalledTimes( 1 );
+		expect( navigate ).toHaveBeenCalledWith(
+			'https://shop.test/login-redirect/'
+		);
+		expect( event.resolve ).not.toHaveBeenCalled();
+	} );
+
 	it( 'sends order attribution data in the extensions payload', async () => {
 		document.body.insertAdjacentHTML(
 			'beforeend',
@@ -2041,6 +2075,10 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 					amount: 7200,
 				} );
 			} );
+			// Client 11.3.0 keeps the same Elements group when only the amount changes
+			// (block-buttons/components/__tests__/express-checkout-container.test.js).
+			expect( stripe.elements ).toHaveBeenCalledTimes( 1 );
+			expect( expressElement.destroy ).not.toHaveBeenCalled();
 
 			act( () => {
 				expressHandlers.click( { resolve } );
@@ -2110,6 +2148,316 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			expect( stripe.elements ).toHaveBeenCalledWith(
 				expect.objectContaining( { mode: 'payment', amount: 1 } )
 			);
+		} );
+	} );
+
+	// Client 11.3.0 keys the Elements group on the cart currency, because Stripe takes a new currency through
+	// elements.update() without re-checking which wallets support it (block-buttons/components/
+	// express-checkout-container.js:117-133); react-stripe-js destroys the old Element when the group unmounts.
+	describe( 'a cart currency change after the button mounted', () => {
+		// A Store API cart in EUR whose wallet list no longer has Amazon Pay
+		// (WooPaymentsExpressCheckoutStoreApiExtension asks is_amazon_pay_usable() for the cart's currency).
+		const eurBilling = {
+			...billing,
+			cartTotal: { value: 4600 },
+			currency: { code: 'EUR', minorUnit: 2 },
+		};
+		const eurCart = cartWithExpressMethods( [ 'payment_request' ], {
+			totals: { ...blocksCart.totals, currency_code: 'EUR' },
+			cartTotals: { ...blocksCart.cartTotals, currency_code: 'EUR' },
+		} );
+		let createdElements;
+
+		const renderWallet = ( method, props = {} ) => {
+			const registration = getRegistration(
+				`woocommerce_payments_express_checkout_${ method }`
+			);
+			const sharedProps = {
+				...registration.content.props,
+				onClick: jest.fn(),
+				onClose: jest.fn(),
+				setExpressPaymentError: jest.fn(),
+				...props,
+			};
+			const view = render(
+				createElement( registration.content.type, {
+					...sharedProps,
+					billing,
+					...getPaymentMethodInterfaceProps(
+						cartWithExpressMethods( [
+							'payment_request',
+							'amazon_pay',
+						] )
+					),
+				} )
+			);
+
+			return ( nextBilling, nextCart ) =>
+				view.rerender(
+					createElement( registration.content.type, {
+						...sharedProps,
+						billing: nextBilling,
+						...getPaymentMethodInterfaceProps( nextCart ),
+					} )
+				);
+		};
+
+		beforeEach( () => {
+			baseExpressCheckoutParams.enabled_methods = [
+				'payment_request',
+				'amazon_pay',
+			];
+			baseExpressCheckoutParams.payment_method_types = [
+				'card',
+				'amazon_pay',
+			];
+			createdElements = [];
+			elements.create.mockImplementation( () => {
+				const element = { ...expressElement, destroy: jest.fn() };
+				createdElements.push( element );
+				return element;
+			} );
+			registerExpressCheckout();
+		} );
+
+		it( 'starts a new Elements group in the new currency and destroys the old Element', async () => {
+			const rerenderWallet = renderWallet( 'applePay' );
+			await waitFor( () => {
+				expect( expressElement.mount ).toHaveBeenCalledTimes( 1 );
+			} );
+
+			rerenderWallet( eurBilling, eurCart );
+
+			expect( stripe.elements ).toHaveBeenCalledTimes( 2 );
+			expect( stripe.elements.mock.calls[ 0 ][ 0 ] ).toEqual(
+				expect.objectContaining( {
+					currency: 'usd',
+					paymentMethodTypes: [ 'card', 'amazon_pay' ],
+				} )
+			);
+			expect( stripe.elements.mock.calls[ 1 ][ 0 ] ).toEqual(
+				expect.objectContaining( {
+					amount: 4600,
+					currency: 'eur',
+					paymentMethodTypes: [ 'card' ],
+				} )
+			);
+			expect( createdElements ).toHaveLength( 2 );
+			expect( createdElements[ 0 ].destroy ).toHaveBeenCalledTimes( 1 );
+			expect( createdElements[ 1 ].destroy ).not.toHaveBeenCalled();
+			expect( elements.update ).not.toHaveBeenCalledWith(
+				expect.objectContaining( { currency: expect.anything() } )
+			);
+			expect( expressElement.mount ).toHaveBeenCalledTimes( 2 );
+			expect( window.Stripe ).toHaveBeenCalledTimes( 1 );
+		} );
+
+		// The Store API calls keep the currency the page was rendered with (client 11.3.0 express-checkout/cart-api.js:
+		// 118-120); the header names the Element's currency, so the server refuses an order in another one.
+		it( 'sends the new currency in the payment currency header after the change', async () => {
+			const rerenderWallet = renderWallet( 'applePay' );
+			await waitFor( () => {
+				expect( expressElement.mount ).toHaveBeenCalledTimes( 1 );
+			} );
+
+			rerenderWallet( eurBilling, eurCart );
+
+			await act( async () => {
+				await expressHandlers.confirm( {
+					billingDetails: {
+						email: 'shopper@example.test',
+						name: 'Ada Lovelace',
+					},
+				} );
+			} );
+
+			const checkoutRequest = apiFetch.mock.calls.find( ( [ request ] ) =>
+				request.path.startsWith( '/wc/store/v1/checkout' )
+			)?.[ 0 ];
+			expect( checkoutRequest.path ).toBe(
+				'/wc/store/v1/checkout?currency=USD'
+			);
+			expect( checkoutRequest.headers ).toEqual(
+				expect.objectContaining( {
+					'X-WooPayments-Payment-Currency': 'eur',
+				} )
+			);
+		} );
+
+		describe( 'with jQuery BlockUI on the page', () => {
+			let pageLock;
+
+			beforeEach( () => {
+				pageLock = createPageLock();
+				window.jQuery = {
+					blockUI: pageLock.blockUI,
+					unblockUI: jest.fn( pageLock.unblockUI ),
+				};
+			} );
+
+			afterEach( () => {
+				delete window.jQuery;
+			} );
+
+			const clickWallet = () =>
+				act( () => {
+					expressHandlers.click( {
+						expressPaymentType: 'google_pay',
+						resolve: jest.fn(),
+					} );
+				} );
+
+			// Client 11.3.0 releases the click's lock only on cancel or failure (event-handlers.js:304-326); whether a
+			// destroyed Element still sends either is not documented, so the remount releases this click's lock itself.
+			it( 'releases the page lock its own click put up when the Element remounts', async () => {
+				const rerenderWallet = renderWallet( 'googlePay' );
+				await waitFor( () => {
+					expect( expressHandlers.click ).toBeDefined();
+				} );
+				clickWallet();
+				expect( pageLock.isLocked() ).toBe( true );
+
+				rerenderWallet( eurBilling, eurCart );
+
+				expect( window.jQuery.unblockUI ).toHaveBeenCalledTimes( 1 );
+				expect( pageLock.isLocked() ).toBe( false );
+				expect( createdElements ).toHaveLength( 2 );
+			} );
+
+			// react-stripe-js 6.3.0 ignores a throw from destroy() on unmount (dist/react-stripe.js:678-688).
+			it( 'releases the page lock and mounts the new Element when destroying the old one throws', async () => {
+				const rerenderWallet = renderWallet( 'googlePay' );
+				await waitFor( () => {
+					expect( expressHandlers.click ).toBeDefined();
+				} );
+				clickWallet();
+				createdElements[ 0 ].destroy.mockImplementation( () => {
+					throw new Error( 'The Element was already destroyed.' );
+				} );
+
+				rerenderWallet( eurBilling, eurCart );
+
+				expect( createdElements[ 0 ].destroy ).toHaveBeenCalledTimes(
+					1
+				);
+				expect( createdElements ).toHaveLength( 2 );
+				expect( expressElement.mount ).toHaveBeenCalledTimes( 2 );
+				expect( pageLock.isLocked() ).toBe( false );
+			} );
+
+			it( 'leaves a page lock its own click did not put up when the Element remounts', async () => {
+				const rerenderApplePay = renderWallet( 'applePay' );
+				await waitFor( () => {
+					expect( expressElement.mount ).toHaveBeenCalledTimes( 1 );
+				} );
+
+				// Another script's overlay.
+				window.jQuery.blockUI( { message: 'Another script is busy' } );
+				rerenderApplePay( eurBilling, eurCart );
+				expect( createdElements ).toHaveLength( 2 );
+				expect( window.jQuery.unblockUI ).not.toHaveBeenCalled();
+				expect( pageLock.isLocked() ).toBe( true );
+				pageLock.unblockUI();
+
+				// The Google Pay button's sheet is open while the Apple Pay button remounts.
+				renderWallet( 'googlePay' );
+				await waitFor( () => {
+					expect( expressElement.mount ).toHaveBeenCalledTimes( 3 );
+				} );
+				clickWallet();
+				expect( pageLock.isLocked() ).toBe( true );
+
+				rerenderApplePay( billing, blocksCart );
+				expect( createdElements ).toHaveLength( 4 );
+				expect( window.jQuery.unblockUI ).not.toHaveBeenCalled();
+				expect( pageLock.isLocked() ).toBe( true );
+			} );
+
+			// A cancel or a failed payment releases the click's lock (client 11.3.0 event-handlers.js:312-326); a later
+			// remount of that button leaves the lock another wallet's click put up.
+			it.each( [
+				[
+					'the sheet is canceled',
+					async () => {
+						act( () => {
+							expressHandlers.cancel();
+						} );
+					},
+				],
+				[
+					'the payment fails',
+					async () => {
+						// Store API checkout error (AbstractRoute::error_to_response()), a declined payment
+						// (src/StoreApi/Utilities/CheckoutTrait.php:135).
+						apiFetch.mockRejectedValueOnce( {
+							code: 'woocommerce_rest_checkout_process_payment_error',
+							message: 'Your card was declined.',
+							data: { status: 400 },
+						} );
+						await act( async () => {
+							await expressHandlers.confirm( {
+								paymentFailed: jest.fn(),
+								billingDetails: {
+									email: 'shopper@example.test',
+									name: 'Ada Lovelace',
+								},
+							} );
+						} );
+					},
+				],
+			] )(
+				'leaves the page lock of another wallet when the Element remounts after %s',
+				async ( _, endPayment ) => {
+					const rerenderGooglePay = renderWallet( 'googlePay' );
+					await waitFor( () => {
+						expect( expressHandlers.click ).toBeDefined();
+					} );
+					clickWallet();
+					await endPayment();
+					expect( pageLock.isLocked() ).toBe( false );
+
+					renderWallet( 'applePay' );
+					await waitFor( () => {
+						expect( expressElement.mount ).toHaveBeenCalledTimes(
+							2
+						);
+					} );
+					clickWallet();
+					expect( pageLock.isLocked() ).toBe( true );
+					window.jQuery.unblockUI.mockClear();
+
+					rerenderGooglePay( eurBilling, eurCart );
+
+					expect( createdElements ).toHaveLength( 3 );
+					expect( window.jQuery.unblockUI ).not.toHaveBeenCalled();
+					expect( pageLock.isLocked() ).toBe( true );
+				}
+			);
+
+			// Client 11.3.0 locks the page before it leaves for the order (event-handlers.js:316-318); the Checkout block
+			// can still re-render the button while the order page loads.
+			it( 'keeps the page locked for the order page when the Element remounts after the payment', async () => {
+				const rerenderWallet = renderWallet( 'googlePay' );
+				await waitFor( () => {
+					expect( expressHandlers.click ).toBeDefined();
+				} );
+				clickWallet();
+				await act( async () => {
+					await expressHandlers.confirm( {
+						billingDetails: {
+							email: 'shopper@example.test',
+							name: 'Ada Lovelace',
+						},
+					} );
+				} );
+				expect( navigate ).toHaveBeenCalledTimes( 1 );
+
+				rerenderWallet( eurBilling, eurCart );
+
+				expect( createdElements ).toHaveLength( 2 );
+				expect( window.jQuery.unblockUI ).not.toHaveBeenCalled();
+				expect( pageLock.isLocked() ).toBe( true );
+			} );
 		} );
 	} );
 
@@ -2894,8 +3242,10 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			} );
 
 			// Client 11.1.0: a throw from `window.location = url` is inside onConfirmHandler()'s try, so abortPayment() shows
-			// it and unblocks (event-handlers.js:244-271, :312-314). Setting `location.href` to a URL the browser cannot
-			// parse throws a TypeError (https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-location-href).
+			// it and unblocks (event-handlers.js:244-271, :312-314). Here the navigation is `location.assign()`, which
+			// throws a SyntaxError DOMException on a URL the browser cannot parse
+			// (https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-location-assign); the thrown message is
+			// test data, shown as the payment error whatever the error's type.
 			it( 'unlocks the page and shows the error when leaving for the order throws', async () => {
 				const setExpressPaymentError = jest.fn();
 				navigate.mockImplementation( () => {
