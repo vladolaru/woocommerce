@@ -159,17 +159,51 @@ class SelectedCurrencyPersistenceServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should recalculate cart after currency changes.
+	 * @testdox Should recalculate the cart only when the stored currency changes, and reset the state on every update: $_dataName.
+	 *
+	 * Client 11.3.0 `update_selected_currency()` compares the stored code with the new one before writing it and recalculates
+	 * only on a change (`includes/multi-currency/MultiCurrency.php:1117`, `:1135-1141`; test
+	 * `tests/unit/multi-currency/test-class-multi-currency.php:1631-1652`).
+	 *
+	 * @dataProvider provide_stored_currencies
+	 *
+	 * @param bool        $logged_in      Whether a customer is logged in; otherwise a guest's session stores the code.
+	 * @param string|null $stored         Code stored before the update, or null for none.
+	 * @param int         $recalculations Cart calculations the update to GBP makes.
 	 */
-	public function test_recalculates_cart_after_currency_change(): void {
-		$cart      = $this->create_cart();
-		WC()->cart = $cart;
-		$sut       = $this->create_service( 'USD' );
-		wp_set_current_user( self::factory()->user->create() );
+	public function test_recalculates_the_cart_only_on_a_real_currency_change( bool $logged_in, ?string $stored, int $recalculations ): void {
+		$cart          = $this->create_cart();
+		WC()->cart     = $cart;
+		WC()->session  = $this->create_session( $logged_in ? null : $stored );
+		$state_builder = $this->create_state_builder( 'USD' );
+		$sut           = new SelectedCurrencyPersistenceService( $state_builder );
+		if ( $logged_in ) {
+			$user_id = self::factory()->user->create();
+			wp_set_current_user( $user_id );
+			if ( null !== $stored ) {
+				update_user_meta( $user_id, 'wcpay_currency', $stored );
+			}
+		}
 
 		$sut->update_selected_currency( 'GBP' );
 
-		$this->assertSame( 1, $cart->calculate_totals_calls, 'Changing currency should recalculate cart totals.' );
+		$this->assertSame( array( $recalculations, 1 ), array( $cart->calculate_totals_calls, $state_builder->reset_calls ) );
+	}
+
+	/**
+	 * Stored codes before an update to GBP, with the cart calculations the update makes.
+	 *
+	 * @return array<string,array<int,mixed>>
+	 */
+	public function provide_stored_currencies(): array {
+		return array(
+			'customer, same code'    => array( true, 'GBP', 0 ),
+			'customer, another code' => array( true, 'USD', 1 ),
+			'customer, none stored'  => array( true, null, 1 ),
+			'guest, same code'       => array( false, 'GBP', 0 ),
+			'guest, another code'    => array( false, 'USD', 1 ),
+			'guest, none stored'     => array( false, null, 1 ),
+		);
 	}
 
 	/**

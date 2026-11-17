@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
 /**
  * Stores the shopper's selected currency under the `wcpay_currency` key, in user meta for a logged-in customer or in the
- * session for a guest, and recalculates the cart after a change.
+ * session for a guest, and recalculates the cart when the stored currency changes.
  *
  * @since 11.0.0
  * @internal
@@ -58,6 +58,9 @@ class SelectedCurrencyPersistenceService {
 			return false;
 		}
 
+		// Read before the write: the cart was calculated in the stored currency, so only a different one makes it stale.
+		$currency_changed = $this->get_stored_currency_code() !== $currency_code;
+
 		$user_id = get_current_user_id();
 		if ( $user_id ) {
 			update_user_meta( $user_id, StateBuilder::CURRENCY_STORAGE_KEY, $currency_code );
@@ -66,7 +69,31 @@ class SelectedCurrencyPersistenceService {
 		}
 
 		$this->state_builder->reset();
-		$this->recalculate_cart_or_schedule();
+		if ( $currency_changed ) {
+			$this->recalculate_cart_or_schedule();
+		}
+
+		return true;
+	}
+
+	/**
+	 * Persist a currency named by the `currency` URL parameter.
+	 *
+	 * A link read before WordPress has loaded recalculates the cart on `wp_loaded` for any enabled code, the stored one
+	 * included, as client 11.3.0 `update_selected_currency_by_url()` does while the cart has not loaded
+	 * (`includes/multi-currency/MultiCurrency.php:1149-1159`).
+	 *
+	 * @param string $currency_code Three-letter currency code.
+	 * @return bool True when the selected currency was persisted.
+	 */
+	public function update_selected_currency_by_url( string $currency_code ): bool {
+		if ( ! $this->update_selected_currency( $currency_code ) ) {
+			return false;
+		}
+
+		if ( ! did_action( 'wp_loaded' ) ) {
+			$this->schedule_cart_recalculation();
+		}
 
 		return true;
 	}
@@ -152,20 +179,7 @@ class SelectedCurrencyPersistenceService {
 	 * @since 11.0.0
 	 */
 	public function has_stored_currency_code(): bool {
-		$user_id = get_current_user_id();
-		if ( $user_id ) {
-			$currency_code = get_user_meta( $user_id, StateBuilder::CURRENCY_STORAGE_KEY, true );
-
-			return is_string( $currency_code ) && '' !== $currency_code;
-		}
-
-		if ( ! WC()->session ) {
-			WC()->initialize_session();
-		}
-
-		$currency_code = WC()->session->get( StateBuilder::CURRENCY_STORAGE_KEY );
-
-		return is_string( $currency_code ) && '' !== $currency_code;
+		return '' !== $this->get_stored_currency_code();
 	}
 
 	/**
@@ -199,6 +213,28 @@ class SelectedCurrencyPersistenceService {
 	}
 
 	/**
+	 * Get the currency code stored for the current customer: user meta for a logged-in customer, else the guest's session.
+	 *
+	 * @return string The stored code, or an empty string when none is stored.
+	 */
+	private function get_stored_currency_code(): string {
+		$user_id = get_current_user_id();
+		if ( $user_id ) {
+			$currency_code = get_user_meta( $user_id, StateBuilder::CURRENCY_STORAGE_KEY, true );
+
+			return is_string( $currency_code ) ? $currency_code : '';
+		}
+
+		if ( ! WC()->session ) {
+			WC()->initialize_session();
+		}
+
+		$currency_code = WC()->session->get( StateBuilder::CURRENCY_STORAGE_KEY );
+
+		return is_string( $currency_code ) ? $currency_code : '';
+	}
+
+	/**
 	 * Recalculate cart totals now or after WordPress finishes loading.
 	 */
 	private function recalculate_cart_or_schedule(): void {
@@ -207,6 +243,13 @@ class SelectedCurrencyPersistenceService {
 			return;
 		}
 
+		$this->schedule_cart_recalculation();
+	}
+
+	/**
+	 * Recalculate cart totals once WordPress finishes loading, once per request.
+	 */
+	private function schedule_cart_recalculation(): void {
 		if ( ! has_action( 'wp_loaded', array( $this, 'recalculate_cart' ) ) ) {
 			add_action( 'wp_loaded', array( $this, 'recalculate_cart' ) );
 		}

@@ -423,6 +423,63 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A currency link recalculates the cart before the cart is used when it names an enabled currency, the selected one included: $_dataName.
+	 *
+	 * Client 11.3.0 `update_selected_currency_by_url()` asks for the recalculation for any enabled code while the cart has
+	 * not loaded (`includes/multi-currency/MultiCurrency.php:1149-1159`), on top of the one a real change makes.
+	 *
+	 * @dataProvider provide_currency_links
+	 *
+	 * @param string $link           The `currency` query parameter; the customer has EUR stored, and USD and EUR are enabled.
+	 * @param int    $recalculations Cart calculations once WordPress has loaded.
+	 */
+	public function test_a_currency_link_recalculates_the_cart_for_an_enabled_currency( string $link, int $recalculations ): void {
+		global $wp_actions;
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.9' );
+		$customer_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		wp_set_current_user( $customer_id );
+		update_user_meta( $customer_id, 'wcpay_currency', 'EUR' );
+		$cart             = $this->create_counting_cart();
+		$service          = wc_get_container()->get( ServiceFactory::class )->create_selected_currency_persistence_service();
+		$sut              = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, $this->create_request_context( true, false ) );
+		$_GET['currency'] = $link;
+		// The link is read on init, before WordPress has loaded; only what the link schedules runs on wp_loaded here.
+		remove_all_actions( 'wp_loaded' );
+		$loaded = $wp_actions['wp_loaded'] ?? null;
+		unset( $wp_actions['wp_loaded'] );
+
+		try {
+			WC()->cart = $cart;
+			try {
+				$sut->handle_init();
+			} finally {
+				$wp_actions['wp_loaded'] = $loaded; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restoring the count read above.
+			}
+			do_action( 'wp_loaded' ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		} finally {
+			WC()->cart = $this->original_cart;
+		}
+
+		$this->assertSame( $recalculations, $cart->calculate_totals_calls );
+	}
+
+	/**
+	 * Currency links on a store with USD and EUR enabled, for a customer with EUR stored.
+	 *
+	 * @return array<string,array<int,mixed>>
+	 */
+	public function provide_currency_links(): array {
+		return array(
+			'the selected currency'    => array( 'eur', 1 ),
+			'another enabled currency' => array( 'USD', 1 ),
+			'a currency not enabled'   => array( 'GBP', 0 ),
+		);
+	}
+
+	/**
 	 * @testdox Should leave the selected currency unchanged when a sanitizer filter returns false for the currency argument.
 	 */
 	public function test_leaves_selected_currency_unchanged_when_the_sanitizer_returns_false(): void {
@@ -1512,6 +1569,34 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 			 */
 			public function is_store_api_request(): bool {
 				return $this->is_store_api_request;
+			}
+		};
+	}
+
+	/**
+	 * Create a cart that counts its calculations and registers no cart hooks.
+	 *
+	 * @return \WC_Cart&object{calculate_totals_calls: int}
+	 */
+	private function create_counting_cart(): \WC_Cart {
+		return new class() extends \WC_Cart {
+			/**
+			 * Calculate totals call count.
+			 *
+			 * @var int
+			 */
+			public int $calculate_totals_calls = 0;
+
+			/**
+			 * Skip the parent constructor so the double registers no cart hooks.
+			 */
+			public function __construct() {}
+
+			/**
+			 * Count a calculation.
+			 */
+			public function calculate_totals(): void {
+				++$this->calculate_totals_calls;
 			}
 		};
 	}

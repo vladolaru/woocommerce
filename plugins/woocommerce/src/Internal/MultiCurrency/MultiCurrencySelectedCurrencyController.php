@@ -176,7 +176,7 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 			return;
 		}
 
-		$this->get_persistence_service()->update_selected_currency( strtoupper( trim( (string) $currency_code ) ) );
+		$this->get_persistence_service()->update_selected_currency_by_url( strtoupper( trim( (string) $currency_code ) ) );
 		$this->clear_url_price_params();
 	}
 
