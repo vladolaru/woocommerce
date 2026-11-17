@@ -55,6 +55,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		'shortcode_atts_fee',
 		'do_shortcode_tag',
 		'woocommerce_before_calculate_totals',
+		'woocommerce_cart_shipping_packages',
 	);
 
 	/**
@@ -81,6 +82,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 			WC()->session->__unset( 'shipping_for_package_0' );
 			WC()->customer->set_props( $this->customer_address );
 		}
+		wp_set_current_user( 0 );
 
 		parent::tearDown();
 	}
@@ -119,6 +121,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 					'shortcode_atts_fee'                  => array( 'start_shipping_fee_rendering' => array( 10, 1 ) ),
 					'wc_get_price_decimal_separator'      => array( 'use_store_decimal_separator_during_shipping_fee' => array( 990, 1 ) ),
 					'woocommerce_before_calculate_totals' => array( 'reset_shipping_fee_rendering' => array( PHP_INT_MIN, 1 ) ),
+					'woocommerce_cart_shipping_packages'  => array( 'add_currency_to_shipping_packages' => array( PHP_INT_MAX, 1 ) ),
 					'woocommerce_coupon_get_amount'       => array( 'get_coupon_amount' => array( 99, 2 ) ),
 					'woocommerce_coupon_get_maximum_amount' => array( 'get_coupon_min_max_amount' => array( 99, 2 ) ),
 					'woocommerce_coupon_get_minimum_amount' => array( 'get_coupon_min_max_amount' => array( 99, 2 ) ),
@@ -770,6 +773,159 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should mark each shipping package with the selected currency in the extension's spelling: $_dataName.
+	 *
+	 * Client 11.3.0 `tests/unit/multi-currency/test-class-frontend-prices.php:120-147`: EUR at 0.9, rounding 0.25 and charm
+	 * -0.01 is `EUR:0.9:0.25:-0.01:1`, with `0` last when charm also applies to shipping. A currency with no stored rounding
+	 * or charm carries the client's defaults as its getters return them (`includes/multi-currency/MultiCurrency.php:2322-2325`,
+	 * `includes/multi-currency/Currency.php:65-67`, `:121-123`): rounding `1.00` and charm `0`.
+	 *
+	 * @dataProvider provide_shipping_package_markers
+	 *
+	 * @param array<string,string> $options      Multi-Currency options of the selected currency.
+	 * @param bool                 $charm_only   Whether charm applies to products only.
+	 * @param string               $selected     Selected currency.
+	 * @param string               $marker       Expected marker.
+	 */
+	public function test_marks_each_shipping_package_with_the_selected_currency( array $options, bool $charm_only, string $selected, string $marker ): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', $selected ) );
+		foreach ( $options as $option => $value ) {
+			update_option( $option, $value );
+		}
+		add_filter( 'wcpay_multi_currency_override_selected_currency', fn() => $selected );
+		add_filter( 'wcpay_multi_currency_apply_charm_only_to_products', fn() => $charm_only );
+		$this->create_real_controller()->register();
+
+		$packages = apply_filters(
+			'woocommerce_cart_shipping_packages',
+			array(
+				0 => array( 'contents' => array( 'a' ) ),
+				1 => array( 'contents' => array( 'b' ) ),
+			)
+		);
+
+		$this->assertSame(
+			array(
+				0 => array(
+					'contents'             => array( 'a' ),
+					'wcpay_multi_currency' => $marker,
+				),
+				1 => array(
+					'contents'             => array( 'b' ),
+					'wcpay_multi_currency' => $marker,
+				),
+			),
+			$packages
+		);
+	}
+
+	/**
+	 * Selected currencies with the marker the client builds for them.
+	 *
+	 * @return array<string,array{0:array<string,string>,1:bool,2:string,3:string}>
+	 */
+	public function provide_shipping_package_markers(): array {
+		$eur = array(
+			'wcpay_multi_currency_exchange_rate_eur'  => 'manual',
+			'wcpay_multi_currency_manual_rate_eur'    => '0.9',
+			'wcpay_multi_currency_price_rounding_eur' => '0.25',
+			'wcpay_multi_currency_price_charm_eur'    => '-0.01',
+		);
+
+		return array(
+			'charm on products only'      => array( $eur, true, 'EUR', 'EUR:0.9:0.25:-0.01:1' ),
+			'charm on shipping too'       => array( $eur, false, 'EUR', 'EUR:0.9:0.25:-0.01:0' ),
+			'no stored rounding or charm' => array(
+				array(
+					'wcpay_multi_currency_exchange_rate_gbp' => 'manual',
+					'wcpay_multi_currency_manual_rate_gbp' => '0.8',
+				),
+				true,
+				'GBP',
+				'GBP:0.8:1.00:0:1',
+			),
+		);
+	}
+
+	/**
+	 * @testdox Should leave the shipping packages untouched where it adds no marker: $_dataName.
+	 *
+	 * Client 11.3.0 `tests/unit/multi-currency/test-class-frontend-prices.php:149-182`: anything but an array, a package that
+	 * is not an array and an empty package are left as they are; in the store currency the packages stay identical, so they
+	 * hash as on a store without Multi-Currency.
+	 *
+	 * @dataProvider provide_unmarked_shipping_packages
+	 *
+	 * @param string $selected Selected currency.
+	 * @param mixed  $packages Packages the filter receives.
+	 * @param mixed  $expected Packages the filter returns.
+	 */
+	public function test_leaves_the_shipping_packages_untouched_where_it_adds_no_marker( string $selected, $packages, $expected ): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.9' );
+		add_filter( 'wcpay_multi_currency_override_selected_currency', fn() => $selected );
+		$this->create_real_controller()->register();
+
+		$this->assertSame( $expected, apply_filters( 'woocommerce_cart_shipping_packages', $packages ) );
+	}
+
+	/**
+	 * Packages the filter leaves untouched.
+	 *
+	 * @return array<string,array{0:string,1:mixed,2:mixed}>
+	 */
+	public function provide_unmarked_shipping_packages(): array {
+		$marked = array(
+			'contents'             => array( 'a' ),
+			'wcpay_multi_currency' => 'EUR:0.9:1.00:0:1',
+		);
+
+		return array(
+			'not an array'                   => array( 'EUR', 'not-an-array', 'not-an-array' ),
+			'a package that is not an array' => array( 'EUR', array( array( 'contents' => array( 'a' ) ), 'skip-me' ), array( $marked, 'skip-me' ) ),
+			'an empty package'               => array( 'EUR', array( array() ), array( array() ) ),
+			'the store currency'             => array( 'USD', array( array( 'contents' => array( 'a' ) ) ), array( array( 'contents' => array( 'a' ) ) ) ),
+		);
+	}
+
+	/**
+	 * @testdox Should build a fresh shipping rate when a signed-in shopper switches currency on the account page after the cart loaded.
+	 *
+	 * The account page saves the default currency on `template_redirect`, after the cart has loaded, through the persistence
+	 * service, which recalculates at once. A zero-priced shippable line hashes alike in both currencies, so without the
+	 * marker the 9.00 rate built in EUR at 0.9 was reused as 9.00 USD. The extension marks the package
+	 * (client 11.3.0 `includes/multi-currency/FrontendPrices.php:587-627`), so its rate is built again: the 10.00 flat rate.
+	 */
+	public function test_builds_a_fresh_shipping_rate_after_an_account_page_currency_switch(): void {
+		global $wp_actions;
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.9' );
+		update_option( 'wcpay_multi_currency_price_rounding_eur', '0.00' );
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'customer' ) ) );
+		$this->register_storefront_controllers();
+		$persistence = wc_get_container()->get( ServiceFactory::class )->create_selected_currency_persistence_service();
+		$loaded      = $wp_actions['woocommerce_cart_loaded_from_session'] ?? null;
+		// The cart has loaded on both requests, so each switch recalculates at once.
+		$wp_actions['woocommerce_cart_loaded_from_session'] = 1; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restored below.
+
+		try {
+			$persistence->update_selected_currency( 'EUR' );
+			$this->assertSame( 9.0, $this->get_cart_shipping_total( '10', '0' ), 'The rate is built in EUR.' );
+
+			$persistence->update_selected_currency( 'USD' );
+		} finally {
+			$wp_actions['woocommerce_cart_loaded_from_session'] = $loaded; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restoring the count read above.
+		}
+
+		$this->assertSame( array( 'USD', 10.0 ), array( get_woocommerce_currency(), (float) WC()->cart->get_shipping_total() ) );
+	}
+
+	/**
 	 * @testdox Should respect conversion guards for product and coupon prices.
 	 */
 	public function test_respects_conversion_guards_for_product_and_coupon_prices(): void {
@@ -1376,6 +1532,18 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		}
 
 		return $currencies;
+	}
+
+	/**
+	 * Create a prices controller on the real services, owned by the built-in module.
+	 *
+	 * @return MultiCurrencyFrontendPricesController
+	 */
+	private function create_real_controller(): MultiCurrencyFrontendPricesController {
+		$sut = new MultiCurrencyFrontendPricesController();
+		$sut->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ), wc_get_container()->get( ServiceFactory::class ), wc_get_container()->get( RequestContext::class ) );
+
+		return $sut;
 	}
 
 	/**

@@ -134,6 +134,43 @@ class PriceConverter {
 	}
 
 	/**
+	 * Get the marker a shipping package carries for the selected currency, or null when the store currency is selected.
+	 *
+	 * The code, rate, rounding step, charm and whether charm applies to products only, joined with colons from the currency's
+	 * typed getters, byte for byte as client 11.3.0 `FrontendPrices::add_currency_to_shipping_packages()` builds it
+	 * (`includes/multi-currency/FrontendPrices.php:596-627`), so each runtime reuses rates the other cached.
+	 *
+	 * @return string|null
+	 */
+	public function get_selected_currency_shipping_marker(): ?string {
+		$state    = $this->state_builder->build();
+		$currency = $state->get_selected_currency();
+		if ( $currency->get_code() === $state->get_default_currency()->get_code() ) {
+			return null;
+		}
+
+		/**
+		 * Filters whether charm pricing applies only to product prices; shipping gets it too when false.
+		 *
+		 * @param bool $apply_charm_only_to_products Whether charm pricing is product-only.
+		 *
+		 * @since 11.0.0
+		 */
+		$apply_charm_only_to_products = (bool) apply_filters( DisplayService::APPLY_CHARM_PRODUCTS_HOOK, true );
+
+		return implode(
+			':',
+			array(
+				$currency->get_code(),
+				$currency->get_rate(),
+				$currency->get_rounding(),
+				$currency->get_charm(),
+				$apply_charm_only_to_products ? '1' : '0',
+			)
+		);
+	}
+
+	/**
 	 * Convert a selected-currency amount back to the store currency at the raw rate, with no rounding.
 	 *
 	 * @param float $amount Amount in the selected currency.

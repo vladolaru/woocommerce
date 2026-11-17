@@ -140,6 +140,8 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 		add_filter( 'do_shortcode_tag', array( $this, 'end_shipping_fee_rendering' ), PHP_INT_MIN, 2 );
 		// PHP_INT_MIN so the fee state is cleared before plugins that set item prices on the same action read a format.
 		add_action( 'woocommerce_before_calculate_totals', array( $this, 'reset_shipping_fee_rendering' ), PHP_INT_MIN );
+		// PHP_INT_MAX so the marker is added last and survives a plugin that rebuilds the packages on this filter.
+		add_filter( 'woocommerce_cart_shipping_packages', array( $this, 'add_currency_to_shipping_packages' ), PHP_INT_MAX );
 		add_filter( 'woocommerce_coupon_get_amount', array( $this, 'get_coupon_amount' ), 99, 2 );
 		add_filter( 'woocommerce_coupon_get_minimum_amount', array( $this, 'get_coupon_min_max_amount' ), 99, 2 );
 		add_filter( 'woocommerce_coupon_get_maximum_amount', array( $this, 'get_coupon_min_max_amount' ), 99, 2 );
@@ -332,6 +334,38 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	public function reset_shipping_fee_rendering(): void {
 		self::$shipping_method_rendering_fee = null;
 		self::$store_currency_cost_method    = null;
+	}
+
+	/**
+	 * Mark each shipping package with the selected currency, so core's package hash changes with it.
+	 *
+	 * Core reuses a package's cached rates while its hash is unchanged, and the rate was converted once when it was built.
+	 * Store-currency packages stay unmarked, so they hash as where Multi-Currency does not run (client 11.3.0
+	 * `includes/multi-currency/FrontendPrices.php:587-627`).
+	 *
+	 * @internal
+	 *
+	 * @param mixed $packages Shipping packages; anything but an array is returned untouched.
+	 * @return mixed
+	 */
+	public function add_currency_to_shipping_packages( $packages ) {
+		if ( ! is_array( $packages ) ) {
+			return $packages;
+		}
+
+		$marker = $this->get_price_converter()->get_selected_currency_shipping_marker();
+		if ( null === $marker ) {
+			return $packages;
+		}
+
+		foreach ( array_keys( $packages ) as $key ) {
+			// An empty package stays empty, so core still discards it instead of rating it.
+			if ( is_array( $packages[ $key ] ) && ! empty( $packages[ $key ] ) ) {
+				$packages[ $key ]['wcpay_multi_currency'] = $marker;
+			}
+		}
+
+		return $packages;
 	}
 
 	/**
