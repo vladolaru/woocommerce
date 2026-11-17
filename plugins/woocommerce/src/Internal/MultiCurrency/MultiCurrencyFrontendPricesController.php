@@ -284,7 +284,10 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	 * request that is neither Store API nor a Store API batch keeps the selection, as it already prices orders in the store
 	 * currency. A live coupon's amount is in the store currency. A deleted coupon is rebuilt from the order line: its
 	 * `coupon_info` amount was converted at checkout, a legacy `coupon_data` amount was not, and a rebuild with no stored
-	 * amount takes the order line's discount, already in the order's currency.
+	 * amount takes the order line's discount, already in the order's currency. Known gap, shared with the client
+	 * (`FrontendPrices.php:553-555`): core's former `OrderCouponDataMigrator` wrote `coupon_info` from the raw `coupon_data`
+	 * without converting it, and nothing marks such an entry apart from one written at checkout, so it is treated as
+	 * converted.
 	 *
 	 * @internal
 	 *

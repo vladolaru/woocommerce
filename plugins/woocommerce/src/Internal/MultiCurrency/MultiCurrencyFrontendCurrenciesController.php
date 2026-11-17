@@ -163,7 +163,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 			add_filter( 'woocommerce_order_class', array( $this, 'flag_order_loading' ), 900 );
 			// Pushed before calculate_totals() reads the decimals, popped after every other listener has read them.
 			add_action( 'woocommerce_order_before_calculate_totals', array( $this, 'init_calculated_order_currency' ), 10, 2 );
-			add_action( 'woocommerce_order_after_calculate_totals', array( $this, 'clear_calculated_order_currency' ), 900 );
+			add_action( 'woocommerce_order_after_calculate_totals', array( $this, 'clear_calculated_order_currency' ), 900, 3 );
 
 			add_action( 'before_woocommerce_pay', array( $this, 'init_order_currency_from_query_vars' ) );
 			add_action( 'woocommerce_blocks_enqueue_cart_block_scripts_after', array( $this, 'enqueue_blocks_totals_script' ) );
@@ -328,9 +328,23 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	/**
 	 * Drop the innermost recalculating order's currency once its totals are calculated.
 	 *
+	 * A direct stage_totals() defers this hook to the order's next save, which can run inside a live calculate_totals();
+	 * the stack holds that live calculation's entry then, and the staged call's own entry never outlived its first read.
+	 * So a staged hook pops nothing.
+	 *
 	 * @internal
+	 *
+	 * @param mixed $and_taxes Whether taxes were calculated too.
+	 * @param mixed $order     Order whose totals were calculated.
+	 * @param mixed $staged    Whether the totals were staged and are not yet saved.
 	 */
-	public function clear_calculated_order_currency(): void {
+	public function clear_calculated_order_currency( $and_taxes = true, $order = null, $staged = false ): void {
+		unset( $and_taxes, $order );
+
+		if ( true === $staged ) {
+			return;
+		}
+
 		array_pop( $this->calculated_order_currencies );
 	}
 

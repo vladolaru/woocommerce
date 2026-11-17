@@ -100,7 +100,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 					'woocommerce_cart_hash'           => array( 'add_currency_to_cart_hash' => array( 900, 1 ) ),
 					'woocommerce_currency'            => array( 'get_woocommerce_currency' => array( 900, 1 ) ),
 					'woocommerce_get_formatted_order_total' => array( 'maybe_clear_order_currency_after_formatted_order_total' => array( 900, 4 ) ),
-					'woocommerce_order_after_calculate_totals' => array( 'clear_calculated_order_currency' => array( 900, 1 ) ),
+					'woocommerce_order_after_calculate_totals' => array( 'clear_calculated_order_currency' => array( 900, 3 ) ),
 					'woocommerce_order_before_calculate_totals' => array( 'init_calculated_order_currency' => array( 10, 2 ) ),
 					'woocommerce_order_class'         => array( 'flag_order_loading' => array( 900, 1 ) ),
 					'woocommerce_order_get_total'     => array( 'maybe_init_order_currency_from_order_total_prop' => array( 900, 2 ) ),
@@ -865,7 +865,9 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * Client 11.3.0 `tests/unit/multi-currency/test-class-frontend-currencies.php:528-578`: a BHD order (3 decimals) with JPY
 	 * selected, then the selection again once the calculation ends, or when the entry belongs to no live calculation. The
-	 * currency code stays the selection throughout.
+	 * currency code stays the selection throughout. A listener of the after hook later than the pop (client 11.3.0 pops at
+	 * 900, `includes/multi-currency/FrontendCurrencies.php:184`, `:597-599`) still runs inside calculate_totals() and gets the
+	 * selection.
 	 */
 	public function test_uses_the_recalculating_order_decimals_only_while_it_calculates(): void {
 		$sut                     = $this->register_on_real_services( array( 'JPY' ) );
@@ -873,6 +875,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 		$bhd_order               = new \WC_Order();
 		$bhd_order->set_currency( 'BHD' );
 		$during = array();
+		$after  = null;
 		add_action(
 			'woocommerce_order_before_calculate_totals',
 			static function () use ( &$during ) {
@@ -880,15 +883,55 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 			},
 			20
 		);
+		add_action(
+			'woocommerce_order_after_calculate_totals',
+			static function () use ( &$after ) {
+				$after = wc_get_price_decimals();
+			},
+			1000
+		);
 
 		$bhd_order->calculate_totals();
 
 		$this->assertSame( array( 3, 'JPY' ), $during );
+		$this->assertSame( 0, $after, 'A listener after the pop reads the selection.' );
 		$this->assertSame( 0, wc_get_price_decimals() );
 
 		$sut->init_calculated_order_currency( true, $bhd_order );
 		$this->assertSame( 0, wc_get_price_decimals() );
 		$this->assertSame( 0, wc_get_price_decimals() );
+	}
+
+	/**
+	 * @testdox Should keep a recalculation in its order's currency when that order's staged after hook fires inside it.
+	 *
+	 * A direct stage_totals() leaves woocommerce_order_after_calculate_totals to the order's next save, with its staged
+	 * argument true (core `abstract-wc-order.php:3251`, `:502-511`). calculate_totals() with taxes saves in its tax step,
+	 * inside the live calculation, and that save runs the left hook. Client 11.3.0 pops on every after hook
+	 * (`includes/multi-currency/FrontendCurrencies.php:597-599`), which would drop the live order's entry here and round
+	 * the rest of the calculation at the selected JPY's decimals.
+	 */
+	public function test_keeps_a_recalculation_in_its_currency_when_its_staged_after_hook_fires_inside_it(): void {
+		$order = $this->create_order_with_lines( 'USD', array( '1.49', '1.49', '1.45' ) );
+		$order->save();
+		$this->register_on_real_services( array( 'JPY' ) );
+		$this->selected_currency = 'JPY';
+		$staged_hooks            = array();
+		add_action(
+			'woocommerce_order_after_calculate_totals',
+			static function ( $and_taxes, $calculated, $staged = false ) use ( &$staged_hooks ) {
+				unset( $and_taxes, $calculated );
+				$staged_hooks[] = $staged;
+			},
+			10,
+			3
+		);
+
+		$order->stage_totals();
+		$order->calculate_totals();
+
+		$this->assertSame( array( true, false ), $staged_hooks, 'The staged hook runs inside the recalculation, before its own.' );
+		$this->assertSame( '4.43', $order->get_total() );
 	}
 
 	/**
