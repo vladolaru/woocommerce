@@ -662,6 +662,36 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should format in the named order's currency only inside an order-confirmation block render: $_dataName.
+	 * @testWith ["inside the block render", true, 2]
+	 *           ["other prices on the page", false, 0]
+	 *
+	 * ISK (0 decimals) selected and a USD order on the block order-received page: client 11.3.0
+	 * `tests/unit/multi-currency/test-class-frontend-currencies.php:331-357` and `:386-400`.
+	 *
+	 * @param string $label     Row name.
+	 * @param bool   $rendering Whether an order-confirmation block is rendering.
+	 * @param int    $expected  Decimals the read gets.
+	 */
+	public function test_formats_in_the_named_order_currency_only_inside_a_confirmation_block( string $label, bool $rendering, int $expected ): void {
+		unset( $label );
+		$order_id                = $this->create_saved_order( 'USD', '10.49' );
+		$sut                     = $this->register_on_real_services( array( 'ISK' ), $this->create_block_render_context( $rendering ) );
+		$this->selected_currency = 'ISK';
+
+		$this->with_query_vars(
+			array(
+				'pagename'       => 'checkout',
+				'order-received' => $order_id,
+			),
+			function () use ( $sut, $expected ): void {
+				$this->assertSame( $expected, $sut->get_price_decimals( 2 ) );
+				$this->assertSame( 'ISK', get_woocommerce_currency(), 'The block render formats amounts; the currency code stays the selection.' );
+			}
+		);
+	}
+
+	/**
 	 * @testdox Should resolve an order-pay var with trailing characters to its order.
 	 *
 	 * Client 11.3.0 `tests/unit/multi-currency/test-class-frontend-currencies.php:975-985`: the var is read as a positive
@@ -832,10 +862,11 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	 * Register the controller on the real services: a USD store with the given currencies enabled at manual rates, and
 	 * the selection read from $selected_currency on every read.
 	 *
-	 * @param string[] $currency_codes Enabled currencies besides USD.
+	 * @param string[]                 $currency_codes        Enabled currencies besides USD.
+	 * @param OrderContextService|null $order_context_service Order context service; the container's by default.
 	 * @return MultiCurrencyFrontendCurrenciesController
 	 */
-	private function register_on_real_services( array $currency_codes ): MultiCurrencyFrontendCurrenciesController {
+	private function register_on_real_services( array $currency_codes, ?OrderContextService $order_context_service = null ): MultiCurrencyFrontendCurrenciesController {
 		$rates = array(
 			'EUR' => '0.9',
 			'ISK' => '140',
@@ -850,10 +881,46 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 		add_filter( 'wcpay_multi_currency_override_selected_currency', fn() => $this->selected_currency );
 
 		$sut = new MultiCurrencyFrontendCurrenciesController();
-		$sut->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ), wc_get_container()->get( ServiceFactory::class ), wc_get_container()->get( RequestContext::class ), wc_get_container()->get( OrderContextService::class ) );
+		$sut->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ), wc_get_container()->get( ServiceFactory::class ), wc_get_container()->get( RequestContext::class ), $order_context_service ?? wc_get_container()->get( OrderContextService::class ) );
 		$sut->register();
 
 		return $sut;
+	}
+
+	/**
+	 * Create an order context service that says whether an order-confirmation block is rendering, and reads the query vars.
+	 *
+	 * @param bool $rendering Whether an order-confirmation block is rendering.
+	 * @return OrderContextService
+	 */
+	private function create_block_render_context( bool $rendering ): OrderContextService {
+		return new class( $rendering ) extends OrderContextService {
+			/**
+			 * Whether an order-confirmation block is rendering.
+			 *
+			 * @var bool
+			 */
+			private bool $rendering;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param bool $rendering Whether an order-confirmation block is rendering.
+			 */
+			public function __construct( bool $rendering ) {
+				parent::__construct();
+				$this->rendering = $rendering;
+			}
+
+			/**
+			 * Tell whether an order-confirmation block is rendering.
+			 *
+			 * @return bool
+			 */
+			public function is_rendering_order_confirmation(): bool {
+				return $this->rendering;
+			}
+		};
 	}
 
 	/**

@@ -215,7 +215,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 			return absint( $decimals );
 		}
 
-		$currency_decimals = $this->get_display_service()->get_price_decimals( absint( $decimals ), $this->order_currency );
+		$currency_decimals = $this->get_display_service()->get_price_decimals( absint( $decimals ), $this->get_formatting_currency() );
 
 		// A flat-rate percent fee in store units keeps the store's decimals, or the shopper's currency's when it has more.
 		if ( MultiCurrencyFrontendPricesController::is_computing_store_currency_fee() ) {
@@ -232,7 +232,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	 * @return string
 	 */
 	public function get_price_decimal_separator( $separator ): string {
-		return $this->get_display_service()->get_price_decimal_separator( (string) $separator, $this->order_currency );
+		return $this->get_display_service()->get_price_decimal_separator( (string) $separator, $this->get_formatting_currency() );
 	}
 
 	/**
@@ -242,7 +242,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	 * @return string
 	 */
 	public function get_price_thousand_separator( $separator ): string {
-		return $this->get_display_service()->get_price_thousand_separator( (string) $separator, $this->order_currency );
+		return $this->get_display_service()->get_price_thousand_separator( (string) $separator, $this->get_formatting_currency() );
 	}
 
 	/**
@@ -252,7 +252,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	 * @return string
 	 */
 	public function get_woocommerce_price_format( $format ): string {
-		return $this->get_display_service()->get_woocommerce_price_format( (string) $format, $this->order_currency );
+		return $this->get_display_service()->get_woocommerce_price_format( (string) $format, $this->get_formatting_currency() );
 	}
 
 	/**
@@ -262,7 +262,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	 * @return string
 	 */
 	public function get_woocommerce_currency_pos( $position ): string {
-		return $this->get_display_service()->get_woocommerce_currency_pos( (string) $position, $this->order_currency );
+		return $this->get_display_service()->get_woocommerce_currency_pos( (string) $position, $this->get_formatting_currency() );
 	}
 
 	/**
@@ -412,6 +412,23 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 		}
 
 		return $this->display_service;
+	}
+
+	/**
+	 * Get the currency that formats this read, or null for the selected currency.
+	 *
+	 * The order currency set for an order page, else the currency of the order the page names while an order-confirmation
+	 * block renders it (client 11.3.0 `includes/multi-currency/FrontendCurrencies.php:620-624`, `:685-689`). Other prices
+	 * on the page keep the selected currency.
+	 *
+	 * @return string|null
+	 */
+	private function get_formatting_currency(): ?string {
+		if ( null !== $this->order_currency ) {
+			return $this->order_currency;
+		}
+
+		return $this->order_context_service->is_rendering_order_confirmation() ? $this->get_query_var_order_currency() : null;
 	}
 
 	/**

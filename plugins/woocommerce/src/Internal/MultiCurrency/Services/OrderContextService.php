@@ -37,10 +37,7 @@ class OrderContextService {
 	 * @return bool
 	 */
 	public function should_use_order_currency(): bool {
-		$pages = array( 'my-account', 'checkout' );
-		$vars  = array( 'order-received', 'order-pay', 'orders', 'view-order' );
-
-		if ( ! $this->is_page_with_vars( $pages, $vars ) ) {
+		if ( ! $this->is_order_page() ) {
 			return false;
 		}
 
@@ -52,6 +49,23 @@ class OrderContextService {
 				'WC_Order->get_formatted_order_total',
 			)
 		);
+	}
+
+	/**
+	 * Tell whether an order-confirmation block is rendering the order a single-order page names.
+	 *
+	 * Block confirmation pages render the order's amounts without the shortcode calls above, so the block's render counts
+	 * when the page names an order (client 11.3.0 `includes/multi-currency/FrontendCurrencies.php:685-689`). It is kept apart
+	 * from should_use_order_currency(), which also decides when the order currency is set for the rest of the request.
+	 *
+	 * @return bool
+	 */
+	public function is_rendering_order_confirmation(): bool {
+		if ( ! $this->is_order_page() || null === $this->get_order_id_from_query_vars() ) {
+			return false;
+		}
+
+		return $this->is_call_in_backtrace( array( 'Automattic\WooCommerce\Blocks\BlockTypes\OrderConfirmation\AbstractOrderConfirmationBlock->render' ) );
 	}
 
 	/**
@@ -78,6 +92,15 @@ class OrderContextService {
 		}
 
 		return null;
+	}
+
+	/**
+	 * Tell whether this is a My Account or checkout page about orders.
+	 *
+	 * @return bool
+	 */
+	private function is_order_page(): bool {
+		return $this->is_page_with_vars( array( 'my-account', 'checkout' ), array( 'order-received', 'order-pay', 'orders', 'view-order' ) );
 	}
 
 	/**
