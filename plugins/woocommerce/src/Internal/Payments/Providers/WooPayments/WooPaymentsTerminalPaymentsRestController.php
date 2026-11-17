@@ -443,7 +443,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 		$payment_captured = false;
 		try {
 			$intent = $this->api_client->get_payment_intention( $intent_id );
-			if ( ! $this->intent_matches_order( $intent, $order ) ) {
+			if ( ! WooPaymentsIntentCodec::intent_order_id_matches_order( $intent, $order ) ) {
 				$this->get_logger()->error( 'Payment capture rejected due to failed validation: order id on intent is incorrect or missing.', array( 'order_id' => $order->get_id() ) );
 
 				return new WP_Error( 'wcpay_intent_order_mismatch', __( 'The payment cannot be captured', 'woocommerce' ), array( 'status' => 409 ) );
@@ -635,20 +635,6 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 		}
 
 		return null;
-	}
-
-	/**
-	 * Tell whether an intent belongs to an order.
-	 *
-	 * @param array<string,mixed> $intent Intent.
-	 * @param WC_Order            $order  Order.
-	 * @return bool
-	 */
-	private function intent_matches_order( array $intent, WC_Order $order ): bool {
-		$metadata = $this->get_intent_metadata( $intent );
-		$order_id = $metadata['order_id'] ?? '';
-
-		return is_numeric( $order_id ) && $order->get_id() === (int) $order_id;
 	}
 
 	/**

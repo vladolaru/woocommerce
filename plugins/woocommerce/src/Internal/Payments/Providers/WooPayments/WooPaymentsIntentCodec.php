@@ -423,6 +423,27 @@ class WooPaymentsIntentCodec {
 	}
 
 	/**
+	 * Tell whether an intent's metadata names the order by its ID: `order_id` is numeric and, cast to an integer, is the
+	 * order's ID.
+	 *
+	 * Both the built-in store and the WooPayments extension record an intent paid on WooPay only when its `order_id`
+	 * names the order (client 11.3.0 class-wc-payment-gateway-wcpay.php:2097-2114, :2228-2243), so `order_number` is
+	 * not read.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param array<string,mixed> $intent Intent response.
+	 * @param WC_Order            $order  Order.
+	 * @return bool
+	 */
+	public static function intent_order_id_matches_order( array $intent, WC_Order $order ): bool {
+		$metadata = is_array( $intent['metadata'] ?? null ) ? $intent['metadata'] : array();
+		$order_id = $metadata['order_id'] ?? '';
+
+		return is_numeric( $order_id ) && $order->get_id() === (int) $order_id;
+	}
+
+	/**
 	 * Tell whether a charge of the intent was fully refunded: `refunded`, or `amount_refunded` reaching its amount.
 	 *
 	 * A refunded or disputed PaymentIntent keeps its `succeeded` status. The platform returns intents with their charges

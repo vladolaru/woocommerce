@@ -1222,9 +1222,18 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
-	 * @testdox Terminal capture rejects intents without matching order metadata.
+	 * @testdox Terminal capture rejects intents without matching order metadata: $_dataName.
+	 *
+	 * Client 11.3.0's route compares `metadata.order_id` alone (class-wc-rest-payments-orders-controller.php:196-206).
+	 *
+	 * @testWith ["no metadata", false]
+	 *           ["a WooPay payment naming the order by its number only", true]
+	 *
+	 * @param string $label        Row label.
+	 * @param bool   $order_number Whether the metadata names the order by its number on a WooPay payment, and another order by its ID.
 	 */
-	public function test_capture_terminal_payment_rejects_intent_without_order_metadata(): void {
+	public function test_capture_terminal_payment_rejects_intent_without_order_metadata( string $label, bool $order_number ): void {
+		unset( $label );
 		$logger = RecordingWcLogger::install();
 		$this->enable_terminal_debug_logging();
 		$order                                        = $this->create_order( 12.34, 'USD' );
@@ -1232,7 +1241,13 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 			'id'       => 'pi_terminal',
 			'status'   => 'succeeded',
 			'currency' => 'usd',
-			'metadata' => array(),
+			'metadata' => $order_number
+				? array(
+					'order_id'       => (string) ( $order->get_id() + 1000 ),
+					'order_number'   => (string) $order->get_id(),
+					'paid_on_woopay' => true,
+				)
+				: array(),
 		);
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );

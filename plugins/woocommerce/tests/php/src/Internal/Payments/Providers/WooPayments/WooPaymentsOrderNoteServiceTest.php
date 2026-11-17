@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
+use Automattic\WooCommerce\Utilities\OrderUtil;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -769,6 +770,120 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 				$transaction_url
 			),
 			$sut->format_capture_cancelled_note_candidates( 'pi_canceled', 'ch_canceled' )[0]
+		);
+	}
+
+	/**
+	 * @testdox The note and message of an operation refused for its target name the reason, link each payment ID and the other order: $_dataName.
+	 *
+	 * A payment ID is printed only when it is a payment intent, so a value a merchant typed is never printed; the other
+	 * order is linked when it is on this store; the payment the order last recorded is named when it differs.
+	 *
+	 * @dataProvider provide_operation_target_refusals
+	 *
+	 * @param string      $operation        `capture` or `cancel`.
+	 * @param string      $target           The intent the operation would have acted on.
+	 * @param string      $stored_intent_id The order's stored intent.
+	 * @param string|null $owner            'other order', 'missing order', 'none' or null for a failed read.
+	 * @param string      $expected_note    Expected note, with `%target%`, `%stored%` and `%order%` for the links.
+	 * @param string      $expected_message Expected message.
+	 */
+	public function test_formats_operation_target_refusal( string $operation, string $target, string $stored_intent_id, ?string $owner, string $expected_note, string $expected_message ): void {
+		$order       = wc_create_order();
+		$other_order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertInstanceOf( WC_Order::class, $other_order );
+		if ( '' !== $stored_intent_id ) {
+			$order->update_meta_data( '_intent_id', $stored_intent_id );
+			$order->save();
+		}
+		$owner_order_id = array(
+			'other order'   => $other_order->get_id(),
+			'missing order' => 999999999,
+			'none'          => 0,
+		)[ $owner ] ?? null;
+		$sut            = new WooPaymentsOrderNoteService();
+		$link           = static fn( string $intent_id ): string => '<a href="' . esc_url( $sut->transaction_url( $intent_id, '' ) ) . '" target="_blank" rel="noopener noreferrer">' . $intent_id . '</a>';
+
+		$refusal = $sut->format_operation_target_refusal( $order, $operation, $target, $owner_order_id );
+
+		$this->assertSame(
+			strtr(
+				$expected_note,
+				array(
+					'%target%' => $link( $target ),
+					'%stored%' => $link( $stored_intent_id ),
+					'%order%'  => '<a href="' . esc_url( OrderUtil::get_order_admin_edit_url( $other_order->get_id() ) ) . '">#' . $other_order->get_order_number() . '</a>',
+				)
+			),
+			$refusal['note']
+		);
+		$this->assertSame( $expected_message, $refusal['message'] );
+	}
+
+	/**
+	 * Refusals for each reason and operation, with payment IDs and typed values, and orders on this store or not.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string,3:string|null,4:string,5:string}>
+	 */
+	public function provide_operation_target_refusals(): array {
+		return array(
+			'another order\'s payment, capture' => array(
+				'capture',
+				'pi_B',
+				'pi_A',
+				'other order',
+				'WooPayments did not capture this payment. This order&#039;s transaction ID names payment %target%, which belongs to order %order%, not to this order. Nothing was charged. The payment this order last recorded is %stored%. Correct the transaction ID, then capture again.',
+				'WooPayments did not capture this payment: the transaction ID names a payment of another order. See the order notes.',
+			),
+			'another order\'s payment, cancel'  => array(
+				'cancel',
+				'pi_B',
+				'pi_A',
+				'other order',
+				'WooPayments did not cancel the authorization. This order&#039;s transaction ID names payment %target%, which belongs to order %order%, not to this order. Nothing was released. The payment this order last recorded is %stored%. Correct the transaction ID, then cancel again.',
+				'WooPayments did not cancel the authorization: the transaction ID names a payment of another order. See the order notes.',
+			),
+			'the payment of an order not on this store, capture' => array(
+				'capture',
+				'pi_B',
+				'pi_A',
+				'missing order',
+				'WooPayments did not capture this payment. This order&#039;s transaction ID names payment %target%, which belongs to order #999999999, not to this order. Nothing was charged. The payment this order last recorded is %stored%. Correct the transaction ID, then capture again.',
+				'WooPayments did not capture this payment: the transaction ID names a payment of another order. See the order notes.',
+			),
+			'a payment naming no order, cancel' => array(
+				'cancel',
+				'pi_B',
+				'pi_A',
+				'none',
+				'WooPayments did not cancel the authorization, because it could not confirm that payment %target% belongs to this order. Nothing was released. The payment this order last recorded is %stored%. Correct the transaction ID, then cancel again.',
+				'WooPayments did not cancel the authorization: it could not confirm that the payment belongs to this order. See the order notes.',
+			),
+			'a typed value that could not be read, capture' => array(
+				'capture',
+				'order_123',
+				'pi_A',
+				null,
+				'WooPayments did not capture this payment, because it could not check the value in Transaction ID with WooPayments. Nothing was charged. The payment this order last recorded is %stored%. Check the transaction ID, then try again.',
+				'WooPayments did not capture this payment: it could not check the payment with WooPayments. Try again later.',
+			),
+			'a payment that could not be read beside no stored intent, cancel' => array(
+				'cancel',
+				'pi_B',
+				'',
+				null,
+				'WooPayments did not cancel the authorization, because it could not check payment %target% with WooPayments. Nothing was released. Check the transaction ID, then try again.',
+				'WooPayments did not cancel the authorization: it could not check the payment with WooPayments. Try again later.',
+			),
+			'a payment beside a stored value that is not a payment, capture' => array(
+				'capture',
+				'pi_B',
+				'order_456',
+				'none',
+				'WooPayments did not capture this payment, because it could not confirm that payment %target% belongs to this order. Nothing was charged. Correct the transaction ID, then capture again.',
+				'WooPayments did not capture this payment: it could not confirm that the payment belongs to this order. See the order notes.',
+			),
 		);
 	}
 

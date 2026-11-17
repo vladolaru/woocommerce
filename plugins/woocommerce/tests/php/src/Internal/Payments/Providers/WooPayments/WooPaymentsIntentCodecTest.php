@@ -663,6 +663,55 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The intent's order ID matches the order only as TPR compared it, an integer equal to the order ID: $_dataName.
+	 *
+	 * Both the built-in store and client 11.3.0 record a WooPay payment only when its `order_id` names the order
+	 * (class-wc-payment-gateway-wcpay.php:2097-2114), so `order_number` is not read.
+	 *
+	 * @dataProvider provide_intent_order_ids
+	 *
+	 * @param mixed $metadata Intent metadata, as the platform may answer it; 'order' stands for the order's ID.
+	 * @param bool  $saved    Whether the order is saved, so it has an ID; an unsaved order's ID is 0.
+	 * @param bool  $matches  Whether the intent names the order.
+	 */
+	public function test_intent_order_id_matches_order( $metadata, bool $saved, bool $matches ): void {
+		$order = new \WC_Order();
+		if ( $saved ) {
+			$order->save();
+		}
+		$replace = static fn( $value ) => 'order' === $value ? (string) $order->get_id() : ( '-order' === $value ? '-' . $order->get_id() : ( 'int order' === $value ? $order->get_id() : $value ) );
+		$intent  = array( 'metadata' => is_array( $metadata ) ? array_map( $replace, $metadata ) : $metadata );
+
+		$this->assertSame( $matches, WooPaymentsIntentCodec::intent_order_id_matches_order( $intent, $order ) );
+	}
+
+	/**
+	 * Intent metadata and whether it names the order.
+	 *
+	 * @return array<string,array{0:mixed,1:bool,2:bool}>
+	 */
+	public function provide_intent_order_ids(): array {
+		return array(
+			'a numeric string equal to the ID'        => array( array( 'order_id' => 'order' ), true, true ),
+			'an integer equal to the ID'              => array( array( 'order_id' => 'int order' ), true, true ),
+			'the negative ID'                         => array( array( 'order_id' => '-order' ), true, false ),
+			'a non-numeric value'                     => array( array( 'order_id' => 'order_abc' ), true, false ),
+			'another order ID'                        => array( array( 'order_id' => '999999999' ), true, false ),
+			'a WooPay payment naming the order by its number only' => array(
+				array(
+					'order_id'       => '999999999',
+					'order_number'   => 'order',
+					'paid_on_woopay' => 'true',
+				),
+				true,
+				false,
+			),
+			'no order ID, for an order whose ID is 0' => array( array( 'order_key' => 'wc_order_x' ), false, false ),
+			'metadata that is not an array'           => array( 'order', true, false ),
+		);
+	}
+
+	/**
 	 * A declined charge attempt of the same intent (Stripe API reference, "The Charge object": a failed charge is not
 	 * paid, captured, refunded or disputed and names its failure_code).
 	 *

@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\ExplicitPriceFormatte
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
+use Automattic\WooCommerce\Utilities\OrderUtil;
 use WC_Order;
 
 /**
@@ -38,6 +39,11 @@ class WooPaymentsOrderNoteService {
 	 * Longest provider error text a decline note quotes, so the note stays well within the comment size limit and is saved.
 	 */
 	private const MAX_PROVIDER_ERROR_LENGTH = 1000;
+
+	/**
+	 * Form of a payment intent ID that a note may print: a value a merchant typed into Transaction ID is not printed.
+	 */
+	private const PRINTABLE_INTENT_ID_PATTERN = '/\Api_[A-Za-z0-9]+\z/';
 
 	/**
 	 * Stripe Billing invoice note: the renewal was already paid by another WooPayments payment, so the customer was charged twice.
@@ -1882,6 +1888,113 @@ class WooPaymentsOrderNoteService {
 			$provider_status,
 			'' !== $failure_reason ? $failure_reason : __( 'No reason provided.', 'woocommerce' )
 		);
+	}
+
+	/**
+	 * Build the note and the error message of a capture or cancel that was not sent because its intent, which is not the
+	 * order's stored intent, is not shown to be the order's own.
+	 *
+	 * The reason follows the platform's record of the intent: it names another order, it names no order, or it could
+	 * not be read. A payment ID is printed only when it is a payment intent, linked to its transaction page; the other
+	 * order is linked when it is on this store. The payment the order last recorded is named when it differs.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param WC_Order $order          Order the operation was for.
+	 * @param string   $operation      `capture` or `cancel`.
+	 * @param string   $intent_id      The intent the operation would have acted on.
+	 * @param int|null $owner_order_id The order the intent's metadata names, 0 when it names none, or null when the intent
+	 *                                 could not be read.
+	 * @return array{note:string,message:string} The order note, and the plain-text error message the merchant sees.
+	 */
+	public function format_operation_target_refusal( WC_Order $order, string $operation, string $intent_id, ?int $owner_order_id ): array {
+		$is_capture = 'capture' === $operation;
+		$payment    = $this->format_payment_reference( $intent_id );
+
+		if ( null === $owner_order_id ) {
+			$reason = $is_capture
+				/* translators: %s: a WooPayments payment, such as "payment pi_123", or "the value in Transaction ID". */
+				? __( 'WooPayments did not capture this payment, because it could not check %s with WooPayments.', 'woocommerce' )
+				/* translators: %s: a WooPayments payment, such as "payment pi_123", or "the value in Transaction ID". */
+				: __( 'WooPayments did not cancel the authorization, because it could not check %s with WooPayments.', 'woocommerce' );
+			$reason  = sprintf( esc_html( $reason ), $payment );
+			$action  = __( 'Check the transaction ID, then try again.', 'woocommerce' );
+			$message = $is_capture
+				? __( 'WooPayments did not capture this payment: it could not check the payment with WooPayments. Try again later.', 'woocommerce' )
+				: __( 'WooPayments did not cancel the authorization: it could not check the payment with WooPayments. Try again later.', 'woocommerce' );
+		} elseif ( 0 === $owner_order_id ) {
+			$reason = $is_capture
+				/* translators: %s: a WooPayments payment, such as "payment pi_123", or "the value in Transaction ID". */
+				? __( 'WooPayments did not capture this payment, because it could not confirm that %s belongs to this order.', 'woocommerce' )
+				/* translators: %s: a WooPayments payment, such as "payment pi_123", or "the value in Transaction ID". */
+				: __( 'WooPayments did not cancel the authorization, because it could not confirm that %s belongs to this order.', 'woocommerce' );
+			$reason  = sprintf( esc_html( $reason ), $payment );
+			$action  = $is_capture ? __( 'Correct the transaction ID, then capture again.', 'woocommerce' ) : __( 'Correct the transaction ID, then cancel again.', 'woocommerce' );
+			$message = $is_capture
+				? __( 'WooPayments did not capture this payment: it could not confirm that the payment belongs to this order. See the order notes.', 'woocommerce' )
+				: __( 'WooPayments did not cancel the authorization: it could not confirm that the payment belongs to this order. See the order notes.', 'woocommerce' );
+		} else {
+			$reason = $is_capture ? __( 'WooPayments did not capture this payment.', 'woocommerce' ) : __( 'WooPayments did not cancel the authorization.', 'woocommerce' );
+			$reason = esc_html( $reason ) . ' ' . sprintf(
+				/* translators: %1$s: a WooPayments payment, such as "payment pi_123", or "the value in Transaction ID", %2$s: an order number, such as "#123". */
+				esc_html__( 'This order\'s transaction ID names %1$s, which belongs to order %2$s, not to this order.', 'woocommerce' ),
+				$payment,
+				$this->format_order_reference( $owner_order_id )
+			);
+			$action  = $is_capture ? __( 'Correct the transaction ID, then capture again.', 'woocommerce' ) : __( 'Correct the transaction ID, then cancel again.', 'woocommerce' );
+			$message = $is_capture
+				? __( 'WooPayments did not capture this payment: the transaction ID names a payment of another order. See the order notes.', 'woocommerce' )
+				: __( 'WooPayments did not cancel the authorization: the transaction ID names a payment of another order. See the order notes.', 'woocommerce' );
+		}
+
+		$note             = $reason . ' ' . esc_html( $is_capture ? __( 'Nothing was charged.', 'woocommerce' ) : __( 'Nothing was released.', 'woocommerce' ) );
+		$stored_intent_id = (string) $order->get_meta( '_intent_id', true );
+		if ( $stored_intent_id !== $intent_id && 1 === preg_match( self::PRINTABLE_INTENT_ID_PATTERN, $stored_intent_id ) ) {
+			$note .= ' ' . sprintf(
+				/* translators: %s: the ID of a WooPayments payment, such as "pi_123". */
+				esc_html__( 'The payment this order last recorded is %s.', 'woocommerce' ),
+				$this->format_payment_reference( $stored_intent_id, false )
+			);
+		}
+
+		return array(
+			'note'    => $note . ' ' . esc_html( $action ),
+			'message' => $message,
+		);
+	}
+
+	/**
+	 * Format a payment for a note: "payment" and its ID linked to its transaction page when it is a payment intent, else
+	 * "the value in Transaction ID", so a value a merchant typed is never printed.
+	 *
+	 * @param string $intent_id    Intent ID, or a typed value.
+	 * @param bool   $with_keyword Whether a payment intent is preceded by "payment".
+	 * @return string HTML.
+	 */
+	private function format_payment_reference( string $intent_id, bool $with_keyword = true ): string {
+		if ( 1 !== preg_match( self::PRINTABLE_INTENT_ID_PATTERN, $intent_id ) ) {
+			return esc_html__( 'the value in Transaction ID', 'woocommerce' );
+		}
+
+		$link = sprintf( '<a href="%1$s" target="_blank" rel="noopener noreferrer">%2$s</a>', esc_url( $this->transaction_url( $intent_id, '' ) ), esc_html( $intent_id ) );
+
+		/* translators: %s: the ID of a WooPayments payment. */
+		return $with_keyword ? sprintf( esc_html__( 'payment %s', 'woocommerce' ), $link ) : $link;
+	}
+
+	/**
+	 * Format an order for a note: its number, linked to its edit screen when the order is on this store, else its ID.
+	 *
+	 * @param int $order_id Order ID.
+	 * @return string HTML.
+	 */
+	private function format_order_reference( int $order_id ): string {
+		$other_order = wc_get_order( $order_id );
+		if ( ! $other_order instanceof WC_Order ) {
+			return esc_html( '#' . $order_id );
+		}
+
+		return sprintf( '<a href="%1$s">%2$s</a>', esc_url( OrderUtil::get_order_admin_edit_url( $order_id ) ), esc_html( '#' . $other_order->get_order_number() ) );
 	}
 
 	/**

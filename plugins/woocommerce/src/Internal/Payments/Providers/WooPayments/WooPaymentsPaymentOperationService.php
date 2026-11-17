@@ -114,6 +114,19 @@ class WooPaymentsPaymentOperationService {
 	private const REASON_OPERATION_ON_AN_ORDER_NAMING_TWO_INTENTS = 'operation_on_an_order_naming_two_intents';
 
 	/**
+	 * Outcome error code of a capture or cancel that was not sent because its intent is not the order's stored intent and
+	 * the platform's record of it does not name the order.
+	 *
+	 * @since 11.4.0
+	 */
+	public const ERROR_OPERATION_TARGET_OF_ANOTHER_ORDER = 'wcpay_operation_target_of_another_order';
+
+	/**
+	 * Log reason of a capture or cancel that was not sent because its intent is not shown to be the order's own.
+	 */
+	private const REASON_OPERATION_TARGET_OF_ANOTHER_ORDER = 'operation_target_of_another_order';
+
+	/**
 	 * Intent statuses a payment intent never leaves, so an order storing one has no authorization to capture or cancel
 	 * (client 11.3.0 class-wc-payments-order-service.php:89-92).
 	 *
@@ -545,6 +558,11 @@ class WooPaymentsPaymentOperationService {
 					return $refusal;
 				}
 
+				$refusal = $this->refuse_a_target_of_another_order( $context, 'capture', $intent_id );
+				if ( null !== $refusal ) {
+					return $refusal;
+				}
+
 				$amount_to_capture = WooPaymentsCurrencyUtils::amount_to_minor_units( $context->get_amount() ?? (float) $order->get_total(), (string) $order->get_currency() );
 				// Client 11.1.0 always captures the order total (`class-wc-payment-gateway-wcpay.php:3966, 3981`) and sends the
 				// order's Level 3 data with it (:3984-3986), so it never meets a partial capture. The order's line items add up to
@@ -635,6 +653,11 @@ class WooPaymentsPaymentOperationService {
 			$intent_id = $this->get_operation_intent_id( $context, 'cancel' );
 			if ( '' !== $intent_id ) {
 				$refusal = $this->refuse_an_intent_id_outside_the_form( $context, 'cancel', $intent_id );
+				if ( null !== $refusal ) {
+					return $refusal;
+				}
+
+				$refusal = $this->refuse_a_target_of_another_order( $context, 'cancel', $intent_id );
 				if ( null !== $refusal ) {
 					return $refusal;
 				}
@@ -1951,6 +1974,80 @@ class WooPaymentsPaymentOperationService {
 			array(
 				PaymentOutcome::DATA_ERROR_CODE => 'wcpay_core_invalid_request_parameter_stripe_id',
 				'operation'                     => $operation,
+				WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array( '_intention_status' => (string) $fresh_order->get_meta( '_intention_status', true ) ),
+			)
+		);
+	}
+
+	/**
+	 * Refuse a capture or cancel, before it is sent, when its intent is not the order's stored intent and the platform's
+	 * record of that intent does not name the order by its ID, or cannot be read.
+	 *
+	 * The order screen's actions act on the transaction ID, which a merchant can type. Client 11.3.0 sends them with no
+	 * read (class-wc-payment-gateway-wcpay.php:4333-4350, :4436-4448), so a transaction ID that names another order's
+	 * authorization captures or releases that authorization. An intent equal to the stored intent, which the store wrote,
+	 * is sent with no read. The refusal sends nothing, keeps the stored values and intent status, and carries a note and
+	 * an error message; there is no fallback to the stored intent.
+	 *
+	 * @param PaymentOperationContext $context   Capture or cancel context.
+	 * @param string                  $operation `capture` or `cancel`.
+	 * @param string                  $intent_id The intent the operation acts on.
+	 * @return PaymentOutcome|null The refusal, or null when the operation goes on.
+	 */
+	private function refuse_a_target_of_another_order( PaymentOperationContext $context, string $operation, string $intent_id ): ?PaymentOutcome {
+		$order = $context->get_order();
+		if ( (string) $order->get_meta( '_intent_id', true ) === $intent_id ) {
+			return null;
+		}
+
+		$owner_order_id = null;
+		try {
+			$intent = $this->api_client->get_payment_intention( $intent_id );
+			if ( WooPaymentsIntentCodec::intent_order_id_matches_order( $intent, $order ) ) {
+				return null;
+			}
+
+			$metadata       = is_array( $intent['metadata'] ?? null ) ? $intent['metadata'] : array();
+			$raw_order_id   = $metadata['order_id'] ?? '';
+			$owner_order_id = is_numeric( $raw_order_id ) && 0 < (int) $raw_order_id ? (int) $raw_order_id : 0;
+		} catch ( ApiException $exception ) {
+			unset( $exception );
+		}
+
+		$loggable_intent_id = WooPaymentsLogger::get_loggable_provider_id( $intent_id );
+		if ( null === $owner_order_id ) {
+			$message = sprintf( 'The %1$s of order #%2$d was not sent: intent %3$s, which is not the stored intent, could not be read.', $operation, $order->get_id(), $loggable_intent_id );
+		} elseif ( 0 === $owner_order_id ) {
+			$message = sprintf( 'The %1$s of order #%2$d was not sent: intent %3$s, which is not the stored intent, names no order.', $operation, $order->get_id(), $loggable_intent_id );
+		} else {
+			$message = sprintf( 'The %1$s of order #%2$d was not sent: intent %3$s, which is not the stored intent, belongs to order #%4$d.', $operation, $order->get_id(), $loggable_intent_id, $owner_order_id );
+		}
+		$this->logger->log_always(
+			$message,
+			'warning',
+			array(
+				'order_id'        => $order->get_id(),
+				'intent_id'       => $loggable_intent_id,
+				'intent_order_id' => 0 < (int) $owner_order_id ? $owner_order_id : 'none',
+				'operation'       => $operation,
+				'reason'          => self::REASON_OPERATION_TARGET_OF_ANOTHER_ORDER,
+			)
+		);
+
+		$refusal     = $this->note_service->format_operation_target_refusal( $order, $operation, $intent_id, $owner_order_id );
+		$fresh_order = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
+
+		return new PaymentOutcome(
+			PaymentOutcome::STATUS_FAILED,
+			'',
+			'',
+			'',
+			'',
+			array(
+				PaymentOutcome::DATA_ERROR_CODE    => self::ERROR_OPERATION_TARGET_OF_ANOTHER_ORDER,
+				PaymentOutcome::DATA_ERROR_MESSAGE => $refusal['message'],
+				'operation'                        => $operation,
+				PaymentOutcome::DATA_NOTE          => $refusal['note'],
 				WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array( '_intention_status' => (string) $fresh_order->get_meta( '_intention_status', true ) ),
 			)
 		);

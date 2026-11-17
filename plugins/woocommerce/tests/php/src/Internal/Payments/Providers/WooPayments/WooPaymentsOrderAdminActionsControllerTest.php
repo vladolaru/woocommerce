@@ -805,11 +805,12 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A status change to $order_status on an order storing requires_capture sends the $operation for the stored intent, not the transaction ID, retried: $retried.
+	 * @testdox A status change to $order_status on an order storing requires_capture sends the $operation for the stored intent, not the transaction ID, with no read, retried: $retried.
 	 *
 	 * Client 11.3.0 captures or cancels the order's stored intent on the status change (class-wc-payments-order-service.php:2330,
 	 * :2386). The order screen's actions keep the transaction ID, as its capture_charge() and cancel_authorization() do
-	 * (class-wc-payment-gateway-wcpay.php:4341, :4443).
+	 * (class-wc-payment-gateway-wcpay.php:4341, :4443). The target is the stored intent, so the operation service reads
+	 * nothing either: the transport receives the operation alone.
 	 *
 	 * @dataProvider stored_authorization_status_changes
 	 *
@@ -1464,10 +1465,11 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The order screen's $operation action on an order storing requires_capture acts on the transaction ID.
+	 * @testdox The order screen's $operation action on an order storing requires_capture acts on the transaction ID, read first when it is not the stored intent.
 	 *
 	 * Client 11.3.0's capture_charge() and cancel_authorization() act on the order's transaction ID
-	 * (class-wc-payment-gateway-wcpay.php:4341, :4443).
+	 * (class-wc-payment-gateway-wcpay.php:4341, :4443). The built-in store reads a transaction ID other than the stored
+	 * intent first, and sends the operation because the platform's record names this order.
 	 *
 	 * @testWith ["capture", "woocommerce_order_action_capture_charge"]
 	 *           ["cancel", "woocommerce_order_action_cancel_authorization"]
@@ -1479,14 +1481,92 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$order = $this->create_recorded_authorization_order( 'requires_capture', OrderStatus::ON_HOLD );
 		$order->set_transaction_id( 'pi_earlier_attempt' );
 		$order->save();
-		$transport = $this->create_operation_transport( $operation );
-		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $this->create_platform( null, null, new \ArrayObject() ) );
+		$transport            = $this->create_operation_transport( $operation );
+		$transport->responses = array(
+			array(
+				'response' => array( 'code' => 200 ),
+				'headers'  => array( 'content-type' => 'application/json' ),
+				'body'     => wp_json_encode(
+					array(
+						'id'       => 'pi_earlier_attempt',
+						'status'   => 'requires_capture',
+						'metadata' => array( 'order_id' => (string) $order->get_id() ),
+					)
+				),
+			),
+		);
+		$this->sut            = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $this->create_platform( null, null, new \ArrayObject() ) );
 		$this->sut->register();
 
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising the public WooCommerce order action hook.
 		do_action( $action, wc_get_order( $order->get_id() ) );
 
-		$this->assertSame( array( 'intentions/pi_earlier_attempt/' . $operation ), $this->request_paths( $transport ) );
+		$this->assertSame( array( 'intentions/pi_earlier_attempt?test_mode=1', 'intentions/pi_earlier_attempt/' . $operation ), $this->request_paths( $transport ) );
+	}
+
+	/**
+	 * @testdox An operation refused because its intent is not shown to be the order's adds the edit screen error only from the order screen: $_dataName.
+	 *
+	 * The refusal carries its note and error message, so no generic failure note is added and no retry is scheduled. The
+	 * error is core's after-save error for edit screens, shown on the reload (WC_Admin_Meta_Boxes::add_error()). Client
+	 * 11.3.0 sends these operations with no check (class-wc-payment-gateway-wcpay.php:4333-4350, :4436-4448).
+	 *
+	 * @dataProvider provider_operation_outcomes_and_their_edit_screen_error
+	 *
+	 * @param string $hook         Order action or status hook.
+	 * @param string $operation    Capture or cancel.
+	 * @param string $order_status Status the order is saved with.
+	 * @param bool   $refused      Whether the provider refuses the operation as a target of another order.
+	 * @param bool   $adds_error   Whether the edit screen error is added.
+	 */
+	public function test_refused_target_of_another_order_adds_the_edit_screen_error( string $hook, string $operation, string $order_status, bool $refused, bool $adds_error ): void {
+		set_current_screen( 'edit-shop_order' );
+		\WC_Admin_Meta_Boxes::$meta_box_errors = array();
+		$message                               = 'WooPayments did not capture this payment: the transaction ID names a payment of another order. See the order notes.';
+		$outcome                               = $refused
+			? new PaymentOutcome(
+				PaymentOutcome::STATUS_FAILED,
+				'',
+				'',
+				'',
+				'',
+				array(
+					PaymentOutcome::DATA_ERROR_CODE    => WooPaymentsPaymentOperationService::ERROR_OPERATION_TARGET_OF_ANOTHER_ORDER,
+					PaymentOutcome::DATA_ERROR_MESSAGE => $message,
+					'operation'                        => $operation,
+					PaymentOutcome::DATA_NOTE          => 'WooPayments did not capture this payment.',
+				)
+			)
+			: new PaymentOutcome( PaymentProcessingService::OPERATION_CAPTURE === $operation ? PaymentOutcome::STATUS_COMPLETED : PaymentOutcome::STATUS_CANCELED, 'pi_3UJhOgBzWlxcwgpP0AOgQE2z' );
+		$order                                 = $this->create_recorded_authorization_order( 'requires_capture', $order_status );
+		$this->sut                             = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_fixed_outcome_provider( $outcome ) );
+		$this->sut->register();
+
+		try {
+			$this->fire_order_hook( $hook, wc_get_order( $order->get_id() ) );
+			$errors = \WC_Admin_Meta_Boxes::$meta_box_errors;
+		} finally {
+			\WC_Admin_Meta_Boxes::$meta_box_errors = array();
+		}
+
+		$this->assertSame( $adds_error ? array( $message ) : array(), $errors );
+		$this->assertSame( 0, $this->count_notes( $order, $this->failure_note( $operation ) ) );
+		$this->assertSame( array(), $this->get_pending_retries( $order ) );
+	}
+
+	/**
+	 * Order screen actions and status changes, refused as a target of another order or sent.
+	 *
+	 * @return array<string,array{string,string,string,bool,bool}>
+	 */
+	public function provider_operation_outcomes_and_their_edit_screen_error(): array {
+		return array(
+			'order screen capture, refused'       => array( 'woocommerce_order_action_capture_charge', 'capture', OrderStatus::ON_HOLD, true, true ),
+			'order screen cancel, refused'        => array( 'woocommerce_order_action_cancel_authorization', 'cancel', OrderStatus::ON_HOLD, true, true ),
+			'order screen capture, sent'          => array( 'woocommerce_order_action_capture_charge', 'capture', OrderStatus::ON_HOLD, false, false ),
+			'status change to Completed, refused' => array( 'woocommerce_order_status_completed', 'capture', OrderStatus::COMPLETED, true, false ),
+			'status change to Cancelled, refused' => array( 'woocommerce_order_status_cancelled', 'cancel', OrderStatus::CANCELLED, true, false ),
+		);
 	}
 
 	/**

@@ -26,6 +26,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundAmbiguityService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPlatformEvents;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\StoredPaymentRecords;
 use WC_Order;
 use WC_REST_Unit_Test_Case;
 use WP_REST_Request;
@@ -1154,6 +1155,101 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 		$this->assertSame( 'canceled', $order->get_meta( '_intention_status', true ) );
 		$this->assertSame( $intent_outcome, $order->get_meta( '_wcpay_fraud_outcome_status', true ) );
 		$this->assertSame( $expected_box, $order->get_meta( '_wcpay_fraud_meta_box_type', true ) );
+	}
+
+	/**
+	 * @testdox A $action request on an order whose transaction ID names another payment than its stored intent, $_dataName.
+	 *
+	 * The route reads the requested intent and refuses it when its metadata names another order, as client 11.3.0's route
+	 * does (class-wc-rest-payments-orders-controller.php:390-399, :629-638). The operation service then reads the same
+	 * intent again, because it is not the stored intent, and sends the operation only when the platform names this order.
+	 * When that second read names another order or fails, the error carries the refusal's message.
+	 *
+	 * @dataProvider provide_authorization_requests_on_an_order_naming_two_intents
+	 *
+	 * @param string   $action          Capture or cancel.
+	 * @param string[] $reads           What each read answers: 'this order', 'another order' or 'failure'.
+	 * @param int      $expected_status Response status.
+	 * @param string   $expected_code   Error code, or '' for a success.
+	 * @param string   $expected_reason The refusal's reason in the error message, or '' for none.
+	 */
+	public function test_authorization_request_on_an_order_naming_two_intents( string $action, array $reads, int $expected_status, string $expected_code, string $expected_reason ): void {
+		$order      = StoredPaymentRecords::authorization_status_beside_another_intent();
+		$read_ids   = new \ArrayObject();
+		$api_client = $this->getMockBuilder( Client::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_available', 'get_payment_intention', 'capture_intention', 'cancel_intention' ) )
+			->getMock();
+		$api_client->method( 'is_available' )->willReturn( true );
+		$api_client->method( 'get_payment_intention' )->willReturnCallback(
+			static function ( string $intent_id ) use ( $reads, $read_ids, $order ): array {
+				$answer     = $reads[ count( $read_ids ) ];
+				$read_ids[] = $intent_id;
+				if ( 'failure' === $answer ) {
+					throw new ApiException( 'Error: Upstream provider unavailable.', 'api_connection_error', 502, 'api_error' );
+				}
+
+				return array(
+					'id'       => $intent_id,
+					'status'   => 'requires_capture',
+					'metadata' => array( 'order_id' => (string) ( 'this order' === $answer ? $order->get_id() : $order->get_id() + 1000 ) ),
+				);
+			}
+		);
+		$sends = '' === $expected_code;
+		$api_client->expects( $sends && 'capture' === $action ? $this->once() : $this->never() )->method( 'capture_intention' )->with( 'pi_A' )->willReturn(
+			array(
+				'id'     => 'pi_A',
+				'status' => 'succeeded',
+			)
+		);
+		$api_client->expects( $sends && 'cancel' === $action ? $this->once() : $this->never() )->method( 'cancel_intention' )->with( 'pi_A' )->willReturn(
+			array(
+				'id'     => 'pi_A',
+				'status' => 'canceled',
+			)
+		);
+		$controller = new WooPaymentsAuthorizationsRestController();
+		$controller->init( $api_client, wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_api_client( $api_client ) );
+		$controller->register_routes();
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/' . $action . '_authorization' );
+		$request->set_body_params( array( 'payment_intent_id' => 'pi_A' ) );
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( array_fill( 0, count( $reads ), 'pi_A' ), $read_ids->getArrayCopy() );
+		$this->assertSame( $expected_status, $response->get_status() );
+		if ( '' === $expected_code ) {
+			return;
+		}
+		$this->assertSame( $expected_code, $response->get_data()['code'] );
+		if ( '' !== $expected_reason ) {
+			$this->assertSame(
+				'capture' === $action
+					? 'Payment capture failed to complete with the following message: WooPayments did not capture this payment: ' . $expected_reason
+					: 'Payment cancel failed to complete with the following message: WooPayments did not cancel the authorization: ' . $expected_reason,
+				$response->get_data()['message']
+			);
+		}
+	}
+
+	/**
+	 * Requests whose route read and operation service read answer this order, another order, or fail.
+	 *
+	 * @return array<string,array{0:string,1:string[],2:int,3:string,4:string}>
+	 */
+	public function provide_authorization_requests_on_an_order_naming_two_intents(): array {
+		$rows = array();
+		foreach ( array( 'capture', 'cancel' ) as $action ) {
+			$error = 'capture' === $action ? 'wcpay_capture_error' : 'wcpay_cancel_error';
+
+			$rows[ "another order's payment is refused by the route's read alone, $action" ]     = array( $action, array( 'another order' ), 409, 'wcpay_intent_order_mismatch', '' );
+			$rows[ "the order's own payment is read twice and sent, $action" ]                   = array( $action, array( 'this order', 'this order' ), 200, '', '' );
+			$rows[ "a second read naming another order answers the refusal's message, $action" ] = array( $action, array( 'this order', 'another order' ), 502, $error, 'the transaction ID names a payment of another order. See the order notes.' );
+			$rows[ "a failed second read answers the refusal's message, $action" ]               = array( $action, array( 'this order', 'failure' ), 502, $error, 'it could not check the payment with WooPayments. Try again later.' );
+		}
+
+		return $rows;
 	}
 
 	/**

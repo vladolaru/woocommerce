@@ -9622,23 +9622,19 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @dataProvider provider_capture_requests
 	 *
-	 * @param string              $transaction_id Order transaction ID.
-	 * @param array<string,mixed> $meta           Order meta.
-	 * @param float|null          $amount         Capture amount, or null for the order total.
-	 * @param string              $intent_id      Intent ID expected in the request.
-	 * @param int                 $minor_amount   Amount expected in the request, in minor units.
+	 * @param callable   $create_order Creates the authorized order.
+	 * @param float|null $amount       Capture amount, or null for the order total.
+	 * @param string     $intent_id    Intent ID expected in the request.
+	 * @param int        $minor_amount Amount expected in the request, in minor units.
 	 */
-	public function test_capture_sends_the_intent_and_amount_to_the_platform_api( string $transaction_id, array $meta, ?float $amount, string $intent_id, int $minor_amount ): void {
-		$order      = $this->create_woopayments_order( '10.00' );
+	public function test_capture_sends_the_intent_and_amount_to_the_platform_api( callable $create_order, ?float $amount, string $intent_id, int $minor_amount ): void {
+		$order      = $create_order();
 		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'capture_intention' ) )
 			->getMock();
 
-		$order->set_transaction_id( $transaction_id );
-		foreach ( $meta as $key => $value ) {
-			$order->update_meta_data( $key, $value );
-		}
+		$order->set_total( '10.00' );
 		$order->save();
 
 		$api_client->expects( $this->once() )
@@ -9673,41 +9669,61 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * Capture requests: the order total by the transaction ID, a context amount, and the intent meta as a fallback. The
 	 * answer is the recorded capture_full_amount (Fixtures/platform-manual-capture.json) reduced to its ID and status.
 	 *
-	 * @return array<string,array{0:string,1:array<string,mixed>,2:float|null,3:string,4:int}>
+	 * @return array<string,array{0:callable,1:float|null,2:string,3:int}>
 	 */
 	public function provider_capture_requests(): array {
 		return array(
-			'the order total'                          => array( 'pi_capture', array(), null, 'pi_capture', 1000 ),
-			'a context amount'                         => array( 'pi_capture_partial', array(), 4.25, 'pi_capture_partial', 425 ),
-			'the order total found by the intent meta' => array( '', array( '_intent_id' => 'pi_capture_meta' ), null, 'pi_capture_meta', 1000 ),
+			'the order total'                          => array( static fn(): WC_Order => StoredPaymentRecords::authorization( 'pi_capture', 'ch_capture' ), null, 'pi_capture', 1000 ),
+			'a context amount'                         => array( static fn(): WC_Order => StoredPaymentRecords::authorization( 'pi_capture_partial', 'ch_capture_partial' ), 4.25, 'pi_capture_partial', 425 ),
+			'the order total found by the intent meta' => array( static fn(): WC_Order => StoredPaymentRecords::authorization_without_transaction_id( 'pi_capture_meta', 'requires_capture', OrderStatus::ON_HOLD, 'ch_capture_meta' ), null, 'pi_capture_meta', 1000 ),
 		);
 	}
 
 	/**
-	 * @testdox The $operation of $_dataName acts on the intent it did before, with the two-intents line: $logged.
+	 * @testdox The $operation of $_dataName targets the intent it did before, with the two-intents line: $logged; the target read: $read.
 	 *
 	 * A status change acts on the stored intent and the order screen's actions on the transaction ID, as client 11.3.0 does
 	 * (class-wc-payments-order-service.php:2330, :2386; class-wc-payment-gateway-wcpay.php:4341, :4443); a platform read
 	 * names the intent itself. The client logs nothing about the target. The built-in store writes one warning, whatever
 	 * the logging setting, when no read named the intent and the order stores requires_capture with a transaction ID and a
-	 * stored intent that differ. A transaction ID or stored intent that is not a WooPayments intent is never printed.
+	 * stored intent that differ. A transaction ID or stored intent that is not a WooPayments intent is never printed. A
+	 * target other than the stored intent is read first: sent when the platform names this order, else not sent, with the
+	 * line written before the read.
 	 *
 	 * @dataProvider provider_operations_on_a_stored_authorization
 	 *
 	 * @param callable $create_order Creates the order.
 	 * @param string   $operation 'capture' or 'cancel'.
 	 * @param string   $trigger   'status change', 'order screen' or 'platform read'.
-	 * @param string   $target    The intent the operation is sent for.
+	 * @param string   $target    The intent the operation is for.
 	 * @param string   $logged    The printed target, transaction ID and stored intent, '|'-separated, or '' for no line.
+	 * @param string   $read      The platform read of the target: '' for none, 'this order' or 'not found'.
 	 */
-	public function test_operation_on_an_order_naming_two_intents_logs_both( callable $create_order, string $operation, string $trigger, string $target, string $logged ): void {
+	public function test_operation_on_an_order_naming_two_intents_logs_both( callable $create_order, string $operation, string $trigger, string $target, string $logged, string $read ): void {
 		$order      = $create_order();
 		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_available', 'capture_intention', 'cancel_intention' ) )
+			->onlyMethods( array( 'is_available', 'get_payment_intention', 'capture_intention', 'cancel_intention' ) )
 			->getMock();
 		$api_client->method( 'is_available' )->willReturn( true );
-		$api_client->expects( 'capture' === $operation ? $this->once() : $this->never() )
+		$api_client->expects( '' === $read ? $this->never() : $this->once() )
+			->method( 'get_payment_intention' )
+			->with( $target )
+			->willReturnCallback(
+				static function () use ( $read, $target, $order ): array {
+					if ( 'not found' === $read ) {
+						throw new ApiException( 'No such payment_intent.', 'resource_missing', 404, 'invalid_request_error' );
+					}
+
+					return array(
+						'id'       => $target,
+						'status'   => 'requires_capture',
+						'metadata' => array( 'order_id' => (string) $order->get_id() ),
+					);
+				}
+			);
+		$sent = 'not found' !== $read;
+		$api_client->expects( $sent && 'capture' === $operation ? $this->once() : $this->never() )
 			->method( 'capture_intention' )
 			->with( $target )
 			->willReturn(
@@ -9716,7 +9732,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 					'status' => 'succeeded',
 				)
 			);
-		$api_client->expects( 'cancel' === $operation ? $this->once() : $this->never() )
+		$api_client->expects( $sent && 'cancel' === $operation ? $this->once() : $this->never() )
 			->method( 'cancel_intention' )
 			->with( $target )
 			->willReturn(
@@ -9768,9 +9784,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Orders storing an authorization, the operation, what triggered it, its target and the line.
+	 * Orders storing an authorization, the operation, what triggered it, its target, the line and the target's read.
 	 *
-	 * @return array<string,array{0:callable,1:string,2:string,3:string,4:string}>
+	 * @return array<string,array{0:callable,1:string,2:string,3:string,4:string,5:string}>
 	 */
 	public function provider_operations_on_a_stored_authorization(): array {
 		$beside_another   = static fn(): WC_Order => StoredPaymentRecords::authorization_status_beside_another_intent( OrderStatus::COMPLETED );
@@ -9779,14 +9795,14 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$beside_a_decline = static fn(): WC_Order => StoredPaymentRecords::payment_beside_a_declined_retry();
 
 		return array(
-			'an order storing another intent beside its authorization, by status change' => array( $beside_another, 'capture', 'status change', 'pi_B', 'pi_B|pi_A|pi_B' ),
-			'an order storing another intent beside its authorization, by status change to Cancelled' => array( $beside_another, 'cancel', 'status change', 'pi_B', 'pi_B|pi_A|pi_B' ),
-			'an order storing another intent beside its authorization, from the order screen' => array( $beside_another, 'capture', 'order screen', 'pi_A', 'pi_A|pi_A|pi_B' ),
-			'an order storing another intent beside its authorization, after a platform read' => array( $beside_another, 'cancel', 'platform read', 'pi_B', '' ),
-			'an ordinary authorization'         => array( $authorization, 'capture', 'order screen', 'pi_A', '' ),
-			'a payment beside a declined retry' => array( $beside_a_decline, 'capture', 'order screen', 'pi_A', '' ),
-			'an order whose transaction ID was typed, from the order screen' => array( $typed_txn, 'capture', 'order screen', 'order_123', 'another value|another value|pi_B' ),
-			'an order whose transaction ID was typed, cancelled from the order screen' => array( $typed_txn, 'cancel', 'order screen', 'order_123', 'another value|another value|pi_B' ),
+			'an order storing another intent beside its authorization, by status change' => array( $beside_another, 'capture', 'status change', 'pi_B', 'pi_B|pi_A|pi_B', '' ),
+			'an order storing another intent beside its authorization, by status change to Cancelled' => array( $beside_another, 'cancel', 'status change', 'pi_B', 'pi_B|pi_A|pi_B', '' ),
+			'an order storing another intent beside its authorization, from the order screen' => array( $beside_another, 'capture', 'order screen', 'pi_A', 'pi_A|pi_A|pi_B', 'this order' ),
+			'an order storing another intent beside its authorization, after a platform read' => array( $beside_another, 'cancel', 'platform read', 'pi_B', '', '' ),
+			'an ordinary authorization'         => array( $authorization, 'capture', 'order screen', 'pi_A', '', '' ),
+			'a payment beside a declined retry' => array( $beside_a_decline, 'capture', 'order screen', 'pi_A', '', 'this order' ),
+			'an order whose transaction ID was typed, from the order screen' => array( $typed_txn, 'capture', 'order screen', 'order_123', 'another value|another value|pi_B', 'not found' ),
+			'an order whose transaction ID was typed, cancelled from the order screen' => array( $typed_txn, 'cancel', 'order screen', 'order_123', 'another value|another value|pi_B', 'not found' ),
 		);
 	}
 
@@ -9805,12 +9821,12 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @param bool                $leaves_order_status Whether the outcome asks to leave the order status untouched.
 	 */
 	public function test_status_change_capture_drops_the_fee_meta_and_leaves_the_order_status( array $provider_data, string $capture_status, bool $writes_fee_meta, bool $leaves_order_status ): void {
-		$order      = $this->create_woopayments_order();
+		$order      = StoredPaymentRecords::authorization( 'pi_capture_fee', 'ch_capture_fee' );
 		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'capture_intention' ) )
 			->getMock();
-		$order->set_transaction_id( 'pi_capture_fee' );
+		$order->set_total( '10.00' );
 		$order->save();
 		$api_client->method( 'is_available' )->willReturn( true );
 		$api_client->method( 'capture_intention' )->willReturn(
@@ -9857,7 +9873,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @param bool       $sends_level3 Whether the order's Level 3 data is sent.
 	 */
 	public function test_capture_sends_level3_only_for_the_order_total( ?float $amount, bool $sends_level3 ): void {
-		$order       = $this->create_woopayments_order( '10.00' );
+		$order       = StoredPaymentRecords::authorization( 'pi_capture_level3', 'ch_capture_level3' );
 		$level3_data = array(
 			'merchant_reference' => (string) $order->get_id(),
 			'line_items'         => array( array( 'product_description' => 'Hoodie' ) ),
@@ -9891,7 +9907,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			}
 		};
 		wc_get_container()->replace( WooPaymentsLevel3Service::class, $level3 );
-		$order->set_transaction_id( 'pi_capture_level3' );
+		$order->set_total( '10.00' );
 		$order->save();
 		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
@@ -9933,13 +9949,13 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Capture should return fee details as a plan without writing order notes.
 	 */
 	public function test_capture_returns_fee_effect_plan_without_writing_notes(): void {
-		$order      = $this->create_woopayments_order( '50.00' );
+		$order      = StoredPaymentRecords::authorization( 'pi_capture_notes', 'ch_capture_notes' );
 		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'capture_intention' ) )
 			->getMock();
 
-		$order->set_transaction_id( 'pi_capture_notes' );
+		$order->set_total( '50.00' );
 		$order->save();
 
 		$api_client->expects( $this->once() )
@@ -10029,9 +10045,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_capture_defers_settlement_exchange_rate_meta_to_effect_plan(): void {
 		update_option( 'woocommerce_currency', 'USD' );
-		$order = $this->create_woopayments_order( '40.00' );
+		$order = StoredPaymentRecords::authorization( 'pi_capture_converted', 'ch_capture_converted' );
 		$order->set_currency( 'GBP' );
-		$order->set_transaction_id( 'pi_capture_converted' );
+		$order->set_total( '40.00' );
 		$order->save();
 
 		$api_client = $this->getMockBuilder( Client::class )
@@ -10099,13 +10115,13 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A capture the platform leaves uncaptured fails with the platform's message and the intent ID, and returns no order meta or note.
 	 */
 	public function test_failed_capture_returns_the_platform_error_without_order_meta_or_note(): void {
-		$order      = $this->create_woopayments_order();
+		$order      = StoredPaymentRecords::authorization( 'pi_capture', 'ch_capture' );
 		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'capture_intention' ) )
 			->getMock();
 
-		$order->set_transaction_id( 'pi_capture' );
+		$order->set_total( '10.00' );
 		$order->save();
 
 		$api_client->expects( $this->once() )
@@ -10154,13 +10170,13 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A failed cancel re-fetches the intent and treats an already-canceled authorization as canceled.
 	 */
 	public function test_cancel_exception_self_heals_when_intent_is_already_canceled(): void {
-		$order      = $this->create_woopayments_order();
+		$order      = StoredPaymentRecords::authorization( 'pi_cancel_healed', 'ch_cancel_healed' );
 		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'cancel_intention', 'get_payment_intention' ) )
 			->getMock();
 
-		$order->set_transaction_id( 'pi_cancel_healed' );
+		$order->set_total( '10.00' );
 		$order->save();
 
 		$api_client->method( 'is_available' )->willReturn( true );
@@ -10196,13 +10212,13 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A failed cancel stays failed when the re-fetched intent is not canceled.
 	 */
 	public function test_cancel_exception_stays_failed_when_intent_is_not_canceled(): void {
-		$order      = $this->create_woopayments_order();
+		$order      = StoredPaymentRecords::authorization( 'pi_cancel_live', 'ch_cancel_live' );
 		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'cancel_intention', 'get_payment_intention' ) )
 			->getMock();
 
-		$order->set_transaction_id( 'pi_cancel_live' );
+		$order->set_total( '10.00' );
 		$order->save();
 
 		$api_client->method( 'is_available' )->willReturn( true );
@@ -10233,13 +10249,13 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A failed cancel whose re-fetch also fails keeps the plain failed outcome.
 	 */
 	public function test_cancel_exception_without_refetch_keeps_plain_failure(): void {
-		$order      = $this->create_woopayments_order();
+		$order      = StoredPaymentRecords::authorization( 'pi_cancel_dark', 'ch_cancel_dark' );
 		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'cancel_intention', 'get_payment_intention' ) )
 			->getMock();
 
-		$order->set_transaction_id( 'pi_cancel_dark' );
+		$order->set_total( '10.00' );
 		$order->save();
 
 		$api_client->method( 'is_available' )->willReturn( true );
@@ -10319,13 +10335,13 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A failed capture re-fetches the intent and flags an expired authorization.
 	 */
 	public function test_capture_exception_detects_expired_authorization_via_refetch(): void {
-		$order      = $this->create_woopayments_order();
+		$order      = StoredPaymentRecords::authorization( 'pi_expired', 'ch_expired' );
 		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'capture_intention', 'get_payment_intention' ) )
 			->getMock();
 
-		$order->set_transaction_id( 'pi_expired' );
+		$order->set_total( '10.00' );
 		$order->save();
 
 		$api_client->method( 'is_available' )->willReturn( true );
@@ -10366,13 +10382,13 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @param callable $refetch Answers the intent re-fetch, or throws.
 	 */
 	public function test_capture_exception_keeps_plain_failure_effects( callable $refetch ): void {
-		$order      = $this->create_woopayments_order();
+		$order      = StoredPaymentRecords::authorization( 'pi_capture_failed', 'ch_capture_failed' );
 		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'capture_intention', 'get_payment_intention' ) )
 			->getMock();
 
-		$order->set_transaction_id( 'pi_capture_failed' );
+		$order->set_total( '10.00' );
 		$order->save();
 
 		$api_client->method( 'is_available' )->willReturn( true );
@@ -10420,24 +10436,17 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @dataProvider provider_cancel_intent_sources
 	 *
-	 * @param string              $transaction_id Order transaction ID.
-	 * @param array<string,mixed> $meta           Order meta.
-	 * @param string              $intent_id      Intent ID expected in the request.
-	 * @param array<string,mixed> $answer         Platform answer.
-	 * @param string|null         $charge_id      Charge ID the plan carries, or null for none.
+	 * @param callable            $create_order Creates the authorized order.
+	 * @param string              $intent_id    Intent ID expected in the request.
+	 * @param array<string,mixed> $answer       Platform answer.
+	 * @param string|null         $charge_id    Charge ID the plan carries, or null for none.
 	 */
-	public function test_cancel_sends_the_order_intent_to_the_platform_api( string $transaction_id, array $meta, string $intent_id, array $answer, ?string $charge_id ): void {
-		$order      = $this->create_woopayments_order();
+	public function test_cancel_sends_the_order_intent_to_the_platform_api( callable $create_order, string $intent_id, array $answer, ?string $charge_id ): void {
+		$order      = $create_order();
 		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'cancel_intention' ) )
 			->getMock();
-
-		$order->set_transaction_id( $transaction_id );
-		foreach ( $meta as $key => $value ) {
-			$order->update_meta_data( $key, $value );
-		}
-		$order->save();
 
 		$api_client->expects( $this->once() )
 			->method( 'is_available' )
@@ -10462,13 +10471,12 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * ID the cancel plan carries. Client 11.1.0 reads the status of the cancel answer
 	 * (includes/class-wc-payment-gateway-wcpay.php:4076-4079, :4101-4102).
 	 *
-	 * @return array<string,array{0:string,1:array<string,mixed>,2:string,3:array<string,mixed>,4:string|null}>
+	 * @return array<string,array{0:callable,1:string,2:array<string,mixed>,3:string|null}>
 	 */
 	public function provider_cancel_intent_sources(): array {
 		return array(
 			'the transaction ID' => array(
-				'pi_cancel',
-				array(),
+				static fn(): WC_Order => StoredPaymentRecords::authorization( 'pi_cancel', 'ch_cancel' ),
 				'pi_cancel',
 				array(
 					'id'      => 'pi_cancel',
@@ -10482,8 +10490,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 				'ch_cancel',
 			),
 			'the intent meta'    => array(
-				'',
-				array( '_intent_id' => 'pi_cancel_meta' ),
+				static fn(): WC_Order => StoredPaymentRecords::authorization_without_transaction_id( 'pi_cancel_meta', 'requires_capture', OrderStatus::ON_HOLD, 'ch_cancel_meta' ),
 				'pi_cancel_meta',
 				array(
 					'id'     => 'pi_cancel_meta',
@@ -10498,13 +10505,13 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Failed cancellation results retain diagnostics without success effects.
 	 */
 	public function test_failed_cancel_retains_plan_without_success_effect_data(): void {
-		$order      = $this->create_woopayments_order();
+		$order      = StoredPaymentRecords::authorization( 'pi_cancel_failed', 'ch_cancel_failed' );
 		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'cancel_intention' ) )
 			->getMock();
 
-		$order->set_transaction_id( 'pi_cancel_failed' );
+		$order->set_total( '10.00' );
 		$order->save();
 
 		$api_client->expects( $this->once() )
@@ -10673,9 +10680,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @param string $answered  Intent status the platform answers.
 	 */
 	public function test_operation_on_an_intent_id_in_the_form_is_sent( string $operation, string $answered ): void {
-		$order = StoredPaymentRecords::authorization();
-		$order->set_transaction_id( 'pi_3UJhOgBzWlxcwgpP0AOgQE2z' );
-		$order->save();
+		$order                 = StoredPaymentRecords::authorization( 'pi_3UJhOgBzWlxcwgpP0AOgQE2z' );
 		$http_client           = new FakeHttpClient();
 		$http_client->response = self::http_json(
 			200,
@@ -10691,6 +10696,253 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array( 'intentions/pi_3UJhOgBzWlxcwgpP0AOgQE2z/' . $operation ), array_map( static fn( array $request ): string => (string) strstr( (string) $request['path'], 'intentions/' ), $http_client->requests ) );
 		$this->assertSame( array(), array_filter( $logger->lines, static fn( array $line ): bool => str_contains( $line[1], 'outside the intent form' ) ) );
+	}
+
+	/**
+	 * @testdox The order screen's operation on $_dataName is refused after one read of the target, and the order keeps its stored values.
+	 *
+	 * Client 11.3.0's order screen sends the transaction ID with no read (class-wc-payment-gateway-wcpay.php:4333-4350,
+	 * :4436-4448), so a transaction ID naming another order's authorization captures or releases it. The built-in store reads
+	 * a target that is not the stored intent and sends it only when the platform's record names the order by its ID. The
+	 * refusal carries no payment reference and the stored intent status, so the failed operation writes neither over the
+	 * order; it carries the note and an error message, sets no retry, and writes one line whatever the logging setting.
+	 *
+	 * @dataProvider provider_order_screen_operations_on_a_target_of_another_order
+	 *
+	 * @param string   $operation     'capture' or 'cancel'.
+	 * @param string   $target        The transaction ID the merchant typed.
+	 * @param string   $stored_status The intent status the order stores.
+	 * @param callable $answer        Builds the platform's answer to the read from the other order's ID.
+	 * @param string   $reason        'another order', 'no order' or 'not read'.
+	 */
+	public function test_order_screen_operation_on_a_target_of_another_order_is_refused( string $operation, string $target, string $stored_status, callable $answer, string $reason ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$other_order           = StoredPaymentRecords::authorization( 'pi_3UckgABzWlxcwgpP1dAdQsbf', 'ch_3UckgABzWlxcwgpP1w8Z58Wf' );
+		$order                 = StoredPaymentRecords::authorization_with_another_attempts_transaction_id( $target, 'pi_3UckfsBzWlxcwgpP06118rEY', $stored_status, OrderStatus::ON_HOLD, 'ch_3UckfsBzWlxcwgpP0EJeMLRR' );
+		$http_client           = new FakeHttpClient();
+		$http_client->response = $answer( $other_order->get_id() );
+		$provider              = $this->create_provider_over_fake_transport( $http_client, $this->create_account_service( false ) );
+		$logger                = RecordingWcLogger::install();
+
+		$outcome = 'capture' === $operation
+			? wc_get_container()->get( PaymentProcessingService::class )->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $provider )
+			: wc_get_container()->get( PaymentProcessingService::class )->cancel( PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $provider );
+
+		$this->assertSame( array( 'GET intentions/' . $target ), self::request_lines( $http_client ), 'One read of the target, and nothing sent.' );
+		$fresh = wc_get_order( $order->get_id() );
+		$this->assertSame(
+			array( OrderStatus::ON_HOLD, $target, 'pi_3UckfsBzWlxcwgpP06118rEY', $stored_status, 'ch_3UckfsBzWlxcwgpP0EJeMLRR' ),
+			array( $fresh->get_status(), $fresh->get_transaction_id(), $fresh->get_meta( '_intent_id', true ), $fresh->get_meta( '_intention_status', true ), $fresh->get_meta( '_charge_id', true ) ),
+			'The order keeps its status, transaction ID, stored intent, intent status and charge.'
+		);
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( '', $outcome->get_provider_payment_id(), 'No payment reference, so the target is not written as the stored intent.' );
+		$messages = array(
+			'another order' => 'the transaction ID names a payment of another order. See the order notes.',
+			'no order'      => 'it could not confirm that the payment belongs to this order. See the order notes.',
+			'not read'      => 'it could not check the payment with WooPayments. Try again later.',
+		);
+		$data     = $outcome->get_data();
+		$this->assertSame(
+			array(
+				PaymentOutcome::DATA_ERROR_CODE    => WooPaymentsPaymentOperationService::ERROR_OPERATION_TARGET_OF_ANOTHER_ORDER,
+				PaymentOutcome::DATA_ERROR_MESSAGE => ( 'capture' === $operation ? 'WooPayments did not capture this payment: ' : 'WooPayments did not cancel the authorization: ' ) . $messages[ $reason ],
+				'operation'                        => $operation,
+				WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array( '_intention_status' => $stored_status ),
+			),
+			array_intersect_key( $data, array_flip( array( PaymentOutcome::DATA_ERROR_CODE, PaymentOutcome::DATA_ERROR_MESSAGE, 'operation', WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ) ) )
+		);
+		$this->assertArrayNotHasKey( WooPaymentsPaymentOperationService::DATA_STATUS_CHANGE_REFUSAL, $data, 'No retry is asked for.' );
+		$refusal_notes = self::note_texts_containing( $fresh, 'capture' === $operation ? 'WooPayments did not capture this payment' : 'WooPayments did not cancel the authorization' );
+		$this->assertSame( array( $data[ PaymentOutcome::DATA_NOTE ] ), $refusal_notes, 'The outcome\'s note is the one note added.' );
+		$this->assertStringContainsString(
+			array(
+				'another order' => 'which belongs to order <a href="' . esc_url( OrderUtil::get_order_admin_edit_url( $other_order->get_id() ) ) . '">#' . $other_order->get_order_number() . '</a>, not to this order.',
+				'no order'      => 'because it could not confirm that',
+				'not read'      => 'because it could not check',
+			)[ $reason ],
+			$refusal_notes[0]
+		);
+		$this->assertSame( array(), self::note_texts_containing( $fresh, 'expired' ) );
+
+		$lines = array_keys( array_filter( $logger->contexts, static fn( array $context ): bool => 'operation_target_of_another_order' === ( $context['reason'] ?? '' ) ) );
+		$this->assertCount( 1, $lines, 'One line, with logging off.' );
+		$this->assertSame( 'warning', $logger->lines[ $lines[0] ][0] );
+		$this->assertSame(
+			array(
+				'order_id'        => $order->get_id(),
+				'intent_id'       => 'order_123' === $target ? 'another value' : $target,
+				'intent_order_id' => 'another order' === $reason ? $other_order->get_id() : 'none',
+				'operation'       => $operation,
+				'reason'          => 'operation_target_of_another_order',
+			),
+			array_intersect_key( $logger->contexts[ $lines[0] ], array_flip( array( 'order_id', 'intent_id', 'intent_order_id', 'operation', 'reason' ) ) )
+		);
+		$two_intents_lines = array_filter( $logger->contexts, static fn( array $context ): bool => 'operation_on_an_order_naming_two_intents' === ( $context['reason'] ?? '' ) );
+		$this->assertCount( 'requires_capture' === $stored_status ? 1 : 0, $two_intents_lines, 'The two-intents line still counts the operation.' );
+		foreach ( $logger->lines as $index => $line ) {
+			$this->assertStringNotContainsString( 'order_123', $line[1] . (string) wp_json_encode( $logger->contexts[ $index ] ), 'A transaction ID that is not an intent is never printed.' );
+		}
+		$this->assertStringNotContainsString( 'order_123', $refusal_notes[0] );
+	}
+
+	/**
+	 * Order screen operations whose typed transaction ID is not the order's: another order's authorization, one whose
+	 * metadata names no order, a value the platform does not find, another order's canceled authorization, and an order
+	 * that stores a status other than requires_capture, as the Authorizations route reaches it.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string,3:callable,4:string}>
+	 */
+	public function provider_order_screen_operations_on_a_target_of_another_order(): array {
+		$intent    = static fn( string $status, array $metadata ): callable => static fn( int $other_order_id ): array => self::http_json(
+			200,
+			array(
+				'id'       => 'pi_3UckgABzWlxcwgpP1dAdQsbf',
+				'status'   => $status,
+				'metadata' => array_map( static fn( $value ) => 'other order' === $value ? (string) $other_order_id : $value, $metadata ),
+			)
+		);
+		$not_found = static fn(): array => self::http_json(
+			404,
+			array(
+				'code'    => 'resource_missing',
+				'message' => 'No such payment_intent: \'order_123\'',
+			)
+		);
+		$target    = 'pi_3UckgABzWlxcwgpP1dAdQsbf';
+
+		return array(
+			'another order\'s authorization, capture'   => array( 'capture', $target, 'requires_capture', $intent( 'requires_capture', array( 'order_id' => 'other order' ) ), 'another order' ),
+			'another order\'s authorization, cancel'    => array( 'cancel', $target, 'requires_capture', $intent( 'requires_capture', array( 'order_id' => 'other order' ) ), 'another order' ),
+			'an authorization naming no order, capture' => array( 'capture', $target, 'requires_capture', $intent( 'requires_capture', array( 'order_key' => 'wc_order_x' ) ), 'no order' ),
+			'an authorization naming no order, cancel'  => array( 'cancel', $target, 'requires_capture', $intent( 'requires_capture', array( 'order_key' => 'wc_order_x' ) ), 'no order' ),
+			'a typed value the platform does not find, capture' => array( 'capture', 'order_123', 'requires_capture', $not_found, 'not read' ),
+			'a typed value the platform does not find, cancel' => array( 'cancel', 'order_123', 'requires_capture', $not_found, 'not read' ),
+			'another order\'s canceled authorization, capture' => array( 'capture', $target, 'requires_capture', $intent( 'canceled', array( 'order_id' => 'other order' ) ), 'another order' ),
+			'another order\'s authorization on an order storing another status, capture' => array( 'capture', $target, 'requires_payment_method', $intent( 'requires_capture', array( 'order_id' => 'other order' ) ), 'another order' ),
+			'another order\'s authorization on an order storing another status, cancel' => array( 'cancel', $target, 'requires_payment_method', $intent( 'requires_capture', array( 'order_id' => 'other order' ) ), 'another order' ),
+		);
+	}
+
+	/**
+	 * @testdox The order screen's operation on $_dataName reads the target only when it is not the stored intent, and sends it only when the platform names this order by its ID.
+	 *
+	 * An empty transaction ID targets the stored intent. A stored intent equal to the target, which the store wrote, is sent
+	 * with no read; an empty stored intent does not show that the target is the attempt the order recorded, so it is read.
+	 * Only `metadata.order_id` decides: a WooPay payment's `order_number` is not read.
+	 *
+	 * @dataProvider provider_order_screen_operations_and_their_reads
+	 *
+	 * @param callable      $create_order Creates the order.
+	 * @param string        $operation    'capture' or 'cancel'.
+	 * @param callable|null $metadata     Builds the read intent's metadata from the order's ID, or null when no read is expected.
+	 * @param string[]      $expected     The requests, each its method and path from `intentions/`.
+	 */
+	public function test_order_screen_operation_reads_a_target_other_than_the_stored_intent( callable $create_order, string $operation, ?callable $metadata, array $expected ): void {
+		$order                  = $create_order();
+		$target                 = '' !== (string) $order->get_transaction_id() ? (string) $order->get_transaction_id() : (string) $order->get_meta( '_intent_id', true );
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			self::http_json(
+				200,
+				array(
+					'id'     => $target,
+					'status' => 'capture' === $operation ? 'succeeded' : 'canceled',
+				)
+			),
+		);
+		if ( null !== $metadata ) {
+			array_unshift(
+				$http_client->responses,
+				self::http_json(
+					200,
+					array(
+						'id'       => $target,
+						'status'   => 'requires_capture',
+						'metadata' => $metadata( $order->get_id() ),
+					)
+				)
+			);
+		}
+		$logger = RecordingWcLogger::install();
+
+		$outcome = $this->run_capture_or_cancel( $this->create_operation_service_over_fake_transport( $http_client ), $order, $operation );
+
+		$this->assertSame( $expected, self::request_lines( $http_client ) );
+		$sent = 2 === count( $expected ) || null === $metadata;
+		$this->assertSame( $sent ? ( 'capture' === $operation ? PaymentOutcome::STATUS_COMPLETED : PaymentOutcome::STATUS_CANCELED ) : PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( $sent ? '' : WooPaymentsPaymentOperationService::ERROR_OPERATION_TARGET_OF_ANOTHER_ORDER, $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? '' );
+		$this->assertSame( ! $sent, isset( $outcome->get_data()[ PaymentOutcome::DATA_NOTE ] ), 'Only the refusal carries the note.' );
+		$this->assertCount( $sent ? 0 : 1, array_filter( $logger->contexts, static fn( array $context ): bool => 'operation_target_of_another_order' === ( $context['reason'] ?? '' ) ) );
+	}
+
+	/**
+	 * Orders whose order screen operation reads or sends: an ordinary authorization and one with no transaction ID send
+	 * with no read; the order's own payment beside another stored intent, a WooPay payment, and a transaction ID beside an
+	 * empty stored intent are read first.
+	 *
+	 * @return array<string,array{0:callable,1:string,2:callable|null,3:string[]}>
+	 */
+	public function provider_order_screen_operations_and_their_reads(): array {
+		$beside_no_stored_intent = static function (): WC_Order {
+			$order = StoredPaymentRecords::authorization();
+			$order->delete_meta_data( '_intent_id' );
+			$order->save();
+
+			return $order;
+		};
+		$orders                  = array(
+			'an ordinary authorization'                    => array( static fn(): WC_Order => StoredPaymentRecords::authorization(), null, false ),
+			'an authorization with no transaction ID'      => array( static fn(): WC_Order => StoredPaymentRecords::authorization_without_transaction_id(), null, false ),
+			'the order\'s own payment beside another stored intent' => array( static fn(): WC_Order => StoredPaymentRecords::authorization_status_beside_another_intent(), static fn( int $order_id ): array => array( 'order_id' => (string) $order_id ), true ),
+			'the order\'s own payment named by an integer' => array( static fn(): WC_Order => StoredPaymentRecords::authorization_status_beside_another_intent(), static fn( int $order_id ): array => array( 'order_id' => $order_id ), true ),
+			'a WooPay payment naming this order by its number only' => array(
+				static fn(): WC_Order => StoredPaymentRecords::authorization_status_beside_another_intent(),
+				static fn( int $order_id ): array => array(
+					'order_id'       => (string) ( $order_id + 1000 ),
+					'order_number'   => (string) $order_id,
+					'paid_on_woopay' => true,
+				),
+				false,
+			),
+			'a WooPay payment naming this order by its ID' => array(
+				static fn(): WC_Order => StoredPaymentRecords::authorization_status_beside_another_intent(),
+				static fn( int $order_id ): array => array(
+					'order_id'       => (string) $order_id,
+					'order_number'   => (string) ( $order_id + 1000 ),
+					'paid_on_woopay' => true,
+				),
+				true,
+			),
+			'a transaction ID beside no stored intent, this order\'s' => array( $beside_no_stored_intent, static fn( int $order_id ): array => array( 'order_id' => (string) $order_id ), true ),
+			'a transaction ID beside no stored intent, another order\'s' => array( $beside_no_stored_intent, static fn( int $order_id ): array => array( 'order_id' => (string) ( $order_id + 1000 ) ), false ),
+		);
+
+		$rows = array();
+		foreach ( array( 'capture', 'cancel' ) as $operation ) {
+			foreach ( $orders as $name => list( $create_order, $metadata, $sends_after_read ) ) {
+				$send     = 'POST intentions/pi_A/' . $operation;
+				$expected = null === $metadata ? array( $send ) : ( $sends_after_read ? array( 'GET intentions/pi_A', $send ) : array( 'GET intentions/pi_A' ) );
+
+				$rows[ $name . ', ' . $operation ] = array( $create_order, $operation, $metadata, $expected );
+			}
+		}
+
+		return $rows;
+	}
+
+	/**
+	 * Get each request a fake transport received as its method and its path from `intentions/`, without the query.
+	 *
+	 * @param FakeHttpClient $http_client Fake transport.
+	 * @return string[]
+	 */
+	private static function request_lines( FakeHttpClient $http_client ): array {
+		return array_map(
+			static fn( array $request ): string => $request['method'] . ' ' . strtok( (string) strstr( (string) $request['path'], 'intentions/' ), '?' ),
+			$http_client->requests
+		);
 	}
 
 	/**

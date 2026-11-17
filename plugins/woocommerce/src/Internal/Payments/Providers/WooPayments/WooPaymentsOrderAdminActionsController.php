@@ -475,6 +475,10 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 				}
 			}
 
+			if ( ! $on_status_change ) {
+				self::add_edit_screen_error_for_a_target_of_another_order( $outcome );
+			}
+
 			if ( $this->operation_failed_without_note( $outcome, $operation ) ) {
 				self::add_operation_failure_note( $order, $operation );
 			}
@@ -559,6 +563,22 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 
 		return $expected_status !== $outcome->get_status()
 			&& ( ! isset( $data[ PaymentOutcome::DATA_NOTE ] ) || '' === (string) $data[ PaymentOutcome::DATA_NOTE ] );
+	}
+
+	/**
+	 * Show the error of an order screen capture or cancel that was not sent because its intent is not shown to be the
+	 * order's own, on the order screen the save reloads (WC_Admin_Meta_Boxes stores it at shutdown and prints it on the
+	 * next admin notices).
+	 *
+	 * @param PaymentOutcome $outcome Operation outcome.
+	 */
+	private static function add_edit_screen_error_for_a_target_of_another_order( PaymentOutcome $outcome ): void {
+		$data = $outcome->get_data();
+		if ( WooPaymentsPaymentOperationService::ERROR_OPERATION_TARGET_OF_ANOTHER_ORDER !== ( $data[ PaymentOutcome::DATA_ERROR_CODE ] ?? '' ) || ! is_admin() || ! class_exists( 'WC_Admin_Meta_Boxes' ) ) {
+			return;
+		}
+
+		\WC_Admin_Meta_Boxes::add_error( (string) ( $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] ?? '' ) );
 	}
 
 	/**
