@@ -29,6 +29,11 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	private const ORDER_READ_BACKTRACE_DEPTH = 40;
 
 	/**
+	 * The call a live order recalculation keeps on the backtrace; the method is declared on the abstract order.
+	 */
+	private const ORDER_CALCULATE_TOTALS_CALL = 'WC_Abstract_Order->calculate_totals';
+
+	/**
 	 * Runtime owner arbiter.
 	 *
 	 * @var MultiCurrencyRuntimeArbiter
@@ -108,6 +113,15 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	private ?string $query_var_order_currency = null;
 
 	/**
+	 * Currencies of the orders recalculating their totals, innermost last.
+	 *
+	 * A stack, so a nested recalculation of another order does not drop the outer order's currency when it ends.
+	 *
+	 * @var array<int,string|null>
+	 */
+	private array $calculated_order_currencies = array();
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -147,6 +161,9 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 			add_filter( 'woocommerce_order_get_total', array( $this, 'maybe_init_order_currency_from_order_total_prop' ), 900, 2 );
 			add_filter( 'woocommerce_get_formatted_order_total', array( $this, 'maybe_clear_order_currency_after_formatted_order_total' ), 900, 4 );
 			add_filter( 'woocommerce_order_class', array( $this, 'flag_order_loading' ), 900 );
+			// Pushed before calculate_totals() reads the decimals, popped after every other listener has read them.
+			add_action( 'woocommerce_order_before_calculate_totals', array( $this, 'init_calculated_order_currency' ), 10, 2 );
+			add_action( 'woocommerce_order_after_calculate_totals', array( $this, 'clear_calculated_order_currency' ), 900 );
 
 			add_action( 'before_woocommerce_pay', array( $this, 'init_order_currency_from_query_vars' ) );
 			add_action( 'woocommerce_blocks_enqueue_cart_block_scripts_after', array( $this, 'enqueue_blocks_totals_script' ) );
@@ -286,6 +303,38 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	}
 
 	/**
+	 * Record the currency of the order whose totals are being recalculated, so its amounts round in its own currency.
+	 *
+	 * A calculation that throws before its after hook leaves its entry behind, so the stack is first cut to the live
+	 * calculate_totals() frames other than this one; that also drops a stale entry left at the bottom (client 11.3.0
+	 * `includes/multi-currency/FrontendCurrencies.php:565-590`).
+	 *
+	 * @internal
+	 *
+	 * @param mixed $and_taxes Whether taxes are calculated too.
+	 * @param mixed $order     Order recalculating its totals.
+	 */
+	public function init_calculated_order_currency( $and_taxes, $order ): void {
+		unset( $and_taxes );
+
+		$valid_existing = max( 0, $this->request_context->get_backtrace_call_count( self::ORDER_CALCULATE_TOTALS_CALL ) - 1 );
+		if ( count( $this->calculated_order_currencies ) > $valid_existing ) {
+			$this->calculated_order_currencies = array_slice( $this->calculated_order_currencies, 0, $valid_existing );
+		}
+
+		$this->calculated_order_currencies[] = $order instanceof \WC_Order && $order->get_currency() ? $order->get_currency() : null;
+	}
+
+	/**
+	 * Drop the innermost recalculating order's currency once its totals are calculated.
+	 *
+	 * @internal
+	 */
+	public function clear_calculated_order_currency(): void {
+		array_pop( $this->calculated_order_currencies );
+	}
+
+	/**
 	 * Flag that an order may be loading: `WC_Order_Factory` asks for the order class right before it reads the order.
 	 *
 	 * @internal
@@ -417,18 +466,46 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	/**
 	 * Get the currency that formats this read, or null for the selected currency.
 	 *
-	 * The order currency set for an order page, else the currency of the order the page names while an order-confirmation
+	 * The currency of the order recalculating its totals, else the order currency set for an order page, else the currency of the order the page names while an order-confirmation
 	 * block renders it (client 11.3.0 `includes/multi-currency/FrontendCurrencies.php:620-624`, `:685-689`). Other prices
 	 * on the page keep the selected currency.
 	 *
 	 * @return string|null
 	 */
 	private function get_formatting_currency(): ?string {
+		$calculated_order_currency = $this->get_calculated_order_currency();
+		if ( null !== $calculated_order_currency ) {
+			return $calculated_order_currency;
+		}
+
 		if ( null !== $this->order_currency ) {
 			return $this->order_currency;
 		}
 
 		return $this->order_context_service->is_rendering_order_confirmation() ? $this->get_query_var_order_currency() : null;
+	}
+
+	/**
+	 * Get the currency of the innermost order whose totals are being recalculated, or null outside a recalculation.
+	 *
+	 * Entries beyond the live calculate_totals() frames belong to calculations that ended without their after hook, so
+	 * they are dropped first (client 11.3.0 `includes/multi-currency/FrontendCurrencies.php:606-618`).
+	 *
+	 * @return string|null
+	 */
+	private function get_calculated_order_currency(): ?string {
+		if ( array() === $this->calculated_order_currencies ) {
+			return null;
+		}
+
+		$active_calculations = $this->request_context->get_backtrace_call_count( self::ORDER_CALCULATE_TOTALS_CALL );
+		if ( count( $this->calculated_order_currencies ) > $active_calculations ) {
+			$this->calculated_order_currencies = array_slice( $this->calculated_order_currencies, 0, $active_calculations );
+		}
+
+		$currency = end( $this->calculated_order_currencies );
+
+		return is_string( $currency ) ? $currency : null;
 	}
 
 	/**

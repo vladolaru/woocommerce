@@ -184,6 +184,26 @@ class RequestContext {
 	}
 
 	/**
+	 * Count the frames of the current backtrace that are the given call.
+	 *
+	 * As client 11.3.0 `includes/multi-currency/Utils.php:71-81`, which reads it on each price-format call during a
+	 * recalculation, so the arguments are not collected.
+	 *
+	 * @param string $call Call as `Class->method`, `Class::method` or `function`.
+	 * @return int
+	 */
+	public function get_backtrace_call_count( string $call ): int {
+		$count = 0;
+		foreach ( debug_backtrace( DEBUG_BACKTRACE_IGNORE_ARGS ) as $frame ) { // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_debug_backtrace -- Recalculation frame count on the price-format path.
+			if ( self::get_frame_call( $frame ) === $call ) {
+				++$count;
+			}
+		}
+
+		return $count;
+	}
+
+	/**
 	 * Get a backtrace frame's call, as `Class->method`, `Class::method` or `function`.
 	 *
 	 * @param array<string,mixed> $frame Backtrace frame.

@@ -39,6 +39,8 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 		'before_woocommerce_pay',
 		'woocommerce_account_view-order_endpoint',
 		'woocommerce_order_class',
+		'woocommerce_order_before_calculate_totals',
+		'woocommerce_order_after_calculate_totals',
 		'woocommerce_blocks_enqueue_cart_block_scripts_after',
 		'woocommerce_blocks_enqueue_checkout_block_scripts_after',
 	);
@@ -98,6 +100,8 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 					'woocommerce_cart_hash'           => array( 'add_currency_to_cart_hash' => array( 900, 1 ) ),
 					'woocommerce_currency'            => array( 'get_woocommerce_currency' => array( 900, 1 ) ),
 					'woocommerce_get_formatted_order_total' => array( 'maybe_clear_order_currency_after_formatted_order_total' => array( 900, 4 ) ),
+					'woocommerce_order_after_calculate_totals' => array( 'clear_calculated_order_currency' => array( 900, 1 ) ),
+					'woocommerce_order_before_calculate_totals' => array( 'init_calculated_order_currency' => array( 10, 2 ) ),
 					'woocommerce_order_class'         => array( 'flag_order_loading' => array( 900, 1 ) ),
 					'woocommerce_order_get_total'     => array( 'maybe_init_order_currency_from_order_total_prop' => array( 900, 2 ) ),
 					'woocommerce_price_format'        => array( 'get_woocommerce_price_format' => array( 900, 1 ) ),
@@ -144,6 +148,8 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 		$this->assertFalse( has_filter( 'wc_get_price_decimals', array( $sut, 'get_price_decimals' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_order_get_total', array( $sut, 'maybe_init_order_currency_from_order_total_prop' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_order_class', array( $sut, 'flag_order_loading' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_order_before_calculate_totals', array( $sut, 'init_calculated_order_currency' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_order_after_calculate_totals', array( $sut, 'clear_calculated_order_currency' ) ) );
 		$this->assertFalse( has_action( 'before_woocommerce_pay', array( $sut, 'init_order_currency_from_query_vars' ) ) );
 		$this->assertSame( 10, has_filter( 'woocommerce_thankyou_order_id', array( $sut, 'init_order_currency' ) ) );
 		$this->assertSame( 9, has_action( 'woocommerce_account_view-order_endpoint', array( $sut, 'init_order_currency' ) ) );
@@ -779,14 +785,134 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should still find the WooCommerce frames the order checks look for.
 	 *
-	 * The checks match `WC_Order_Factory::get_order`, `WC_Order_Factory::get_orders` and `WC_Abstract_Order->__construct` by
-	 * name on the backtrace, which names a method by the class that declares it (client 11.3.0
-	 * `tests/unit/multi-currency/test-class-frontend-currencies.php:359-380`).
+	 * The checks match `WC_Order_Factory::get_order`, `WC_Order_Factory::get_orders`, `WC_Abstract_Order->__construct` and
+	 * `WC_Abstract_Order->calculate_totals` by name on the backtrace, which names a method by the class that declares it
+	 * (client 11.3.0 `tests/unit/multi-currency/test-class-frontend-currencies.php:359-380`).
 	 */
 	public function test_still_finds_the_woocommerce_frames_the_order_checks_look_for(): void {
 		$this->assertTrue( ( new \ReflectionMethod( \WC_Order_Factory::class, 'get_order' ) )->isStatic() );
 		$this->assertTrue( ( new \ReflectionMethod( \WC_Order_Factory::class, 'get_orders' ) )->isStatic() );
 		$this->assertSame( 'WC_Abstract_Order', ( new \ReflectionMethod( \WC_Order::class, '__construct' ) )->getDeclaringClass()->getName() );
+		$this->assertSame( 'WC_Abstract_Order', ( new \ReflectionMethod( \WC_Order::class, 'calculate_totals' ) )->getDeclaringClass()->getName() );
+	}
+
+	/**
+	 * @testdox Should round an order's recalculation in its own currency, whatever is selected: $_dataName.
+	 * @dataProvider provide_recalculations
+	 *
+	 * A USD order of three lines (1.49, 1.49, 1.45) recalculated with JPY selected: client 11.3.0
+	 * `tests/unit/multi-currency/test-class-frontend-currencies.php:821-856` (a plain recalculation), `:858-923` (a nested
+	 * JPY order's recalculation throws and is caught inside the USD order's) and `:925-973` (an earlier JPY recalculation
+	 * threw, leaving its entry behind). The recalculating order comes before an order currency set for the page, as the
+	 * client reads its stack first (`includes/multi-currency/FrontendCurrencies.php:606-618`).
+	 *
+	 * @param string $failure Where a JPY recalculation throws: 'none', 'nested' or 'earlier'; or 'page order', a JPY order
+	 *                        set for the page first.
+	 */
+	public function test_rounds_a_recalculation_in_the_order_currency( string $failure ): void {
+		$order         = $this->create_order_with_lines( 'USD', array( '1.49', '1.49', '1.45' ) );
+		$page_order_id = $this->create_saved_order( 'JPY', '1500' );
+		$sut           = $this->register_on_real_services( array( 'JPY' ) );
+		if ( 'page order' === $failure ) {
+			$sut->init_order_currency( $page_order_id );
+		}
+		$jpy_order = new \WC_Order();
+		$jpy_order->set_currency( 'JPY' );
+		add_action(
+			'woocommerce_order_before_calculate_totals',
+			static function ( $and_taxes, $calculating ) use ( $failure, $jpy_order ) {
+				unset( $and_taxes );
+				if ( $calculating === $jpy_order ) {
+					throw new \Exception( 'The JPY recalculation failed.' );
+				}
+				if ( 'nested' === $failure ) {
+					try {
+						$jpy_order->calculate_totals();
+					} catch ( \Exception $e ) {
+						unset( $e );
+					}
+				}
+			},
+			20,
+			2
+		);
+		$this->selected_currency = 'JPY';
+
+		if ( 'earlier' === $failure ) {
+			try {
+				$jpy_order->calculate_totals();
+			} catch ( \Exception $e ) {
+				unset( $e );
+			}
+		}
+		$order->calculate_totals();
+
+		$this->assertSame( '4.43', $order->get_total() );
+	}
+
+	/** @return array<string,array{string}> */
+	public static function provide_recalculations(): array {
+		return array(
+			'a plain recalculation'              => array( 'none' ),
+			'a nested recalculation threw'       => array( 'nested' ),
+			'an earlier recalculation threw'     => array( 'earlier' ),
+			'an order currency set for the page' => array( 'page order' ),
+		);
+	}
+
+	/**
+	 * @testdox Should use the recalculating order's decimals only while its totals are calculated.
+	 *
+	 * Client 11.3.0 `tests/unit/multi-currency/test-class-frontend-currencies.php:528-578`: a BHD order (3 decimals) with JPY
+	 * selected, then the selection again once the calculation ends, or when the entry belongs to no live calculation. The
+	 * currency code stays the selection throughout.
+	 */
+	public function test_uses_the_recalculating_order_decimals_only_while_it_calculates(): void {
+		$sut                     = $this->register_on_real_services( array( 'JPY' ) );
+		$this->selected_currency = 'JPY';
+		$bhd_order               = new \WC_Order();
+		$bhd_order->set_currency( 'BHD' );
+		$during = array();
+		add_action(
+			'woocommerce_order_before_calculate_totals',
+			static function () use ( &$during ) {
+				$during = array( wc_get_price_decimals(), get_woocommerce_currency() );
+			},
+			20
+		);
+
+		$bhd_order->calculate_totals();
+
+		$this->assertSame( array( 3, 'JPY' ), $during );
+		$this->assertSame( 0, wc_get_price_decimals() );
+
+		$sut->init_calculated_order_currency( true, $bhd_order );
+		$this->assertSame( 0, wc_get_price_decimals() );
+		$this->assertSame( 0, wc_get_price_decimals() );
+	}
+
+	/**
+	 * @testdox Should leave an admin or cron recalculation at the store's decimals, as before: $_dataName.
+	 * @testWith ["admin"]
+	 *           ["cron"]
+	 *
+	 * The order hooks are not registered there (client 11.3.0 `includes/multi-currency/FrontendCurrencies.php:167`), so a
+	 * store set to zero decimals rounds each line of the 4.43 order to whole units, as core does with the filter absent.
+	 *
+	 * @param string $signal Request signal.
+	 */
+	public function test_leaves_an_admin_or_cron_recalculation_at_store_decimals( string $signal ): void {
+		$order = $this->create_order_with_lines( 'USD', array( '1.49', '1.49', '1.45' ) );
+		update_option( 'woocommerce_price_num_decimals', '0' );
+		$sut = new MultiCurrencyFrontendCurrenciesController();
+		$sut->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ), wc_get_container()->get( ServiceFactory::class ), wc_get_container()->get( RequestContext::class ), wc_get_container()->get( OrderContextService::class ) );
+
+		RequestSignals::run( array( $signal => true ), fn() => $sut->register() );
+		$order->calculate_totals();
+
+		$this->assertFalse( has_filter( 'woocommerce_order_class', array( $sut, 'flag_order_loading' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_order_before_calculate_totals', array( $sut, 'init_calculated_order_currency' ) ) );
+		$this->assertSame( '3', $order->get_total() );
 	}
 
 	/**
@@ -937,6 +1063,26 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 		$order->save();
 
 		return $order->get_id();
+	}
+
+	/**
+	 * Build an unsaved order in a currency with one line per product price, before any currency filter runs.
+	 *
+	 * @param string   $currency Order currency.
+	 * @param string[] $prices   Product prices, one line of quantity 1 each.
+	 * @return \WC_Order
+	 */
+	private function create_order_with_lines( string $currency, array $prices ): \WC_Order {
+		$order = new \WC_Order();
+		$order->set_currency( $currency );
+		foreach ( $prices as $price ) {
+			$product = new \WC_Product_Simple();
+			$product->set_regular_price( $price );
+			$product->save();
+			$order->add_product( $product, 1 );
+		}
+
+		return $order;
 	}
 
 	/**
