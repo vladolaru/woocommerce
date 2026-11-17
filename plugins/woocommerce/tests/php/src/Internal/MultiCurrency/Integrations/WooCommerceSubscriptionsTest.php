@@ -29,6 +29,26 @@ use Automattic\WooCommerce\Tests\Internal\MultiCurrency\ServiceFactories;
 class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 
 	/**
+	 * The extension's session key marking coupon copies stored unconverted (client 11.3.0
+	 * `includes/multi-currency/Compatibility/WooCommerceSubscriptions.php:37`).
+	 */
+	private const UNCONVERTED_SESSION_COUPONS_KEY = 'wcpay_multi_currency_unconverted_session_coupons';
+
+	private const RENEWAL_SETUP_ACTION = 'woocommerce_setup_cart_for_subscription_renewal';
+
+	private const INITIAL_PAYMENT_SETUP_ACTION = 'woocommerce_setup_cart_for_subscription_initial_payment';
+
+	/**
+	 * A fixed coupon's properties as Subscriptions copies them, in the store currency.
+	 */
+	private const COUPON_COPY = array(
+		'discount_type'  => 'fixed_cart',
+		'amount'         => '10.00',
+		'minimum_amount' => '50.00',
+		'maximum_amount' => '60.00',
+	);
+
+	/**
 	 * Hooks touched by the subscriptions compatibility controller.
 	 *
 	 * @var string[]
@@ -57,6 +77,9 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 		'wcpay_multi_currency_should_output_explicit_price',
 		'woocommerce_coupon_get_minimum_amount',
 		'woocommerce_coupon_get_maximum_amount',
+		'wcpay_multi_currency_should_convert_coupon_min_max_amount',
+		'woocommerce_setup_cart_for_subscription_renewal',
+		'woocommerce_setup_cart_for_subscription_initial_payment',
 	);
 
 	/**
@@ -76,6 +99,14 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 
 		foreach ( $this->deferred_controllers as $controller ) {
 			remove_action( 'plugins_loaded', array( $controller, 'register_subscription_filters' ), 20 );
+		}
+
+		// The session object outlives the test: its cart decides later cart-type lookups, and the copies and their mark later
+		// coupon reads.
+		if ( WC()->session instanceof \WC_Session ) {
+			WC()->session->set( 'cart', null );
+			WC()->session->set( 'wcs_renewal_coupons', null );
+			WC()->session->set( self::UNCONVERTED_SESSION_COUPONS_KEY, null );
 		}
 
 		parent::tearDown();
@@ -107,11 +138,17 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 	 * @return array<string,array{0:string,1:bool,2:bool,3:bool,4:array<string,array<string,int[]>>}>
 	 */
 	public function provide_subscriptions_requests(): array {
-		$hooks = array(
+		// First and last on each cart setup action (client 11.3.0 `includes/multi-currency/Compatibility/WooCommerceSubscriptions.php:98-101`).
+		$marker_callbacks = array(
+			'finish_storing_unconverted_session_coupons' => array( PHP_INT_MAX, 1 ),
+			'start_storing_unconverted_session_coupons'  => array( 0, 1 ),
+		);
+		$hooks            = array(
 			'option_woocommerce_subscriptions_multiple_purchase' => array( 'maybe_disable_mixed_cart' => array( 50, 1 ) ),
 			'wc_price'                                     => array( 'maybe_get_explicit_format_for_subscription_total' => array( 50, 1 ) ),
 			'wcpay_multi_currency_override_selected_currency' => array( 'override_selected_currency' => array( 50, 1 ) ),
 			'wcpay_multi_currency_should_convert_coupon_amount' => array( 'should_convert_coupon_amount' => array( 50, 2 ) ),
+			'wcpay_multi_currency_should_convert_coupon_min_max_amount' => array( 'should_convert_coupon_min_max_amount' => array( 50, 2 ) ),
 			'wcpay_multi_currency_should_convert_product_price' => array( 'should_convert_product_price' => array( 50, 2 ) ),
 			'wcpay_multi_currency_should_disable_currency_switching' => array( 'should_disable_currency_switching' => array( 50, 1 ) ),
 			'woocommerce_add_to_cart'                      => array( 'clear_subscription_type_cache' => array( 10, 1 ) ),
@@ -120,11 +157,11 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 			'woocommerce_cart_item_restored'               => array( 'clear_subscription_type_cache' => array( 10, 1 ) ),
 			'woocommerce_cart_loaded_from_session'         => array( 'clear_subscription_type_cache' => array( 10, 1 ) ),
 			'woocommerce_cart_updated'                     => array( 'clear_subscription_type_cache' => array( 10, 1 ) ),
-			'woocommerce_coupon_get_maximum_amount'        => array( 'get_subscription_session_coupon_spend_limit' => array( 100, 2 ) ),
-			'woocommerce_coupon_get_minimum_amount'        => array( 'get_subscription_session_coupon_spend_limit' => array( 100, 2 ) ),
 			'woocommerce_get_formatted_subscription_total' => array( 'maybe_clear_current_my_account_subscription' => array( 50, 2 ) ),
 			'woocommerce_product_get__subscription_sign_up_fee' => array( 'get_subscription_product_signup_fee' => array( 50, 2 ) ),
 			'woocommerce_product_variation_get__subscription_sign_up_fee' => array( 'get_subscription_product_signup_fee' => array( 50, 2 ) ),
+			'woocommerce_setup_cart_for_subscription_initial_payment' => $marker_callbacks,
+			'woocommerce_setup_cart_for_subscription_renewal' => $marker_callbacks,
 			'woocommerce_subscription_price_string_details' => array( 'maybe_set_current_my_account_subscription' => array( 50, 2 ) ),
 			'woocommerce_subscriptions_product_price'      => array( 'get_subscription_product_price' => array( 50, 2 ) ),
 			'woocommerce_subscriptions_product_regular_price' => array( 'get_stored_price_for_active_price' => array( 50, 2 ) ),
@@ -1053,6 +1090,9 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should apply subscription coupon conversion decisions.
+	 *
+	 * A recurring coupon applied in a renewal cart converts like any fixed coupon (client 11.3.0
+	 * `tests/unit/multi-currency/compatibility/test-class-woocommerce-subscriptions.php:1017-1036`).
 	 */
 	public function test_applies_subscription_coupon_conversion_decisions(): void {
 		$sut = $this->create_controller();
@@ -1066,7 +1106,7 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 		CallStack::run(
 			array( 'WC_Discounts->apply_coupon' ),
 			function () use ( $renewal ): void {
-				$this->assertFalse( $renewal->should_convert_coupon_amount( true, $this->create_coupon( 'renewal_fee' ) ) );
+				$this->assertTrue( $renewal->should_convert_coupon_amount( true, $this->create_coupon( 'renewal_fee' ) ) );
 				$this->assertTrue( $renewal->should_convert_coupon_amount( true, $this->create_coupon( 'fixed_cart' ) ) );
 			}
 		);
@@ -1077,13 +1117,15 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should apply a subscription cart's coupon at the amount, minimum and maximum it holds.
+	 * @testdox Should apply a coupon copied into the session before the copies were marked at the amount, minimum and maximum it holds.
 	 *
-	 * WooCommerce Subscriptions 9.3.0 sets up renewal and initial payment carts by storing each coupon's view-context amount,
-	 * minimum and maximum in the session (`includes/core/class-wcs-cart-renewal.php:1108-1166`) and rebuilding the coupon from
-	 * there on every later read, as a virtual coupon (`:1041-1077`); a manual or deleted discount becomes a `renewal_cart` or
-	 * `initial_cart` coupon holding the order's discount (`:1708-1852`). The session amounts were converted when they were stored,
-	 * and an order discount is already in the order's currency, so neither converts again. Amounts are from a recorded store run
+	 * WooCommerce Subscriptions 9.4.1 sets up renewal and initial payment carts by storing each coupon's view-context amount,
+	 * minimum and maximum in the session (`includes/core/class-wcs-cart-renewal.php:1115-1170`) and rebuilding the coupon from
+	 * there on every later read, as a virtual coupon (`:1048-1084`); a manual or deleted discount becomes a `renewal_cart` or
+	 * `initial_cart` coupon holding the order's discount (`:1774-1918`). Copies stored before they were marked, by an earlier
+	 * version of either runtime, were converted when they were stored, and an order discount is already in the order's currency,
+	 * so neither converts again (client 11.3.0 `tests/unit/multi-currency/compatibility/test-class-woocommerce-subscriptions.php:1040-1048`,
+	 * `:1111-1118`). Database, typed-in and other plugins' virtual coupons convert. Amounts are from a recorded store run
 	 * at GBP 0.73: a 10.00 coupon stored as 7.30 with a 50.00 minimum stored as 36.45 (the 73.00 maximum is a synthetic value), and a
 	 * 5.00 manual discount. The fixture converts by doubling, which exceeds a 50.00/60.00 band's max/min ratio: rebuilding such a
 	 * coupon must keep its maximum.
@@ -1097,7 +1139,7 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 	 * @param string               $amount    Expected amount.
 	 * @param string[]             $limits    Expected minimum and maximum spend.
 	 */
-	public function test_applies_a_subscription_cart_coupon_at_the_amount_it_holds( ?string $cart_type, array $calls, string $origin, array $props, string $amount, array $limits ): void {
+	public function test_applies_a_coupon_copied_before_the_mark_at_the_amount_it_holds( ?string $cart_type, array $calls, string $origin, array $props, string $amount, array $limits ): void {
 		$sut = $this->create_controller();
 		if ( null !== $cart_type ) {
 			$sut->set_subscription_cart_item( $cart_type, $this->create_subscription( 'GBP' ) );
@@ -1113,7 +1155,8 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Coupons a renewal or initial payment cart reads while it is set up, applied, and turned into the order's coupon line.
+	 * Coupons a renewal or initial payment cart reads in the set-up frame, applied, and turned into the order's coupon line, with
+	 * the session holding unmarked copies.
 	 *
 	 * @return array<string,array<mixed>>
 	 */
@@ -1144,22 +1187,194 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 		) + $stored;
 
 		return array(
-			'renewal, manual discount, stored'           => array( 'renewal', $setup, 'order', $order_amount + array( 'discount_type' => 'renewal_cart' ), '5.00', array( '0', '0' ) ),
+			'renewal, manual discount, set-up frame'     => array( 'renewal', $setup, 'order', $order_amount + array( 'discount_type' => 'renewal_cart' ), '5.00', array( '0', '0' ) ),
 			'renewal, manual discount, applied'          => array( 'renewal', $apply, 'session', $order_amount + array( 'discount_type' => 'renewal_cart' ), '5.00', array( '0', '0' ) ),
-			'initial payment, manual discount, stored'   => array( null, $setup, 'order', array( 'code' => 'discount_initial' ) + $order_amount + array( 'discount_type' => 'initial_cart' ), '5.00', array( '0', '0' ) ),
+			'initial payment, manual discount, set-up frame' => array( null, $setup, 'order', array( 'code' => 'discount_initial' ) + $order_amount + array( 'discount_type' => 'initial_cart' ), '5.00', array( '0', '0' ) ),
 			'initial payment, manual discount, applied'  => array( null, $apply, 'session', array( 'code' => 'discount_initial' ) + $order_amount + array( 'discount_type' => 'initial_cart' ), '5.00', array( '0', '0' ) ),
 			'initial payment, stored coupon, applied'    => array( null, $apply, 'session', $stored, '7.30', array( '36.45', '73.00' ) ),
 			'renewal, stored non-recurring coupon, applied' => array( 'renewal', $apply, 'session', $stored, '7.30', array( '36.45', '73.00' ) ),
 			'renewal, stored renewal coupon, applied'    => array( 'renewal', $apply, 'session', array( 'discount_type' => 'renewal_fee' ) + $stored, '7.30', array( '36.45', '73.00' ) ),
 			'renewal, stored coupon above its max/min ratio, applied' => array( 'renewal', $apply, 'session', $tight_band, '7.30', array( '50.00', '60.00' ) ),
 			'renewal, stored coupon, order coupon line'  => array( 'renewal', array(), 'session', $stored, '7.30', array( '36.45', '73.00' ) ),
-			'renewal, database coupon, stored'           => array( 'renewal', $setup, 'database', $database, '20', array( '100', '120' ) ),
-			'initial payment, database coupon, stored'   => array( null, $setup, 'database', $database, '20', array( '100', '120' ) ),
+			'renewal, database coupon, set-up frame'     => array( 'renewal', $setup, 'database', $database, '20', array( '100', '120' ) ),
+			'initial payment, database coupon, set-up frame' => array( null, $setup, 'database', $database, '20', array( '100', '120' ) ),
 			'initial payment, coupon typed in, applied'  => array( null, $apply, 'database', $database, '20', array( '100', '120' ) ),
 			'recurring percent coupon, limits convert'   => array( null, $apply, 'database', array( 'discount_type' => 'recurring_percent' ) + $database, '10.00', array( '100', '120' ) ),
 			'renewal, another plugin\'s virtual coupon'  => array( 'renewal', $apply, 'virtual', $database, '20', array( '100', '120' ) ),
 			'renewal, virtual coupon beside stored ones' => array( 'renewal', $apply, 'virtual beside stored', $database, '20', array( '100', '120' ) ),
 		);
+	}
+
+	/**
+	 * @testdox Should read a coupon at its own amounts while Subscriptions copies it into the session, and convert it otherwise: $_dataName.
+	 *
+	 * Client 11.3.0 `tests/unit/multi-currency/compatibility/test-class-woocommerce-subscriptions.php:957-1011`, `:1163-1205`: while
+	 * a cart setup action runs and `WCS_Cart_Renewal->store_coupon` is on the stack, neither the amount nor the spend limits
+	 * convert; a read outside that call during the setup, such as the coupon's validation, converts, and so does a read in that
+	 * call outside a setup action. The fixture converts by doubling.
+	 *
+	 * @dataProvider provide_cart_setup_actions
+	 *
+	 * @param string $action Cart setup action Subscriptions fires.
+	 */
+	public function test_reads_a_coupon_at_its_own_amounts_while_subscriptions_copies_it( string $action ): void {
+		$sut = $this->create_controller();
+		$sut->set_subscription_cart_item( 'renewal', $this->create_subscription( 'GBP' ) );
+		$sut->register();
+		$this->register_frontend_prices();
+		$coupon = $this->create_subscription_cart_coupon( 'database', array( 'code' => 'ten' ) + self::COUPON_COPY );
+		$store  = array( 'WCS_Cart_Renewal->store_coupon' );
+		$reads  = array();
+		add_action(
+			$action,
+			function () use ( $coupon, $store, &$reads ): void {
+				$reads['copied during the setup']    = $this->read_coupon( $store, $coupon );
+				$reads['validated during the setup'] = $this->read_coupon( array( 'WC_Discounts->apply_coupon' ), $coupon );
+			}
+		);
+
+		do_action( $action ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Subscriptions' action, fired as it fires it.
+		$reads['copied outside a setup'] = $this->read_coupon( $store, $coupon );
+
+		$this->assertSame(
+			array(
+				'copied during the setup'    => array( '10.00', '50.00', '60.00' ),
+				'validated during the setup' => array( '20', '100', '120' ),
+				'copied outside a setup'     => array( '20', '100', '120' ),
+			),
+			$reads
+		);
+	}
+
+	/**
+	 * The two actions Subscriptions fires while it sets a cart up from an order or a subscription.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public function provide_cart_setup_actions(): array {
+		return array(
+			'renewal'         => array( self::RENEWAL_SETUP_ACTION ),
+			'initial payment' => array( self::INITIAL_PAYMENT_SETUP_ACTION ),
+		);
+	}
+
+	/**
+	 * @testdox Should convert a coupon copied into the session once, when the cart uses it: $_dataName.
+	 *
+	 * Client 11.3.0 `includes/multi-currency/Compatibility/WooCommerceSubscriptions.php:296-362`, `:641-699` and its tests
+	 * `tests/unit/multi-currency/compatibility/test-class-woocommerce-subscriptions.php:930-950`, `:1017-1091`: a copy stored
+	 * during a setup, marked `'storing'` and then with the hash of the copies, converts when the cart reads it, during the setup
+	 * and after it; a session in the extension's own form reads the same; a percent copy keeps its percentage and converts its
+	 * limits; an order discount never converts. A copy rewritten after the setup without the mark, and any coupon whose code is
+	 * among copies from before the mark, a database coupon included, hold converted amounts. The fixture converts by doubling.
+	 *
+	 * @dataProvider provide_coupon_copies_in_use
+	 *
+	 * @param string               $session  How the session got its copies: `renewal setup`, `initial payment setup`, `rewritten after setup`,
+	 *                                       `extension form`, `still storing` or `unmarked`.
+	 * @param string               $origin   `copy` (built from the session copy, as Subscriptions does) or `database`.
+	 * @param array<string,string> $props  Coupon properties, the code included.
+	 * @param string[]             $expected Expected amount, minimum and maximum spend when the cart applies the coupon.
+	 * @param string[]|null        $during   Expected reads while the setup still runs, or null outside a setup.
+	 */
+	public function test_converts_a_coupon_copy_once_when_the_cart_uses_it( string $session, string $origin, array $props, array $expected, ?array $during ): void {
+		$sut = $this->create_controller();
+		$sut->set_subscription_cart_item( 'renewal', $this->create_subscription( 'GBP' ) );
+		$sut->register();
+		$this->register_frontend_prices();
+		$this->register_subscription_coupon_types();
+		$code  = $props['code'];
+		$copy  = array_diff_key( $props, array( 'code' => true ) );
+		$apply = array( 'WC_Discounts->apply_coupon' );
+		$read  = null;
+
+		if ( in_array( $session, array( 'renewal setup', 'initial payment setup', 'rewritten after setup' ), true ) ) {
+			$action = 'initial payment setup' === $session ? self::INITIAL_PAYMENT_SETUP_ACTION : self::RENEWAL_SETUP_ACTION;
+			// Subscriptions copies the coupon, then applies it, inside the setup (9.4.1 `class-wcs-cart-renewal.php:1903-1918`).
+			$store_and_apply = function () use ( $code, $copy, $apply, &$read ): void {
+				WC()->session->set( 'wcs_renewal_coupons', array( 41 => array( $code => $copy ) ) );
+				$read = $this->read_coupon( $apply, $this->create_copy_built_coupon( $code ) );
+			};
+			add_action( $action, $store_and_apply );
+			do_action( $action ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Subscriptions' action, fired as it fires it.
+			remove_action( $action, $store_and_apply );
+		} else {
+			WC()->session->set( 'wcs_renewal_coupons', array( 41 => array( $code => $copy ) ) );
+		}
+
+		$copies = WC()->session->get( 'wcs_renewal_coupons' );
+		if ( 'rewritten after setup' === $session ) {
+			// Code that converts a copy when it stores it, and leaves the mark alone.
+			$copies[41][ $code ]['amount'] = '15.00';
+			WC()->session->set( 'wcs_renewal_coupons', $copies );
+		} elseif ( 'extension form' === $session ) {
+			WC()->session->set( self::UNCONVERTED_SESSION_COUPONS_KEY, md5( (string) wp_json_encode( $copies ) ) );
+		} elseif ( 'still storing' === $session ) {
+			WC()->session->set( self::UNCONVERTED_SESSION_COUPONS_KEY, 'storing' );
+		}
+
+		$coupon = 'database' === $origin ? $this->create_subscription_cart_coupon( 'database', $props ) : $this->create_copy_built_coupon( $code );
+
+		$this->assertSame( $expected, $this->read_coupon( $apply, $coupon ), 'Applied by the cart' );
+		$this->assertSame( $during, $read, 'Applied while the setup runs' );
+	}
+
+	/**
+	 * Copies in the session and the coupon the cart applies: amount, minimum and maximum spend, after the setup and during it.
+	 *
+	 * @return array<string,array<mixed>>
+	 */
+	public function provide_coupon_copies_in_use(): array {
+		$copy      = array( 'code' => 'ten' ) + self::COUPON_COPY;
+		$converted = array( '20', '100', '120' );
+		$own       = array( '10.00', '50.00', '60.00' );
+		$discount  = array(
+			'code'          => 'discount_renewal',
+			'discount_type' => 'renewal_cart',
+			'amount'        => '5.00',
+		);
+
+		return array(
+			'stored during a renewal setup'                => array( 'renewal setup', 'copy', $copy, $converted, $converted ),
+			'stored during an initial payment setup'       => array( 'initial payment setup', 'copy', $copy, $converted, $converted ),
+			'stored in the extension\'s form'              => array( 'extension form', 'copy', $copy, $converted, null ),
+			'stored by a request that ended while storing' => array( 'still storing', 'copy', $copy, $converted, null ),
+			'a renewal coupon stored during a renewal setup' => array( 'renewal setup', 'copy', array( 'discount_type' => 'renewal_fee' ) + $copy, $converted, $converted ),
+			'a renewal percent coupon stored during a setup' => array(
+				'renewal setup',
+				'copy',
+				array(
+					'discount_type' => 'renewal_percent',
+					'amount'        => '15',
+				) + $copy,
+				array( '15', '100', '120' ),
+				array( '15', '100', '120' ),
+			),
+			'an order discount stored during a setup'      => array( 'renewal setup', 'copy', $discount, array( '5.00', '0', '0' ), array( '5.00', '0', '0' ) ),
+			'rewritten after the setup without the mark'   => array( 'rewritten after setup', 'copy', $copy, array( '15.00', '50.00', '60.00' ), $converted ),
+			'a database coupon of an unmarked copy\'s code' => array( 'unmarked', 'database', $copy, $own, null ),
+		);
+	}
+
+	/**
+	 * @testdox Should write no mark when a cart setup action fires without a session.
+	 *
+	 * Client 11.3.0 `tests/unit/multi-currency/compatibility/test-class-woocommerce-subscriptions.php:1094-1109`.
+	 */
+	public function test_writes_no_mark_without_a_session(): void {
+		$sut = $this->create_controller();
+		$sut->register();
+		$session      = WC()->session;
+		WC()->session = null;
+
+		try {
+			do_action( self::RENEWAL_SETUP_ACTION ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Subscriptions' action, fired as it fires it.
+			do_action( self::INITIAL_PAYMENT_SETUP_ACTION ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Subscriptions' action, fired as it fires it.
+		} finally {
+			WC()->session = $session;
+		}
+
+		$this->assertNull( WC()->session->get( self::UNCONVERTED_SESSION_COUPONS_KEY ) );
 	}
 
 	/**
@@ -1289,11 +1504,66 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Register the coupon discount types Subscriptions registers (`includes/core/class-wc-subscriptions-coupon.php:136-147,1179-1189`).
+	 */
+	private function register_subscription_coupon_types(): void {
+		add_filter(
+			'woocommerce_coupon_discount_types',
+			static fn( array $types ): array => $types + array_fill_keys( array( 'recurring_percent', 'renewal_fee', 'renewal_percent', 'renewal_cart', 'initial_cart' ), 'Subscriptions' )
+		);
+	}
+
+	/**
+	 * Build a coupon from its copy in the session, as Subscriptions' shop coupon data filter does on every read of that code
+	 * (Subscriptions 9.4.1 `includes/core/class-wcs-cart-renewal.php:1048-1084`).
+	 *
+	 * @param string $code Coupon code.
+	 * @return \WC_Coupon
+	 */
+	private function create_copy_built_coupon( string $code ): \WC_Coupon {
+		add_filter(
+			'woocommerce_get_shop_coupon_data',
+			static function ( $data, $coupon_code ) {
+				foreach ( (array) WC()->session->get( 'wcs_renewal_coupons' ) as $coupons ) {
+					if ( is_array( $coupons ) && isset( $coupons[ $coupon_code ] ) ) {
+						return array_merge(
+							$coupons[ $coupon_code ],
+							array(
+								'id'           => true,
+								'usage_limit'  => '',
+								'usage_count'  => '',
+								'date_expires' => '',
+							)
+						);
+					}
+				}
+
+				return $data;
+			},
+			10,
+			2
+		);
+
+		return new \WC_Coupon( $code );
+	}
+
+	/**
+	 * Read a coupon's amount, minimum and maximum spend with the calls on the stack.
+	 *
+	 * @param string[]   $calls  Calls on the stack while the coupon is read.
+	 * @param \WC_Coupon $coupon Coupon.
+	 * @return string[]
+	 */
+	private function read_coupon( array $calls, \WC_Coupon $coupon ): array {
+		return CallStack::run( $calls, static fn() => array( $coupon->get_amount(), $coupon->get_minimum_amount(), $coupon->get_maximum_amount() ) );
+	}
+
+	/**
 	 * Create a coupon the way a subscription cart reads it.
 	 *
 	 * `session`: Subscriptions rebuilt it from the coupon properties it stored in the session, through its shop coupon data
-	 * filter (Subscriptions 9.3.0 `includes/core/class-wcs-cart-renewal.php:1041-1077,1108-1166`). `virtual`: a coupon another
-	 * plugin builds through the same filter (`virtual beside stored`: while the session holds another code). `order`: the pseudo coupon Subscriptions makes for an order discount (`:1813-1828`).
+	 * filter (Subscriptions 9.4.1 `includes/core/class-wcs-cart-renewal.php:1048-1084`, `:1115-1170`), with no mark. `virtual`: a coupon another
+	 * plugin builds through the same filter (`virtual beside stored`: while the session holds another code). `order`: the pseudo coupon Subscriptions makes for an order discount (`:1879-1894`).
 	 * `database`: a coupon read from the database.
 	 *
 	 * @param string               $origin Where the coupon comes from.
@@ -1303,11 +1573,7 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 	private function create_subscription_cart_coupon( string $origin, array $props ): \WC_Coupon {
 		$code = $props['code'];
 		unset( $props['code'] );
-		// Discount types Subscriptions registers (`includes/core/class-wc-subscriptions-coupon.php:136-147,1179-1189`).
-		add_filter(
-			'woocommerce_coupon_discount_types',
-			static fn( array $types ): array => $types + array_fill_keys( array( 'recurring_percent', 'renewal_fee', 'renewal_cart', 'initial_cart' ), 'Subscriptions' )
-		);
+		$this->register_subscription_coupon_types();
 
 		if ( 'order' !== $origin && 'database' !== $origin ) {
 			if ( 'virtual' !== $origin ) {

@@ -56,13 +56,6 @@ class WooCommerceSubscriptions implements RegisterHooksInterface {
 		'renewal_percent',
 	);
 
-	private const SUBSCRIPTION_RECURRING_COUPON_TYPES = array(
-		'recurring_fee',
-		'recurring_percent',
-		'renewal_fee',
-		'renewal_percent',
-	);
-
 	/**
 	 * Coupon types Subscriptions gives the discount of the order a renewal or initial payment cart pays, in that order's currency.
 	 */
@@ -70,6 +63,32 @@ class WooCommerceSubscriptions implements RegisterHooksInterface {
 		'renewal_cart',
 		'initial_cart',
 	);
+
+	/**
+	 * Actions Subscriptions fires while it sets a cart up from an order or a subscription and copies the order's coupons into
+	 * the session; an early renewal fires the renewal one.
+	 */
+	private const CART_SETUP_ACTIONS = array(
+		'woocommerce_setup_cart_for_subscription_renewal',
+		'woocommerce_setup_cart_for_subscription_initial_payment',
+	);
+
+	/**
+	 * The call that copies a coupon into the session. PHP names an inherited method after the class that declares it, so this
+	 * also matches the initial payment and early renewal carts.
+	 */
+	private const STORE_COUPON_CALLS = array(
+		'WCS_Cart_Renewal->store_coupon',
+	);
+
+	/**
+	 * Session key marking the coupon copies in `wcs_renewal_coupons` that were stored unconverted: STORING_SESSION_COUPONS while a
+	 * cart is set up, then a hash of the copies stored. The extension's own key and values, so either runtime reads the other's
+	 * copies (client 11.3.0 `includes/multi-currency/Compatibility/WooCommerceSubscriptions.php:32-42`).
+	 */
+	private const UNCONVERTED_SESSION_COUPONS_KEY = 'wcpay_multi_currency_unconverted_session_coupons';
+
+	private const STORING_SESSION_COUPONS = 'storing';
 
 	private const PRODUCT_PRICE_CALCULATION_CALLS = array(
 		'WC_Cart_Totals->calculate_item_totals',
@@ -80,14 +99,6 @@ class WooCommerceSubscriptions implements RegisterHooksInterface {
 
 	private const RENEWAL_SETUP_CALLS = array(
 		'WCS_Cart_Renewal->setup_cart',
-	);
-
-	private const EARLY_RENEWAL_SETUP_CALLS = array(
-		'WCS_Cart_Early_Renewal->setup_cart',
-	);
-
-	private const APPLY_COUPON_CALLS = array(
-		'WC_Discounts->apply_coupon',
 	);
 
 	private const SUBSCRIPTION_PRICE_SETUP_CALLS = array(
@@ -268,8 +279,11 @@ class WooCommerceSubscriptions implements RegisterHooksInterface {
 		add_filter( StateBuilder::FILTER_PREFIX . 'should_disable_currency_switching', array( $this, 'should_disable_currency_switching' ), 50 );
 		add_filter( StateBuilder::FILTER_PREFIX . 'should_convert_product_price', array( $this, 'should_convert_product_price' ), 50, 2 );
 		add_filter( StateBuilder::FILTER_PREFIX . 'should_convert_coupon_amount', array( $this, 'should_convert_coupon_amount' ), 50, 2 );
-		add_filter( 'woocommerce_coupon_get_minimum_amount', array( $this, 'get_subscription_session_coupon_spend_limit' ), 100, 2 );
-		add_filter( 'woocommerce_coupon_get_maximum_amount', array( $this, 'get_subscription_session_coupon_spend_limit' ), 100, 2 );
+		add_filter( StateBuilder::FILTER_PREFIX . 'should_convert_coupon_min_max_amount', array( $this, 'should_convert_coupon_min_max_amount' ), 50, 2 );
+		foreach ( self::CART_SETUP_ACTIONS as $action ) {
+			add_action( $action, array( $this, 'start_storing_unconverted_session_coupons' ), 0 );
+			add_action( $action, array( $this, 'finish_storing_unconverted_session_coupons' ), PHP_INT_MAX );
+		}
 		add_filter( 'woocommerce_subscriptions_product_price', array( $this, 'get_subscription_product_price' ), 50, 2 );
 		add_filter( 'woocommerce_subscriptions_product_sale_price', array( $this, 'get_stored_price_for_active_price' ), 50, 2 );
 		add_filter( 'woocommerce_subscriptions_product_regular_price', array( $this, 'get_stored_price_for_active_price' ), 50, 2 );
@@ -445,47 +459,84 @@ class WooCommerceSubscriptions implements RegisterHooksInterface {
 	/**
 	 * Tell whether coupon amount conversion should run for subscription contexts.
 	 *
+	 * As client 11.3.0 `includes/multi-currency/Compatibility/WooCommerceSubscriptions.php:296-313`: a fixed amount copied into the
+	 * session converts once, when the cart uses it, a recurring coupon's in a renewal cart included.
+	 *
 	 * @param bool  $should_convert Existing coupon conversion decision.
 	 * @param mixed $coupon         Coupon object.
 	 * @return bool
 	 */
 	public function should_convert_coupon_amount( bool $should_convert, $coupon ): bool {
-		$discount_type = strtolower( trim( $this->get_coupon_discount_type( $coupon ) ) );
-
-		if (
-			! $should_convert
-			|| in_array( $discount_type, self::SUBSCRIPTION_PERCENT_COUPON_TYPES, true )
-			|| in_array( $discount_type, self::ORDER_DISCOUNT_COUPON_TYPES, true )
-			|| $this->is_subscription_session_coupon( $coupon )
-		) {
+		if ( ! $should_convert ) {
 			return false;
 		}
 
-		// In a renewal cart a recurring coupon already holds its converted amount when applied; an early renewal's setup reads the original amount.
-		return ! (
-			null !== $this->get_subscription_type_from_cart( 'renewal' )
-			&& ! $this->request_context->is_call_in_backtrace( self::EARLY_RENEWAL_SETUP_CALLS )
-			&& $this->request_context->is_call_in_backtrace( self::APPLY_COUPON_CALLS )
-			&& in_array( $discount_type, self::SUBSCRIPTION_RECURRING_COUPON_TYPES, true )
-		);
+		$discount_type = strtolower( trim( $this->get_coupon_discount_type( $coupon ) ) );
+
+		// A percentage is not an amount.
+		if ( in_array( $discount_type, self::SUBSCRIPTION_PERCENT_COUPON_TYPES, true ) ) {
+			return false;
+		}
+
+		// A pseudo coupon's amount is a discount taken from the order or subscription, so it is already in the order's currency,
+		// even when its copy is marked as stored unconverted.
+		if ( in_array( $discount_type, self::ORDER_DISCOUNT_COUPON_TYPES, true ) ) {
+			return false;
+		}
+
+		return ! $this->is_coupon_being_stored_in_session() && ! $this->is_coupon_from_converted_session_copy( $coupon );
 	}
 
 	/**
-	 * Keep the minimum or maximum spend Subscriptions stored for a coupon it rebuilds from the session.
+	 * Tell whether a coupon's minimum and maximum spend conversion should run for subscription contexts.
 	 *
-	 * Subscriptions stored the converted spend limit while it set the cart up, so the stored value is returned in place of the
-	 * frontend price conversion's second pass.
+	 * As client 11.3.0 `includes/multi-currency/Compatibility/WooCommerceSubscriptions.php:323-333`: the limits of a percent
+	 * coupon are amounts, so only the copy checks apply.
 	 *
-	 * @param mixed $amount Coupon minimum or maximum spend.
-	 * @param mixed $coupon Coupon object.
-	 * @return mixed
+	 * @param mixed $should_convert Existing spend limit conversion decision.
+	 * @param mixed $coupon         Coupon object.
+	 * @return bool
 	 */
-	public function get_subscription_session_coupon_spend_limit( $amount, $coupon ) {
-		if ( ! $this->is_subscription_session_coupon( $coupon ) ) {
-			return $amount;
+	public function should_convert_coupon_min_max_amount( $should_convert, $coupon = null ): bool {
+		if ( ! $should_convert ) {
+			return false;
 		}
 
-		return 'woocommerce_coupon_get_minimum_amount' === current_filter() ? $coupon->get_minimum_amount( 'edit' ) : $coupon->get_maximum_amount( 'edit' );
+		return ! $this->is_coupon_being_stored_in_session() && ! $this->is_coupon_from_converted_session_copy( $coupon );
+	}
+
+	/**
+	 * Mark the coupon copies Subscriptions is about to store in the session, while the cart is set up, as unconverted.
+	 *
+	 * Runs first on the cart setup actions. Nothing is written without a session.
+	 *
+	 * @internal
+	 */
+	public function start_storing_unconverted_session_coupons(): void {
+		$session = WC()->session;
+		if ( ! $session instanceof \WC_Session ) {
+			return;
+		}
+
+		$session->set( self::UNCONVERTED_SESSION_COUPONS_KEY, self::STORING_SESSION_COUPONS );
+	}
+
+	/**
+	 * Record which coupon copies were stored unconverted, once the cart is set up.
+	 *
+	 * Runs last on the cart setup actions. A hash of the copies rather than a flag, so copies rewritten later by code that
+	 * converts them when it stores them, and leaves the mark alone, are not taken for unconverted ones (client 11.3.0
+	 * `includes/multi-currency/Compatibility/WooCommerceSubscriptions.php:348-362`). Nothing is written without a session.
+	 *
+	 * @internal
+	 */
+	public function finish_storing_unconverted_session_coupons(): void {
+		$session = WC()->session;
+		if ( ! $session instanceof \WC_Session ) {
+			return;
+		}
+
+		$session->set( self::UNCONVERTED_SESSION_COUPONS_KEY, $this->get_session_coupons_hash( $session->get( 'wcs_renewal_coupons' ) ) );
 	}
 
 	/**
@@ -916,33 +967,69 @@ class WooCommerceSubscriptions implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether Subscriptions rebuilt the coupon from the properties it stored in the session while it set up the cart.
+	 * Tell whether Subscriptions is copying a coupon into the session.
 	 *
-	 * Subscriptions stores each coupon's amount and spend limits as read while the cart is set up, already converted, and
-	 * serves them back for that code as a virtual coupon (Subscriptions 9.3.0 `includes/core/class-wcs-cart-renewal.php:1041-1077,1108-1166`).
+	 * When a cart is set up from an order or a subscription, Subscriptions copies each coupon's amount and spend limits into the
+	 * session as it reads them, and builds every later read of that code from the copy (Subscriptions 9.4.1
+	 * `includes/core/class-wcs-cart-renewal.php:1048-1084`, `:1115-1170`). The copy keeps the original amounts, so they are
+	 * converted once, when they are used. The stack is read only while a cart setup action runs.
+	 *
+	 * @return bool
+	 */
+	private function is_coupon_being_stored_in_session(): bool {
+		if ( ! doing_action( self::CART_SETUP_ACTIONS[0] ) && ! doing_action( self::CART_SETUP_ACTIONS[1] ) ) {
+			return false;
+		}
+
+		return $this->request_context->is_call_in_backtrace( self::STORE_COUPON_CALLS );
+	}
+
+	/**
+	 * Tell whether the coupon is built from a session copy that holds converted amounts.
+	 *
+	 * A copy counts by its code, in any order's copies. It holds converted amounts unless the mark says the copies were stored
+	 * unconverted: the setup is still running, or the mark is the hash of the copies as they are now. Copies stored before the
+	 * mark existed, or rewritten since without it, were converted when stored, and last until the cart is set up again, emptied,
+	 * or the session expires (client 11.3.0 `includes/multi-currency/Compatibility/WooCommerceSubscriptions.php:656-688`).
 	 *
 	 * @param mixed $coupon Coupon object.
 	 * @return bool
 	 */
-	private function is_subscription_session_coupon( $coupon ): bool {
-		if ( ! $coupon instanceof \WC_Coupon || ! $coupon->get_virtual( 'edit' ) || 0 !== $coupon->get_id() ) {
+	private function is_coupon_from_converted_session_copy( $coupon ): bool {
+		$session = WC()->session;
+		if ( ! $coupon instanceof \WC_Coupon || ! $session instanceof \WC_Session ) {
 			return false;
 		}
 
-		$session         = WC()->session;
-		$renewal_coupons = $session instanceof \WC_Session ? $session->get( 'wcs_renewal_coupons' ) : null;
-		if ( ! is_array( $renewal_coupons ) ) {
+		$session_coupons = $session->get( 'wcs_renewal_coupons' );
+		if ( ! is_array( $session_coupons ) ) {
 			return false;
 		}
 
-		$code = $coupon->get_code( 'edit' );
-		foreach ( $renewal_coupons as $order_coupons ) {
-			if ( is_array( $order_coupons ) && isset( $order_coupons[ $code ] ) ) {
-				return true;
+		$is_copied = false;
+		foreach ( $session_coupons as $coupons ) {
+			if ( is_array( $coupons ) && array_key_exists( $coupon->get_code(), $coupons ) ) {
+				$is_copied = true;
+				break;
 			}
 		}
+		if ( ! $is_copied ) {
+			return false;
+		}
 
-		return false;
+		$marker = $session->get( self::UNCONVERTED_SESSION_COUPONS_KEY );
+
+		return self::STORING_SESSION_COUPONS !== $marker && $this->get_session_coupons_hash( $session_coupons ) !== $marker;
+	}
+
+	/**
+	 * Hash the coupon copies stored in the session, as the extension does, so either runtime recognises the other's mark.
+	 *
+	 * @param mixed $session_coupons The value of `wcs_renewal_coupons`.
+	 * @return string
+	 */
+	private function get_session_coupons_hash( $session_coupons ): string {
+		return md5( (string) wp_json_encode( $session_coupons ) );
 	}
 
 	/**

@@ -29,10 +29,10 @@ final class CallStack {
 		'WC_Points_Rewards_Discount'   => array( 'get_discount_data' ), // Client 11.1.0 Compatibility/WooCommercePointsAndRewards.php:59.
 		'WC_Subscription'              => array( 'get_formatted_order_total' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:331.
 		'WCS_Template_Loader'          => array( '::get_my_subscriptions' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:330.
-		'WCS_Cart_Renewal'             => array( 'setup_cart' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:230.
+		'WCS_Cart_Renewal'             => array( 'setup_cart', 'store_coupon' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:230; client 11.3.0 Compatibility/WooCommerceSubscriptions.php:651.
 		'WCS_Cart_Early_Renewal'       => array( 'setup_cart' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:284.
 		'WC_Subscriptions_Cart'        => array( '::set_subscription_prices_for_calculation' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:122.
-		'WC_Subscriptions_Product'     => array( '::get_sign_up_fee', '::get_price' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:127; Subscriptions 9.3.0 includes/core/class-wc-subscriptions-product.php:553.
+		'WC_Subscriptions_Product'     => array( '::get_sign_up_fee', '::get_price' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:127; Subscriptions 9.4.1 includes/core/class-wc-subscriptions-product.php:553.
 		'WCS_Switch_Totals_Calculator' => array( 'apportion_sign_up_fees' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:130.
 	);
 
@@ -141,6 +141,9 @@ final class CallStack {
 			throw new CallStackStop();
 		};
 		add_filter( $hook, $probe, PHP_INT_MIN );
+		// The stop leaves the hook without popping it from the running hooks, so a later doing_action() would still see it.
+		global $wp_current_filter;
+		$running_hooks = count( $wp_current_filter );
 
 		try {
 			$trigger();
@@ -152,6 +155,7 @@ final class CallStack {
 			}
 			return $result;
 		} finally {
+			array_splice( $wp_current_filter, $running_hooks );
 			remove_filter( $hook, $probe, PHP_INT_MIN );
 		}
 	}
