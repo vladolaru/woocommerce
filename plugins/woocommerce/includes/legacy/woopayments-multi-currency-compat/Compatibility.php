@@ -12,7 +12,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 
 /**
  * Stands in for the WooPayments extension's Multi-Currency compatibility class, which `MultiCurrency::get_compatibility()`
- * returns, while WooCommerce runs Multi-Currency: its seven predicates answer by the module's rules.
+ * returns, while WooCommerce runs Multi-Currency: its eight predicates answer by the module's rules.
  *
  * It does not extend the extension's `BaseCompatibility`.
  *
@@ -84,6 +84,35 @@ class Compatibility {
 		_deprecated_function( 'WCPay\\MultiCurrency\\Compatibility::should_convert_coupon_amount', '11.0.0', '' );
 
 		return $this->get_controller()->should_convert_coupon_amount( $coupon );
+	}
+
+	/**
+	 * Tell whether a coupon's minimum and maximum spend are converted to the selected currency; with no coupon, they are.
+	 *
+	 * Removed in WooCommerce 12.0.0.
+	 *
+	 * @since 11.0.0
+	 * @deprecated 11.0.0 No public replacement.
+	 *
+	 * @param mixed $coupon Coupon object.
+	 * @return bool
+	 */
+	public function should_convert_coupon_min_max_amount( $coupon = null ): bool {
+		_deprecated_function( 'WCPay\\MultiCurrency\\Compatibility::should_convert_coupon_min_max_amount', '11.0.0', '' );
+
+		if ( ! $coupon ) {
+			return true;
+		}
+
+		/**
+		 * Filters whether a coupon's minimum and maximum spend should be converted to the selected currency.
+		 *
+		 * @since 11.4.0
+		 *
+		 * @param bool  $should_convert Whether the minimum and maximum spend should be converted.
+		 * @param mixed $coupon         Coupon object.
+		 */
+		return (bool) apply_filters( StateBuilder::FILTER_PREFIX . 'should_convert_coupon_min_max_amount', true, $coupon );
 	}
 
 	/**

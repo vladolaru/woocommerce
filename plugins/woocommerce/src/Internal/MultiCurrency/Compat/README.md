@@ -35,6 +35,7 @@ The currencies these members return are the module's `MultiCurrencyCurrency` obj
 |---|---|
 | `override_selected_currency()`, `should_disable_currency_switching()`, `should_convert_coupon_amount( $coupon = null )`, `should_convert_product_price( $product = null )`, `should_return_store_currency()` | `IntegrationsController`, which has the same rules and filters. |
 | `should_convert_shipping_amount( $shipping_method = null )` | `true` without a method, else the module's `wcpay_multi_currency_should_convert_shipping_amount` filter with its `true` default. |
+| `should_convert_coupon_min_max_amount( $coupon = null )` | `true` without a coupon, else the module's `wcpay_multi_currency_should_convert_coupon_min_max_amount` filter with its `true` default. |
 | `should_hide_widgets()` | `should_disable_currency_switching()`, with the extension's own 6.5.0 deprecation notice. |
 
 The class does not extend the extension's `WCPay\MultiCurrency\Compatibility\BaseCompatibility`, so a type check against that class fails.

@@ -410,14 +410,15 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox get_compatibility() returns one Compatibility facade whose seven predicates answer by the module's rules.
+	 * @testdox get_compatibility() returns one Compatibility facade whose eight predicates answer by the module's rules.
 	 *
-	 * Client 11.1.0 `includes/multi-currency/Compatibility.php:82-237`: each predicate's default and the filter that changes it.
+	 * Client 11.1.0 `includes/multi-currency/Compatibility.php:82-237`: each predicate's default and the filter that changes it;
+	 * client 11.3.0 `includes/multi-currency/Compatibility.php:178-193` for the coupon spend limits.
 	 */
 	public function test_compatibility_predicates_answer_by_the_module_rules(): void {
 		$this->declare_facade();
 		$this->expect_facade_deprecations( 'get_compatibility' );
-		foreach ( array( 'override_selected_currency', 'should_disable_currency_switching', 'should_convert_coupon_amount', 'should_convert_product_price', 'should_convert_shipping_amount', 'should_return_store_currency' ) as $predicate ) {
+		foreach ( array( 'override_selected_currency', 'should_disable_currency_switching', 'should_convert_coupon_amount', 'should_convert_coupon_min_max_amount', 'should_convert_product_price', 'should_convert_shipping_amount', 'should_return_store_currency' ) as $predicate ) {
 			$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\Compatibility::' . $predicate );
 		}
 		$this->setExpectedDeprecated( 'should_hide_widgets' );
@@ -435,6 +436,8 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 		$this->assertFalse( $compatibility->should_hide_widgets(), 'should_hide_widgets' );
 		$this->assertTrue( $compatibility->should_convert_coupon_amount(), 'should_convert_coupon_amount without a coupon' );
 		$this->assertTrue( $compatibility->should_convert_coupon_amount( $coupon ), 'should_convert_coupon_amount' );
+		$this->assertTrue( $compatibility->should_convert_coupon_min_max_amount(), 'should_convert_coupon_min_max_amount without a coupon' );
+		$this->assertTrue( $compatibility->should_convert_coupon_min_max_amount( $coupon ), 'should_convert_coupon_min_max_amount' );
 		$this->assertTrue( $compatibility->should_convert_product_price(), 'should_convert_product_price without a product' );
 		$this->assertTrue( $compatibility->should_convert_product_price( $product ), 'should_convert_product_price' );
 		$this->assertTrue( $compatibility->should_convert_shipping_amount(), 'should_convert_shipping_amount without a method' );
@@ -442,9 +445,21 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 		$this->assertFalse( $compatibility->should_return_store_currency(), 'should_return_store_currency' );
 
 		$filtered_shipping_method = null;
+		$filtered_coupon          = null;
 		add_filter( 'wcpay_multi_currency_override_selected_currency', static fn() => 'EUR' );
 		add_filter( 'wcpay_multi_currency_should_disable_currency_switching', '__return_true' );
 		add_filter( 'wcpay_multi_currency_should_convert_coupon_amount', '__return_false' );
+		add_filter(
+			'wcpay_multi_currency_should_convert_coupon_min_max_amount',
+			static function ( $convert, $filtered ) use ( &$filtered_coupon ) {
+				unset( $convert );
+				$filtered_coupon = $filtered;
+
+				return false;
+			},
+			10,
+			2
+		);
 		add_filter( 'wcpay_multi_currency_should_convert_product_price', '__return_false' );
 		add_filter(
 			'wcpay_multi_currency_should_convert_shipping_amount',
@@ -464,6 +479,9 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $compatibility->should_hide_widgets(), 'should_hide_widgets filtered' );
 		$this->assertFalse( $compatibility->should_convert_coupon_amount( $coupon ), 'should_convert_coupon_amount filtered' );
 		$this->assertTrue( $compatibility->should_convert_coupon_amount(), 'should_convert_coupon_amount without a coupon ignores the filter' );
+		$this->assertFalse( $compatibility->should_convert_coupon_min_max_amount( $coupon ), 'should_convert_coupon_min_max_amount filtered' );
+		$this->assertSame( $coupon, $filtered_coupon, 'The spend limit filter receives the coupon.' );
+		$this->assertTrue( $compatibility->should_convert_coupon_min_max_amount(), 'should_convert_coupon_min_max_amount without a coupon ignores the filter' );
 		$this->assertFalse( $compatibility->should_convert_product_price( $product ), 'should_convert_product_price filtered' );
 		$this->assertFalse( $compatibility->should_convert_shipping_amount( $shipping ), 'should_convert_shipping_amount filtered' );
 		$this->assertSame( $shipping, $filtered_shipping_method, 'The shipping filter receives the method.' );
