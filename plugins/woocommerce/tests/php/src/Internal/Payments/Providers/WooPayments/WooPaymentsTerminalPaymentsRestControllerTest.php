@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Tests\Internal\Payments\StorefrontMultiCurrencyTestTrait;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
@@ -33,6 +34,8 @@ use WP_REST_Server;
  * Tests for the WooPaymentsTerminalPaymentsRestController class.
  */
 class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Case {
+
+	use StorefrontMultiCurrencyTestTrait;
 
 	/**
 	 * The System Under Test.
@@ -519,6 +522,37 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 		$this->assertSame( 'test', $order->get_meta( '_wcpay_mode', true ) );
 		// Plugin 11.1.0 stores the intent model's uppercased currency (class-wc-rest-payments-orders-controller.php:215, class-wc-payments-api-payment-intention.php:93).
 		$this->assertSame( 'USD', $order->get_meta( '_wcpay_intent_currency', true ) );
+	}
+
+	/**
+	 * @testdox Capturing a terminal payment of a USD 10.99 order on a JPY store captures 1099 cents.
+	 *
+	 * The order is read again in place under the capture's order payment lock and after the intent read, and the capture
+	 * amount is built from it, here with the store's zero decimals in force.
+	 */
+	public function test_capture_terminal_payment_on_a_store_with_fewer_decimals_captures_the_stored_total(): void {
+		$order = $this->create_order( 10.99, 'USD' );
+		$this->register_storefront_multi_currency( 'JPY', array( 'USD' => '0.0067' ) );
+		$this->assertSame( 0, wc_get_price_decimals(), 'Precondition: the store currency, JPY, is in force.' );
+		$this->api_client->payment_intention_response  = array(
+			'id'       => 'pi_terminal',
+			'status'   => 'requires_capture',
+			'currency' => 'usd',
+			'metadata' => array( 'order_id' => (string) $order->get_id() ),
+		);
+		$this->api_client->captured_intention_response = array(
+			'id'       => 'pi_terminal',
+			'status'   => 'succeeded',
+			'currency' => 'usd',
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal' );
+
+		$this->sut->capture_terminal_payment( $request );
+
+		$this->assertSame( array( 1099 ), array_column( $this->api_client->captures, 'amount' ) );
 	}
 
 	/**

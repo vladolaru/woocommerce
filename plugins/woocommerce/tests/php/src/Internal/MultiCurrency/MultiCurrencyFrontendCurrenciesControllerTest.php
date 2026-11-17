@@ -4,6 +4,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Caches\OrderCache;
+use Automattic\WooCommerce\Internal\DataStores\Orders\DataSynchronizer;
+use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendCurrenciesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendPricesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
@@ -12,6 +14,9 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\OrderContextService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
+use Automattic\WooCommerce\RestApi\UnitTests\Helpers\OrderHelper;
+use Automattic\WooCommerce\Utilities\OrderUtil;
 use WC_Unit_Test_Case;
 
 /**
@@ -640,6 +645,83 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should keep an order's precision when the payments code reads it again from its data store: $_dataName.
+	 * @dataProvider provide_order_rereads
+	 *
+	 * OrderPaymentLifecycleService::reread_order_from_data_store() reads the order's props into the object that holds it,
+	 * and get_fresh_order_from_data_store() into a clone, with neither the order factory nor the order constructor on the
+	 * backtrace. A USD 10.49 order on a USD store, read with JPY selected.
+	 *
+	 * @param bool   $hpos             Whether HPOS stores the orders.
+	 * @param string $data_store_class The order data store class that storage uses.
+	 * @param bool   $in_place         Whether the order is read again in place, or into a fresh copy.
+	 */
+	public function test_keeps_the_precision_of_an_order_read_again( bool $hpos, string $data_store_class, bool $in_place ): void {
+		$hpos_was_enabled = OrderUtil::custom_orders_table_usage_is_enabled();
+		add_filter( 'wc_allow_changing_orders_storage_while_sync_is_pending', '__return_true' );
+		OrderHelper::toggle_cot_feature_and_usage( $hpos );
+
+		try {
+			$order_id = $this->create_saved_order( 'USD', '10.49' );
+			$this->register_on_real_services( array( 'JPY', 'EUR' ) );
+			$this->selected_currency = 'JPY';
+			$order                   = wc_get_order( $order_id );
+			$this->assertSame( $data_store_class, $order->get_data_store()->get_current_class_name() );
+			$lifecycle_service = wc_get_container()->get( OrderPaymentLifecycleService::class );
+
+			if ( $in_place ) {
+				$lifecycle_service->reread_order_from_data_store( $order );
+			} else {
+				$order = $lifecycle_service->get_fresh_order_from_data_store( $order );
+			}
+
+			$this->assertSame( '10.49', $order->get_total() );
+			$this->assertSame( 0, wc_get_price_decimals(), 'Other reads keep the selected currency.' );
+		} finally {
+			OrderHelper::toggle_cot_feature_and_usage( $hpos_was_enabled );
+		}
+	}
+
+	/** @return array<string,array{bool,string,bool}> */
+	public static function provide_order_rereads(): array {
+		return array(
+			'in place, HPOS'            => array( true, OrdersTableDataStore::class, true ),
+			'in place, posts storage'   => array( false, 'WC_Order_Data_Store_CPT', true ),
+			'fresh copy, HPOS'          => array( true, OrdersTableDataStore::class, false ),
+			'fresh copy, posts storage' => array( false, 'WC_Order_Data_Store_CPT', false ),
+		);
+	}
+
+	/**
+	 * @testdox Should write no new total to the posts copy when an HPOS order is saved with fewer decimals selected.
+	 *
+	 * With HPOS compatibility mode on, every save backfills the posts copy (OrdersTableDataStore::backfill_post_record()): it
+	 * reads that copy through the posts data store's own read, sets the saved order's props on it, and writes what changed.
+	 * Both steps round at the decimals in force, so a USD 10.99 order saved with JPY selected writes no total.
+	 */
+	public function test_writes_no_new_total_to_the_posts_copy_when_an_hpos_order_is_saved_with_fewer_decimals(): void {
+		$hpos_was_enabled = OrderUtil::custom_orders_table_usage_is_enabled();
+		add_filter( 'wc_allow_changing_orders_storage_while_sync_is_pending', '__return_true' );
+		OrderHelper::toggle_cot_feature_and_usage( true );
+		add_filter( 'pre_option_' . DataSynchronizer::ORDERS_DATA_SYNC_ENABLED_OPTION, static fn() => 'yes' );
+
+		try {
+			$order_id = $this->create_saved_order( 'USD', '10.99' );
+			$this->assertSame( '10.99', get_post_meta( $order_id, '_order_total', true ), 'Precondition: the posts copy holds the stored total.' );
+			$this->register_on_real_services( array( 'JPY', 'EUR' ) );
+			$this->selected_currency = 'JPY';
+			$order                   = wc_get_order( $order_id );
+			$order->set_customer_note( 'Paid again.' );
+			$order->save();
+
+			$this->assertSame( 'Paid again.', get_post_field( 'post_excerpt', $order_id ), 'The save reached the posts copy.' );
+			$this->assertSame( '10.99', get_post_meta( $order_id, '_order_total', true ) );
+		} finally {
+			OrderHelper::toggle_cot_feature_and_usage( $hpos_was_enabled );
+		}
+	}
+
+	/**
 	 * @testdox Should keep the store's decimals for the Analytics stats while an order loaded during them keeps its own.
 	 *
 	 * The Analytics import rounds amounts converted to the store currency with the store's decimals; an order read inside
@@ -785,15 +867,17 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should still find the WooCommerce frames the order checks look for.
 	 *
-	 * The checks match `WC_Order_Factory::get_order`, `WC_Order_Factory::get_orders`, `WC_Abstract_Order->__construct` and
-	 * `WC_Abstract_Order->calculate_totals` by name on the backtrace, which names a method by the class that declares it
-	 * (client 11.3.0 `tests/unit/multi-currency/test-class-frontend-currencies.php:359-380`).
+	 * The checks match `WC_Order_Factory::get_order`, `WC_Order_Factory::get_orders`, `WC_Abstract_Order->__construct`,
+	 * `WC_Abstract_Order->calculate_totals` and the payment lifecycle's `reread_order_from_data_store` by name on the
+	 * backtrace, which names a method by the class that declares it (client 11.3.0
+	 * `tests/unit/multi-currency/test-class-frontend-currencies.php:359-380`).
 	 */
 	public function test_still_finds_the_woocommerce_frames_the_order_checks_look_for(): void {
 		$this->assertTrue( ( new \ReflectionMethod( \WC_Order_Factory::class, 'get_order' ) )->isStatic() );
 		$this->assertTrue( ( new \ReflectionMethod( \WC_Order_Factory::class, 'get_orders' ) )->isStatic() );
 		$this->assertSame( 'WC_Abstract_Order', ( new \ReflectionMethod( \WC_Order::class, '__construct' ) )->getDeclaringClass()->getName() );
 		$this->assertSame( 'WC_Abstract_Order', ( new \ReflectionMethod( \WC_Order::class, 'calculate_totals' ) )->getDeclaringClass()->getName() );
+		$this->assertSame( OrderPaymentLifecycleService::class, ( new \ReflectionMethod( OrderPaymentLifecycleService::class, 'reread_order_from_data_store' ) )->getDeclaringClass()->getName() );
 	}
 
 	/**

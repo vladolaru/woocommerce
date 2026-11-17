@@ -59,6 +59,7 @@ use WC_Unit_Test_Case;
 class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 
 	use OrderPaymentLockTestTrait;
+	use StorefrontMultiCurrencyTestTrait;
 
 	/**
 	 * A provider platform's error text: it can hold an email, a URL or a key, so no log may carry it.
@@ -106,6 +107,18 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->sut                    = wc_get_container()->get( PaymentProcessingService::class );
 		$this->order_payment_lock     = wc_get_container()->get( OrderPaymentLock::class );
 		$this->persistence_vocabulary = new WooPaymentsPersistenceVocabulary();
+	}
+
+	/**
+	 * Tear down test fixtures.
+	 */
+	public function tearDown(): void {
+		try {
+			// A container replacement, which the base test case does not reset.
+			$this->reset_container_replacements();
+		} finally {
+			parent::tearDown();
+		}
 	}
 
 	/**
@@ -3454,6 +3467,134 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'fresh', $provider->seen_meta, 'The charge must see what the read under the lock returned.' );
 		$this->assertSame( 'fresh', $loaded->get_meta( '_written_after_load', true ), 'The caller continues with the order as read under the lock.' );
 		$this->assertTrue( $loaded->has_status( wc_get_is_paid_statuses() ), 'The caller sees the outcome applied on the same order.' );
+	}
+
+	/**
+	 * @testdox A USD 10.99 order paid on the classic order-pay page with JPY selected is charged and noted at 10.99.
+	 *
+	 * The pay action's own steps (class-wc-form-handler.php:757 load, :794-795 payment method and save, :801 process_payment())
+	 * on a USD store with JPY (0 decimals) and EUR enabled and JPY selected. Under the checkout lock the order is read again
+	 * from its data store into the same object, and the charge and its failure note are built from that object. The
+	 * platform answers with its request failure.
+	 */
+	public function test_order_pay_with_fewer_selected_decimals_charges_and_notes_the_stored_total(): void {
+		$order    = $this->create_saved_usd_order( '10.99' );
+		$order_id = $order->get_id();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->save();
+		$this->register_storefront_multi_currency(
+			'USD',
+			array(
+				'JPY' => '150',
+				'EUR' => '0.9',
+			)
+		);
+		add_filter( 'wcpay_multi_currency_override_selected_currency', static fn() => 'JPY' );
+		$this->assertSame( 0, wc_get_price_decimals(), 'Precondition: JPY is selected.' );
+		$http_client = new FakeHttpClient();
+		// The platform's request failure, as the live store returned it (502 wcpay_request_failure).
+		$http_client->response = $this->json_transport_response(
+			502,
+			array(
+				'code'    => 'wcpay_request_failure',
+				'message' => 'Platform request failure.',
+				'data'    => array( 'status' => 502 ),
+			)
+		);
+
+		$gateway = new WooPaymentsGateway();
+		$gateway->init( $this->sut, $this->timeout_transport_provider( $http_client ) );
+
+		global $wp;
+		$previous_query_vars                            = $wp->query_vars;
+		$wp->query_vars['order-pay']                    = $order_id;
+		$_GET['key']                                    = $order->get_order_key();
+		$_POST['woocommerce_pay']                       = '1';
+		$_POST['payment_method']                        = WooPaymentsPersistenceVocabulary::GATEWAY_ID;
+		$_POST['wc-woocommerce_payments-payment-token'] = 'new';
+		$_POST['wcpay-payment-method']                  = 'pm_card_visa';
+
+		try {
+			wp_cache_flush();
+			$pay_order = wc_get_order( $order_id );
+			$pay_order->set_payment_method( $gateway );
+			$pay_order->save();
+			$result = $gateway->process_payment( $order_id );
+		} finally {
+			$wp->query_vars = $previous_query_vars;
+			$_GET           = array();
+			$_POST          = array();
+		}
+
+		$this->assertSame( 'failure', $result['result'] ?? '' );
+		$intent_requests = array_values( array_filter( $http_client->requests, static fn( array $request ): bool => '/sites/123/wcpay/intentions' === $request['path'] ) );
+		$this->assertCount( 1, $intent_requests, 'The charge reached the platform once.' );
+		$this->assertSame( 1099, json_decode( (string) $intent_requests[0]['body'], true )['amount'] ?? null, 'The charge carries the stored 10.99.' );
+		$notes  = array_map( static fn( $note ): string => wp_strip_all_tags( html_entity_decode( $note->content ) ), wc_get_order_notes( array( 'order_id' => $order_id ) ) );
+		$failed = array_values( preg_grep( '/failed to complete with the following message/', $notes ) );
+		$this->assertCount( 1, $failed, implode( "\n", $notes ) );
+		$this->assertStringStartsWith( 'A payment of $10.99 USD failed', $failed[0] );
+	}
+
+	/**
+	 * @testdox A scheduled renewal of a USD 10.99 order on a JPY store is charged 10.99.
+	 *
+	 * A renewal has no shopper, so the store's zero decimals are in force when the checkout lock reads the order again from
+	 * its data store into the same object, the one the charge is built from. The renewal's payment data is what
+	 * SubscriptionsController::scheduled_subscription_payment() passes.
+	 */
+	public function test_scheduled_renewal_on_a_store_with_fewer_decimals_charges_the_stored_total(): void {
+		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$token   = new WC_Payment_Token_CC();
+		$token->set_token( 'pm_saved' );
+		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$token->set_card_type( 'visa' );
+		$token->set_last4( '4242' );
+		$token->set_expiry_month( '12' );
+		$token->set_expiry_year( '2040' );
+		$token->set_user_id( $user_id );
+		$token->save();
+		$order = $this->create_saved_usd_order( '10.99' );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_customer_id( $user_id );
+		$order->update_meta_data( '_stripe_customer_id', 'cus_subscription' );
+		$order->add_payment_token( $token );
+		$order->save();
+		$this->register_storefront_multi_currency( 'JPY', array( 'USD' => '0.0067' ) );
+		$this->assertSame( 0, wc_get_price_decimals(), 'Precondition: the store currency, JPY, is in force.' );
+		$http_client = new FakeHttpClient();
+		// Shape: a confirmed card PaymentIntent (Fixtures/platform-intention-basic-card.json), reduced to the fields this path reads.
+		$http_client->response = $this->json_transport_response(
+			200,
+			array(
+				'id'             => 'pi_renewal',
+				'object'         => 'payment_intent',
+				'status'         => 'succeeded',
+				'amount'         => 1099,
+				'currency'       => 'usd',
+				'customer'       => 'cus_subscription',
+				'payment_method' => 'pm_saved',
+				'metadata'       => array( 'order_id' => (string) $order->get_id() ),
+			)
+		);
+
+		wp_cache_flush();
+		$this->sut->process_checkout_outcome(
+			PaymentOperationContext::for_checkout(
+				wc_get_order( $order->get_id() ),
+				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+				'',
+				array(
+					'payment_token'       => (string) $token->get_id(),
+					'save_payment_method' => false,
+				),
+				array( 'scheduled_subscription_payment' => true )
+			),
+			$this->timeout_transport_provider( $http_client, true )
+		);
+
+		$this->assertSame( '/sites/123/wcpay/intentions', $http_client->requests[0]['path'] );
+		$this->assertSame( 1099, json_decode( (string) $http_client->requests[0]['body'], true )['amount'] ?? null, 'The renewal carries the stored 10.99.' );
 	}
 
 	/**

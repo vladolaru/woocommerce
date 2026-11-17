@@ -28,6 +28,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockWithClaimHook;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
+use Automattic\WooCommerce\Tests\Internal\Payments\StorefrontMultiCurrencyTestTrait;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPlatformEvents;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\StoredPaymentRecords;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
@@ -48,6 +49,8 @@ use WC_Unit_Test_Case;
 class EventIngestorTest extends WC_Unit_Test_Case {
 
 	use OrderPaymentLockTestTrait;
+
+	use StorefrontMultiCurrencyTestTrait;
 
 	use ProviderTextLogAssertions;
 
@@ -273,6 +276,30 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'was put <strong>on hold</strong>' ) );
 		$this->assertCount( 0, $this->get_order_notes_containing( $order, 'successfully charged' ) );
 		$this->assertFalse( as_has_scheduled_action( WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION, null, 'woocommerce_payments' ) );
+	}
+
+	/**
+	 * @testdox payment_intent.succeeded for a USD 10.99 order on a JPY store completes it: no hold is decided on a rounded total.
+	 *
+	 * A webhook has no shopper, so the store's zero decimals are in force when the event is applied. Under the order payment
+	 * lock the order is read again from its data store into the same object, and the amount comparison reads its total
+	 * (WooPaymentsAmountMismatchHold::decide_hold()). The intent is the order's own 1099 cents.
+	 */
+	public function test_payment_intent_succeeded_on_a_store_with_fewer_decimals_compares_the_stored_total(): void {
+		$order = $this->create_saved_usd_order( '10.99' );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->save();
+		$this->register_storefront_multi_currency( 'JPY', array( 'USD' => '0.0067' ) );
+		$this->assertSame( 0, wc_get_price_decimals(), 'Precondition: the store currency, JPY, is in force.' );
+
+		$this->sut->process( $this->create_payment_intent_event( 'payment_intent.succeeded', $order, array( 'amount' => 1099 ) ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( '10.99', $order->get_total() );
+		$this->assertSame( 'completed', $order->get_status() );
+		$this->assertCount( 0, $this->get_order_notes_containing( $order, 'was put <strong>on hold</strong>' ) );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'successfully charged' ) );
 	}
 
 	/**

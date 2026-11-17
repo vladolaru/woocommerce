@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling;
 
+use Automattic\WooCommerce\Tests\Internal\Payments\StorefrontMultiCurrencyTestTrait;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
@@ -35,6 +36,8 @@ use WC_Unit_Test_Case;
  * first as the client's `request()` adds it (`class-wc-payments-api-client.php:2635-2640`).
  */
 class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
+
+	use StorefrontMultiCurrencyTestTrait;
 
 	use ProviderTextLogAssertions;
 
@@ -1774,6 +1777,40 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( $expected_paid, wc_get_order( $renewal_id )->is_paid() );
 		$this->assertSame( $expected_paid ? 1 : 0, wc_notice_count( 'success' ) );
+	}
+
+	/**
+	 * @testdox Paying a failed USD 10.49 renewal on a JPY store matches the charge against the stored total.
+	 *
+	 * The renewal is read again under the order payment lock before the charge is matched against it, here with the store's
+	 * zero decimals in force. The match allows one cent per line, so a total read as 10 would not match 1049 cents. The
+	 * recorded invoice charge, its amounts changed to 1049.
+	 */
+	public function test_a_paid_charge_is_matched_against_the_stored_total_on_a_store_with_fewer_decimals(): void {
+		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
+		$entry                                    = $this->get_entry( 'charge_invoice_charging' );
+		$entry['response']['body']['amount_due']  = 1049;
+		$entry['response']['body']['amount_paid'] = 1049;
+		$entry['response']['body']['total']       = 1049;
+		$this->queue_entry( $entry );
+		$subscription  = $this->create_subscription(
+			array(
+				'_wcpay_subscription_id'    => self::MAIN_SUBSCRIPTION_ID,
+				'_wcpay_pending_invoice_id' => self::MAIN_INVOICE_ID,
+			)
+		);
+		$renewal_order = \WC_Helper_Order::create_order();
+		$renewal_order->update_meta_data( '_wcpay_billing_invoice_id', self::MAIN_INVOICE_ID );
+		$renewal_order->set_status( 'failed' );
+		$renewal_order->set_total( '10.49' );
+		$renewal_order->save();
+		$this->register_storefront_multi_currency( 'JPY', array( 'USD' => '0.0067' ) );
+		$this->assertSame( 0, wc_get_price_decimals(), 'Precondition: the store currency, JPY, is in force.' );
+
+		$this->sut->maybe_attempt_payment_for_subscription( $subscription, $this->create_token() );
+
+		$this->assertTrue( wc_get_order( $renewal_order->get_id() )->is_paid() );
+		$this->assertSame( 1, wc_notice_count( 'success' ) );
 	}
 
 	/**

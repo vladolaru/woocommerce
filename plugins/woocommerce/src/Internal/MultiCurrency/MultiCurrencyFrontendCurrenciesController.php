@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\DisplayService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\OrderContextService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -23,10 +24,19 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterface {
 
 	/**
-	 * Most backtrace frames read to find the order constructor below a decimals read, as client 11.3.0
-	 * (`includes/multi-currency/FrontendCurrencies.php:20-28`): the constructor sits a short, fixed distance below the read.
+	 * Most backtrace frames read to find an order read below a decimals read, as client 11.3.0
+	 * (`includes/multi-currency/FrontendCurrencies.php:20-28`): the read sits a short, fixed distance below it.
 	 */
 	private const ORDER_READ_BACKTRACE_DEPTH = 40;
+
+	/**
+	 * The calls that read an order's props without the order factory: its constructor, and the payment lifecycle's re-read
+	 * of an order into the object that already holds it. The backtrace names a method by the class that declares it.
+	 */
+	private const ORDER_READ_CALLS = array(
+		'WC_Abstract_Order->__construct',
+		OrderPaymentLifecycleService::class . '->reread_order_from_data_store',
+	);
 
 	/**
 	 * The call a live order recalculation keeps on the backtrace; the method is declared on the abstract order.
@@ -553,8 +563,10 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	 * Tell whether an order is being read from the data store.
 	 *
 	 * No hook marks the end of a factory read, so the flag holds until a read finds the factory gone from the backtrace. An
-	 * order woken from a persistent object cache is read again by its constructor without the factory, so the constructor
-	 * is looked for within the innermost frames (client 11.3.0 `includes/multi-currency/FrontendCurrencies.php:702-715`).
+	 * order woken from a persistent object cache is read again by its constructor without the factory, as client 11.3.0
+	 * looks for (`includes/multi-currency/FrontendCurrencies.php:702-715`). The payments code reads an order again into the
+	 * object it holds through one function, and charges and checks amounts on it, so that function counts too. The data
+	 * stores' reads do not: core's posts backfill reads one and then sets the saved order's props outside it.
 	 *
 	 * @return bool
 	 */
@@ -566,7 +578,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 			}
 		}
 
-		return $this->request_context->is_call_in_backtrace_within( array( 'WC_Abstract_Order->__construct' ), self::ORDER_READ_BACKTRACE_DEPTH );
+		return $this->request_context->is_call_in_backtrace_within( self::ORDER_READ_CALLS, self::ORDER_READ_BACKTRACE_DEPTH );
 	}
 
 	/**
