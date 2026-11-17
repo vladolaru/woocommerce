@@ -330,6 +330,59 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should pay a signup order in its currency after a read made before post types are registered: $_dataName.
+	 * @dataProvider provide_signup_order_currency_states
+	 *
+	 * The price filter widget's constructor reads the currency at widgets_init (init 1), before WooCommerce registers its
+	 * post types (init 5), where wc_get_order() logs a notice and reads nothing. The store currency, USD, is selected.
+	 *
+	 * @param bool $eur_enabled Whether EUR is still enabled when the order is paid again.
+	 */
+	public function test_pays_a_signup_order_in_its_currency_after_a_read_before_post_types( bool $eur_enabled ): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', $eur_enabled ? array( 'USD', 'EUR' ) : array( 'USD' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.9' );
+		$sut = $this->create_controller();
+		$sut->set_initial_payment_cart_item( $this->create_order_in_currency( 'EUR' ) );
+		$sut->register();
+		$state_builder = wc_get_container()->get( StateBuilderFactory::class )->get_state_builder();
+
+		$early_notices = 0;
+		$count_notices = static function ( $function_name ) use ( &$early_notices ) {
+			if ( 'wc_get_order' === $function_name ) {
+				++$early_notices;
+			}
+		};
+		add_action( 'doing_it_wrong_run', $count_notices );
+		global $wp_actions;
+		$registered = $wp_actions['woocommerce_after_register_post_type'] ?? null;
+		// The read at widgets_init, before WooCommerce registers its post types.
+		unset( $wp_actions['woocommerce_after_register_post_type'] ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restored below.
+		try {
+			$early = $state_builder->build()->get_selected_currency()->get_code();
+		} finally {
+			if ( null !== $registered ) {
+				$wp_actions['woocommerce_after_register_post_type'] = $registered; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restores the count unset above.
+			}
+			remove_action( 'doing_it_wrong_run', $count_notices );
+		}
+		$selected = $state_builder->build()->get_selected_currency();
+
+		$this->assertSame( 'USD', $early, 'Before post types exist the signup order is not read.' );
+		$this->assertSame( array( 'EUR', 0.9 ), array( $selected->get_code(), $selected->get_rate() ), 'The rest of the request pays the signup order in its currency.' );
+		$this->assertSame( 0, $early_notices, 'No order is read before post types are registered.' );
+	}
+
+	/** @return array<string,array{bool}> */
+	public static function provide_signup_order_currency_states(): array {
+		return array(
+			'EUR enabled'                   => array( true ),
+			'EUR disabled after the signup' => array( false ),
+		);
+	}
+
+	/**
 	 * @testdox Should leave the selection alone when the cart pays no readable signup order: $_dataName.
 	 * @dataProvider provide_carts_without_a_signup_order_currency
 	 *

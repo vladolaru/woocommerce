@@ -339,12 +339,19 @@ class WooCommerceSubscriptions implements RegisterHooksInterface {
 	 * even when the load throws (client 11.3.0 `includes/multi-currency/Compatibility/WooCommerceSubscriptions.php:530-548`,
 	 * `:587-598`).
 	 *
-	 * @return string|null The currency, or null when the cart pays no signup order or the order cannot be read.
+	 * @return string|null The currency, or null when the cart pays no signup order, WooCommerce has not registered its post
+	 *                     types yet, or the order cannot be read.
 	 */
 	private function get_initial_payment_order_currency(): ?string {
 		$cart_item = $this->get_subscription_type_from_cart( 'initial_payment' );
 		$order_id  = absint( $cart_item['subscription_initial_payment']['order_id'] ?? 0 );
 		if ( 0 === $order_id ) {
+			return null;
+		}
+
+		// The currency filters answer from plugin load, and the price filter widget reads at widgets_init, before any order
+		// can be read: nothing is loaded or remembered until the post types exist (the client's filters start at init 10).
+		if ( ! did_action( 'woocommerce_after_register_post_type' ) ) {
 			return null;
 		}
 
