@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventOrderResolver;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\OtherChargeRecorder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\PaymentIntentEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
@@ -103,6 +104,13 @@ class StripeBillingEventHandler {
 	private OtherChargeRecorder $other_charge_recorder;
 
 	/**
+	 * Webhook event order resolver, for the paid test the event ownership uses.
+	 *
+	 * @var EventOrderResolver
+	 */
+	private EventOrderResolver $event_order_resolver;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -115,8 +123,9 @@ class StripeBillingEventHandler {
 	 * @param WooPaymentsLogger                $logger                       Module logger.
 	 * @param OrderPaymentLifecycleService     $lifecycle_service            Payment lifecycle service.
 	 * @param OtherChargeRecorder              $other_charge_recorder        Recorder of events on another charge.
+	 * @param EventOrderResolver               $event_order_resolver         Webhook event order resolver.
 	 */
-	final public function init( StripeBillingInvoiceService $invoice_service, StripeBillingSubscriptionService $subscription_service, Client $api_client, PaymentIntentEventHandler $payment_intent_event_handler, WooPaymentsAccountService $account_service, WooPaymentsLogger $logger, OrderPaymentLifecycleService $lifecycle_service, OtherChargeRecorder $other_charge_recorder ): void {
+	final public function init( StripeBillingInvoiceService $invoice_service, StripeBillingSubscriptionService $subscription_service, Client $api_client, PaymentIntentEventHandler $payment_intent_event_handler, WooPaymentsAccountService $account_service, WooPaymentsLogger $logger, OrderPaymentLifecycleService $lifecycle_service, OtherChargeRecorder $other_charge_recorder, EventOrderResolver $event_order_resolver ): void {
 		$this->invoice_service              = $invoice_service;
 		$this->subscription_service         = $subscription_service;
 		$this->api_client                   = $api_client;
@@ -125,6 +134,7 @@ class StripeBillingEventHandler {
 		$this->logger                       = $logger;
 		$this->lifecycle_service            = $lifecycle_service;
 		$this->other_charge_recorder        = $other_charge_recorder;
+		$this->event_order_resolver         = $event_order_resolver;
 	}
 
 	/**
@@ -477,7 +487,7 @@ class StripeBillingEventHandler {
 		if ( null !== $authorization ) {
 			$facts = $invoice_facts + $authorization + $this->get_collected_invoice_note_facts( $subscription, $order );
 			// Said only of a renewal that is not paid: on a paid one the invoice completed it.
-			$facts['billing_continues'] = $facts['billing_continues'] && ! $this->has_paid_state( $order );
+			$facts['billing_continues'] = $facts['billing_continues'] && ! $this->event_order_resolver->is_paid_for_ownership( $order );
 			$this->add_invoice_note_once( $order, WooPaymentsOrderNoteService::INVOICE_NOTE_AUTHORIZATION_REPLACED, $facts, 'stripe_billing_invoice_collected|' . $wcpay_invoice_id );
 		} elseif ( $recorded_unpaid && ! $already_recorded ) {
 			// The order screen's refund goes to the stored charge, which is the invoice's only when nothing was stored before.
@@ -545,7 +555,7 @@ class StripeBillingEventHandler {
 			return true;
 		}
 
-		if ( ! $this->has_paid_state( $order ) ) {
+		if ( ! $this->event_order_resolver->is_paid_for_ownership( $order ) ) {
 			return false;
 		}
 
@@ -588,16 +598,6 @@ class StripeBillingEventHandler {
 	}
 
 	/**
-	 * Tell whether an order has a paid status or a paid date.
-	 *
-	 * @param WC_Order $order Order.
-	 * @return bool
-	 */
-	private function has_paid_state( WC_Order $order ): bool {
-		return $order->is_paid() || null !== $order->get_date_paid();
-	}
-
-	/**
 	 * Get the invoice's charge ID: the read intent's charge, else the invoice's `charge`.
 	 *
 	 * @param array<string,mixed>      $event_object Invoice from the event.
@@ -623,7 +623,7 @@ class StripeBillingEventHandler {
 	 */
 	private function get_another_payment_note_facts( WC_Order $subscription, WC_Order $order ): array {
 		$transaction_id = (string) $order->get_transaction_id();
-		if ( ! $this->has_paid_state( $order ) ) {
+		if ( ! $this->event_order_resolver->is_paid_for_ownership( $order ) ) {
 			$wording = WooPaymentsOrderNoteService::INVOICE_NOTE_REFUND_FROM_TRANSACTION_PAGE;
 		} elseif ( ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) ) {
 			$wording        = WooPaymentsOrderNoteService::INVOICE_NOTE_PAID_ANOTHER_WAY;

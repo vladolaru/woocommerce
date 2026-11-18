@@ -244,6 +244,43 @@ class EventOrderResolverTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A $status order (paid date: $has_paid_date, counted paid by a filter: $filter_paid) is paid for ownership: $expected.
+	 * @dataProvider paid_for_ownership_provider
+	 *
+	 * Ownership counts an order paid by WC_Order::is_paid(), filter included, or by a paid date, unlike the payment
+	 * lifecycle, which reads the status alone.
+	 *
+	 * @param string $status        Order status.
+	 * @param bool   $has_paid_date Whether the order has a paid date.
+	 * @param bool   $filter_paid   Whether the woocommerce_order_is_paid filter counts the order as paid.
+	 * @param bool   $expected      Whether the order is paid for ownership.
+	 */
+	public function test_tells_whether_an_order_is_paid_for_ownership( string $status, bool $has_paid_date, bool $filter_paid, bool $expected ): void {
+		$order = $this->create_order_in_state( $status, $has_paid_date, WooPaymentsPersistenceVocabulary::GATEWAY_ID, '', array() );
+		if ( $filter_paid ) {
+			add_filter( 'woocommerce_order_is_paid', '__return_true' );
+		}
+
+		$this->assertSame( $expected, $this->sut->is_paid_for_ownership( $order ) );
+	}
+
+	/**
+	 * Order states, with whether ownership counts the order as paid.
+	 *
+	 * @return array<string,array{string,bool,bool,bool}>
+	 */
+	public function paid_for_ownership_provider(): array {
+		return array(
+			'Processing with a paid date'         => array( OrderStatus::PROCESSING, true, false, true ),
+			'Processing without a paid date'      => array( OrderStatus::PROCESSING, false, false, true ),
+			'Cancelled with a paid date'          => array( OrderStatus::CANCELLED, true, false, true ),
+			'On hold, which a filter counts paid' => array( OrderStatus::ON_HOLD, false, true, true ),
+			'Pending without a paid date'         => array( OrderStatus::PENDING, false, false, false ),
+			'Failed without a paid date'          => array( OrderStatus::FAILED, false, false, false ),
+		);
+	}
+
+	/**
 	 * @testdox A paid $status order (method $payment_method, empty transaction ID, _intent_id "$stored_intent_id", _charge_id "$stored_charge_id") owns an event standing in with intent "$stand_in_intent_id" and charge "$charge_id": $expected ($_dataName).
 	 * @dataProvider stored_payment_provider
 	 *

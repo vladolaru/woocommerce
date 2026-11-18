@@ -161,7 +161,7 @@ class EventOrderResolver {
 	 * @return bool
 	 */
 	public function is_own_payment( WC_Order $order, string $intent_id, string $charge_id, string $stand_in_intent_id ): bool {
-		if ( $order->is_paid() || null !== $order->get_date_paid() ) {
+		if ( $this->is_paid_for_ownership( $order ) ) {
 			$transaction_id = (string) $order->get_transaction_id();
 			if ( '' === $transaction_id ) {
 				return $this->is_stored_woopayments_payment( $order, $stand_in_intent_id, $charge_id );
@@ -175,6 +175,20 @@ class EventOrderResolver {
 		}
 
 		return WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() );
+	}
+
+	/**
+	 * Tell whether an order counts as paid when an event's ownership is decided: it has a paid status, by
+	 * WC_Order::is_paid() and its filter, or a paid date. A paid order's own payment is the one its transaction ID names
+	 * (is_own_payment()). The payment lifecycle's paid test is another one (OrderPaymentLifecycleService::has_paid_status()).
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param WC_Order $order Order read under the order payment lock.
+	 * @return bool
+	 */
+	public function is_paid_for_ownership( WC_Order $order ): bool {
+		return $order->is_paid() || null !== $order->get_date_paid();
 	}
 
 	/**
