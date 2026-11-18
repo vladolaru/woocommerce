@@ -624,7 +624,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A paid invoice for a cancelled renewal storing a declined attempt records the invoice's payment in one save, its succeeded status with its IDs.
+	 * @testdox A paid invoice for a cancelled renewal storing a declined attempt records the invoice's payment in one save, its succeeded status with its IDs, payment method, fee and net.
 	 *
 	 * The renewal never stores the invoice's intent and charge beside the declined attempt's status, so a run stopped
 	 * after that save leaves the payment recorded whole, and a retried invoice.paid, which writes nothing once the stored
@@ -643,7 +643,13 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		$saved  = array();
 		$record = static function ( $order ) use ( $renewal, &$saved ): void {
 			if ( $order instanceof WC_Order && $order->get_id() === $renewal->get_id() && self::RENEWAL_INTENT_ID === (string) $order->get_meta( '_intent_id', true ) ) {
-				$saved[] = array( (string) $order->get_meta( '_charge_id', true ), (string) $order->get_meta( '_intention_status', true ) );
+				$saved[] = array(
+					(string) $order->get_meta( '_charge_id', true ),
+					(string) $order->get_meta( '_intention_status', true ),
+					(string) $order->get_meta( '_payment_method_id', true ),
+					(string) $order->get_meta( '_wcpay_transaction_fee', true ),
+					(string) $order->get_meta( '_wcpay_net', true ),
+				);
 			}
 		};
 		add_action( 'woocommerce_before_order_object_save', $record );
@@ -652,7 +658,11 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 
 		remove_action( 'woocommerce_before_order_object_save', $record );
 		$this->assertNotEmpty( $saved );
-		$this->assertSame( array( self::RENEWAL_CHARGE_ID, 'succeeded' ), $saved[0], 'The first save that stores the invoice\'s intent also stores its charge and succeeded status.' );
+		$this->assertSame(
+			array_fill( 0, count( $saved ), array( self::RENEWAL_CHARGE_ID, 'succeeded', (string) $this->get_renewal_intent()['payment_method'], '1.27', '23.63' ) ),
+			$saved,
+			'Every save that stores the invoice\'s intent also stores its charge, succeeded status, payment method, fee and net.'
+		);
 		$renewal = wc_get_order( $renewal->get_id() );
 		$this->assertSame( array( 'cancelled', self::RENEWAL_INTENT_ID, self::RENEWAL_CHARGE_ID, 'succeeded', self::RENEWAL_INTENT_ID ), array( $renewal->get_status(), $renewal->get_meta( '_intent_id', true ), $renewal->get_meta( '_charge_id', true ), $renewal->get_meta( '_intention_status', true ), $renewal->get_transaction_id() ) );
 	}

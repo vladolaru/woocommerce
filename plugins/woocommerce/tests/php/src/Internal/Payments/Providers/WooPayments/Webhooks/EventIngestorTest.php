@@ -3478,7 +3478,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		if ( $has_charge ) {
 			$this->assertSame( array( 'mandate_123', '1.23' ), array( $order->get_meta( '_stripe_mandate_id', true ), $order->get_meta( '_wcpay_transaction_fee', true ) ), "The charge's mandate and fee." );
 		}
-		$this->assertSame( array( array_slice( $expected, 0, 3 ) ), $saved->values_after_the_first_change(), 'The payment values reach the store in one save, with no state between.' );
+		$this->assertSame( array( array_merge( array_slice( $expected, 0, 3 ), $has_charge ? array( 'pm_123', '1.23', '9.76' ) : array( 'pm_123', '', '' ) ) ), $saved->values_after_the_first_change(), 'The payment values, its payment method, fee and net included, reach the store in one save, with no state between.' );
 		$this->assert_success_recorded_over_another_attempt( $logger, $order, $replaced_status );
 	}
 
@@ -3548,6 +3548,52 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 			'a Failed order storing a declined attempt, the total paid' => array( 'row 12', 1099, OrderStatus::COMPLETED, 'requires_payment_method' ),
 			'an On hold order storing an authorization, another amount' => array( 'authorization', 1500, OrderStatus::ON_HOLD, 'requires_capture' ),
 			'an On hold order storing an authorization, the total paid' => array( 'authorization', 1099, OrderStatus::COMPLETED, 'requires_capture' ),
+		);
+	}
+
+	/**
+	 * @testdox A success of another attempt whose one save fails writes no line of a whole record, and is decided on what the order stores: held on its amount, with the refused-capture line naming the stored intent.
+	 *
+	 * The save's hook throws, and core keeps the exception as the order's last save error and goes on, so nothing of the
+	 * payment is stored. The decision reads the order again, finds the authorization pi_A, and checks the payment's amount.
+	 */
+	public function test_success_of_another_attempt_whose_save_fails_logs_only_the_refused_capture(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$order  = $this->create_order_in_shape( 'authorization' );
+		$event  = $this->create_success_of_attempt_b( $order, true, 1500 );
+		$logger = RecordingWcLogger::install();
+		$failed = 0;
+		$fail   = static function ( $saved ) use ( $order, &$failed ): void {
+			if ( 0 === $failed && $saved instanceof WC_Order && $saved->get_id() === $order->get_id() && 'pi_B' === (string) $saved->get_meta( '_intent_id', true ) ) {
+				++$failed;
+				throw new \Exception( 'Save failed.' );
+			}
+		};
+		add_action( 'woocommerce_before_order_object_save', $fail, PHP_INT_MAX );
+
+		try {
+			$this->sut->process( $event );
+		} finally {
+			remove_action( 'woocommerce_before_order_object_save', $fail, PHP_INT_MAX );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( array( 1, 1 ), array( $failed, count( array_filter( $logger->get_errors(), static fn( array $line ): bool => 'Error saving order ID ' . $order->get_id() . '.' === $line[1] ) ) ), 'The first save storing pi_B failed, and core logged it.' );
+		$this->assertSame( array( OrderStatus::ON_HOLD, 0, 0, 1 ), array( $order->get_status(), count( $this->get_order_notes_containing( $order, 'was <strong>successfully captured</strong>' ) ), count( array_merge( $this->get_order_notes_containing( $order, 'was <strong>successfully charged</strong>' ), $this->get_order_notes_containing( $order, 'A test payment of' ) ) ), count( $this->get_order_notes_containing( $order, 'but the order total is' ) ) ), 'Held on its amount, not completed as a capture.' );
+		$this->assert_success_recorded_over_another_attempt( $logger, $order, null );
+		$lines = $this->get_refused_capture_lines( $logger );
+		$this->assertCount( 1, $lines );
+		$this->assertSame(
+			array(
+				'order_id'         => $order->get_id(),
+				'intent_id'        => 'pi_B',
+				'stored_intent_id' => 'pi_A',
+				'transaction_id'   => 'pi_A',
+				'condition'        => 'stored_intent',
+			),
+			array_intersect_key( $this->get_logged_context( $logger, (string) $lines[0][1] ), array_flip( array( 'order_id', 'intent_id', 'stored_intent_id', 'transaction_id', 'condition' ) ) )
 		);
 	}
 
@@ -3694,27 +3740,35 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	 *
 	 * The stored status is succeeded, so the status-change listener finds no authorization to capture
 	 * (WooPaymentsOrderAdminActionsController get_status_change_target()); the authorization the transaction ID names is
-	 * left to expire.
+	 * left to expire. The platform client is connected, so a capture the listener started would reach it.
 	 */
 	public function test_completing_an_order_after_a_stopped_success_of_another_attempt_sends_no_capture(): void {
 		$order = $this->create_order_in_shape( 'authorization' );
-		$this->process_success_stopped_before_its_decision( $this->create_success_of_attempt_b( $order ) );
-		wc_get_container()->get( WooPaymentsOrderAdminActionsController::class )->register();
-		$platform_requests = 0;
-		add_filter(
-			'pre_http_request',
-			static function ( $response ) use ( &$platform_requests ) {
-				++$platform_requests;
-				return $response;
+		$event = $this->create_success_of_attempt_b( $order );
+		$this->process_success_stopped_before_its_decision( $event );
+		$captures = 0;
+		$platform = $this->getMockBuilder( Client::class )->disableOriginalConstructor()->onlyMethods( array( 'is_available', 'capture_intention' ) )->getMock();
+		$platform->method( 'is_available' )->willReturn( true );
+		$platform->method( 'capture_intention' )->willReturnCallback(
+			static function () use ( &$captures, $event ): array {
+				++$captures;
+				return $event['data']['object'];
 			}
 		);
-
-		wc_get_order( $order->get_id() )->update_status( OrderStatus::COMPLETED );
+		wc_get_container()->replace( Client::class, $platform );
+		$this->reset_container_resolutions();
+		try {
+			wc_get_container()->get( WooPaymentsOrderAdminActionsController::class )->register();
+			wc_get_order( $order->get_id() )->update_status( OrderStatus::COMPLETED );
+		} finally {
+			$this->reset_container_replacements();
+			$this->reset_container_resolutions();
+		}
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( OrderStatus::COMPLETED, $order->get_status() );
-		$this->assertSame( 0, $platform_requests, 'No capture request.' );
+		$this->assertSame( 0, $captures, 'No capture sent to the platform.' );
 		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
 	}
 
@@ -3894,7 +3948,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Record the stored intent, charge and intent status each save of the order writes.
+	 * Record the stored intent, charge, intent status, payment method, fee and net each save of the order writes.
 	 *
 	 * @param WC_Order $order Order.
 	 * @return object A recorder whose values_after_the_first_change() lists the saved values once each changes, from the first value that differs from the order's before the event.
@@ -3960,13 +4014,16 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 			}
 
 			/**
-			 * Stored intent, charge and intent status.
+			 * Stored intent, charge, intent status, payment method, fee and net.
 			 *
 			 * @param WC_Order $order Order.
 			 * @return string[]
 			 */
 			private static function values( WC_Order $order ): array {
-				return array( (string) $order->get_meta( '_intent_id', true ), (string) $order->get_meta( '_charge_id', true ), (string) $order->get_meta( '_intention_status', true ) );
+				return array_map(
+					static fn( string $key ): string => (string) $order->get_meta( $key, true ),
+					array( '_intent_id', '_charge_id', '_intention_status', '_payment_method_id', '_wcpay_transaction_fee', '_wcpay_net' )
+				);
 			}
 		};
 		add_action( 'woocommerce_before_order_object_save', array( $recorder, 'record' ) );

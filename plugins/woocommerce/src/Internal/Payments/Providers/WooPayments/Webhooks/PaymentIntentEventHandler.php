@@ -642,8 +642,8 @@ class PaymentIntentEventHandler {
 	 * On an order without a paid status by the lifecycle's test (OrderPaymentLifecycleService::has_paid_status()), which
 	 * the lifecycle applies rather than skips, whose stored intent is another, non-empty one, the before-deciding mode also
 	 * writes the succeeded status, so the order never stores this payment beside the other attempt's status, and logs that
-	 * it did; the fill-only mode writes nothing there, since the payment's own record is written by what settles it. A paid
-	 * date or a woocommerce_order_is_paid filter makes the order paid for ownership
+	 * it did once the save reports no error; the fill-only mode writes nothing there, since the payment's own record is
+	 * written by what settles it. A paid date or a woocommerce_order_is_paid filter makes the order paid for ownership
 	 * (EventOrderResolver::is_paid_for_ownership()), which still decides whose payment this is, but not for this write.
 	 * Client 11.3.0 writes the IDs and no status (class-wc-payments-webhook-processing-service.php:642-701). On an order in
 	 * a paid status reached by a caller that reports the intent's status, the succeeded status is written too: the
@@ -669,7 +669,7 @@ class PaymentIntentEventHandler {
 		}
 		$order->save();
 
-		if ( $another_attempt ) {
+		if ( $another_attempt && null === $order->get_last_save_error() ) {
 			$this->log_success_recorded_over_another_attempt( $order, $intent_id, $stored_intent_id, $stored_status );
 		}
 	}
