@@ -2312,11 +2312,11 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	 * @testdox A Klarna failure's return and its payment_intent.payment_failed webhook leave the client's notes in either order: $_dataName.
 	 *
 	 * Client 11.3.0's webhook adds the declined-payment note for a buy now, pay later failure unless the same text is on the
-	 * order, and changes no status (class-wc-payments-webhook-processing-service.php:577-606). Its return writes the same text
-	 * for an intent error and fails the order whatever notes it has (class-wc-payment-gateway-wcpay.php:2760-2763;
-	 * class-wc-payments-order-service.php:577-595), and writes "UPE payment failed: <message>" for a failed fetch, stopped
-	 * only by that text or a Failed order (gw:2765-2767; os:545-560). The error is the one Stripe returned when a shopper
-	 * closed Klarna's test page.
+	 * order, and changes no status (class-wc-payments-webhook-processing-service.php:577-606). The error is the one Stripe
+	 * returns when a shopper closes Klarna's test page, a retryable decline: the return adds the same text unless it is on
+	 * the order, leaves the order's status and meta, and sends the shopper to the order's pay page (class-wc-payment-gateway-wcpay.php,
+	 * process_redirect_payment(), is_retryable_decline()). A failed fetch writes "UPE payment failed: <message>" and fails the
+	 * order, stopped only by that text or a Failed order (gw:2765-2767; os:545-560).
 	 *
 	 * @dataProvider provider_klarna_failure_arrivals
 	 *
@@ -2382,7 +2382,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 				if ( 'failed fetch' === $arrival ) {
 					$_GET['redirect_status'] = 'failed';
 				}
-				$this->assertSame( wc_get_checkout_url(), $this->handle_wp_expecting_redirect(), "The $arrival sends the shopper back to checkout." );
+				$this->assertSame( 'return' === $arrival ? $order->get_checkout_payment_url() : wc_get_checkout_url(), $this->handle_wp_expecting_redirect(), "Where the $arrival sends the shopper." );
 			}
 
 			$reloaded       = wc_get_order( $order->get_id() );
@@ -2396,9 +2396,9 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			sort( $failure_notes );
 			sort( $expected_texts );
 			$this->assertSame(
-				array( $expected_status, $expected_texts, 'pi_klarna_return', '' ),
-				array( $reloaded->get_status(), $failure_notes, $reloaded->get_meta( '_intent_id', true ), $reloaded->get_transaction_id() ),
-				"Status, failure notes, stored intent and transaction ID after the $arrival."
+				array( $expected_status, $expected_texts, 'pi_klarna_return', 'requires_action', '' ),
+				array( $reloaded->get_status(), $failure_notes, $reloaded->get_meta( '_intent_id', true ), $reloaded->get_meta( '_intention_status', true ), $reloaded->get_transaction_id() ),
+				"Status, failure notes, stored intent, stored intent status and transaction ID after the $arrival."
 			);
 		}
 	}
@@ -2412,14 +2412,14 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		return array(
 			'the return, then the webhook'     => array(
 				array(
-					array( 'return', OrderStatus::FAILED, array( 'D' ) ),
-					array( 'webhook', OrderStatus::FAILED, array( 'D' ) ),
+					array( 'return', OrderStatus::PENDING, array( 'D' ) ),
+					array( 'webhook', OrderStatus::PENDING, array( 'D' ) ),
 				),
 			),
 			'the webhook, then the return'     => array(
 				array(
 					array( 'webhook', OrderStatus::PENDING, array( 'D' ) ),
-					array( 'return', OrderStatus::FAILED, array( 'D' ) ),
+					array( 'return', OrderStatus::PENDING, array( 'D' ) ),
 				),
 			),
 			'the webhook, then a failed fetch' => array(
@@ -2506,13 +2506,25 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A PaymentIntent error while another request holds the order payment lock leaves the order alone but still returns to checkout.
+	 * @testdox A PaymentIntent error while another request holds the order payment lock leaves the order alone but still sends the shopper on: $_dataName.
 	 *
 	 * Client 11.1.0: mark_payment_failed() skips a locked order (os:463-466, 2747-2758), and the catch still adds the notice
 	 * and redirects to checkout (gw:2447-2454). The intent error proves this payment failed, so a resubmit cannot pay twice.
+	 * A retryable decline goes to the order's pay page instead, with no note while another request holds the lock
+	 * (client 11.3.0 class-wc-payment-gateway-wcpay.php, process_redirect_payment()).
+	 *
+	 * @testWith ["card_declined", "", false]
+	 *           ["payment_intent_authentication_failure", "klarna_payment_declined", true]
+	 *
+	 * @param string $code         The error's `code`.
+	 * @param string $decline_code The error's `decline_code`, or '' for none.
+	 * @param bool   $retryable    Whether the pair is a retryable decline.
 	 */
-	public function test_handle_wp_returns_payment_intent_error_to_checkout_while_the_order_is_locked(): void {
-		$order                      = $this->create_order();
+	public function test_handle_wp_sends_a_payment_intent_error_on_while_the_order_is_locked( string $code, string $decline_code, bool $retryable ): void {
+		$order = $this->create_order();
+		$order->update_meta_data( '_intention_status', 'requires_action' );
+		$order->set_transaction_id( 'pi_error_locked' );
+		$order->save();
 		$api_client                 = new RedirectReturnApiClientStub();
 		$api_client->payment_intent = array(
 			'id'                 => 'pi_error_locked',
@@ -2522,10 +2534,13 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			'customer'           => 'cus_return',
 			'payment_method'     => null,
 			'metadata'           => array( 'order_id' => $order->get_id() ),
-			'last_payment_error' => array(
-				'type'    => 'card_error',
-				'code'    => 'card_declined',
-				'message' => 'Your card was declined.',
+			'last_payment_error' => array_filter(
+				array(
+					'type'         => 'card_error',
+					'code'         => $code,
+					'decline_code' => $decline_code,
+					'message'      => 'Your card was declined.',
+				)
 			),
 		);
 		$store                      = wc_get_container()->get( OrderPaymentLock::class );
@@ -2534,6 +2549,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->assertNotNull( $lock_token );
 		$this->sut = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_error_locked' );
+		$notes = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 
 		try {
 			$location = $this->handle_wp_expecting_redirect();
@@ -2541,9 +2557,199 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			$store->release( $order, $vocabulary, $lock_token );
 		}
 
-		$this->assertSame( wc_get_checkout_url(), $location );
+		$reloaded = wc_get_order( $order->get_id() );
+		$this->assertSame( $retryable ? $order->get_checkout_payment_url() : wc_get_checkout_url(), $location );
 		$this->assert_single_error_notice( "We're not able to process this payment. Please try again later." );
-		$this->assertSame( 'pending', wc_get_order( $order->get_id() )->get_status() );
+		$this->assertSame(
+			array( 'pending', 'requires_action', 'pi_error_locked', 'pi_error_locked', $notes ),
+			array( $reloaded->get_status(), $reloaded->get_meta( '_intention_status', true ), $reloaded->get_meta( '_intent_id', true ), $reloaded->get_transaction_id(), count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) ) ),
+			'Status, stored intent status, stored intent, transaction ID and note count.'
+		);
+	}
+
+	/**
+	 * @testdox A return whose intent error is $_dataName records it by both codes of the pair.
+	 *
+	 * Client 11.3.0 (class-wc-payment-gateway-wcpay.php, RETRYABLE_DECLINE_CODES, is_retryable_decline(),
+	 * process_redirect_payment()): when the intent's own error, last_payment_error or a zero-total order's last_setup_error,
+	 * has a listed code with one of that code's listed decline codes, the return adds the declined-payment note, writes no
+	 * status or meta, and sends the shopper to the order's pay page with the notice and the cart kept. Any other error goes
+	 * through mark_payment_declined(): the order is failed with the same note and the shopper goes back to checkout.
+	 *
+	 * @dataProvider provider_intent_error_pairs
+	 *
+	 * @param string $code         The error's `code`.
+	 * @param string $decline_code The error's `decline_code`, or '' for none.
+	 * @param bool   $retryable    Whether the pair is a retryable decline.
+	 * @param bool   $setup        Whether the return is a zero-total order's SetupIntent.
+	 */
+	public function test_handle_wp_records_an_intent_error_by_its_pair( string $code, string $decline_code, bool $retryable, bool $setup = false ): void {
+		$intent_id = $setup ? 'seti_pair' : 'pi_pair';
+		$order     = $this->create_order( $setup ? '0.00' : '50.00' );
+		$order->update_meta_data( '_intent_id', $intent_id );
+		$order->update_meta_data( '_intention_status', 'requires_action' );
+		$order->set_transaction_id( $intent_id );
+		$order->save();
+		$product = \WC_Helper_Product::create_simple_product();
+		WC()->cart->add_to_cart( $product->get_id() );
+		$error      = array_filter(
+			array(
+				'type'         => 'invalid_request_error',
+				'code'         => $code,
+				'decline_code' => $decline_code,
+				'message'      => 'The provider declined the payment.',
+			)
+		);
+		$api_client = new RedirectReturnApiClientStub();
+		$intent     = array(
+			'id'       => $intent_id,
+			'status'   => 'requires_payment_method',
+			'customer' => 'cus_pair',
+			'metadata' => array( 'order_id' => $order->get_id() ),
+		);
+		if ( $setup ) {
+			$api_client->setup_intent = array_merge( $intent, array( 'last_setup_error' => $error ) );
+			$this->set_setup_intent_return_request( $order, $intent_id );
+		} else {
+			$api_client->payment_intent = array_merge(
+				$intent,
+				array(
+					'currency'           => 'usd',
+					'amount'             => 5000,
+					'payment_method'     => null,
+					'last_payment_error' => $error,
+				)
+			);
+			$this->set_payment_intent_return_request( $order, $intent_id );
+		}
+		$this->sut = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client );
+
+		$location = $this->handle_wp_expecting_redirect();
+
+		$reloaded      = wc_get_order( $order->get_id() );
+		$intent_link   = $setup
+			? '<code>seti_pair</code>'
+			: '<a href="' . add_query_arg(
+				array(
+					'page' => 'wc-admin',
+					'path' => rawurlencode( '/payments/transactions/details' ),
+					'id'   => 'pi_pair',
+				),
+				admin_url( 'admin.php' )
+			) . '" target="_blank" rel="noopener noreferrer">pi_pair</a>';
+		$failure_notes = array_values(
+			array_filter(
+				wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ),
+				static fn( string $note ): bool => false !== strpos( $note, '<strong>failed</strong>' )
+			)
+		);
+		$this->assertSame( $retryable ? $order->get_checkout_payment_url() : wc_get_checkout_url(), $location );
+		$this->assert_single_error_notice( "We're not able to process this payment. Please try again later." );
+		$this->assertSame( 1, WC()->cart->get_cart_contents_count(), 'The cart is kept.' );
+		$this->assertSame(
+			array( 'A payment of ' . wc_price( $setup ? 0 : 50, array( 'currency' => 'USD' ) ) . ' <strong>failed</strong> using WooPayments (' . $intent_link . '). With the following message: <code>The provider declined the payment.</code>' . ( '' === $decline_code ? '' : '. Decline code: <code>' . $decline_code . '</code>.' ) ),
+			$failure_notes
+		);
+		$this->assertSame(
+			$retryable
+				? array( 'pending', 'requires_action', $intent_id, $intent_id )
+				: array( 'failed', 'requires_payment_method', $intent_id, $intent_id ),
+			array( $reloaded->get_status(), $reloaded->get_meta( '_intention_status', true ), $reloaded->get_meta( '_intent_id', true ), $reloaded->get_transaction_id() ),
+			'Status, stored intent status, stored intent and transaction ID.'
+		);
+	}
+
+	/**
+	 * Each retryable pair of client 11.3.0's RETRYABLE_DECLINE_CODES, and errors that match only part of a pair.
+	 *
+	 * @return array<string,array{0:string,1:string,2:bool,3?:bool}>
+	 */
+	public function provider_intent_error_pairs(): array {
+		return array(
+			'Klarna declined at authentication'        => array( 'payment_intent_authentication_failure', 'klarna_payment_declined', true ),
+			'Klarna declined at the payment attempt'   => array( 'payment_intent_payment_attempt_failed', 'klarna_payment_declined', true ),
+			'a partner high-risk decline'              => array( 'payment_method_provider_decline', 'partner_high_risk_customer', true ),
+			'a partner generic decline'                => array( 'payment_method_provider_decline', 'partner_generic_decline', true ),
+			'a SetupIntent declined by Klarna'         => array( 'payment_intent_authentication_failure', 'klarna_payment_declined', true, true ),
+			'a listed code with another decline code'  => array( 'payment_intent_authentication_failure', 'generic_decline', false ),
+			'a listed decline code under another code' => array( 'payment_method_provider_decline', 'klarna_payment_declined', false ),
+			'a listed code with no decline code'       => array( 'payment_intent_authentication_failure', '', false ),
+			'a SetupIntent with another decline code'  => array( 'payment_intent_authentication_failure', 'generic_decline', false, true ),
+		);
+	}
+
+	/**
+	 * @testdox A retryable decline is noted only when the order read under the order payment lock still waits on it, and the shopper goes to the pay page either way: $_dataName.
+	 *
+	 * The return reuses the failure's claim, fresh read and checks: an order put on hold, bound to another intent or taken by
+	 * another payment method just before the claim gets no note, status or meta. Client 11.3.0 has no lock and notes the decline
+	 * whenever its entry check passed (class-wc-payment-gateway-wcpay.php, process_redirect_payment()); the webhook's note still
+	 * records a buy now, pay later decline.
+	 *
+	 * @testWith ["on hold"]
+	 *           ["another intent"]
+	 *           ["another payment method"]
+	 *
+	 * @param string $change What another request changes just before the claim.
+	 */
+	public function test_handle_wp_notes_a_retryable_decline_only_on_the_order_read_under_the_lock( string $change ): void {
+		$order = $this->create_order();
+		$order->update_meta_data( '_intention_status', 'requires_action' );
+		$order->set_transaction_id( 'pi_retry_window' );
+		$order->save();
+		$api_client                 = new RedirectReturnApiClientStub();
+		$api_client->payment_intent = array(
+			'id'                 => 'pi_retry_window',
+			'status'             => 'requires_payment_method',
+			'currency'           => 'usd',
+			'amount'             => 5000,
+			'customer'           => 'cus_return',
+			'payment_method'     => null,
+			'metadata'           => array( 'order_id' => $order->get_id() ),
+			'last_payment_error' => array(
+				'code'         => 'payment_intent_authentication_failure',
+				'decline_code' => 'klarna_payment_declined',
+				'message'      => 'Customer was declined by Klarna',
+			),
+		);
+		$lock                       = new RedirectReturnTakeoverOrderPaymentLock();
+		$lock->init( new TransientRowLock() );
+		$lock->before_first_claim = static function () use ( $order, $change ): void {
+			$changed = wc_get_order( $order->get_id() );
+			if ( 'on hold' === $change ) {
+				$changed->set_status( OrderStatus::ON_HOLD );
+			} elseif ( 'another intent' === $change ) {
+				$changed->update_meta_data( '_intent_id', 'pi_newer_attempt' );
+			} else {
+				$changed->set_payment_method( 'bacs' );
+			}
+			$changed->save();
+		};
+		$container                = wc_get_container();
+		$container->replace( OrderPaymentLock::class, $lock );
+		$this->sut = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_retry_window' );
+
+		try {
+			$location = $this->handle_wp_expecting_redirect();
+		} finally {
+			$container->reset_replacement( OrderPaymentLock::class );
+		}
+
+		$reloaded = wc_get_order( $order->get_id() );
+		$this->assertSame( $order->get_checkout_payment_url(), $location );
+		$this->assert_single_error_notice( "We're not able to process this payment. Please try again later." );
+		$this->assertSame(
+			array( 'on hold' === $change ? 'on-hold' : 'pending', 'requires_action', 'another intent' === $change ? 'pi_newer_attempt' : 'pi_retry_window', 'pi_retry_window', array() ),
+			array(
+				$reloaded->get_status(),
+				$reloaded->get_meta( '_intention_status', true ),
+				$reloaded->get_meta( '_intent_id', true ),
+				$reloaded->get_transaction_id(),
+				array_values( array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $note ): bool => false !== strpos( $note, '<strong>failed</strong>' ) ) ),
+			),
+			'Status, stored intent status, stored intent, transaction ID and failure notes.'
+		);
 	}
 
 	/**

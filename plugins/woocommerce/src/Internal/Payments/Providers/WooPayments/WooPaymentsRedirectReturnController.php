@@ -19,7 +19,8 @@ use WC_Order;
 
 /**
  * Completes a WooPayments payment or setup when the shopper returns from a redirect payment method: confirms the intent
- * onto its order, or fails the order and sends the shopper back to checkout.
+ * onto its order, or fails the order and sends the shopper back to checkout. A decline the shopper can retry with another
+ * payment method leaves the order as it is, with the declined-payment note, and sends the shopper to the order's pay page.
  *
  * @since 11.0.0
  * @internal
@@ -32,6 +33,18 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 * @var string
 	 */
 	const ORDER_MISMATCH_QUERY_FLAG = 'upe_process_redirect_order_id_mismatched';
+
+	/**
+	 * Intent error codes, each with the decline codes after which the shopper can retry with another payment method, so the
+	 * return leaves the order as it is (client 11.3.0 WC_Payment_Gateway_WCPay::RETRYABLE_DECLINE_CODES).
+	 *
+	 * @var array<string,string[]>
+	 */
+	private const RETRYABLE_DECLINE_CODES = array(
+		'payment_intent_authentication_failure' => array( 'klarna_payment_declined' ),
+		'payment_intent_payment_attempt_failed' => array( 'klarna_payment_declined' ),
+		'payment_method_provider_decline'       => array( 'partner_high_risk_customer', 'partner_generic_decline' ),
+	);
 
 	/**
 	 * Runtime owner arbiter.
@@ -239,7 +252,8 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 
 		$intent_status = isset( $intent['status'] ) && is_scalar( $intent['status'] ) ? (string) $intent['status'] : '';
 
-		// Client gw:2377-2382: an intent error ends the return before any order write; the catch fails the order once with its note.
+		// Client gw:2377-2382: an intent error ends the return before any order write; the catch fails the order once with its
+		// note, or notes a retryable decline and leaves the order as it is (client 11.3.0 process_redirect_payment()).
 		$intent_error = $intent[ $is_payment_intent ? 'last_payment_error' : 'last_setup_error' ] ?? null;
 		if ( ! empty( $intent_error ) ) {
 			$logger  = wc_get_container()->get( WooPaymentsLogger::class );
@@ -247,6 +261,10 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 			// Client gw:2378 logs the error's message, which Stripe writes; this line logs its listed codes instead.
 			$logger->log( 'Error when processing payment.', 'info', $this->get_intent_error_log_context( $intent_error ) );
 			$logger->error( 'Error occurred during the redirect payment process. Exception: ' . $message, array( 'order_id' => $order->get_id() ) );
+			if ( $this->is_retryable_decline( (array) $intent_error ) ) {
+				$this->note_decline_and_return_to_pay_page( $fresh_order, $intent_id, $intent_status, $message, (array) $intent_error );
+				return;
+			}
 			$this->fail_and_return_to_checkout( $fresh_order, $intent_id, $intent_status, $message, $message, (array) $intent_error );
 			return;
 		}
@@ -343,7 +361,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 * Client 11.1.0 catches only Exception, so a PHP Error fatals there; this takes the same path and logs it whatever the
 	 * logging setting.
 	 * A confirmation failure on a PaymentIntent that moved or held money never comes here (log_failure_kept_for_settlement()).
-	 * Two exceptions, through fail_order_unless_settled(): an order a fresh locked read shows as processing, completed
+	 * Two exceptions, through record_failure_unless_settled(): an order a fresh locked read shows as processing, completed
 	 * or on-hold keeps its order-received page, as at checkout, and an order locked by another
 	 * claim is left to that holder.
 	 *
@@ -364,7 +382,8 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 * intent, paid with another payment method, or locked by another holder) and the payment may have gone through, so a resubmit cannot pay a second time.
 	 * A failure write that throws still sends the shopper to checkout, with an always-on error line: no money moved on
 	 * these paths. An intent error proves this payment failed, so that return always goes back to checkout, as client
-	 * 11.1.0's catch does (gw:2447-2454) even when its own write was skipped.
+	 * 11.1.0's catch does (gw:2447-2454) even when its own write was skipped. A retryable decline does not come here: it
+	 * goes to the order's pay page (note_decline_and_return_to_pay_page()).
 	 *
 	 * @param WC_Order     $order             Order object.
 	 * @param string       $intent_id         Requested intent ID.
@@ -374,7 +393,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 * @param array<mixed> $intent_error      The intent's own error, or empty when the intent did not report the failure.
 	 */
 	private function fail_and_return_to_checkout( WC_Order $order, string $intent_id, string $intent_status, string $exception_message, string $shopper_notice, array $intent_error = array() ): void {
-		if ( ! $this->fail_order_unless_settled( $order, $intent_id, $exception_message, $intent_error, $intent_status ) && array() === $intent_error ) {
+		if ( ! $this->record_failure_unless_settled( $order, $intent_id, $exception_message, $intent_error, $intent_status ) && array() === $intent_error ) {
 			return;
 		}
 
@@ -382,7 +401,46 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Fail the order after a failed return, unless a fresh read under the order payment lock shows it is settled.
+	 * Note a decline the shopper can retry, leaving the order's status and stored payment values as they are, then send the
+	 * shopper to the order's pay page with the notice, as client 11.3.0's process_redirect_payment() does for a retryable decline.
+	 *
+	 * The note is written under the order payment lock with record_failure_unless_settled()'s checks. When they skip it, or
+	 * another holder has the lock, the shopper still goes to the pay page: the intent's error proves this attempt failed.
+	 *
+	 * @param WC_Order     $order          Order object.
+	 * @param string       $intent_id      Requested intent ID.
+	 * @param string       $intent_status  Fetched intent status.
+	 * @param string       $shopper_notice Shopper error notice.
+	 * @param array<mixed> $intent_error   The intent's own error, a retryable decline.
+	 */
+	private function note_decline_and_return_to_pay_page( WC_Order $order, string $intent_id, string $intent_status, string $shopper_notice, array $intent_error ): void {
+		$this->record_failure_unless_settled( $order, $intent_id, $shopper_notice, $intent_error, $intent_status );
+
+		// Before core's template_redirect cart clearing, as redirect_to_checkout() does.
+		wc_add_notice( $shopper_notice, 'error' );
+		wp_safe_redirect( $order->get_checkout_payment_url() );
+		exit;
+	}
+
+	/**
+	 * Tell whether an intent's own error is a decline the shopper can retry with another payment method: its code and decline
+	 * code are a listed pair (client 11.3.0 WC_Payment_Gateway_WCPay::is_retryable_decline()).
+	 *
+	 * @param array<mixed> $intent_error The intent's last_payment_error or last_setup_error.
+	 * @return bool
+	 */
+	private function is_retryable_decline( array $intent_error ): bool {
+		$code         = $intent_error['code'] ?? '';
+		$decline_code = $intent_error['decline_code'] ?? '';
+
+		return is_string( $code )
+			&& isset( self::RETRYABLE_DECLINE_CODES[ $code ] )
+			&& in_array( $decline_code, self::RETRYABLE_DECLINE_CODES[ $code ], true );
+	}
+
+	/**
+	 * Record a failed return on the order, unless a fresh read under the order payment lock shows it is settled: fail the
+	 * order with its note, or, for a retryable decline, add only the declined-payment note.
 	 *
 	 * Webhooks write the order status under the same lock, so an on-hold written just before this claims the lock is seen
 	 * here. The lifecycle's own late-failure check stays on paid statuses only: a Multibanco voucher expiry
@@ -392,17 +450,18 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 * writing this payment's status, a checkout of the same order in another tab, a refund or a capture. Nothing is
 	 * written, and an always-on warning names the holder's operation, lock value and age from the lock record.
 	 * Client 11.1.0 also skips the write (os:2747-2758) but sends the shopper to checkout (gw:2447-2454), where a
-	 * resubmit can pay again while the holder is still at work; fail_and_return_to_checkout() decides where the shopper goes.
+	 * resubmit can pay again while the holder is still at work; fail_and_return_to_checkout() and
+	 * note_decline_and_return_to_pay_page() decide where the shopper goes.
 	 *
 	 * @param WC_Order     $order             Order object.
 	 * @param string       $intent_id         Requested intent ID.
 	 * @param string       $exception_message Message of what ended the return.
 	 * @param array<mixed> $intent_error      The intent's own error, or empty when the intent did not report the failure.
 	 * @param string       $intent_status     Fetched intent status, or '' when the fetch failed.
-	 * @return bool Whether the shopper goes back to checkout; false when the order is settled, bound to another intent, paid
-	 *              with another payment method or locked by another holder.
+	 * @return bool Whether the failure was recorded or its write attempted; false when the order is settled, bound to another
+	 *              intent, paid with another payment method or locked by another holder.
 	 */
-	private function fail_order_unless_settled( WC_Order $order, string $intent_id, string $exception_message, array $intent_error, string $intent_status ): bool {
+	private function record_failure_unless_settled( WC_Order $order, string $intent_id, string $exception_message, array $intent_error, string $intent_status ): bool {
 		$persistence_vocabulary = new WooPaymentsPersistenceVocabulary();
 		$order_payment_lock     = wc_get_container()->get( OrderPaymentLock::class );
 		$lock_token             = $order_payment_lock->claim( $order, $persistence_vocabulary, $intent_id, 'payment status update' );
@@ -433,9 +492,17 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 				return false;
 			}
 
+			if ( $this->is_retryable_decline( $intent_error ) ) {
+				// Client 11.3.0's process_redirect_payment() adds the note unless the same text is on the order, as the BNPL
+				// webhook's note may be (order_note_exists()), and writes no status or meta. No identity, so only the text counts.
+				$note_candidates = $this->note_service->format_declined_payment_note_candidates( $fresh_order, $intent_id, $intent_error );
+				$this->note_service->add_note_once( $fresh_order, $note_candidates[0], '', $note_candidates );
+				return true;
+			}
+
 			// A failure raised with a message goes through client 11.3.0's mark_payment_failed(), which changes nothing once the
 			// failure is recorded (class-wc-payment-gateway-wcpay.php:2765-2767; class-wc-payments-order-service.php:550-554).
-			// An intent's own error is a decline, which fails the order whatever notes it has (gw:2760-2763; os:577-595).
+			// Any other intent error is a decline, which fails the order whatever notes it has (gw:2760-2763; os:577-595).
 			$failure = $this->build_failure_event( $fresh_order, $intent_id, $exception_message, $intent_error, $intent_status );
 			if ( array() !== $intent_error || ! $this->note_service->is_failure_recorded( $fresh_order, $failure ) ) {
 				$this->lifecycle_service->apply_under_lock( $fresh_order, $failure, $persistence_vocabulary );

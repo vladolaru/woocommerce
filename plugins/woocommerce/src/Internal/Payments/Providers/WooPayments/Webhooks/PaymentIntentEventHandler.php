@@ -942,8 +942,9 @@ class PaymentIntentEventHandler {
 	/**
 	 * Add the declined-payment note of a buy now, pay later failure to the order read under the claim, and change nothing else.
 	 *
-	 * The shopper's return from the provider's page fails the order and writes the same note, but a shopper who abandons
-	 * the payment never returns, so this note is the only record of that failure. It is written only for the order's
+	 * The shopper's return from the provider's page writes the same note, and fails the order unless the decline is one the
+	 * shopper can retry with another payment method, but a shopper who abandons the payment never returns, so this note is
+	 * the only record of that failure. It is written only for the order's
 	 * stored payment method on an order not in a paid status, Failed orders included, and is found by its text only, as
 	 * client 11.3.0 does (class-wc-payments-webhook-processing-service.php:577-606; class-wc-payments-order-service.php:987-1000).
 	 * Unlike a card failure, it does not check which intent the order waits on: the note is true of the failed attempt and
