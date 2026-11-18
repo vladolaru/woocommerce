@@ -337,6 +337,8 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_queued_reminder_job_completes_without_sending(): void {
 		update_option( 'wcpay_kyc_completion_date', time() - 8 * DAY_IN_SECONDS, false );
+		// A stage the extension already sent, which a job that sends or clears the history would change.
+		update_option( 'wcpay_post_kyc_activation_email_sent_stages', array( 30 ), false );
 		// A live account out of test mode with no live sale, which client 11.2.0 sent the 7-day reminder to.
 		$account_service = $this->create_account_service(
 			array(
@@ -369,7 +371,7 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'complete', ActionScheduler::store()->get_status( (string) $action_id ) );
 		$this->assertSame( 0, $mails );
-		$this->assertFalse( get_option( 'wcpay_post_kyc_activation_email_sent_stages' ) );
+		$this->assertSame( array( 30 ), get_option( 'wcpay_post_kyc_activation_email_sent_stages' ) );
 	}
 
 	/**

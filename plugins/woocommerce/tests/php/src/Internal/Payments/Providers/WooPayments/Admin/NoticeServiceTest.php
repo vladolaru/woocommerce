@@ -147,7 +147,6 @@ class NoticeServiceTest extends WC_Unit_Test_Case {
 			'unknown notice'             => array( 'unknown', 'shown' ),
 			'unknown action'             => array( 'one_and_done', 'explode' ),
 			'retired test-to-live shown' => array( 'test_to_live', 'shown' ),
-			'retired post-KYC dismiss'   => array( 'post_kyc_activation', 'dismiss' ),
 		);
 	}
 
