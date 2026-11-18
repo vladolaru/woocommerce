@@ -3,6 +3,7 @@ import type { ApiClient } from '@woocommerce/e2e-utils-playwright';
 
 import { expect, tags, test } from '../../../fixtures/fixtures';
 import { ADMIN_STATE_PATH } from '../../../playwright.config';
+import { adminMenuLink } from '../../../utils/woopayments';
 
 test.use( { storageState: ADMIN_STATE_PATH } );
 
@@ -90,7 +91,7 @@ function requireBaseUrl( baseURL: string | undefined ): string {
  */
 function paymentsMenu( page: Page ): Locator {
 	return page.locator( '#adminmenu > li' ).filter( {
-		has: page.getByRole( 'link', { name: 'Payments', exact: true } ),
+		has: adminMenuLink( page, 'Payments' ),
 	} );
 }
 
@@ -106,10 +107,7 @@ async function paymentsMenuItemUrl(
 	page: Page,
 	name: string
 ): Promise< string > {
-	const item = paymentsMenu( page ).getByRole( 'link', {
-		name,
-		exact: true,
-	} );
+	const item = adminMenuLink( paymentsMenu( page ), name );
 	await expect( item ).toHaveCount( 1 );
 	const href = await item.getAttribute( 'href' );
 	if ( ! href ) {

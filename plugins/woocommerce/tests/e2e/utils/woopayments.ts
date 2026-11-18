@@ -4,8 +4,9 @@
  * The one module a rewritten provider spec may import beyond the shared e2e
  * surfaces: entering a card into the Payment Element, answering a 3D Secure
  * challenge, refusing to run against a live account, reading the store's
- * own mirror of the provider's PaymentIntent and Charge objects, and
- * converging on one settled card payment's full graph.
+ * own mirror of the provider's PaymentIntent and Charge objects,
+ * converging on one settled card payment's full graph, and finding a
+ * Payments admin menu link whatever count badge it carries.
  *
  * Provider command (D16, as actually run against `:8889`):
  * `WCPAY_RUNTIME=native BASE_URL=<store> WP_BASE_URL=<store>
@@ -433,6 +434,18 @@ export async function clickExtensionStripeSubmit(
  * The extension's affected-orders check. Its admin pages queue it once, 10 s
  * ahead, while its result option is absent, and the queue writes the result.
  */
+/**
+ * An admin menu link by its label. The menu adds a count badge to some labels
+ * when something waits for the merchant (an incentive on Payments, uncaptured
+ * authorizations on Transactions, disputes on Disputes), so the link's name
+ * may end in a number.
+ */
+export function adminMenuLink( scope: Page | Locator, label: string ): Locator {
+	return scope.getByRole( 'link', {
+		name: new RegExp( `^${ label }(?: \\d+)?$` ),
+	} );
+}
+
 export const EXTENSION_ORDER_CHECK_HOOK =
 	'wcpay_check_affected_auth_fee_orders';
 

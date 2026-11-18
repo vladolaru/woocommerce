@@ -7,6 +7,7 @@ import { admin } from '../../../test-data/data';
 import { random } from '../../../utils/helpers';
 import { logIn } from '../../../utils/login';
 import {
+	adminMenuLink,
 	expectSettledCardPayment,
 	fillCardDetails,
 	requireTestModeAccount,
@@ -141,13 +142,8 @@ async function openExactMerchantTransaction(
 	paid: PaidOrder
 ): Promise< void > {
 	await page.goto( 'wp-admin/' );
-	await page
-		.getByRole( 'link', { name: 'Payments', exact: true } )
-		.first()
-		.click();
-	const transactionsLink = page
-		.getByRole( 'link', { name: 'Transactions', exact: true } )
-		.first();
+	await adminMenuLink( page, 'Payments' ).first().click();
+	const transactionsLink = adminMenuLink( page, 'Transactions' ).first();
 	await expect( transactionsLink ).toHaveAttribute( 'href', /transactions/ );
 	const transactionsUrl = await transactionsLink.getAttribute( 'href' );
 	if ( ! transactionsUrl ) {

@@ -3,6 +3,7 @@ import type { ApiClient } from '@woocommerce/e2e-utils-playwright';
 
 import { expect, tags, test } from '../../../fixtures/fixtures';
 import { ADMIN_STATE_PATH } from '../../../playwright.config';
+import { adminMenuLink } from '../../../utils/woopayments';
 
 test.use( { storageState: ADMIN_STATE_PATH } );
 
@@ -84,7 +85,7 @@ function requireBaseUrl( baseURL: string | undefined ): string {
  */
 function paymentsMenu( page: Page ): Locator {
 	return page.locator( '#adminmenu > li' ).filter( {
-		has: page.getByRole( 'link', { name: 'Payments', exact: true } ),
+		has: adminMenuLink( page, 'Payments' ),
 	} );
 }
 
@@ -101,10 +102,7 @@ async function followPaymentsMenuItem(
 	page: Page,
 	name: string
 ): Promise< string > {
-	const item = paymentsMenu( page ).getByRole( 'link', {
-		name,
-		exact: true,
-	} );
+	const item = adminMenuLink( paymentsMenu( page ), name );
 	await expect( item ).toHaveCount( 1 );
 	const href = await item.getAttribute( 'href' );
 	if ( ! href ) {
@@ -375,13 +373,9 @@ test(
 		const menu = paymentsMenu( page );
 		await expect( menu ).toHaveCount( 1 );
 		for ( const item of [ 'Overview', 'Payouts', 'Transactions' ] ) {
-			await expect(
-				menu.getByRole( 'link', { name: item, exact: true } )
-			).toHaveCount( 1 );
+			await expect( adminMenuLink( menu, item ) ).toHaveCount( 1 );
 		}
-		await menu
-			.getByRole( 'link', { name: 'Payments', exact: true } )
-			.click();
+		await adminMenuLink( menu, 'Payments' ).click();
 
 		// Contract: the primary payments administration surface renders.
 		await expectNoFailureShapes( page );

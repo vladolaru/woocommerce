@@ -14,6 +14,7 @@
 import { test, expect, type Page } from '@playwright/test';
 
 import {
+	adminMenuLink,
 	completeThreeDSChallenge,
 	expectSettledCardPayment,
 	fillCardDetails,
@@ -397,6 +398,36 @@ test( 'completeThreeDSChallenge fails when no challenge is presented', async ( {
 			challengeTimeoutMs: SHORT_TIMEOUT_MS,
 		} )
 	).rejects.toThrow();
+} );
+
+test( 'adminMenuLink finds a menu link with or without its count badge', async ( {
+	page,
+} ) => {
+	// wp-admin's menu markup, with the badges the Payments menu adds and two
+	// links whose names only contain the Payments label.
+	await page.setContent( `
+		<ul id="adminmenu">
+			<li>
+				<a href="/payments">Payments <span class="awaiting-mod count-1"><span class="plugin-count">1</span></span></a>
+				<ul>
+					<li><a href="/transactions">Transactions</a></li>
+					<li><a href="/disputes">Disputes <span class="awaiting-mod count-50"><span class="plugin-count">50</span></span></a></li>
+				</ul>
+			</li>
+			<li><a href="/woopayments">WooPayments</a></li>
+			<li><a href="/payments-settings">Payments settings</a></li>
+		</ul>
+	` );
+
+	for ( const [ label, href ] of [
+		[ 'Payments', '/payments' ],
+		[ 'Transactions', '/transactions' ],
+		[ 'Disputes', '/disputes' ],
+	] ) {
+		const link = adminMenuLink( page, label );
+		await expect( link ).toHaveCount( 1 );
+		await expect( link ).toHaveAttribute( 'href', href );
+	}
 } );
 
 test( 'requireTestModeAccount passes for a confirmed test-mode account', async () => {
