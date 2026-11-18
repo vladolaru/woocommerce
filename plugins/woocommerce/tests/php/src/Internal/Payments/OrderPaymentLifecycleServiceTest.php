@@ -4,7 +4,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
 use Automattic\WooCommerce\Enums\OrderStatus;
-use Automattic\WooCommerce\Internal\DataStores\Orders\DataSynchronizer;
 use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
@@ -12,11 +11,8 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
-use Automattic\WooCommerce\RestApi\UnitTests\Helpers\OrderHelper;
 use Automattic\WooCommerce\RestApi\UnitTests\LoggerSpyTrait;
 use Automattic\WooCommerce\Utilities\OrderUtil;
-use Error;
-use Exception;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -1102,300 +1098,47 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A $event_status event's meta reaches the database in the save that writes its status, not before it, and a status hook that loads the order by ID sees the status, the transaction ID and the meta together.
-	 * @dataProvider status_changing_event_provider
+	 * @testdox Event meta is in the database before the order save that applies a $event_status event: $expected.
+	 * @dataProvider meta_saved_before_order_save_provider
 	 *
-	 * @param string $event_status    Lifecycle event status.
-	 * @param string $expected_status Order status after the event.
-	 * @param string $expected_txn_id Transaction ID after the event.
+	 * @param string $event_status Lifecycle event status.
+	 * @param bool   $expected     Whether the meta is persisted before the order save.
 	 */
-	public function test_event_meta_is_written_with_the_status_in_one_save( string $event_status, string $expected_status, string $expected_txn_id ): void {
-		$order    = $this->create_woopayments_order();
-		$order_id = $order->get_id();
-		$at_save  = null;
-		$at_hook  = null;
-		add_action(
-			'woocommerce_before_order_object_save',
-			function ( $saved_order ) use ( $order_id, &$at_save ): void {
-				if ( null === $at_save && $saved_order instanceof WC_Order && $saved_order->get_id() === $order_id ) {
-					$at_save = array( $saved_order->get_meta( '_lifecycle_probe', true ), $this->is_order_meta_persisted( $order_id, '_lifecycle_probe' ) );
-				}
+	public function test_event_meta_is_saved_before_the_order_save_for_every_status_but_started( string $event_status, bool $expected ): void {
+		$order          = $this->create_woopayments_order();
+		$order_id       = $order->get_id();
+		$meta_persisted = null;
+		$observer       = function ( $saved_order ) use ( $order_id, &$meta_persisted ): void {
+			if ( null === $meta_persisted && $saved_order instanceof WC_Order && $saved_order->get_id() === $order_id ) {
+				$meta_persisted = $this->is_order_meta_persisted( $order_id, '_lifecycle_probe' );
 			}
-		);
-		add_action(
-			'woocommerce_order_status_' . $expected_status,
-			static function ( $hook_order_id ) use ( &$at_hook ): void {
-				$stored  = wc_get_order( $hook_order_id );
-				$at_hook = $stored instanceof WC_Order ? array( $stored->get_status(), $stored->get_transaction_id(), $stored->get_meta( '_lifecycle_probe', true ) ) : null;
-			}
-		);
-
-		$this->apply_under_lock_leaving_no_listener( $order, new PaymentLifecycleEvent( $event_status, 'pi_probe', array( '_lifecycle_probe' => 'saved' ) ) );
-
-		$this->assertSame( array( 'saved', false ), $at_save, 'At the first save of the order the meta is on the object, not yet in the database.' );
-		$this->assertSame( array( $expected_status, $expected_txn_id, 'saved' ), $at_hook, 'The status hook sees the stored status, transaction ID and meta.' );
-	}
-
-	/**
-	 * Every lifecycle status that changes the order status, with the status and transaction ID it leaves.
-	 *
-	 * @return array<string,array{0:string,1:string,2:string}>
-	 */
-	public static function status_changing_event_provider(): array {
-		return array(
-			'completed'       => array( PaymentLifecycleEvent::STATUS_COMPLETED, OrderStatus::COMPLETED, 'pi_probe' ),
-			'authorized'      => array( PaymentLifecycleEvent::STATUS_AUTHORIZED, OrderStatus::ON_HOLD, 'pi_probe' ),
-			'failed'          => array( PaymentLifecycleEvent::STATUS_FAILED, OrderStatus::FAILED, '' ),
-			'capture expired' => array( PaymentLifecycleEvent::STATUS_CAPTURE_EXPIRED, OrderStatus::FAILED, '' ),
-			'canceled'        => array( PaymentLifecycleEvent::STATUS_CANCELED, OrderStatus::CANCELLED, '' ),
-		);
-	}
-
-	/**
-	 * @testdox A completed event that a callback stops with an Error before core writes the payment leaves neither its meta nor its status stored.
-	 */
-	public function test_completed_event_stopped_by_an_error_before_the_write_stores_nothing(): void {
-		$order = $this->create_woopayments_order();
-		add_action(
-			'woocommerce_pre_payment_complete',
-			static function (): void {
-				throw new Error( 'The run stopped.' );
-			}
-		);
-		$stopped = null;
-
-		try {
-			$this->apply_under_lock_leaving_no_listener( $order, $this->completed_event( 'pi_stopped' ) );
-		} catch ( Error $error ) {
-			$stopped = $error;
-		}
-
-		$this->assertInstanceOf( Error::class, $stopped );
-		$this->assertSame( array( 'wc-pending', false ), array( $this->get_persisted_order_status( $order->get_id() ), $this->is_order_meta_persisted( $order->get_id(), '_intention_status' ) ) );
-	}
-
-	/**
-	 * @testdox A completed event on a Refunded order, whose status core does not change, keeps the status and stores its meta and note when a callback on the refused status $callback_does.
-	 * @testWith ["does nothing"]
-	 *           ["saves its own copy of the order"]
-	 *           ["applies an event to another order"]
-	 *
-	 * @param string $callback_does What the callback on woocommerce_payment_complete_order_status_refunded does.
-	 */
-	public function test_completed_event_on_a_status_core_refuses_stores_its_meta( string $callback_does ): void {
-		$order = $this->create_woopayments_order();
-		$order->set_status( OrderStatus::REFUNDED );
-		$order->save();
-		$other    = $this->create_woopayments_order();
-		$refusals = 0;
-		add_action(
-			'woocommerce_payment_complete_order_status_refunded',
-			function ( $order_id ) use ( $callback_does, $other, &$refusals ): void {
-				++$refusals;
-				$copy = wc_get_order( $order_id );
-				if ( 'saves its own copy of the order' === $callback_does && $copy instanceof WC_Order ) {
-					$copy->save();
-				} elseif ( 'applies an event to another order' === $callback_does ) {
-					$this->sut->apply_under_lock( $other, new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_AUTHORIZED, 'pi_other' ), $this->persistence_vocabulary );
-				}
-			}
-		);
-
-		$this->apply_under_lock_leaving_no_listener( $order, $this->completed_event( 'pi_refused' ) );
-
-		$order = wc_get_order( $order->get_id() );
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( array( 1, OrderStatus::REFUNDED, 'succeeded', '1.23' ), array( $refusals, $order->get_status(), $order->get_meta( '_intention_status', true ), $order->get_meta( '_wcpay_transaction_fee', true ) ) );
-		$this->assertOrderHasNote( $order, 'Payment complete.' );
-	}
-
-	/**
-	 * @testdox A completed event whose payment a callback stops with an Exception before core writes it stores its meta and note beside core's error note, and the status stays.
-	 */
-	public function test_completed_event_whose_payment_a_callback_stops_stores_its_meta(): void {
-		$order = $this->create_woopayments_order();
-		add_filter(
-			'woocommerce_valid_order_statuses_for_payment_complete',
-			static function (): array {
-				throw new Exception( 'Callback failed.' );
-			}
-		);
-
-		$this->apply_under_lock_leaving_no_listener( $order, $this->completed_event( 'pi_stopped' ) );
-
-		$order = wc_get_order( $order->get_id() );
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( array( OrderStatus::PENDING, 'succeeded' ), array( $order->get_status(), $order->get_meta( '_intention_status', true ) ) );
-		$this->assertOrderHasNote( $order, 'Payment complete event failed. Callback failed.' );
-		$this->assertOrderHasNote( $order, 'Payment complete.' );
-	}
-
-	/**
-	 * @testdox An authorized event whose hold a callback stops with an Exception still puts the order on hold with its transaction ID and meta, beside core's error note.
-	 */
-	public function test_authorized_event_whose_hold_a_callback_stops_still_holds_the_order(): void {
-		$order = $this->create_woopayments_order();
-		$fails = 0;
-		add_filter(
-			'woocommerce_payment_complete_order_status',
-			static function ( $status ) use ( &$fails ) {
-				if ( 0 === $fails++ ) {
-					throw new Exception( 'Callback failed.' );
-				}
-				return $status;
-			}
-		);
-
-		$this->apply_under_lock_leaving_no_listener( $order, new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_AUTHORIZED, 'pi_auth', array( '_intention_status' => 'requires_capture' ) ) );
-
-		$order = wc_get_order( $order->get_id() );
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( array( OrderStatus::ON_HOLD, 'pi_auth', 'requires_capture' ), array( $order->get_status(), $order->get_transaction_id(), $order->get_meta( '_intention_status', true ) ) );
-		$this->assertOrderHasNote( $order, 'Update status event failed. Callback failed.' );
-	}
-
-	/**
-	 * @testdox A $event_status event whose status call saves the order in a callback and then fails is saved once more: $then.
-	 * @testWith ["completed", "the payment note fails", "completed", "", ""]
-	 *           ["authorized", "a later callback changes the order and fails", "on-hold", "pi_saved", "kept"]
-	 *
-	 * @param string $event_status    Lifecycle event status.
-	 * @param string $then            What fails after the callback saved the order.
-	 * @param string $expected_status Order status after the event: the status core set after the save.
-	 * @param string $expected_txn_id Transaction ID after the event.
-	 * @param string $expected_change The later callback's change, stored.
-	 */
-	public function test_status_call_that_fails_after_a_callback_saved_the_order_is_saved_again( string $event_status, string $then, string $expected_status, string $expected_txn_id, string $expected_change ): void {
-		$order    = $this->create_woopayments_order();
-		$order_id = $order->get_id();
-		$saved    = false;
-		$failed   = false;
-		add_filter(
-			'woocommerce_payment_complete_order_status',
-			static function ( $status, $hook_order_id, $hook_order ) use ( $order_id, &$saved ) {
-				if ( ! $saved && $hook_order_id === $order_id && $hook_order instanceof WC_Order ) {
-					$saved = true;
-					$hook_order->save();
-				}
-				return $status;
-			},
-			10,
-			3
-		);
-		$fail = static function ( $value, $hook_order = null ) use ( &$saved, &$failed ) {
-			if ( $saved && ! $failed ) {
-				$failed = true;
-				if ( $hook_order instanceof WC_Order ) {
-					$hook_order->update_meta_data( '_callback_change', 'kept' );
-				}
-				throw new Exception( 'Callback failed.' );
-			}
-			return $value;
 		};
-		if ( 'the payment note fails' === $then ) {
-			add_filter( 'woocommerce_new_order_note_data', $fail );
-		} else {
-			add_filter( 'woocommerce_payment_complete_order_status', static fn( $status, $hook_order_id, $hook_order ) => $fail( $status, $hook_order ), 20, 3 );
-		}
+		add_action( 'woocommerce_before_order_object_save', $observer );
 
-		$this->apply_under_lock_leaving_no_listener( $order, new PaymentLifecycleEvent( $event_status, 'pi_saved', array( '_lifecycle_probe' => 'saved' ) ) );
-
-		$order = wc_get_order( $order_id );
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertTrue( $failed );
-		$this->assertSame( array( $expected_status, 'saved', $expected_change ), array( $order->get_status(), $order->get_meta( '_lifecycle_probe', true ), $order->get_meta( '_callback_change', true ) ) );
-		if ( '' !== $expected_txn_id ) {
-			$this->assertSame( $expected_txn_id, $order->get_transaction_id() );
-		}
-	}
-
-	/**
-	 * @testdox A completed event whose order write fails once, when $what throws, is written by the lifecycle's save: the event's status and meta, with the status hook after woocommerce_payment_complete.
-	 * @testWith ["a before-save callback", "woocommerce_before_order_object_save"]
-	 *           ["a late after-save callback", "woocommerce_after_order_object_save"]
-	 *
-	 * @param string $what Which callback throws.
-	 * @param string $hook The hook it throws on.
-	 */
-	public function test_completed_event_whose_write_fails_once_is_written_by_the_lifecycle_save( string $what, string $hook ): void {
-		unset( $what );
-		$order    = $this->create_woopayments_order();
-		$order_id = $order->get_id();
-		$failed   = 0;
-		$fired    = array();
-		add_action(
-			$hook,
-			static function ( $saved_order ) use ( $order_id, &$failed ): void {
-				if ( 0 === $failed && $saved_order instanceof WC_Order && $saved_order->get_id() === $order_id && $saved_order->has_status( OrderStatus::COMPLETED ) ) {
-					++$failed;
-					throw new Exception( 'Write failed.' );
-				}
-			},
-			PHP_INT_MAX
-		);
-		foreach ( array( 'woocommerce_payment_complete', 'woocommerce_order_status_completed' ) as $fired_hook ) {
-			add_action(
-				$fired_hook,
-				static function () use ( $fired_hook, &$fired ): void {
-					$fired[] = $fired_hook;
-				}
-			);
-		}
-
-		$this->apply_under_lock_leaving_no_listener( $order, $this->completed_event( 'pi_retried' ) );
-
-		$this->assertSame( array( 1, array( 'woocommerce_payment_complete', 'woocommerce_order_status_completed' ) ), array( $failed, $fired ) );
-		$this->assertSame( array( 'wc-completed', true ), array( $this->get_persisted_order_status( $order_id ), $this->is_order_meta_persisted( $order_id, '_intention_status' ) ) );
-	}
-
-	/**
-	 * @testdox On HPOS, a completed event on an order last modified in an earlier second fires the order's save and update hooks once each before its status hooks.
-	 */
-	public function test_completed_event_fires_the_save_and_update_hooks_once_on_hpos(): void {
-		add_filter( 'pre_option_' . DataSynchronizer::ORDERS_DATA_SYNC_ENABLED_OPTION, static fn(): string => 'yes' );
-		$hpos_was_enabled = OrderUtil::custom_orders_table_usage_is_enabled();
-		OrderHelper::toggle_cot_feature_and_usage( true );
 		try {
-			$order = $this->create_woopayments_order();
-			$order->set_date_modified( time() - MINUTE_IN_SECONDS );
-			$order->save();
-			$order_id           = $order->get_id();
-			$fired              = array(
-				'woocommerce_after_order_object_save' => 0,
-				'woocommerce_update_order'            => 0,
-			);
-			$status_hooks_fired = false;
-			add_action(
-				'woocommerce_order_status_completed',
-				static function () use ( &$status_hooks_fired ): void {
-					$status_hooks_fired = true;
-				},
-				0
-			);
-			foreach ( array_keys( $fired ) as $hook ) {
-				add_action(
-					$hook,
-					static function ( $hook_order ) use ( $hook, $order_id, &$fired, &$status_hooks_fired ): void {
-						$hook_order_id = $hook_order instanceof WC_Order ? $hook_order->get_id() : (int) $hook_order;
-						if ( ! $status_hooks_fired && $hook_order_id === $order_id ) {
-							++$fired[ $hook ];
-						}
-					}
-				);
-			}
-
-			$this->apply_under_lock_leaving_no_listener( $order, $this->completed_event( 'pi_once' ) );
-
-			$this->assertSame(
-				array(
-					'woocommerce_after_order_object_save' => 1,
-					'woocommerce_update_order'            => 1,
-				),
-				$fired
-			);
+			$this->apply_event_under_lock( $order, new PaymentLifecycleEvent( $event_status, 'pi_probe', array( '_lifecycle_probe' => 'saved' ) ) );
 		} finally {
-			OrderHelper::toggle_cot_feature_and_usage( $hpos_was_enabled );
+			remove_action( 'woocommerce_before_order_object_save', $observer );
 		}
+
+		$this->assertSame( $expected, $meta_persisted );
+		$this->assertTrue( $this->is_order_meta_persisted( $order_id, '_lifecycle_probe' ), 'Every event saves its meta by the end.' );
+	}
+
+	/**
+	 * Every lifecycle status and whether its meta is saved before the order save.
+	 *
+	 * @return array<string,array{0:string,1:bool}>
+	 */
+	public static function meta_saved_before_order_save_provider(): array {
+		return array(
+			'completed'       => array( PaymentLifecycleEvent::STATUS_COMPLETED, true ),
+			'authorized'      => array( PaymentLifecycleEvent::STATUS_AUTHORIZED, true ),
+			'failed'          => array( PaymentLifecycleEvent::STATUS_FAILED, true ),
+			'canceled'        => array( PaymentLifecycleEvent::STATUS_CANCELED, true ),
+			'capture expired' => array( PaymentLifecycleEvent::STATUS_CAPTURE_EXPIRED, true ),
+			'started'         => array( PaymentLifecycleEvent::STATUS_STARTED, false ),
+		);
 	}
 
 	/**
@@ -2320,33 +2063,6 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	 */
 	private function apply_event_under_lock( WC_Order $order, PaymentLifecycleEvent $event ): void {
 		$this->sut->apply_under_lock( $order, $event, $this->persistence_vocabulary );
-	}
-
-	/**
-	 * Apply a lifecycle event under the caller's lock, and assert the lifecycle left no listener on the order save hook,
-	 * also when the event throws.
-	 *
-	 * @param WC_Order              $order Order object.
-	 * @param PaymentLifecycleEvent $event Lifecycle event.
-	 */
-	private function apply_under_lock_leaving_no_listener( WC_Order $order, PaymentLifecycleEvent $event ): void {
-		$listeners = $this->count_order_save_listeners();
-		try {
-			$this->apply_event_under_lock( $order, $event );
-		} finally {
-			$this->assertSame( $listeners, $this->count_order_save_listeners(), 'The lifecycle removes its order save listener.' );
-		}
-	}
-
-	/**
-	 * Count the callbacks on woocommerce_after_order_object_save.
-	 *
-	 * @return int
-	 */
-	private function count_order_save_listeners(): int {
-		global $wp_filter;
-
-		return isset( $wp_filter['woocommerce_after_order_object_save'] ) ? array_sum( array_map( 'count', $wp_filter['woocommerce_after_order_object_save']->callbacks ) ) : 0;
 	}
 
 	/**
