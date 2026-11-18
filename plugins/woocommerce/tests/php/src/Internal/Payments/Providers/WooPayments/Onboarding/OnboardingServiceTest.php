@@ -1086,7 +1086,8 @@ class OnboardingServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Client 11.1.0 finalize_embedded_connection() (includes/class-wc-payments-account.php:2296-2345) enables the
-	 * gateway, sets its mode, stamps a live KYC submission once, and returns the connection-success redirect params.
+	 * gateway, sets its mode, and returns the connection-success redirect params. Client 11.3.0 no longer stamps a live
+	 * KYC submission date.
 	 *
 	 * @testdox KYC finalization through the REST route enables the gateway in the finalized mode and activates the setup tier.
 	 * @dataProvider provide_kyc_finalize_modes
@@ -1137,10 +1138,7 @@ class OnboardingServiceTest extends WC_Unit_Test_Case {
 			),
 			$response->get_data()['params']
 		);
-		$this->assertSame( $is_live ? self::TEST_EPOCH : false, get_option( 'wcpay_kyc_submitted_date', false ) );
-		if ( $is_live ) {
-			$this->assertOptionNotAutoloaded( 'wcpay_kyc_submitted_date' );
-		}
+		$this->assertFalse( get_option( 'wcpay_kyc_submitted_date', false ) );
 	}
 
 	/**
@@ -1228,21 +1226,6 @@ class OnboardingServiceTest extends WC_Unit_Test_Case {
 		$error = $adapter->getValue( $this->sut )->get_builtin_onboarding()->finish_kyc_session( WooPaymentsService::SESSION_ENTRY_LYS );
 		$this->assertInstanceOf( WP_Error::class, $error );
 		$this->assertSame( 400, $error->get_error_data()['code'] ?? null );
-	}
-
-	/**
-	 * @testdox Live KYC finalization never overwrites an existing KYC submission date.
-	 */
-	public function test_kyc_finalize_keeps_existing_kyc_submitted_date(): void {
-		update_option( 'wcpay_kyc_submitted_date', self::TEST_EPOCH - DAY_IN_SECONDS, false );
-		$this->arrange_kyc_finalize(
-			array( $this->get_finalized_account_data() ),
-			array( 'card' => true )
-		);
-
-		$this->sut->finish_onboarding_kyc_session( 'US' );
-
-		$this->assertSame( self::TEST_EPOCH - DAY_IN_SECONDS, (int) get_option( 'wcpay_kyc_submitted_date' ) );
 	}
 
 	/**

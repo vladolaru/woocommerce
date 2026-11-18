@@ -540,7 +540,8 @@ class LinkControllerTest extends WC_Unit_Test_Case {
 		$this->assertFalse( get_transient( 'wcpay_stripe_onboarding_state' ) );
 		$this->assertFalse( get_transient( 'test_drive_account_settings_for_live_account' ) );
 		$this->assertSame( array( 'is_existing_stripe_account' => false ), get_option( '_wcpay_onboarding_stripe_connected' ) );
-		$this->assertNotFalse( get_option( 'wcpay_kyc_submitted_date', false ) );
+		// Client 11.3.0 no longer stamps a KYC submission date.
+		$this->assertFalse( get_option( 'wcpay_kyc_submitted_date', false ) );
 		// Plugin 11.1.0 cleanup_on_account_onboarded() (class-wc-payments-onboarding-service.php:967-985) after a completed KYC.
 		$this->assertFalse( get_option( 'wcpay_recommended_payment_methods' ) );
 		$this->assertFalse( get_option( 'wcpay_onboarding_fields_data' ) );

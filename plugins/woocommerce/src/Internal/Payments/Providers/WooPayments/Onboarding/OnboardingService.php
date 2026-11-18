@@ -15,7 +15,6 @@ use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountMilestonesController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
@@ -468,11 +467,6 @@ class OnboardingService {
 
 		// Flag the new connection for the Overview's wcpay_stripe_connected Tracks event.
 		$this->proxy->call_function( 'update_option', '_wcpay_onboarding_stripe_connected', array( 'is_existing_stripe_account' => false ), false );
-
-		// Stamp a live KYC submission once, for the post-KYC nudge clock.
-		if ( $is_live && ! $this->proxy->call_function( 'get_option', WooPaymentsAccountMilestonesController::KYC_SUBMITTED_DATE_OPTION ) ) {
-			$this->proxy->call_function( 'update_option', WooPaymentsAccountMilestonesController::KYC_SUBMITTED_DATE_OPTION, $this->proxy->call_function( 'time' ), false );
-		}
 	}
 
 	/**

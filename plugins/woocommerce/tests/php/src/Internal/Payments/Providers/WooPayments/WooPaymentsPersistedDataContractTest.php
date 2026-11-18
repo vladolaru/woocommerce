@@ -77,12 +77,16 @@ class WooPaymentsPersistedDataContractTest extends WC_Unit_Test_Case {
 	 */
 	private const ALLOWED_DIFFERENCES = array(
 		'wcpay_check_subscriptions_eligibility_after_onboarding' => 'data/consumer-map/consumer-map.md:67 (cosmetic options are changelog items).',
-		'wcpay_menu_badge_hidden'                 => 'data/consumer-map/consumer-map.md:67 (cosmetic options are changelog items).',
-		'wcpay_should_redirect_to_onboarding'     => 'data/consumer-map/consumer-map.md:67 (cosmetic options are changelog items).',
-		'wcpay_survey_payment_overview_submitted' => 'data/consumer-map/consumer-map.md:67 (cosmetic options are changelog items).',
-		'wcpay_error_message'                     => 'plan.md T.7 Step 6 (d): superseded by the NOX wcpay-connection-error query arg.',
-		'wcpay_has_affected_auth_fee_orders'      => "The built-in keeps the canceled-authorization note's check in its own option and never reads, writes or deletes the extension's.",
-		'wcpay_check_affected_auth_fee_orders'    => "The built-in runs that check on its own hook and does not handle the extension's.",
+		'wcpay_menu_badge_hidden'                     => 'data/consumer-map/consumer-map.md:67 (cosmetic options are changelog items).',
+		'wcpay_should_redirect_to_onboarding'         => 'data/consumer-map/consumer-map.md:67 (cosmetic options are changelog items).',
+		'wcpay_survey_payment_overview_submitted'     => 'data/consumer-map/consumer-map.md:67 (cosmetic options are changelog items).',
+		'wcpay_error_message'                         => 'plan.md T.7 Step 6 (d): superseded by the NOX wcpay-connection-error query arg.',
+		'wcpay_has_affected_auth_fee_orders'          => "The built-in keeps the canceled-authorization note's check in its own option and never reads, writes or deletes the extension's.",
+		'wcpay_check_affected_auth_fee_orders'        => "The built-in runs that check on its own hook and does not handle the extension's.",
+		'wcpay_kyc_completion_date'                   => 'Client 11.3.0 retired the post-KYC reminder emails and no longer writes it (includes/class-wc-payments-account.php, deprecated KYC_COMPLETION_DATE_OPTION).',
+		'wcpay_kyc_submitted_date'                    => 'Client 11.3.0 retired the post-KYC reminder emails and no longer writes it (includes/class-wc-payments-account.php, deprecated KYC_SUBMITTED_DATE_OPTION).',
+		'wcpay_post_kyc_activation_email_sent_stages' => 'Client 11.3.0 retired the post-KYC reminder emails and leaves the stored value unread (includes/migrations/class-retire-post-kyc-activation-emails.php).',
+		'wcpay_post_kyc_activation_emails_scheduled'  => 'Client 11.3.0 retired the post-KYC reminder emails and leaves the stored value unread (includes/migrations/class-retire-post-kyc-activation-emails.php).',
 	);
 
 	/**
@@ -203,9 +207,9 @@ class WooPaymentsPersistedDataContractTest extends WC_Unit_Test_Case {
 	 * The fixture's `group` column is read per scheduling call site at the 11.2.0 tag
 	 * (`extract-persisted-data.php` Pass 6): `wcpay_store_setup_sync` under
 	 * `WC_Payments_Action_Scheduler_Service::GROUP_ID` (`class-wc-payments-action-scheduler-service.php:123`),
-	 * the post-KYC email and fee-remediation hooks under the literal `'woocommerce-payments'`
-	 * (`class-wc-payments-post-kyc-activation-email-service.php:113`,
-	 * `class-wc-payments-remediate-canceled-auth-fees.php:570,592`).
+	 * the fee-remediation hooks under the literal `'woocommerce-payments'`
+	 * (`class-wc-payments-remediate-canceled-auth-fees.php:570,592`). The built-in schedules no post-KYC reminder
+	 * email, as client 11.3.0 schedules none.
 	 *
 	 * The groups are collected into a map keyed by hook name, where a later duplicate entry would overwrite an earlier
 	 * one, so every key/store pair in the fixture must be unique first.
@@ -223,7 +227,6 @@ class WooPaymentsPersistedDataContractTest extends WC_Unit_Test_Case {
 
 		$builtin_groups               = array(
 			'wcpay_store_setup_sync'                      => WooPaymentsActionSchedulerService::GROUP_ID,
-			'wcpay_post_kyc_activation_email_send'        => WooPaymentsAccountMilestonesController::POST_KYC_ACTIVATION_EMAIL_GROUP,
 			'wcpay_remediate_canceled_authorization_fees' => WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_SCHEDULER_GROUP_ID,
 			'wcpay_remediate_canceled_authorization_fees_dry_run' => WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_SCHEDULER_GROUP_ID,
 		);

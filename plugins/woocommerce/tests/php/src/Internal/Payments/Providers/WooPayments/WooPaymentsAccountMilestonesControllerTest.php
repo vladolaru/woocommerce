@@ -7,11 +7,11 @@ use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\NoticeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIppReceiptEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountMilestonesController;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
+use ActionScheduler;
 use WC_Data_Store;
 use WC_Order;
 use WC_Unit_Test_Case;
@@ -48,8 +48,6 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 		delete_transient( 'wcpay_post_kyc_activation_eligible' );
 		delete_transient( 'wcpay_one_and_done_eligible' );
 		$this->delete_instant_deposit_note();
-		remove_filter( 'woocommerce_email_classes', '__return_empty_array', 20 );
-		remove_filter( 'pre_wp_mail', '__return_true' );
 		remove_all_actions( 'woocommerce_payments_email_ipp_receipt_store_details' );
 		remove_all_actions( 'woocommerce_payments_email_ipp_receipt_compliance_details' );
 		remove_all_actions( 'woocommerce_payments_email_ipp_receipt_notification' );
@@ -61,8 +59,6 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 			as_unschedule_all_actions( 'wcpay_post_kyc_activation_email_send', null, WooPaymentsActionSchedulerService::GROUP_ID );
 			as_unschedule_all_actions( 'wcpay_post_kyc_activation_email_send', null, 'woocommerce-payments' );
 		}
-		unset( $_GET['wcpay_referrer'], $_GET['wcpay_referrer_stage'], $_GET['_wpnonce'] );
-		remove_all_filters( 'wp_redirect' );
 		parent::tearDown();
 	}
 
@@ -75,12 +71,8 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 		$service->register();
 
 		$this->assertSame( 10, has_action( 'woocommerce_payments_account_refreshed', array( $service, 'handle_wcpay_instant_deposits_inbox_note' ) ) );
-		$this->assertSame( 10, has_action( 'woocommerce_payments_account_refreshed', array( $service, 'maybe_record_kyc_completion_date' ) ) );
 		$this->assertSame( 10, has_action( 'wcpay_instant_deposit_reminder', array( $service, 'handle_wcpay_instant_deposit_reminder' ) ) );
-		$this->assertSame( 10, has_action( 'add_option_wcpay_kyc_completion_date', array( $service, 'handle_add_option_wcpay_kyc_completion_date' ) ) );
 		$this->assertSame( 10, has_action( 'wcpay_post_kyc_activation_email_send', array( $service, 'handle_wcpay_post_kyc_activation_email_send' ) ) );
-		$this->assertSame( 10, has_action( 'admin_init', array( $service, 'handle_wcpay_post_kyc_activation_email_cta' ) ) );
-		$this->assertSame( 10, has_filter( 'woocommerce_email_classes', array( $service, 'add_post_kyc_activation_email' ) ) );
 		$this->assertSame( 10, has_filter( 'woocommerce_email_classes', array( $service, 'add_ipp_receipt_email' ) ) );
 		$this->assertSame( 10, has_action( 'woocommerce_order_status_changed', array( $service, 'handle_woocommerce_order_status_changed' ) ) );
 	}
@@ -199,55 +191,6 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Referrer CTA handler redirects only for an allowlisted stage and a manager, without requiring a nonce: $_dataName.
-	 * @dataProvider provider_referrer_cta_clicks
-	 *
-	 * @param string $role            Role of the current user.
-	 * @param string $stage           The referrer stage in the CTA link.
-	 * @param bool   $expect_redirect Whether the handler records the click and redirects.
-	 */
-	public function test_referrer_cta_redirects_only_for_a_recorded_click( string $role, string $stage, bool $expect_redirect ): void {
-		$service = $this->create_service();
-		wp_set_current_user( self::factory()->user->create( array( 'role' => $role ) ) );
-
-		// The email CTA link carries no nonce; the handler must still record the click.
-		$_GET['wcpay_referrer']       = 'post_kyc_email';
-		$_GET['wcpay_referrer_stage'] = $stage;
-
-		$redirected = false;
-		add_filter(
-			'wp_redirect',
-			function ( $location ) use ( &$redirected ) {
-				$redirected = true;
-				// Stand in for the handler's exit so the test run is not terminated.
-				throw new \Exception( esc_html( (string) $location ) );
-			}
-		);
-
-		try {
-			$service->handle_wcpay_post_kyc_activation_email_cta();
-		} catch ( \Exception $e ) {
-			unset( $e );
-		}
-
-		$this->assertSame( $expect_redirect, $redirected, $expect_redirect ? 'An allowlisted stage should record the event and redirect without a nonce.' : 'The handler must not record analytics or trigger a redirect.' );
-	}
-
-	/**
-	 * CTA clicks the handler records, and those it must not record.
-	 *
-	 * @return array<string,array{string,string,bool}>
-	 */
-	public static function provider_referrer_cta_clicks(): array {
-		return array(
-			'allowlisted stage'                 => array( 'administrator', '7', true ),
-			// Stage 3 is not in POST_KYC_STAGE_DAYS.
-			'a stage that is not allowlisted'   => array( 'administrator', '3', false ),
-			'a user without manage_woocommerce' => array( 'customer', '7', false ),
-		);
-	}
-
-	/**
 	 * @testdox Should stamp the test-mode enable date and clear notice eligibility on a mode flip.
 	 */
 	public function test_test_mode_toggle_stamps_and_clears_bookkeeping(): void {
@@ -350,97 +293,27 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Post-KYC completion schedules activation emails under the hyphenated woocommerce-payments group.
+	 * @testdox Recording the KYC completion date schedules no post-KYC reminder email.
 	 *
-	 * Client 11.1.0 class-wc-payments-post-kyc-activation-email-service.php:113 schedules each stage
-	 * under the literal 'woocommerce-payments', not the scheduler service's 'woocommerce_payments'.
+	 * Client 11.3.0 `tests/unit/test-class-retired-kyc-emails.php` `test_recording_kyc_no_longer_schedules_emails`.
 	 */
-	public function test_post_kyc_completion_schedules_emails_under_the_hyphenated_group(): void {
+	public function test_recording_kyc_completion_schedules_no_reminder_email(): void {
 		$service = $this->create_service( new WooPaymentsActionSchedulerService() );
+		$service->register();
 
-		$service->handle_add_option_wcpay_kyc_completion_date( 'wcpay_kyc_completion_date', time() );
+		add_option( 'wcpay_kyc_completion_date', time() - DAY_IN_SECONDS );
 
 		foreach ( array( 7, 14, 30 ) as $stage ) {
-			$this->assertIsInt( as_next_scheduled_action( 'wcpay_post_kyc_activation_email_send', array( $stage ), 'woocommerce-payments' ), "Stage {$stage} must be scheduled under woocommerce-payments." );
+			$this->assertFalse( as_has_scheduled_action( 'wcpay_post_kyc_activation_email_send', array( $stage ), 'woocommerce-payments' ), "Stage {$stage} must not be scheduled." );
 		}
-		$this->assertFalse( as_next_scheduled_action( 'wcpay_post_kyc_activation_email_send', null, WooPaymentsActionSchedulerService::GROUP_ID ) );
+		$this->assertFalse( as_has_scheduled_action( 'wcpay_post_kyc_activation_email_send' ) );
+		$this->assertFalse( get_option( 'wcpay_post_kyc_activation_emails_scheduled' ) );
 	}
 
 	/**
-	 * @testdox Dismissing a post-KYC notice leaves email eligibility, sent stages, and scheduled delivery unchanged.
+	 * @testdox A live account refresh records no KYC completion date.
 	 */
-	public function test_post_kyc_notice_dismissal_does_not_change_email_delivery(): void {
-		$user_id      = self::factory()->user->create( array( 'role' => 'administrator' ) );
-		$scheduled_at = time() + DAY_IN_SECONDS;
-		wp_set_current_user( $user_id );
-		set_transient( 'wcpay_post_kyc_activation_eligible', '1', HOUR_IN_SECONDS );
-		as_schedule_single_action(
-			$scheduled_at,
-			'wcpay_post_kyc_activation_email_send',
-			array( 7 ),
-			'woocommerce-payments',
-			true
-		);
-		$scheduled_before = as_next_scheduled_action( 'wcpay_post_kyc_activation_email_send', array( 7 ), 'woocommerce-payments' );
-		$notice_service   = new NoticeService( static fn(): int => 1700000000 );
-		$notice_service->init( $this->createMock( WooPaymentsAccountService::class ), wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter::class ) );
-
-		$this->assertTrue( $notice_service->record_action( 'post_kyc_activation', 'dismiss', 7 ) );
-
-		$this->assertFalse( get_transient( 'wcpay_post_kyc_activation_eligible' ) );
-		$this->assertFalse( get_option( 'wcpay_post_kyc_activation_email_sent_stages' ) );
-		$this->assertSame( $scheduled_before, as_next_scheduled_action( 'wcpay_post_kyc_activation_email_send', array( 7 ), 'woocommerce-payments' ) );
-		$this->assertSame( $scheduled_at, $scheduled_before );
-	}
-
-	/**
-	 * @testdox Post-KYC completion schedules no activation emails when another request already claimed the gate: $_dataName.
-	 * @dataProvider provider_post_kyc_gate_already_claimed
-	 *
-	 * @param callable $claim_gate Writes the gate marker as the concurrent request left it.
-	 */
-	public function test_post_kyc_completion_does_not_schedule_when_the_gate_is_claimed( callable $claim_gate ): void {
-		$scheduler = new RecordingActionSchedulerService();
-		$service   = $this->create_service( $scheduler );
-		$claim_gate();
-
-		$service->handle_add_option_wcpay_kyc_completion_date( 'wcpay_kyc_completion_date', time() );
-
-		$this->assertSame( array(), $scheduler->scheduled_jobs, 'No activation email stages should be scheduled once the gate row exists.' );
-	}
-
-	/**
-	 * Gate markers a concurrent request left behind.
-	 *
-	 * @return array<string,array{callable}>
-	 */
-	public static function provider_post_kyc_gate_already_claimed(): array {
-		return array(
-			'marker in the option cache' => array(
-				static function (): void {
-					update_option( 'wcpay_post_kyc_activation_emails_scheduled', '1', false );
-				},
-			),
-			// The cache still records the option as missing, as it would for a read just before the other insert committed.
-			// add_option() then skips its existence check and runs INSERT ... ON DUPLICATE KEY UPDATE, which affects no row
-			// for the same value and returns false.
-			'marker missed by the cache' => array(
-				static function (): void {
-					update_option( 'wcpay_post_kyc_activation_emails_scheduled', '1', false );
-					wp_cache_delete( 'wcpay_post_kyc_activation_emails_scheduled', 'options' );
-					$notoptions = wp_cache_get( 'notoptions', 'options' );
-					$notoptions = is_array( $notoptions ) ? $notoptions : array();
-					$notoptions['wcpay_post_kyc_activation_emails_scheduled'] = true;
-					wp_cache_set( 'notoptions', $notoptions, 'options' );
-				},
-			),
-		);
-	}
-
-	/**
-	 * @testdox Account refresh records post-KYC completion once and schedules staged emails.
-	 */
-	public function test_account_refresh_records_post_kyc_completion_and_schedules_staged_emails(): void {
+	public function test_live_account_refresh_records_no_kyc_completion_date(): void {
 		$scheduler = new RecordingActionSchedulerService();
 		$service   = $this->create_service( $scheduler );
 		$service->register();
@@ -454,7 +327,7 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 		do_action(
 			'woocommerce_payments_account_refreshed',
 			array(
-				// The fields client 11.1.0 maybe_record_kyc_completion_date() checks (includes/class-wc-payments-account.php:2683-2710).
+				// The fields client 11.2.0 maybe_record_kyc_completion_date() checked (includes/class-wc-payments-account.php).
 				'payments_enabled' => true,
 				'is_live'          => true,
 				'is_test_drive'    => false,
@@ -462,83 +335,37 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$post_kyc_jobs = array_values(
-			array_filter(
-				$scheduler->scheduled_jobs,
-				static fn( array $job ): bool => 'wcpay_post_kyc_activation_email_send' === $job['hook']
-			)
-		);
-
-		$this->assertSame( '1', get_option( 'wcpay_post_kyc_activation_emails_scheduled' ) );
-		$this->assertGreaterThan( 0, (int) get_option( 'wcpay_kyc_completion_date', 0 ) );
-		$this->assertSame(
-			array( array( 7 ), array( 14 ), array( 30 ) ),
-			array_column( $post_kyc_jobs, 'args' )
-		);
-	}
-
-	/**
-	 * @testdox Account refresh does not overwrite an existing post-KYC completion date.
-	 */
-	public function test_account_refresh_does_not_overwrite_existing_post_kyc_completion_date(): void {
-		$scheduler         = new RecordingActionSchedulerService();
-		$service           = $this->create_service( $scheduler );
-		$existing_kyc_date = time() - YEAR_IN_SECONDS;
-
-		update_option( 'wcpay_kyc_completion_date', $existing_kyc_date, false );
-		$service->maybe_record_kyc_completion_date(
-			array(
-				// The fields client 11.1.0 maybe_record_kyc_completion_date() checks (includes/class-wc-payments-account.php:2683-2710).
-				'payments_enabled' => true,
-				'is_live'          => true,
-				'is_test_drive'    => false,
-				'created'          => time() - MONTH_IN_SECONDS,
-			)
-		);
-
-		$this->assertSame( $existing_kyc_date, (int) get_option( 'wcpay_kyc_completion_date', 0 ) );
+		$this->assertFalse( get_option( 'wcpay_kyc_completion_date' ) );
 		$this->assertSame( array(), $scheduler->scheduled_jobs );
 	}
 
 	/**
-	 * @testdox $method registers its email under the WooPayments email class key, settings key and template paths.
-	 * @testWith ["add_post_kyc_activation_email", "WC_Payments_Email_Post_Kyc_Activation", "Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\WooPaymentsPostKycActivationEmail", "wcpay_post_kyc_activation", "woocommerce_woocommerce_payments_wcpay_post_kyc_activation_settings", "emails/post-kyc-activation.php", "emails/plain/post-kyc-activation.php"]
-	 *           ["add_ipp_receipt_email", "WC_Payments_Email_IPP_Receipt", "Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\WooPaymentsIppReceiptEmail", "new_receipt", "woocommerce_woocommerce_payments_new_receipt_settings", "emails/customer-ipp-receipt.php", "emails/plain/customer-ipp-receipt.php"]
-	 *
-	 * @param string $method         The email-class filter method.
-	 * @param string $class_key      Email class key in WooCommerce's email list.
-	 * @param string $email_class    Email class.
-	 * @param string $id             Email ID.
-	 * @param string $option_key     Email settings option key.
-	 * @param string $template_html  HTML template path.
-	 * @param string $template_plain Plain-text template path.
+	 * @testdox WooCommerce's email list carries the in-person payment receipt under its WooPayments keys and templates, and no post-KYC reminder.
 	 */
-	public function test_email_registration_preserves_settings_key_and_template_paths( string $method, string $class_key, string $email_class, string $id, string $option_key, string $template_html, string $template_plain ): void {
-		$emails = $this->create_service()->$method( array() );
+	public function test_email_list_carries_the_ipp_receipt_and_no_post_kyc_reminder(): void {
+		$service = $this->create_service();
+		$service->register();
 
-		$this->assertArrayHasKey( $class_key, $emails );
-		$this->assertInstanceOf( $email_class, $emails[ $class_key ] );
-		$this->assertSame( $id, $emails[ $class_key ]->id );
-		$this->assertSame( $option_key, $emails[ $class_key ]->get_option_key() );
-		$this->assertSame( $template_html, $emails[ $class_key ]->template_html );
-		$this->assertSame( $template_plain, $emails[ $class_key ]->template_plain );
+		/** This filter is documented in WooCommerce's WC_Emails::init(). */
+		$emails = apply_filters( 'woocommerce_email_classes', array() );
+
+		$this->assertArrayNotHasKey( 'WC_Payments_Email_Post_Kyc_Activation', $emails );
+		$this->assertArrayHasKey( 'WC_Payments_Email_IPP_Receipt', $emails );
+		$this->assertInstanceOf( WooPaymentsIppReceiptEmail::class, $emails['WC_Payments_Email_IPP_Receipt'] );
+		$this->assertSame( 'new_receipt', $emails['WC_Payments_Email_IPP_Receipt']->id );
+		$this->assertSame( 'woocommerce_woocommerce_payments_new_receipt_settings', $emails['WC_Payments_Email_IPP_Receipt']->get_option_key() );
+		$this->assertSame( 'emails/customer-ipp-receipt.php', $emails['WC_Payments_Email_IPP_Receipt']->template_html );
+		$this->assertSame( 'emails/plain/customer-ipp-receipt.php', $emails['WC_Payments_Email_IPP_Receipt']->template_plain );
 	}
 
 	/**
-	 * @testdox Post-KYC activation email jobs record the stage only after a delivery: $_dataName.
-	 * @dataProvider provider_post_kyc_email_job_stage_recording
+	 * @testdox A reminder job the WooPayments extension queued completes without sending on a store the reminder would have suited.
 	 *
-	 * @param callable             $send_mail            pre_wp_mail filter that decides the delivery.
-	 * @param callable             $arrange_store        Sets up the store state the row needs.
-	 * @param array<int,int>|false $expected_sent_stages The sent stages option after the job.
-	 * @param string|false         $expected_live_sale   The live-sale marker option after the job.
+	 * Client 11.3.0 `tests/unit/test-class-retired-kyc-emails.php` `test_residual_action_completes_without_sending`.
 	 */
-	public function test_post_kyc_activation_email_job_records_the_stage_only_after_delivery( callable $send_mail, callable $arrange_store, $expected_sent_stages, $expected_live_sale ): void {
+	public function test_queued_reminder_job_completes_without_sending(): void {
 		update_option( 'wcpay_kyc_completion_date', time() - 8 * DAY_IN_SECONDS, false );
-		$arrange_store();
-
-		// Account flags per client 11.1.0 `includes/class-wc-payments-account.php:367-377`; card_payments in the
-		// capabilities map, as the client's account validity check reads it (`:290-292`).
+		// A live account out of test mode with no live sale, which client 11.2.0 sent the 7-day reminder to.
 		$account_service = $this->create_account_service(
 			array(
 				'is_live'           => true,
@@ -556,52 +383,21 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 		$service         = $this->create_service( new RecordingActionSchedulerService(), $account_service );
 		$service->register();
 		$this->reset_mailer_emails();
-
-		add_filter( 'pre_wp_mail', $send_mail );
-		try {
-			$service->handle_wcpay_post_kyc_activation_email_send( 7 );
-		} finally {
-			remove_filter( 'pre_wp_mail', $send_mail );
-		}
-
-		$this->assertSame( $expected_sent_stages, get_option( 'wcpay_post_kyc_activation_email_sent_stages' ) );
-		$this->assertSame( $expected_live_sale, get_option( 'wcpay_has_live_sale' ) );
-	}
-
-	/**
-	 * Delivery outcomes and store states, with the sent stages and live-sale marker each should leave.
-	 *
-	 * @return array<string,array{callable,callable,array<int,int>|false,string|false}>
-	 */
-	public static function provider_post_kyc_email_job_stage_recording(): array {
-		$nothing = static function (): void {};
-
-		return array(
-			'delivered'                         => array( '__return_true', $nothing, array( 7 ), false ),
-			// A later job can retry the stage.
-			'delivery failed'                   => array( '__return_false', $nothing, false, false ),
-			'the email registry omits it'       => array(
-				'__return_true',
-				static function (): void {
-					add_filter( 'woocommerce_email_classes', '__return_empty_array', 20 );
-				},
-				false,
-				false,
-			),
-			// The order exists before the service registers, so only the job's own live-sale check can find it.
-			'the store already has a live sale' => array(
-				'__return_true',
-				static function (): void {
-					$order = wc_create_order();
-					$order->set_payment_method( 'woocommerce_payments' );
-					$order->set_status( 'completed' );
-					$order->update_meta_data( '_wcpay_mode', 'prod' );
-					$order->save();
-				},
-				false,
-				'1',
-			),
+		$mails = 0;
+		add_filter(
+			'pre_wp_mail',
+			static function () use ( &$mails ) {
+				++$mails;
+				return true;
+			}
 		);
+		$action_id = as_schedule_single_action( time() - 60, 'wcpay_post_kyc_activation_email_send', array( 7 ), 'woocommerce-payments' );
+
+		ActionScheduler::runner()->process_action( $action_id, 'test' );
+
+		$this->assertSame( 'complete', ActionScheduler::store()->get_status( (string) $action_id ) );
+		$this->assertSame( 0, $mails );
+		$this->assertFalse( get_option( 'wcpay_post_kyc_activation_email_sent_stages' ) );
 	}
 
 	/**
@@ -662,14 +458,10 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 	 */
 	private function remove_account_milestone_hooks( WooPaymentsAccountMilestonesController $service ): void {
 		remove_action( 'wcpay_instant_deposit_reminder', array( $service, 'handle_wcpay_instant_deposit_reminder' ) );
-		remove_action( 'add_option_wcpay_kyc_completion_date', array( $service, 'handle_add_option_wcpay_kyc_completion_date' ) );
 		remove_action( 'wcpay_post_kyc_activation_email_send', array( $service, 'handle_wcpay_post_kyc_activation_email_send' ) );
-		remove_action( 'admin_init', array( $service, 'handle_wcpay_post_kyc_activation_email_cta' ) );
 		remove_action( 'woocommerce_payments_account_refreshed', array( $service, 'handle_wcpay_instant_deposits_inbox_note' ) );
-		remove_action( 'woocommerce_payments_account_refreshed', array( $service, 'maybe_record_kyc_completion_date' ) );
 		remove_action( 'update_option_woocommerce_woocommerce_payments_settings', array( $service, 'maybe_handle_test_mode_toggle' ) );
 		remove_action( 'woocommerce_order_status_changed', array( $service, 'handle_woocommerce_order_status_changed' ) );
-		remove_filter( 'woocommerce_email_classes', array( $service, 'add_post_kyc_activation_email' ) );
 		remove_filter( 'woocommerce_email_classes', array( $service, 'add_ipp_receipt_email' ) );
 	}
 
