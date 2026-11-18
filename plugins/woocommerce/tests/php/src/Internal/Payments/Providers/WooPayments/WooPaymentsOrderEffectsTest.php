@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffects;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderMode;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use WC_Order;
 use WC_Unit_Test_Case;
 
 /**
@@ -676,5 +677,29 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertSame( $equivalent_notes, $effects[ PaymentOutcome::DATA_REFUND_NOTE_EQUIVALENTS ] );
+	}
+
+	/**
+	 * @testdox The transaction ID names a payment only by its intent or its charge, and an empty one names nothing: $_dataName.
+	 *
+	 * @testWith ["the intent", "pi_A", "pi_A", "ch_A", true]
+	 *           ["the charge", "ch_A", "pi_A", "ch_A", true]
+	 *           ["another value", "pi_B", "pi_A", "ch_A", false]
+	 *           ["no transaction ID", "", "pi_A", "ch_A", false]
+	 *           ["no transaction ID, and a payment with no charge", "", "pi_A", "", false]
+	 *           ["the intent, and a payment with no charge", "pi_A", "pi_A", "", true]
+	 *
+	 * @param string $case_name      Case name.
+	 * @param string $transaction_id The order's transaction ID.
+	 * @param string $intent_id      The payment's intent.
+	 * @param string $charge_id      The payment's charge, or ''.
+	 * @param bool   $expected       Whether the transaction ID names the payment.
+	 */
+	public function test_transaction_id_names_a_payment_by_its_intent_or_its_charge( string $case_name, string $transaction_id, string $intent_id, string $charge_id, bool $expected ): void {
+		unset( $case_name );
+		$order = new WC_Order();
+		$order->set_transaction_id( $transaction_id );
+
+		$this->assertSame( $expected, WooPaymentsOrderEffects::transaction_id_names_payment( $order, $intent_id, $charge_id ) );
 	}
 }

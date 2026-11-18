@@ -21,6 +21,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\Othe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\PaymentIntentEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffects;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use InvalidArgumentException;
@@ -384,9 +385,8 @@ class StripeBillingEventHandler {
 			throw new RuntimeException( sprintf( 'The payment of invoice %1$s could not be read for renewal order #%2$d, which holds an uncaptured authorization.', $wcpay_invoice_id, $order->get_id() ) );
 		}
 
-		$transaction_id   = (string) $order->get_transaction_id();
 		$already_recorded = $intent_id === (string) $order->get_meta( '_intent_id', true )
-			|| ( '' !== $transaction_id && in_array( $transaction_id, array( $intent_id, $charge_id ), true ) );
+			|| WooPaymentsOrderEffects::transaction_id_names_payment( $order, $intent_id, $charge_id );
 		$recorded_unpaid  = false;
 		$was_succeeded    = 'succeeded' === $order->get_meta( '_intention_status', true );
 
@@ -559,9 +559,7 @@ class StripeBillingEventHandler {
 			return false;
 		}
 
-		$transaction_id = (string) $order->get_transaction_id();
-
-		return '' !== $transaction_id && $transaction_id !== $intent_id && $transaction_id !== $charge_id;
+		return '' !== (string) $order->get_transaction_id() && ! WooPaymentsOrderEffects::transaction_id_names_payment( $order, $intent_id, $charge_id );
 	}
 
 	/**

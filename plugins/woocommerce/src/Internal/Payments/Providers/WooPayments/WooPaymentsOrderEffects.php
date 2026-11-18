@@ -486,6 +486,23 @@ class WooPaymentsOrderEffects {
 	}
 
 	/**
+	 * Tell whether the order's transaction ID names a payment, by its intent ID or its charge ID. An empty transaction ID
+	 * names nothing. Event ownership and the Stripe Billing renewal records ask this, so they cannot answer it differently.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param WC_Order $order     Order.
+	 * @param string   $intent_id The payment's intent ID, or ''.
+	 * @param string   $charge_id The payment's charge ID, or ''.
+	 * @return bool
+	 */
+	public static function transaction_id_names_payment( WC_Order $order, string $intent_id, string $charge_id ): bool {
+		$transaction_id = (string) $order->get_transaction_id();
+
+		return '' !== $transaction_id && ( $transaction_id === $intent_id || $transaction_id === $charge_id );
+	}
+
+	/**
 	 * Get the fee meta client 11.1.0 `attach_transaction_fee_to_order()` writes from a charge: nothing until the charge is
 	 * captured; the envelope's fee and net when it has one; otherwise the application fee alone, in the charge currency.
 	 *

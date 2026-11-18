@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffects;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use WC_Order;
 
@@ -162,12 +163,11 @@ class EventOrderResolver {
 	 */
 	public function is_own_payment( WC_Order $order, string $intent_id, string $charge_id, string $stand_in_intent_id ): bool {
 		if ( $this->is_paid_for_ownership( $order ) ) {
-			$transaction_id = (string) $order->get_transaction_id();
-			if ( '' === $transaction_id ) {
+			if ( '' === (string) $order->get_transaction_id() ) {
 				return $this->is_stored_woopayments_payment( $order, $stand_in_intent_id, $charge_id );
 			}
 
-			return $transaction_id === $intent_id || $transaction_id === $charge_id;
+			return WooPaymentsOrderEffects::transaction_id_names_payment( $order, $intent_id, $charge_id );
 		}
 
 		if ( '' !== $intent_id && $intent_id === (string) $order->get_meta( '_intent_id', true ) ) {

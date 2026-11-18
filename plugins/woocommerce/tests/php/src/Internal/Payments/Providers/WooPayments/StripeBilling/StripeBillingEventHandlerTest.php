@@ -607,6 +607,19 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 				true,
 				array( 'pi_held', 'ch_held', '' ),
 			),
+			"on hold storing another payment, its transaction ID naming the invoice's charge" => array(
+				'on-hold',
+				array(
+					'_intent_id'        => 'pi_held',
+					'_charge_id'        => 'ch_held',
+					'_intention_status' => 'succeeded',
+				),
+				self::RENEWAL_CHARGE_ID,
+				'on-hold',
+				null,
+				false,
+				array( 'pi_held', 'ch_held', self::RENEWAL_CHARGE_ID ),
+			),
 		);
 	}
 
