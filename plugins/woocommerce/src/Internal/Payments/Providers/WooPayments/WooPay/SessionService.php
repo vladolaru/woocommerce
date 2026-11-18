@@ -458,28 +458,33 @@ class SessionService {
 		}
 
 		$is_pay_for_order = null !== $order_id;
-		$email            = $this->resolve_session_email( $email );
+		// From the request, WooPay's identity and the signed-in shopper, before the cart preload below can replace the session.
+		$email = $this->resolve_session_email( $email );
+		// The platform customer of the session the request came with, as client 11.3.0 `class-woopay-session.php:621-626`.
+		$customer_id = $this->customer_service->get_or_create_customer_id_for_user( get_current_user_id() );
+		// The cart and checkout are preloaded before the rest of the request is built, as client 11.3.0 `class-woopay-session.php:653-654`.
+		$preloaded_requests = $is_pay_for_order
+			? array(
+				'cart'     => $this->get_cart_data( $order_id, $key, $billing_email, $woopay_request ),
+				'checkout' => array(
+					'order_id' => $order_id,
+				),
+			)
+			: array(
+				'cart'     => $this->get_cart_data( null, null, null, $woopay_request ),
+				'checkout' => $this->get_checkout_data( $woopay_request ),
+			);
 
 		$request = array(
 			'wcpay_version'        => WooPaymentsClientVersion::VERSION,
 			'user_id'              => get_current_user_id(),
-			'customer_id'          => $this->customer_service->get_or_create_customer_id_for_user( get_current_user_id() ),
+			'customer_id'          => $customer_id,
 			'session_nonce'        => $this->create_woopay_nonce( get_current_user_id() ),
 			'store_api_token'      => $this->get_store_api_token(),
 			'email'                => $email,
 			'store_data'           => $this->get_store_data( $order_id ),
 			'user_session'         => $user_session,
-			'preloaded_requests'   => $is_pay_for_order
-				? array(
-					'cart'     => $this->get_cart_data( $order_id, $key, $billing_email, $woopay_request ),
-					'checkout' => array(
-						'order_id' => $order_id,
-					),
-				)
-				: array(
-					'cart'     => $this->get_cart_data( null, null, null, $woopay_request ),
-					'checkout' => $this->get_checkout_data( $woopay_request ),
-				),
+			'preloaded_requests'   => $preloaded_requests,
 			'tracks_user_identity' => $this->frontend_tracking_controller->get_or_create_tracks_identity_for_current_user(),
 			// The stored appearance and font rules fill in only while global theme support is on, so a merchant who turns the
 			// setting off stops sending old theme data to WooPay.

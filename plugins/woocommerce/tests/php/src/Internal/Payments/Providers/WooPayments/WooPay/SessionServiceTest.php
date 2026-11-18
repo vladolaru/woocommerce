@@ -717,6 +717,93 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should preload the cart and checkout before building the store data, as client 11.3.0 does.
+	 *
+	 * Client 11.3.0 `includes/woopay/class-woopay-session.php:653-654` works out the cart and checkout before it builds the
+	 * request at `:662-703`, its store data included. The store data's first read is the shop page link.
+	 */
+	public function test_preloads_the_cart_and_checkout_before_building_the_store_data(): void {
+		$sequence = array();
+		add_filter(
+			'rest_pre_dispatch',
+			static function ( $preempt, $server, WP_REST_Request $request ) use ( &$sequence ) {
+				unset( $server );
+				if ( ! in_array( $request->get_route(), array( '/wc/store/v1/cart', '/wc/store/v1/checkout' ), true ) ) {
+					return $preempt;
+				}
+
+				$sequence[] = $request->get_route();
+
+				return new WP_REST_Response( array( 'items_count' => 0 ) );
+			},
+			10,
+			3
+		);
+		add_filter(
+			'woocommerce_get_shop_page_permalink',
+			static function ( $permalink ) use ( &$sequence ) {
+				$sequence[] = 'store_data';
+
+				return $permalink;
+			}
+		);
+		$request = new WP_REST_Request( 'GET', '/payments/woopay/session' );
+		$request->set_header( 'Cart-Token', 'cart-token-123' );
+
+		$this->create_service()->start_init_session_request( 'shopper@example.com', null, $request );
+
+		$this->assertSame( array( '/wc/store/v1/cart', '/wc/store/v1/checkout', 'store_data' ), $sequence );
+	}
+
+	/**
+	 * @testdox Should name no email, adapted-extension data or verified-email nonce for a signed request without an email, whatever billing email the cart's session holds.
+	 *
+	 * On a signed request the session controller passes no adapted-extensions email, so the session email decides. That email
+	 * comes from the request, WooPay's identity and the signed-in shopper, worked out before the cart preload replaces the
+	 * session; the extension adds the nonce on this route only for an email WooPay attested (client 11.3.0
+	 * `includes/woopay/class-woopay-session.php:749-755`).
+	 */
+	public function test_a_signed_request_without_an_email_takes_no_email_from_the_cart_session(): void {
+		if ( ! class_exists( '\WC_Points_Rewards_Manager', false ) ) {
+			class_alias( FakeWooPayPointsRewardsManager::class, 'WC_Points_Rewards_Manager' );
+		}
+		$user_id = self::factory()->user->create( array( 'user_email' => 'points-shopper@example.com' ) );
+		FakeWooPayPointsRewardsManager::$points[ $user_id ] = 250;
+		update_option( 'woopay_enabled_adapted_extensions', array( 'woocommerce-points-and-rewards' ) );
+		update_option( 'wc_points_rewards_redeem_points_ratio', '10:1' );
+		$adapted_extensions = new AdaptedExtensions();
+		$adapted_extensions->register( new FakeWooPayPointsRewardsBlocksIntegration() );
+		WC()->customer = null;
+		add_filter(
+			'rest_pre_dispatch',
+			static function ( $preempt, $server, WP_REST_Request $request ) {
+				unset( $server );
+				if ( ! in_array( $request->get_route(), array( '/wc/store/v1/cart', '/wc/store/v1/checkout' ), true ) ) {
+					return $preempt;
+				}
+
+				if ( '/wc/store/v1/cart' === $request->get_route() ) {
+					// The cart route loads the session the Cart-Token names, with its customer.
+					WC()->customer = new \WC_Customer( 0, true );
+					WC()->customer->set_billing_email( 'points-shopper@example.com' );
+				}
+
+				return new WP_REST_Response( array( 'items_count' => 0 ) );
+			},
+			10,
+			3
+		);
+		$request = new WP_REST_Request( 'GET', '/payments/woopay/session' );
+		$request->set_header( 'Cart-Token', 'cart-token-123' );
+
+		$result = $this->create_service( array(), array(), $adapted_extensions )->start_init_session_request( null, null, $request, null, null, null, null, array(), null );
+
+		$this->assertSame( '', $result['email'] );
+		$this->assertArrayNotHasKey( 'adapted_extensions', $result );
+		$this->assertArrayNotHasKey( 'email_verified_session_nonce', $result );
+	}
+
+	/**
 	 * @testdox The session data the store seals opens only as WooPay's first accepted form: $_dataName.
 	 *
 	 * Client 11.2.0 WooPay_Utilities::encrypt_and_sign_data() seals under the key HKDF derives for woopay-session-v1, the HMAC
