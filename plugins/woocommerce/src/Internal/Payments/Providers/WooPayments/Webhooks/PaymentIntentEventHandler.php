@@ -52,7 +52,7 @@ class PaymentIntentEventHandler {
 
 	/**
 	 * Log reason of a succeeded payment whose whole record was written over the stored intent of another attempt, on an
-	 * order not yet paid.
+	 * order without a paid status.
 	 */
 	private const REASON_SUCCESS_RECORDED_OVER_ANOTHER_ATTEMPT = 'success_recorded_over_another_attempt';
 
@@ -63,8 +63,8 @@ class PaymentIntentEventHandler {
 	private const RECORD_FILL_ONLY = 'fill_only';
 
 	/**
-	 * Record mode of a success whose order status is decided next: on an order not yet paid that stores another attempt,
-	 * the payment's whole record is written, its succeeded status included.
+	 * Record mode of a success whose order status is decided next: on an order without a paid status that stores another
+	 * attempt, the payment's whole record is written, its succeeded status included.
 	 */
 	private const RECORD_BEFORE_DECIDING = 'before_deciding';
 
@@ -511,12 +511,12 @@ class PaymentIntentEventHandler {
 	 *
 	 * Provider code that learns of a succeeded intent outside its webhook, such as a paid Stripe Billing invoice, uses it
 	 * under its own claim. A caller that decided the order is held passes the hold's note: the payment is then recorded and
-	 * the order put on hold instead of completed. On an order not yet paid that stores another attempt's intent, the
-	 * payment's whole record, its succeeded status included, is written in one save before the order's status is decided,
-	 * so the payment is completed and its amount checked, not taken as the capture of that attempt's authorization. An
-	 * order that still stores a requires_capture intent status then is completed as a capture, with the capture note. Once
-	 * the order has this intent's capture note, the payment is not completed again: only the payment meta is written. The
-	 * Fee details job is scheduled when the intent's payment note is first added.
+	 * the order put on hold instead of completed. On an order without a paid status that stores another attempt's intent,
+	 * the payment's whole record, its succeeded status included, is written in one save before the order's status is
+	 * decided, so the payment is completed and its amount checked, not taken as the capture of that attempt's
+	 * authorization. An order that still stores a requires_capture intent status then is completed as a capture, with the
+	 * capture note. Once the order has this intent's capture note, the payment is not completed again: only the payment
+	 * meta is written. The Fee details job is scheduled when the intent's payment note is first added.
 	 *
 	 * @since 11.2.0
 	 *
@@ -536,10 +536,11 @@ class PaymentIntentEventHandler {
 	 * paid status as it is, after the payment meta is written (client 11.3.0 class-wc-payments-webhook-processing-service.php:642-716,
 	 * class-wc-payments-order-service.php:475). On such an order its payment meta also stores the succeeded status.
 	 *
-	 * The payment meta is written and the token repaired first, in the client's order (:715, then :716); the token repair can
-	 * call the platform, so the order is then read again in place and the hold and the event are decided on that read. The
-	 * intent the order stored is read before anything is written: on an order not yet paid that stores another attempt,
-	 * the payment meta is the payment's whole record, its succeeded status included (write_succeeded_payment_intent_record()).
+	 * The payment meta is written and the token repaired first, in the client's order (:715, then :716); the token repair
+	 * can call the platform, so the order is then read again in place and the hold and the event are decided on that read.
+	 * The intent the order stored is read before anything is written: on an order without a paid status that stores another
+	 * attempt, the payment meta is the payment's whole record, its succeeded status included
+	 * (write_succeeded_payment_intent_record()).
 	 *
 	 * @param WC_Order            $order                 Order the intent pays, read under the lock.
 	 * @param array<string,mixed> $payment_intent        Provider payment intent object.
@@ -626,13 +627,15 @@ class PaymentIntentEventHandler {
 	 * before anything else in the run is written.
 	 *
 	 * The meta is what client 11.1.0 writes on every succeeded payment intent event (set_succeeded_payment_intent_meta()).
-	 * On an order not yet paid by the ownership test (EventOrderResolver::is_paid_for_ownership()) whose stored intent is
-	 * another, non-empty one, the before-deciding mode also writes the succeeded status, so the order never stores this
-	 * payment beside the other attempt's status, and logs that it did; the fill-only mode writes nothing there, since the
-	 * payment's own record is written by what settles it. Client 11.3.0 writes the IDs and no status
-	 * (class-wc-payments-webhook-processing-service.php:642-701). On an order in a paid status reached by a caller that
-	 * reports the intent's status, the succeeded status is written too: the lifecycle skips the success there and writes
-	 * none of its meta, so the stored charge and status describe one payment.
+	 * On an order without a paid status by the lifecycle's test (OrderPaymentLifecycleService::has_paid_status()), which
+	 * the lifecycle applies rather than skips, whose stored intent is another, non-empty one, the before-deciding mode also
+	 * writes the succeeded status, so the order never stores this payment beside the other attempt's status, and logs that
+	 * it did; the fill-only mode writes nothing there, since the payment's own record is written by what settles it. A paid
+	 * date or a woocommerce_order_is_paid filter makes the order paid for ownership
+	 * (EventOrderResolver::is_paid_for_ownership()), which still decides whose payment this is, but not for this write.
+	 * Client 11.3.0 writes the IDs and no status (class-wc-payments-webhook-processing-service.php:642-701). On an order in
+	 * a paid status reached by a caller that reports the intent's status, the succeeded status is written too: the
+	 * lifecycle skips the success there and writes none of its meta, so the stored charge and status describe one payment.
 	 *
 	 * @param WC_Order            $order                 Order the intent belongs to, read under the lock.
 	 * @param array<string,mixed> $payment_intent        Provider payment intent object.
@@ -642,7 +645,7 @@ class PaymentIntentEventHandler {
 	 */
 	private function write_succeeded_payment_intent_record( WC_Order $order, array $payment_intent, string $mode, string $stored_intent_id, bool $reports_intent_status ): void {
 		$intent_id       = $this->get_object_id( $payment_intent );
-		$another_attempt = '' !== $stored_intent_id && $stored_intent_id !== $intent_id && ! $this->event_order_resolver->is_paid_for_ownership( $order );
+		$another_attempt = '' !== $stored_intent_id && $stored_intent_id !== $intent_id && ! $this->lifecycle_service->has_paid_status( $order );
 		if ( $another_attempt && self::RECORD_FILL_ONLY === $mode ) {
 			return;
 		}
@@ -695,9 +698,9 @@ class PaymentIntentEventHandler {
 	}
 
 	/**
-	 * Log a succeeded payment whose whole record was written over the stored intent of another attempt, on an order not
-	 * yet paid, whatever the logging setting. The order's status is then decided on this payment, which client 11.3.0 takes
-	 * as the capture of a stored requires_capture status (class-wc-payments-order-service.php:484-485).
+	 * Log a succeeded payment whose whole record was written over the stored intent of another attempt, on an order without
+	 * a paid status, whatever the logging setting. The order's status is then decided on this payment, which client 11.3.0
+	 * takes as the capture of a stored requires_capture status (class-wc-payments-order-service.php:484-485).
 	 *
 	 * @param WC_Order $order            Order read under the lock.
 	 * @param string   $intent_id        The arriving intent.

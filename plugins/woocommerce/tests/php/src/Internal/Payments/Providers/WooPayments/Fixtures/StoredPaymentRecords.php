@@ -190,9 +190,9 @@ final class StoredPaymentRecords {
 	 * An authorization's requires_capture status stored beside another attempt's intent and charge: the transaction ID
 	 * names the authorized payment, the stored intent another attempt.
 	 *
-	 * Written when a succeeded payment's meta is saved before its decision on an order with a paid date and no paid status
-	 * (PaymentIntentEventHandler write_succeeded_payment_intent_record()) and the run stops there; or when a failed capture
-	 * or cancel of another intent stores the default requires_capture
+	 * Written when a paid Stripe Billing renewal's invoice payment meta is saved before its decision, which on an order
+	 * with a paid status stores no status for that caller (PaymentIntentEventHandler write_succeeded_payment_intent_record()),
+	 * and the run stops there; or when a failed capture or cancel of another intent stores the default requires_capture
 	 * (WooPaymentsOutcomeMetadataMapper::get_failed_capture_or_cancel_outcome_meta()). In the WooPayments extension, when a declined attempt writes its intent over the authorization (client 11.3.0
 	 * class-wc-payment-gateway-wcpay.php:1610-1614), or when its succeeded webhook stops after writing the intent
 	 * (class-wc-payments-webhook-processing-service.php:642-701).

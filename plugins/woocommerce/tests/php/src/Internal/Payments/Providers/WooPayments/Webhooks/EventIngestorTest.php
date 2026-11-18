@@ -3259,10 +3259,11 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A succeeded payment stopped before its decision leaves the record it wrote in one save: $_dataName.
 	 *
-	 * The run stops after the payment's meta is saved and before the order's status is decided. On an order not yet paid
-	 * that stores another attempt, the payment's whole record is written, its succeeded status included, and the transaction
-	 * ID is left to the decision; a line names the status it replaced. An empty or equal stored intent, and a paid order,
-	 * are written as before, a paid status with the succeeded status. A success with no charge removes the stored one.
+	 * The run stops after the payment's meta is saved and before the order's status is decided. On an order without a paid
+	 * status that stores another attempt, a paid date or a paid-status filter included, the payment's whole record is
+	 * written, its succeeded status included, and the transaction ID is left to the decision; a line names the status it
+	 * replaced. An empty or equal stored intent, and an order with a paid status, are written as before, the paid status
+	 * with the succeeded status. A success with no charge removes the stored one.
 	 * Client 11.3.0 writes the IDs, the currency, the mandate, the fee and the net and no status, and keeps an earlier
 	 * charge when the success has none (class-wc-payments-webhook-processing-service.php:642-701).
 	 *
@@ -3307,8 +3308,8 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 			'a declined attempt stored on a Failed order'  => array( 'row 12', true, array( 'pi_B', 'ch_B', 'succeeded', 'pi_B', OrderStatus::FAILED ), 'requires_payment_method' ),
 			'an authorization stored on an On hold order'  => array( 'authorization', true, array( 'pi_B', 'ch_B', 'succeeded', 'pi_A', OrderStatus::ON_HOLD ), 'requires_capture' ),
 			'another attempt stored on a Processing order' => array( 'paid', true, array( 'pi_B', 'ch_B', 'succeeded', 'pi_B', OrderStatus::PROCESSING ), null ),
-			'another attempt stored on a Cancelled order with a paid date' => array( 'paid date', true, array( 'pi_B', 'ch_B', 'requires_payment_method', 'pi_B', OrderStatus::CANCELLED ), null ),
-			'another attempt stored on an On hold order a filter counts as paid' => array( 'filter paid', true, array( 'pi_B', 'ch_B', 'requires_payment_method', 'pi_B', OrderStatus::ON_HOLD ), null ),
+			'another attempt stored on a Cancelled order with a paid date' => array( 'paid date', true, array( 'pi_B', 'ch_B', 'succeeded', 'pi_B', OrderStatus::CANCELLED ), 'requires_payment_method' ),
+			'another attempt stored on an On hold order a filter counts as paid' => array( 'filter paid', true, array( 'pi_B', 'ch_B', 'succeeded', 'pi_B', OrderStatus::ON_HOLD ), 'requires_payment_method' ),
 			'no intent stored, a kept charge, a success with no charge' => array( 'kept charge', false, array( 'pi_B', '', '', '', OrderStatus::PENDING ), null ),
 			'a declined attempt stored, a success with no charge' => array( 'row 12', false, array( 'pi_B', '', 'succeeded', 'pi_B', OrderStatus::FAILED ), 'requires_payment_method' ),
 			'another attempt stored with no status'        => array( 'A without status', true, array( 'pi_B', 'ch_B', 'succeeded', '', OrderStatus::PENDING ), 'none' ),
@@ -3388,13 +3389,19 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A Stripe Billing invoice's payment intent on an order storing another attempt writes nothing, and its invoice records the payment.
+	 * @testdox A Stripe Billing invoice's payment intent on $_dataName storing another attempt writes nothing, and its invoice records the payment.
 	 *
 	 * The order is found by the charge's metadata. The invoice's own invoice.paid records the payment; a stored succeeded
-	 * status written here would make that record skip its write and its transaction ID.
+	 * status written here would make that record skip its write and its transaction ID. An order with a paid date or a
+	 * paid-status filter but no paid status is one the lifecycle applies, so it takes the same answer.
+	 *
+	 * @dataProvider provider_orders_an_invoice_intent_meets
+	 *
+	 * @param string   $shape    The order before the event.
+	 * @param string[] $expected Stored intent, charge, intent status, transaction ID, order status and payment method, after the event.
 	 */
-	public function test_invoice_intent_success_on_an_order_storing_another_attempt_writes_nothing(): void {
-		$order                              = StoredPaymentRecords::declined_attempt_with_charge( '', 'pi_A', 'ch_A' );
+	public function test_invoice_intent_success_on_an_order_storing_another_attempt_writes_nothing( string $shape, array $expected ): void {
+		$order                              = 'pending' === $shape ? StoredPaymentRecords::declined_attempt_with_charge( '', 'pi_A', 'ch_A' ) : $this->create_order_in_shape( $shape );
 		$event                              = $this->create_success_of_attempt_b( $order );
 		$event['data']['object']['invoice'] = 'in_B';
 		$event['data']['object']['charges']['data'][0]['metadata'] = $event['data']['object']['metadata'];
@@ -3405,9 +3412,50 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( array( 'pi_A', 'ch_A', 'requires_payment_method', 'pi_A', OrderStatus::PENDING, '' ), array( $order->get_meta( '_intent_id', true ), $order->get_meta( '_charge_id', true ), $order->get_meta( '_intention_status', true ), $order->get_transaction_id(), $order->get_status(), $order->get_meta( '_payment_method_id', true ) ) );
+		$this->assertSame( $expected, array( $order->get_meta( '_intent_id', true ), $order->get_meta( '_charge_id', true ), $order->get_meta( '_intention_status', true ), $order->get_transaction_id(), $order->get_status(), $order->get_meta( '_payment_method_id', true ) ) );
 		$this->assert_success_recorded_over_another_attempt( $logger, $order, null );
 		$this->assertSame( array(), $this->get_order_notes_containing( $order, 'does not pay this order' ), 'The event is the order\'s own, not another charge.' );
+	}
+
+	/**
+	 * Orders without a paid status that store another attempt, with their unchanged values.
+	 *
+	 * @return array<string,array{string,string[]}>
+	 */
+	public function provider_orders_an_invoice_intent_meets(): array {
+		return array(
+			'a Pending order'                       => array( 'pending', array( 'pi_A', 'ch_A', 'requires_payment_method', 'pi_A', OrderStatus::PENDING, '' ) ),
+			'a Cancelled order with a paid date'    => array( 'paid date', array( 'pi_A', 'ch_B', 'requires_payment_method', 'pi_B', OrderStatus::CANCELLED, '' ) ),
+			'an On hold order a filter counts paid' => array( 'filter paid', array( 'pi_A', '', 'requires_payment_method', 'pi_B', OrderStatus::ON_HOLD, '' ) ),
+		);
+	}
+
+	/**
+	 * @testdox A success of the attempt the transaction ID names, on a Pending order with a paid date storing another attempt's authorization, stopped before its decision, is amount-checked on its redelivery: held with the amount note, no capture note.
+	 *
+	 * The order was paid once, so it keeps its paid date, and stores another attempt's requires_capture beside the
+	 * transaction ID of the arriving payment. The stopped run writes the payment's whole record with its succeeded status,
+	 * so the redelivery decides it as a payment, not as the capture of that authorization. Client 11.3.0 completes it as a
+	 * capture, amount not checked (class-wc-payments-order-service.php:484-485).
+	 */
+	public function test_redelivery_after_a_stopped_success_on_a_pending_order_with_a_paid_date_is_amount_checked(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$order = StoredPaymentRecords::authorization_status_beside_another_intent( OrderStatus::PENDING, 'pi_B', 'pi_A', 'ch_A' );
+		$order->set_date_paid( time() - HOUR_IN_SECONDS );
+		$order->save();
+		$event  = $this->create_success_of_attempt_b( $order, true, 1500 );
+		$logger = RecordingWcLogger::install();
+		$this->process_success_stopped_before_its_decision( $event );
+
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( array( OrderStatus::ON_HOLD, 'pi_B', 'succeeded' ), array( $order->get_status(), $order->get_meta( '_intent_id', true ), $order->get_meta( '_intention_status', true ) ) );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'but the order total is' ) );
+		$this->assertSame( array(), $this->get_order_notes_containing( $order, 'was <strong>successfully captured</strong>' ) );
+		$this->assert_success_recorded_over_another_attempt( $logger, $order, 'requires_capture' );
 	}
 
 	/**
