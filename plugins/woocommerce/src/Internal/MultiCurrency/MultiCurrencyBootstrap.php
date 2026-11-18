@@ -86,7 +86,12 @@ final class MultiCurrencyBootstrap {
 		MultiCurrencyStoreCurrencyLifecycleController::class,
 	);
 
-	/** Currency and price conversion classes. @var array<int,class-string> */
+	/**
+	 * Currency and price conversion classes. The price controller converts into the currency the currency controller answers,
+	 * so a request loads both or neither.
+	 *
+	 * @var array<int,class-string>
+	 */
 	private const PRICE = array(
 		MultiCurrencyFrontendCurrenciesController::class,
 		MultiCurrencyFrontendPricesController::class,
@@ -510,8 +515,8 @@ final class MultiCurrencyBootstrap {
 				RequestTypeUtil::AJAX  => array_merge( self::BASE, self::PRICE, self::COMPAT, array( MultiCurrencyStorefrontIntegrationController::class, MultiCurrencyAsyncPriceRendererController::class ), self::HISTORY ),
 				RequestTypeUtil::REST  => array_merge( self::BASE, self::PRICE, self::COMPAT, array( MultiCurrencySwitcherBlockController::class, MultiCurrencyStorefrontIntegrationController::class, MultiCurrencyAsyncPriceRendererController::class ), self::HISTORY, array( MultiCurrencyRestController::class, MultiCurrencyRestRequestOverrideController::class ) ),
 				RequestTypeUtil::ADMIN => array_merge( self::BASE, self::PRICE, self::COMPAT, array( MultiCurrencyAnalyticsController::class, MultiCurrencySwitcherBlockController::class, MultiCurrencySettingsController::class, MultiCurrencyTrackerController::class ), self::ADMIN ),
-				RequestTypeUtil::CRON  => array_merge( self::BASE, array( MultiCurrencyFrontendPricesController::class ), self::COMPAT, self::HISTORY ),
-				RequestTypeUtil::CLI   => array_merge( self::BASE, array( MultiCurrencyFrontendPricesController::class ), self::COMPAT, self::HISTORY ),
+				RequestTypeUtil::CRON  => array_merge( self::BASE, array( MultiCurrencyFrontendCurrenciesController::class, MultiCurrencyFrontendPricesController::class ), self::COMPAT, self::HISTORY ),
+				RequestTypeUtil::CLI   => array_merge( self::BASE, array( MultiCurrencyFrontendCurrenciesController::class, MultiCurrencyFrontendPricesController::class ), self::COMPAT, self::HISTORY ),
 			),
 			'historical' => array(
 				RequestTypeUtil::ADMIN => array_merge( self::BASE, array( MultiCurrencyAnalyticsController::class, MultiCurrencySettingsController::class, MultiCurrencyTrackerController::class ), self::ADMIN ),
