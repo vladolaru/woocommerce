@@ -144,7 +144,7 @@ class MerchantRestController extends RestApiControllerBase {
 
 		register_rest_route(
 			$this->route_namespace,
-			'/' . $this->rest_base . '/admin-notices/(?P<notice_id>test_to_live|post_kyc_activation|one_and_done)/(?P<action>shown|dismiss|snooze|cta)',
+			'/' . $this->rest_base . '/admin-notices/(?P<notice_id>one_and_done)/(?P<action>shown|dismiss|snooze|cta)',
 			array(
 				'methods'             => \WP_REST_Server::CREATABLE,
 				'callback'            => fn( $request ) => $this->run( $request, 'record_admin_notice_action' ),
@@ -957,15 +957,9 @@ class MerchantRestController extends RestApiControllerBase {
 	 * @return WP_Error|WP_REST_Response
 	 */
 	protected function record_admin_notice_action( WP_REST_Request $request ) {
-		$stage = $request->get_param( 'stage' );
-		if ( null !== $stage && ! is_int( $stage ) ) {
-			return new WP_Error( 'woocommerce_woopayments_invalid_notice_action', __( 'Invalid notice action.', 'woocommerce' ), array( 'status' => WP_Http::BAD_REQUEST ) );
-		}
-
 		$result = $this->admin_notice_service->record_action(
 			sanitize_key( (string) $request->get_param( 'notice_id' ) ),
-			sanitize_key( (string) $request->get_param( 'action' ) ),
-			$stage
+			sanitize_key( (string) $request->get_param( 'action' ) )
 		);
 		if ( is_wp_error( $result ) ) {
 			$result->add_data( array( 'status' => WP_Http::BAD_REQUEST ) );

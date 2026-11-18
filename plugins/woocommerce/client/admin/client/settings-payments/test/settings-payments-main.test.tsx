@@ -68,7 +68,7 @@ const pspCategory = {
 	description: '',
 };
 
-const noticeMessage = 'Ready for live payments.';
+const noticeMessage = 'Your store made its first sale.';
 const noticeProvider = {
 	id: 'woocommerce_payments',
 	_type: 'gateway',
@@ -87,12 +87,12 @@ const noticeProvider = {
 	onboarding: { type: 'native_in_context' },
 	_links: {},
 	_admin_notice: {
-		id: 'test_to_live',
+		id: 'one_and_done',
 		message: noticeMessage,
 		primary: {
-			kind: 'onboard',
-			label: 'Turn on live payments',
-			href: '/onboard',
+			kind: 'navigate_and_dismiss',
+			label: 'Promote my store',
+			href: '/marketing',
 		},
 		_links: {
 			shown: { href: '/shown' },

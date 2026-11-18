@@ -250,12 +250,12 @@ class MerchantRestControllerTest extends WC_Unit_Test_Case {
 		$notice_service = $this->createMock( NoticeService::class );
 		$notice_service->expects( $this->once() )
 			->method( 'record_action' )
-			->with( 'test_to_live', 'shown', null )
+			->with( 'one_and_done', 'shown' )
 			->willReturn( true );
 		$this->sut->init( $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $notice_service, new WooPaymentsApplePayDomainService(), $this->mock_api_client );
 		$this->sut->register_routes( true );
 
-		$request  = new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/test_to_live/shown' );
+		$request  = new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/one_and_done/shown' );
 		$response = $this->server->dispatch( $request );
 
 		$this->assertSame( 200, $response->get_status() );
@@ -269,7 +269,7 @@ class MerchantRestControllerTest extends WC_Unit_Test_Case {
 		$controller = wc_get_container()->get( MerchantRestController::class );
 		$controller->register_routes( true );
 
-		$notice_response   = $this->server->dispatch( new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/test_to_live/shown' ) );
+		$notice_response   = $this->server->dispatch( new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/one_and_done/shown' ) );
 		$apple_pay_request = new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/apple_pay_domain_error/shown' );
 		$apple_pay_request->set_param( 'error_id', hash( 'sha256', 'Test error message' ) );
 		$apple_pay_response = $this->server->dispatch( $apple_pay_request );
@@ -384,7 +384,9 @@ class MerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should reject unknown notice paths and non-integer stages before the notice service runs.
+	 * @testdox Should answer no route for unknown and retired notice paths, and refuse a shop customer, before the notice service runs.
+	 *
+	 * Client 11.3.0 retired the test-to-live and post-KYC notices (`includes/admin/attach-rate/class-wc-payments-admin-notices.php`).
 	 */
 	public function test_record_admin_notice_action_rejects_invalid_request(): void {
 		$notice_service = $this->createMock( NoticeService::class );
@@ -392,10 +394,13 @@ class MerchantRestControllerTest extends WC_Unit_Test_Case {
 		$this->sut->init( $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $notice_service, new WooPaymentsApplePayDomainService(), $this->mock_api_client );
 		$this->sut->register_routes( true );
 
-		$this->assertSame( 404, $this->server->dispatch( new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/unknown/shown' ) )->get_status() );
-		$request = new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/post_kyc_activation/shown' );
-		$request->set_param( 'stage', '7' );
-		$this->assertSame( 400, $this->server->dispatch( $request )->get_status() );
+		foreach ( array( 'unknown/shown', 'test_to_live/shown', 'test_to_live/cta', 'post_kyc_activation/dismiss' ) as $path ) {
+			$response = $this->server->dispatch( new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/' . $path ) );
+			$this->assertSame( 404, $response->get_status(), $path );
+			$this->assertSame( 'rest_no_route', $response->get_data()['code'] ?? null, $path );
+		}
+		wp_set_current_user( $this->factory->user->create( array( 'role' => 'customer' ) ) );
+		$this->assertSame( 403, $this->server->dispatch( new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/one_and_done/shown' ) )->get_status() );
 	}
 
 	/**
@@ -416,7 +421,7 @@ class MerchantRestControllerTest extends WC_Unit_Test_Case {
 		$this->sut->init( $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $notice_service, new WooPaymentsApplePayDomainService(), $this->mock_api_client );
 		$this->sut->register_routes( true );
 
-		$request = new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/test_to_live/' . $action );
+		$request = new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/one_and_done/' . $action );
 		$this->assertSame( 200, $this->server->dispatch( $request )->get_status() );
 		$first_marker = get_user_meta( $this->store_admin_id, $meta_key, true );
 		$now          = 2000;
@@ -426,15 +431,15 @@ class MerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Preserved user-meta markers for replayed test-to-live actions.
+	 * Preserved user-meta markers for replayed one-and-done actions.
 	 *
 	 * @return array<string,array{string,string}>
 	 */
 	public static function notice_action_markers(): array {
 		return array(
-			'shown'   => array( 'shown', 'wcpay_test_to_live_notice_shown' ),
-			'dismiss' => array( 'dismiss', 'wcpay_test_to_live_notice_dismissed' ),
-			'snooze'  => array( 'snooze', 'wcpay_test_to_live_notice_snoozed' ),
+			'shown'   => array( 'shown', 'wcpay_one_and_done_notice_shown' ),
+			'dismiss' => array( 'dismiss', 'wcpay_one_and_done_notice_dismissed_at' ),
+			'snooze'  => array( 'snooze', 'wcpay_one_and_done_notice_snoozed_at' ),
 		);
 	}
 
@@ -885,7 +890,7 @@ class MerchantRestControllerTest extends WC_Unit_Test_Case {
 	 *           ["POST", "/wc/v3/payments/file"]
 	 *           ["POST", "/wc/v3/payments/pm-promotions/klarna-promo__spotlight/activate"]
 	 *           ["POST", "/wc/v3/payments/pm-promotions/klarna-promo__spotlight/dismiss"]
-	 *           ["POST", "/wc-admin/settings/payments/woopayments/admin-notices/test_to_live/shown"]
+	 *           ["POST", "/wc-admin/settings/payments/woopayments/admin-notices/one_and_done/shown"]
 	 *
 	 * @param string $method HTTP method.
 	 * @param string $route  Route path.

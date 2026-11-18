@@ -530,7 +530,7 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 	 * @testdox The settings notice is the notice service's answer for the current user.
 	 */
 	public function test_settings_notice_comes_from_the_notice_service(): void {
-		$notice  = array( 'id' => 'test_to_live' );
+		$notice  = array( 'id' => 'one_and_done' );
 		$service = $this->createMock( NoticeService::class );
 		$service->expects( $this->once() )->method( 'refresh_notice_for_current_user' )->willReturn( $notice );
 		wc_get_container()->replace( NoticeService::class, $service );

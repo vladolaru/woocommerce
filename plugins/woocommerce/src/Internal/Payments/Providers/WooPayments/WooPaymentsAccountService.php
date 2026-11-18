@@ -42,12 +42,6 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 
 	private const ONBOARDING_INIT_IN_PROGRESS_TRANSIENT = 'wcpay_onboarding_init_in_progress';
 
-	private const TEST_MODE_ENABLED_DATE_OPTION = 'wcpay_test_mode_enabled_date';
-
-	private const TEST_TO_LIVE_NOTICE_ELIGIBLE_TRANSIENT = 'wcpay_test_to_live_eligible';
-
-	private const POST_KYC_ACTIVATION_ELIGIBLE_TRANSIENT = 'wcpay_post_kyc_activation_eligible';
-
 	private const INCENTIVES_USAGE_OPTION = 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments';
 
 	private const INCENTIVES_USAGE_VERSION_OPTION = 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments_version';
@@ -408,9 +402,6 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		$this->legacy_proxy->call_function( 'delete_option', self::EMBEDDED_KYC_IN_PROGRESS_OPTION );
 		$this->legacy_proxy->call_function( 'delete_transient', WooPaymentsPaymentsSettingsAdapter::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT );
 		$this->legacy_proxy->call_function( 'delete_transient', self::ONBOARDING_INIT_IN_PROGRESS_TRANSIENT );
-		$this->legacy_proxy->call_function( 'delete_option', self::TEST_MODE_ENABLED_DATE_OPTION );
-		$this->legacy_proxy->call_function( 'delete_transient', self::TEST_TO_LIVE_NOTICE_ELIGIBLE_TRANSIENT );
-		$this->legacy_proxy->call_function( 'delete_transient', self::POST_KYC_ACTIVATION_ELIGIBLE_TRANSIENT );
 		$this->legacy_proxy->call_function( 'delete_transient', self::ONBOARDING_DISABLED_TRANSIENT );
 
 		$this->database_cache->delete_all();

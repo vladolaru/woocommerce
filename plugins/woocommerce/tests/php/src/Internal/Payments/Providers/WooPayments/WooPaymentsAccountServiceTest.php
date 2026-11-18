@@ -58,7 +58,6 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		delete_option( '_wcpay_onboarding_stripe_connected' );
 		delete_option( 'wcpay_connection_success_modal_dismissed' );
 		delete_option( 'wcpay_onboarding_embedded_kyc_in_progress' );
-		delete_option( 'wcpay_test_mode_enabled_date' );
 		delete_option( 'woocommerce_woopayments_nox_profile' );
 		delete_option( 'woocommerce_woopayments_nox_onboarding_locked' );
 		delete_option( '_wcpay_feature_reports_area' );
@@ -71,8 +70,6 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		delete_transient( 'woopay_enabled_by_default' );
 		delete_transient( 'wcpay_onboarding_init_in_progress' );
 		delete_transient( 'wcpay_on_boarding_disabled' );
-		delete_transient( 'wcpay_test_to_live_eligible' );
-		delete_transient( 'wcpay_post_kyc_activation_eligible' );
 		remove_all_filters( 'pre_option_wcpay_account_data' );
 		remove_all_filters( 'wcpay_dev_mode' );
 		remove_all_filters( 'wcpay_test_mode' );
@@ -1259,7 +1256,6 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_onboarding_test_mode', 'yes' );
 		update_option( 'wcpay_connection_success_modal_dismissed', 'yes' );
 		update_option( 'wcpay_onboarding_embedded_kyc_in_progress', 'yes' );
-		update_option( 'wcpay_test_mode_enabled_date', 123 );
 		update_option( 'woocommerce_woopayments_nox_profile', array( 'id' => 'nox_profile' ) );
 		update_option( 'woocommerce_woopayments_nox_onboarding_locked', 'yes' );
 		update_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments', 'yes' );
@@ -1268,8 +1264,6 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		set_transient( 'wcpay_stripe_onboarding_state', 'state', DAY_IN_SECONDS );
 		set_transient( 'woopay_enabled_by_default', true, DAY_IN_SECONDS );
 		set_transient( 'wcpay_onboarding_init_in_progress', 'yes', DAY_IN_SECONDS );
-		set_transient( 'wcpay_test_to_live_eligible', true, DAY_IN_SECONDS );
-		set_transient( 'wcpay_post_kyc_activation_eligible', true, DAY_IN_SECONDS );
 
 		$sut = $this->create_service();
 		$sut->cleanup_after_account_reset();
@@ -1287,7 +1281,6 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		$this->assertFalse( get_option( 'wcpay_onboarding_fields_data' ), 'Every database cache key goes with the account.' );
 		$this->assertFalse( get_option( 'wcpay_connection_success_modal_dismissed' ) );
 		$this->assertFalse( get_option( 'wcpay_onboarding_embedded_kyc_in_progress' ) );
-		$this->assertFalse( get_option( 'wcpay_test_mode_enabled_date' ) );
 		$this->assertSame( array( 'id' => 'nox_profile' ), get_option( 'woocommerce_woopayments_nox_profile' ) );
 		$this->assertSame( 'yes', get_option( 'woocommerce_woopayments_nox_onboarding_locked' ) );
 		$this->assertFalse( get_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments' ) );
@@ -1295,8 +1288,6 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		$this->assertFalse( get_transient( 'wcpay_stripe_onboarding_state' ) );
 		$this->assertFalse( get_transient( 'woopay_enabled_by_default' ) );
 		$this->assertFalse( get_transient( 'wcpay_onboarding_init_in_progress' ) );
-		$this->assertFalse( get_transient( 'wcpay_test_to_live_eligible' ) );
-		$this->assertFalse( get_transient( 'wcpay_post_kyc_activation_eligible' ) );
 	}
 
 	/**

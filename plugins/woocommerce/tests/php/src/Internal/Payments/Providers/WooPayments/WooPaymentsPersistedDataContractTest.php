@@ -87,6 +87,9 @@ class WooPaymentsPersistedDataContractTest extends WC_Unit_Test_Case {
 		'wcpay_kyc_submitted_date'                    => 'Client 11.3.0 retired the post-KYC reminder emails and no longer writes it (includes/class-wc-payments-account.php, deprecated KYC_SUBMITTED_DATE_OPTION).',
 		'wcpay_post_kyc_activation_email_sent_stages' => 'Client 11.3.0 retired the post-KYC reminder emails and leaves the stored value unread (includes/migrations/class-retire-post-kyc-activation-emails.php).',
 		'wcpay_post_kyc_activation_emails_scheduled'  => 'Client 11.3.0 retired the post-KYC reminder emails and leaves the stored value unread (includes/migrations/class-retire-post-kyc-activation-emails.php).',
+		'wcpay_test_mode_enabled_date'                => 'Client 11.3.0 retired the test-to-live notice and no longer writes it (includes/class-wc-payments-onboarding-service.php, deprecated TEST_MODE_ENABLED_DATE_OPTION).',
+		'wcpay_test_to_live_eligible'                 => 'Client 11.3.0 retired the test-to-live notice; its one-hour cache is no longer read and expires (includes/migrations/class-retire-post-kyc-activation-emails.php).',
+		'wcpay_post_kyc_activation_eligible'          => 'Client 11.3.0 retired the post-KYC notice; its one-hour cache is no longer read and expires (includes/migrations/class-retire-post-kyc-activation-emails.php).',
 	);
 
 	/**

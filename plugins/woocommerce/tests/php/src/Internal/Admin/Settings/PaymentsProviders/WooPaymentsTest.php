@@ -120,11 +120,11 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 			)
 		);
 		$notice  = array(
-			'id'      => 'test_to_live',
-			'message' => 'Ready for live payments.',
+			'id'      => 'one_and_done',
+			'message' => 'Your store made its first sale.',
 			'primary' => array(
-				'kind'  => 'disable_test_mode',
-				'label' => 'Turn on live payments',
+				'kind'  => 'navigate_and_dismiss',
+				'label' => 'Promote my store',
 			),
 			'_links'  => array(),
 		);

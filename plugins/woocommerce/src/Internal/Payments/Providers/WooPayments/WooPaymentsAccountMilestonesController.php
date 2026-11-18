@@ -10,15 +10,14 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Admin\Notes\DataStore as NotesDataStore;
 use Automattic\WooCommerce\Admin\Notes\Notes;
-use Automattic\WooCommerce\Enums\OrderInternalStatus;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
 use WC_Order;
 
 /**
- * Follows the WooPayments account through its milestones: the Instant Deposits note, the store's first live sale and
- * the date test mode was turned on. It adds the WooPayments in-person payment receipt email to WooCommerce's email list.
+ * Follows the WooPayments account through its milestones: the Instant Deposits note and the store's first live sale.
+ * It adds the WooPayments in-person payment receipt email to WooCommerce's email list.
  *
  * Their hooks, options, transients and notes keep the WooPayments extension's names, so jobs it queued and state it
  * stored carry over after the switch. The retired first-sale reminder email's send hook keeps a callback that does
@@ -64,27 +63,6 @@ class WooPaymentsAccountMilestonesController implements RegisterHooksInterface {
 	 * @var string
 	 */
 	public const HAS_LIVE_SALE_OPTION = 'wcpay_has_live_sale';
-
-	/**
-	 * Option holding the time test mode was turned on.
-	 *
-	 * @var string
-	 */
-	private const TEST_MODE_ENABLED_DATE_OPTION = 'wcpay_test_mode_enabled_date';
-
-	/**
-	 * Transient caching whether the test-to-live notice applies.
-	 *
-	 * @var string
-	 */
-	private const TEST_TO_LIVE_NOTICE_ELIGIBLE_TRANSIENT = 'wcpay_test_to_live_eligible';
-
-	/**
-	 * Transient caching whether a post-KYC activation email applies.
-	 *
-	 * @var string
-	 */
-	private const POST_KYC_ACTIVATION_ELIGIBLE_TRANSIENT = 'wcpay_post_kyc_activation_eligible';
 
 	/**
 	 * Transient caching the one-and-done notice eligibility.
@@ -139,7 +117,6 @@ class WooPaymentsAccountMilestonesController implements RegisterHooksInterface {
 		// Reminder jobs the WooPayments extension queued before the switch complete without sending.
 		add_action( self::POST_KYC_ACTIVATION_EMAIL_SEND_ACTION, array( $this, 'handle_wcpay_post_kyc_activation_email_send' ), 10, 0 );
 		add_filter( 'woocommerce_email_classes', array( $this, 'add_ipp_receipt_email' ), 10, 1 );
-		add_action( 'update_option_' . WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array( $this, 'maybe_handle_test_mode_toggle' ), 10, 2 );
 		add_action( 'woocommerce_order_status_changed', array( $this, 'handle_woocommerce_order_status_changed' ), 10, 4 );
 	}
 
@@ -179,38 +156,8 @@ class WooPaymentsAccountMilestonesController implements RegisterHooksInterface {
 		}
 
 		update_option( self::HAS_LIVE_SALE_OPTION, '1', true );
-		delete_transient( self::POST_KYC_ACTIVATION_ELIGIBLE_TRANSIENT );
 		// Client 11.1.0 records the same event (class-wc-payments-order-service.php:295-309).
 		WooPaymentsTracks::record_wcadmin_event( 'wcpay_first_live_sale' );
-	}
-
-	/**
-	 * Track test-mode flips for the go-live nudge, as client 11.1.0's onboarding service does
-	 * (class-wc-payments-onboarding-service.php:1106, :1673-1681).
-	 *
-	 * Enable stamps the enable date so the nudge clock starts; disable clears it so re-entering test mode restarts the clock; both drop the notice-eligibility transients.
-	 *
-	 * @param mixed $old_value Previous settings option value.
-	 * @param mixed $new_value New settings option value.
-	 */
-	public function maybe_handle_test_mode_toggle( $old_value, $new_value ): void {
-		$old_test_mode = is_array( $old_value ) ? ( $old_value['test_mode'] ?? 'no' ) : 'no';
-		$new_test_mode = is_array( $new_value ) ? ( $new_value['test_mode'] ?? 'no' ) : 'no';
-
-		if ( $old_test_mode === $new_test_mode ) {
-			return;
-		}
-
-		if ( 'yes' === $new_test_mode ) {
-			if ( ! get_option( self::TEST_MODE_ENABLED_DATE_OPTION ) ) {
-				update_option( self::TEST_MODE_ENABLED_DATE_OPTION, time(), false );
-			}
-		} else {
-			delete_option( self::TEST_MODE_ENABLED_DATE_OPTION );
-		}
-
-		delete_transient( self::TEST_TO_LIVE_NOTICE_ELIGIBLE_TRANSIENT );
-		delete_transient( self::POST_KYC_ACTIVATION_ELIGIBLE_TRANSIENT );
 	}
 
 	/**
@@ -357,45 +304,6 @@ class WooPaymentsAccountMilestonesController implements RegisterHooksInterface {
 	 */
 	private function schedule_instant_deposit_note_reminder(): void {
 		$this->scheduler->schedule_job( self::INSTANT_DEPOSIT_REMINDER_ACTION, array(), time() + self::INSTANT_DEPOSIT_REMINDER_DELAY );
-	}
-
-	/**
-	 * Tell whether the store has a live WooPayments sale: the recorded flag, or else one query for a paid live order through
-	 * the card gateway, which records the flag when it finds one, as client 11.1.0 `has_live_sale()` does
-	 * (`includes/class-wc-payments-order-service.php:360-382`). Recording it drops the cached post-KYC eligibility, as the
-	 * client's listener on the flag's first write does (`includes/admin/attach-rate/class-wc-payments-post-kyc-activation-notice.php:68-73`).
-	 * The query only checks that one order exists, so it asks for no sort.
-	 *
-	 * @since 11.2.0
-	 *
-	 * @return bool
-	 */
-	public function has_live_sale(): bool {
-		if ( get_option( self::HAS_LIVE_SALE_OPTION ) ) {
-			return true;
-		}
-
-		$orders = wc_get_orders(
-			array(
-				'payment_method' => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
-				'limit'          => 1,
-				'orderby'        => 'none',
-				'return'         => 'ids',
-				'status'         => array( OrderInternalStatus::COMPLETED, OrderInternalStatus::PROCESSING ),
-				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
-				'meta_key'       => '_wcpay_mode',
-				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
-				'meta_value'     => WooPaymentsOrderMode::PRODUCTION,
-			)
-		);
-
-		if ( ! empty( $orders ) ) {
-			update_option( self::HAS_LIVE_SALE_OPTION, '1', true );
-			delete_transient( self::POST_KYC_ACTIVATION_ELIGIBLE_TRANSIENT );
-			return true;
-		}
-
-		return false;
 	}
 
 	/**

@@ -3,11 +3,10 @@
  */
 import apiFetch from '@wordpress/api-fetch';
 import { dispatch, select } from '@wordpress/data';
-import { createRef, StrictMode } from '@wordpress/element';
+import { StrictMode } from '@wordpress/element';
 import { paymentSettingsStore } from '@woocommerce/data';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { WooPaymentsAdminNotice } from '@woocommerce/data';
 
 /**
  * Internal dependencies
@@ -21,7 +20,6 @@ import { FraudProtectionAdvancedSettingsPage } from '../fraud-protection/advance
 import { DisputeEvidenceForm } from '../../admin/money-movement/dispute-evidence-form';
 import type { WooPaymentsDispute } from '../../admin/money-movement/types';
 import { ReactivateLivePaymentsButton } from '~/settings-payments/components/buttons/reactivate-live-payments-button';
-import { WooPaymentsAdminNoticeItem } from '~/settings-payments/components/woopayments-admin-notices';
 
 jest.mock( '@wordpress/api-fetch', () => jest.fn() );
 // The test setup's `core/notices` store has no notice creators.
@@ -103,17 +101,6 @@ const setUpServer = () => {
 	} );
 };
 
-const testToLiveNotice: WooPaymentsAdminNotice = {
-	id: 'test_to_live',
-	message: "You're ready to take real payments.",
-	primary: { kind: 'disable_test_mode', label: 'Turn on live payments' },
-	_links: {
-		shown: { href: '/admin-notices/test_to_live/shown' },
-		dismiss: { href: '/admin-notices/test_to_live/dismiss' },
-		cta: { href: '/admin-notices/test_to_live/cta' },
-	},
-} as WooPaymentsAdminNotice;
-
 // Stands in for an express checkout Customize page, which reads the settings store as the settings page does.
 const CustomizeSettings = () =>
 	useSettings().isLoading ? null : <p>Customize settings loaded</p>;
@@ -186,16 +173,12 @@ const failNextRead = () => {
 	} );
 };
 
-// On the Payments list, "Turn on live payments" turns test mode off on the server.
+// On the Payments list, "Reactivate payments" turns test mode off on the server.
 const goLive = async () => {
 	const payments = render(
-		<WooPaymentsAdminNoticeItem
-			notice={ testToLiveNotice }
-			focusTargetRef={ createRef() }
-			onDismiss={ () => undefined }
-		/>
+		<ReactivateLivePaymentsButton settingsHref="#" />
 	);
-	await userEvent.click( screen.getByText( 'Turn on live payments' ) );
+	await userEvent.click( screen.getByText( 'Reactivate payments' ) );
 	await waitFor( () => expect( server.is_test_mode_enabled ).toBe( false ) );
 	payments.unmount();
 	posts.length = 0;
@@ -288,60 +271,40 @@ describe( 'WooPayments settings store across settings routes', () => {
 
 	afterEach( () => jest.restoreAllMocks() );
 
-	it.each( [
-		[
-			'the "Turn on live payments" notice',
-			'Turn on live payments',
-			() => (
-				<WooPaymentsAdminNoticeItem
-					notice={ testToLiveNotice }
-					focusTargetRef={ createRef() }
-					onDismiss={ () => undefined }
-				/>
-			),
-		],
-		[
-			'the "Reactivate payments" row button',
-			'Reactivate payments',
-			() => <ReactivateLivePaymentsButton settingsHref="#" />,
-		],
-	] )(
-		'saves live mode after going live through %s and coming back',
-		async ( _path, label, GoLive ) => {
-			const settingsPage = await renderSettingsPage();
-			settingsPage.unmount();
-			// The merchant reads the Payments list before going live, so any read made on the way out has landed.
-			await act(
-				() => new Promise( ( resolve ) => setTimeout( resolve ) )
-			);
+	it( 'saves live mode after going live through the "Reactivate payments" row button and coming back', async () => {
+		const settingsPage = await renderSettingsPage();
+		settingsPage.unmount();
+		// The merchant reads the Payments list before going live, so any read made on the way out has landed.
+		await act( () => new Promise( ( resolve ) => setTimeout( resolve ) ) );
 
-			const payments = render( <GoLive /> );
-			await userEvent.click( screen.getByText( label ) );
-			await waitFor( () =>
-				expect( server.is_test_mode_enabled ).toBe( false )
-			);
-			payments.unmount();
-			posts.length = 0;
+		const payments = render(
+			<ReactivateLivePaymentsButton settingsHref="#" />
+		);
+		await userEvent.click( screen.getByText( 'Reactivate payments' ) );
+		await waitFor( () =>
+			expect( server.is_test_mode_enabled ).toBe( false )
+		);
+		payments.unmount();
+		posts.length = 0;
 
-			await renderSettingsPage();
-			await waitFor( () =>
-				expect(
-					screen.getByRole( 'checkbox', { name: 'Enable test mode' } )
-				).not.toBeChecked()
-			);
-			await userEvent.click(
-				screen.getByRole( 'checkbox', { name: 'Log error messages' } )
-			);
-			await save();
+		await renderSettingsPage();
+		await waitFor( () =>
+			expect(
+				screen.getByRole( 'checkbox', { name: 'Enable test mode' } )
+			).not.toBeChecked()
+		);
+		await userEvent.click(
+			screen.getByRole( 'checkbox', { name: 'Log error messages' } )
+		);
+		await save();
 
-			expect( posts[ 0 ] ).toEqual(
-				expect.objectContaining( {
-					is_test_mode_enabled: false,
-					is_debug_log_enabled: true,
-				} )
-			);
-		}
-	);
+		expect( posts[ 0 ] ).toEqual(
+			expect.objectContaining( {
+				is_test_mode_enabled: false,
+				is_debug_log_enabled: true,
+			} )
+		);
+	} );
 
 	it( 'saves live mode after leaving while the settings still load, then going live and coming back', async () => {
 		const serve = mockApiFetch.getMockImplementation();
@@ -373,13 +336,9 @@ describe( 'WooPayments settings store across settings routes', () => {
 		await settle();
 
 		const payments = render(
-			<WooPaymentsAdminNoticeItem
-				notice={ testToLiveNotice }
-				focusTargetRef={ createRef() }
-				onDismiss={ () => undefined }
-			/>
+			<ReactivateLivePaymentsButton settingsHref="#" />
 		);
-		await userEvent.click( screen.getByText( 'Turn on live payments' ) );
+		await userEvent.click( screen.getByText( 'Reactivate payments' ) );
 		await waitFor( () =>
 			expect( server.is_test_mode_enabled ).toBe( false )
 		);

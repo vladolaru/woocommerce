@@ -149,7 +149,14 @@ class WooPaymentsTracksEventsContractTest extends WC_Unit_Test_Case {
 		'wcpay_post_kyc_activation_email_cta_clicked'    => 'Client 11.3.0 retired the post-KYC reminder emails and their CTA link (includes/class-wc-payments.php).',
 		'wcpay_post_kyc_activation_email_sent'           => 'Client 11.3.0 retired the post-KYC reminder emails (includes/class-wc-payments.php).',
 		'wcpay_post_kyc_activation_email_send_failed'    => 'Client 11.3.0 retired the post-KYC reminder emails (includes/class-wc-payments.php).',
-		'wcpay_post_kyc_activation_notice_snoozed'       => 'Client 11.1.0 never fires it: the post-KYC notice overrides supports_snooze() to false (includes/admin/attach-rate/class-wc-payments-post-kyc-activation-notice.php:214-215), so the base never hooks snooze_notice() (class-wc-payments-abstract-admin-notice.php:83); native matches with no snooze action (owner N-137 asked for a snooze; premise corrected, the client has none (V438); R8 closed).',
+		'wcpay_post_kyc_activation_notice_cta_clicked'   => 'Client 11.3.0 retired the post-KYC notice (includes/admin/attach-rate/class-wc-payments-admin-notices.php).',
+		'wcpay_post_kyc_activation_notice_dismissed'     => 'Client 11.3.0 retired the post-KYC notice (includes/admin/attach-rate/class-wc-payments-admin-notices.php).',
+		'wcpay_post_kyc_activation_notice_shown'         => 'Client 11.3.0 retired the post-KYC notice (includes/admin/attach-rate/class-wc-payments-admin-notices.php).',
+		'wcpay_post_kyc_activation_notice_snoozed'       => 'Client 11.3.0 retired the post-KYC notice, which never fired it (it had no snooze action).',
+		'wcpay_test_to_live_notice_cta_clicked'          => 'Client 11.3.0 retired the test-to-live notice (includes/admin/attach-rate/class-wc-payments-admin-notices.php).',
+		'wcpay_test_to_live_notice_dismissed'            => 'Client 11.3.0 retired the test-to-live notice (includes/admin/attach-rate/class-wc-payments-admin-notices.php).',
+		'wcpay_test_to_live_notice_shown'                => 'Client 11.3.0 retired the test-to-live notice (includes/admin/attach-rate/class-wc-payments-admin-notices.php).',
+		'wcpay_test_to_live_notice_snoozed'              => 'Client 11.3.0 retired the test-to-live notice (includes/admin/attach-rate/class-wc-payments-admin-notices.php).',
 	);
 
 	/**

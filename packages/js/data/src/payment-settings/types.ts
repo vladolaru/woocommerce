@@ -51,18 +51,16 @@ export type PaymentsProviderIncentive = {
 	};
 };
 
-export type WooPaymentsAdminNoticeId =
-	'test_to_live' | 'post_kyc_activation' | 'one_and_done';
+export type WooPaymentsAdminNoticeId = 'one_and_done';
 
 export type WooPaymentsAdminNoticeAction =
 	'shown' | 'dismiss' | 'snooze' | 'cta';
 
 export type WooPaymentsAdminNotice = {
 	id: WooPaymentsAdminNoticeId;
-	stage?: 7 | 14 | 30;
 	message: string;
 	primary: {
-		kind: 'disable_test_mode' | 'onboard' | 'navigate_and_dismiss';
+		kind: 'navigate_and_dismiss';
 		label: string;
 		href?: string;
 	};

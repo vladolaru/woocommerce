@@ -8,17 +8,7 @@ import { __, sprintf } from '@wordpress/i18n';
 import apiFetch from '@wordpress/api-fetch';
 import { paymentSettingsStore } from '@woocommerce/data';
 import type { WooPaymentsAdminNotice } from '@woocommerce/data';
-import type { MouseEvent, RefObject } from 'react';
-
-/**
- * Internal dependencies
- */
-import { recordPaymentsEvent } from '~/settings-payments/utils';
-import {
-	wooPaymentsExtensionSlug,
-	wooPaymentsProviderId,
-	wooPaymentsSuggestionId,
-} from '~/settings-payments/constants';
+import type { RefObject } from 'react';
 
 const SNOOZE_SUPPRESSION_MS = 7 * 24 * 60 * 60 * 1000;
 const suppressedCachedNotices = new WeakMap< WooPaymentsAdminNotice, number >();
@@ -62,12 +52,11 @@ export const WooPaymentsAdminNoticeItem = ( {
 	const [ pendingAction, setPendingAction ] = useState< string | null >(
 		null
 	);
-	const shownKey = `${ notice.id }:${ notice.stage ?? '' }`;
+	const shownKey = notice.id;
 	const shownRef = useRef< string | null >( null );
 	const noticeRef = useRef< HTMLDivElement >( null );
 	const isSuppressed = isCachedNoticeSuppressed( notice );
-	const { createSuccessNotice, createErrorNotice } =
-		dispatch( 'core/notices' );
+	const { createErrorNotice } = dispatch( 'core/notices' );
 	const { invalidateResolutionForStoreSelector } =
 		useDispatch( paymentSettingsStore );
 
@@ -80,9 +69,8 @@ export const WooPaymentsAdminNoticeItem = ( {
 		void apiFetch( {
 			url: notice._links.shown.href,
 			method: 'POST',
-			data: notice.stage ? { stage: notice.stage } : undefined,
 		} ).catch( () => undefined );
-	}, [ isSuppressed, shownKey, notice._links.shown.href, notice.stage ] );
+	}, [ isSuppressed, shownKey, notice._links.shown.href ] );
 
 	const finish = () => {
 		// Move focus only when it is still on the notice, or was lost with it; a user who moved on keeps their place.
@@ -108,14 +96,6 @@ export const WooPaymentsAdminNoticeItem = ( {
 		}
 	};
 
-	// Client 11.1.0 records the notice CTA Tracks event server-side (handle_cta()).
-	const recordCtaClick = () =>
-		notice._links.cta
-			? apiFetch( { url: notice._links.cta.href, method: 'POST' } ).catch(
-					() => undefined
-				)
-			: Promise.resolve();
-
 	const postAction = async (
 		action: 'dismiss' | 'snooze' | 'cta',
 		onSuccess: () => void = finish
@@ -132,7 +112,6 @@ export const WooPaymentsAdminNoticeItem = ( {
 			await apiFetch( {
 				url: href,
 				method: 'POST',
-				data: notice.stage ? { stage: notice.stage } : undefined,
 			} );
 			suppressCachedNotice( notice, action );
 			void refreshPaymentProviders();
@@ -146,58 +125,6 @@ export const WooPaymentsAdminNoticeItem = ( {
 				{ type: 'snackbar', explicitDismiss: true }
 			);
 			setPendingAction( null );
-		}
-	};
-
-	const enableLivePayments = async () => {
-		if ( pendingAction ) {
-			return;
-		}
-		setPendingAction( 'primary' );
-		void recordCtaClick();
-		recordPaymentsEvent( 'reactivate_payments_button_click', {
-			provider_id: wooPaymentsProviderId,
-			provider_extension_slug: wooPaymentsExtensionSlug,
-			suggestion_id: wooPaymentsSuggestionId,
-		} );
-
-		try {
-			await apiFetch( {
-				path: '/wc/v3/payments/settings',
-				method: 'POST',
-				data: {
-					is_test_mode_enabled: false,
-				},
-			} );
-			createSuccessNotice(
-				sprintf(
-					/* translators: %s: WooPayments */
-					__(
-						'%s is now processing live payments (real payment methods and charges).',
-						'woocommerce'
-					),
-					'WooPayments'
-				),
-				{ type: 'snackbar', explicitDismiss: false }
-			);
-			suppressCachedNotice( notice, 'dismiss' );
-			void refreshPaymentProviders();
-			setPendingAction( null );
-			finish();
-		} catch {
-			setPendingAction( null );
-			recordPaymentsEvent( 'reactivate_payments_error', {
-				provider_id: wooPaymentsProviderId,
-				provider_extension_slug: wooPaymentsExtensionSlug,
-				suggestion_id: wooPaymentsSuggestionId,
-			} );
-			createErrorNotice(
-				__(
-					'We could not turn on live payments. Please try again.',
-					'woocommerce'
-				),
-				{ type: 'snackbar', explicitDismiss: true }
-			);
 		}
 	};
 
@@ -218,36 +145,6 @@ export const WooPaymentsAdminNoticeItem = ( {
 				spokenMessage={ spokenMessage }
 			>
 				<p>{ notice.message }</p>
-				{ notice.primary.kind === 'disable_test_mode' && (
-					<Button
-						variant="primary"
-						isBusy={ pendingAction === 'primary' }
-						aria-disabled={ pendingAction !== null }
-						onClick={ () => void enableLivePayments() }
-					>
-						{ notice.primary.label }
-					</Button>
-				) }
-				{ notice.primary.kind === 'onboard' && (
-					<Button
-						variant="primary"
-						href={ notice.primary.href }
-						aria-disabled={ pendingAction !== null }
-						onClick={ ( event: MouseEvent ) => {
-							event.preventDefault();
-							const onboardingHref = notice.primary.href;
-							if ( pendingAction !== null || ! onboardingHref ) {
-								return;
-							}
-							setPendingAction( 'primary' );
-							void recordCtaClick().then( () =>
-								window.location.assign( onboardingHref )
-							);
-						} }
-					>
-						{ notice.primary.label }
-					</Button>
-				) }
 				{ notice.primary.kind === 'navigate_and_dismiss' && (
 					<Button
 						variant="primary"

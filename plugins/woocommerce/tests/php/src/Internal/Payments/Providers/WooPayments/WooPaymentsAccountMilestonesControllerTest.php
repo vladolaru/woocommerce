@@ -44,8 +44,6 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_kyc_submitted_date' );
 		delete_option( 'wcpay_has_live_sale' );
 		delete_option( 'wcpay_test_mode_enabled_date' );
-		delete_transient( 'wcpay_test_to_live_eligible' );
-		delete_transient( 'wcpay_post_kyc_activation_eligible' );
 		delete_transient( 'wcpay_one_and_done_eligible' );
 		$this->delete_instant_deposit_note();
 		remove_all_actions( 'woocommerce_payments_email_ipp_receipt_store_details' );
@@ -78,13 +76,13 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A live WooPayments paid-status transition records the sale and invalidates cached post-KYC eligibility.
+	 * @testdox A live WooPayments paid-status transition records the store's first live sale.
 	 * @testWith ["woocommerce_payments"]
 	 *           ["woocommerce_payments_ideal"]
 	 *
 	 * @param string $payment_method WooPayments gateway ID stored on the order.
 	 */
-	public function test_live_woopayments_order_status_transition_invalidates_post_kyc_eligibility( string $payment_method ): void {
+	public function test_live_woopayments_order_status_transition_records_the_first_live_sale( string $payment_method ): void {
 		$service = $this->create_service();
 		$service->register();
 		$order = wc_create_order();
@@ -93,12 +91,10 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 		// Plugin 11.1.0 `maybe_record_first_live_sale()` matches `Order_Mode::PRODUCTION` (class-wc-payments-order-service.php:305).
 		$order->update_meta_data( '_wcpay_mode', 'prod' );
 		$order->save();
-		set_transient( 'wcpay_post_kyc_activation_eligible', '1', HOUR_IN_SECONDS );
 
 		do_action( 'woocommerce_order_status_changed', $order->get_id(), 'pending', 'processing', $order );
 
 		$this->assertSame( '1', get_option( 'wcpay_has_live_sale' ) );
-		$this->assertFalse( get_transient( 'wcpay_post_kyc_activation_eligible' ) );
 	}
 
 	/**
@@ -145,7 +141,7 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Ineligible order-status transitions leave the live-sale marker and post-KYC eligibility unchanged.
+	 * @testdox Ineligible order-status transitions leave the live-sale marker unset.
 	 * @dataProvider provide_ineligible_order_status_transitions
 	 *
 	 * @param string $payment_method Payment method stored on the order.
@@ -153,7 +149,7 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 	 * @param string $new_status     Target order status supplied by the hook.
 	 * @param bool   $valid_order    Whether the hook receives a WC_Order.
 	 */
-	public function test_ineligible_order_status_transitions_preserve_post_kyc_eligibility( string $payment_method, string $mode, string $new_status, bool $valid_order ): void {
+	public function test_ineligible_order_status_transitions_leave_the_live_sale_marker_unset( string $payment_method, string $mode, string $new_status, bool $valid_order ): void {
 		$service  = $this->create_service();
 		$order    = new \stdClass();
 		$order_id = 123;
@@ -166,12 +162,10 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 			$order_id = $order->get_id();
 		}
 		delete_option( 'wcpay_has_live_sale' );
-		set_transient( 'wcpay_post_kyc_activation_eligible', '1', HOUR_IN_SECONDS );
 
 		$service->handle_woocommerce_order_status_changed( $order_id, OrderStatus::PENDING, $new_status, $order );
 
 		$this->assertFalse( get_option( 'wcpay_has_live_sale' ), 'An ineligible transition must not record a live sale.' );
-		$this->assertSame( '1', get_transient( 'wcpay_post_kyc_activation_eligible' ), 'An ineligible transition must not invalidate cached eligibility.' );
 	}
 
 	/**
@@ -191,45 +185,23 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should stamp the test-mode enable date and clear notice eligibility on a mode flip.
+	 * @testdox A gateway test-mode flip records no test-mode date and leaves a stored one in place.
+	 *
+	 * Client 11.3.0 no longer writes or clears `wcpay_test_mode_enabled_date` (`includes/class-wc-payments-onboarding-service.php`).
 	 */
-	public function test_test_mode_toggle_stamps_and_clears_bookkeeping(): void {
+	public function test_test_mode_flip_records_no_test_mode_date(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'no' ) );
-		set_transient( 'wcpay_test_to_live_eligible', '1', 100 );
-		set_transient( 'wcpay_post_kyc_activation_eligible', '1', 100 );
 		$service = $this->create_service();
 		$service->register();
 
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 
-		$enabled_date = (int) get_option( 'wcpay_test_mode_enabled_date' );
-		$this->assertGreaterThan( 0, $enabled_date );
-		$this->assertFalse( get_transient( 'wcpay_test_to_live_eligible' ) );
-		$this->assertFalse( get_transient( 'wcpay_post_kyc_activation_eligible' ) );
+		$this->assertFalse( get_option( 'wcpay_test_mode_enabled_date' ) );
 
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'no' ) );
-
-		$this->assertFalse( get_option( 'wcpay_test_mode_enabled_date' ), 'Disabling test mode must restart the nudge clock.' );
-	}
-
-	/**
-	 * @testdox Should preserve the original enable date across saves that do not flip the mode.
-	 */
-	public function test_test_mode_bookkeeping_preserves_enable_date_without_a_flip(): void {
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		update_option( 'wcpay_test_mode_enabled_date', 1234567890, false );
-		$service = $this->create_service();
-		$service->register();
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'no' ) );
 
-		update_option(
-			'woocommerce_woocommerce_payments_settings',
-			array(
-				'test_mode'      => 'yes',
-				'enable_logging' => 'yes',
-			)
-		);
-
-		$this->assertSame( 1234567890, (int) get_option( 'wcpay_test_mode_enabled_date' ), 'A save without a mode flip must not restamp the enable date.' );
+		$this->assertSame( 1234567890, (int) get_option( 'wcpay_test_mode_enabled_date' ) );
 	}
 
 	/**
@@ -460,7 +432,6 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 		remove_action( 'wcpay_instant_deposit_reminder', array( $service, 'handle_wcpay_instant_deposit_reminder' ) );
 		remove_action( 'wcpay_post_kyc_activation_email_send', array( $service, 'handle_wcpay_post_kyc_activation_email_send' ) );
 		remove_action( 'woocommerce_payments_account_refreshed', array( $service, 'handle_wcpay_instant_deposits_inbox_note' ) );
-		remove_action( 'update_option_woocommerce_woocommerce_payments_settings', array( $service, 'maybe_handle_test_mode_toggle' ) );
 		remove_action( 'woocommerce_order_status_changed', array( $service, 'handle_woocommerce_order_status_changed' ) );
 		remove_filter( 'woocommerce_email_classes', array( $service, 'add_ipp_receipt_email' ) );
 	}

@@ -8,9 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin;
 
 use Automattic\WooCommerce\Enums\OrderInternalStatus;
-use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use WP_Error;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountMilestonesController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
@@ -18,8 +16,9 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderMode;
 
 /**
- * Picks the notice the WooPayments settings page shows the current user (go live after test mode, the first-sale nudges
- * after KYC, or the follow-up to a first sale) and records the user's actions on it.
+ * Picks the notice the WooPayments settings page shows the current user, the one-and-done follow-up to a store's first
+ * live sale, and records the user's actions on it, as client 11.3.0 shows only that notice
+ * (`includes/admin/attach-rate/class-wc-payments-admin-notices.php`).
  *
  * It answers nothing while the WooPayments extension owns payments.
  *
@@ -27,16 +26,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
  * @internal
  */
 class NoticeService {
-	/**
-	 * Existing site-scoped test-to-live eligibility cache.
-	 */
-	private const TEST_TO_LIVE_ELIGIBLE_TRANSIENT = 'wcpay_test_to_live_eligible';
-
-	/**
-	 * Existing site-scoped post-KYC activation eligibility cache.
-	 */
-	private const POST_KYC_ACTIVATION_ELIGIBLE_TRANSIENT = 'wcpay_post_kyc_activation_eligible';
-
 	/**
 	 * Existing site-scoped one-and-done eligibility cache.
 	 */
@@ -48,29 +37,16 @@ class NoticeService {
 	private const ONE_AND_DONE_PERMANENTLY_INELIGIBLE_OPTION = 'wcpay_one_and_done_permanently_ineligible';
 
 	/**
-	 * Supported post-KYC activation stages.
-	 */
-	private const POST_KYC_ACTIVATION_STAGES = array( 7, 14, 30 );
-
-	/**
 	 * Supported actions for each settings notice.
 	 */
 	private const ACTIONS = array(
-		'test_to_live'        => array( 'shown', 'dismiss', 'snooze', 'cta' ),
-		'post_kyc_activation' => array( 'shown', 'dismiss', 'cta' ),
-		'one_and_done'        => array( 'shown', 'dismiss', 'snooze', 'cta' ),
+		'one_and_done' => array( 'shown', 'dismiss', 'snooze', 'cta' ),
 	);
 
 	/**
-	 * The WooPayments extension's user meta keys for the test-to-live and one-and-done notices, so a dismissal or snooze
-	 * carries over.
+	 * The WooPayments extension's user meta keys for the one-and-done notice, so a dismissal or snooze carries over.
 	 */
 	private const USER_META_KEYS = array(
-		'test_to_live' => array(
-			'shown'   => 'wcpay_test_to_live_notice_shown',
-			'dismiss' => 'wcpay_test_to_live_notice_dismissed',
-			'snooze'  => 'wcpay_test_to_live_notice_snoozed',
-		),
 		'one_and_done' => array(
 			'shown'   => 'wcpay_one_and_done_notice_shown',
 			'dismiss' => 'wcpay_one_and_done_notice_dismissed_at',
@@ -142,73 +118,7 @@ class NoticeService {
 			return null;
 		}
 
-		if ( ! $this->account_service->is_test_mode_enabled() ) {
-			$post_kyc_notice = $this->refresh_post_kyc_notice( $user_id );
-			return $post_kyc_notice ?? $this->refresh_one_and_done_notice( $user_id );
-		}
-		if ( $this->account_service->is_dev_mode_enabled() ) {
-			return null;
-		}
-
-		$now          = (int) call_user_func( $this->clock );
-		$enabled_date = (int) get_option( 'wcpay_test_mode_enabled_date', 0 );
-		if ( 0 === $enabled_date || $now < $enabled_date + 7 * DAY_IN_SECONDS ) {
-			return null;
-		}
-
-		if ( get_user_meta( $user_id, self::USER_META_KEYS['test_to_live']['dismiss'], true ) ) {
-			return null;
-		}
-		$snoozed_at = (int) get_user_meta( $user_id, self::USER_META_KEYS['test_to_live']['snooze'], true );
-		if ( 0 < $snoozed_at && $now < $snoozed_at + 7 * DAY_IN_SECONDS ) {
-			return null;
-		}
-
-		$has_test_sale = get_transient( self::TEST_TO_LIVE_ELIGIBLE_TRANSIENT );
-		if ( false === $has_test_sale ) {
-			$orders = wc_get_orders(
-				array(
-					'payment_method' => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
-					'limit'          => 1,
-					'orderby'        => 'none',
-					'return'         => 'ids',
-					'status'         => array( OrderInternalStatus::COMPLETED, OrderInternalStatus::PROCESSING ),
-					// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
-					'meta_key'       => '_wcpay_mode',
-					// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
-					'meta_value'     => WooPaymentsOrderMode::TEST,
-				)
-			);
-			$has_test_sale = empty( $orders ) ? '0' : '1';
-			set_transient( self::TEST_TO_LIVE_ELIGIBLE_TRANSIENT, $has_test_sale, HOUR_IN_SECONDS );
-		}
-		if ( '1' !== $has_test_sale ) {
-			return null;
-		}
-
-		$can_go_live = $this->account_service->has_live_account();
-		$primary_url = $can_go_live ? Utils::wc_payments_settings_url( '/woopayments/settings' ) : Utils::wc_payments_settings_url( '/woopayments/onboarding' );
-		$action_base = 'wc-admin/settings/payments/woopayments/admin-notices/test_to_live/';
-
-		return array(
-			'id'        => 'test_to_live',
-			'message'   => __( "You're ready to take real payments. Switch from test mode to start charging customers.", 'woocommerce' ),
-			'primary'   => array(
-				'kind'  => $can_go_live ? 'disable_test_mode' : 'onboard',
-				'label' => __( 'Turn on live payments', 'woocommerce' ),
-				'href'  => $primary_url,
-			),
-			'secondary' => array(
-				'kind'  => 'snooze',
-				'label' => __( 'Maybe later', 'woocommerce' ),
-			),
-			'_links'    => array(
-				'shown'   => array( 'href' => rest_url( $action_base . 'shown' ) ),
-				'dismiss' => array( 'href' => rest_url( $action_base . 'dismiss' ) ),
-				'snooze'  => array( 'href' => rest_url( $action_base . 'snooze' ) ),
-				'cta'     => array( 'href' => rest_url( $action_base . 'cta' ) ),
-			),
-		);
+		return $this->refresh_one_and_done_notice( $user_id );
 	}
 
 	/**
@@ -303,7 +213,8 @@ class NoticeService {
 	 * @return bool
 	 */
 	private function can_consider_one_and_done( int $user_id, int $now ): bool {
-		if ( get_option( self::ONE_AND_DONE_PERMANENTLY_INELIGIBLE_OPTION ) || ! $this->account_service->can_process_payments() || ! $this->account_service->has_live_account() || $this->account_service->has_test_account() || $this->account_service->is_dev_mode_enabled() ) {
+		// Client 11.3.0 compute_eligibility() also rules out test mode, now that no other notice shows there.
+		if ( get_option( self::ONE_AND_DONE_PERMANENTLY_INELIGIBLE_OPTION ) || ! $this->account_service->can_process_payments() || ! $this->account_service->has_live_account() || $this->account_service->has_test_account() || $this->account_service->is_test_mode_enabled() || $this->account_service->is_dev_mode_enabled() ) {
 			return false;
 		}
 		if ( get_user_meta( $user_id, self::USER_META_KEYS['one_and_done']['dismiss'], true ) ) {
@@ -346,92 +257,16 @@ class NoticeService {
 	}
 
 	/**
-	 * Get the oldest due post-KYC activation stage for the current user.
-	 *
-	 * @param int $user_id Current user ID.
-	 * @return array|null
-	 */
-	private function refresh_post_kyc_notice( int $user_id ): ?array {
-		if ( ! $this->account_service->can_process_payments() || ! $this->account_service->has_live_account() || $this->account_service->has_test_account() || $this->account_service->is_dev_mode_enabled() || get_option( WooPaymentsAccountMilestonesController::HAS_LIVE_SALE_OPTION ) ) {
-			return null;
-		}
-
-		$now      = (int) call_user_func( $this->clock );
-		$kyc_date = (int) get_option( 'wcpay_kyc_completion_date', 0 );
-		if ( 0 === $kyc_date || $now < $kyc_date + 7 * DAY_IN_SECONDS || $now >= $kyc_date + 60 * DAY_IN_SECONDS ) {
-			return null;
-		}
-
-		$messages         = array(
-			7  => __( 'Your store is open. Now bring in your first customer.', 'woocommerce' ),
-			14 => __( 'Two weeks on, still no first sale?', 'woocommerce' ),
-			30 => __( "A month in. Let's get your first sale.", 'woocommerce' ),
-		);
-		$selected_stage   = null;
-		$selected_message = null;
-		foreach ( $messages as $stage => $message ) {
-			if ( $now < $kyc_date + $stage * DAY_IN_SECONDS || get_user_meta( $user_id, sprintf( 'wcpay_post_kyc_activation_%d_dismissed', $stage ), true ) ) {
-				continue;
-			}
-			$selected_stage   = $stage;
-			$selected_message = $message;
-			break;
-		}
-		if ( null === $selected_stage || null === $selected_message ) {
-			return null;
-		}
-
-		if ( false === get_transient( self::POST_KYC_ACTIVATION_ELIGIBLE_TRANSIENT ) ) {
-			if ( $this->has_live_sale() ) {
-				return null;
-			}
-			set_transient( self::POST_KYC_ACTIVATION_ELIGIBLE_TRANSIENT, '1', HOUR_IN_SECONDS );
-		}
-
-		$action_base = 'wc-admin/settings/payments/woopayments/admin-notices/post_kyc_activation/';
-		return array(
-			'id'      => 'post_kyc_activation',
-			'stage'   => $selected_stage,
-			'message' => $selected_message,
-			'primary' => array(
-				'kind'  => 'navigate_and_dismiss',
-				'label' => __( 'Promote my store', 'woocommerce' ),
-				'href'  => admin_url( 'admin.php?page=wc-admin&path=/marketing' ),
-			),
-			'_links'  => array(
-				'shown'   => array( 'href' => rest_url( $action_base . 'shown' ) ),
-				'dismiss' => array( 'href' => rest_url( $action_base . 'dismiss' ) ),
-				'cta'     => array( 'href' => rest_url( $action_base . 'cta' ) ),
-			),
-		);
-	}
-
-	/**
-	 * Tell whether the store has a live WooPayments sale.
-	 *
-	 * Read through the account milestones controller, which keeps the live-sale flag.
-	 *
-	 * @return bool
-	 */
-	private function has_live_sale(): bool {
-		return wc_get_container()->get( WooPaymentsAccountMilestonesController::class )->has_live_sale();
-	}
-
-	/**
 	 * Record a current-user notice action.
 	 *
 	 * @since 11.2.0
 	 *
-	 * @param string   $notice_id Notice identifier.
-	 * @param string   $action    Action identifier.
-	 * @param int|null $stage     Optional post-KYC stage.
+	 * @param string $notice_id Notice identifier.
+	 * @param string $action    Action identifier.
 	 * @return bool|WP_Error
 	 */
-	public function record_action( string $notice_id, string $action, ?int $stage = null ) {
-		$valid_stage = 'post_kyc_activation' === $notice_id
-			? in_array( $stage, self::POST_KYC_ACTIVATION_STAGES, true )
-			: null === $stage;
-		if ( ! isset( self::ACTIONS[ $notice_id ] ) || ! in_array( $action, self::ACTIONS[ $notice_id ], true ) || ! $valid_stage ) {
+	public function record_action( string $notice_id, string $action ) {
+		if ( ! isset( self::ACTIONS[ $notice_id ] ) || ! in_array( $action, self::ACTIONS[ $notice_id ], true ) ) {
 			return new WP_Error( 'woocommerce_woopayments_invalid_notice_action', __( 'Invalid notice action.', 'woocommerce' ) );
 		}
 		$user_id = get_current_user_id();
@@ -441,17 +276,9 @@ class NoticeService {
 		if ( $this->runtime_arbiter->is_extension_owner() ) {
 			return new WP_Error( 'woocommerce_woopayments_notice_extension_owned', __( 'The WooPayments extension manages this notice.', 'woocommerce' ) );
 		}
-		if ( 'test_to_live' === $notice_id && 'cta' === $action ) {
-			// Client 11.1.0 test-to-live handle_cta() records without a dismissal marker: the notice clears once live.
-			WooPaymentsTracks::record_wcadmin_event( 'wcpay_test_to_live_notice_cta_clicked', array( 'path' => $this->account_service->has_live_account() ? 'switch_mode' : 'onboarding' ) );
-			return true;
-		}
-
 		// A CTA click also dismisses the notice.
 		$marker   = 'cta' === $action ? 'dismiss' : $action;
-		$meta_key = 'post_kyc_activation' === $notice_id
-			? sprintf( 'wcpay_post_kyc_activation_%d_%s', $stage, 'dismiss' === $marker ? 'dismissed' : 'shown' )
-			: self::USER_META_KEYS[ $notice_id ][ $marker ];
+		$meta_key = self::USER_META_KEYS[ $notice_id ][ $marker ];
 		$now      = (int) call_user_func( $this->clock );
 		if ( metadata_exists( 'user', $user_id, $meta_key ) ) {
 			$existing_marker = (int) get_user_meta( $user_id, $meta_key, true );
@@ -470,17 +297,9 @@ class NoticeService {
 		if ( ! $stored ) {
 			return new WP_Error( 'woocommerce_woopayments_notice_action_failed', __( 'Could not update the notice.', 'woocommerce' ) );
 		}
-		if ( 'post_kyc_activation' === $notice_id ) {
-			delete_transient( self::POST_KYC_ACTIVATION_ELIGIBLE_TRANSIENT );
-		}
-		if ( 'test_to_live' === $notice_id ) {
-			delete_transient( self::TEST_TO_LIVE_ELIGIBLE_TRANSIENT );
-		}
-		if ( 'one_and_done' === $notice_id ) {
-			delete_transient( self::ONE_AND_DONE_ELIGIBLE_TRANSIENT );
-		}
+		delete_transient( self::ONE_AND_DONE_ELIGIBLE_TRANSIENT );
 		if ( $changed ) {
-			$this->record_tracks_event( $notice_id . ':' . $action, $stage );
+			$this->record_tracks_event( $notice_id . ':' . $action );
 		}
 
 		return true;
@@ -490,21 +309,10 @@ class NoticeService {
 	 * Record the client 11.1.0 attach-rate notice Tracks event (`class-wc-payments-abstract-admin-notice.php:196,222,446,546`
 	 * and the notices' handle_cta()/hide_notice() overrides) once this user's notice state changed.
 	 *
-	 * @param string   $notice_action Notice identifier and action, joined by a colon.
-	 * @param int|null $stage         Post-KYC stage.
+	 * @param string $notice_action Notice identifier and action, joined by a colon.
 	 */
-	private function record_tracks_event( string $notice_action, ?int $stage ): void {
-		$stage_properties = array( 'stage' => $stage );
+	private function record_tracks_event( string $notice_action ): void {
 		switch ( $notice_action ) {
-			case 'test_to_live:shown':
-				WooPaymentsTracks::record_wcadmin_event( 'wcpay_test_to_live_notice_shown' );
-				break;
-			case 'test_to_live:dismiss':
-				WooPaymentsTracks::record_wcadmin_event( 'wcpay_test_to_live_notice_dismissed' );
-				break;
-			case 'test_to_live:snooze':
-				WooPaymentsTracks::record_wcadmin_event( 'wcpay_test_to_live_notice_snoozed' );
-				break;
 			case 'one_and_done:shown':
 				WooPaymentsTracks::record_wcadmin_event( 'wcpay_one_and_done_notice_shown' );
 				break;
@@ -516,15 +324,6 @@ class NoticeService {
 				break;
 			case 'one_and_done:cta':
 				WooPaymentsTracks::record_wcadmin_event( 'wcpay_one_and_done_notice_cta_clicked', array( 'destination' => 'marketing' ) );
-				break;
-			case 'post_kyc_activation:shown':
-				WooPaymentsTracks::record_wcadmin_event( 'wcpay_post_kyc_activation_notice_shown', $stage_properties );
-				break;
-			case 'post_kyc_activation:dismiss':
-				WooPaymentsTracks::record_wcadmin_event( 'wcpay_post_kyc_activation_notice_dismissed', $stage_properties );
-				break;
-			case 'post_kyc_activation:cta':
-				WooPaymentsTracks::record_wcadmin_event( 'wcpay_post_kyc_activation_notice_cta_clicked', $stage_properties );
 				break;
 		}
 	}

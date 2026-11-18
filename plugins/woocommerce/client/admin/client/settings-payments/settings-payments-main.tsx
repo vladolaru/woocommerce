@@ -227,9 +227,7 @@ export const SettingsPaymentsMain = () => {
 	const adminNotice = ! isFetching
 		? noticeProvider?._admin_notice
 		: undefined;
-	const noticeKey = adminNotice
-		? `${ adminNotice.id }:${ adminNotice.stage ?? '' }`
-		: null;
+	const noticeKey = adminNotice ? adminNotice.id : null;
 	const incentive = incentiveProvider ? incentiveProvider._incentive : null;
 
 	// Determine what type of incentive surface to display.
