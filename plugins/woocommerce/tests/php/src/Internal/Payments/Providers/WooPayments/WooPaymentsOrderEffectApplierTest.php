@@ -19,6 +19,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\StoredPaymentRecords;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use RuntimeException;
 use WC_Order;
@@ -459,6 +460,48 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 'successfully charged', $data[ PaymentOutcome::DATA_NOTE ] );
 		$this->assertSame( 'payment_success', $data[ PaymentOutcome::DATA_NOTE_TYPE ] );
 		$this->assertContains( $data[ PaymentOutcome::DATA_NOTE ], $data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] );
+	}
+
+	/**
+	 * @testdox A checkout charge attached over an earlier authorization's record completes the order as a payment, not as that authorization's capture.
+	 *
+	 * The order stored authorization pi_A, its transaction ID naming it, and was moved back to Pending. The checkout's attach
+	 * writes the new payment's intent and status first (attach_charge_intent()), so the composition reads that payment's
+	 * record and gives the payment's success note. Client 11.3.0 attaches before its status update in the same order
+	 * (class-wc-payment-gateway-wcpay.php:2444, then class-wc-payments-order-service.php:484-489).
+	 */
+	public function test_checkout_charge_attached_over_an_earlier_authorization_completes_as_a_payment(): void {
+		$order = StoredPaymentRecords::authorization( 'pi_A', 'ch_A' );
+		$order->set_status( 'pending' );
+		$order->save();
+		$result = array(
+			'id'       => 'pi_C',
+			'status'   => 'succeeded',
+			'amount'   => 1099,
+			'currency' => 'usd',
+			'charges'  => array(
+				'data' => array(
+					array(
+						'id'       => 'ch_C',
+						'currency' => 'usd',
+						'amount'   => 1099,
+					),
+				),
+			),
+		);
+		$plan   = WooPaymentsOrderEffectPlan::for_payment_intent( $result, false );
+
+		$data = $this->apply_charge(
+			$this->create_applier(),
+			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_C' ),
+			new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_C', '', 'pm_C' ),
+			$plan
+		)->get_data();
+
+		$stored = wc_get_order( $order->get_id() );
+		$this->assertSame( array( 'pi_C', 'succeeded' ), array( $stored->get_meta( '_intent_id', true ), $stored->get_meta( '_intention_status', true ) ), 'The attach wrote the new payment first.' );
+		$this->assertSame( PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS, $data[ PaymentOutcome::DATA_NOTE_TYPE ] ?? null );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_HOLD_ORDER, $data );
 	}
 
 	/**
@@ -1731,7 +1774,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A succeeded payment that completes an authorization as a capture stamps the fraud box from the stored outcome: $_dataName.
 	 *
-	 * The order stores the authorization, so client 11.3.0 completes it with its capture writer
+	 * The order stores the authorization, its transaction ID naming it, so client 11.3.0 completes it with its capture writer
 	 * (class-wc-payments-order-service.php:484-485), which stamps `review_allowed` when the stored outcome is review and
 	 * `allow` otherwise, for every payment method (:2209-2213). The Amazon Pay rows give the charge Stripe's `amazon_pay`
 	 * payment method details.
@@ -1748,6 +1791,8 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	public function test_payment_intent_effects_of_a_capture_stamp_the_fraud_box_from_the_stored_outcome( string $payment_method_type, string $stored_outcome, string $expected_box ): void {
 		$order = $this->create_woopayments_order();
 		$order->set_status( 'on-hold' );
+		$order->set_transaction_id( 'pi_capture_confirm' );
+		$order->update_meta_data( '_intent_id', 'pi_capture_confirm' );
 		$order->update_meta_data( '_intention_status', 'requires_capture' );
 		$order->update_meta_data( '_wcpay_fraud_outcome_status', $stored_outcome );
 		$order->save();

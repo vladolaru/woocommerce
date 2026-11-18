@@ -76,7 +76,8 @@ class WooPaymentsAmountMismatchHoldTest extends WC_Unit_Test_Case {
 	 * Client 11.3.0 class-wc-payments-order-service.php:483-491: the capture branch comes first, only a PaymentIntent is
 	 * compared, and the currency compares case-insensitively; class-wc-payments-webhook-processing-service.php:711-717
 	 * leaves an invoice's intent to the invoice, and the partial-capture case is its
-	 * test_partial_capture_completes_order_despite_amount_below_order_total().
+	 * test_partial_capture_completes_order_despite_amount_below_order_total(). The authorization is the one the order
+	 * recorded: its stored intent and transaction ID name the payment.
 	 *
 	 * @dataProvider provider_payments_that_complete
 	 *
@@ -86,6 +87,8 @@ class WooPaymentsAmountMismatchHoldTest extends WC_Unit_Test_Case {
 	public function test_payment_that_completes_its_order_holds_nothing( array $intent, string $stored_intent_status ): void {
 		$order = $this->create_order( '25.19', 'USD' );
 		if ( '' !== $stored_intent_status ) {
+			$order->set_transaction_id( 'pi_mismatch' );
+			$order->update_meta_data( '_intent_id', 'pi_mismatch' );
 			$order->update_meta_data( '_intention_status', $stored_intent_status );
 			$order->save();
 		}
@@ -126,6 +129,42 @@ class WooPaymentsAmountMismatchHoldTest extends WC_Unit_Test_Case {
 				'',
 			),
 		);
+	}
+
+	/**
+	 * @testdox A payment for less than the total is held on an order storing requires_capture unless it is the capture of the authorization the order recorded: $_dataName.
+	 *
+	 * The capture is exempt only when the order stores requires_capture, the payment is the intent the order stored before
+	 * the caller wrote any (the caller's value, or the stored intent when it passes none), and the transaction ID names it.
+	 * Client 11.3.0 exempts any order storing requires_capture (class-wc-payments-order-service.php:484-485).
+	 *
+	 * @testWith ["the recorded authorization's capture", "pi_mismatch", "pi_mismatch", null, false]
+	 *           ["the recorded authorization's capture, by the intent stored before the caller's write", "pi_another", "pi_mismatch", "pi_mismatch", false]
+	 *           ["no intent and no transaction ID stored", "", "", null, true]
+	 *           ["no transaction ID", "pi_mismatch", "", null, true]
+	 *           ["a transaction ID naming another attempt", "pi_mismatch", "pi_earlier", null, true]
+	 *           ["another intent stored before the caller's write", "pi_mismatch", "pi_mismatch", "pi_earlier", true]
+	 *           ["no intent stored before the caller's write", "pi_mismatch", "pi_mismatch", "", true]
+	 *
+	 * @param string      $case_name        Case name.
+	 * @param string      $stored_intent    The intent the order stores now, or '' for none.
+	 * @param string      $transaction_id   The order's transaction ID, or '' for none.
+	 * @param string|null $stored_intent_id The intent the caller read before its write, or null for none passed.
+	 * @param bool        $expected_held    Whether the order is held.
+	 */
+	public function test_stored_requires_capture_exempts_only_the_recorded_authorizations_capture( string $case_name, string $stored_intent, string $transaction_id, ?string $stored_intent_id, bool $expected_held ): void {
+		unset( $case_name );
+		$order = $this->create_order( '25.19', 'USD' );
+		$order->set_transaction_id( $transaction_id );
+		if ( '' !== $stored_intent ) {
+			$order->update_meta_data( '_intent_id', $stored_intent );
+		}
+		$order->update_meta_data( '_intention_status', 'requires_capture' );
+		$order->save();
+
+		$hold = $this->sut->decide_hold( $order, $this->succeeded_intent( 2000, 'usd' ), $stored_intent_id );
+
+		$this->assertSame( $expected_held, null !== $hold );
 	}
 
 	/**

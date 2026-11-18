@@ -45,12 +45,6 @@ use WC_Payment_Token;
 class PaymentIntentEventHandler {
 
 	/**
-	 * Log reason of a succeeded payment treated as the capture of an order's stored authorization status whose stored
-	 * intent was another one.
-	 */
-	private const REASON_CAPTURE_OVER_ANOTHER_INTENTS_AUTHORIZATION = 'capture_over_another_intents_authorization';
-
-	/**
 	 * Log reason of a succeeded payment whose whole record was written over the stored intent of another attempt, on an
 	 * order without a paid status.
 	 */
@@ -514,9 +508,11 @@ class PaymentIntentEventHandler {
 	 * the order put on hold instead of completed. On an order without a paid status that stores another attempt's intent,
 	 * the payment's whole record, its succeeded status included, is written in one save before the order's status is
 	 * decided, so the payment is completed and its amount checked, not taken as the capture of that attempt's
-	 * authorization. An order that still stores a requires_capture intent status then is completed as a capture, with the
-	 * capture note. Once the order has this intent's capture note, the payment is not completed again: only the payment
-	 * meta is written. The Fee details job is scheduled when the intent's payment note is first added.
+	 * authorization. The order is then completed as a capture, with the capture note and no amount check, only when it
+	 * stores a requires_capture intent status, this intent is the one it stored before this event wrote anything, and its
+	 * transaction ID names this payment (WooPaymentsOrderEffects::captures_the_authorization()). Once the order has this
+	 * intent's capture note, the payment is not completed again: only the payment meta is written. The Fee details job is
+	 * scheduled when the intent's payment note is first added.
 	 *
 	 * @since 11.2.0
 	 *
@@ -540,7 +536,7 @@ class PaymentIntentEventHandler {
 	 * can call the platform, so the order is then read again in place and the hold and the event are decided on that read.
 	 * The intent the order stored is read before anything is written: on an order without a paid status that stores another
 	 * attempt, the payment meta is the payment's whole record, its succeeded status included
-	 * (write_succeeded_payment_intent_record()).
+	 * (write_succeeded_payment_intent_record()), and the hold and the capture choice ask whether this intent is that one.
 	 *
 	 * @param WC_Order            $order                 Order the intent pays, read under the lock.
 	 * @param array<string,mixed> $payment_intent        Provider payment intent object.
@@ -557,46 +553,14 @@ class PaymentIntentEventHandler {
 		$this->composition_data_settler->run_settled(
 			function () use ( $order, $payment_intent, $hold_note_candidates, $reports_intent_status, $stored_intent_id ): void {
 				$this->lifecycle_service->reread_order_from_data_store( $order );
-				$hold            = null === $hold_note_candidates ? wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->decide_hold( $order, $payment_intent ) : null;
-				$lifecycle_event = $this->build_succeeded_lifecycle_event( $payment_intent, $order, $hold_note_candidates ?? ( null === $hold ? null : $hold['notes'] ) );
-				if ( null === $hold_note_candidates ) {
-					$this->log_capture_over_another_intents_authorization( $order, $payment_intent, $stored_intent_id );
-				}
+				$hold            = null === $hold_note_candidates ? wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->decide_hold( $order, $payment_intent, $stored_intent_id ) : null;
+				$lifecycle_event = $this->build_succeeded_lifecycle_event( $payment_intent, $order, $hold_note_candidates ?? ( null === $hold ? null : $hold['notes'] ), $stored_intent_id );
 				if ( $reports_intent_status ) {
 					$this->fee_details_note_controller->apply_intent_status_and_schedule_fee_details( $order, $lifecycle_event, $hold, $payment_intent );
 				} else {
 					$this->fee_details_note_controller->apply_and_schedule_fee_details( $order, $lifecycle_event, $hold, $payment_intent );
 				}
 			}
-		);
-	}
-
-	/**
-	 * Log a succeeded payment treated as the capture of the order's stored requires_capture status while the order stored
-	 * another intent before the event, whatever the logging setting. The capture choice reads the stored status only
-	 * (client 11.3.0 class-wc-payments-order-service.php:484-489), which can be another attempt's. The line records the
-	 * choice; the lifecycle can still skip the event, for example on an order already in a paid status.
-	 *
-	 * @param WC_Order            $order            Order read under the lock, after the payment meta was written.
-	 * @param array<string,mixed> $payment_intent   Provider payment intent object.
-	 * @param string              $stored_intent_id The intent the order stored before the event.
-	 */
-	private function log_capture_over_another_intents_authorization( WC_Order $order, array $payment_intent, string $stored_intent_id ): void {
-		$intent_id = $this->get_object_id( $payment_intent );
-		if ( $stored_intent_id === $intent_id || ! WooPaymentsOrderEffects::captures_the_authorization( $order, $payment_intent ) ) {
-			return;
-		}
-
-		$stored = WooPaymentsLogger::get_loggable_provider_id( $stored_intent_id );
-		wc_get_container()->get( WooPaymentsLogger::class )->log_always(
-			sprintf( 'Payment %1$s on order #%2$d is treated as the capture of an authorization, but the requires_capture status the order stores is beside intent %3$s.', $intent_id, $order->get_id(), $stored ),
-			'warning',
-			array(
-				'order_id'         => $order->get_id(),
-				'intent_id'        => $intent_id,
-				'stored_intent_id' => $stored,
-				'reason'           => self::REASON_CAPTURE_OVER_ANOTHER_INTENTS_AUTHORIZATION,
-			)
 		);
 	}
 
@@ -789,12 +753,13 @@ class PaymentIntentEventHandler {
 	 * @param array<string,mixed> $event_object         Provider intent object.
 	 * @param WC_Order            $order                Order object.
 	 * @param string[]|null       $hold_note_candidates The hold's note when the order is held, or null when the intent completes it.
+	 * @param string              $stored_intent_id     The intent the order stored before this event wrote anything.
 	 * @return PaymentLifecycleEvent
 	 */
-	private function build_succeeded_lifecycle_event( array $event_object, WC_Order $order, ?array $hold_note_candidates ): PaymentLifecycleEvent {
+	private function build_succeeded_lifecycle_event( array $event_object, WC_Order $order, ?array $hold_note_candidates, string $stored_intent_id ): PaymentLifecycleEvent {
 		$charge                     = WooPaymentsIntentCodec::first_charge( $event_object );
 		$balance_transaction_id     = WooPaymentsIntentCodec::balance_transaction_id( $charge['balance_transaction'] ?? null );
-		$captures_the_authorization = null === $hold_note_candidates && WooPaymentsOrderEffects::captures_the_authorization( $order, $event_object );
+		$captures_the_authorization = null === $hold_note_candidates && WooPaymentsOrderEffects::captures_the_authorization( $order, $event_object, $stored_intent_id );
 		$meta                       = $this->get_succeeded_payment_intent_meta( $event_object, $order, $captures_the_authorization );
 
 		if ( null !== $hold_note_candidates ) {
@@ -812,7 +777,8 @@ class PaymentIntentEventHandler {
 		}
 
 		// Client 11.3.0 completes an order that stores requires_capture with its capture writer, and any other with its
-		// success writer (class-wc-payments-order-service.php:484-489, :2193-2219).
+		// success writer (class-wc-payments-order-service.php:484-489, :2193-2219); here only the capture of the authorization
+		// the order recorded takes the capture writer.
 		$note_candidates = $captures_the_authorization
 			? $this->order_note_service->format_capture_success_note_candidates( $order, $this->get_object_id( $event_object ), WooPaymentsIntentCodec::first_charge_id( $event_object ), $balance_transaction_id )
 			: $this->order_note_service->format_payment_success_note_candidates( $order, $this->get_object_id( $event_object ), WooPaymentsIntentCodec::first_charge_id( $event_object ), $balance_transaction_id );

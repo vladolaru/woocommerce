@@ -473,21 +473,32 @@ class WooPaymentsOrderEffects {
 	}
 
 	/**
-	 * Tell whether a succeeded intent completes the order as a capture: the order still stores the authorization's
-	 * requires_capture intent status, with no intent attached since. Client 11.3.0 then completes it with its capture
-	 * writer, not its success writer (class-wc-payments-order-service.php:484-485, :2193-2219).
+	 * Tell whether a succeeded intent completes the order as the capture of the authorization the order recorded: the
+	 * order stores requires_capture, the intent is the one the order stored before the caller wrote any, and the
+	 * transaction ID names it. Any other success is a payment, whose amount is checked. Client 11.3.0 reads the stored
+	 * status alone (class-wc-payments-order-service.php:484-485, :2193-2219).
 	 *
-	 * @param WC_Order            $order  Order the intent pays, read under the order payment lock.
-	 * @param array<string,mixed> $intent Provider intent response.
+	 * @param WC_Order            $order            Order the intent pays, read under the order payment lock.
+	 * @param array<string,mixed> $intent           Provider intent response.
+	 * @param string|null         $stored_intent_id The intent the order stored before the caller wrote any, or null to read it now.
 	 * @return bool
 	 */
-	public static function captures_the_authorization( WC_Order $order, array $intent ): bool {
-		return 'succeeded' === (string) ( $intent['status'] ?? '' ) && 'requires_capture' === (string) $order->get_meta( '_intention_status', true );
+	public static function captures_the_authorization( WC_Order $order, array $intent, ?string $stored_intent_id = null ): bool {
+		$intent_id = isset( $intent['id'] ) && is_scalar( $intent['id'] ) ? (string) $intent['id'] : '';
+		$charge    = WooPaymentsIntentCodec::latest_charge( $intent );
+		$charge_id = isset( $charge['id'] ) && is_scalar( $charge['id'] ) ? (string) $charge['id'] : '';
+
+		return 'succeeded' === (string) ( $intent['status'] ?? '' )
+			&& 'requires_capture' === (string) $order->get_meta( '_intention_status', true )
+			&& '' !== $intent_id
+			&& ( $stored_intent_id ?? (string) $order->get_meta( '_intent_id', true ) ) === $intent_id
+			&& self::transaction_id_names_payment( $order, $intent_id, $charge_id );
 	}
 
 	/**
 	 * Tell whether the order's transaction ID names a payment, by its intent ID or its charge ID. An empty transaction ID
-	 * names nothing. Event ownership and the Stripe Billing renewal records ask this, so they cannot answer it differently.
+	 * names nothing. Event ownership, the Stripe Billing renewal records and the capture of an authorization ask this, so
+	 * they cannot answer it differently.
 	 *
 	 * @since 11.4.0
 	 *

@@ -746,9 +746,10 @@ class WooPaymentsOrderEffectApplier {
 	/**
 	 * Compose a PaymentIntent's order meta: the intent's record, the payment's meta and the payment method's display meta.
 	 *
-	 * A completion as a capture (WooPaymentsOrderEffects::captures_the_authorization()) marks a fraud review as allowed only
-	 * when the order's fraud outcome is review, stamps a non-card charge as it stamps a card, and writes the captured
-	 * charge's fee, as client 11.3.0's capture writer does (class-wc-payments-order-service.php:2207-2215).
+	 * A completion as the capture of the authorization the order recorded (WooPaymentsOrderEffects::captures_the_authorization(),
+	 * asked of the intent the order stores now) marks a fraud review as allowed only when the order's fraud outcome is
+	 * review, stamps a non-card charge as it stamps a card, and writes the captured charge's fee, as client 11.3.0's capture
+	 * writer does (class-wc-payments-order-service.php:2207-2215).
 	 *
 	 * @param WC_Order            $order            Order being charged.
 	 * @param array<string,mixed> $result           Provider PaymentIntent response.
@@ -802,8 +803,9 @@ class WooPaymentsOrderEffectApplier {
 			$effect_data[ PaymentOutcome::DATA_NOTE_TYPE ]        = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_HELD;
 			$effect_data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] = $hold['notes'];
 		} elseif ( 'succeeded' === $status && WooPaymentsOrderEffects::captures_the_authorization( $order, $result ) ) {
-			// No intent was attached since the authorization, so the payment completes the order as a capture (client 11.3.0
-			// class-wc-payments-order-service.php:484-485, :2193-2219), as the payment_intent.succeeded webhook does.
+			// The order stores this intent's authorization and its transaction ID names it, so the payment completes the order
+			// as its capture (client 11.3.0 class-wc-payments-order-service.php:484-485, :2193-2219), as the
+			// payment_intent.succeeded webhook does.
 			$note_candidates                                      = $this->note_service->format_capture_success_note_candidates(
 				$order,
 				$intent_id,

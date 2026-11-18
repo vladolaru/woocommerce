@@ -313,16 +313,27 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	}
 
 	/**
-	 * @testdox An attached PaymentIntent that succeeded while the order still stores its authorization completes the order as a capture, once.
+	 * @testdox An attached PaymentIntent that succeeded while a payable order stores requires_capture completes the order once, as $_dataName.
 	 *
 	 * Client 11.3.0 applies the attached intent through update_order_status_from_intent() with no attach
 	 * (class-duplicate-payment-prevention-service.php:150), whose status writer completes an order storing requires_capture
-	 * with its capture writer: the capture note and the captured charge's fee
-	 * (class-wc-payments-order-service.php:484-485, :2193-2219).
+	 * with its capture writer: the capture note and the captured charge's fee (class-wc-payments-order-service.php:484-485,
+	 * :2193-2219). The built-in store does so only for the authorization the order recorded, which its transaction ID
+	 * names; on a record whose transaction ID names an earlier attempt, written when a success's run stopped after its
+	 * first write, the payment gets the success note and no captured charge's fee.
+	 *
+	 * @testWith ["a capture: the transaction ID names the stored authorization", "pi_existing", true]
+	 *           ["a payment: the transaction ID names an earlier attempt", "pi_A", false]
+	 *
+	 * @param string $case_name      Case name.
+	 * @param string $transaction_id The order's transaction ID.
+	 * @param bool   $is_capture     Whether the payment completes the order as a capture.
 	 */
-	public function test_attached_intent_succeeded_over_a_stored_authorization_completes_as_a_capture(): void {
-		$order = $this->create_order( 'hash', 'on-hold' );
+	public function test_attached_intent_succeeded_over_a_stored_authorization_completes_the_order_once( string $case_name, string $transaction_id, bool $is_capture ): void {
+		unset( $case_name );
+		$order = $this->create_order( 'hash', 'pending' );
 		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_transaction_id( $transaction_id );
 		$order->update_meta_data( '_intent_id', 'pi_existing' );
 		$order->update_meta_data( '_intention_status', 'requires_capture' );
 		$order->update_meta_data( '_wcpay_fraud_outcome_status', 'allow' );
@@ -354,9 +365,9 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$notes        = wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' );
 		$this->assertTrue( $order->is_paid() );
 		$this->assertSame( 1, did_action( 'woocommerce_pre_payment_complete' ) - $completions, 'One completion.' );
-		$this->assertCount( 1, array_intersect( $notes, $captured ), 'One capture note.' );
-		$this->assertCount( 0, array_intersect( $notes, $charged ), 'No success note.' );
-		$this->assertSame( '0.35', $order->get_meta( '_wcpay_transaction_fee', true ) );
+		$this->assertCount( $is_capture ? 1 : 0, array_intersect( $notes, $captured ), 'Capture notes.' );
+		$this->assertCount( $is_capture ? 0 : 1, array_intersect( $notes, $charged ), 'Success notes.' );
+		$this->assertSame( $is_capture ? '0.35' : '', $order->get_meta( '_wcpay_transaction_fee', true ), "The captured charge's fee." );
 		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
 	}
 
@@ -502,18 +513,19 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	/**
 	 * @testdox An attached PaymentIntent decides the hold on the order read under the order payment lock: $_dataName.
 	 *
-	 * The payment is compared with the order read under the order payment lock its lifecycle event is applied under, and a
-	 * stored `requires_capture` intent status exempts it (client 11.3.0 class-duplicate-payment-prevention-service.php:126-150,
-	 * class-wc-payments-order-service.php:484-491).
+	 * The payment is compared with the order read under the order payment lock its lifecycle event is applied under, and the
+	 * capture of the authorization the order stores, its `requires_capture` status beside a transaction ID that names it,
+	 * exempts it (client 11.3.0 class-duplicate-payment-prevention-service.php:126-150, class-wc-payments-order-service.php:484-491,
+	 * where the stored status alone exempts it).
 	 *
 	 * @dataProvider provider_attached_orders_read_under_the_lock
 	 *
 	 * @param string $first_total     Order total when the request reads the order.
 	 * @param string $first_currency  Order currency then.
-	 * @param bool   $first_capture   Whether the stored intent status was `requires_capture` then.
+	 * @param bool   $first_capture   Whether the order stored the intent's authorization then: `requires_capture`, named by the transaction ID.
 	 * @param string $stored_total    Order total stored when the order payment lock is claimed.
 	 * @param string $stored_currency Order currency stored then.
-	 * @param bool   $stored_capture  Whether the stored intent status is `requires_capture` then.
+	 * @param bool   $stored_capture  Whether the order stores the intent's authorization then.
 	 * @param bool   $expected_held   Whether the order is held rather than paid.
 	 */
 	public function test_attached_intent_decides_the_hold_on_the_order_read_under_the_lock( string $first_total, string $first_currency, bool $first_capture, string $stored_total, string $stored_currency, bool $stored_capture, bool $expected_held ): void {
@@ -522,6 +534,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$order->set_total( $first_total );
 		$order->set_currency( $first_currency );
 		if ( $first_capture ) {
+			$order->set_transaction_id( 'pi_existing' );
 			$order->update_meta_data( '_intention_status', 'requires_capture' );
 		}
 		$order->update_meta_data( '_intent_id', 'pi_existing' );
@@ -571,13 +584,14 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	 * @param int    $order_id         Order ID.
 	 * @param string $total            Order total.
 	 * @param string $currency         Order currency.
-	 * @param bool   $requires_capture Whether the stored intent status is `requires_capture`.
+	 * @param bool   $requires_capture Whether the order stores the intent's authorization: `requires_capture`, named by the transaction ID.
 	 */
 	private static function store_order_values( int $order_id, string $total, string $currency, bool $requires_capture ): void {
 		$stored = wc_get_order( $order_id );
 		$stored->set_total( $total );
 		$stored->set_currency( $currency );
 		if ( $requires_capture ) {
+			$stored->set_transaction_id( 'pi_existing' );
 			$stored->update_meta_data( '_intention_status', 'requires_capture' );
 		} else {
 			$stored->delete_meta_data( '_intention_status' );

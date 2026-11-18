@@ -1133,21 +1133,21 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	 * @testdox A paid invoice for a renewal that stores its uncaptured authorization records the invoice's payment in its place and names the authorization once: $_dataName.
 	 *
 	 * Delivered twice. Today's writes stay, as client 11.3.0's attach overwrites a stored requires_capture
-	 * (class-wc-payments-order-service.php:1818-1822, :1873-1884): on a paid renewal the invoice's payment is its capture,
-	 * with the capture note and Fee details job. The note is the recorded departure; the sentence that Stripe Billing keeps
-	 * charging is added on a renewal neither paid nor payable. The capture over another intent's authorization writes its
-	 * warning line on the paid renewal only.
+	 * (class-wc-payments-order-service.php:1818-1822, :1873-1884). On a paid renewal the invoice's payment gets the
+	 * payment's success note and the Fee details job, not the capture note the client writes: the invoice's intent is not
+	 * the authorization the renewal recorded. The note is the recorded departure; the sentence that Stripe Billing keeps
+	 * charging is added on a renewal neither paid nor payable.
 	 *
 	 * @testWith ["paid by hand", "processing", "active", false, 1]
 	 *           ["on hold, never paid", "on-hold", "on-hold", true, 0]
 	 *
-	 * @param string $name                Case name.
-	 * @param string $status              Renewal status.
-	 * @param string $subscription_status Subscription status.
-	 * @param bool   $expected_sentence   Whether the note says Stripe Billing keeps charging.
-	 * @param int    $expected_captures   Capture notes, Fee details jobs and capture warning lines.
+	 * @param string $name                   Case name.
+	 * @param string $status                 Renewal status.
+	 * @param string $subscription_status    Subscription status.
+	 * @param bool   $expected_sentence      Whether the note says Stripe Billing keeps charging.
+	 * @param int    $expected_success_notes The payment's success notes and Fee details jobs.
 	 */
-	public function test_paid_invoice_on_a_renewal_storing_its_authorization_records_the_invoice_and_names_the_authorization( string $name, string $status, string $subscription_status, bool $expected_sentence, int $expected_captures ): void {
+	public function test_paid_invoice_on_a_renewal_storing_its_authorization_records_the_invoice_and_names_the_authorization( string $name, string $status, string $subscription_status, bool $expected_sentence, int $expected_success_notes ): void {
 		unset( $name );
 		$subscription = $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID, array(), $subscription_status );
 		$renewal      = $this->create_renewal_storing_an_authorization( $subscription, $status );
@@ -1166,9 +1166,9 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		$this->assertSame( self::RENEWAL_INTENT_ID, $renewal->get_meta( '_intent_id', true ) );
 		$this->assertSame( self::RENEWAL_CHARGE_ID, $renewal->get_meta( '_charge_id', true ) );
 		$this->assertSame( 'succeeded', $renewal->get_meta( '_intention_status', true ) );
-		$this->assertCount( $expected_captures, $this->get_notes_containing( $renewal, 'was <strong>successfully captured</strong>' ) );
-		$this->assertSame( $expected_captures, $this->count_fee_details_actions( $renewal ) );
-		$this->assertSame( $expected_captures, $this->count_log_lines( 'is treated as the capture of an authorization' ) );
+		$this->assertSame( array(), $this->get_notes_containing( $renewal, 'was <strong>successfully captured</strong>' ) );
+		$this->assertCount( $expected_success_notes, $this->get_payment_success_notes( $renewal ) );
+		$this->assertSame( $expected_success_notes, $this->count_fee_details_actions( $renewal ) );
 		$notes = $this->get_notes_containing( $renewal, 'Stripe Billing collected' );
 		$this->assertCount( 1, $notes );
 		$this->assertStringStartsWith( 'This order held WooPayments authorization <a href="', $notes[0] );
@@ -1215,6 +1215,8 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	 * @testdox A paid invoice whose intent cannot be read, for a renewal storing its uncaptured authorization, notes once not to capture it and fails for a retry; a retry that reads the intent records the payment.
 	 *
 	 * The note is saved before the failure, so it stays if no retry reads the intent; nothing else is written until then.
+	 * The retry gives the invoice's payment its success note, as the invoice's intent is not the authorization the renewal
+	 * recorded.
 	 * invoice.paid is retried while the Stripe Billing module is loaded (EventIngestor::is_retried_event()), three more
 	 * times at most (WebhookReliabilityService::RETRY_DELAYS_SECONDS).
 	 */
@@ -1243,7 +1245,6 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 			$this->assertSame( 'requires_capture', $stored->get_meta( '_intention_status', true ) );
 		}
 		$this->assertCount( 3, $this->get_requests(), 'Only the intent reads: nothing is reported to the platform.' );
-		$this->assertSame( 0, $this->count_log_lines( 'is treated as the capture of an authorization' ) );
 		$this->queue_response( 200, $this->get_renewal_intent() );
 		$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
 
@@ -1253,10 +1254,10 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		$this->assertSame( self::RENEWAL_INTENT_ID, $renewal->get_transaction_id() );
 		$this->assertSame( self::RENEWAL_CHARGE_ID, $renewal->get_meta( '_charge_id', true ) );
 		$this->assertSame( 'succeeded', $renewal->get_meta( '_intention_status', true ) );
-		$this->assertCount( 1, $this->get_notes_containing( $renewal, 'was <strong>successfully captured</strong>' ) );
+		$this->assertSame( array(), $this->get_notes_containing( $renewal, 'was <strong>successfully captured</strong>' ) );
+		$this->assertCount( 1, $this->get_payment_success_notes( $renewal ) );
 		$this->assertCount( 1, $this->get_notes_containing( $renewal, 'This order held WooPayments authorization' ) );
 		$this->assertCount( 1, $this->get_notes_containing( $renewal, 'could not be read' ), 'The first note is not repeated.' );
-		$this->assertSame( 1, $this->count_log_lines( 'is treated as the capture of an authorization' ) );
 	}
 
 	/**
@@ -2585,6 +2586,16 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	 */
 	private function get_note_contents( WC_Order $order ): array {
 		return array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+	}
+
+	/**
+	 * Get the order's payment success notes, in either mode's wording.
+	 *
+	 * @param WC_Order $order Order.
+	 * @return string[]
+	 */
+	private function get_payment_success_notes( WC_Order $order ): array {
+		return array_merge( $this->get_notes_containing( $order, 'was <strong>successfully charged</strong>' ), $this->get_notes_containing( $order, 'A test payment of' ) );
 	}
 
 	/**

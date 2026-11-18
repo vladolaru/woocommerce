@@ -65,22 +65,25 @@ class WooPaymentsAmountMismatchHold {
 	 * Decide whether a succeeded PaymentIntent holds its order because its amount or currency differs from the order total.
 	 *
 	 * Returns the hold when the order is held; null when the payment completes it: a PaymentIntent for the order's total
-	 * and currency, any intent that has not succeeded, a SetupIntent (client :486), an order whose stored intent status is
-	 * `requires_capture`, whose capture completes it (:484-485), and a Stripe Billing invoice's intent, which its invoice
-	 * settles. Whoever applies the hold passes it to log_hold() once the payment lifecycle has added the hold note.
+	 * and currency, any intent that has not succeeded, a SetupIntent (client :486), the capture of the authorization the
+	 * order recorded (WooPaymentsOrderEffects::captures_the_authorization(): the order stores `requires_capture`, the intent
+	 * is the one it stored before the caller wrote any, and the transaction ID names it), and a Stripe Billing invoice's
+	 * intent, which its invoice settles. The client exempts any order storing `requires_capture` (:484-485). Whoever
+	 * applies the hold passes it to log_hold() once the payment lifecycle has added the hold note.
 	 *
-	 * @param WC_Order            $order  Order the intent pays.
-	 * @param array<string,mixed> $intent Intent as the platform returns it.
+	 * @param WC_Order            $order            Order the intent pays.
+	 * @param array<string,mixed> $intent           Intent as the platform returns it.
+	 * @param string|null         $stored_intent_id The intent the order stored before the caller wrote any, or null to read it now.
 	 * @return array{notes:string[],log_line:string}|null The hold note's wordings, WooCommerce's first, and the client's
 	 *                                                    error line (:2117-2131); null when the payment completes the order.
 	 */
-	public function decide_hold( WC_Order $order, array $intent ): ?array {
+	public function decide_hold( WC_Order $order, array $intent, ?string $stored_intent_id = null ): ?array {
 		$intent_id = isset( $intent['id'] ) && is_scalar( $intent['id'] ) ? (string) $intent['id'] : '';
 		if (
 			'succeeded' !== ( $intent['status'] ?? '' )
 			|| 'setup_intent' === ( $intent['object'] ?? '' )
 			|| 0 === strpos( $intent_id, 'seti_' )
-			|| 'requires_capture' === (string) $order->get_meta( '_intention_status', true )
+			|| WooPaymentsOrderEffects::captures_the_authorization( $order, $intent, $stored_intent_id )
 			|| WooPaymentsIntentCodec::is_invoice_intent( $intent )
 			|| WooPaymentsCurrencyUtils::intent_matches_order_total( $intent, $order )
 		) {

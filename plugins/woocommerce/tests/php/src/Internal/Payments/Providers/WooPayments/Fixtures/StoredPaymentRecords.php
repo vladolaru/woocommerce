@@ -201,10 +201,12 @@ final class StoredPaymentRecords {
 	 * @param string $transaction_id The authorized payment's intent.
 	 * @param string $intent_id      The other attempt's intent, the stored intent.
 	 * @param string $charge_id      The other attempt's charge.
+	 * @param bool   $with_paid_date Whether an order without a paid status keeps the paid date of an earlier move through
+	 *                               a paid status, such as Processing, which a later status change does not clear.
 	 * @return WC_Order
 	 */
-	public static function authorization_status_beside_another_intent( string $status = OrderStatus::ON_HOLD, string $transaction_id = 'pi_A', string $intent_id = 'pi_B', string $charge_id = 'ch_B' ): WC_Order {
-		return self::create_order(
+	public static function authorization_status_beside_another_intent( string $status = OrderStatus::ON_HOLD, string $transaction_id = 'pi_A', string $intent_id = 'pi_B', string $charge_id = 'ch_B', bool $with_paid_date = false ): WC_Order {
+		$order = self::create_order(
 			$status,
 			$transaction_id,
 			array(
@@ -213,6 +215,12 @@ final class StoredPaymentRecords {
 				'_charge_id'        => $charge_id,
 			)
 		);
+		if ( $with_paid_date && null === $order->get_date_paid() ) {
+			$order->set_date_paid( time() - HOUR_IN_SECONDS );
+			$order->save();
+		}
+
+		return $order;
 	}
 
 	/**

@@ -409,7 +409,8 @@ class StripeBillingEventHandler {
 		if ( ! $order->needs_payment() && null !== $intent && $order->is_paid() ) {
 			// A paid renewal that records no other payment, such as one paid by its new payment method, gets the payment's
 			// success note and its Fee details job once; its status does not move, and a payment that differs from its total
-			// adds no note to a paid order. One that stored an uncaptured authorization gets the payment as its capture.
+			// adds no note to a paid order. The invoice's intent is not the authorization the renewal recorded, so one that
+			// stored an uncaptured authorization gets the payment's success note.
 			$this->payment_intent_event_handler->apply_succeeded_payment_intent_under_lock(
 				$order,
 				$intent,

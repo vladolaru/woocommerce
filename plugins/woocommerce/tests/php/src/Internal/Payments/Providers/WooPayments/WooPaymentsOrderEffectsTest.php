@@ -3,10 +3,12 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffects;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderMode;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\StoredPaymentRecords;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -677,6 +679,75 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertSame( $equivalent_notes, $effects[ PaymentOutcome::DATA_REFUND_NOTE_EQUIVALENTS ] );
+	}
+
+	/**
+	 * @testdox A succeeded payment is the capture of the authorization the order recorded only when the order stores requires_capture, the payment is the intent stored before the event and the transaction ID names it: $_dataName.
+	 *
+	 * Client 11.3.0 reads the stored status alone (class-wc-payments-order-service.php:484-485). Arriving: pi_A with ch_A,
+	 * unless the row names pi_B with ch_B.
+	 *
+	 * @dataProvider provider_records_a_success_meets
+	 *
+	 * @param string      $shape            The stored record (StoredPaymentRecords).
+	 * @param string      $arriving         `A` or `B`.
+	 * @param string|null $stored_intent_id The intent stored before the event, as the caller read it, or null for none passed.
+	 * @param string      $intent_status    The arriving intent's status.
+	 * @param bool        $expected         Whether the payment is the capture.
+	 */
+	public function test_success_captures_only_the_recorded_authorization( string $shape, string $arriving, ?string $stored_intent_id, string $intent_status, bool $expected ): void {
+		switch ( $shape ) {
+			case 'authorization':
+				$order = StoredPaymentRecords::authorization( 'pi_A', 'ch_A' );
+				break;
+			case 'transaction ID names the charge':
+				$order = StoredPaymentRecords::authorization_with_another_attempts_transaction_id( 'ch_A', 'pi_A' );
+				break;
+			case 'no transaction ID':
+				$order = StoredPaymentRecords::authorization_without_transaction_id( 'pi_A' );
+				break;
+			case 'retyped transaction ID':
+				$order = StoredPaymentRecords::authorization_with_another_attempts_transaction_id( 'typed-reference', 'pi_A' );
+				break;
+			case 'already mixed':
+				$order = StoredPaymentRecords::authorization_status_beside_another_intent( OrderStatus::ON_HOLD, 'pi_A', 'pi_B', 'ch_B' );
+				break;
+			case 'no intent stored':
+				$order = StoredPaymentRecords::authorization_status_beside_another_intent( OrderStatus::PENDING, 'pi_B', '', '' );
+				break;
+			default:
+				$order = StoredPaymentRecords::payment( OrderStatus::ON_HOLD, 'pi_A', 'ch_A' );
+		}
+		$intent_id = 'B' === $arriving ? 'pi_B' : 'pi_A';
+		$intent    = array(
+			'id'      => $intent_id,
+			'status'  => $intent_status,
+			'charges' => array( 'data' => array( array( 'id' => 'B' === $arriving ? 'ch_B' : 'ch_A' ) ) ),
+		);
+
+		$this->assertSame( $expected, WooPaymentsOrderEffects::captures_the_authorization( $order, $intent, $stored_intent_id ) );
+	}
+
+	/**
+	 * Stored records, the arriving payment, the intent stored before the event and the arriving status.
+	 *
+	 * @return array<string,array{string,string,string|null,string,bool}>
+	 */
+	public function provider_records_a_success_meets(): array {
+		return array(
+			'the recorded authorization'             => array( 'authorization', 'A', null, 'succeeded', true ),
+			'the recorded authorization, the same intent stored before the event' => array( 'authorization', 'A', 'pi_A', 'succeeded', true ),
+			'the transaction ID names the charge'    => array( 'transaction ID names the charge', 'A', null, 'succeeded', true ),
+			'another intent stored before the event' => array( 'authorization', 'A', 'pi_earlier', 'succeeded', false ),
+			'no intent stored before the event'      => array( 'authorization', 'A', '', 'succeeded', false ),
+			'no transaction ID'                      => array( 'no transaction ID', 'A', null, 'succeeded', false ),
+			'a retyped transaction ID'               => array( 'retyped transaction ID', 'A', null, 'succeeded', false ),
+			'already mixed: the stored intent, another transaction ID' => array( 'already mixed', 'B', 'pi_B', 'succeeded', false ),
+			'no intent stored, the transaction ID names it' => array( 'no intent stored', 'B', '', 'succeeded', false ),
+			'no intent stored, read at the decision' => array( 'no intent stored', 'B', null, 'succeeded', false ),
+			'a stored succeeded status'              => array( 'payment', 'A', 'pi_A', 'succeeded', false ),
+			'an intent that has not succeeded'       => array( 'authorization', 'A', 'pi_A', 'requires_capture', false ),
+		);
 	}
 
 	/**
