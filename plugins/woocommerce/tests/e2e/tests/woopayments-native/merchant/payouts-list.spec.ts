@@ -342,7 +342,7 @@ async function expectPayoutDetailsTransactions(
 		page.getByRole( 'status' ).filter( { hasText: 'Transactions loaded.' } )
 	).toHaveCount( 1 );
 	await expect(
-		page.getByRole( 'button', { name: 'Download transactions' } )
+		page.getByRole( 'button', { name: 'Export', exact: true } )
 	).toBeEnabled();
 	await expect(
 		page.getByRole( 'columnheader', { name: 'Order #', exact: true } )
