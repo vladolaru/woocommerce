@@ -27,6 +27,13 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderAdminActionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAmountMismatchHold;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFailedTransactionRateLimiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTerminalPaymentsRestController;
+use Automattic\WooCommerce\Tests\Internal\Payments\RecordingPaymentProcessingService;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockWithClaimHook;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
 use Automattic\WooCommerce\Tests\Internal\Payments\StorefrontMultiCurrencyTestTrait;
@@ -43,6 +50,8 @@ use RuntimeException;
 use WC_Order;
 use WC_Order_Refund;
 use WC_Unit_Test_Case;
+use WP_Error;
+use WP_REST_Request;
 
 /**
  * Tests for the EventIngestor class.
@@ -3399,6 +3408,150 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'pi_A', 'ch_A', 'requires_payment_method', 'pi_A', OrderStatus::PENDING, '' ), array( $order->get_meta( '_intent_id', true ), $order->get_meta( '_charge_id', true ), $order->get_meta( '_intention_status', true ), $order->get_transaction_id(), $order->get_status(), $order->get_meta( '_payment_method_id', true ) ) );
 		$this->assert_success_recorded_over_another_attempt( $logger, $order, null );
 		$this->assertSame( array(), $this->get_order_notes_containing( $order, 'does not pay this order' ), 'The event is the order\'s own, not another charge.' );
+	}
+
+	/**
+	 * @testdox After a success of another attempt stopped before its decision, a retried checkout $_dataName.
+	 *
+	 * The stored intent is the attempt that succeeded, so the duplicate check reads it and completes the order with it,
+	 * without a new charge. When the read fails, the stored succeeded status refuses the checkout instead of charging again.
+	 * Client 11.3.0 logs a failed read and goes on to charge (class-duplicate-payment-prevention-service.php:101-109).
+	 *
+	 * @testWith ["completes the order with the stored payment", false]
+	 *           ["is refused when the stored payment cannot be read", true]
+	 *
+	 * @param string $name       Case name.
+	 * @param bool   $read_fails Whether the read of the stored intent fails.
+	 */
+	public function test_retried_checkout_after_a_stopped_success_of_another_attempt( string $name, bool $read_fails ): void {
+		unset( $name );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$order = $this->create_order_in_shape( 'row 12' );
+		$event = $this->create_success_of_attempt_b( $order );
+		$this->process_success_stopped_before_its_decision( $event );
+		$api_client = $this->getMockBuilder( Client::class )->disableOriginalConstructor()->onlyMethods( array( 'get_payment_intention' ) )->getMock();
+		if ( $read_fails ) {
+			$api_client->method( 'get_payment_intention' )->willThrowException( new ApiException( 'Read failed.', 'api_error', 500 ) );
+		} else {
+			$api_client->method( 'get_payment_intention' )->willReturn( $event['data']['object'] );
+		}
+		$service = new WooPaymentsDuplicatePaymentPreventionService( new \WC_Session_Handler() );
+		$service->init( $api_client, wc_get_container()->get( OrderPaymentLifecycleService::class ) );
+
+		$result = $service->check_payment_intent_attached_to_order_succeeded( wc_get_order( $order->get_id() ), new WooPaymentsGateway() );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		if ( $read_fails ) {
+			$this->assertInstanceOf( WP_Error::class, $result );
+			$this->assertSame( WooPaymentsDuplicatePaymentPreventionService::ERROR_CHECK_FAILED, $result->get_error_code() );
+			$this->assertSame( OrderStatus::FAILED, $order->get_status() );
+			return;
+		}
+		$this->assertIsArray( $result );
+		$this->assertSame( 'success', $result['result'] ?? '' );
+		$this->assertSame( array( OrderStatus::COMPLETED, 'pi_B' ), array( $order->get_status(), $order->get_transaction_id() ) );
+	}
+
+	/**
+	 * @testdox After a success of another attempt stopped before its decision on an authorized order, completing the order sends no capture.
+	 *
+	 * The stored status is succeeded, so the status-change listener finds no authorization to capture
+	 * (WooPaymentsOrderAdminActionsController get_status_change_target()); the authorization the transaction ID names is
+	 * left to expire.
+	 */
+	public function test_completing_an_order_after_a_stopped_success_of_another_attempt_sends_no_capture(): void {
+		$order = $this->create_order_in_shape( 'authorization' );
+		$this->process_success_stopped_before_its_decision( $this->create_success_of_attempt_b( $order ) );
+		wc_get_container()->get( WooPaymentsOrderAdminActionsController::class )->register();
+		$platform_requests = 0;
+		add_filter(
+			'pre_http_request',
+			static function ( $response ) use ( &$platform_requests ) {
+				++$platform_requests;
+				return $response;
+			}
+		);
+
+		wc_get_order( $order->get_id() )->update_status( OrderStatus::COMPLETED );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( OrderStatus::COMPLETED, $order->get_status() );
+		$this->assertSame( 0, $platform_requests, 'No capture request.' );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+	}
+
+	/**
+	 * @testdox After a success of another attempt stopped before its decision, the in-person capture of that payment is refused with 409 and nothing is sent.
+	 *
+	 * The route refuses an order whose stored status is succeeded (WooPaymentsTerminalPaymentsRestController
+	 * get_uncapturable_order_error()), as it does whenever the webhook completed the order first; the redelivery records the
+	 * payment.
+	 */
+	public function test_in_person_capture_after_a_stopped_success_of_another_attempt_is_refused(): void {
+		$order = $this->create_order_in_shape( 'row 12' );
+		$this->process_success_stopped_before_its_decision( $this->create_success_of_attempt_b( $order ) );
+		$platform_requests = 0;
+		add_filter(
+			'pre_http_request',
+			static function ( $response ) use ( &$platform_requests ) {
+				++$platform_requests;
+				return $response;
+			}
+		);
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_B' );
+
+		$response = wc_get_container()->get( WooPaymentsTerminalPaymentsRestController::class )->capture_terminal_payment( $request );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$this->assertSame( array( 'wcpay_payment_uncapturable', 409 ), array( $response->get_error_code(), $response->get_error_data()['status'] ?? null ) );
+		$this->assertSame( 0, $platform_requests );
+		$this->assertSame( OrderStatus::FAILED, wc_get_order( $order->get_id() )->get_status() );
+	}
+
+	/**
+	 * @testdox After a success of another attempt stopped before its decision, a shopper's retry while the order payment lock is held is answered as paid, with no new charge.
+	 *
+	 * The duplicate check reads the stored payment, which succeeded and belongs to the order, and sends the shopper to the
+	 * order received page without charging again; its completion is left to the webhook's redelivery, which holds the order
+	 * payment lock. Client 11.3.0 answers the same way (class-duplicate-payment-prevention-service.php:149-157).
+	 */
+	public function test_shopper_retry_refused_by_the_lock_after_a_stopped_success_of_another_attempt_is_answered_as_paid(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$order = $this->create_order_in_shape( 'row 12' );
+		$event = $this->create_success_of_attempt_b( $order );
+		$this->process_success_stopped_before_its_decision( $event );
+		$api_client = $this->getMockBuilder( Client::class )->disableOriginalConstructor()->onlyMethods( array( 'get_payment_intention' ) )->getMock();
+		$api_client->method( 'get_payment_intention' )->willReturn( $event['data']['object'] );
+		$session                   = new \WC_Session_Handler();
+		$duplicate_payment_service = new WooPaymentsDuplicatePaymentPreventionService( $session );
+		$duplicate_payment_service->init( $api_client, wc_get_container()->get( OrderPaymentLifecycleService::class ) );
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_cached_account_data' ) )->getMock();
+		$account_service->method( 'get_cached_account_data' )->willReturn( array( 'card_testing_protection_eligible' => false ) );
+		$fraud_prevention_service = new WooPaymentsFraudPreventionService( $session );
+		$fraud_prevention_service->init( $account_service );
+		$processing_service = new RecordingPaymentProcessingService();
+		$gateway            = new WooPaymentsGateway();
+		$gateway->init( $processing_service, new WooPaymentsProvider(), null, null, null, null, null, $fraud_prevention_service, new WooPaymentsFailedTransactionRateLimiter( $session ), $duplicate_payment_service );
+		$_POST['wcpay-payment-method'] = 'pm_card_visa';
+		$this->hold_order_payment_lock( $order, new WooPaymentsPersistenceVocabulary(), 'pi_B' );
+
+		try {
+			$result = $gateway->process_payment( $order->get_id() );
+		} finally {
+			unset( $_POST['wcpay-payment-method'] );
+			$this->clear_order_payment_lock( $order, new WooPaymentsPersistenceVocabulary() );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'success', $result['result'] ?? '' );
+		$this->assertSame( 0, $processing_service->checkout_attempt_count, 'No new charge.' );
+		$this->assertStringContainsString( 'wcpay_previous_successful_intent=yes', $result['redirect'] ?? '' );
+		$this->assertSame( array( OrderStatus::FAILED, 'succeeded' ), array( $order->get_status(), $order->get_meta( '_intention_status', true ) ), 'The redelivery completes the order.' );
 	}
 
 	/**
