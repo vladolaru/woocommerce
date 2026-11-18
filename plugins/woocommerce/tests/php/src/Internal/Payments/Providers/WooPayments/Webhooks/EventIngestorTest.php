@@ -3120,37 +3120,45 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A succeeded payment on $_dataName completes the order as a $completion, with the capture-choice line: $logged.
+	 * @testdox A succeeded payment on $_dataName completes the order as a $completion, with the refused-capture line: $condition.
 	 *
 	 * Client 11.3.0 completes an order that stores requires_capture with its capture writer, whatever intent the order
-	 * stores (class-wc-payments-order-service.php:484-489, :2193-2219), and logs nothing about it. The built-in store
-	 * completes it as a capture only when the order stored the arriving intent before the event and its transaction ID
-	 * names it; on an order storing no intent the payment completes the order as a payment, its amount checked. On an
-	 * order storing another intent, the payment's whole record is written first, so it completes the order as a payment
-	 * too. The event is the recorded authorization (Fixtures/platform-payment-intent-events.json) captured in full.
+	 * stores and whatever its transaction ID names (class-wc-payments-order-service.php:484-489, :2193-2219), and logs
+	 * nothing about it. The built-in store completes it as a capture only when the order stored the arriving intent before
+	 * the event and its transaction ID names it. When the order still stores requires_capture at the decision and either
+	 * fails, the payment completes the order as a payment, its amount checked, with one warning naming the condition,
+	 * whatever the logging setting. On an order storing another intent, the payment's whole record is written first, so the
+	 * order no longer stores requires_capture: a payment, with the line of that record instead. The event is the recorded
+	 * authorization (Fixtures/platform-payment-intent-events.json) captured in full.
 	 *
 	 * @dataProvider provider_capture_choices_over_a_stored_authorization
 	 *
-	 * @param string $stored_intent The intent the order stores before the event: '' for none, 'arriving' for the event's.
-	 * @param bool   $logging       Whether WooPayments logging is on.
-	 * @param string $logged        The stored intent the line names, or '' for no line.
-	 * @param string $completion    `capture` or `payment`.
+	 * @param string $stored_intent  The intent the order stores before the event: '' for none, 'arriving' for the event's.
+	 * @param string $transaction_id The order's transaction ID: 'arriving' for the event's intent.
+	 * @param bool   $logging        Whether WooPayments logging is on.
+	 * @param string $condition      The condition the line names, or '' for no line.
+	 * @param string $completion     `capture` or `payment`.
 	 */
-	public function test_capture_choice_over_a_stored_authorization_logs_another_intents_status( string $stored_intent, bool $logging, string $logged, string $completion ): void {
+	public function test_capture_choice_over_a_stored_authorization_logs_a_refused_capture( string $stored_intent, string $transaction_id, bool $logging, string $condition, string $completion ): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		if ( $logging ) {
 			self::enable_woopayments_debug_logging();
 		} else {
 			add_filter( 'wcpay_dev_mode', '__return_false' );
 		}
-		$event     = RecordedPlatformEvents::body( 'platform-payment-intent-events.json', 'manual_capture_amount_capturable_updated' );
-		$intent_id = (string) $event['data']['object']['id'];
-		$charge_id = (string) $event['data']['object']['charges']['data'][0]['id'];
-		$order     = 'arriving' === $stored_intent
-			? StoredPaymentRecords::authorization( $intent_id, $charge_id )
-			: StoredPaymentRecords::authorization_status_beside_another_intent( OrderStatus::ON_HOLD, $intent_id, $stored_intent );
-		$event     = $this->recorded_capture_event( $order );
-		$logger    = RecordingWcLogger::install();
+		$event          = RecordedPlatformEvents::body( 'platform-payment-intent-events.json', 'manual_capture_amount_capturable_updated' );
+		$intent_id      = (string) $event['data']['object']['id'];
+		$charge_id      = (string) $event['data']['object']['charges']['data'][0]['id'];
+		$transaction_id = 'arriving' === $transaction_id ? $intent_id : $transaction_id;
+		if ( 'arriving' !== $stored_intent ) {
+			$order = StoredPaymentRecords::authorization_status_beside_another_intent( OrderStatus::ON_HOLD, $transaction_id, $stored_intent );
+		} elseif ( $intent_id === $transaction_id ) {
+			$order = StoredPaymentRecords::authorization( $intent_id, $charge_id );
+		} else {
+			$order = StoredPaymentRecords::authorization_with_another_attempts_transaction_id( $transaction_id, $intent_id, 'requires_capture', OrderStatus::ON_HOLD, $charge_id );
+		}
+		$event  = $this->recorded_capture_event( $order );
+		$logger = RecordingWcLogger::install();
 
 		$this->sut->process( $event );
 
@@ -3161,12 +3169,17 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
 		$this->assertCount( 'capture' === $completion ? 1 : 0, $this->get_order_notes_containing( $order, 'was <strong>successfully captured</strong>' ) );
 		$this->assertCount( 'payment' === $completion ? 1 : 0, array_merge( $this->get_order_notes_containing( $order, 'was <strong>successfully charged</strong>' ), $this->get_order_notes_containing( $order, 'A test payment of' ) ) );
-		$lines = array_values( array_filter( $logger->lines, static fn( array $line ): bool => false !== strpos( $line[1], 'the capture of an authorization, but the requires_capture status' ) ) );
-		if ( '' === $logged ) {
+		$lines = $this->get_refused_capture_lines( $logger );
+		if ( '' === $condition ) {
 			$this->assertSame( array(), $lines );
 			return;
 		}
-		$message = sprintf( 'Payment %1$s on order #%2$d is treated as the capture of an authorization, but the requires_capture status the order stores is beside intent %3$s.', $intent_id, $order->get_id(), $logged );
+		$message = sprintf(
+			'Payment %1$s on order #%2$d was not treated as the capture of an authorization: the order stores requires_capture, but %3$s.',
+			$intent_id,
+			$order->get_id(),
+			'stored_intent' === $condition ? 'the payment is not the intent the order stored before this event' : 'the transaction ID does not name it'
+		);
 		$context = $this->get_logged_context( $logger, $message );
 		$this->assertCount( 1, $lines );
 		$this->assertSame( array( 'warning', 'woopayments' ), array( $lines[0][0], $lines[0][2] ) );
@@ -3174,29 +3187,43 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 			array(
 				'order_id'         => $order->get_id(),
 				'intent_id'        => $intent_id,
-				'stored_intent_id' => $logged,
-				'reason'           => 'capture_over_another_intents_authorization',
+				'stored_intent_id' => '' === $stored_intent ? 'none' : $intent_id,
+				'transaction_id'   => $transaction_id,
+				'condition'        => $condition,
+				'reason'           => 'success_not_a_capture_of_the_stored_authorization',
 			),
-			array_intersect_key( $context, array_flip( array( 'order_id', 'intent_id', 'stored_intent_id', 'reason' ) ) )
+			array_intersect_key( $context, array_flip( array( 'order_id', 'intent_id', 'stored_intent_id', 'transaction_id', 'condition', 'reason' ) ) )
 		);
+		$this->assertSame( array(), array_values( array_filter( $logger->lines, static fn( array $line ): bool => false !== strpos( $line[1], 'over the stored intent' ) ) ), 'Never beside the line of a whole record written over another attempt.' );
 	}
 
 	/**
-	 * Stored intents beside a stored authorization, and the logging setting.
+	 * Stored intents and transaction IDs beside a stored authorization, and the logging setting.
 	 *
-	 * @return array<string,array{0:string,1:bool,2:string,3:string}>
+	 * @return array<string,array{0:string,1:string,2:bool,3:string,4:string}>
 	 */
 	public function provider_capture_choices_over_a_stored_authorization(): array {
 		return array(
-			'an order storing another intent'              => array( 'pi_anotherAttempt', true, '', 'payment' ),
-			'an order storing no intent'                   => array( '', true, '', 'payment' ),
-			'an order storing no intent, with logging off' => array( '', false, '', 'payment' ),
-			'an order storing the arriving intent'         => array( 'arriving', true, '', 'capture' ),
+			'an order storing another intent'              => array( 'pi_anotherAttempt', 'arriving', true, '', 'payment' ),
+			'an order storing no intent'                   => array( '', 'arriving', true, 'stored_intent', 'payment' ),
+			'an order storing no intent, with logging off' => array( '', 'arriving', false, 'stored_intent', 'payment' ),
+			"an order storing the arriving intent beside another attempt's transaction ID" => array( 'arriving', 'pi_earlier', true, 'transaction_id', 'payment' ),
+			'an order storing the arriving intent'         => array( 'arriving', 'arriving', true, '', 'capture' ),
 		);
 	}
 
 	/**
-	 * @testdox A succeeded payment on an order already paid, storing another intent's authorization status, stores its succeeded status first, so no capture is chosen and no capture-choice line is written.
+	 * Get the lines of a succeeded payment not treated as the capture of the order's stored authorization.
+	 *
+	 * @param RecordingWcLogger $logger Recording logger.
+	 * @return array<int,array<int,mixed>>
+	 */
+	private function get_refused_capture_lines( RecordingWcLogger $logger ): array {
+		return array_values( array_filter( $logger->lines, static fn( array $line ): bool => false !== strpos( (string) $line[1], 'was not treated as the capture of an authorization' ) ) );
+	}
+
+	/**
+	 * @testdox A succeeded payment on an order already paid, storing another intent's authorization status, stores its succeeded status first, so no capture is chosen and no refused-capture line is written.
 	 *
 	 * The order's transaction ID names the arriving payment, so the event is the order's own. On an order in a paid status
 	 * the webhook stores the payment's succeeded status with its charge, before the capture choice reads the stored
@@ -3228,8 +3255,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'already had a paid status' ) );
 		$this->assertSame( 'order_paid', $this->get_logged_context( $logger, 'Payment event skipped: the order is already paid, so the event does not change it.' )['reason'] ?? '' );
 		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
-		$lines = array_values( array_filter( $logger->lines, static fn( array $line ): bool => false !== strpos( $line[1], 'the capture of an authorization, but the requires_capture status' ) ) );
-		$this->assertSame( array(), $lines );
+		$this->assertSame( array(), $this->get_refused_capture_lines( $logger ) );
 	}
 
 	/**
@@ -3274,12 +3300,14 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A succeeded payment on $_dataName is $expected_completion, delivered twice.
+	 * @testdox A succeeded payment on $_dataName is $expected_completion, delivered twice, with the refused-capture line: $condition.
 	 *
 	 * Completed as the capture of an authorization, with the capture note and no amount check, only when the order stores
 	 * requires_capture, the payment is the intent the order stored before the event, and the transaction ID names it. Any
 	 * other success is a payment: completed with its success note when it pays the total, held with the amount note when
-	 * it does not. Client 11.3.0 completes every order storing requires_capture as a capture, amount not checked
+	 * it does not. A payment that meets requires_capture at its decision writes one line naming the condition that failed;
+	 * a payment whose whole record was written over another attempt meets its own succeeded status instead, and never
+	 * writes both lines. Client 11.3.0 completes every order storing requires_capture as a capture, amount not checked
 	 * (class-wc-payments-order-service.php:484-488). The order total is 10.99.
 	 *
 	 * @dataProvider provider_successes_over_a_stored_authorization
@@ -3288,12 +3316,14 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	 * @param string $intent_id           The arriving intent; its charge is `ch_` and the same suffix.
 	 * @param int    $amount              The payment's amount in minor units.
 	 * @param string $expected_completion `a capture`, `a payment` or `held`.
+	 * @param string $condition           The condition the refused-capture line names, `none` for no line, or `another attempt` for the line of a whole record written over another attempt instead.
 	 */
-	public function test_success_over_a_stored_authorization_is_a_capture_only_of_the_recorded_authorization( string $shape, string $intent_id, int $amount, string $expected_completion ): void {
+	public function test_success_over_a_stored_authorization_is_a_capture_only_of_the_recorded_authorization( string $shape, string $intent_id, int $amount, string $expected_completion, string $condition ): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		add_filter( 'wcpay_dev_mode', '__return_false' );
-		$order = $this->create_order_storing_an_authorization( $shape );
-		$event = $this->create_payment_intent_event(
+		$order  = $this->create_order_storing_an_authorization( $shape );
+		$logger = RecordingWcLogger::install();
+		$event  = $this->create_payment_intent_event(
 			'payment_intent.succeeded',
 			$order,
 			array(
@@ -3324,30 +3354,41 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 			'Order status, capture notes, payment notes, amount notes.'
 		);
 		$this->assertSame( array( $intent_id, 'succeeded' ), array( $order->get_meta( '_intent_id', true ), $order->get_meta( '_intention_status', true ) ) );
+		$this->assertSame(
+			array(
+				in_array( $condition, array( 'none', 'another attempt' ), true ) ? array() : array( $condition ),
+				'another attempt' === $condition ? 1 : 0,
+			),
+			array(
+				array_map( fn( array $line ): string => (string) ( $this->get_logged_context( $logger, (string) $line[1] )['condition'] ?? '' ), $this->get_refused_capture_lines( $logger ) ),
+				count( array_filter( $logger->lines, static fn( array $line ): bool => false !== strpos( (string) $line[1], 'over the stored intent' ) ) ),
+			),
+			'The refused-capture lines by condition, and the lines of a whole record written over another attempt.'
+		);
 	}
 
 	/**
-	 * Orders storing requires_capture, the success that arrives and what it is.
+	 * Orders storing requires_capture, the success that arrives, what it is and the line it writes.
 	 *
-	 * @return array<string,array{string,string,int,string}>
+	 * @return array<string,array{string,string,int,string,string}>
 	 */
 	public function provider_successes_over_a_stored_authorization(): array {
 		return array(
-			'the recorded authorization, captured in full' => array( 'authorization', 'pi_A', 1099, 'a capture' ),
-			'the recorded authorization, captured for less than an edited total' => array( 'authorization', 'pi_A', 800, 'a capture' ),
-			'an authorization whose transaction ID names its charge' => array( 'charge transaction ID', 'pi_A', 800, 'a capture' ),
-			'an authorization with no transaction ID, another amount' => array( 'no transaction ID', 'pi_A', 800, 'held' ),
-			'an authorization with a retyped transaction ID, the total' => array( 'retyped transaction ID', 'pi_A', 1099, 'a payment' ),
-			'an already mixed record, its intent for another amount' => array( 'already mixed', 'pi_B', 1500, 'held' ),
-			'an already mixed record, its intent for the total' => array( 'already mixed', 'pi_B', 1099, 'a payment' ),
-			'a Pending order with a paid date storing another attempt, the earlier attempt for another amount' => array( 'H2 with a paid date', 'pi_A', 1500, 'held' ),
-			'a Failed order with a paid date storing a declined retry, the genuine capture for less than an edited total' => array( 'declined retry with a paid date', 'pi_A', 800, 'held' ),
-			"step 2's record over another attempt, redelivered for another amount" => array( 'whole record over another attempt', 'pi_B', 1500, 'held' ),
-			"step 2's record on a Failed order whose transaction ID names it, redelivered for another amount" => array( 'whole record named by the transaction ID', 'pi_B', 1500, 'held' ),
-			'no intent stored, the transaction ID naming the payment' => array( 'no intent stored', 'pi_B', 1500, 'held' ),
-			"an authorization over a kept payment, the authorization's capture" => array( 'authorization over a kept payment', 'pi_B', 800, 'held' ),
-			'an authorization over a kept payment with no transaction ID, the kept payment again' => array( 'authorization over a kept payment without a transaction ID', 'pi_K', 1500, 'held' ),
-			"the duplicate check's authorization with another attempt's transaction ID" => array( "authorization with another attempt's transaction ID", 'pi_B', 1500, 'held' ),
+			'the recorded authorization, captured in full' => array( 'authorization', 'pi_A', 1099, 'a capture', 'none' ),
+			'the recorded authorization, captured for less than an edited total' => array( 'authorization', 'pi_A', 800, 'a capture', 'none' ),
+			'an authorization whose transaction ID names its charge' => array( 'charge transaction ID', 'pi_A', 800, 'a capture', 'none' ),
+			'an authorization with no transaction ID, another amount' => array( 'no transaction ID', 'pi_A', 800, 'held', 'transaction_id' ),
+			'an authorization with a retyped transaction ID, the total' => array( 'retyped transaction ID', 'pi_A', 1099, 'a payment', 'transaction_id' ),
+			'an already mixed record, its intent for another amount' => array( 'already mixed', 'pi_B', 1500, 'held', 'transaction_id' ),
+			'an already mixed record, its intent for the total' => array( 'already mixed', 'pi_B', 1099, 'a payment', 'transaction_id' ),
+			'a Pending order with a paid date storing another attempt, the earlier attempt for another amount' => array( 'H2 with a paid date', 'pi_A', 1500, 'held', 'another attempt' ),
+			'a Failed order with a paid date storing a declined retry, the genuine capture for less than an edited total' => array( 'declined retry with a paid date', 'pi_A', 800, 'held', 'another attempt' ),
+			"a payment's whole record written over another attempt, redelivered for another amount" => array( 'whole record over another attempt', 'pi_B', 1500, 'held', 'none' ),
+			"a payment's whole record on a Failed order whose transaction ID names it, redelivered for another amount" => array( 'whole record named by the transaction ID', 'pi_B', 1500, 'held', 'none' ),
+			'no intent stored, the transaction ID naming the payment' => array( 'no intent stored', 'pi_B', 1500, 'held', 'stored_intent' ),
+			"an authorization over a kept payment, the authorization's capture" => array( 'authorization over a kept payment', 'pi_B', 800, 'held', 'another attempt' ),
+			'an authorization over a kept payment with no transaction ID, the kept payment again' => array( 'authorization over a kept payment without a transaction ID', 'pi_K', 1500, 'held', 'transaction_id' ),
+			"the duplicate check's authorization with another attempt's transaction ID" => array( "authorization with another attempt's transaction ID", 'pi_B', 1500, 'held', 'transaction_id' ),
 		);
 	}
 
@@ -3360,7 +3401,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	 *                      `H2 with a paid date` (a Pending order whose transaction ID names an earlier attempt pi_A and which
 	 *                      stores the authorization pi_B); `declined retry with a paid date` (the extension's declined retry
 	 *                      pi_B stored over authorization pi_A on a Failed order); `whole record over another attempt` (pi_B
-	 *                      stored with succeeded beside pi_A's transaction ID, as step 2 writes it); `whole record named by the
+	 *                      stored with succeeded beside pi_A's transaction ID, as a success over another attempt writes it); `whole record named by the
 	 *                      transaction ID` (the same on a Failed order whose transaction ID names pi_B); `no intent stored`
 	 *                      (requires_capture beside a transaction ID naming pi_B); `authorization over a kept payment` (the
 	 *                      extension's authorization pi_B recorded over kept payment pi_K, written with pi_K's values);
@@ -3467,7 +3508,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	 *
 	 * Delivered twice. Its whole record is written first, so the order is completed, or held when the amount differs from
 	 * the total, as a payment, not as the capture of the stored authorization, with one line naming the status it
-	 * replaced and no capture-choice line. Client 11.3.0 captures the stored authorization, its amount not checked
+	 * replaced and no refused-capture line. Client 11.3.0 captures the stored authorization, its amount not checked
 	 * (class-wc-payments-order-service.php:484-488).
 	 *
 	 * @dataProvider provider_successes_of_another_attempt_decided_as_payments
@@ -3494,7 +3535,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertCount( OrderStatus::ON_HOLD === $expected_status ? 0 : 1, array_merge( $this->get_order_notes_containing( $order, 'was <strong>successfully charged</strong>' ), $this->get_order_notes_containing( $order, 'A test payment of' ) ) );
 		$this->assertCount( OrderStatus::ON_HOLD === $expected_status ? 1 : 0, $this->get_order_notes_containing( $order, 'but the order total is' ) );
 		$this->assert_success_recorded_over_another_attempt( $logger, $order, $replaced_status );
-		$this->assertSame( array(), array_values( array_filter( $logger->lines, static fn( array $line ): bool => false !== strpos( $line[1], 'the capture of an authorization, but the requires_capture status' ) ) ) );
+		$this->assertSame( array(), $this->get_refused_capture_lines( $logger ) );
 	}
 
 	/**
@@ -3602,6 +3643,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'but the order total is' ) );
 		$this->assertSame( array(), $this->get_order_notes_containing( $order, 'was <strong>successfully captured</strong>' ) );
 		$this->assert_success_recorded_over_another_attempt( $logger, $order, 'requires_capture' );
+		$this->assertSame( array(), $this->get_refused_capture_lines( $logger ) );
 	}
 
 	/**
