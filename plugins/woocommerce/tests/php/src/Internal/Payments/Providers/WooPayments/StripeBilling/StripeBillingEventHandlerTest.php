@@ -611,6 +611,40 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A paid invoice for a cancelled renewal storing a declined attempt records the invoice's payment in one save, its succeeded status with its IDs.
+	 *
+	 * The renewal never stores the invoice's intent and charge beside the declined attempt's status, so a run stopped
+	 * after that save leaves the payment recorded whole, and a retried invoice.paid, which writes nothing once the stored
+	 * status is succeeded (client 11.3.0 class-wc-payments-order-service.php:1818-1822), finds nothing missing.
+	 */
+	public function test_paid_invoice_on_a_cancelled_renewal_records_the_payment_in_one_save(): void {
+		$subscription = $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID, array(), 'on-hold' );
+		$renewal      = $this->create_unpaid_renewal_order( $subscription, '24.90' );
+		$renewal->update_meta_data( '_intent_id', 'pi_declined' );
+		$renewal->update_meta_data( '_intention_status', 'requires_payment_method' );
+		$renewal->set_transaction_id( 'pi_declined' );
+		$renewal->set_status( 'cancelled' );
+		$renewal->save();
+		$this->queue_response( 200, $this->get_renewal_intent() );
+		$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
+		$saved  = array();
+		$record = static function ( $order ) use ( $renewal, &$saved ): void {
+			if ( $order instanceof WC_Order && $order->get_id() === $renewal->get_id() && self::RENEWAL_INTENT_ID === (string) $order->get_meta( '_intent_id', true ) ) {
+				$saved[] = array( (string) $order->get_meta( '_charge_id', true ), (string) $order->get_meta( '_intention_status', true ) );
+			}
+		};
+		add_action( 'woocommerce_before_order_object_save', $record );
+
+		$this->sut->handle_event( $this->get_event( 'invoice_paid_renewal' ) );
+
+		remove_action( 'woocommerce_before_order_object_save', $record );
+		$this->assertNotEmpty( $saved );
+		$this->assertSame( array( self::RENEWAL_CHARGE_ID, 'succeeded' ), $saved[0], 'The first save that stores the invoice\'s intent also stores its charge and succeeded status.' );
+		$renewal = wc_get_order( $renewal->get_id() );
+		$this->assertSame( array( 'cancelled', self::RENEWAL_INTENT_ID, self::RENEWAL_CHARGE_ID, 'succeeded', self::RENEWAL_INTENT_ID ), array( $renewal->get_status(), $renewal->get_meta( '_intent_id', true ), $renewal->get_meta( '_charge_id', true ), $renewal->get_meta( '_intention_status', true ), $renewal->get_transaction_id() ) );
+	}
+
+	/**
 	 * @testdox A paid invoice for a renewal neither paid nor payable follows what the renewal can still refund: $_dataName.
 	 *
 	 * Delivered twice. A renewal that can no longer refund the invoice's amount, as after a change to Refunded, would refuse

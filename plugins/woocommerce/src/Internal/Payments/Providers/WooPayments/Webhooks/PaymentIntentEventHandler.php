@@ -601,10 +601,11 @@ class PaymentIntentEventHandler {
 
 	/**
 	 * Record a succeeded payment intent on an order read under the order payment lock the caller holds, without changing
-	 * its status or adding a note: the payment meta, the intent status and the charge's meta.
+	 * its status or adding a note: the payment meta, the intent status and the charge's meta, in one save.
 	 *
 	 * Nothing is written once the order's stored intent status is succeeded, as client 11.3.0
-	 * attach_intent_info_to_order() writes nothing then (class-wc-payments-order-service.php:1818-1822).
+	 * attach_intent_info_to_order() writes nothing then (class-wc-payments-order-service.php:1818-1822). The one save
+	 * means the order never stores the payment's IDs without its succeeded status.
 	 *
 	 * @since 11.2.0
 	 *
@@ -617,7 +618,6 @@ class PaymentIntentEventHandler {
 		}
 
 		$this->set_succeeded_payment_intent_meta( $order, $payment_intent );
-		$order->save();
 		$this->lifecycle_service->apply_meta_under_lock( $order, $this->get_succeeded_payment_intent_meta( $payment_intent, $order ), array() );
 	}
 
