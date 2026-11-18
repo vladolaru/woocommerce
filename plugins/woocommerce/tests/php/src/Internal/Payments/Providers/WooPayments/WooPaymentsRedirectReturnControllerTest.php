@@ -1751,7 +1751,8 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * A free-text value in one code field, next to a listed value in the other.
+	 * A free-text value in one code field, next to a listed value in the other; and the retryable decline pairs, whose
+	 * codes the return branches on, so each is logged as itself.
 	 *
 	 * @return array<string,array{string,string,string,string}>
 	 */
@@ -1759,8 +1760,13 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$free_text = "No such customer: 'cus_123'; ask shopper@example.com, see https://pay.example.test/r?key=sk_test_leak123";
 
 		return array(
-			'free text in code'         => array( $free_text, 'insufficient_funds', 'unknown_error', 'insufficient_funds' ),
-			'free text in decline_code' => array( 'card_declined', $free_text, 'card_declined', 'unknown_error' ),
+			'free text in code'                       => array( $free_text, 'insufficient_funds', 'unknown_error', 'insufficient_funds' ),
+			'free text in decline_code'               => array( 'card_declined', $free_text, 'card_declined', 'unknown_error' ),
+			'a failed attempt with generic_decline'   => array( 'payment_intent_payment_attempt_failed', 'generic_decline', 'payment_intent_payment_attempt_failed', 'unknown_error' ),
+			'a Klarna decline after authentication'   => array( 'payment_intent_authentication_failure', 'klarna_payment_declined', 'payment_intent_authentication_failure', 'klarna_payment_declined' ),
+			'a provider decline with no decline code' => array( 'payment_method_provider_decline', '', 'payment_method_provider_decline', '' ),
+			'a provider decline, high-risk customer'  => array( 'payment_method_provider_decline', 'partner_high_risk_customer', 'payment_method_provider_decline', 'partner_high_risk_customer' ),
+			'a provider decline, partner generic'     => array( 'payment_method_provider_decline', 'partner_generic_decline', 'payment_method_provider_decline', 'partner_generic_decline' ),
 		);
 	}
 

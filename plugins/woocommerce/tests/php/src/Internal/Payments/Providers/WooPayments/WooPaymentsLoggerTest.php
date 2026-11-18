@@ -184,6 +184,45 @@ class WooPaymentsLoggerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A platform error with $_dataName is logged with its codes as they are.
+	 *
+	 * WooPaymentsOrderNoteService writes its own failed payment note for these codes, and
+	 * WooPaymentsPaymentOperationService treats `payment_method_no_longer_available` as an unusable saved payment method.
+	 *
+	 * @dataProvider codes_the_provider_branches_on
+	 *
+	 * @param string $error_code   The platform error's code.
+	 * @param string $decline_code The platform error's decline code, or '' for none.
+	 */
+	public function test_failure_context_logs_a_code_the_provider_branches_on( string $error_code, string $decline_code ): void {
+		$context = WooPaymentsLogger::get_failure_context( new ApiException( 'Error: x', $error_code, 402, 'card_error', $decline_code ) );
+
+		$this->assertSame( $error_code, $context['error_code'] );
+		if ( '' !== $decline_code ) {
+			$this->assertSame( $decline_code, $context['decline_code'] );
+		}
+	}
+
+	/**
+	 * The codes the failed payment note and the renewal's unusable payment method check branch on.
+	 *
+	 * @return array<string,array{string,string}>
+	 */
+	public function codes_the_provider_branches_on(): array {
+		return array(
+			'a closed bank account'              => array( 'account_closed', '' ),
+			'an unauthorized debit'              => array( 'debit_not_authorized', '' ),
+			'no bank account'                    => array( 'no_account', '' ),
+			'failed microdeposits'               => array( 'payment_method_microdeposit_failed', '' ),
+			'too many microdeposit checks'       => array( 'payment_method_microdeposit_verification_attempts_exceeded', '' ),
+			'an invalid mandate'                 => array( 'payment_intent_mandate_invalid', '' ),
+			'an undelivered debit notification'  => array( 'card_declined', 'debit_notification_undelivered' ),
+			'a recurring payment not approved'   => array( 'card_declined', 'transaction_not_approved' ),
+			'a saved method no longer available' => array( 'payment_method_no_longer_available', '' ),
+		);
+	}
+
+	/**
 	 * @testdox A provider object ID that is $_dataName is logged as $expected.
 	 * @dataProvider provider_object_ids
 	 *

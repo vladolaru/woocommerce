@@ -88,6 +88,22 @@ class WooPaymentsLogger {
 		'wcpay_card_testing_prevention',
 		'wcpay_fraud_ruleset_not_found',
 		'wcpay_on_boarding_disabled',
+		// Error and decline codes of the retryable decline pairs the redirect return branches on.
+		'klarna_payment_declined',
+		'partner_generic_decline',
+		'partner_high_risk_customer',
+		'payment_intent_payment_attempt_failed',
+		'payment_method_provider_decline',
+		// Error and decline codes the failed payment note and the renewal's unusable payment method check branch on.
+		'account_closed',
+		'debit_not_authorized',
+		'debit_notification_undelivered',
+		'no_account',
+		'payment_intent_mandate_invalid',
+		'payment_method_microdeposit_failed',
+		'payment_method_microdeposit_verification_attempts_exceeded',
+		'payment_method_no_longer_available',
+		'transaction_not_approved',
 		// Stripe error types.
 		'api_error',
 		'card_error',
