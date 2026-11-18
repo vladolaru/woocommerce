@@ -14,8 +14,9 @@ use Automattic\Jetpack\Constants;
  * keyed by.
  *
  * Every request has exactly one type, checked in this order: WP-CLI, cron, AJAX, REST, admin, front. So `cron` includes
- * Action Scheduler's async request runner, and `admin` is a wp-admin request that is neither AJAX nor REST. This differs
- * from WooCommerce::is_request(), where `frontend` is also true on AJAX requests and `cron` reads only DOING_CRON.
+ * Action Scheduler's async request runner, which arrives over admin-ajax, and `admin` is a wp-admin request that is neither
+ * AJAX nor REST. This differs from WooCommerce::is_request(), where `frontend` is also true on AJAX requests and `cron`
+ * reads only DOING_CRON.
  *
  * @since 11.2.0
  * @internal
@@ -25,7 +26,7 @@ final class RequestTypeUtil {
 	/** A WP-CLI command. */
 	public const CLI = 'cli';
 
-	/** A WordPress cron run or Action Scheduler's async request runner. */
+	/** A WordPress cron run, or Action Scheduler's async request runner over admin-ajax. */
 	public const CRON = 'cron';
 
 	/** A WordPress AJAX request (admin-ajax.php). */
@@ -54,9 +55,10 @@ final class RequestTypeUtil {
 	 */
 	public static function get_request_type( bool $is_rest_api_request ): string {
 		$is_cli   = Constants::is_true( 'WP_CLI' );
-		$is_cron  = wp_doing_cron() || wc_is_running_from_async_action_scheduler();
 		$is_ajax  = wp_doing_ajax();
 		$is_admin = is_admin();
+		// The async runner arrives over admin-ajax, so it counts as cron only together with that server state.
+		$is_cron = wp_doing_cron() || ( $is_ajax && $is_admin && wc_is_running_from_async_action_scheduler() );
 
 		if ( $is_cli ) {
 			return self::CLI;

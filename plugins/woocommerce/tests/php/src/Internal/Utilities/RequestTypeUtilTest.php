@@ -52,11 +52,12 @@ class RequestTypeUtilTest extends WC_Unit_Test_Case {
 	/** @return array<string,array{array<string,bool>,string}> */
 	public static function provide_request_signals(): array {
 		$all = array(
-			'cli'   => true,
-			'cron'  => true,
-			'ajax'  => true,
-			'rest'  => true,
-			'admin' => true,
+			'cli'       => true,
+			'cron'      => true,
+			'as_runner' => true,
+			'ajax'      => true,
+			'rest'      => true,
+			'admin'     => true,
 		);
 
 		return array(
@@ -92,7 +93,15 @@ class RequestTypeUtilTest extends WC_Unit_Test_Case {
 				RequestTypeUtil::AJAX,
 			),
 			// Action Scheduler's async runner posts to admin-ajax.php without DOING_CRON, which WooCommerce::is_request( 'cron' ) reads.
-			'Action Scheduler async runner from AJAX' => array(
+			'Action Scheduler async runner over admin-ajax' => array(
+				array(
+					'as_runner' => true,
+					'ajax'      => true,
+					'admin'     => true,
+				),
+				RequestTypeUtil::CRON,
+			),
+			'Action Scheduler async runner over admin-ajax, with a REST answer' => array(
 				array(
 					'as_runner' => true,
 					'ajax'      => true,
@@ -101,7 +110,29 @@ class RequestTypeUtilTest extends WC_Unit_Test_Case {
 				),
 				RequestTypeUtil::CRON,
 			),
-			'Action Scheduler async runner alone'     => array( array( 'as_runner' => true ), RequestTypeUtil::CRON ),
+			// The runner's signal counts only together with the admin-ajax state the runner arrives with.
+			'runner signal outside admin-ajax'        => array( array( 'as_runner' => true ), RequestTypeUtil::FRONT ),
+			'runner signal on a REST request'         => array(
+				array(
+					'as_runner' => true,
+					'rest'      => true,
+				),
+				RequestTypeUtil::REST,
+			),
+			'runner signal on a wp-admin page'        => array(
+				array(
+					'as_runner' => true,
+					'admin'     => true,
+				),
+				RequestTypeUtil::ADMIN,
+			),
+			'runner signal on AJAX, outside wp-admin' => array(
+				array(
+					'as_runner' => true,
+					'ajax'      => true,
+				),
+				RequestTypeUtil::AJAX,
+			),
 		);
 	}
 }
