@@ -44,6 +44,7 @@ use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Recordi
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPaymentsEventHandlerTestTrait;
 use Automattic\WooCommerce\Tests\Internal\Payments\UncachedOrderWriter;
+use Error;
 use Exception;
 use InvalidArgumentException;
 use RuntimeException;
@@ -3690,6 +3691,49 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( array(), $this->get_order_notes_containing( $order, 'was <strong>successfully captured</strong>' ) );
 		$this->assert_success_recorded_over_another_attempt( $logger, $order, 'requires_capture' );
 		$this->assertSame( array(), $this->get_refused_capture_lines( $logger ) );
+	}
+
+	/**
+	 * @testdox A capture of the recorded authorization on an order whose total was edited, stopped before core writes the payment, completes as a capture on its redelivery: capture note, no amount note.
+	 *
+	 * The first run stops in a callback before the order's write, after the lifecycle applied the success's meta to the
+	 * order. That meta is written with the status, so the order still stores requires_capture and the redelivery takes
+	 * the capture. Client 11.3.0 completes it as a capture too (class-wc-payments-order-service.php:484-485).
+	 */
+	public function test_capture_stopped_before_the_order_write_completes_as_a_capture_on_its_redelivery(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$order = StoredPaymentRecords::authorization( 'pi_A', 'ch_A' );
+		$order->set_total( '15.00' );
+		$order->save();
+		$event = $this->create_payment_intent_event(
+			'payment_intent.succeeded',
+			$order,
+			array(
+				'id'      => 'pi_A',
+				'amount'  => 1099,
+				'charges' => array( 'data' => array( array( 'id' => 'ch_A' ) ) ),
+			)
+		);
+		$stop  = static function (): void {
+			throw new Error( 'The run stopped.' );
+		};
+		add_action( 'woocommerce_pre_payment_complete', $stop );
+		$stopped = null;
+		try {
+			$this->sut->process( $event );
+		} catch ( Error $error ) {
+			$stopped = $error;
+		}
+		remove_action( 'woocommerce_pre_payment_complete', $stop );
+		$this->assertInstanceOf( Error::class, $stopped );
+
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( array( OrderStatus::COMPLETED, 'succeeded', 'pi_A' ), array( $order->get_status(), $order->get_meta( '_intention_status', true ), $order->get_transaction_id() ) );
+		$this->assertSame( array( 1, 0 ), array( count( $this->get_order_notes_containing( $order, 'was <strong>successfully captured</strong>' ) ), count( $this->get_order_notes_containing( $order, 'but the order total is' ) ) ) );
 	}
 
 	/**

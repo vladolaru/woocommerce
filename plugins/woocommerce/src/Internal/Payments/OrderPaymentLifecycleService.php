@@ -272,6 +272,9 @@ class OrderPaymentLifecycleService {
 	/**
 	 * Decide and write a payment lifecycle event on one order object, under the order payment lock.
 	 *
+	 * The event's meta and the status change it causes are written in one save. When core writes nothing for the status
+	 * call, for a status it does not change or a callback that throws, the order is still saved once with the event's meta.
+	 *
 	 * @param WC_Order                               $order                  Order object the event is decided and written on.
 	 * @param PaymentLifecycleEvent                  $event                  Lifecycle event.
 	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
@@ -299,14 +302,7 @@ class OrderPaymentLifecycleService {
 
 		$should_add_note = null !== $note && '' !== $note && ! $this->should_skip_lifecycle_note( $order, $event );
 
-		if ( $this->should_save_meta_before_status_transition( $event ) ) {
-			$order->save_meta_data();
-		}
-
-		$status_transition_saved_order = $this->apply_status_transition( $order, $event );
-		if ( ! $status_transition_saved_order ) {
-			$order->save();
-		}
+		$this->apply_status_transition_in_one_save( $order, $event );
 
 		return $should_add_note && $this->add_lifecycle_note( $order, $event, $persistence_vocabulary )
 			? self::RESULT_NOTE_ADDED
@@ -353,16 +349,32 @@ class OrderPaymentLifecycleService {
 	}
 
 	/**
-	 * Tell whether lifecycle metadata needs to be saved before status-transition hooks run.
+	 * Apply the event's status transition, then save the order unless the status call wrote this object in full.
 	 *
-	 * Every status but started changes the order status, and callbacks on that change may load the order again, so the
-	 * event's meta is saved first.
+	 * The status call saves the order when core writes the status. When core refuses the status, a callback throws or
+	 * the write fails, it leaves changes unsaved, and this one save writes them with the event's meta.
 	 *
+	 * @param WC_Order              $order Order object the event's meta was applied to.
 	 * @param PaymentLifecycleEvent $event Lifecycle event.
-	 * @return bool
 	 */
-	private function should_save_meta_before_status_transition( PaymentLifecycleEvent $event ): bool {
-		return PaymentLifecycleEvent::STATUS_STARTED !== $event->get_status();
+	private function apply_status_transition_in_one_save( WC_Order $order, PaymentLifecycleEvent $event ): void {
+		$saved_order_seen = false;
+		$observe_save     = static function ( $saved_order ) use ( $order, &$saved_order_seen ): void {
+			if ( $saved_order === $order ) {
+				$saved_order_seen = true;
+			}
+		};
+
+		add_action( 'woocommerce_after_order_object_save', $observe_save );
+		try {
+			$status_call_completed = $this->apply_status_transition( $order, $event );
+		} finally {
+			remove_action( 'woocommerce_after_order_object_save', $observe_save );
+		}
+
+		if ( ! $saved_order_seen || null !== $order->get_last_save_error() || ! $status_call_completed ) {
+			$order->save();
+		}
 	}
 
 	/**
@@ -372,7 +384,7 @@ class OrderPaymentLifecycleService {
 	 *
 	 * @param WC_Order              $order Order object.
 	 * @param PaymentLifecycleEvent $event Lifecycle event.
-	 * @return bool True when the transition saved the order.
+	 * @return bool False when the event makes no status call or its status call caught an exception, true otherwise.
 	 */
 	private function apply_status_transition( WC_Order $order, PaymentLifecycleEvent $event ): bool {
 		switch ( $event->get_status() ) {
@@ -383,15 +395,13 @@ class OrderPaymentLifecycleService {
 				}
 
 				if ( $event->should_hold_order() ) {
-					$this->put_order_on_hold( $order, $event );
-					return true;
+					return $this->put_order_on_hold( $order, $event );
 				}
 
 				return (bool) $order->payment_complete( (string) $event->get_payment_reference() );
 
 			case PaymentLifecycleEvent::STATUS_AUTHORIZED:
-				$this->put_order_on_hold( $order, $event );
-				return true;
+				return $this->put_order_on_hold( $order, $event );
 
 			case PaymentLifecycleEvent::STATUS_FAILED:
 			case PaymentLifecycleEvent::STATUS_CAPTURE_EXPIRED:
@@ -399,12 +409,10 @@ class OrderPaymentLifecycleService {
 					return false;
 				}
 
-				$order->update_status( OrderStatus::FAILED );
-				return true;
+				return $order->update_status( OrderStatus::FAILED );
 
 			case PaymentLifecycleEvent::STATUS_CANCELED:
-				$order->update_status( OrderStatus::CANCELLED );
-				return true;
+				return $order->update_status( OrderStatus::CANCELLED );
 
 			case PaymentLifecycleEvent::STATUS_STARTED:
 				if ( null !== $event->get_payment_reference() && '' !== $event->get_payment_reference() && '' === (string) $order->get_transaction_id() ) {
@@ -459,12 +467,13 @@ class OrderPaymentLifecycleService {
 	 *
 	 * @param WC_Order              $order Order object.
 	 * @param PaymentLifecycleEvent $event Lifecycle event.
+	 * @return bool What update_status() returns: false when it caught an exception.
 	 */
-	private function put_order_on_hold( WC_Order $order, PaymentLifecycleEvent $event ): void {
+	private function put_order_on_hold( WC_Order $order, PaymentLifecycleEvent $event ): bool {
 		if ( null !== $event->get_payment_reference() && '' !== $event->get_payment_reference() ) {
 			$order->set_transaction_id( $event->get_payment_reference() );
 		}
-		$order->update_status( OrderStatus::ON_HOLD );
+		return $order->update_status( OrderStatus::ON_HOLD );
 	}
 
 	/**
