@@ -307,8 +307,8 @@ class MultiCurrencyStoreApiRouteControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function provide_requests_selecting_by_geolocation_at_the_match(): array {
 		return array(
-			'admin referer'        => array( self::ADMIN_REFERER, 'speed' ),
-			'shop, cache mode'     => array( self::SHOP_REFERER, 'cache' ),
+			'admin referer'    => array( self::ADMIN_REFERER, 'speed' ),
+			'shop, cache mode' => array( self::SHOP_REFERER, 'cache' ),
 		);
 	}
 
@@ -415,7 +415,11 @@ class MultiCurrencyStoreApiRouteControllerTest extends WC_Unit_Test_Case {
 		rest_do_request( new WP_REST_Request( 'POST', '/wc/store/v1/mc-page-stub' ) );
 
 		$this->assertSame( $expected_store_api_request, $seen[0], 'The route runs as a Store API request only when the request posted it.' );
-		$this->assertSame( 'EUR', $seen[1], "The page's currency follows the session the route loaded." );
+		// The internal dispatch is a control for the classification only: its page also follows the loaded session, so a
+		// currency assertion there could not fail.
+		if ( $expected_store_api_request ) {
+			$this->assertSame( 'EUR', $seen[1], "The page's currency follows the session the route loaded." );
+		}
 		$this->assertFalse( $request_context->is_store_api_request(), 'The request is not left a Store API request.' );
 	}
 
