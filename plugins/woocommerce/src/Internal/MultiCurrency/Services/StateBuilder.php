@@ -203,17 +203,24 @@ class StateBuilder {
 			}
 		}
 
-		// A stored code counts only with two or more enabled currencies: with one, nothing could have been selected
-		// (client 11.2.0 `includes/multi-currency/MultiCurrency.php:876-899`).
-		$stored_code = $this->get_stored_currency_code();
-		$stored      = $stored_code && count( $enabled ) > 1 ? $enabled[ $stored_code ] ?? null : null;
+		// The stored code is read again whenever the user or the session object differs from the last read, as when a Store API
+		// route loads the cart's own session in this request, so conversion and formatting follow that session together
+		// (client 11.3.0 `includes/multi-currency/FrontendCurrencies.php:654-664`).
+		$stored_owner = array( get_current_user_id(), WC()->session );
+		$stored       = $this->get_stored_currency( $enabled );
 		// The override filter is asked on every read, as compatibility code changes it mid-request (client 11.1.0 `MultiCurrency.php:802-810`).
 		// An override marked as an existing order's currency, such as a subscription's, holds even after the merchant disabled
 		// that currency, as long as its rate is known; any other override that is not enabled selects nothing.
-		$selected = function () use ( $default_code, $available, $enabled, $stored ): ?MultiCurrencyCurrency {
+		$selected = function () use ( $default_code, $available, $enabled, &$stored_owner, &$stored ): ?MultiCurrencyCurrency {
 			$is_order_currency = false;
 			$override_code     = self::get_override_currency_code( $is_order_currency );
 			if ( null === $override_code ) {
+				$owner = array( get_current_user_id(), WC()->session );
+				if ( $owner[0] !== $stored_owner[0] || $owner[1] !== $stored_owner[1] ) {
+					$stored_owner = $owner;
+					$stored       = $this->get_stored_currency( $enabled );
+				}
+
 				return $stored;
 			}
 
@@ -541,6 +548,21 @@ class StateBuilder {
 		$is_order_currency = null !== $override_currency_code && $override_currency_code === $order_currency_code;
 
 		return $override_currency_code;
+	}
+
+	/**
+	 * Get the enabled currency the current user or session stored.
+	 *
+	 * A stored code counts only with two or more enabled currencies: with one, nothing could have been selected
+	 * (client 11.2.0 `includes/multi-currency/MultiCurrency.php:876-899`).
+	 *
+	 * @param array<string,MultiCurrencyCurrency> $enabled Enabled currencies, by code.
+	 * @return MultiCurrencyCurrency|null
+	 */
+	private function get_stored_currency( array $enabled ): ?MultiCurrencyCurrency {
+		$stored_code = $this->get_stored_currency_code();
+
+		return $stored_code && count( $enabled ) > 1 ? $enabled[ $stored_code ] ?? null : null;
 	}
 
 	/**

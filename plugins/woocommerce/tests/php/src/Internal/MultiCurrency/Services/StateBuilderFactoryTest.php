@@ -180,6 +180,47 @@ class StateBuilderFactoryTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should convert prices and name the currency of the session the request swapped in, as a cart's own session.
+	 *
+	 * Client 11.3.0 `tests/unit/multi-currency/test-class-frontend-currencies.php:266-280`: a replaced session object is
+	 * read again, and a session with nothing stored falls back to the store currency.
+	 */
+	public function test_follows_the_currency_of_a_swapped_in_session(): void {
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP', 'EUR' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_gbp', '0.80' );
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.90' );
+		$product = \WC_Helper_Product::create_simple_product();
+		wp_set_current_user( 0 );
+		set_current_screen( 'front' );
+		$cookie_session = new StateBuilderFactorySessionTestDouble();
+		$cookie_session->init();
+		$cart_session = new StateBuilderFactorySessionTestDouble();
+		$cart_session->set( 'wcpay_currency', 'EUR' );
+		$empty_session = new StateBuilderFactorySessionTestDouble();
+		WC()->session  = $cookie_session;
+
+		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		wc_get_container()->reset_all_resolved();
+		$seen = array();
+		try {
+			wc_get_container()->get( MultiCurrencyFrontendPricesController::class )->register();
+			wc_get_container()->get( MultiCurrencyFrontendCurrenciesController::class )->register();
+
+			foreach ( array( $cookie_session, $cart_session, $empty_session ) as $session ) {
+				WC()->session = $session;
+				$seen[]       = array( get_woocommerce_currency(), wc_get_product( $product->get_id() )->get_price() );
+			}
+		} finally {
+			wc_get_container()->reset_all_resolved();
+		}
+
+		// 10 at 0.80 ceils to 8 and at 0.90 to 9; the session with nothing stored keeps the store currency.
+		$this->assertSame( array( array( 'GBP', '8' ), array( 'EUR', '9' ), array( 'USD', '10' ) ), $seen );
+	}
+
+	/**
 	 * @testdox Should hand every consumer the same builder, so a page of order totals builds the state once.
 	 */
 	public function test_shares_one_builder_per_request(): void {
@@ -293,7 +334,8 @@ class StateBuilderFactoryTest extends WC_Unit_Test_Case {
 		$session->init();
 		WC()->session = $session;
 
-		$this->assertSame( 'USD', $frontend_builder->build()->get_selected_currency()->get_code(), 'The same frontend builder should retain its cached projection until readiness invalidates it.' );
+		// The selection follows the session object it reads, as client 11.3.0 `FrontendCurrencies.php:654-664` does.
+		$this->assertSame( 'GBP', $frontend_builder->build()->get_selected_currency()->get_code(), 'The same frontend builder should read the ready session once it replaces the missing one.' );
 		$persistence->reset_selected_currency_state();
 
 		$this->assertSame( 'GBP', $frontend_builder->build()->get_selected_currency()->get_code(), 'The same frontend builder should rebuild from the ready GBP session.' );
