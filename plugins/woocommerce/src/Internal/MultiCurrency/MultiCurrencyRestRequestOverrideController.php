@@ -13,7 +13,8 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 
 /**
  * Sets the currency of a REST request outside the Store API: the `currency` query argument when one is given, otherwise
- * the store currency with product prices left unconverted.
+ * the store currency with product prices left unconverted. The callbacks are its own, so they can be removed without
+ * removing another plugin's.
  *
  * @since 11.0.0
  * @internal
@@ -62,9 +63,50 @@ class MultiCurrencyRestRequestOverrideController implements RegisterHooksInterfa
 			return;
 		}
 
-		add_filter( self::FILTER_SHOULD_RETURN_STORE_CURRENCY, '__return_true' );
-		add_filter( MultiCurrencyFrontendPricesController::FILTER_SHOULD_CONVERT_PRODUCT_PRICE, '__return_false' );
+		add_filter( self::FILTER_SHOULD_RETURN_STORE_CURRENCY, array( $this, 'should_return_store_currency' ) );
+		add_filter( MultiCurrencyFrontendPricesController::FILTER_SHOULD_CONVERT_PRODUCT_PRICE, array( $this, 'should_convert_product_price' ) );
 		add_filter( StateBuilder::FILTER_OVERRIDE_SELECTED_CURRENCY, array( $this, 'get_store_currency_code' ) );
+	}
+
+	/**
+	 * Remove the overrides this instance added, for a request found to run a Store API route, and leave any other plugin's
+	 * callbacks on the same filters (client 11.3.0 `includes/multi-currency/MultiCurrency.php:439-442`).
+	 *
+	 * @internal
+	 */
+	public function remove_overrides(): void {
+		remove_filter( StateBuilder::FILTER_OVERRIDE_SELECTED_CURRENCY, array( $this, 'get_currency_from_query_param' ) );
+		remove_filter( self::FILTER_SHOULD_RETURN_STORE_CURRENCY, array( $this, 'should_return_store_currency' ) );
+		remove_filter( MultiCurrencyFrontendPricesController::FILTER_SHOULD_CONVERT_PRODUCT_PRICE, array( $this, 'should_convert_product_price' ) );
+		remove_filter( StateBuilder::FILTER_OVERRIDE_SELECTED_CURRENCY, array( $this, 'get_store_currency_code' ) );
+	}
+
+	/**
+	 * Show the store currency code on a REST request outside the Store API.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $should_return_store_currency Value earlier callbacks gave.
+	 * @return bool
+	 */
+	public function should_return_store_currency( $should_return_store_currency = false ): bool {
+		unset( $should_return_store_currency );
+
+		return true;
+	}
+
+	/**
+	 * Leave product prices unconverted on a REST request outside the Store API.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $should_convert_product_price Value earlier callbacks gave.
+	 * @return bool
+	 */
+	public function should_convert_product_price( $should_convert_product_price = true ): bool {
+		unset( $should_convert_product_price );
+
+		return false;
 	}
 
 	/**

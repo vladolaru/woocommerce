@@ -1075,6 +1075,60 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should convert a coupon re-applied during a matched Store API route in the order's currency, and keep the selection after the route ends.
+	 *
+	 * A USD store with JPY at 150 and EUR at 0.9 enabled, EUR selected, a JPY order re-applying a live 10.00 coupon on a
+	 * merchant REST URL. While a Store API route is matched the request reads as Store API, as client 11.3.0
+	 * `includes/multi-currency/FrontendPrices.php:534` reads `Utils::is_store_api_request()` (`Utils.php:130-140`); once the
+	 * route's callbacks have run it reads as a merchant REST request again (`tests/unit/multi-currency/test-class-frontend-prices.php:822-888`).
+	 */
+	public function test_converts_a_coupon_reapplied_during_a_matched_store_api_route_in_the_order_currency(): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'JPY', 'EUR' ) );
+		foreach ( array(
+			'jpy' => '150',
+			'eur' => '0.9',
+		) as $code => $rate ) {
+			update_option( 'wcpay_multi_currency_exchange_rate_' . $code, 'manual' );
+			update_option( 'wcpay_multi_currency_manual_rate_' . $code, $rate );
+		}
+		add_filter( 'wcpay_multi_currency_override_selected_currency', static fn() => 'EUR' );
+		$order = wc_create_order();
+		$order->set_currency( 'JPY' );
+		$coupon          = $this->create_coupon();
+		$request_context = wc_get_container()->get( RequestContext::class );
+		$sut             = new MultiCurrencyFrontendPricesController();
+		$sut->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ), wc_get_container()->get( ServiceFactory::class ), $request_context );
+		$original_uri = $_SERVER['REQUEST_URI'] ?? null; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized,WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- Restored below.
+		$amounts      = array();
+
+		try {
+			$_SERVER['REQUEST_URI'] = '/wp-json/wc/v3/orders';
+			$request_context->set_matched_store_api_route( true );
+			$sut->set_order_coupon( $coupon, 'code', new \WC_Order_Item_Coupon(), $order );
+			$amounts['during the matched route'] = $sut->get_coupon_amount( '10', $coupon );
+			$request_context->set_matched_store_api_route( false );
+			$sut->set_order_coupon( $coupon, 'code', new \WC_Order_Item_Coupon(), $order );
+			$amounts['after the matched route'] = $sut->get_coupon_amount( '10', $coupon );
+		} finally {
+			if ( null === $original_uri ) {
+				unset( $_SERVER['REQUEST_URI'] );
+			} else {
+				$_SERVER['REQUEST_URI'] = $original_uri;
+			}
+			$request_context->set_matched_store_api_route( false );
+		}
+
+		$this->assertSame(
+			array(
+				'during the matched route' => 1500.0,
+				'after the matched route'  => 9.0,
+			),
+			$amounts
+		);
+	}
+
+	/**
 	 * @testdox Should take a fixed coupon re-applied to a USD order in dollars while JPY is selected.
 	 *
 	 * Client 11.3.0 `tests/unit/multi-currency/test-class-frontend-prices.php:890-925`: four 10.00 lines and 10.00 shipping

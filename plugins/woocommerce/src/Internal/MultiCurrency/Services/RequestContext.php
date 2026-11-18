@@ -21,6 +21,14 @@ class RequestContext {
 	private const SETTINGS_PREVIEW_FLAG = 'is_mc_onboarding_simulation';
 
 	/**
+	 * Whether WordPress has matched this request, or a request batched or dispatched in it, to a Store API route its URL did
+	 * not name, until that request's callbacks have run.
+	 *
+	 * @var bool
+	 */
+	private bool $matched_store_api_route = false;
+
+	/**
 	 * Tell whether the current request is a frontend request.
 	 *
 	 * @return bool True when frontend multi-currency hooks may register.
@@ -32,13 +40,17 @@ class RequestContext {
 	}
 
 	/**
-	 * Tell whether the current request is Store API.
+	 * Tell whether the current request is Store API: by its URL, or by the Store API route WordPress matched for it.
 	 *
 	 * @return bool True when this is a Store API request.
 	 *
 	 * @since 11.0.0
 	 */
 	public function is_store_api_request(): bool {
+		if ( $this->matched_store_api_route ) {
+			return true;
+		}
+
 		$wc_store_api_request = $this->get_wc_store_api_request();
 		if ( null !== $wc_store_api_request ) {
 			return $wc_store_api_request;
@@ -56,6 +68,18 @@ class RequestContext {
 		$rest_route = rawurldecode( esc_url_raw( wp_unslash( $_GET['rest_route'] ) ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 
 		return 0 === strpos( $rest_route, '/wc/store/' );
+	}
+
+	/**
+	 * Record whether WordPress has matched the request to a Store API route its URL did not name, as client 11.3.0
+	 * `includes/multi-currency/Utils.php:130-157` does: once matched, the request is a Store API request whatever its URL.
+	 *
+	 * @internal
+	 *
+	 * @param bool $matched True once a Store API route has matched, false when that request's callbacks have run.
+	 */
+	public function set_matched_store_api_route( bool $matched ): void {
+		$this->matched_store_api_route = $matched;
 	}
 
 	/**

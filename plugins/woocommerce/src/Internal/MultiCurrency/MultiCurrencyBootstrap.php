@@ -91,6 +91,7 @@ final class MultiCurrencyBootstrap {
 		MultiCurrencyFrontendCurrenciesController::class,
 		MultiCurrencyFrontendPricesController::class,
 		MultiCurrencySelectedCurrencyController::class,
+		MultiCurrencyStoreApiRouteController::class,
 	);
 
 	/** Extension compatibility classes. @var array<int,class-string> */

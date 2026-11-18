@@ -148,6 +148,42 @@ class RequestContextTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should treat an admin-referred REST request as Store API only while a Store API route is matched for it.
+	 *
+	 * Client 11.3.0 `includes/multi-currency/Utils.php:130-157`: the matched route classifies the request whatever its URL,
+	 * so it is neither an admin REST request nor one that takes the store-currency overrides.
+	 */
+	public function test_a_matched_store_api_route_classifies_the_request_as_store_api(): void {
+		$_SERVER['REQUEST_URI']  = '/wp-json/batch/v1';
+		$_SERVER['HTTP_REFERER'] = admin_url( 'admin.php?page=wc-admin' );
+		$sut                     = new RequestContext();
+		$read                    = static fn(): array => array(
+			$sut->is_store_api_request(),
+			$sut->is_admin_api_request(),
+			$sut->should_register_rest_request_overrides(),
+			$sut->should_register_frontend_hooks(),
+		);
+		$before                  = $read();
+
+		$sut->set_matched_store_api_route( true );
+		$during = $read();
+		$sut->set_matched_store_api_route( false );
+
+		$this->assertSame(
+			array(
+				'before the match' => array( false, true, true, false ),
+				'while matched'    => array( true, false, false, true ),
+				'after the match'  => array( false, true, true, false ),
+			),
+			array(
+				'before the match' => $before,
+				'while matched'    => $during,
+				'after the match'  => $read(),
+			)
+		);
+	}
+
+	/**
 	 * @testdox Should allow selected currency writers for Store API context.
 	 */
 	public function test_allows_selected_currency_writers_for_store_api_context(): void {

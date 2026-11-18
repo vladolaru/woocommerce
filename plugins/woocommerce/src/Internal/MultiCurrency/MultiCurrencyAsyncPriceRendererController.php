@@ -130,6 +130,19 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 	}
 
 	/**
+	 * Remove the async renderer hooks, for a request found to run a Store API route after they were added (client 11.3.0
+	 * `includes/multi-currency/AsyncPriceRenderer.php:68-73`).
+	 *
+	 * @internal
+	 */
+	public function remove_hooks(): void {
+		remove_filter( 'wc_price', array( $this, 'handle_wc_price' ), 999 );
+		remove_filter( 'woocommerce_format_sale_price', array( $this, 'handle_woocommerce_format_sale_price' ), 999 );
+		remove_filter( 'woocommerce_format_price_range', array( $this, 'handle_woocommerce_format_price_range' ), 999 );
+		remove_action( 'wp_enqueue_scripts', array( $this, 'handle_wp_enqueue_scripts' ) );
+	}
+
+	/**
 	 * Wrap formatted prices with async renderer skeleton markup.
 	 *
 	 * @internal

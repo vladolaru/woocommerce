@@ -113,8 +113,8 @@ class MultiCurrencyRestRequestOverrideControllerTest extends WC_Unit_Test_Case {
 		$sut->register();
 
 		$this->assertSame( 10, has_filter( self::FILTER_OVERRIDE_SELECTED_CURRENCY, array( $sut, 'get_store_currency_code' ) ) );
-		$this->assertSame( 10, has_filter( self::FILTER_SHOULD_RETURN_STORE_CURRENCY, '__return_true' ) );
-		$this->assertSame( 10, has_filter( self::FILTER_SHOULD_CONVERT_PRODUCT_PRICE, '__return_false' ) );
+		$this->assertSame( 10, has_filter( self::FILTER_SHOULD_RETURN_STORE_CURRENCY, array( $sut, 'should_return_store_currency' ) ) );
+		$this->assertSame( 10, has_filter( self::FILTER_SHOULD_CONVERT_PRODUCT_PRICE, array( $sut, 'should_convert_product_price' ) ) );
 		/**
 		 * Apply the request-local selected currency override filter registered by the controller.
 		 *
@@ -162,6 +162,27 @@ class MultiCurrencyRestRequestOverrideControllerTest extends WC_Unit_Test_Case {
 		 * @since 11.0.0
 		 */
 		$this->assertFalse( apply_filters( self::FILTER_SHOULD_CONVERT_PRODUCT_PRICE, true, new \stdClass() ) );
+	}
+
+	/**
+	 * @testdox Should remove only its own overrides, leaving another plugin's callbacks on the same filters at the same priority.
+	 *
+	 * Client 11.3.0 removes the closures it added, by reference (`includes/multi-currency/MultiCurrency.php:439-442`), so a
+	 * plugin's own `__return_true` or `__return_false` stays.
+	 */
+	public function test_removes_only_its_own_overrides(): void {
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
+		add_filter( self::FILTER_SHOULD_RETURN_STORE_CURRENCY, '__return_true' );
+		add_filter( self::FILTER_SHOULD_CONVERT_PRODUCT_PRICE, '__return_false' );
+		$sut->register();
+
+		$sut->remove_overrides();
+
+		$this->assertSame( 10, has_filter( self::FILTER_SHOULD_RETURN_STORE_CURRENCY, '__return_true' ) );
+		$this->assertSame( 10, has_filter( self::FILTER_SHOULD_CONVERT_PRODUCT_PRICE, '__return_false' ) );
+		$this->assertFalse( has_filter( self::FILTER_SHOULD_RETURN_STORE_CURRENCY, array( $sut, 'should_return_store_currency' ) ) );
+		$this->assertFalse( has_filter( self::FILTER_SHOULD_CONVERT_PRODUCT_PRICE, array( $sut, 'should_convert_product_price' ) ) );
+		$this->assertFalse( has_filter( self::FILTER_OVERRIDE_SELECTED_CURRENCY, array( $sut, 'get_store_currency_code' ) ) );
 	}
 
 	/**

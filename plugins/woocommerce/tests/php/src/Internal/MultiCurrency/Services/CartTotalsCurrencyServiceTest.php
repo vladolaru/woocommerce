@@ -244,6 +244,50 @@ class CartTotalsCurrencyServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should stamp saved totals with the hash and currency the WooPayments extension writes for them.
+	 *
+	 * Client 11.3.0 `includes/multi-currency/MultiCurrency.php:1338-1339`, `:1397-1399`: the session keys
+	 * `wcpay_cart_totals_currency` and `wcpay_cart_totals_hash`, the hash being `md5( (string) wp_json_encode( $totals ) )`.
+	 * The expected hash is the md5 of this array's JSON encoding, worked out outside this module:
+	 * `{"subtotal":"90.00","subtotal_tax":0,"shipping_total":"10.00","shipping_tax":1.5,"shipping_taxes":{"1":1.5},...}`.
+	 */
+	public function test_stamps_saved_totals_with_the_extension_hash_and_currency(): void {
+		$totals = array(
+			'subtotal'            => '90.00',
+			'subtotal_tax'        => 0,
+			'shipping_total'      => '10.00',
+			'shipping_tax'        => 1.5,
+			'shipping_taxes'      => array( 1 => 1.5 ),
+			'discount_total'      => 0,
+			'discount_tax'        => 0,
+			'cart_contents_total' => '90.00',
+			'cart_contents_tax'   => 0,
+			'cart_contents_taxes' => array(),
+			'fee_total'           => '0',
+			'fee_tax'             => 0,
+			'fee_taxes'           => array(),
+			'total'               => '101.50',
+			'total_tax'           => 1.5,
+		);
+		$this->switch_on_an_earlier_request( 'GBP' );
+		WC()->cart->set_totals( $totals );
+		WC()->session->set( 'cart_totals', $totals );
+
+		$this->sut->record_cart_totals_currency( WC()->cart );
+
+		$this->assertSame(
+			array(
+				self::CURRENCY_SESSION_KEY => 'GBP',
+				self::HASH_SESSION_KEY     => 'e9d19597aee439b058207946a17291db',
+			),
+			array(
+				self::CURRENCY_SESSION_KEY => WC()->session->get( self::CURRENCY_SESSION_KEY ),
+				self::HASH_SESSION_KEY     => WC()->session->get( self::HASH_SESSION_KEY ),
+			)
+		);
+	}
+
+	/**
 	 * @testdox Should leave the stamp alone for another cart's calculation, and remove it for a save outside the main cart's calculation.
 	 *
 	 * Client 11.3.0 `tests/unit/multi-currency/test-class-multi-currency.php:1168-1187`, `:1253-1265`.

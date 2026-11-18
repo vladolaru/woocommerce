@@ -229,6 +229,33 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	}
 
 	/**
+	 * Select the shopper's currency for a Store API route matched on a request whose URL did not name it.
+	 *
+	 * As client 11.3.0 `includes/multi-currency/MultiCurrency.php:444`, `:454-460`: the created-customer copy and the check of
+	 * the cart's saved totals are added, which registration skips on a request with an admin referer; the session is made
+	 * ready and geolocation runs now, for the session already in use, and geolocation runs again when the cart loads, for a
+	 * session the route loads with it. The state follows that session on its own.
+	 *
+	 * @internal
+	 */
+	public function start_matched_store_api_route(): void {
+		add_action( 'woocommerce_created_customer', array( $this, 'handle_woocommerce_created_customer' ) );
+		add_action( 'woocommerce_cart_loaded_from_session', array( $this, 'handle_woocommerce_cart_loaded_from_session' ), PHP_INT_MAX, 0 );
+		$this->prepare_selected_currency_state_for_session( true );
+		$this->handle_geolocation_init();
+		add_action( 'woocommerce_cart_loaded_from_session', array( $this, 'handle_geolocation_init' ), 10, 0 );
+	}
+
+	/**
+	 * Stop selecting the geolocated currency on cart load once the matched Store API route's callbacks have run.
+	 *
+	 * @internal
+	 */
+	public function end_matched_store_api_route(): void {
+		remove_action( 'woocommerce_cart_loaded_from_session', array( $this, 'handle_geolocation_init' ), 10 );
+	}
+
+	/**
 	 * Handle explicit selected-currency URL changes.
 	 *
 	 * @internal

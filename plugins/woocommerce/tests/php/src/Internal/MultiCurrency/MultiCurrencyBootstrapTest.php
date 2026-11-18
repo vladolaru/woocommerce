@@ -70,6 +70,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencyTrackerController',
 		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencyAdminNoticesController',
 		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencyAdminNoteController',
+		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencyStoreApiRouteController',
 	);
 
 	/** Start each case without the extension-flag mirror and the options the Multi-Currency handover reads and writes. */
@@ -737,7 +738,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	/** @return array<string,array{bool,bool,string,array<int,string>}> */
 	public static function core_root_matrix(): array {
 		$base       = array( self::CORE_ROOTS[0] );
-		$price      = array( self::CORE_ROOTS[1], self::CORE_ROOTS[2], self::CORE_ROOTS[3] );
+		$price      = array( self::CORE_ROOTS[1], self::CORE_ROOTS[2], self::CORE_ROOTS[3], self::CORE_ROOTS[26] );
 		$compat     = array_slice( self::CORE_ROOTS, 5, 11 );
 		$storefront = array( self::CORE_ROOTS[16], self::CORE_ROOTS[17], self::CORE_ROOTS[19], self::CORE_ROOTS[20] );
 		$history    = array( self::CORE_ROOTS[4], self::CORE_ROOTS[23] );
