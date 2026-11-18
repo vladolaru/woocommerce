@@ -163,7 +163,9 @@ final class StoredPaymentRecords {
 	 * Written by the amount-mismatch refusal over an order whose transaction ID an earlier started attempt had set
 	 * (OrderPaymentLifecycleService fills an empty transaction ID on a started event), when the merchant completes the order
 	 * before the refused intent's authorization is recorded; or by a merchant who types another value into the Transaction ID
-	 * field and saves.
+	 * field and saves. With requires_payment_method and no charge on a Failed order, by a second attempt declined on the
+	 * order's pay page while the first waits for its customer: the decline's failed outcome stores its intent and the default
+	 * status and leaves the first attempt's transaction ID (WooPaymentsOutcomeMetadataMapper::get_outcome_meta()).
 	 *
 	 * @param string $transaction_id The earlier attempt's intent or the typed value.
 	 * @param string $intent_id      The authorized attempt's intent, the stored intent.
@@ -188,10 +190,10 @@ final class StoredPaymentRecords {
 	 * An authorization's requires_capture status stored beside another attempt's intent and charge: the transaction ID
 	 * names the authorized payment, the stored intent another attempt.
 	 *
-	 * Written when a succeeded payment's meta is saved before its decision (PaymentIntentEventHandler
-	 * write_succeeded_payment_intent_meta()) and the run stops there; or when a failed capture or cancel of another intent
-	 * stores the default requires_capture (WooPaymentsOutcomeMetadataMapper::get_failed_capture_or_cancel_outcome_meta()).
-	 * In the WooPayments extension, when a declined attempt writes its intent over the authorization (client 11.3.0
+	 * Written when a succeeded payment's meta is saved before its decision on an order with a paid date and no paid status
+	 * (PaymentIntentEventHandler write_succeeded_payment_intent_record()) and the run stops there; or when a failed capture
+	 * or cancel of another intent stores the default requires_capture
+	 * (WooPaymentsOutcomeMetadataMapper::get_failed_capture_or_cancel_outcome_meta()). In the WooPayments extension, when a declined attempt writes its intent over the authorization (client 11.3.0
 	 * class-wc-payment-gateway-wcpay.php:1610-1614), or when its succeeded webhook stops after writing the intent
 	 * (class-wc-payments-webhook-processing-service.php:642-701).
 	 *
