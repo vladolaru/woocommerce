@@ -46,6 +46,10 @@ class ExtensionBoundRenewalPlugins {
 			'name'            => 'Deposit and Partial Payment Plan',
 			'checked_version' => '1.0.5',
 		),
+		'payment-plan-suite'                    => array(
+			'name'            => 'Payment Plan Suite',
+			'checked_version' => '2.6.0',
+		),
 	);
 
 	/**
