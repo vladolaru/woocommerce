@@ -45,6 +45,33 @@ class SubscriptionDouble extends \WC_Order {
 	}
 
 	/**
+	 * Set the payment method, moving the manual renewal flag with it as WooCommerce Subscriptions does.
+	 *
+	 * A new gateway on an object that was read makes the subscription manual when the store requires manual renewal or the
+	 * gateway is missing or does not support `subscriptions`, and automatic otherwise; an empty method makes it manual
+	 * (WooCommerce Subscriptions 9.4.1 includes/core/class-wc-subscription.php:2529-2574). The title is left alone, as the
+	 * order's setter leaves it.
+	 *
+	 * @param mixed $payment_method Gateway ID or gateway.
+	 * @param array $payment_meta   Payment meta, which the double does not store.
+	 */
+	public function set_payment_method( $payment_method = '', $payment_meta = array() ) {
+		unset( $payment_meta );
+		$gateway_id = is_a( $payment_method, 'WC_Payment_Gateway' ) ? $payment_method->id : $payment_method;
+		if ( empty( $gateway_id ) ) {
+			$this->set_requires_manual_renewal( true );
+		} elseif ( $this->get_payment_method() !== $gateway_id && $this->object_read ) {
+			$gateways = WC()->payment_gateways()->payment_gateways();
+			$gateway  = is_a( $payment_method, 'WC_Payment_Gateway' ) ? $payment_method : ( $gateways[ $gateway_id ] ?? null );
+			$this->set_requires_manual_renewal(
+				( function_exists( 'wcs_is_manual_renewal_required' ) && wcs_is_manual_renewal_required() ) || null === $gateway || ! $gateway->supports( 'subscriptions' )
+			);
+		}
+
+		parent::set_payment_method( $gateway_id );
+	}
+
+	/**
 	 * Accept the subscription statuses an order does not have.
 	 *
 	 * @return string[]

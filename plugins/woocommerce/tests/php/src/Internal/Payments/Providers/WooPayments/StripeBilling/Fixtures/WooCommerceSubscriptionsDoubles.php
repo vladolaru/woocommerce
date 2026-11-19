@@ -535,13 +535,21 @@ final class WooCommerceSubscriptionsDoubles {
 	/**
 	 * Fire `woocommerce_subscriptions_paid_for_failed_renewal_order` for each subscription of a failed renewal that was just paid.
 	 *
+	 * A failed renewal is one that was `failed` just before, or that carries the `_failed_renewal_order` marker Subscriptions
+	 * saves when a renewal payment fails, so one moved back to pending and paid still counts (WooCommerce Subscriptions 9.4.1
+	 * includes/core/class-wc-subscriptions-renewal-order.php:114).
+	 *
 	 * @param mixed $order_id   Order ID.
 	 * @param mixed $old_status Previous status.
 	 * @param mixed $new_status New status.
 	 */
 	public static function maybe_fire_paid_for_failed_renewal( $order_id, $old_status, $new_status ): void {
 		$order = wc_get_order( $order_id );
-		if ( 'failed' !== $old_status || ! in_array( $new_status, array( 'processing', 'completed' ), true ) || ! $order instanceof \WC_Order ) {
+		if ( ! $order instanceof \WC_Order || ! in_array( $new_status, array( 'processing', 'completed' ), true ) ) {
+			return;
+		}
+
+		if ( 'failed' !== $old_status && ! wc_string_to_bool( $order->get_meta( '_failed_renewal_order', true ) ) ) {
 			return;
 		}
 

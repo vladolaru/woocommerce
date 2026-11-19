@@ -70,7 +70,12 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		remove_all_actions( 'wp_ajax_nopriv_update_order_status' );
 		remove_all_actions( 'wp_ajax_create_setup_intent' );
 		remove_all_filters( 'woocommerce_payment_token_class' );
-		unset( $GLOBALS['wcpay_test_order_subscription_relationships'], $GLOBALS['wcpay_test_renewal_order_ids'] );
+		unset(
+			$GLOBALS['wcpay_test_order_subscription_relationships'],
+			$GLOBALS['wcpay_test_renewal_order_ids'],
+			$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ],
+			$GLOBALS[ WooCommerceSubscriptionsDoubles::RENEWAL_SUBSCRIPTIONS ]
+		);
 		if ( class_exists( 'WC_Subscriptions_Change_Payment_Gateway', false ) && method_exists( 'WC_Subscriptions_Change_Payment_Gateway', 'reset' ) ) {
 			\WC_Subscriptions_Change_Payment_Gateway::reset();
 		}
@@ -4143,8 +4148,9 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string $renewal_status       Renewal order status.
 	 * @param bool   $subscription_follows Whether the subscription moves to the new card.
+	 * @param bool   $failure_marked       Whether the renewal carries the marker Subscriptions saves when its payment fails.
 	 */
-	public function test_update_order_status_saves_a_new_card_on_a_renewal_and_moves_its_subscription_only_after_a_failure( string $renewal_status, bool $subscription_follows ): void {
+	public function test_update_order_status_saves_a_new_card_on_a_renewal_and_moves_its_subscription_only_after_a_failure( string $renewal_status, bool $subscription_follows, bool $failure_marked ): void {
 		WooCommerceSubscriptionsDoubles::load();
 		WooCommerceSubscriptionsDoubles::load_renewal_detector();
 		WooCommerceSubscriptionsDoubles::hand_failed_renewal_subscriptions_to_the_gateway();
@@ -4164,6 +4170,9 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$order->set_status( $renewal_status );
 		$order->set_payment_method_title( 'WooPayments' );
 		$order->update_meta_data( '_intent_id', 'pi_native' );
+		if ( $failure_marked ) {
+			$order->update_meta_data( '_failed_renewal_order', 'yes' );
+		}
 		$order->save();
 		$subscription->set_customer_id( $user_id );
 		$subscription->set_status( 'on-hold' );
@@ -4307,14 +4316,15 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Provide failed and pending renewal statuses, and whether the subscription moves to the new card.
+	 * Provide renewal statuses, whether the renewal carries the failed-payment marker, and whether the subscription moves to the new card.
 	 *
-	 * @return array<string,array{string,bool}>
+	 * @return array<string,array{string,bool,bool}>
 	 */
 	public function renewal_order_statuses(): array {
 		return array(
-			'failed renewal'  => array( 'failed', true ),
-			'pending renewal' => array( 'pending', false ),
+			'failed renewal'                       => array( 'failed', true, false ),
+			'pending renewal'                      => array( 'pending', false, false ),
+			'failed renewal moved back to pending' => array( 'pending', true, true ),
 		);
 	}
 
@@ -4373,14 +4383,31 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$token_service = $this->create_renewal_card_token_service();
 		$sut           = $this->create_controller( $this->bind_intents_to_order( $this->create_renewal_card_intent_client(), $order ), null, $token_service );
 
-		$response     = $sut->confirm_order_payment(
-			array(
-				'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
-				'order_id'                   => $order->get_id(),
-				'intent_id'                  => 'pi_native',
-				'should_save_payment_method' => 'false',
-			)
+		// With Subscriptions, a subscription moved to a gateway that supports subscriptions stops renewing manually.
+		$gateways                                  = WC()->payment_gateways()->payment_gateways;
+		WC()->payment_gateways()->payment_gateways = array(
+			new class() extends \WC_Payment_Gateway {
+				/**
+				 * Make the gateway WooPayments, which supports subscriptions.
+				 */
+				public function __construct() {
+					$this->id       = WooPaymentsPersistenceVocabulary::GATEWAY_ID;
+					$this->supports = array( 'subscriptions' );
+				}
+			},
 		);
+		try {
+			$response = $sut->confirm_order_payment(
+				array(
+					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+					'order_id'                   => $order->get_id(),
+					'intent_id'                  => 'pi_native',
+					'should_save_payment_method' => 'false',
+				)
+			);
+		} finally {
+			WC()->payment_gateways()->payment_gateways = $gateways;
+		}
 		$order        = wc_get_order( $order->get_id() );
 		$subscription = wc_get_order( $subscription->get_id() );
 		$token        = $order instanceof WC_Order ? $token_service->get_active_token_for_order( $order ) : null;
@@ -4393,9 +4420,9 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'Visa credit card', $order->get_payment_method_title() );
 		$this->assertInstanceOf( WC_Payment_Token_CC::class, $token );
 		$this->assertSame( 'pm_native', $token->get_token() );
+		$this->assertTrue( $subscription->is_manual(), 'The renewal\'s gateway does not turn manual renewal off on the subscription.' );
 		$this->assertSame( 'bacs', $subscription->get_payment_method() );
 		$this->assertSame( 'Direct bank transfer', $subscription->get_payment_method_title() );
-		$this->assertTrue( $subscription->is_manual() );
 		$this->assertSame( array(), $subscription->get_payment_tokens() );
 		$this->assertSame( '', $subscription->get_meta( '_payment_method_id', true ) );
 		$this->assertSame( '', $subscription->get_meta( '_stripe_customer_id', true ) );

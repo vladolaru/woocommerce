@@ -836,6 +836,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 
 		$order = $this->create_woopayments_order();
 		$order->set_customer_id( $customer_id );
+		$order->update_meta_data( '_stripe_customer_id', 'cus_123' );
 		$order->save();
 
 		$subscription = wc_create_order();
@@ -849,7 +850,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		);
 
 		try {
-			$this->sut->process( $this->create_payment_intent_event( 'payment_intent.succeeded', $order ) );
+			$this->sut->process( $this->create_payment_intent_event( 'payment_intent.succeeded', $order, array( 'customer' => 'cus_123' ) ) );
 		} finally {
 			unset( $GLOBALS['wcpay_test_renewal_order_ids'], $GLOBALS['wcpay_test_order_subscription_relationships'] );
 		}
@@ -860,10 +861,11 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		if ( $expect_token ) {
 			$this->assertContains( $token->get_id(), array_map( 'absint', $subscription->get_payment_tokens() ), 'WCS copies the subscription tokens into each new renewal order; a stale subscription charges the replaced card next renewal.' );
 			$this->assertSame( 'pm_123', $subscription->get_meta( '_payment_method_id', true ) );
+			$this->assertSame( 'cus_123', $subscription->get_meta( '_stripe_customer_id', true ), 'The order\'s customer goes with the token.' );
 		} else {
+			$this->assertSame( '', $subscription->get_meta( '_stripe_customer_id', true ), 'A renewal\'s subscription takes no customer.' );
 			$this->assertSame( array(), $subscription->get_payment_tokens() );
 			$this->assertSame( '', $subscription->get_meta( '_payment_method_id', true ) );
-			$this->assertSame( '', $subscription->get_meta( '_stripe_customer_id', true ) );
 		}
 	}
 

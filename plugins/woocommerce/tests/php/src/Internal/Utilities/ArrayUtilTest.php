@@ -451,10 +451,11 @@ class ArrayUtilTest extends WC_Unit_Test_Case {
 	 * @param array<string,mixed> $changes  The values expected in place of the defaults, then any extra keys.
 	 */
 	public function test_restore_typed_defaults( $filtered, array $changes ): void {
+		// The integer default differs from what an integer cast of 2.5, ' 2' or '2.5' gives, so a cast cannot pass for a rejection.
 		$defaults = array(
 			'pos'  => 'left',
 			'sep'  => ',',
-			'dec'  => 2,
+			'dec'  => 7,
 			'flag' => false,
 			'opt'  => null,
 			'list' => array( 'a' ),
