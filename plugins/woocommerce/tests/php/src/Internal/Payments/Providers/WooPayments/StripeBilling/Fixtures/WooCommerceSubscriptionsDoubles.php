@@ -88,6 +88,11 @@ final class WooCommerceSubscriptionsDoubles {
 	public const MANUAL_RENEWAL_REQUIRED = 'wcpay_test_manual_renewal_required';
 
 	/**
+	 * Global holding, by subscription ID, the active token ID each switched subscription had when complete_paid_switches() moved it.
+	 */
+	public const SWITCHED_SUBSCRIPTION_TOKEN_IDS = 'wcpay_test_switched_subscription_token_ids';
+
+	/**
 	 * Define the doubles that are not defined yet, and load registered subscriptions as `SubscriptionDouble` until the test ends.
 	 */
 	public static function load(): void {
@@ -580,6 +585,48 @@ final class WooCommerceSubscriptionsDoubles {
 
 		do_action( 'woocommerce_subscription_failing_payment_method_updated', $subscription, $renewal_order );
 		do_action( 'woocommerce_subscription_failing_payment_method_updated_' . $new_payment_method, $subscription, $renewal_order );
+	}
+
+	/**
+	 * Make paying a switch order move each manual subscription it switches to the order's gateway, as WooCommerce Subscriptions does.
+	 *
+	 * WooCommerce Subscriptions 9.4.1 completes a switch when its order moves to processing or completed
+	 * (includes/switching/class-wc-subscriptions-switcher.php:2717-2747), then sets each manual subscription to the order's
+	 * gateway and automatic renewal (:3180-3214), here with automatic payments on and the auto-renew toggle off. The test's
+	 * hook snapshot removes the callback when the test ends.
+	 */
+	public static function complete_paid_switches(): void {
+		add_action( 'woocommerce_order_status_changed', array( self::class, 'maybe_complete_paid_switch' ), 10, 3 );
+	}
+
+	/**
+	 * Move the manual subscriptions of a switch order that was just paid to its gateway, recording each one's active token first.
+	 *
+	 * @param mixed $order_id   Order ID.
+	 * @param mixed $old_status Previous status.
+	 * @param mixed $new_status New status.
+	 */
+	public static function maybe_complete_paid_switch( $order_id, $old_status, $new_status ): void {
+		unset( $old_status );
+		$order = wc_get_order( $order_id );
+		if ( ! $order instanceof \WC_Order || ! in_array( $new_status, array( 'processing', 'completed' ), true ) ) {
+			return;
+		}
+
+		foreach ( $GLOBALS[ self::ORDER_SUBSCRIPTIONS ][ absint( $order_id ) ]['switch'] ?? array() as $subscription_id ) {
+			$subscription = wc_get_order( $subscription_id );
+			if ( ! $subscription instanceof SubscriptionDouble || ! $subscription->is_manual() ) {
+				continue;
+			}
+
+			$token_ids = $subscription->get_payment_tokens();
+			$GLOBALS[ self::SWITCHED_SUBSCRIPTION_TOKEN_IDS ][ $subscription->get_id() ] = (int) end( $token_ids );
+			if ( $order->get_payment_method() !== $subscription->get_payment_method() ) {
+				$subscription->set_payment_method( $order->get_payment_method() );
+			}
+			$subscription->set_requires_manual_renewal( false );
+			$subscription->save();
+		}
 	}
 
 	/**

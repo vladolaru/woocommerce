@@ -1162,6 +1162,69 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A switch order paid by card adds the card to a manual bank transfer subscription it switches and changes nothing else on it.
+	 *
+	 * Client 11.3.0 appends the token whatever the subscription's gateway (trait-wc-payment-gateway-wcpay-subscriptions.php:718-730),
+	 * so the card is there when Subscriptions moves the subscription to the card gateway as the switch completes. Moving it
+	 * is Subscriptions' job, and the payment method ID and customer are not written on another gateway's subscription.
+	 */
+	public function test_switch_order_charge_adds_its_card_to_a_bank_transfer_subscription(): void {
+		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
+		$user_id      = $this->factory()->user->create();
+		$order        = $this->create_woopayments_order();
+		$subscription = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $subscription );
+		$order->set_customer_id( $user_id );
+		$order->save();
+		$subscription->set_customer_id( $user_id );
+		$subscription->set_payment_method( 'bacs' );
+		$subscription->set_payment_method_title( 'Direct bank transfer' );
+		$subscription->update_meta_data( '_requires_manual_renewal', 'true' );
+		$subscription->save();
+		$GLOBALS['wcpay_test_order_subscription_relationships'] = array(
+			$order->get_id() => array( 'switch' => array( $subscription->get_id() ) ),
+		);
+
+		$token_service = $this->create_token_service(
+			array(
+				'pm_switch' => array(
+					'id'   => 'pm_switch',
+					'type' => 'card',
+					'card' => array(
+						'brand'     => 'visa',
+						'last4'     => '4242',
+						'exp_month' => 12,
+						'exp_year'  => 2030,
+					),
+				),
+			)
+		);
+		$outcome       = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_switch', '', 'pm_switch', 'cus_switch' );
+		$plan          = WooPaymentsOrderEffectPlan::for_payment_intent(
+			array(
+				'id'             => 'pi_switch',
+				'status'         => 'succeeded',
+				'payment_method' => 'pm_switch',
+			),
+			true
+		);
+
+		$this->apply_charge( $this->create_applier( $token_service ), PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_switch' ), $outcome, $plan );
+		$subscription = wc_get_order( $subscription->get_id() );
+		$tokens       = \WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$token        = reset( $tokens );
+
+		$this->assertInstanceOf( WC_Order::class, $subscription );
+		$this->assertInstanceOf( WC_Payment_Token_CC::class, $token );
+		$this->assertSame( array( $token->get_id() ), array_values( $subscription->get_payment_tokens() ), 'The switched subscription has the card before Subscriptions moves it.' );
+		$this->assertSame( 'bacs', $subscription->get_payment_method() );
+		$this->assertSame( 'Direct bank transfer', $subscription->get_payment_method_title() );
+		$this->assertSame( 'true', $subscription->get_meta( '_requires_manual_renewal', true ) );
+		$this->assertSame( '', $subscription->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( '', $subscription->get_meta( '_stripe_customer_id', true ) );
+	}
+
+	/**
 	 * @testdox A recurring PaymentIntent whose token cannot be saved keeps its paid outcome, identity and note.
 	 */
 	public function test_recurring_token_failure_keeps_the_paid_outcome(): void {

@@ -74,7 +74,8 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			$GLOBALS['wcpay_test_order_subscription_relationships'],
 			$GLOBALS['wcpay_test_renewal_order_ids'],
 			$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ],
-			$GLOBALS[ WooCommerceSubscriptionsDoubles::RENEWAL_SUBSCRIPTIONS ]
+			$GLOBALS[ WooCommerceSubscriptionsDoubles::RENEWAL_SUBSCRIPTIONS ],
+			$GLOBALS[ WooCommerceSubscriptionsDoubles::SWITCHED_SUBSCRIPTION_TOKEN_IDS ]
 		);
 		if ( class_exists( 'WC_Subscriptions_Change_Payment_Gateway', false ) && method_exists( 'WC_Subscriptions_Change_Payment_Gateway', 'reset' ) ) {
 			\WC_Subscriptions_Change_Payment_Gateway::reset();
@@ -4338,14 +4339,19 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @testWith ["no parent order", false]
 	 *           ["a parent order paid by WooPayments card", true]
+	 *           ["no parent order, with Subscriptions' switch handling", false, true]
 	 *
-	 * @param string $case_name  Case name.
-	 * @param bool   $has_parent Whether the subscription has a parent order paid by WooPayments card.
+	 * @param string $case_name          Case name.
+	 * @param bool   $has_parent         Whether the subscription has a parent order paid by WooPayments card.
+	 * @param bool   $completes_switches Whether Subscriptions' switch handling runs when an order is paid.
 	 */
-	public function test_update_order_status_leaves_a_manual_subscription_alone_when_its_pending_renewal_is_paid_by_card( string $case_name, bool $has_parent ): void {
+	public function test_update_order_status_leaves_a_manual_subscription_alone_when_its_pending_renewal_is_paid_by_card( string $case_name, bool $has_parent, bool $completes_switches = false ): void {
 		unset( $case_name );
 		WooCommerceSubscriptionsDoubles::load();
 		WooCommerceSubscriptionsDoubles::load_renewal_detector();
+		if ( $completes_switches ) {
+			WooCommerceSubscriptionsDoubles::complete_paid_switches();
+		}
 		$user_id = $this->factory()->user->create();
 		wp_set_current_user( $user_id );
 		$parent_token = null;
@@ -4430,6 +4436,82 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			$parent = wc_get_order( $parent->get_id() );
 			$this->assertSame( array( $parent_token->get_id() ), array_values( $parent->get_payment_tokens() ), 'The parent order keeps its own card.' );
 		}
+	}
+
+	/**
+	 * @testdox A switch order paid by card saves the card on the manual bank transfer subscription it switches before Subscriptions makes it automatic.
+	 *
+	 * Client 11.3.0 appends the token whatever the subscription's gateway (trait-wc-payment-gateway-wcpay-subscriptions.php:718-730),
+	 * before the order's status changes (class-wc-payment-gateway-wcpay.php:4738, :4771). Subscriptions then moves a manual
+	 * subscription to the order's gateway with automatic renewal, so without the card its next renewal would fail.
+	 */
+	public function test_update_order_status_saves_the_card_on_a_switched_manual_subscription_before_subscriptions_moves_it(): void {
+		WooCommerceSubscriptionsDoubles::load();
+		WooCommerceSubscriptionsDoubles::load_order_detector();
+		WooCommerceSubscriptionsDoubles::complete_paid_switches();
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+		$subscription = new WC_Order();
+		$subscription->save();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] = array( $subscription->get_id() );
+		$subscription = wc_get_order( $subscription->get_id() );
+		$this->assertInstanceOf( SubscriptionDouble::class, $subscription );
+		$subscription->set_customer_id( $user_id );
+		$subscription->set_status( 'active' );
+		$subscription->set_payment_method( 'bacs' );
+		$subscription->set_payment_method_title( 'Direct bank transfer' );
+		$subscription->set_requires_manual_renewal( true );
+		$subscription->save();
+		$order = $this->create_woopayments_order( '10.00' );
+		$order->set_customer_id( $user_id );
+		$order->set_status( 'pending' );
+		$order->update_meta_data( '_intent_id', 'pi_native' );
+		$order->save();
+		$GLOBALS['wcpay_test_order_subscription_relationships'] = array( $order->get_id() => array( 'switch' => array( $subscription->get_id() ) ) );
+		$token_service = $this->create_renewal_card_token_service();
+		$sut           = $this->create_controller( $this->bind_intents_to_order( $this->create_renewal_card_intent_client(), $order ), null, $token_service );
+
+		$gateways                                  = WC()->payment_gateways()->payment_gateways;
+		WC()->payment_gateways()->payment_gateways = array(
+			new class() extends \WC_Payment_Gateway {
+				/**
+				 * Make the gateway WooPayments, which supports subscriptions.
+				 */
+				public function __construct() {
+					$this->id       = WooPaymentsPersistenceVocabulary::GATEWAY_ID;
+					$this->supports = array( 'subscriptions' );
+				}
+			},
+		);
+		try {
+			$response = $sut->confirm_order_payment(
+				array(
+					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+					'order_id'                   => $order->get_id(),
+					'intent_id'                  => 'pi_native',
+					'should_save_payment_method' => 'false',
+				)
+			);
+		} finally {
+			WC()->payment_gateways()->payment_gateways = $gateways;
+		}
+		$order        = wc_get_order( $order->get_id() );
+		$subscription = wc_get_order( $subscription->get_id() );
+		$card         = $order instanceof WC_Order ? $token_service->get_active_token_for_order( $order ) : null;
+		$active_token = $subscription instanceof WC_Order ? $token_service->get_active_token_for_order( $subscription ) : null;
+
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertTrue( $order->is_paid(), 'The switch order is paid by WooPayments.' );
+		$this->assertInstanceOf( WC_Payment_Token_CC::class, $card );
+		$this->assertSame( 'pm_native', $card->get_token() );
+		$this->assertInstanceOf( SubscriptionDouble::class, $subscription );
+		$this->assertSame( $card->get_id(), $GLOBALS[ WooCommerceSubscriptionsDoubles::SWITCHED_SUBSCRIPTION_TOKEN_IDS ][ $subscription->get_id() ] ?? null, 'The card is on the subscription when Subscriptions moves it.' );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $subscription->get_payment_method() );
+		$this->assertFalse( $subscription->is_manual(), 'Subscriptions makes the switched subscription automatic.' );
+		$this->assertInstanceOf( WC_Payment_Token_CC::class, $active_token, 'The automatic subscription has a card to renew with.' );
+		$this->assertSame( $card->get_id(), $active_token->get_id() );
+		$this->assertSame( '', $subscription->get_meta( '_stripe_customer_id', true ) );
 	}
 
 	/**

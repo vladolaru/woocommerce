@@ -2019,11 +2019,9 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$monthly = $this->create_woopayments_order();
 		$yearly  = $this->create_woopayments_order();
 
-		// Related through the same parent order (for example via a later gateway switch), but
-		// not paid through WooPayments: the client's own token-repair comment in
-		// trait-wc-payment-gateway-wcpay-subscriptions.php warns against "silently re-pointing
-		// sibling subscriptions the customer has since moved to a different [gateway]", so this
-		// one must be left untouched.
+		// Related through the same parent order but now on another gateway. Client 11.3.0 appends the token to it too
+		// (trait-wc-payment-gateway-wcpay-subscriptions.php:718-730); the two IDs are left alone, since another gateway may
+		// keep its own values under the same keys.
 		$other_gateway = wc_create_order();
 		$other_gateway->set_payment_method( 'bacs' );
 		$other_gateway->save();
@@ -2057,7 +2055,96 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( \WC_Payment_Token::class, $yearly_active_token, 'The yearly subscription should carry the token as its active token.' );
 		$this->assertSame( $token->get_id(), $monthly_active_token->get_id() );
 		$this->assertSame( $token->get_id(), $yearly_active_token->get_id() );
-		$this->assertSame( array(), $other_gateway->get_payment_tokens(), 'A related subscription paid through another gateway must not receive the WooPayments token.' );
+		$other_gateway_active_token = $sut->get_active_token_for_order( $other_gateway );
+		$this->assertInstanceOf( \WC_Payment_Token::class, $other_gateway_active_token, 'A related subscription on another gateway should carry the token too.' );
+		$this->assertSame( $token->get_id(), $other_gateway_active_token->get_id() );
+		$this->assertSame( '', $other_gateway->get_meta( '_payment_method_id', true ), 'The payment method ID is not written on another gateway\'s subscription.' );
+		$this->assertSame( '', $other_gateway->get_meta( '_stripe_customer_id', true ), 'The customer ID is not written on another gateway\'s subscription.' );
+	}
+
+	/**
+	 * @testdox A switch paid by card adds the card to a switched subscription on another gateway and leaves that gateway's IDs alone ($_dataName).
+	 *
+	 * Client 11.3.0 appends the token to every subscription the order is the parent or a switch of, whatever its gateway
+	 * (trait-wc-payment-gateway-wcpay-subscriptions.php:718-730), so a manual subscription that Subscriptions then moves to
+	 * the card gateway has the card. Stripe Gateway keeps its own customer under `_stripe_customer_id`, so neither ID is written.
+	 *
+	 * @dataProvider provider_switched_subscriptions_on_another_gateway
+	 *
+	 * @param string               $gateway_id     The subscription's gateway.
+	 * @param string               $manual         Its stored manual renewal flag.
+	 * @param array<string,string> $meta           Its stored IDs, which the payment leaves as they are.
+	 * @param bool                 $has_sepa_token Whether it already renews on a SEPA token.
+	 */
+	public function test_switch_payment_adds_the_card_to_a_subscription_on_another_gateway( string $gateway_id, string $manual, array $meta, bool $has_sepa_token ): void {
+		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
+		$user_id      = $this->factory()->user->create();
+		$card         = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card' );
+		$order        = $this->create_woopayments_order();
+		$subscription = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $subscription );
+		$subscription->set_payment_method( $gateway_id );
+		$subscription->update_meta_data( '_requires_manual_renewal', $manual );
+		foreach ( array_filter( $meta ) as $key => $value ) {
+			$subscription->update_meta_data( $key, $value );
+		}
+		if ( $has_sepa_token ) {
+			$subscription->add_payment_token( $this->create_sepa_token( $user_id, 'pm_sepa' ) );
+		}
+		$subscription->save();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $order->get_id() => array( 'switch' => array( $subscription->get_id() ) ) );
+		$sut = $this->create_service();
+
+		$sut->sync_related_subscriptions_payment_token( $order, $card, 'pm_card', 'cus_card' );
+
+		$subscription = wc_get_order( $subscription->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $subscription );
+		$active_token = $sut->get_active_token_for_order( $subscription );
+		$this->assertInstanceOf( \WC_Payment_Token::class, $active_token, 'The switched subscription should carry the card.' );
+		$this->assertSame( $card->get_id(), $active_token->get_id(), 'The card is the switched subscription\'s active token.' );
+		$this->assertSame( $gateway_id, $subscription->get_payment_method(), 'Subscriptions, not the payment, moves the subscription.' );
+		$this->assertSame( $manual, $subscription->get_meta( '_requires_manual_renewal', true ) );
+		foreach ( $meta as $key => $value ) {
+			$this->assertSame( $value, $subscription->get_meta( $key, true ), "{$key} is left as it was." );
+		}
+	}
+
+	/**
+	 * Subscriptions on another gateway: a manual bank transfer one, an automatic Stripe Gateway one and an automatic SEPA one.
+	 *
+	 * @return array<string,array{string,string,array<string,string>,bool}>
+	 */
+	public function provider_switched_subscriptions_on_another_gateway(): array {
+		return array(
+			'bacs manual'      => array(
+				'bacs',
+				'true',
+				array(
+					'_payment_method_id'  => '',
+					'_stripe_customer_id' => '',
+				),
+				false,
+			),
+			'stripe automatic' => array(
+				'stripe',
+				'false',
+				array(
+					'_payment_method_id'  => '',
+					'_stripe_customer_id' => 'cus_stripe_gateway',
+					'_stripe_source_id'   => 'src_stripe_gateway',
+				),
+				false,
+			),
+			'sepa automatic'   => array(
+				WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'sepa_debit',
+				'false',
+				array(
+					'_payment_method_id'  => 'pm_sepa',
+					'_stripe_customer_id' => 'cus_sepa',
+				),
+				true,
+			),
+		);
 	}
 
 	/**
