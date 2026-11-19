@@ -222,13 +222,6 @@ class PaymentLifecycleEvent {
 	private ?array $paid_order_note;
 
 	/**
-	 * Whether this started event's payment reference replaces a different transaction ID.
-	 *
-	 * @var bool
-	 */
-	private bool $replaces_transaction_id;
-
-	/**
 	 * Constructor.
 	 *
 	 * @since 11.0.0
@@ -250,11 +243,9 @@ class PaymentLifecycleEvent {
 	 *                                                 already on the order (since 11.4.0).
 	 * @param array|null          $paid_order_note   Note for a completed event skipped on an order already in a paid status, as
 	 *                                               `note`, `identity` and `own_note_events` (since 11.4.0); see get_paid_order_note().
-	 * @param bool                $replaces_transaction_id Whether a started event's payment reference replaces a different transaction ID
-	 *                                                     (since 11.4.0); see replaces_transaction_id().
 	 * @throws InvalidArgumentException When an unknown status is supplied, or a hold on an event that is not completed.
 	 */
-	public function __construct( string $status, ?string $payment_reference = null, array $meta_to_update = array(), array $meta_to_delete = array(), ?string $note = null, ?string $note_type = null, array $note_equivalents = array(), bool $preserve_order_status = false, bool $hold_order = false, array $applied_alternatives = array(), bool $leave_paid_order = false, bool $note_per_occurrence = false, ?array $paid_order_note = null, bool $replaces_transaction_id = false ) {
+	public function __construct( string $status, ?string $payment_reference = null, array $meta_to_update = array(), array $meta_to_delete = array(), ?string $note = null, ?string $note_type = null, array $note_equivalents = array(), bool $preserve_order_status = false, bool $hold_order = false, array $applied_alternatives = array(), bool $leave_paid_order = false, bool $note_per_occurrence = false, ?array $paid_order_note = null ) {
 		if ( ! in_array( $status, $this->get_allowed_statuses(), true ) ) {
 			throw new InvalidArgumentException( esc_html( sprintf( 'Unknown payment lifecycle status: %s', $status ) ) );
 		}
@@ -281,22 +272,6 @@ class PaymentLifecycleEvent {
 		$this->leave_paid_order      = $leave_paid_order;
 		$this->note_per_occurrence   = $note_per_occurrence;
 		$this->paid_order_note       = self::normalize_paid_order_note( $paid_order_note );
-
-		$this->replaces_transaction_id = $replaces_transaction_id;
-	}
-
-	/**
-	 * Tell whether this started event's payment reference replaces a different transaction ID: the provider read it as the
-	 * order's own authorization, still in place after a failed capture or cancel (PaymentOutcome::DATA_AUTHORIZATION_IN_PLACE).
-	 *
-	 * Without it a started event only fills an empty transaction ID. Events of other statuses do not read it.
-	 *
-	 * @since 11.4.0
-	 *
-	 * @return bool
-	 */
-	public function replaces_transaction_id(): bool {
-		return $this->replaces_transaction_id;
 	}
 
 	/**

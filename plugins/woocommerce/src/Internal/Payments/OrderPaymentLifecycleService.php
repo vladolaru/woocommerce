@@ -407,7 +407,10 @@ class OrderPaymentLifecycleService {
 				return true;
 
 			case PaymentLifecycleEvent::STATUS_STARTED:
-				return $this->record_started_payment_reference( $order, $event );
+				if ( null !== $event->get_payment_reference() && '' !== $event->get_payment_reference() && '' === (string) $order->get_transaction_id() ) {
+					$order->set_transaction_id( $event->get_payment_reference() );
+				}
+				return false;
 		}
 
 		return false;
@@ -448,56 +451,6 @@ class OrderPaymentLifecycleService {
 		}
 
 		$order->set_transaction_id( $payment_reference );
-	}
-
-	/**
-	 * Record a started event's payment reference as the transaction ID: it fills an empty one, and replaces a different one
-	 * only when the event says its reference is the order's authorization still in place.
-	 *
-	 * A replacement is saved here, the event's one save, and logged only once the save reports no error, with both values;
-	 * the line is the only place a replaced value survives.
-	 *
-	 * @param WC_Order              $order Order object.
-	 * @param PaymentLifecycleEvent $event Started event.
-	 * @return bool True when the order was saved.
-	 */
-	private function record_started_payment_reference( WC_Order $order, PaymentLifecycleEvent $event ): bool {
-		$payment_reference = (string) $event->get_payment_reference();
-		$transaction_id    = (string) $order->get_transaction_id();
-		if ( '' === $payment_reference || $payment_reference === $transaction_id ) {
-			return false;
-		}
-
-		if ( '' === $transaction_id ) {
-			$order->set_transaction_id( $payment_reference );
-			return false;
-		}
-
-		if ( ! $event->replaces_transaction_id() ) {
-			return false;
-		}
-
-		$order->set_transaction_id( $payment_reference );
-		$order->save();
-		if ( null === $order->get_last_save_error() ) {
-			wc_get_logger()->warning(
-				sprintf(
-					'Order #%1$d names the authorization %2$s that a failed capture or cancel left in place; its transaction ID %3$s was replaced.',
-					$order->get_id(),
-					$payment_reference,
-					$transaction_id
-				),
-				array(
-					'source'                  => 'order-payments',
-					'order_id'                => $order->get_id(),
-					'payment_reference'       => $payment_reference,
-					'replaced_transaction_id' => $transaction_id,
-					'reason'                  => 'authorization_replaced_a_different_transaction_id',
-				)
-			);
-		}
-
-		return true;
 	}
 
 	/**
