@@ -86,30 +86,31 @@ class WooPaymentsPaymentOperationService {
 	public const PROVIDER_DATA_STORED_INTENT_ID = 'stored_intent_id';
 
 	/**
-	 * Outcome data key set when a status-change capture or cancel sent nothing because the order changed after its intent
-	 * was read: one of the REFUSAL_* values.
+	 * Outcome data key set when a status-change capture or cancel sent nothing because the order, read again under the
+	 * operation's order payment lock, no longer matches what the status change acts on: one of the REFUSAL_* values.
 	 *
 	 * @since 11.2.0
 	 */
 	public const DATA_STATUS_CHANGE_REFUSAL = 'status_change_refusal';
 
 	/**
-	 * Refusal: the order no longer stores the intent that was read. The operation is tried again with a new read.
+	 * Refusal of a capture or cancel: the order no longer stores the intent the status change acts on, the one it read or
+	 * the stored one. The operation is tried again, and the retry reads the order's intent again.
 	 *
 	 * @since 11.2.0
 	 */
 	public const REFUSAL_INTENT_CHANGED = 'intent_changed';
 
 	/**
-	 * Refusal: the order now stores a settled intent status. Nothing is left to capture or cancel.
+	 * Refusal of a capture or cancel: the order now stores a settled intent status. Nothing is left to capture or cancel.
 	 *
 	 * @since 11.2.0
 	 */
 	public const REFUSAL_INTENT_SETTLED = 'intent_settled';
 
 	/**
-	 * Refusal: the order no longer pays through WooPayments, so its capture is not sent and nothing is left to do. A
-	 * cancel takes no money, so it is never refused for this.
+	 * Refusal of a status-change capture only: the order no longer pays through WooPayments, so its capture is not sent and
+	 * nothing is left to do. A cancel takes no money, so it is never refused for this.
 	 *
 	 * @since 11.4.0
 	 */

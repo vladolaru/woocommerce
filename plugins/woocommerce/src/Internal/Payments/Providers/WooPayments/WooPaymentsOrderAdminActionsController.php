@@ -496,8 +496,8 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Schedule the next retry of a status-change operation the order payment lock refused, or the provider refused because
-	 * the order no longer stores the intent it read.
+	 * Schedule the next retry of a status-change operation the order payment lock refused, or that was refused because the
+	 * order, read again under the lock, no longer stores the intent the status change acts on.
 	 *
 	 * @param WC_Order $order          Order.
 	 * @param string   $operation      Capture or cancel.
