@@ -10408,50 +10408,38 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Re-fetches whose answer the failure does not record: one that fails, and one that finds the intent still holding the
-	 * money (authorized, processing or captured), which keeps requires_capture as client 11.3.0 does
-	 * (includes/class-wc-payment-gateway-wcpay.php:4418), so the capture's own payment_intent.succeeded completes the order
-	 * as a capture. The captured and authorized answers are the recorded capture_full_amount and authorize_manual_capture
-	 * (Fixtures/platform-manual-capture.json) reduced to their ID and status; processing is a HAND-BUILT status of a
-	 * PaymentIntent (https://docs.stripe.com/payments/paymentintents/lifecycle).
+	 * Re-fetches whose answer the failure does not record: one that fails, and one that finds the intent captured, which
+	 * keeps requires_capture as client 11.3.0 does (includes/class-wc-payment-gateway-wcpay.php:4418), so the capture's own
+	 * payment_intent.succeeded completes the order as a capture. The captured answer is the recorded capture_full_amount
+	 * (Fixtures/platform-manual-capture.json) reduced to its ID and status.
 	 *
 	 * @return array<string,array{0:callable}>
 	 */
 	public function provider_capture_failures_kept_plain(): array {
 		return array(
-			'itself fails'                      => array(
+			'itself fails'              => array(
 				static function (): array {
 					throw new ApiException( 'Fetch failed.', 'wcpay_fetch_error', 500 );
 				},
 			),
-			'finds the intent captured'         => array(
+			'finds the intent captured' => array(
 				static fn( string $intent_id ): array => array(
 					'id'     => $intent_id,
 					'status' => 'succeeded',
-				),
-			),
-			'finds the intent processing'       => array(
-				static fn( string $intent_id ): array => array(
-					'id'     => $intent_id,
-					'status' => 'processing',
-				),
-			),
-			'finds the intent still capturable' => array(
-				static fn( string $intent_id ): array => array(
-					'id'     => $intent_id,
-					'status' => 'requires_capture',
 				),
 			),
 		);
 	}
 
 	/**
-	 * @testdox A failed capture whose re-fetch finds the intent $label, an authorization that is gone, carries the intent it read: its effects record that status with the capture error.
+	 * @testdox A failed capture whose re-fetch finds the intent $_dataName carries the intent it read, so its effects record that status with the capture error.
 	 *
-	 * The answers are HAND-BUILT statuses of a PaymentIntent (https://docs.stripe.com/payments/paymentintents/lifecycle).
+	 * The requires_capture answer is the recorded authorize_manual_capture (Fixtures/platform-manual-capture.json) reduced to
+	 * its ID and status; the others are HAND-BUILT statuses of a PaymentIntent (https://docs.stripe.com/payments/paymentintents/lifecycle).
 	 *
-	 * @testWith ["needing a new payment method", "requires_payment_method"]
-	 *           ["needing an action", "requires_action"]
+	 * @testWith ["still capturable", "requires_capture"]
+	 *           ["needing a new payment method", "requires_payment_method"]
+	 *           ["processing", "processing"]
 	 *
 	 * @param string $label  Row label.
 	 * @param string $status Status the re-fetch answers.
