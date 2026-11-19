@@ -397,6 +397,24 @@ class WooPaymentsDatabaseCacheTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should delete the live and test early fraud warning lists, under the WooPayments extension's option names, and no other entry.
+	 */
+	public function test_delete_early_fraud_warning_caches_deletes_both_lists_only(): void {
+		$lists = array( 'wcpay_early_fraud_warning_orders_cache', 'wcpay_test_early_fraud_warning_orders_cache' );
+		foreach ( array_merge( $lists, array( WooPaymentsDatabaseCache::ACTIVE_DISPUTES_KEY ) ) as $key ) {
+			update_option( $key, array( 'data' => array() ), false );
+		}
+
+		$this->sut->delete_early_fraud_warning_caches();
+
+		foreach ( $lists as $key ) {
+			$this->assertFalse( get_option( $key, false ), "{$key} should be deleted." );
+			$this->assertContains( $key, WooPaymentsDatabaseCache::ALL_KEYS, "An account reset deletes {$key}." );
+		}
+		$this->assertSame( array( 'data' => array() ), get_option( WooPaymentsDatabaseCache::ACTIVE_DISPUTES_KEY ) );
+	}
+
+	/**
 	 * @testdox Should delete every entry and its object-cache entry, and forget what it read.
 	 */
 	public function test_delete_all_deletes_every_entry(): void {

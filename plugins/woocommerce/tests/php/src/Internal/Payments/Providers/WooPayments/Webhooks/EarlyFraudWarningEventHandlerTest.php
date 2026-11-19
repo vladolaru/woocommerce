@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\Even
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\OtherChargeRecorder;
 use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EarlyFraudWarningEventHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
@@ -61,6 +62,67 @@ class EarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $notes );
 		$this->assertStringContainsString( 'Made with stolen card', $notes[0]->content );
 		$this->assertCount( 0, array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'other charge recorded:' ) ), 'A warning on the order\'s own payment is not recorded as another charge.' );
+	}
+
+	/**
+	 * @testdox A created actionable warning writes the index, holding the warning's time, in the save that stores the warning, and drops both lists.
+	 */
+	public function test_created_actionable_warning_writes_the_index_in_the_same_save_and_drops_the_lists(): void {
+		$warning = RecordedPlatformEvents::body( 'platform-early-fraud-warning-events.json', 'early_fraud_warning_created' )['data']['object'];
+		$order   = $this->create_woopayments_order( $warning['charge'] );
+		$order->update_meta_data( '_intent_id', $warning['payment_intent'] );
+		$order->save();
+		$this->seed_warning_lists();
+		$index_at_first_warning_save = null;
+		add_action(
+			'woocommerce_update_order',
+			static function ( $order_id, $saved ) use ( &$index_at_first_warning_save ): void {
+				unset( $order_id );
+				if ( null === $index_at_first_warning_save && $saved instanceof WC_Order && '' !== $saved->get_meta( '_wcpay_early_fraud_warning', true ) ) {
+					$index_at_first_warning_save = $saved->get_meta( '_wcpay_early_fraud_warning_actionable', true );
+				}
+			},
+			10,
+			2
+		);
+
+		$this->create_handler()->process( 'radar.early_fraud_warning.created', $warning );
+
+		$this->assertSame( (string) $warning['created'], $index_at_first_warning_save );
+		$this->assertSame( (string) $warning['created'], wc_get_order( $order->get_id() )->get_meta( '_wcpay_early_fraud_warning_actionable', true ) );
+		$this->assert_warning_lists_dropped();
+	}
+
+	/**
+	 * @testdox An update $_dataName.
+	 *
+	 * @testWith ["to not actionable deletes the index and drops both lists", false, false]
+	 *           ["that keeps the warning actionable rewrites the index and keeps both lists", true, true]
+	 *
+	 * @param string $description Case.
+	 * @param bool   $actionable  Whether the update is actionable.
+	 * @param bool   $lists_kept  Whether the cached lists stay.
+	 */
+	public function test_update_keeps_the_index_with_the_warning_and_drops_the_lists_only_when_actionable_changes( string $description, bool $actionable, bool $lists_kept ): void {
+		unset( $description );
+		$updated = RecordedPlatformEvents::body( 'platform-early-fraud-warning-events.json', 'early_fraud_warning_updated' )['data']['object'];
+		$created = RecordedPlatformEvents::body( 'platform-early-fraud-warning-events.json', 'early_fraud_warning_created' )['data']['object'];
+		$order   = $this->create_woopayments_order( $created['charge'] );
+		$order->update_meta_data( '_intent_id', $created['payment_intent'] );
+		$order->save();
+		$handler = $this->create_handler();
+		$handler->process( 'radar.early_fraud_warning.created', $created );
+		$this->seed_warning_lists();
+
+		$handler->process( 'radar.early_fraud_warning.updated', array_replace( $updated, array( 'actionable' => $actionable ) ) );
+
+		$index = wc_get_order( $order->get_id() )->get_meta( '_wcpay_early_fraud_warning_actionable', true );
+		$this->assertSame( $actionable ? (string) $updated['created'] : '', $index );
+		if ( $lists_kept ) {
+			$this->assert_warning_lists_kept();
+		} else {
+			$this->assert_warning_lists_dropped();
+		}
 	}
 
 	/**
@@ -121,6 +183,7 @@ class EarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 	public function test_update_without_stored_warning_is_a_successful_no_op(): void {
 		$order   = $this->create_woopayments_order();
 		$handler = $this->create_handler();
+		$this->seed_warning_lists();
 
 		$handler->process(
 			'radar.early_fraud_warning.updated',
@@ -135,7 +198,9 @@ class EarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 		$fresh_order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $fresh_order );
 		$this->assertSame( '', $fresh_order->get_meta( '_wcpay_early_fraud_warning', true ) );
+		$this->assertSame( '', $fresh_order->get_meta( '_wcpay_early_fraud_warning_actionable', true ) );
 		$this->assertCount( 0, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assert_warning_lists_kept();
 	}
 
 	/**
@@ -321,6 +386,7 @@ class EarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 		$handler                 = $this->create_handler();
 		$event                   = $this->valid_event_object();
 		$event['payment_intent'] = 'pi_cheque';
+		$this->seed_warning_lists();
 
 		$handler->process( 'radar.early_fraud_warning.created', $event );
 		$handler->process( 'radar.early_fraud_warning.updated', array_replace( $event, array( 'actionable' => false ) ) );
@@ -328,6 +394,8 @@ class EarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 		$fresh_order = wc_get_order( $order_id );
 		$this->assertInstanceOf( WC_Order::class, $fresh_order );
 		$this->assertSame( '', $fresh_order->get_meta( '_wcpay_early_fraud_warning', true ) );
+		$this->assertSame( '', $fresh_order->get_meta( '_wcpay_early_fraud_warning_actionable', true ) );
+		$this->assert_warning_lists_kept();
 		$this->assertSame( 'processing', $fresh_order->get_status() );
 		$notes = array_values(
 			array_filter(
@@ -1188,10 +1256,36 @@ class EarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 			$persistence_vocabulary ?? $container->get( WooPaymentsPersistenceVocabulary::class ),
 			$note_service ?? $container->get( WooPaymentsOrderNoteService::class ),
 			$container->get( EventOrderResolver::class ),
-			$container->get( OtherChargeRecorder::class )
+			$container->get( OtherChargeRecorder::class ),
+			$container->get( WooPaymentsDatabaseCache::class )
 		);
 
 		return $handler;
+	}
+
+	/**
+	 * Store both cached lists of orders with an actionable warning.
+	 */
+	private function seed_warning_lists(): void {
+		wc_get_container()->get( WooPaymentsDatabaseCache::class )->delete_early_fraud_warning_caches();
+		update_option( 'wcpay_early_fraud_warning_orders_cache', array( 'data' => array() ), false );
+		update_option( 'wcpay_test_early_fraud_warning_orders_cache', array( 'data' => array() ), false );
+	}
+
+	/**
+	 * Assert both cached lists are still stored.
+	 */
+	private function assert_warning_lists_kept(): void {
+		$this->assertSame( array( 'data' => array() ), get_option( 'wcpay_early_fraud_warning_orders_cache' ), 'The live list stays.' );
+		$this->assertSame( array( 'data' => array() ), get_option( 'wcpay_test_early_fraud_warning_orders_cache' ), 'The test list stays.' );
+	}
+
+	/**
+	 * Assert both cached lists are gone.
+	 */
+	private function assert_warning_lists_dropped(): void {
+		$this->assertFalse( get_option( 'wcpay_early_fraud_warning_orders_cache' ), 'The live list is dropped.' );
+		$this->assertFalse( get_option( 'wcpay_test_early_fraud_warning_orders_cache' ), 'The test list is dropped.' );
 	}
 
 	/**

@@ -189,6 +189,8 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 				array(
 					self::WCPAY . 'Cutover\\DataMigration',
 					ReconciliationJob::class,
+					// A webhook retry the action runs can refund an order holding an early fraud warning.
+					self::WCPAY . 'WooPaymentsEarlyFraudWarningOrderService',
 					self::WCPAY . 'WooPaymentsCanceledAuthorizationFeeRemediationService',
 					self::WCPAY . 'WooPaymentsLoanApprovedNote',
 					self::WCPAY . 'WooPaymentsGatewaySettingsSynchronizer',

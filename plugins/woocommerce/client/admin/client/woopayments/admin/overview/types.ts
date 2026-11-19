@@ -277,4 +277,14 @@ export interface WooPaymentsOverviewTask {
 	showActionButton?: boolean;
 	/** Client 11.1.0 `dispute-task.tsx` `data-urgent`: a dispute is due within 72 hours. */
 	isUrgent?: boolean;
+	/** Client 11.3.0 `task-list/index.js:204-206`: the task offers Dismiss, with an Undo. */
+	isDismissable?: boolean;
+}
+
+/** An order whose early fraud warning still needs action (client 11.3.0 `data/early-fraud-warnings/types.d.ts`). */
+export interface WooPaymentsActiveEarlyFraudWarning {
+	order_id: number;
+	order_number: string;
+	charge_id: string;
+	created: number;
 }

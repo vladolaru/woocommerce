@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhook
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use InvalidArgumentException;
@@ -61,6 +62,13 @@ class EarlyFraudWarningEventHandler {
 	private OtherChargeRecorder $other_charge_recorder;
 
 	/**
+	 * Cache holding the lists of orders with an actionable warning.
+	 *
+	 * @var WooPaymentsDatabaseCache
+	 */
+	private WooPaymentsDatabaseCache $database_cache;
+
+	/**
 	 * Initialize the handler dependencies.
 	 *
 	 * @internal
@@ -71,13 +79,15 @@ class EarlyFraudWarningEventHandler {
 	 * @param WooPaymentsOrderNoteService      $note_service WooPayments note service.
 	 * @param EventOrderResolver               $event_order_resolver Webhook event order resolver.
 	 * @param OtherChargeRecorder              $other_charge_recorder Recorder of events on another charge.
+	 * @param WooPaymentsDatabaseCache         $database_cache Cache holding the lists of orders with an actionable warning.
 	 */
-	final public function init( OrderPaymentLock $order_payment_lock, WooPaymentsPersistenceVocabulary $persistence_vocabulary, WooPaymentsOrderNoteService $note_service, EventOrderResolver $event_order_resolver, OtherChargeRecorder $other_charge_recorder ): void {
+	final public function init( OrderPaymentLock $order_payment_lock, WooPaymentsPersistenceVocabulary $persistence_vocabulary, WooPaymentsOrderNoteService $note_service, EventOrderResolver $event_order_resolver, OtherChargeRecorder $other_charge_recorder, WooPaymentsDatabaseCache $database_cache ): void {
 		$this->order_payment_lock     = $order_payment_lock;
 		$this->persistence_vocabulary = $persistence_vocabulary;
 		$this->note_service           = $note_service;
 		$this->event_order_resolver   = $event_order_resolver;
 		$this->other_charge_recorder  = $other_charge_recorder;
+		$this->database_cache         = $database_cache;
 	}
 
 	/**
@@ -158,7 +168,8 @@ class EarlyFraudWarningEventHandler {
 				return;
 			}
 
-			if ( 'radar.early_fraud_warning.updated' === $event_type && ! $this->get_existing_warning( $fresh_order ) ) {
+			$previous_warning = self::get_existing_warning( $fresh_order );
+			if ( 'radar.early_fraud_warning.updated' === $event_type && ! $previous_warning ) {
 				return;
 			}
 
@@ -169,11 +180,24 @@ class EarlyFraudWarningEventHandler {
 				'created'        => $warning['created'],
 			);
 			$fresh_order->update_meta_data( WooPaymentsPersistenceVocabulary::EARLY_FRAUD_WARNING_META_KEY, $state );
+			// The index the Overview's order query reads: present only while the warning is actionable, holding its time, as
+			// client 11.3.0 writes it (class-wc-payments-order-service.php:1667-1681).
+			if ( $warning['actionable'] ) {
+				$fresh_order->update_meta_data( WooPaymentsPersistenceVocabulary::EARLY_FRAUD_WARNING_ACTIONABLE_META_KEY, (string) $warning['created'] );
+			} else {
+				$fresh_order->delete_meta_data( WooPaymentsPersistenceVocabulary::EARLY_FRAUD_WARNING_ACTIONABLE_META_KEY );
+			}
 			$fresh_order->save();
 			$persisted_order   = wc_get_order( $fresh_order->get_id() );
-			$persisted_warning = $persisted_order instanceof WC_Order ? $this->get_existing_warning( $persisted_order ) : null;
+			$persisted_warning = $persisted_order instanceof WC_Order ? self::get_existing_warning( $persisted_order ) : null;
 			if ( ! $persisted_order instanceof WC_Order || $state !== $persisted_warning ) {
 				throw new RuntimeException( esc_html( sprintf( 'Could not persist early fraud warning ID: %s', $warning['id'] ) ) );
+			}
+
+			// The lists are built from the actionable flag alone, so only a change to it, or a first warning, drops them
+			// (client 11.3.0 class-wc-payments-webhook-processing-service.php:1039-1043).
+			if ( ( $previous_warning['efw_actionable'] ?? null ) !== $warning['actionable'] ) {
+				$this->database_cache->delete_early_fraud_warning_caches();
 			}
 
 			$note_candidates = $this->note_service->format_early_fraud_warning_note_candidates( $warning['charge'], $warning['actionable'], $warning['fraud_type'] );
@@ -225,10 +249,12 @@ class EarlyFraudWarningEventHandler {
 	/**
 	 * Get valid stored warning evidence, if any.
 	 *
+	 * @since 11.4.0
+	 *
 	 * @param WC_Order $order Order with potential early fraud warning evidence.
 	 * @return array{efw_id:string,efw_actionable:bool,efw_type:string,created:int}|null
 	 */
-	private function get_existing_warning( WC_Order $order ): ?array {
+	public static function get_existing_warning( WC_Order $order ): ?array {
 		$warning = $order->get_meta( WooPaymentsPersistenceVocabulary::EARLY_FRAUD_WARNING_META_KEY, true );
 		if (
 			! is_array( $warning )

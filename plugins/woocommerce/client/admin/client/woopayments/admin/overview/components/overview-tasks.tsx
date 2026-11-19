@@ -12,6 +12,7 @@ import type { ReactNode } from 'react';
  * Internal dependencies
  */
 import type {
+	WooPaymentsActiveEarlyFraudWarning,
 	WooPaymentsOverviewDispute,
 	WooPaymentsOverviewDisputesSummary,
 	WooPaymentsOverviewShell,
@@ -298,6 +299,35 @@ const buildDisputeTask = (
 	};
 };
 
+// Client 11.3.0 `overview/task-list/tasks/early-fraud-warning-task.tsx:15-84`: one task per payment whose warning still needs action.
+const buildEarlyFraudWarningTasks = (
+	warnings: WooPaymentsActiveEarlyFraudWarning[]
+): WooPaymentsOverviewTask[] =>
+	warnings.map( ( warning ) => ( {
+		key: `early-fraud-warning-task-${ warning.charge_id }`,
+		level: 2,
+		title: sprintf(
+			/* translators: %s: order number, e.g. 12 or INV-42 */
+			__( 'Review order #%s flagged for potential fraud', 'woocommerce' ),
+			warning.order_number || String( warning.order_id )
+		),
+		content: __( 'Refunding it now can prevent a dispute.', 'woocommerce' ),
+		actionLabel: __( 'Review payment', 'woocommerce' ),
+		href: getSettingsPaymentsProviderRouteUrl(
+			`/woopayments/transactions/details?id=${ encodeURIComponent(
+				warning.charge_id
+			) }`
+		),
+		onClick: () =>
+			recordEvent( 'wcpay_overview_task_click', {
+				task: 'early-fraud-warning-task',
+				active_early_fraud_warning_count: warnings.length,
+			} ),
+		showActionButton: true,
+		// The warning clears only on a full refund or a platform update, so a merchant who decides against a refund dismisses it.
+		isDismissable: true,
+	} ) );
+
 // Client 11.1.0 `task-list/tasks.tsx:99-110` `taskSort()`, applied in `overview/index.js:105-111`: completed tasks last, then by level.
 const compareTasks = (
 	a: WooPaymentsOverviewTask,
@@ -314,12 +344,14 @@ export const buildOverviewTasks = ( {
 	shell,
 	disputesSummary,
 	activeDispute,
+	activeEarlyFraudWarnings = [],
 	showUpdateDetailsTask = true,
 	onOpenUpdateBusinessDetails,
 }: {
 	shell: WooPaymentsOverviewShell;
 	disputesSummary: WooPaymentsOverviewDisputesSummary | null;
 	activeDispute?: WooPaymentsOverviewDispute;
+	activeEarlyFraudWarnings?: WooPaymentsActiveEarlyFraudWarning[];
 	showUpdateDetailsTask?: boolean;
 	onOpenUpdateBusinessDetails: ( shell: WooPaymentsOverviewShell ) => void;
 } ): WooPaymentsOverviewTask[] =>
@@ -330,6 +362,7 @@ export const buildOverviewTasks = ( {
 				onOpenUpdateBusinessDetails,
 			} ),
 		buildDisputeTask( disputesSummary, activeDispute ),
+		...buildEarlyFraudWarningTasks( activeEarlyFraudWarnings ),
 		// No go-live task: client 11.1.0 `overview/index.js:105` calls getTasks() without showGoLiveTask, so the
 		// task shows only on WC Home (`GoLiveTask` and `woopayments/home-tasks/go-live-task.tsx`).
 	]

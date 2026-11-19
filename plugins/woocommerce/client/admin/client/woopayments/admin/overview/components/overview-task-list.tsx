@@ -2,8 +2,10 @@
  * External dependencies
  */
 import { Card } from '@wordpress/components';
+import { dispatch } from '@wordpress/data';
+import { useRef, useState } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
-import { List, TaskItem } from '@woocommerce/experimental';
+import { CollapsibleList, TaskItem } from '@woocommerce/experimental';
 
 /**
  * Internal dependencies
@@ -13,6 +15,9 @@ import type {
 	WooPaymentsOverviewTasksVisibility,
 } from '../types';
 import { getVisibleOverviewTasks } from './overview-tasks';
+import { saveOption } from '../../../settings/data/actions';
+
+const DISMISSED_TASKS_OPTION = 'woocommerce_dismissed_todo_tasks';
 
 export const OverviewTaskList = ( {
 	tasks,
@@ -21,7 +26,40 @@ export const OverviewTaskList = ( {
 	tasks: WooPaymentsOverviewTask[];
 	visibility: WooPaymentsOverviewTasksVisibility;
 } ) => {
-	const visibleTasks = getVisibleOverviewTasks( tasks, visibility );
+	// Client 11.3.0 `overview/task-list/index.js:56-104`: a dismissal hides the task at once and saves the list, and Undo puts it back.
+	const [ dismissedTaskKeys, setDismissedTaskKeys ] = useState(
+		visibility.dismissed_todo_tasks
+	);
+	const dismissedTaskKeysRef = useRef( dismissedTaskKeys );
+	const saveDismissedTaskKeys = ( keys: string[] ) => {
+		dismissedTaskKeysRef.current = keys;
+		setDismissedTaskKeys( keys );
+		void saveOption( DISMISSED_TASKS_OPTION, keys );
+	};
+	const dismissTask = ( key: string ) => {
+		saveDismissedTaskKeys( [ ...dismissedTaskKeysRef.current, key ] );
+		dispatch( 'core/notices' ).createSuccessNotice(
+			__( 'Task dismissed', 'woocommerce' ),
+			{
+				actions: [
+					{
+						label: __( 'Undo', 'woocommerce' ),
+						onClick: () =>
+							saveDismissedTaskKeys(
+								dismissedTaskKeysRef.current.filter(
+									( dismissedKey ) => dismissedKey !== key
+								)
+							),
+					},
+				],
+			}
+		);
+	};
+
+	const visibleTasks = getVisibleOverviewTasks( tasks, {
+		...visibility,
+		dismissed_todo_tasks: dismissedTaskKeys,
+	} );
 
 	if ( visibleTasks.length === 0 ) {
 		return null;
@@ -40,8 +78,14 @@ export const OverviewTaskList = ( {
 			>
 				{ __( 'Things to do', 'woocommerce' ) }
 			</h2>
-			{ /* The Overview builds at most two tasks, so the list never needs to fold. */ }
-			<List className="woocommerce-woopayments-overview__task-list">
+			{ /* Client 11.3.0 `overview/task-list/index.js:166-173`: open at first, folding to five. */ }
+			<CollapsibleList
+				className="woocommerce-woopayments-overview__task-list"
+				collapsed={ false }
+				show={ 5 }
+				collapseLabel={ __( 'Hide tasks', 'woocommerce' ) }
+				expandLabel={ __( 'Show tasks', 'woocommerce' ) }
+			>
 				{ visibleTasks.map( ( task ) => (
 					<TaskItem
 						key={ task.key }
@@ -63,9 +107,14 @@ export const OverviewTaskList = ( {
 								window.location.assign( task.href );
 							}
 						} }
+						onDismiss={
+							task.isDismissable
+								? () => dismissTask( task.key )
+								: undefined
+						}
 					/>
 				) ) }
-			</List>
+			</CollapsibleList>
 		</Card>
 	);
 };

@@ -10,6 +10,7 @@ import {
 	confirmWooPaymentsDisputeReadinessStatementDescriptor,
 	createWooPaymentsAccountSession,
 	dismissWooPaymentsDisputeReadinessCard,
+	getWooPaymentsActiveEarlyFraudWarnings,
 	getWooPaymentsDeposit,
 	getWooPaymentsDeposits,
 	getWooPaymentsDepositsOverview,
@@ -167,6 +168,16 @@ describe( 'WooPayments overview deposits data', () => {
 
 		expect( mockApiFetch ).toHaveBeenCalledWith( {
 			path: '/wc/v3/payments/dispute-readiness',
+			method: 'GET',
+		} );
+	} );
+
+	// Client 11.3.0 `data/early-fraud-warnings/resolvers.ts:15-33`.
+	it( 'loads the payments with an actionable early fraud warning from the preserved endpoint', async () => {
+		await getWooPaymentsActiveEarlyFraudWarnings();
+
+		expect( mockApiFetch ).toHaveBeenCalledWith( {
+			path: '/wc/v3/payments/early_fraud_warnings/active',
 			method: 'GET',
 		} );
 	} );

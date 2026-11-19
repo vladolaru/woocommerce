@@ -3,6 +3,7 @@
  */
 import fs from 'fs';
 import path from 'path';
+import { recordEvent } from '@woocommerce/tracks';
 
 /**
  * Internal dependencies
@@ -14,6 +15,22 @@ import {
 import { formatWooPaymentsAmount } from '../overview/utils';
 
 jest.mock( '@woocommerce/tracks', () => ( { recordEvent: jest.fn() } ) );
+
+// Rows as the early fraud warnings route answers them, as client 11.3.0 builds them (class-wc-payments-order-service.php:1714-1756).
+const WARNINGS = [
+	{
+		order_id: 2483,
+		order_number: 'INV-2483',
+		charge_id: 'ch_warning_one',
+		created: 1795035195,
+	},
+	{
+		order_id: 2485,
+		order_number: '',
+		charge_id: 'ch_warning_two',
+		created: 1795034751,
+	},
+];
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const NOW = new Date( '2026-06-19T12:00:00.000Z' ).getTime();
@@ -287,6 +304,58 @@ describe( 'overview task builders', () => {
 			expect( task.isUrgent ).toBe( isUrgent );
 		}
 	);
+
+	// Client 11.3.0 `overview/task-list/tasks/early-fraud-warning-task.tsx:15-84` and `tasks.tsx:97`.
+	it( 'builds one dismissable early fraud warning task per payment, after the dispute task', () => {
+		const tasks = buildOverviewTasks( {
+			showUpdateDetailsTask: false,
+			shell: createShell(),
+			disputesSummary: createSummary( { count: 2 } ),
+			activeEarlyFraudWarnings: WARNINGS,
+			onOpenUpdateBusinessDetails: jest.fn(),
+		} );
+
+		expect( tasks.map( ( task ) => task.key ) ).toEqual( [
+			'dispute-resolution-task-summary',
+			'early-fraud-warning-task-ch_warning_one',
+			'early-fraud-warning-task-ch_warning_two',
+		] );
+		expect( tasks[ 0 ].isDismissable ).toBeFalsy();
+		expect( tasks[ 1 ] ).toMatchObject( {
+			title: 'Review order #INV-2483 flagged for potential fraud',
+			content: 'Refunding it now can prevent a dispute.',
+			actionLabel: 'Review payment',
+			level: 2,
+			isDismissable: true,
+		} );
+		expect( tasks[ 2 ].title ).toBe(
+			'Review order #2485 flagged for potential fraud'
+		);
+	} );
+
+	it( 'records the early fraud warning task click with the count and opens the payment details', () => {
+		const [ task ] = buildOverviewTasks( {
+			showUpdateDetailsTask: false,
+			shell: createShell(),
+			disputesSummary: null,
+			activeEarlyFraudWarnings: WARNINGS,
+			onOpenUpdateBusinessDetails: jest.fn(),
+		} );
+
+		task.onClick?.();
+
+		expect( recordEvent ).toHaveBeenCalledWith(
+			'wcpay_overview_task_click',
+			{
+				task: 'early-fraud-warning-task',
+				active_early_fraud_warning_count: 2,
+			}
+		);
+		expect( task.href ).toContain(
+			'path=%2Fwoopayments%2Ftransactions%2Fdetails'
+		);
+		expect( task.href ).toContain( 'id=ch_warning_one' );
+	} );
 
 	// Client 11.1.0 `overview/index.js:105` calls getTasks() without showGoLiveTask: the go-live task is a WC Home task only.
 	it( 'never builds the go-live task, even for a connected test-mode account', () => {

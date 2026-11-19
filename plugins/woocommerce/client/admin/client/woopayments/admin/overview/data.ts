@@ -18,6 +18,7 @@ import type {
 	WooPaymentsOverviewShell,
 	WooPaymentsAccountSession,
 	WooPaymentsDisputeReadinessPayload,
+	WooPaymentsActiveEarlyFraudWarning,
 } from './types';
 import { getWooPaymentsExportRecipient } from '../money-movement/export';
 
@@ -25,6 +26,8 @@ const DEPOSITS_PATH = '/wc/v3/payments/deposits';
 const DISPUTES_PATH = '/wc/v3/payments/disputes';
 const ACCOUNTS_SESSION_PATH = '/wc/v3/payments/accounts/session';
 const DISPUTE_READINESS_PATH = '/wc/v3/payments/dispute-readiness';
+const ACTIVE_EARLY_FRAUD_WARNINGS_PATH =
+	'/wc/v3/payments/early_fraud_warnings/active';
 const OVERVIEW_SHELL_PATH = '/wc-admin/settings/payments/woopayments/overview';
 const DISPUTE_AWAITING_RESPONSE_STATUSES = [
 	'needs_response',
@@ -167,6 +170,15 @@ export const getWooPaymentsOverviewDisputes =
 			} ),
 			method: 'GET',
 		} );
+
+// Client 11.3.0 `data/early-fraud-warnings/resolvers.ts:15-33`.
+export const getWooPaymentsActiveEarlyFraudWarnings = async (): Promise<
+	WooPaymentsActiveEarlyFraudWarning[]
+> =>
+	apiFetch< WooPaymentsActiveEarlyFraudWarning[] >( {
+		path: ACTIVE_EARLY_FRAUD_WARNINGS_PATH,
+		method: 'GET',
+	} );
 
 export const createWooPaymentsAccountSession =
 	async (): Promise< WooPaymentsAccountSession > =>

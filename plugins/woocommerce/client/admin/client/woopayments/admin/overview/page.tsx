@@ -21,6 +21,7 @@ import type { LoadError } from '@stripe/connect-js';
  */
 import { getWooPaymentsSettingsBootstrap } from '~/woopayments/settings/bootstrap';
 import {
+	getWooPaymentsActiveEarlyFraudWarnings,
 	getWooPaymentsDepositsOverview,
 	getWooPaymentsOverviewDisputes,
 	getWooPaymentsOverviewDisputesSummary,
@@ -34,6 +35,7 @@ import { AccountDetailsCard } from './components/account-details-card';
 import { ActiveLoanSummaryCard } from './components/active-loan-summary-card';
 import { DisputeReadinessCard } from './components/dispute-readiness-card';
 import type {
+	WooPaymentsActiveEarlyFraudWarning,
 	WooPaymentsDeposit,
 	WooPaymentsDepositsOverview,
 	WooPaymentsOverviewDispute,
@@ -102,6 +104,10 @@ export const WooPaymentsOverviewPage = () => {
 		summary: WooPaymentsOverviewDisputesSummary;
 		activeDispute?: WooPaymentsOverviewDispute;
 	} | null >( null );
+	// Client 11.3.0 `overview/index.js:118-132`: no warning task until the list has loaded, and none after an error.
+	const [ activeEarlyFraudWarnings, setActiveEarlyFraudWarnings ] = useState<
+		WooPaymentsActiveEarlyFraudWarning[]
+	>( [] );
 	const [ updateBusinessDetailsShell, setUpdateBusinessDetailsShell ] =
 		useState< WooPaymentsOverviewShell | null >( null );
 	// Client 11.1.0 `overview/index.js:72-92`: the update-details task stays hidden unless the Stripe banner fails to load.
@@ -241,11 +247,21 @@ export const WooPaymentsOverviewPage = () => {
 	useEffect( () => {
 		let isMounted = true;
 
-		const loadDisputes = ( nextShell: WooPaymentsOverviewShell ) => {
+		const loadTaskData = ( nextShell: WooPaymentsOverviewShell ) => {
 			if ( ! nextShell.account.connected ) {
 				setDisputeTaskData( null );
 				return;
 			}
+
+			getWooPaymentsActiveEarlyFraudWarnings()
+				.then( ( warnings ) => {
+					if ( isMounted && Array.isArray( warnings ) ) {
+						setActiveEarlyFraudWarnings( warnings );
+					}
+				} )
+				.catch( () => {
+					// The client keeps the error in its store and shows nothing.
+				} );
 
 			// Client 11.2.0 `overview/index.js:100-123`, which asks the summary whatever the cached count; the error notices are `data/disputes/resolvers.js:89-97, :110-118`.
 			getWooPaymentsOverviewDisputesSummary()
@@ -292,7 +308,7 @@ export const WooPaymentsOverviewPage = () => {
 		};
 
 		if ( preloadedShell ) {
-			loadDisputes( preloadedShell );
+			loadTaskData( preloadedShell );
 
 			return () => {
 				isMounted = false;
@@ -307,7 +323,7 @@ export const WooPaymentsOverviewPage = () => {
 
 				setShell( nextShell );
 				setShellSettled( true );
-				loadDisputes( nextShell );
+				loadTaskData( nextShell );
 			} )
 			.catch( () => {
 				if ( isMounted ) {
@@ -371,6 +387,7 @@ export const WooPaymentsOverviewPage = () => {
 				shell,
 				disputesSummary: disputeTaskData?.summary ?? null,
 				activeDispute: disputeTaskData?.activeDispute,
+				activeEarlyFraudWarnings,
 				// Client 11.1.0 `overview/index.js:72-74,105-109`: only after the banner fails to load.
 				showUpdateDetailsTask:
 					showStripeBanner &&

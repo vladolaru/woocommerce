@@ -96,6 +96,16 @@ class WooPaymentsPersistenceVocabulary implements ProviderPersistenceVocabularyI
 	public const EARLY_FRAUD_WARNING_META_KEY = '_wcpay_early_fraud_warning';
 
 	/**
+	 * Order meta key present only while the stored early fraud warning is actionable, holding the warning's `created`
+	 * time, so the order query can find and sort those orders; the WooPayments extension writes it (client 11.3.0
+	 * includes/class-wc-payments-order-service.php:308).
+	 *
+	 * @since 11.4.0
+	 * @var string
+	 */
+	public const EARLY_FRAUD_WARNING_ACTIONABLE_META_KEY = '_wcpay_early_fraud_warning_actionable';
+
+	/**
 	 * Order meta key holding the time another gateway last took the order over from a WooPayments attempt, whose payment
 	 * details were removed then; the WooPayments extension writes it (client 11.3.0 includes/class-wc-payments-order-service.php:121).
 	 *

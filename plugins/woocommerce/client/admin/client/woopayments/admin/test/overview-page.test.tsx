@@ -16,6 +16,7 @@ import {
 	confirmWooPaymentsDisputeReadinessStatementDescriptor,
 	createWooPaymentsAccountSession,
 	dismissWooPaymentsDisputeReadinessCard,
+	getWooPaymentsActiveEarlyFraudWarnings,
 	getWooPaymentsDepositsOverview,
 	getWooPaymentsDisputeReadiness,
 	getWooPaymentsOverviewDisputes,
@@ -77,6 +78,7 @@ jest.mock( '../overview/data', () => ( {
 	confirmWooPaymentsDisputeReadinessStatementDescriptor: jest.fn(),
 	createWooPaymentsAccountSession: jest.fn(),
 	dismissWooPaymentsDisputeReadinessCard: jest.fn(),
+	getWooPaymentsActiveEarlyFraudWarnings: jest.fn(),
 	getWooPaymentsDepositsOverview: jest.fn(),
 	getWooPaymentsDisputeReadiness: jest.fn(),
 	getWooPaymentsOverviewDisputes: jest.fn(),
@@ -134,6 +136,10 @@ const mockCreateAccountSession =
 const mockDismissDisputeReadiness =
 	dismissWooPaymentsDisputeReadinessCard as jest.MockedFunction<
 		typeof dismissWooPaymentsDisputeReadinessCard
+	>;
+const mockGetActiveEarlyFraudWarnings =
+	getWooPaymentsActiveEarlyFraudWarnings as jest.MockedFunction<
+		typeof getWooPaymentsActiveEarlyFraudWarnings
 	>;
 const mockGetOverview = getWooPaymentsDepositsOverview as jest.MockedFunction<
 	typeof getWooPaymentsDepositsOverview
@@ -322,6 +328,7 @@ describe( 'WooPaymentsOverviewPage', () => {
 		mockConfirmStatementDescriptor.mockReset();
 		mockCreateAccountSession.mockReset();
 		mockDismissDisputeReadiness.mockReset();
+		mockGetActiveEarlyFraudWarnings.mockReset();
 		mockGetOverview.mockReset();
 		mockGetDisputeReadiness.mockReset();
 		mockGetShell.mockReset();
@@ -369,6 +376,7 @@ describe( 'WooPaymentsOverviewPage', () => {
 			},
 		} );
 		mockGetShell.mockResolvedValue( createShell() );
+		mockGetActiveEarlyFraudWarnings.mockResolvedValue( [] );
 		mockGetDisputesSummary.mockResolvedValue( {
 			count: 0,
 			earliest_due_by: null,
@@ -1045,6 +1053,86 @@ describe( 'WooPaymentsOverviewPage', () => {
 		expect(
 			await screen.findByText( 'Respond to a dispute for $10.00' )
 		).toBeInTheDocument();
+	} );
+
+	// Client 11.3.0 `overview/index.js:118-132`: the list is withheld until its request settles.
+	it( 'shows the early fraud warning task only once its list has loaded', async () => {
+		const warnings =
+			createDeferred<
+				Awaited<
+					ReturnType< typeof getWooPaymentsActiveEarlyFraudWarnings >
+				>
+			>();
+		mockGetActiveEarlyFraudWarnings.mockReturnValue( warnings.promise );
+		mockGetOverview.mockResolvedValue( createDepositsOverview() );
+		mockGetRecent.mockResolvedValue( { data: [], total_count: 0 } );
+
+		render( <WooPaymentsOverviewPage /> );
+
+		await screen.findByRole( 'heading', { name: 'Balance' } );
+		expect( mockGetActiveEarlyFraudWarnings ).toHaveBeenCalledTimes( 1 );
+		expect(
+			screen.queryByText( /flagged for potential fraud/ )
+		).not.toBeInTheDocument();
+
+		await act( async () => {
+			warnings.resolve( [
+				{
+					order_id: 2483,
+					order_number: '2483',
+					charge_id: 'ch_warning_2483',
+					created: 1795035195,
+				},
+			] );
+		} );
+
+		expect(
+			screen.getByText( 'Review order #2483 flagged for potential fraud' )
+		).toBeInTheDocument();
+	} );
+
+	// Client 11.3.0 `data/early-fraud-warnings/resolvers.ts:26-31`: the store keeps the error and nothing shows.
+	it( 'shows no early fraud warning task and no notice when its list fails to load', async () => {
+		const warnings =
+			createDeferred<
+				Awaited<
+					ReturnType< typeof getWooPaymentsActiveEarlyFraudWarnings >
+				>
+			>();
+		mockGetActiveEarlyFraudWarnings.mockReturnValue( warnings.promise );
+		mockGetOverview.mockResolvedValue( createDepositsOverview() );
+		mockGetRecent.mockResolvedValue( { data: [], total_count: 0 } );
+
+		render( <WooPaymentsOverviewPage /> );
+
+		await screen.findByRole( 'heading', { name: 'Balance' } );
+		await act( async () => {
+			warnings.reject( new Error( 'List failed.' ) );
+		} );
+
+		expect(
+			screen.queryByText( /flagged for potential fraud/ )
+		).not.toBeInTheDocument();
+		expect( mockCreateErrorNotice ).not.toHaveBeenCalled();
+	} );
+
+	it( 'does not request the early fraud warning list for a disconnected account', async () => {
+		mockGetShell.mockResolvedValue(
+			createShell( {
+				account: {
+					...createShell().account,
+					connected: false,
+					working: false,
+				},
+			} )
+		);
+		mockGetOverview.mockResolvedValue( createDepositsOverview() );
+		mockGetRecent.mockResolvedValue( { data: [], total_count: 0 } );
+
+		render( <WooPaymentsOverviewPage /> );
+
+		await screen.findByRole( 'heading', { name: 'Balance' } );
+		expect( mockGetActiveEarlyFraudWarnings ).not.toHaveBeenCalled();
 	} );
 
 	it( 'fails closed when the overview shell cannot be loaded', async () => {
