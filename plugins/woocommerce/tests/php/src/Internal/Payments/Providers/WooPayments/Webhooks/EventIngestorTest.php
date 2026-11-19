@@ -870,6 +870,74 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox payment_intent.succeeded notes the subscription's move to the repaired card only when the subscription takes it ($relation).
+	 *
+	 * The note tells the merchant the subscription now renews on the new card. The token copy reaches the subscriptions a
+	 * parent or switch order pays for; a repaired renewal's subscription keeps its card, so its next renewal can still charge
+	 * the old one. Client 11.3.0 writes the note on a renewal too (class-wc-payments-webhook-processing-service.php:785-810).
+	 *
+	 * @testWith ["parent", true]
+	 *           ["switch", true]
+	 *           ["renewal", false]
+	 *
+	 * @param string $relation           The order's relation to the subscription.
+	 * @param bool   $subscription_moves Whether the subscription takes the repaired card.
+	 */
+	public function test_payment_intent_succeeded_repair_notes_a_card_change_only_where_the_subscription_takes_it( string $relation, bool $subscription_moves ): void {
+		WooCommerceSubscriptionsDoubles::load_renewal_detector();
+		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
+		WooCommerceSubscriptionsDoubles::load_order_detector();
+		$customer_id = self::factory()->user->create();
+		$tokens      = array();
+		foreach ( array( 'pm_old', 'pm_123' ) as $payment_method_id ) {
+			$token = new \WC_Payment_Token_CC();
+			$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+			$token->set_user_id( $customer_id );
+			$token->set_token( $payment_method_id );
+			$token->set_card_type( 'visa' );
+			$token->set_last4( 'pm_old' === $payment_method_id ? '1111' : '4242' );
+			$token->set_expiry_month( '12' );
+			$token->set_expiry_year( '2030' );
+			$token->save();
+			$tokens[] = $token;
+		}
+		list( $old_token, $new_token ) = $tokens;
+
+		$order = $this->create_woopayments_order();
+		$order->set_customer_id( $customer_id );
+		$order->add_payment_token( $old_token );
+		$order->save();
+
+		$subscription = wc_create_order();
+		$subscription->set_customer_id( $customer_id );
+		$subscription->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$subscription->add_payment_token( $old_token );
+		$subscription->save();
+
+		$GLOBALS['wcpay_test_renewal_order_ids']                = 'renewal' === $relation ? array( $order->get_id() ) : array();
+		$GLOBALS['wcpay_test_order_subscription_relationships'] = array(
+			$order->get_id() => array( $relation => array( $subscription->get_id() ) ),
+		);
+
+		try {
+			$this->sut->process( $this->create_payment_intent_event( 'payment_intent.succeeded', $order ) );
+		} finally {
+			unset( $GLOBALS['wcpay_test_renewal_order_ids'], $GLOBALS['wcpay_test_order_subscription_relationships'] );
+		}
+
+		$order        = wc_get_order( $order->get_id() );
+		$subscription = wc_get_order( $subscription->get_id() );
+		$tokens       = $subscription instanceof WC_Order ? array_map( 'absint', $subscription->get_payment_tokens() ) : array();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( $subscription_moves ? $new_token->get_id() : $old_token->get_id(), absint( end( $tokens ) ), 'The subscription renews on the card it ends with.' );
+		$this->assertSame(
+			$subscription_moves ? array( sprintf( 'WooPayments updated the subscription payment method token from token #%1$d to #%2$d after receiving a successful renewal payment webhook.', $old_token->get_id(), $new_token->get_id() ) ) : array(),
+			array_map( static fn( $note ): string => (string) $note->content, $this->get_order_notes_containing( $order, 'updated the subscription payment method token' ) ),
+			'The note says the subscription moved only when it did.'
+		);
+	}
+
+	/**
 	 * @testdox payment_intent.succeeded reads the payment method ID out of an expanded payment_method object.
 	 */
 	public function test_payment_intent_succeeded_extracts_expanded_payment_method_id(): void {
@@ -927,10 +995,11 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox payment_intent.succeeded notes the token change when repair replaces an attached token.
+	 * @testdox payment_intent.succeeded notes the token change when repair replaces a parent order's attached token, which its subscription takes.
 	 */
 	public function test_payment_intent_succeeded_notes_token_change_on_repair(): void {
-		WooCommerceSubscriptionsDoubles::load_renewal_detector();
+		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
+		WooCommerceSubscriptionsDoubles::load_order_detector();
 		$customer_id = self::factory()->user->create();
 
 		$old_token = new \WC_Payment_Token_CC();
@@ -958,16 +1027,25 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		$order->add_payment_token( $old_token );
 		$order->save();
 
-		$GLOBALS['wcpay_test_renewal_order_ids'] = array( $order->get_id() );
+		$subscription = wc_create_order();
+		$subscription->set_customer_id( $customer_id );
+		$subscription->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$subscription->add_payment_token( $old_token );
+		$subscription->save();
+
+		$GLOBALS['wcpay_test_order_subscription_relationships'] = array( $order->get_id() => array( 'parent' => array( $subscription->get_id() ) ) );
 
 		try {
 			$this->sut->process( $this->create_payment_intent_event( 'payment_intent.succeeded', $order ) );
 		} finally {
-			unset( $GLOBALS['wcpay_test_renewal_order_ids'] );
+			unset( $GLOBALS['wcpay_test_order_subscription_relationships'] );
 		}
 
-		$order = wc_get_order( $order->get_id() );
+		$order        = wc_get_order( $order->get_id() );
+		$subscription = wc_get_order( $subscription->get_id() );
 		$this->assertContains( $new_token->get_id(), array_map( 'absint', $order->get_payment_tokens() ) );
+		$subscription_tokens = array_map( 'absint', $subscription->get_payment_tokens() );
+		$this->assertSame( $new_token->get_id(), end( $subscription_tokens ), 'The subscription takes the repaired card.' );
 		$notes = implode( ' | ', array_map( static fn( $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) ) );
 		$this->assertStringContainsString( 'updated the subscription payment method token', $notes );
 	}

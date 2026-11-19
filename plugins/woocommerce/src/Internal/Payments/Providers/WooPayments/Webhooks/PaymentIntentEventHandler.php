@@ -1261,7 +1261,9 @@ class PaymentIntentEventHandler {
 				(string) $order->get_meta( '_stripe_customer_id', true )
 			);
 
-			if ( $previous_token instanceof WC_Payment_Token && $previous_token->get_id() !== $token->get_id() ) {
+			// The note says the subscription moved to the new card, so it is written only where the copy above reached a
+			// subscription: one the order is the parent or a switch of. A renewal's subscription keeps its own card.
+			if ( $previous_token instanceof WC_Payment_Token && $previous_token->get_id() !== $token->get_id() && array() !== $token_service->get_related_subscriptions_for_order( $order ) ) {
 				$note = sprintf(
 					/* translators: 1: Previous payment token ID, 2: New payment token ID. */
 					__( 'WooPayments updated the subscription payment method token from token #%1$d to #%2$d after receiving a successful renewal payment webhook.', 'woocommerce' ),
