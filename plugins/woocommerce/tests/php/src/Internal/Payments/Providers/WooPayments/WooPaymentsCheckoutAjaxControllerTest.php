@@ -29,6 +29,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\SepaToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
@@ -251,9 +252,10 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$subscription->set_customer_id( $user_id );
 		$subscription->set_payment_method_title( 'Card' );
 		$subscription->save();
-		// Relates the subscription without marking the order recurring: the renewal check reads its own registry.
+		// Relates the subscription as the parent of this $0 sign-up. The shopper asked to save the card, so it is saved whether
+		// or not an earlier test left the order detector defined to mark the order recurring.
 		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
-		$GLOBALS['wcpay_test_order_subscription_relationships'] = array( $order->get_id() => array( 'renewal' => array( $subscription->get_id() ) ) );
+		$GLOBALS['wcpay_test_order_subscription_relationships'] = array( $order->get_id() => array( 'parent' => array( $subscription->get_id() ) ) );
 
 		$api_client           = new class() extends Client {
 			/**
@@ -4130,15 +4132,28 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Authenticated renewal callbacks save and synchronize a new card despite an unchecked save preference.
+	 * @testdox An authenticated $_dataName callback saves the new card on the renewal despite an unchecked save preference, and the subscription moves to it only after a failed renewal.
+	 *
+	 * The payment itself writes nothing on the renewal's subscription, as client 11.3.0 copies a token to the parent's and
+	 * switch's subscriptions only (trait-wc-payment-gateway-wcpay-subscriptions.php:718-730). A paid failed renewal then moves
+	 * an automatic subscription to the new card through Subscriptions' failed-renewal hook and the built-in's handler for it,
+	 * as the extension's update_failing_payment_method() does (trait:592-600); a paid pending renewal leaves it as it was.
 	 *
 	 * @dataProvider renewal_order_statuses
 	 *
-	 * @param string $renewal_status Renewal order status.
+	 * @param string $renewal_status       Renewal order status.
+	 * @param bool   $subscription_follows Whether the subscription moves to the new card.
 	 */
-	public function test_update_order_status_saves_and_syncs_new_card_for_failed_or_pending_renewal( string $renewal_status ): void {
+	public function test_update_order_status_saves_a_new_card_on_a_renewal_and_moves_its_subscription_only_after_a_failure( string $renewal_status, bool $subscription_follows ): void {
+		WooCommerceSubscriptionsDoubles::load();
 		WooCommerceSubscriptionsDoubles::load_renewal_detector();
-		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
+		WooCommerceSubscriptionsDoubles::hand_failed_renewal_subscriptions_to_the_gateway();
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => static fn( $class_name, ...$args ) => 'WC_Subscriptions_Core_Plugin' === $class_name || class_exists( $class_name, ...$args ),
+			)
+		);
+		wc_get_container()->get( SubscriptionsController::class )->handle_plugins_loaded();
 		$user_id      = $this->factory()->user->create();
 		$order        = $this->create_woopayments_order( '10.00' );
 		$subscription = $this->create_woopayments_order( '10.00' );
@@ -4151,6 +4166,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_intent_id', 'pi_native' );
 		$order->save();
 		$subscription->set_customer_id( $user_id );
+		$subscription->set_status( 'on-hold' );
 		$subscription->set_payment_method_title( 'WooPayments' );
 		$subscription->update_meta_data( '_payment_method_id', 'pm_old' );
 		$subscription->update_meta_data( '_stripe_customer_id', 'cus_old' );
@@ -4176,12 +4192,226 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$unrelated->update_meta_data( '_payment_method_id', 'pm_unrelated' );
 		$unrelated->update_meta_data( '_stripe_customer_id', 'cus_unrelated' );
 		$unrelated->save();
-		$GLOBALS['wcpay_test_renewal_order_ids']                = array( $order->get_id() );
-		$GLOBALS['wcpay_test_order_subscription_relationships'] = array(
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ]      = array( $subscription->get_id() );
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::RENEWAL_SUBSCRIPTIONS ] = array( $order->get_id() => array( $subscription->get_id() ) );
+		$GLOBALS['wcpay_test_renewal_order_ids']                           = array( $order->get_id() );
+		$GLOBALS['wcpay_test_order_subscription_relationships']            = array(
 			$order->get_id() => array( 'renewal' => array( $subscription->get_id() ) ),
 		);
 
-		$api_client                      = new class() extends Client {
+		$token_service                   = $this->create_renewal_card_token_service();
+		$sut                             = $this->create_controller( $this->bind_intents_to_order( $this->create_renewal_card_intent_client(), $order ), null, $token_service );
+		$payment_complete_observations   = array();
+		$payment_complete_observer_count = 0;
+		$record_payment_complete         = function ( int $order_id ) use ( $order, $token_service, &$payment_complete_observations, &$payment_complete_observer_count ): void {
+			if ( $order->get_id() !== $order_id ) {
+				return;
+			}
+
+			$observed_order     = wc_get_order( $order_id );
+			$active_order_token = $observed_order instanceof WC_Order ? $token_service->get_active_token_for_order( $observed_order ) : null;
+
+			++$payment_complete_observer_count;
+			$payment_complete_observations = array(
+				'gateway'        => $observed_order instanceof WC_Order ? $observed_order->get_payment_method() : '',
+				'title'          => $observed_order instanceof WC_Order ? $observed_order->get_payment_method_title() : '',
+				'last4'          => $observed_order instanceof WC_Order ? $observed_order->get_meta( 'last4', true ) : '',
+				'brand'          => $observed_order instanceof WC_Order ? $observed_order->get_meta( '_card_brand', true ) : '',
+				'details'        => $observed_order instanceof WC_Order ? $observed_order->get_meta( '_wcpay_payment_method_details', true ) : '',
+				'raw_details'    => $observed_order instanceof WC_Order ? $observed_order->get_meta( '_wcpay_raw_payment_method_details', true ) : '',
+				'payment_method' => $observed_order instanceof WC_Order ? $observed_order->get_meta( '_payment_method_id', true ) : '',
+				'token'          => $active_order_token,
+			);
+		};
+		add_action( 'woocommerce_payment_complete', $record_payment_complete, 1, 1 );
+
+		try {
+			$response = $sut->confirm_order_payment(
+				array(
+					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+					'order_id'                   => $order->get_id(),
+					'intent_id'                  => 'pi_native',
+					'should_save_payment_method' => 'false',
+				)
+			);
+		} finally {
+			remove_action( 'woocommerce_payment_complete', $record_payment_complete, 1 );
+		}
+		$order  = wc_get_order( $order->get_id() );
+		$tokens = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID ) );
+		$token  = $order instanceof WC_Order ? $token_service->get_active_token_for_order( $order ) : null;
+
+		$subscription = wc_get_order( $subscription->get_id() );
+		$unrelated    = wc_get_order( $unrelated->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertInstanceOf( SubscriptionDouble::class, $subscription );
+		$this->assertInstanceOf( WC_Order::class, $unrelated );
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertInstanceOf( WC_Payment_Token_CC::class, $token );
+		$this->assertCount( 2, $tokens );
+		$this->assertSame( $user_id, $token->get_user_id() );
+		$this->assertSame( array( $old_token->get_id(), $token->get_id() ), array_values( $order->get_payment_tokens() ), 'The renewal keeps its old card and takes the new one as its active card.' );
+		$this->assertSame(
+			$subscription_follows ? array( $old_token->get_id(), $token->get_id() ) : array( $old_token->get_id() ),
+			array_values( $subscription->get_payment_tokens() ),
+			$subscription_follows ? 'A paid failed renewal makes the new card the subscription\'s active card.' : 'A paid pending renewal leaves the subscription on its card.'
+		);
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $subscription->get_payment_method() );
+		$this->assertSame( 'WooPayments', $subscription->get_payment_method_title(), 'The renewal\'s card title is not copied to the subscription.' );
+		$this->assertSame( 'pm_old', $subscription->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( 'cus_old', $subscription->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( 1, $payment_complete_observer_count );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $payment_complete_observations['gateway'] );
+		$this->assertSame( 'Visa credit card', $payment_complete_observations['title'] );
+		$this->assertSame( '4242', $payment_complete_observations['last4'] );
+		$this->assertSame( 'visa', $payment_complete_observations['brand'] );
+		$this->assertStringContainsString( '"last4":"4242"', (string) $payment_complete_observations['details'] );
+		$this->assertSame( '', $payment_complete_observations['raw_details'] );
+		$this->assertSame( 'pm_native', $payment_complete_observations['payment_method'] );
+		$this->assertInstanceOf( WC_Payment_Token_CC::class, $payment_complete_observations['token'] );
+		$this->assertSame( 'pm_native', $payment_complete_observations['token']->get_token() );
+		$this->assertSame( array(), $unrelated->get_payment_tokens() );
+		$this->assertSame( 'pm_unrelated', $unrelated->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( 'cus_unrelated', $unrelated->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( 'cheque', $unrelated->get_payment_method() );
+		$this->assertSame( 'Check payments', $unrelated->get_payment_method_title() );
+
+		add_action( 'woocommerce_payment_complete', $record_payment_complete, 1, 1 );
+		try {
+			$response = $sut->confirm_order_payment(
+				array(
+					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+					'order_id'                   => $order->get_id(),
+					'intent_id'                  => 'pi_native',
+					'should_save_payment_method' => 'false',
+				)
+			);
+		} finally {
+			remove_action( 'woocommerce_payment_complete', $record_payment_complete, 1 );
+		}
+		$order        = wc_get_order( $order->get_id() );
+		$subscription = wc_get_order( $subscription->get_id() );
+		$tokens       = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID ) );
+
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertSame( 1, $payment_complete_observer_count );
+		$this->assertCount( 2, $tokens );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( array( $old_token->get_id(), $token->get_id() ), array_values( $order->get_payment_tokens() ) );
+		$this->assertSame(
+			$subscription_follows ? array( $old_token->get_id(), $token->get_id() ) : array( $old_token->get_id() ),
+			array_values( $subscription->get_payment_tokens() ),
+			'A repeated callback changes nothing.'
+		);
+	}
+
+	/**
+	 * Provide failed and pending renewal statuses, and whether the subscription moves to the new card.
+	 *
+	 * @return array<string,array{string,bool}>
+	 */
+	public function renewal_order_statuses(): array {
+		return array(
+			'failed renewal'  => array( 'failed', true ),
+			'pending renewal' => array( 'pending', false ),
+		);
+	}
+
+	/**
+	 * @testdox A pending renewal of a manual bank-transfer subscription paid by card leaves the subscription manual and on bank transfer ($_dataName).
+	 *
+	 * Client 11.3.0 copies the payment method and title from the parent order only, and the token to the parent's and switch's
+	 * subscriptions only (trait-wc-payment-gateway-wcpay-subscriptions.php:718-730, :1515-1536). On a real subscription, a
+	 * WooPayments method would also turn manual renewal off, so the next renewal would charge the card unasked. A parent order
+	 * that once paid by WooPayments card changes nothing: the subscription's own gateway decides how it renews.
+	 *
+	 * @testWith ["no parent order", false]
+	 *           ["a parent order paid by WooPayments card", true]
+	 *
+	 * @param string $case_name  Case name.
+	 * @param bool   $has_parent Whether the subscription has a parent order paid by WooPayments card.
+	 */
+	public function test_update_order_status_leaves_a_manual_subscription_alone_when_its_pending_renewal_is_paid_by_card( string $case_name, bool $has_parent ): void {
+		unset( $case_name );
+		WooCommerceSubscriptionsDoubles::load();
+		WooCommerceSubscriptionsDoubles::load_renewal_detector();
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+		$parent_token = null;
+		$parent       = null;
+		if ( $has_parent ) {
+			$parent_token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_parent' );
+			$parent       = $this->create_woopayments_order( '10.00' );
+			$parent->set_customer_id( $user_id );
+			$parent->set_status( 'completed' );
+			$parent->add_payment_token( $parent_token );
+			$parent->update_meta_data( '_payment_method_id', 'pm_parent' );
+			$parent->update_meta_data( '_stripe_customer_id', 'cus_parent' );
+			$parent->save();
+		}
+		$subscription = new WC_Order();
+		$subscription->set_customer_id( $user_id );
+		$subscription->set_status( 'on-hold' );
+		$subscription->set_payment_method( 'bacs' );
+		$subscription->set_payment_method_title( 'Direct bank transfer' );
+		$subscription->set_parent_id( $parent instanceof WC_Order ? $parent->get_id() : 0 );
+		$subscription->update_meta_data( '_requires_manual_renewal', 'true' );
+		$subscription->save();
+		$order = $this->create_woopayments_order( '10.00' );
+		$order->set_customer_id( $user_id );
+		$order->set_status( 'pending' );
+		$order->update_meta_data( '_intent_id', 'pi_native' );
+		$order->save();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ]      = array( $subscription->get_id() );
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::RENEWAL_SUBSCRIPTIONS ] = array( $order->get_id() => array( $subscription->get_id() ) );
+		$GLOBALS['wcpay_test_renewal_order_ids']                           = array( $order->get_id() );
+		$GLOBALS['wcpay_test_order_subscription_relationships']            = array( $order->get_id() => array( 'renewal' => array( $subscription->get_id() ) ) );
+		if ( $parent instanceof WC_Order ) {
+			$GLOBALS['wcpay_test_order_subscription_relationships'][ $parent->get_id() ] = array( 'parent' => array( $subscription->get_id() ) );
+		}
+		$token_service = $this->create_renewal_card_token_service();
+		$sut           = $this->create_controller( $this->bind_intents_to_order( $this->create_renewal_card_intent_client(), $order ), null, $token_service );
+
+		$response     = $sut->confirm_order_payment(
+			array(
+				'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+				'order_id'                   => $order->get_id(),
+				'intent_id'                  => 'pi_native',
+				'should_save_payment_method' => 'false',
+			)
+		);
+		$order        = wc_get_order( $order->get_id() );
+		$subscription = wc_get_order( $subscription->get_id() );
+		$token        = $order instanceof WC_Order ? $token_service->get_active_token_for_order( $order ) : null;
+
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertInstanceOf( SubscriptionDouble::class, $subscription );
+		$this->assertTrue( $order->is_paid(), 'The renewal itself is paid by WooPayments.' );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $order->get_payment_method() );
+		$this->assertSame( 'Visa credit card', $order->get_payment_method_title() );
+		$this->assertInstanceOf( WC_Payment_Token_CC::class, $token );
+		$this->assertSame( 'pm_native', $token->get_token() );
+		$this->assertSame( 'bacs', $subscription->get_payment_method() );
+		$this->assertSame( 'Direct bank transfer', $subscription->get_payment_method_title() );
+		$this->assertTrue( $subscription->is_manual() );
+		$this->assertSame( array(), $subscription->get_payment_tokens() );
+		$this->assertSame( '', $subscription->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( '', $subscription->get_meta( '_stripe_customer_id', true ) );
+		if ( $parent instanceof WC_Order && $parent_token instanceof WC_Payment_Token ) {
+			$parent = wc_get_order( $parent->get_id() );
+			$this->assertSame( array( $parent_token->get_id() ), array_values( $parent->get_payment_tokens() ), 'The parent order keeps its own card.' );
+		}
+	}
+
+	/**
+	 * Create a client whose `pi_native` PaymentIntent is a succeeded charge on a new Visa card, `pm_native`, for customer `cus_native`.
+	 *
+	 * @return Client
+	 */
+	private function create_renewal_card_intent_client(): Client {
+		return new class() extends Client {
 			/**
 			 * Tell whether the transport is available.
 			 *
@@ -4230,7 +4460,15 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
-		$token_service                   = $this->create_token_service(
+	}
+
+	/**
+	 * Create a token service that reads `pm_native` as a Visa card ending in 4242.
+	 *
+	 * @return WooPaymentsTokenService
+	 */
+	private function create_renewal_card_token_service(): WooPaymentsTokenService {
+		return $this->create_token_service(
 			array(
 				'pm_native' => array(
 					'id'   => 'pm_native',
@@ -4243,132 +4481,6 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 					),
 				),
 			)
-		);
-		$sut                             = $this->create_controller( $this->bind_intents_to_order( $api_client, $order ), null, $token_service );
-		$payment_complete_observations   = array();
-		$payment_complete_observer_count = 0;
-		$record_payment_complete         = function ( int $order_id ) use ( $order, $subscription, $token_service, &$payment_complete_observations, &$payment_complete_observer_count ): void {
-			if ( $order->get_id() !== $order_id ) {
-				return;
-			}
-
-			$observed_order            = wc_get_order( $order_id );
-			$observed_subscription     = wc_get_order( $subscription->get_id() );
-			$active_order_token        = $observed_order instanceof WC_Order ? $token_service->get_active_token_for_order( $observed_order ) : null;
-			$active_subscription_token = $observed_subscription instanceof WC_Order ? $token_service->get_active_token_for_order( $observed_subscription ) : null;
-
-			++$payment_complete_observer_count;
-			$payment_complete_observations = array(
-				'gateway'                        => $observed_order instanceof WC_Order ? $observed_order->get_payment_method() : '',
-				'title'                          => $observed_order instanceof WC_Order ? $observed_order->get_payment_method_title() : '',
-				'last4'                          => $observed_order instanceof WC_Order ? $observed_order->get_meta( 'last4', true ) : '',
-				'brand'                          => $observed_order instanceof WC_Order ? $observed_order->get_meta( '_card_brand', true ) : '',
-				'details'                        => $observed_order instanceof WC_Order ? $observed_order->get_meta( '_wcpay_payment_method_details', true ) : '',
-				'raw_details'                    => $observed_order instanceof WC_Order ? $observed_order->get_meta( '_wcpay_raw_payment_method_details', true ) : '',
-				'payment_method'                 => $observed_order instanceof WC_Order ? $observed_order->get_meta( '_payment_method_id', true ) : '',
-				'token'                          => $active_order_token,
-				'subscription_token'             => $observed_subscription instanceof WC_Order ? $observed_subscription->get_payment_tokens() : array(),
-				'active_subscription_token'      => $active_subscription_token,
-				'subscription_method'            => $observed_subscription instanceof WC_Order ? $observed_subscription->get_payment_method() : '',
-				'subscription_title'             => $observed_subscription instanceof WC_Order ? $observed_subscription->get_payment_method_title() : '',
-				'subscription_payment_method_id' => $observed_subscription instanceof WC_Order ? $observed_subscription->get_meta( '_payment_method_id', true ) : '',
-				'subscription_customer_id'       => $observed_subscription instanceof WC_Order ? $observed_subscription->get_meta( '_stripe_customer_id', true ) : '',
-			);
-		};
-		add_action( 'woocommerce_payment_complete', $record_payment_complete, 1, 1 );
-
-		try {
-			$response = $sut->confirm_order_payment(
-				array(
-					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
-					'order_id'                   => $order->get_id(),
-					'intent_id'                  => 'pi_native',
-					'should_save_payment_method' => 'false',
-				)
-			);
-		} finally {
-			remove_action( 'woocommerce_payment_complete', $record_payment_complete, 1 );
-		}
-		$order  = wc_get_order( $order->get_id() );
-		$tokens = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID ) );
-		$token  = $order instanceof WC_Order ? $token_service->get_active_token_for_order( $order ) : null;
-
-		$subscription = wc_get_order( $subscription->get_id() );
-		$unrelated    = wc_get_order( $unrelated->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertInstanceOf( WC_Order::class, $subscription );
-		$this->assertInstanceOf( WC_Order::class, $unrelated );
-		$this->assertSame( 200, $response['status_code'] );
-		$this->assertInstanceOf( WC_Payment_Token_CC::class, $token );
-		$this->assertCount( 2, $tokens );
-		$this->assertSame( $user_id, $token->get_user_id() );
-		$this->assertContains( $token->get_id(), $order->get_payment_tokens(), 'Saved cards should be linked to the parent order.' );
-		$this->assertSame( array( $old_token->get_id(), $token->get_id() ), array_values( $order->get_payment_tokens() ) );
-		$this->assertContains( $token->get_id(), $subscription->get_payment_tokens(), 'Saved cards should be linked to the renewal subscription.' );
-		$this->assertContains( $old_token->get_id(), $order->get_payment_tokens(), 'Historical cards should remain linked to the renewal order.' );
-		$this->assertContains( $old_token->get_id(), $subscription->get_payment_tokens(), 'Historical cards should remain linked to the renewal subscription.' );
-		$this->assertSame( 'pm_native', $subscription->get_meta( '_payment_method_id', true ) );
-		$this->assertSame( 'cus_native', $subscription->get_meta( '_stripe_customer_id', true ) );
-		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $subscription->get_payment_method() );
-		$this->assertSame( 'Visa credit card', $subscription->get_payment_method_title() );
-		$this->assertSame( 1, $payment_complete_observer_count );
-		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $payment_complete_observations['gateway'] );
-		$this->assertSame( 'Visa credit card', $payment_complete_observations['title'] );
-		$this->assertSame( '4242', $payment_complete_observations['last4'] );
-		$this->assertSame( 'visa', $payment_complete_observations['brand'] );
-		$this->assertStringContainsString( '"last4":"4242"', (string) $payment_complete_observations['details'] );
-		$this->assertSame( '', $payment_complete_observations['raw_details'] );
-		$this->assertSame( 'pm_native', $payment_complete_observations['payment_method'] );
-		$this->assertInstanceOf( WC_Payment_Token_CC::class, $payment_complete_observations['token'] );
-		$this->assertSame( 'pm_native', $payment_complete_observations['token']->get_token() );
-		$this->assertSame( array( $old_token->get_id(), $token->get_id() ), array_values( $payment_complete_observations['subscription_token'] ) );
-		$this->assertInstanceOf( WC_Payment_Token_CC::class, $payment_complete_observations['active_subscription_token'] );
-		$this->assertSame( 'pm_native', $payment_complete_observations['active_subscription_token']->get_token() );
-		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $payment_complete_observations['subscription_method'] );
-		$this->assertSame( 'Visa credit card', $payment_complete_observations['subscription_title'] );
-		$this->assertSame( 'pm_native', $payment_complete_observations['subscription_payment_method_id'] );
-		$this->assertSame( 'cus_native', $payment_complete_observations['subscription_customer_id'] );
-		$this->assertSame( array(), $unrelated->get_payment_tokens() );
-		$this->assertSame( 'pm_unrelated', $unrelated->get_meta( '_payment_method_id', true ) );
-		$this->assertSame( 'cus_unrelated', $unrelated->get_meta( '_stripe_customer_id', true ) );
-		$this->assertSame( 'cheque', $unrelated->get_payment_method() );
-		$this->assertSame( 'Check payments', $unrelated->get_payment_method_title() );
-
-		add_action( 'woocommerce_payment_complete', $record_payment_complete, 1, 1 );
-		try {
-			$response = $sut->confirm_order_payment(
-				array(
-					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
-					'order_id'                   => $order->get_id(),
-					'intent_id'                  => 'pi_native',
-					'should_save_payment_method' => 'false',
-				)
-			);
-		} finally {
-			remove_action( 'woocommerce_payment_complete', $record_payment_complete, 1 );
-		}
-		$order        = wc_get_order( $order->get_id() );
-		$subscription = wc_get_order( $subscription->get_id() );
-		$tokens       = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID ) );
-
-		$this->assertSame( 200, $response['status_code'] );
-		$this->assertSame( 1, $payment_complete_observer_count );
-		$this->assertCount( 2, $tokens );
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( array( $old_token->get_id(), $token->get_id() ), array_values( $order->get_payment_tokens() ) );
-		$this->assertSame( array( $old_token->get_id(), $token->get_id() ), array_values( $subscription->get_payment_tokens() ) );
-	}
-
-	/**
-	 * Provide failed and pending renewal statuses.
-	 *
-	 * @return array<string,array{string}>
-	 */
-	public function renewal_order_statuses(): array {
-		return array(
-			'failed renewal'  => array( 'failed' ),
-			'pending renewal' => array( 'pending' ),
 		);
 	}
 

@@ -593,7 +593,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$subscription->save();
 
 		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
-		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $order->get_id() => array( 'renewal' => array( $subscription->get_id() ) ) );
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $order->get_id() => array( 'parent' => array( $subscription->get_id() ) ) );
 		add_filter(
 			'wcpay_payment_request_payment_method_title_suffix',
 			static function ( string $suffix ) use ( &$title_filter_calls ): string {
@@ -634,6 +634,51 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$this->assertSame( 1, $title_filter_calls, 'The suffix filter should run once when the display title is applied.' );
 		$this->assertSame( $order->get_payment_method(), $subscription->get_payment_method() );
 		$this->assertSame( $order->get_payment_method_title(), $subscription->get_payment_method_title() );
+	}
+
+	/**
+	 * @testdox A renewal order's final payment method and title leave its subscription's as they were.
+	 *
+	 * Client 11.3.0 copies them from the parent order only (trait-wc-payment-gateway-wcpay-subscriptions.php:1515-1536), so
+	 * paying a renewal with a card never turns a subscription paid another way into a WooPayments one.
+	 */
+	public function test_final_payment_method_display_details_leave_a_renewals_subscription_alone(): void {
+		$order        = $this->create_woopayments_order();
+		$subscription = wc_create_order();
+		$subscription->set_payment_method( 'bacs' );
+		$subscription->set_payment_method_title( 'Direct bank transfer' );
+		$subscription->save();
+
+		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $order->get_id() => array( 'renewal' => array( $subscription->get_id() ) ) );
+
+		$result = array(
+			'charges' => array(
+				'data' => array(
+					array(
+						'payment_method_details' => array(
+							'type' => 'card',
+							'card' => array(
+								'brand'   => 'visa',
+								'funding' => 'credit',
+								'last4'   => '4242',
+								'network' => 'visa',
+							),
+						),
+					),
+				),
+			),
+		);
+
+		$this->create_applier( $this->create_token_service() )->apply_payment_method_display_details( $order, $result );
+		$order        = wc_get_order( $order->get_id() );
+		$subscription = wc_get_order( $subscription->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertInstanceOf( WC_Order::class, $subscription );
+		$this->assertSame( 'Visa credit card', $order->get_payment_method_title(), 'The order itself takes the card title.' );
+		$this->assertSame( 'bacs', $subscription->get_payment_method() );
+		$this->assertSame( 'Direct bank transfer', $subscription->get_payment_method_title() );
 	}
 
 	/**
@@ -969,9 +1014,12 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Recurring renewal token effects synchronize the new customer token and provider metadata.
+	 * @testdox Recurring token effects on a failed renewal save the card on the renewal and leave its subscription alone.
+	 *
+	 * The subscription moves to the card through Subscriptions' failed-renewal hook once the renewal is paid, as with
+	 * client 11.3.0 (trait-wc-payment-gateway-wcpay-subscriptions.php:592-600), not through the payment's own writes.
 	 */
-	public function test_recurring_token_effects_synchronize_failed_renewal_subscriptions(): void {
+	public function test_recurring_token_effects_leave_a_renewals_subscription_alone(): void {
 		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
 		$user_id      = $this->factory()->user->create();
 		$order        = $this->create_woopayments_order();
@@ -1031,12 +1079,86 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $tokens );
 		$this->assertSame( $user_id, $token->get_user_id() );
 		$this->assertContains( $token->get_id(), $order->get_payment_tokens() );
-		$this->assertContains( $token->get_id(), $subscription->get_payment_tokens() );
-		$this->assertSame( 'pm_recurring', $subscription->get_meta( '_payment_method_id', true ) );
-		$this->assertSame( 'cus_recurring', $subscription->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( array(), $subscription->get_payment_tokens() );
+		$this->assertSame( '', $subscription->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( '', $subscription->get_meta( '_stripe_customer_id', true ) );
 		$this->assertSame( array(), $unrelated->get_payment_tokens() );
 		$this->assertSame( 'pm_unrelated', $unrelated->get_meta( '_payment_method_id', true ) );
 		$this->assertSame( 'cus_unrelated', $unrelated->get_meta( '_stripe_customer_id', true ) );
+	}
+
+	/**
+	 * @testdox A switch order paid by card adds the card to the switched subscription and leaves its payment method title alone.
+	 *
+	 * Client 11.3.0 copies the token to the parent's and switch's subscriptions (trait-wc-payment-gateway-wcpay-subscriptions.php:718-730)
+	 * and the payment method and title from the parent order only (:1515-1536).
+	 */
+	public function test_switch_order_charge_adds_its_card_to_the_subscription_and_not_its_title(): void {
+		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
+		$user_id      = $this->factory()->user->create();
+		$order        = $this->create_woopayments_order();
+		$subscription = $this->create_woopayments_order();
+		$order->set_customer_id( $user_id );
+		$order->save();
+		$subscription->set_customer_id( $user_id );
+		$subscription->set_payment_method_title( 'Card' );
+		$subscription->save();
+		$GLOBALS['wcpay_test_order_subscription_relationships'] = array(
+			$order->get_id() => array( 'switch' => array( $subscription->get_id() ) ),
+		);
+
+		$token_service = $this->create_token_service(
+			array(
+				'pm_switch' => array(
+					'id'   => 'pm_switch',
+					'type' => 'card',
+					'card' => array(
+						'brand'     => 'visa',
+						'last4'     => '4242',
+						'exp_month' => 12,
+						'exp_year'  => 2030,
+					),
+				),
+			)
+		);
+		$outcome       = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_switch', '', 'pm_switch', 'cus_switch' );
+		$plan          = WooPaymentsOrderEffectPlan::for_payment_intent(
+			array(
+				'id'             => 'pi_switch',
+				'status'         => 'succeeded',
+				'payment_method' => 'pm_switch',
+				'charges'        => array(
+					'data' => array(
+						array(
+							'payment_method_details' => array(
+								'type' => 'card',
+								'card' => array(
+									'brand'   => 'visa',
+									'funding' => 'credit',
+									'last4'   => '4242',
+									'network' => 'visa',
+								),
+							),
+						),
+					),
+				),
+			),
+			true
+		);
+
+		$this->apply_charge( $this->create_applier( $token_service ), PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_switch' ), $outcome, $plan );
+		$order        = wc_get_order( $order->get_id() );
+		$subscription = wc_get_order( $subscription->get_id() );
+		$tokens       = \WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$token        = reset( $tokens );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertInstanceOf( WC_Order::class, $subscription );
+		$this->assertInstanceOf( WC_Payment_Token_CC::class, $token );
+		$this->assertSame( 'Visa credit card', $order->get_payment_method_title() );
+		$this->assertSame( array( $token->get_id() ), array_values( $subscription->get_payment_tokens() ), 'The switched subscription renews on the new card.' );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $subscription->get_payment_method() );
+		$this->assertSame( 'Card', $subscription->get_payment_method_title() );
 	}
 
 	/**

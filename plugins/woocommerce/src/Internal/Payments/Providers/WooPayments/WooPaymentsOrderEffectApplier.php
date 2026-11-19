@@ -1399,13 +1399,16 @@ class WooPaymentsOrderEffectApplier {
 	/**
 	 * Propagate final payment identity to subscriptions created from the parent order.
 	 *
+	 * Only the parent's, as client 11.3.0 (trait-wc-payment-gateway-wcpay-subscriptions.php:1515-1536): a renewal or switch
+	 * paid with another method leaves its subscription's method and manual renewal as they were.
+	 *
 	 * @param WC_Order $order Parent order with finalized payment identity.
 	 */
 	private function sync_payment_method_to_subscriptions( WC_Order $order ): void {
 		$payment_method       = $order->get_payment_method();
 		$payment_method_title = $order->get_payment_method_title();
 
-		foreach ( $this->token_service->get_related_subscriptions_for_order( $order ) as $subscription ) {
+		foreach ( $this->token_service->get_related_subscriptions_for_order( $order, array( 'parent' ) ) as $subscription ) {
 			if ( ! $subscription instanceof WC_Order ) {
 				continue;
 			}

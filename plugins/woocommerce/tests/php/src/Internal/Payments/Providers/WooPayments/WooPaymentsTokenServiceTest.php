@@ -139,9 +139,11 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Related subscription lookups include parent, switch, and renewal relationships.
+	 * @testdox Related subscription lookups include parent and switch relationships, not renewal ones.
+	 *
+	 * Subscriptions' own default, which client 11.3.0 copies a token to (trait-wc-payment-gateway-wcpay-subscriptions.php:718-730).
 	 */
-	public function test_get_related_subscriptions_for_order_includes_renewal_relationships(): void {
+	public function test_get_related_subscriptions_for_order_excludes_renewal_relationships(): void {
 		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
 		$order         = $this->create_woopayments_order();
 		$parent        = $this->create_woopayments_order();
@@ -157,7 +159,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$GLOBALS['wcpay_test_order_subscription_relationships'] = array( $order->get_id() => $relationships );
 		$related = $this->create_service()->get_related_subscriptions_for_order( $order );
 
-		$this->assertSame( array( $parent->get_id(), $switch->get_id(), $renewal->get_id() ), array_map( static fn( WC_Order $subscription ): int => $subscription->get_id(), $related ) );
+		$this->assertSame( array( $parent->get_id(), $switch->get_id() ), array_map( static fn( WC_Order $subscription ): int => $subscription->get_id(), $related ) );
 		$this->assertNotContains( $unrelated->get_id(), array_map( static fn( WC_Order $subscription ): int => $subscription->get_id(), $related ) );
 	}
 
@@ -1994,7 +1996,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$subscription->add_payment_token( $token_a );
 		$subscription->save();
 		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
-		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $order->get_id() => array( 'renewal' => array( $subscription->get_id() ) ) );
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $order->get_id() => array( 'parent' => array( $subscription->get_id() ) ) );
 
 		$sut = $this->create_service();
 		$sut->sync_related_subscriptions_payment_token( $order, $token_b, 'pm_subscription_b', 'cus_subscription' );

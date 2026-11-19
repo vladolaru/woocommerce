@@ -1664,8 +1664,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 * (includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:421-424). A WooCommerce Stripe Gateway
 	 * customer left on the subscription is not on the WooPayments account, so the platform answers resource_missing. The
 	 * user's own stored customer is then used, as client 11.2.0 does (includes/class-wc-payment-gateway-wcpay.php:5449-5465);
-	 * the successful renewal stores it on the renewal order and, through the saved token, on the subscription, so the next
-	 * renewal sends it first. A user with no other customer is test_saved_card_renewal_with_a_missing_customer_creates_no_customer().
+	 * the successful renewal stores it on the renewal order and on the renewal's subscriptions that hold the charged card, so
+	 * the next renewal sends it first. A user with no other customer is test_saved_card_renewal_with_a_missing_customer_creates_no_customer().
 	 *
 	 * @dataProvider provider_renewals_with_a_missing_customer
 	 *
@@ -1744,8 +1744,9 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				)
 			);
 		}
-		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
-		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $renewal->get_id() => array( 'renewal' => array( $subscription->get_id() ) ) );
+		WooCommerceSubscriptionsDoubles::load();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ]   = array( $renewal->get_id() => array( 'renewal' => array( $subscription->get_id() ) ) );
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::RENEWAL_SUBSCRIPTIONS ] = array( $renewal->get_id() => array( $subscription->get_id() ) );
 
 		try {
 			$outcome = $this->sut->process_checkout_outcome(
@@ -1759,7 +1760,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				$this->timeout_transport_provider( $http_client, true )
 			);
 		} finally {
-			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] );
+			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ], $GLOBALS[ WooCommerceSubscriptionsDoubles::RENEWAL_SUBSCRIPTIONS ] );
 		}
 
 		$this->assertSame( $is_paid ? PaymentOutcome::STATUS_COMPLETED : PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
@@ -2601,7 +2602,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		);
 		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = new SubscriptionRelationshipsProbe(
-			static function ( int $order_id ) use ( $order, $subscription, &$credential_sync_calls, &$display_sync_calls, $sequence ): array {
+			static function ( int $order_id ) use ( $order, $subscription, $scheduled_subscription_payment, &$credential_sync_calls, &$display_sync_calls, $sequence ): array {
 				if ( $order->get_id() !== $order_id ) {
 					return array();
 				}
@@ -2613,7 +2614,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 					++$credential_sync_calls;
 					$sequence[] = 'credential-sync';
 				}
-				return array( 'renewal' => array( $subscription->get_id() ) );
+				// A direct checkout is the subscription's parent order; a scheduled renewal is its renewal order.
+				return array( ( $scheduled_subscription_payment ? 'renewal' : 'parent' ) => array( $subscription->get_id() ) );
 			}
 		);
 		$observed = array();
@@ -2675,7 +2677,11 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( '', $order->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) );
 		$subscription = wc_get_order( $subscription->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $subscription );
-		$this->assertSame( 'Link (WooPayments)', $subscription->get_payment_method_title() );
+		$this->assertSame(
+			$scheduled_subscription_payment ? '' : 'Link (WooPayments)',
+			$subscription->get_payment_method_title(),
+			$scheduled_subscription_payment ? 'A renewal leaves its subscription\'s title as it was.' : 'The parent order gives its subscription its final title.'
+		);
 		$this->assertInstanceOf( WC_Order::class, $unrelated_order );
 		$this->assertSame( 'pending', $unrelated_order->get_status() );
 		$this->assertSame( '', $unrelated_order->get_payment_method_title() );
@@ -5354,7 +5360,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		);
 		$observed = array();
 		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
-		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $order->get_id() => array( 'renewal' => array( $subscription->get_id() ) ) );
+		// A $0 recurring checkout is a free-trial sign-up, the subscription's parent order.
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $order->get_id() => array( 'parent' => array( $subscription->get_id() ) ) );
 		$capture_observer_state    = static function ( int $order_id, string $hook ) use ( $order, $subscription, &$observed ): void {
 			if ( $order->get_id() !== $order_id ) {
 				return;

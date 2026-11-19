@@ -806,11 +806,22 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox payment_intent.succeeded writes the repaired token through to related subscriptions.
+	 * @testdox payment_intent.succeeded writes the repaired token through to the subscriptions of a parent order, not a renewal's ($relation).
+	 *
+	 * Client 11.3.0 copies it to the parent's and switch's subscriptions only (class-wc-payments-webhook-processing-service.php:745-760,
+	 * trait-wc-payment-gateway-wcpay-subscriptions.php:718-730); a paid failed renewal moves its subscription through
+	 * Subscriptions' failed-renewal hook instead.
+	 *
+	 * @testWith ["parent", true]
+	 *           ["renewal", false]
+	 *
+	 * @param string $relation     The order's relation to the subscription.
+	 * @param bool   $expect_token Whether the subscription takes the repaired token.
 	 */
-	public function test_payment_intent_succeeded_repair_syncs_related_subscriptions(): void {
+	public function test_payment_intent_succeeded_repair_syncs_only_a_parents_subscriptions( string $relation, bool $expect_token ): void {
 		WooCommerceSubscriptionsDoubles::load_renewal_detector();
 		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
+		WooCommerceSubscriptionsDoubles::load_order_detector();
 		$customer_id = self::factory()->user->create();
 
 		$token = new \WC_Payment_Token_CC();
@@ -832,9 +843,9 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		$subscription->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$subscription->save();
 
-		$GLOBALS['wcpay_test_renewal_order_ids']                = array( $order->get_id() );
+		$GLOBALS['wcpay_test_renewal_order_ids']                = 'renewal' === $relation ? array( $order->get_id() ) : array();
 		$GLOBALS['wcpay_test_order_subscription_relationships'] = array(
-			$order->get_id() => array( 'renewal' => array( $subscription->get_id() ) ),
+			$order->get_id() => array( $relation => array( $subscription->get_id() ) ),
 		);
 
 		try {
@@ -843,9 +854,17 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 			unset( $GLOBALS['wcpay_test_renewal_order_ids'], $GLOBALS['wcpay_test_order_subscription_relationships'] );
 		}
 
+		$order        = wc_get_order( $order->get_id() );
 		$subscription = wc_get_order( $subscription->get_id() );
-		$this->assertContains( $token->get_id(), array_map( 'absint', $subscription->get_payment_tokens() ), 'WCS copies the subscription tokens into each new renewal order; a stale subscription charges the replaced card next renewal.' );
-		$this->assertSame( 'pm_123', $subscription->get_meta( '_payment_method_id', true ) );
+		$this->assertContains( $token->get_id(), array_map( 'absint', $order->get_payment_tokens() ), 'The order itself takes the repaired token.' );
+		if ( $expect_token ) {
+			$this->assertContains( $token->get_id(), array_map( 'absint', $subscription->get_payment_tokens() ), 'WCS copies the subscription tokens into each new renewal order; a stale subscription charges the replaced card next renewal.' );
+			$this->assertSame( 'pm_123', $subscription->get_meta( '_payment_method_id', true ) );
+		} else {
+			$this->assertSame( array(), $subscription->get_payment_tokens() );
+			$this->assertSame( '', $subscription->get_meta( '_payment_method_id', true ) );
+			$this->assertSame( '', $subscription->get_meta( '_stripe_customer_id', true ) );
+		}
 	}
 
 	/**

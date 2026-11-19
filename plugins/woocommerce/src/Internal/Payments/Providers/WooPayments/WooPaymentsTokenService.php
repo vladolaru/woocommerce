@@ -1331,7 +1331,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Copy a saved payment token and provider metadata to related parent, switch, or renewal subscriptions.
+	 * Copy a saved payment token and provider metadata to the subscriptions the order is the parent or a switch of.
 	 *
 	 * @since 11.0.0
 	 *
@@ -1408,18 +1408,23 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get parent, switch, or renewal subscriptions related to an order.
+	 * Get the subscriptions an order is related to as one of the given order types.
 	 *
-	 * @param WC_Order $order Related order.
+	 * The default is Subscriptions' own, parent and switch, as client 11.3.0 copies a token
+	 * (trait-wc-payment-gateway-wcpay-subscriptions.php:718-730). A renewal is left out: paying one never changes how its
+	 * subscription is paid, except through Subscriptions' failed-renewal hook.
+	 *
+	 * @param WC_Order $order       Related order.
+	 * @param string[] $order_types Subscriptions order types, such as `parent` or `switch`.
 	 * @return array<int,mixed>
 	 */
-	public function get_related_subscriptions_for_order( WC_Order $order ): array {
+	public function get_related_subscriptions_for_order( WC_Order $order, array $order_types = array( 'parent', 'switch' ) ): array {
 		$subscriptions = array();
 		if ( function_exists( 'wcs_get_subscriptions_for_order' ) ) {
 			$subscriptions = wcs_get_subscriptions_for_order(
 				$order->get_id(),
 				array(
-					'order_type' => array( 'parent', 'switch', 'renewal' ),
+					'order_type' => $order_types,
 				)
 			);
 		}

@@ -5995,7 +5995,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$subscription->save();
 
 		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
-		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $order->get_id() => array( 'renewal' => array( $subscription->get_id() ) ) );
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $order->get_id() => array( 'parent' => array( $subscription->get_id() ) ) );
 
 		$customer_service->expects( $this->once() )
 			->method( 'get_or_create_customer_id_for_order' )

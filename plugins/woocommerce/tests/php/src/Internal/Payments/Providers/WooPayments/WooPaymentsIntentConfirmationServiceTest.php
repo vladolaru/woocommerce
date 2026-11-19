@@ -821,10 +821,11 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 			/**
 			 * Return the one related subscription.
 			 *
-			 * @param WC_Order $order Order.
+			 * @param WC_Order $order       Order.
+			 * @param string[] $order_types Order types.
 			 * @return WC_Order[]
 			 */
-			public function get_related_subscriptions_for_order( WC_Order $order ): array {
+			public function get_related_subscriptions_for_order( WC_Order $order, array $order_types = array( 'parent', 'switch' ) ): array {
 				return null === $this->subscription ? array() : array( $this->subscription );
 			}
 		};

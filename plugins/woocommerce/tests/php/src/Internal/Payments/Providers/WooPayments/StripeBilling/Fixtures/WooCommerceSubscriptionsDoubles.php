@@ -518,6 +518,63 @@ final class WooCommerceSubscriptionsDoubles {
 	}
 
 	/**
+	 * Make paying a failed renewal hand each of its automatic subscriptions to the renewal's gateway, as WooCommerce Subscriptions does.
+	 *
+	 * WooCommerce Subscriptions 9.4.1 fires `woocommerce_subscriptions_paid_for_failed_renewal_order` when a failed renewal of a
+	 * subscription that is not active is paid (includes/core/class-wc-subscriptions-renewal-order.php:110-125), and its
+	 * `change_failing_payment_method()` (includes/core/class-wc-subscriptions-change-payment-gateway.php:58, :721-760) then fires
+	 * `woocommerce_subscription_failing_payment_method_updated_{gateway}` for an automatic one. Activation is left to
+	 * activate_subscriptions_on_renewal_payment(). The test's hook snapshot removes both callbacks when the test ends.
+	 */
+	public static function hand_failed_renewal_subscriptions_to_the_gateway(): void {
+		// Ahead of the activation stand-in, so the subscription's status is read before it is activated, as Subscriptions reads it.
+		add_action( 'woocommerce_order_status_changed', array( self::class, 'maybe_fire_paid_for_failed_renewal' ), 9, 3 );
+		add_action( 'woocommerce_subscriptions_paid_for_failed_renewal_order', array( self::class, 'change_failing_payment_method' ), 10, 2 );
+	}
+
+	/**
+	 * Fire `woocommerce_subscriptions_paid_for_failed_renewal_order` for each subscription of a failed renewal that was just paid.
+	 *
+	 * @param mixed $order_id   Order ID.
+	 * @param mixed $old_status Previous status.
+	 * @param mixed $new_status New status.
+	 */
+	public static function maybe_fire_paid_for_failed_renewal( $order_id, $old_status, $new_status ): void {
+		$order = wc_get_order( $order_id );
+		if ( 'failed' !== $old_status || ! in_array( $new_status, array( 'processing', 'completed' ), true ) || ! $order instanceof \WC_Order ) {
+			return;
+		}
+
+		foreach ( $GLOBALS[ self::RENEWAL_SUBSCRIPTIONS ][ absint( $order_id ) ] ?? array() as $subscription_id ) {
+			$subscription = wc_get_order( $subscription_id );
+			if ( $subscription instanceof SubscriptionDouble && ! $subscription->has_status( 'active' ) && ! $subscription->has_status( wcs_get_subscription_ended_statuses() ) ) {
+				do_action( 'woocommerce_subscriptions_paid_for_failed_renewal_order', $order, $subscription );
+			}
+		}
+	}
+
+	/**
+	 * Move an automatic subscription to the paid renewal's gateway when it differs, then fire the gateway's failing-method hooks.
+	 *
+	 * @param mixed $renewal_order Paid renewal order.
+	 * @param mixed $subscription  Subscription.
+	 */
+	public static function change_failing_payment_method( $renewal_order, $subscription ): void {
+		if ( ! $renewal_order instanceof \WC_Order || ! $subscription instanceof SubscriptionDouble || $subscription->is_manual() ) {
+			return;
+		}
+
+		$new_payment_method = $renewal_order->get_payment_method();
+		if ( $new_payment_method !== $subscription->get_payment_method() ) {
+			$subscription->set_payment_method( $new_payment_method );
+			$subscription->save();
+		}
+
+		do_action( 'woocommerce_subscription_failing_payment_method_updated', $subscription, $renewal_order );
+		do_action( 'woocommerce_subscription_failing_payment_method_updated_' . $new_payment_method, $subscription, $renewal_order );
+	}
+
+	/**
 	 * Find registered subscriptions with the `subscription_status` asked for whose meta matches every clause of `meta_query`, `=` or `EXISTS`, as `wcs_get_subscriptions()` does.
 	 *
 	 * @param array<string,mixed> $args Query arguments: `subscription_status`, `meta_query` and `subscriptions_per_page`.
