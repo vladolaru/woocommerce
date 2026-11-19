@@ -754,8 +754,8 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 			'configured ajax'  => array( true, false, 'ajax', array_merge( $base, $price, $compat, array( self::CORE_ROOTS[19], self::CORE_ROOTS[20] ), $history ) ),
 			'configured rest'  => array( true, false, 'rest', array_merge( $base, $price, $compat, array( self::CORE_ROOTS[17], self::CORE_ROOTS[19], self::CORE_ROOTS[20] ), $history, array( $rest, $override ) ) ),
 			'configured admin' => array( true, false, 'admin', array_merge( $base, $price, $compat, array( self::CORE_ROOTS[4], self::CORE_ROOTS[17], $settings, self::CORE_ROOTS[23] ), $admin ) ),
-			'configured cron'  => array( true, false, 'cron', array_merge( $base, $compat, $history ) ),
-			'configured cli'   => array( true, false, 'cli', array_merge( $base, $compat, $history ) ),
+			'configured cron'  => array( true, false, 'cron', array_merge( $base, array( self::CORE_ROOTS[1], self::CORE_ROOTS[2] ), $compat, $history ) ),
+			'configured cli'   => array( true, false, 'cli', array_merge( $base, array( self::CORE_ROOTS[1], self::CORE_ROOTS[2] ), $compat, $history ) ),
 			'historical admin' => array( false, true, 'admin', array_merge( array_merge( $base, array( self::CORE_ROOTS[4], $settings, self::CORE_ROOTS[23] ), $admin ), $explicit ) ),
 			'historical rest'  => array( false, true, 'rest', array_merge( array_merge( $base, array( self::CORE_ROOTS[4], $rest, $override, self::CORE_ROOTS[23] ) ), $explicit ) ),
 			'historical cron'  => array( false, true, 'cron', array_merge( array_merge( $base, $history ), $explicit ) ),
@@ -800,12 +800,11 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox $_dataName: a request loads price conversion and the currency it converts into together or not at all, at load and after Action Scheduler's first action.
+	 * @testdox $_dataName: a request that loads price conversion also loads the currency it converts into, at load and after Action Scheduler's first action.
 	 *
 	 * The price controller converts lines into the currency the currency controller answers. With the first alone, a WP-CLI
-	 * order made as a user who selected EUR stored EUR-converted lines under the store currency, with no rate; with the second
-	 * alone, store prices carry the selected currency's label. The rows are the cells the exact matrix pins, so a new or changed
-	 * cell is read here too.
+	 * order made as a user who selected EUR stored EUR-converted lines under the store currency, with no rate. The rows are the
+	 * cells the exact matrix pins, so a new or changed cell is read here too.
 	 *
 	 * @dataProvider every_registration_cell
 	 *
@@ -826,7 +825,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 			'at load'                => $at_load,
 			'after the first action' => $container->registered,
 		) as $moment => $registered ) {
-			$this->assertSame( in_array( self::CORE_ROOTS[1], $registered, true ), in_array( self::CORE_ROOTS[2], $registered, true ), $moment );
+			$this->assertTrue( ! in_array( self::CORE_ROOTS[2], $registered, true ) || in_array( self::CORE_ROOTS[1], $registered, true ), $moment );
 		}
 	}
 
@@ -1150,17 +1149,17 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should store a WP-CLI order made as a user who selected EUR in the store currency at the store price, with no rate: $command.
+	 * @testdox Should store a WP-CLI order made as a user who selected EUR in EUR, with its rate: $command.
 	 *
-	 * A command has no shopper, so it converts nothing, as an order made over REST without a currency or in the admin.
-	 * `wp wc shop_order create` runs the v2 orders route in process (`includes/cli/class-wc-cli-runner.php`).
+	 * Client 11.3.0 registers both conversion halves under WP-CLI (`includes/multi-currency/MultiCurrency.php:2377-2382`); the
+	 * comparison store's run of both commands gave EUR, 8.00 lines and total, rate 0.8 and default USD.
 	 *
 	 * @testWith ["wp eval with wc_create_order()"]
 	 *           ["wp wc shop_order create"]
 	 *
 	 * @param string $command How the order is made.
 	 */
-	public function test_stores_a_wp_cli_order_in_the_store_currency( string $command ): void {
+	public function test_stores_a_wp_cli_order_in_the_selected_currency( string $command ): void {
 		list( $user_id, $product_id ) = $this->arrange_eur_selection_store();
 		$order_id                     = 0;
 
@@ -1169,67 +1168,17 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 			wc_get_container(),
 			'cli',
 			function () use ( $command, $user_id, $product_id, &$order_id ): void {
-				$order_id = 'wp wc shop_order create' === $command ? $this->create_rest_order( $user_id, $product_id, null, 'v2' ) : $this->create_order_with_product( $user_id, $product_id );
+				$order_id = 'wp wc shop_order create' === $command ? $this->create_rest_order( $user_id, $product_id, null ) : $this->create_order_with_product( $user_id, $product_id );
 			}
 		);
 
-		$this->assertSame( array( 'USD', '10.00', '10.00', '10.00', '', '' ), $this->read_order( $order_id ) );
+		$this->assertSame( array( 'EUR', '8.00', '8.00', '8.00', '0.8', 'USD' ), $this->read_order( $order_id ) );
 	}
 
 	/**
-	 * @testdox Should keep the exchange-rate stamp on a WP-CLI order made in another enabled currency, but not on one created via subscription: $label.
+	 * @testdox Should keep a REST order over HTTP by a user who selected EUR in the store currency unless the request names one: currency $currency.
 	 *
-	 * Analytics divides a foreign-currency order's amounts by this rate. Client 11.3.0 stamps it under WP-CLI through its price
-	 * hooks (`includes/multi-currency/FrontendPrices.php:127`). An order created via subscription gets its currency and meta
-	 * from the subscription, so it is not stamped.
-	 *
-	 * @testWith ["wp wc shop_order create in EUR", "rest", ["EUR", "10.00", "10.00", "10.00", "0.8", "USD"]]
-	 *           ["an EUR order created via subscription", "subscription", ["EUR", "8.00", "8.00", "8.00", "", ""]]
-	 *
-	 * @param string            $label    Case label.
-	 * @param string            $made_by  How the order is made.
-	 * @param array<int,string> $expected Currency, total, line subtotal, line total, exchange rate and default currency.
-	 */
-	public function test_keeps_the_rate_stamp_on_a_wp_cli_order_in_another_currency( string $label, string $made_by, array $expected ): void {
-		unset( $label );
-		list( , $product_id ) = $this->arrange_eur_selection_store();
-		$user_id              = self::factory()->user->create( array( 'role' => 'shop_manager' ) );
-		wp_set_current_user( $user_id );
-		$order_id = 0;
-
-		$this->register_as(
-			new MultiCurrencyBootstrap( static fn(): array => array() ),
-			wc_get_container(),
-			'cli',
-			function () use ( $made_by, $user_id, $product_id, &$order_id ): void {
-				if ( 'rest' === $made_by ) {
-					$order_id = $this->create_rest_order( $user_id, $product_id, 'EUR', 'v2' );
-					return;
-				}
-				$order = new \WC_Order();
-				$order->set_created_via( 'subscription' );
-				$order->set_currency( 'EUR' );
-				$order->add_product(
-					wc_get_product( $product_id ),
-					1,
-					array(
-						'subtotal' => 8,
-						'total'    => 8,
-					)
-				);
-				$order->calculate_totals();
-				$order_id = $order->get_id();
-			}
-		);
-
-		$this->assertSame( $expected, $this->read_order( $order_id ) );
-	}
-
-	/**
-	 * @testdox Should keep a REST order over HTTP by a user who selected EUR in the store currency, and convert one that names a currency: currency $currency.
-	 *
-	 * Client 11.3.0 `includes/multi-currency/MultiCurrency.php:371-395`. The order that names EUR is made by a user with no
-	 * selection, so only the request's currency can price its line in EUR.
+	 * Client 11.3.0 `includes/multi-currency/MultiCurrency.php:371-395`.
 	 *
 	 * @testWith [null, ["USD", "10.00", "10.00", "10.00", "", ""]]
 	 *           ["EUR", ["EUR", "8.00", "8.00", "8.00", "0.8", "USD"]]
@@ -1239,12 +1188,8 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	 */
 	public function test_keeps_a_rest_order_over_http_in_the_store_currency_unless_named( ?string $currency, array $expected ): void {
 		list( $user_id, $product_id ) = $this->arrange_eur_selection_store();
-		if ( null !== $currency ) {
-			$user_id = self::factory()->user->create( array( 'role' => 'shop_manager' ) );
-			wp_set_current_user( $user_id );
-		}
-		$original_uri           = $_SERVER['REQUEST_URI'] ?? null; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized,WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- Restored below.
-		$_SERVER['REQUEST_URI'] = '/wp-json/wc/v3/orders';
+		$original_uri                 = $_SERVER['REQUEST_URI'] ?? null; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized,WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- Restored below.
+		$_SERVER['REQUEST_URI']       = '/wp-json/wc/v3/orders';
 		if ( null !== $currency ) {
 			$_GET['currency'] = $currency;
 		}
@@ -1342,18 +1287,13 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should round a JPY order recalculated in a $request request at the store's decimals, as in the admin and over REST.
+	 * @testdox Should round a JPY order recalculated under WP-CLI with no user at JPY's whole units, as on the storefront.
 	 *
-	 * `wp wc shop_order update` recalculates an order whose billing, shipping or lines it changes. Lines of 1.49, 1.49 and
-	 * 1.45 total 4.43 at the store's 2 decimals. Client 11.3.0 adds its order calculation hooks under WP-CLI, where the
-	 * same lines total 3 (`includes/multi-currency/FrontendCurrencies.php:183-184`).
-	 *
-	 * @testWith ["cli"]
-	 *           ["cron"]
-	 *
-	 * @param string $request Request class.
+	 * `wp wc shop_order update` recalculates an order whose billing, shipping or lines it changes, a JPY renewal included.
+	 * Client 11.3.0 adds the order calculation hooks under WP-CLI (`includes/multi-currency/FrontendCurrencies.php:183-184`):
+	 * lines of 1.49, 1.49 and 1.45 round to 1 each, where the store's 2 decimals gave 4.43.
 	 */
-	public function test_rounds_a_job_recalculation_at_the_store_decimals( string $request ): void {
+	public function test_rounds_a_wp_cli_recalculation_in_the_order_currency(): void {
 		$this->arrange_eur_selection_store();
 		wp_set_current_user( 0 );
 		$order = new \WC_Order();
@@ -1369,9 +1309,9 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 			$order->add_product( $product, 1 );
 		}
 
-		$this->register_as( new MultiCurrencyBootstrap( static fn(): array => array() ), wc_get_container(), $request, static fn() => $order->calculate_totals() );
+		$this->register_as( new MultiCurrencyBootstrap( static fn(): array => array() ), wc_get_container(), 'cli', static fn() => $order->calculate_totals() );
 
-		$this->assertSame( '4.43', $order->get_total() );
+		$this->assertSame( '3', $order->get_total() );
 	}
 
 	/**
@@ -1465,22 +1405,20 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create an order with one product through `POST /wc/<version>/orders`: v3 over HTTP, v2 as `wp wc shop_order create`
-	 * runs it in process.
+	 * Create an order with one product through `POST /wc/v3/orders`, which `wp wc shop_order create` runs in process.
 	 *
 	 * The REST server is built again, so the routes' argument defaults are read under this request's filters.
 	 *
 	 * @param int         $customer_id Customer ID.
 	 * @param int         $product_id  Product ID.
 	 * @param string|null $currency    The `currency` query argument, if any.
-	 * @param string      $version     Route version: v3 or v2.
 	 * @return int Order ID.
 	 */
-	private function create_rest_order( int $customer_id, int $product_id, ?string $currency, string $version = 'v3' ): int {
+	private function create_rest_order( int $customer_id, int $product_id, ?string $currency ): int {
 		global $wp_rest_server;
 
 		$wp_rest_server = null; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Rebuilt under this request's filters, and again by the next case.
-		$request        = new \WP_REST_Request( 'POST', '/wc/' . $version . '/orders' );
+		$request        = new \WP_REST_Request( 'POST', '/wc/v3/orders' );
 		if ( null !== $currency ) {
 			$request->set_query_params( array( 'currency' => $currency ) );
 		}

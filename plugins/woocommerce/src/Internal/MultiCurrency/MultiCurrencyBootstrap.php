@@ -234,11 +234,6 @@ final class MultiCurrencyBootstrap {
 		add_filter( 'woocommerce_analytics_update_order_stats_data', array( $this, 'handle_woocommerce_analytics_update_order_stats_data' ), 99999, 2 );
 
 		$classes = $this->get_module_classes_for_request( $container, $request_type );
-		// WP-CLI loads no price conversion, so an order a command creates in another currency gets its rate here.
-		if ( RequestTypeUtil::CLI === $request_type && 'configured' === $this->usage ) {
-			add_action( 'woocommerce_new_order', array( $this, 'handle_woocommerce_new_order' ), 99, 2 );
-		}
-
 		if ( ! empty( $classes ) ) {
 			if ( RequestTypeUtil::ADMIN === $request_type ) {
 				$this->admin_rest_container = $container;
@@ -363,28 +358,6 @@ final class MultiCurrencyBootstrap {
 		}
 
 		$this->register_classes( $container, array_values( array_diff( array_merge( $this->get_provider_classes(), $cron ), $this->registered_classes ) ) );
-	}
-
-	/**
-	 * Save the exchange-rate meta on a new order in another currency, skipping orders created via subscription.
-	 *
-	 * @internal
-	 *
-	 * @param mixed $order_id Order ID.
-	 * @param mixed $order    Order object.
-	 */
-	public function handle_woocommerce_new_order( $order_id, $order = null ): void {
-		if ( null === $this->order_container ) {
-			return;
-		}
-
-		/**
-		 * Multi-Currency price controller.
-		 *
-		 * @var MultiCurrencyFrontendPricesController $controller
-		 */
-		$controller = $this->order_container->get( MultiCurrencyFrontendPricesController::class );
-		$controller->add_order_meta( $order_id, $order );
 	}
 
 	/**
@@ -542,9 +515,8 @@ final class MultiCurrencyBootstrap {
 				RequestTypeUtil::AJAX  => array_merge( self::BASE, self::PRICE, self::COMPAT, array( MultiCurrencyStorefrontIntegrationController::class, MultiCurrencyAsyncPriceRendererController::class ), self::HISTORY ),
 				RequestTypeUtil::REST  => array_merge( self::BASE, self::PRICE, self::COMPAT, array( MultiCurrencySwitcherBlockController::class, MultiCurrencyStorefrontIntegrationController::class, MultiCurrencyAsyncPriceRendererController::class ), self::HISTORY, array( MultiCurrencyRestController::class, MultiCurrencyRestRequestOverrideController::class ) ),
 				RequestTypeUtil::ADMIN => array_merge( self::BASE, self::PRICE, self::COMPAT, array( MultiCurrencyAnalyticsController::class, MultiCurrencySwitcherBlockController::class, MultiCurrencySettingsController::class, MultiCurrencyTrackerController::class ), self::ADMIN ),
-				// Cron and WP-CLI have no shopper, so neither converts: amounts stay in the store currency, as on admin and REST orders.
-				RequestTypeUtil::CRON  => array_merge( self::BASE, self::COMPAT, self::HISTORY ),
-				RequestTypeUtil::CLI   => array_merge( self::BASE, self::COMPAT, self::HISTORY ),
+				RequestTypeUtil::CRON  => array_merge( self::BASE, array( MultiCurrencyFrontendCurrenciesController::class, MultiCurrencyFrontendPricesController::class ), self::COMPAT, self::HISTORY ),
+				RequestTypeUtil::CLI   => array_merge( self::BASE, array( MultiCurrencyFrontendCurrenciesController::class, MultiCurrencyFrontendPricesController::class ), self::COMPAT, self::HISTORY ),
 			),
 			'historical' => array(
 				RequestTypeUtil::ADMIN => array_merge( self::BASE, array( MultiCurrencyAnalyticsController::class, MultiCurrencySettingsController::class, MultiCurrencyTrackerController::class ), self::ADMIN ),
