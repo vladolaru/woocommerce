@@ -2021,9 +2021,10 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$order     = $this->create_taken_over_order( 'cod', self::RECORDED_INTENT, $stored_status, OrderStatus::COMPLETED );
 		$notes     = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 		$reads     = new \ArrayObject();
-		$transport = $this->create_operation_transport( PaymentProcessingService::OPERATION_CAPTURE );
+		$transport = null;
 		$platform  = $this->create_platform( $this->recorded_intent( 'authorize_manual_capture' ), null, $reads );
 		if ( $real_path ) {
+			$transport = $this->create_operation_transport( PaymentProcessingService::OPERATION_CAPTURE );
 			$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $platform );
 		} else {
 			$processing_service = $this->createMock( PaymentProcessingService::class );
@@ -2037,7 +2038,10 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 
 		$stored = wc_get_order( $order->get_id() );
 		$this->assertCount( 0, $reads, 'The kept payment is not read.' );
-		$this->assertSame( array(), $this->request_paths( $transport ) );
+		if ( null !== $transport ) {
+			// Only the real path reaches a transport; over the mock, the never() expectation above is the capture check.
+			$this->assertSame( array(), $this->request_paths( $transport ), 'No request is sent.' );
+		}
 		$this->assertSame( array(), $logger->lines, 'No warning line.' );
 		$this->assertCount( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 		$this->assertSame( array(), $this->get_pending_retries( $order ) );
