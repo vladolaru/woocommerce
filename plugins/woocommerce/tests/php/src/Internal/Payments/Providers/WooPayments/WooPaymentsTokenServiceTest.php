@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudOrderTrackingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -18,6 +19,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\SepaTo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\SubscriptionPaymentIdsOnSave;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use RuntimeException;
 use WC_Order;
@@ -48,9 +50,20 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	private $gateway_initializer = null;
 
 	/**
+	 * The save-time copy of a subscription's IDs registered by a test, removed on tear down.
+	 *
+	 * @var WooPaymentsFraudOrderTrackingService|null
+	 */
+	private ?WooPaymentsFraudOrderTrackingService $save_time_copy = null;
+
+	/**
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
+		if ( null !== $this->save_time_copy ) {
+			remove_action( 'woocommerce_update_order', array( $this->save_time_copy, 'handle_woocommerce_update_order' ), 10 );
+			$this->save_time_copy = null;
+		}
 		$this->reset_container_replacements();
 		foreach ( $this->created_services as $service ) {
 			remove_action( 'woocommerce_payment_token_deleted', array( $service, 'handle_woocommerce_payment_token_deleted' ), 10 );
@@ -2069,6 +2082,11 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 * (trait-wc-payment-gateway-wcpay-subscriptions.php:718-730), so a manual subscription that Subscriptions then moves to
 	 * the card gateway has the card. Stripe Gateway keeps its own customer under `_stripe_customer_id`, so neither ID is written.
 	 *
+	 * These rows run with the save-time copy of a subscription's IDs unregistered, so they check only what the token sync itself
+	 * writes, which is no ID at all. The SEPA row's `pm_sepa` stays because nothing replaces it here: with the copy registered, a
+	 * subscription on a WooPayments gateway takes its newest token's ID when it is saved
+	 * (test_switch_payment_replaces_a_sepa_subscriptions_payment_method_id_when_the_save_time_copy_is_registered).
+	 *
 	 * @dataProvider provider_switched_subscriptions_on_another_gateway
 	 *
 	 * @param string               $gateway_id     The subscription's gateway.
@@ -2145,6 +2163,46 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 				true,
 			),
 		);
+	}
+
+	/**
+	 * @testdox A switch paid by card puts the card's payment method ID on a SEPA subscription when it is saved, and keeps the subscription's customer.
+	 *
+	 * The save-time copy is registered, as it is on a store the built-in owns. The token sync saves the subscription, and the copy
+	 * writes the newest token's payment method ID over the SEPA one. The customer is filled only when empty, so the SEPA customer
+	 * stays and the parent's is not taken (client 11.3.0 trait-wc-payment-gateway-wcpay-subscriptions.php:1113-1168).
+	 */
+	public function test_switch_payment_replaces_a_sepa_subscriptions_payment_method_id_when_the_save_time_copy_is_registered(): void {
+		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
+		$user_id = $this->factory()->user->create();
+		$card    = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card' );
+		$order   = $this->create_woopayments_order();
+		$parent  = $this->create_woopayments_order();
+		$parent->update_meta_data( '_stripe_customer_id', 'cus_parent' );
+		$parent->save();
+		$subscription = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $subscription );
+		$subscription->set_parent_id( $parent->get_id() );
+		$subscription->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'sepa_debit' );
+		$subscription->update_meta_data( '_requires_manual_renewal', 'false' );
+		$subscription->update_meta_data( '_payment_method_id', 'pm_sepa' );
+		$subscription->update_meta_data( '_stripe_customer_id', 'cus_sepa' );
+		$subscription->add_payment_token( $this->create_sepa_token( $user_id, 'pm_sepa' ) );
+		$subscription->save();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $order->get_id() => array( 'switch' => array( $subscription->get_id() ) ) );
+		$sut = $this->create_service();
+
+		$this->save_time_copy = SubscriptionPaymentIdsOnSave::register( $this );
+
+		$sut->sync_related_subscriptions_payment_token( $order, $card );
+
+		$subscription = wc_get_order( $subscription->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $subscription );
+		$active_token = $sut->get_active_token_for_order( $subscription );
+		$this->assertInstanceOf( \WC_Payment_Token::class, $active_token, 'The switched SEPA subscription should carry the card.' );
+		$this->assertSame( $card->get_id(), $active_token->get_id(), 'The card is the switched subscription\'s active token.' );
+		$this->assertSame( 'pm_card', $subscription->get_meta( '_payment_method_id', true ), 'The subscription\'s save takes the card\'s payment method ID over the SEPA one.' );
+		$this->assertSame( 'cus_sepa', $subscription->get_meta( '_stripe_customer_id', true ), 'The subscription keeps its own customer, not the parent\'s.' );
 	}
 
 	/**

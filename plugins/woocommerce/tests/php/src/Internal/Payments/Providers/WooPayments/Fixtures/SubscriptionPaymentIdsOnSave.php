@@ -26,8 +26,9 @@ final class SubscriptionPaymentIdsOnSave {
 	 * Register the callback for the rest of the test; the test's hook snapshot removes it when the test ends.
 	 *
 	 * @param \WC_Unit_Test_Case $test The running test, whose legacy proxy reports WooCommerce Subscriptions available.
+	 * @return WooPaymentsFraudOrderTrackingService The registered copy, for a test that removes it itself.
 	 */
-	public static function register( \WC_Unit_Test_Case $test ): void {
+	public static function register( \WC_Unit_Test_Case $test ): WooPaymentsFraudOrderTrackingService {
 		$test->register_legacy_proxy_function_mocks(
 			array(
 				'class_exists' => static fn( $class_name, ...$args ) => 'WC_Subscriptions_Core_Plugin' === $class_name || class_exists( $class_name, ...$args ),
@@ -51,5 +52,7 @@ final class SubscriptionPaymentIdsOnSave {
 			$fraud_service
 		);
 		add_action( 'woocommerce_update_order', array( $tracking, 'handle_woocommerce_update_order' ), 10, 2 );
+
+		return $tracking;
 	}
 }

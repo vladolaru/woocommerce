@@ -9606,7 +9606,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		SubscriptionPaymentIdsOnSave::register( $this );
 		wc_get_order( $subscription->get_id() )->save();
 
-		$this->assertSame( 'cus_UsIeTbmGHPc9jY', wc_get_order( $subscription->get_id() )->get_meta( '_stripe_customer_id', true ), 'After its activation save the subscription holds the sign-up customer.' );
+		$this->assertSame( 'cus_UsIeTbmGHPc9jY', wc_get_order( $subscription->get_id() )->get_meta( '_stripe_customer_id', true ), 'After its next save the subscription holds the sign-up customer.' );
 
 		// Subscriptions copies the subscription's meta and tokens onto a new renewal (class-wc-subscriptions-data-copier.php:102-123, :228-230).
 		$subscription = wc_get_order( $subscription->get_id() );
