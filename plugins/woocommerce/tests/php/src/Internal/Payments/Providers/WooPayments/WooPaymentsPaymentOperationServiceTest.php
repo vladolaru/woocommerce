@@ -6207,7 +6207,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertWPError( $result );
 		$this->assertNotSame( 'successful', wc_get_order( $order->get_id() )->get_meta( '_wcpay_refund_status', true ) );
-		$this->assertSame( '', wc_get_order( $refund->get_id() )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertFalse( wc_get_order( $refund->get_id() )->meta_exists( '_wcpay_refund_id' ), 'A refused refund must not be linked to a provider refund.' );
 	}
 
 	/**

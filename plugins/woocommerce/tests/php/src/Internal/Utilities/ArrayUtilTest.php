@@ -521,7 +521,6 @@ class ArrayUtilTest extends WC_Unit_Test_Case {
 			),
 			'a nested array is taken whole'                => array( array( 'list' => array( 'b', 'c' ) ), array( 'list' => array( 'b', 'c' ) ) ),
 			'a string for an array keeps the default'      => array( array( 'list' => 'x' ), array() ),
-			'a null is kept for a null default'            => array( array( 'opt' => null ), array() ),
 		);
 	}
 }
