@@ -10403,32 +10403,73 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$plan = $outcome->get_effect_plan();
 		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $plan );
 		$this->assertSame( 'failed', $plan->get_provider_result()['status'] );
+		$this->assertArrayNotHasKey( WooPaymentsPaymentOperationService::DATA_CAPTURE_FAILURE_READ_AGAIN, $outcome->get_data() );
 		$this->assertSame( 'Capture failed.', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ], 'The original capture error must survive the re-fetch.' );
 	}
 
 	/**
-	 * Re-fetches that show no expired authorization: one that fails, and one that finds the intent still capturable. The
-	 * capturable answer is the recorded authorize_manual_capture (Fixtures/platform-manual-capture.json) reduced to its ID
-	 * and status. On these rows native reads only the re-fetched status, which client 11.1.0 also uses to decide expiry
-	 * (includes/class-wc-payment-gateway-wcpay.php:4019-4021). The client also reads the re-fetched charge and ID for its
-	 * note and answer (:4035-4036, :4056); these rows do not cover that.
+	 * Re-fetches whose answer the failure does not record: one that fails, and one that finds the intent captured, which
+	 * keeps requires_capture as client 11.3.0 does (includes/class-wc-payment-gateway-wcpay.php:4418), so the capture's own
+	 * payment_intent.succeeded completes the order as a capture. The captured answer is the recorded capture_full_amount
+	 * (Fixtures/platform-manual-capture.json) reduced to its ID and status.
 	 *
 	 * @return array<string,array{0:callable}>
 	 */
 	public function provider_capture_failures_kept_plain(): array {
 		return array(
-			'itself fails'                      => array(
+			'itself fails'              => array(
 				static function (): array {
 					throw new ApiException( 'Fetch failed.', 'wcpay_fetch_error', 500 );
 				},
 			),
-			'finds the intent still capturable' => array(
+			'finds the intent captured' => array(
 				static fn( string $intent_id ): array => array(
 					'id'     => $intent_id,
-					'status' => 'requires_capture',
+					'status' => 'succeeded',
 				),
 			),
 		);
+	}
+
+	/**
+	 * @testdox A failed capture whose re-fetch finds the intent $_dataName carries the intent it read, so its effects record that status with the capture error.
+	 *
+	 * The requires_capture answer is the recorded authorize_manual_capture (Fixtures/platform-manual-capture.json) reduced to
+	 * its ID and status; the others are HAND-BUILT statuses of a PaymentIntent (https://docs.stripe.com/payments/paymentintents/lifecycle).
+	 *
+	 * @testWith ["still capturable", "requires_capture"]
+	 *           ["needing a new payment method", "requires_payment_method"]
+	 *           ["processing", "processing"]
+	 *
+	 * @param string $label  Row label.
+	 * @param string $status Status the re-fetch answers.
+	 */
+	public function test_capture_exception_carries_the_intent_it_reads_again( string $label, string $status ): void {
+		unset( $label );
+		$order      = StoredPaymentRecords::authorization( 'pi_capture_failed', 'ch_capture_failed' );
+		$api_client = $this->getMockBuilder( Client::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_available', 'capture_intention', 'get_payment_intention' ) )
+			->getMock();
+		$api_client->method( 'is_available' )->willReturn( true );
+		$api_client->method( 'capture_intention' )
+			->willThrowException( new ApiException( 'Capture failed.', 'wcpay_capture_error', 402 ) );
+		$api_client->method( 'get_payment_intention' )->willReturn(
+			array(
+				'id'     => 'pi_capture_failed',
+				'status' => $status,
+			)
+		);
+
+		$outcome = $this->create_operation_service( $api_client )->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' );
+
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$plan = $outcome->get_effect_plan();
+		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $plan );
+		$this->assertSame( WooPaymentsOrderEffectPlan::TYPE_CAPTURE, $plan->get_type() );
+		$this->assertTrue( $outcome->get_data()[ WooPaymentsPaymentOperationService::DATA_CAPTURE_FAILURE_READ_AGAIN ] ?? false );
+		$this->assertSame( $status, $plan->get_provider_result()['status'] );
+		$this->assertSame( 'Capture failed.', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ], 'The original capture error must survive the re-fetch.' );
 	}
 
 	/**

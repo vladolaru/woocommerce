@@ -893,7 +893,7 @@ class WooPaymentsOrderEffectApplier {
 	 *
 	 * @param WC_Order            $order            Order being captured.
 	 * @param PaymentOutcome      $outcome          Provider capture outcome.
-	 * @param array<string,mixed> $result           Provider capture response.
+	 * @param array<string,mixed> $result           Provider capture response, or the intent read again after a failed capture.
 	 * @param bool                $include_fee_meta Whether to write the fee meta.
 	 * @return array<string,mixed>
 	 */
@@ -942,7 +942,11 @@ class WooPaymentsOrderEffectApplier {
 		// failure with another message gets its own note.
 		$message         = WooPaymentsIntentCodec::with_minimum_capture_amount( $message, is_array( $data['extra_details'] ?? null ) ? $data['extra_details'] : array() );
 		$note_candidates = $this->note_service->format_capture_failed_note_candidates( $order, $intent_id, $charge_id, $message );
-		$meta            = WooPaymentsOrderEffects::failed_capture_meta();
+		// A capture whose call failed records the status of the intent read again after it, when the operation service kept
+		// that intent as the plan's result (WooPaymentsPaymentOperationService::DATA_CAPTURE_FAILURE_READ_AGAIN).
+		$meta = true === ( $data[ WooPaymentsPaymentOperationService::DATA_CAPTURE_FAILURE_READ_AGAIN ] ?? false )
+			? array( '_intention_status' => (string) ( $result['status'] ?? '' ) )
+			: WooPaymentsOrderEffects::failed_capture_meta();
 		if ( 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ) ) {
 			$meta['_wcpay_fraud_meta_box_type'] = 'review_failed';
 		}
