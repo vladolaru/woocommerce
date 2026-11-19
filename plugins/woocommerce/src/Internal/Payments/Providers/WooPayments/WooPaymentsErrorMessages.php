@@ -111,7 +111,7 @@ class WooPaymentsErrorMessages {
 		/**
 		 * Filters the localized, customer-facing Stripe error messages.
 		 *
-		 * Keeps this name because extensions listen to it.
+		 * Keeps this name because extensions listen to it. An entry that is not a string is ignored, as a missing one is.
 		 *
 		 * @since 10.7.0
 		 *
@@ -146,6 +146,6 @@ class WooPaymentsErrorMessages {
 			)
 		);
 
-		return is_array( $messages ) ? $messages : array();
+		return is_array( $messages ) ? array_filter( $messages, 'is_string' ) : array();
 	}
 }

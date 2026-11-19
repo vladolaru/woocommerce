@@ -73,6 +73,42 @@ class WooPaymentsErrorMessagesTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A localized message the filter makes something other than text is skipped for the next message in line: $_dataName.
+	 * @dataProvider provide_localized_messages_that_are_not_text
+	 *
+	 * An object used to fail the declined-payment path in sprintf(), and an array printed "Error: Array".
+	 *
+	 * @param string $code         The message entry the filter replaces.
+	 * @param mixed  $value        The entry's new value.
+	 * @param string $decline_code The provider decline code.
+	 * @param string $expected     The shopper message.
+	 */
+	public function test_get_shopper_message_skips_a_localized_message_that_is_not_text( string $code, $value, string $decline_code, string $expected ): void {
+		add_filter(
+			'wcpay_localized_messages',
+			static function ( array $messages ) use ( $code, $value ): array {
+				$messages[ $code ] = $value;
+
+				return $messages;
+			}
+		);
+
+		$this->assertSame( $expected, WooPaymentsErrorMessages::get_shopper_message( 'card_error', 'card_declined', $decline_code, 'raw' ) );
+	}
+
+	/**
+	 * Localized message entries that are not text, and the shopper message each gives.
+	 *
+	 * @return array<string,array{0:string,1:mixed,2:string,3:string}>
+	 */
+	public function provide_localized_messages_that_are_not_text(): array {
+		return array(
+			'an object for the decline code uses the error code' => array( 'insufficient_funds', new \stdClass(), 'insufficient_funds', 'Error: Your card was declined.' ),
+			'an array for the error code uses the platform message' => array( 'card_declined', array( 'x' ), '', 'raw' ),
+		);
+	}
+
+	/**
 	 * @testdox The shopper message for a provider error follows the WooPayments extension's mapping: $_dataName.
 	 *
 	 * Client 11.1.0 `class-wc-payments-utils.php`: the decline code first, then the error code (`:806-817`), against the
