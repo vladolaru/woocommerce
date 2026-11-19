@@ -103,12 +103,14 @@ class WooPaymentsEarlyFraudWarningsRestController extends RestApiControllerBase 
 	public function get_active_early_fraud_warnings( WP_REST_Request $request ): WP_REST_Response {
 		unset( $request );
 
-		$key  = $this->account_service->is_test_mode_enabled()
+		// One mode read picks both the key and the rows, so a list is never stored under the other mode's key.
+		$is_test_mode = $this->account_service->is_test_mode_enabled();
+		$key          = $is_test_mode
 			? WooPaymentsDatabaseCache::EARLY_FRAUD_WARNING_ORDERS_KEY_TEST_MODE
 			: WooPaymentsDatabaseCache::EARLY_FRAUD_WARNING_ORDERS_KEY;
-		$list = $this->database_cache->get_or_add(
+		$list         = $this->database_cache->get_or_add(
 			$key,
-			fn(): array => $this->order_service->get_actionable_orders(),
+			fn(): array => $this->order_service->get_actionable_orders( $is_test_mode ),
 			'is_array'
 		);
 

@@ -108,6 +108,7 @@ const buildUpdateBusinessDetailsTask = ( {
 		actionLabel,
 		completed,
 		showActionButton: true,
+		expandable: true,
 	};
 
 	// Clicks do nothing on a complete or enabled account.
@@ -294,6 +295,7 @@ const buildDisputeTask = (
 				active_dispute_count: activeDisputeCount,
 			} ),
 		showActionButton: true,
+		expandable: true,
 		// Red when overdue or due within 72 hours, yellow before.
 		isUrgent: isPastDue || isDueWithinDays( dueMoment, 3 ),
 	};
@@ -313,17 +315,16 @@ const buildEarlyFraudWarningTasks = (
 		),
 		content: __( 'Refunding it now can prevent a dispute.', 'woocommerce' ),
 		actionLabel: __( 'Review payment', 'woocommerce' ),
-		href: getSettingsPaymentsProviderRouteUrl(
-			`/woopayments/transactions/details?id=${ encodeURIComponent(
-				warning.charge_id
-			) }`
-		),
+		route: `/woopayments/transactions/details?id=${ encodeURIComponent(
+			warning.charge_id
+		) }`,
 		onClick: () =>
 			recordEvent( 'wcpay_overview_task_click', {
 				task: 'early-fraud-warning-task',
 				active_early_fraud_warning_count: warnings.length,
 			} ),
 		showActionButton: true,
+		expandable: true,
 		// The warning clears only on a full refund or a platform update, so a merchant who decides against a refund dismisses it.
 		isDismissable: true,
 	} ) );

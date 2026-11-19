@@ -21,6 +21,10 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  * A request that starts no REST server resolves no controller. The WooPay session routes register only in the active
  * setup tier.
  *
+ * It also hands every refund to the early fraud warning service, which a refund on any request type can make stale, as
+ * client 11.3.0 hooks it on every request (includes/class-wc-payments-order-service.php:342). The service is resolved
+ * only when a refund happens, so a shopper's page pays for one hook registration.
+ *
  * @since 11.2.0
  * @internal
  */
@@ -47,12 +51,30 @@ final class WooPaymentsAdminRestRouteRegistrar implements RegisterHooksInterface
 	}
 
 	/**
-	 * Register the deferred REST hook.
+	 * Register the deferred REST and refund hooks.
 	 *
 	 * @since 11.2.0
 	 */
 	public function register() {
 		add_action( 'rest_api_init', array( $this, 'register_rest_controllers' ), 0 );
+		add_action( 'woocommerce_order_refunded', array( $this, 'handle_order_refunded' ) );
+	}
+
+	/**
+	 * Hand a refund to the early fraud warning service, which drops the cached lists when the order holds a warning.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $order_id The refunded order's ID.
+	 */
+	public function handle_order_refunded( $order_id ): void {
+		/**
+		 * Early fraud warning service.
+		 *
+		 * @var WooPaymentsEarlyFraudWarningOrderService $service
+		 */
+		$service = $this->container->get( WooPaymentsEarlyFraudWarningOrderService::class );
+		$service->handle_order_refunded( $order_id );
 	}
 
 	/**

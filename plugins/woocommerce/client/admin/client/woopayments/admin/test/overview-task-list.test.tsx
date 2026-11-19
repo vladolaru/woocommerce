@@ -5,6 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { getHistory } from '@woocommerce/navigation';
 import { recordEvent } from '@woocommerce/tracks';
 
 /**
@@ -49,6 +50,14 @@ const RECORDED_AWAITING_RESPONSE = (
 		)
 	).response.data as Array< Record< string, unknown > >
  ).filter( ( dispute ) => dispute.status === 'needs_response' );
+
+// A row as the early fraud warnings route answers it.
+const EARLY_FRAUD_WARNING = {
+	order_id: 2483,
+	order_number: '2483',
+	charge_id: 'ch_warning_2483',
+	created: 1795035195,
+};
 
 // The disputes summary states `earliest_due_by` as a UTC `Y-m-d H:i:s` string.
 const formatDueBy = ( timestamp: number ) =>
@@ -161,6 +170,107 @@ describe( 'OverviewTaskList', () => {
 			{ task: 'dispute-resolution-task', active_dispute_count: 2 }
 		);
 	} );
+
+	// Client 11.3.0 `early-fraud-warning-task.tsx:28-40`: the action moves inside the app with `getHistory().push()`.
+	it( 'opens the payment details of an early fraud warning inside the app, without a page load', async () => {
+		const tasks = buildOverviewTasks( {
+			shell: {
+				account: { connected: true },
+				account_status: { requirements: { errors: [] } },
+			} as never,
+			disputesSummary: null,
+			showUpdateDetailsTask: false,
+			activeEarlyFraudWarnings: [ EARLY_FRAUD_WARNING ],
+			onOpenUpdateBusinessDetails: jest.fn(),
+		} );
+		render(
+			<OverviewTaskList
+				tasks={ tasks }
+				visibility={ createVisibility() }
+			/>
+		);
+
+		const push = jest
+			.spyOn( getHistory(), 'push' )
+			.mockImplementation( () => undefined );
+		const originalLocation = window.location;
+		const mockAssign = jest.fn();
+		Object.defineProperty( window, 'location', {
+			configurable: true,
+			value: { ...originalLocation, assign: mockAssign },
+		} );
+		try {
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Review payment' } )
+			);
+		} finally {
+			Object.defineProperty( window, 'location', {
+				configurable: true,
+				value: originalLocation,
+			} );
+		}
+
+		expect( push ).toHaveBeenCalledWith(
+			'admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions%2Fdetails&id=ch_warning_2483'
+		);
+		expect( mockAssign ).not.toHaveBeenCalled();
+		expect( recordEvent ).toHaveBeenCalledWith(
+			'wcpay_overview_task_click',
+			{
+				task: 'early-fraud-warning-task',
+				active_early_fraud_warning_count: 1,
+			}
+		);
+	} );
+
+	// Client 11.3.0 `overview/task-list/index.js:189` with `expandable: true` on `update-business-details-task.tsx:164`,
+	// `dispute-task.tsx:100` and `early-fraud-warning-task.tsx:59`.
+	it.each( [
+		[ 'update-business-details', 'Update WooPayments business details' ],
+		[ 'dispute-resolution-task', 'Respond to an active dispute' ],
+		[
+			'early-fraud-warning-task',
+			'Review order #2483 flagged for potential fraud',
+		],
+	] )(
+		'folds and unfolds the %s task when its row is clicked',
+		async ( keyPrefix, title ) => {
+			const tasks = buildOverviewTasks( {
+				shell: {
+					account: { connected: true },
+					account_status: {
+						status: 'restricted',
+						past_due: true,
+						details_submitted: true,
+						account_link: 'https://connect.example/update',
+						requirements: { errors: [] },
+					},
+				} as never,
+				disputesSummary: {
+					count: 1,
+					amount_by_currency: [],
+					earliest_due_by: formatDueBy( NOW + DAY_IN_MS ),
+				},
+				activeEarlyFraudWarnings: [ EARLY_FRAUD_WARNING ],
+				onOpenUpdateBusinessDetails: jest.fn(),
+			} ).filter( ( task ) => task.key.startsWith( keyPrefix ) );
+			render(
+				<OverviewTaskList
+					tasks={ tasks }
+					visibility={ createVisibility() }
+				/>
+			);
+			const row = screen
+				.getByText( title )
+				.closest( '.woocommerce-task-list__item' );
+
+			expect( row ).toHaveClass( 'expanded' );
+			await userEvent.click( screen.getByText( title ) );
+			expect( row ).not.toHaveClass( 'expanded' );
+			await userEvent.click( screen.getByText( title ) );
+			expect( row ).toHaveClass( 'expanded' );
+		}
+	);
 
 	// Client 11.3.0 `overview/task-list/index.js:56-104, :204-206`.
 	it( 'dismisses a dismissable task at once, saves it, and puts it back on Undo', async () => {

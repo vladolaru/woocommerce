@@ -52,7 +52,7 @@ class WooPaymentsEarlyFraudWarningsRestControllerTest extends WC_REST_Unit_Test_
 		$cache = new WooPaymentsDatabaseCache();
 		$cache->init( new LegacyProxy() );
 		$order_service = new WooPaymentsEarlyFraudWarningOrderService();
-		$order_service->init( $account, $cache );
+		$order_service->init( $cache );
 		$this->sut = new WooPaymentsEarlyFraudWarningsRestController();
 		$this->sut->init( $account, $cache, $order_service );
 		$this->sut->register_routes();
@@ -270,6 +270,36 @@ class WooPaymentsEarlyFraudWarningsRestControllerTest extends WC_REST_Unit_Test_
 		$this->assertSame( 2, $queries );
 		$this->assertSame( array( $test_order->get_id() ), wp_list_pluck( get_option( 'wcpay_test_early_fraud_warning_orders_cache' )['data'], 'order_id' ) );
 		$this->assertSame( array( $live_order->get_id() ), wp_list_pluck( get_option( 'wcpay_early_fraud_warning_orders_cache' )['data'], 'order_id' ) );
+	}
+
+	/**
+	 * @testdox The cached list holds the rows of the mode its key names, even when the wcpay_test_mode filter changes its answer during the read.
+	 */
+	public function test_key_and_rows_use_one_mode_read(): void {
+		$this->create_warning_order( 2000, 'test' );
+		$live_order = $this->create_warning_order( 1000, 'prod' );
+		$cache      = new WooPaymentsDatabaseCache();
+		$cache->init( new LegacyProxy() );
+		$order_service = new WooPaymentsEarlyFraudWarningOrderService();
+		$order_service->init( $cache );
+		$controller = new WooPaymentsEarlyFraudWarningsRestController();
+		$controller->init( wc_get_container()->get( WooPaymentsAccountService::class ), $cache, $order_service );
+		$reads = 0;
+		// The first read says live; every later read in the same request says test.
+		$mode = static function () use ( &$reads ): bool {
+			return 1 < ++$reads;
+		};
+		add_filter( 'wcpay_test_mode', $mode );
+
+		try {
+			$listed = $controller->get_active_early_fraud_warnings( new WP_REST_Request( 'GET', self::ROUTE ) )->get_data();
+		} finally {
+			remove_filter( 'wcpay_test_mode', $mode );
+		}
+
+		$this->assertSame( array( $live_order->get_id() ), wp_list_pluck( $listed, 'order_id' ) );
+		$this->assertSame( array( $live_order->get_id() ), wp_list_pluck( get_option( 'wcpay_early_fraud_warning_orders_cache' )['data'], 'order_id' ) );
+		$this->assertFalse( get_option( 'wcpay_test_early_fraud_warning_orders_cache' ) );
 	}
 
 	/**

@@ -15,12 +15,15 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminRestRouteRegistrar;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDocumentsRestController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEarlyFraudWarningOrderService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentDetailsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionController;
 use ReflectionMethod;
+use WC_Order;
 use WC_REST_Unit_Test_Case;
 use WP_REST_Server;
 
@@ -179,6 +182,92 @@ class WooPaymentsAdminRestRouteRegistrarTest extends WC_REST_Unit_Test_Case {
 			$this->restore_rest_server();
 			wc_get_container()->reset_all_replacements();
 		}
+	}
+
+	/**
+	 * @testdox On a $_dataName request, a refund of an order holding an early fraud warning drops both cached lists.
+	 * @dataProvider front_request_provider
+	 *
+	 * @param string $state Effective setup tier.
+	 */
+	public function test_front_request_refund_drops_the_early_fraud_warning_lists( string $state ): void {
+		$fixture = $this->create_container( $state, $this->create_payment_details_controller(), array( WooPaymentsEarlyFraudWarningOrderService::class ) );
+		$order   = $this->create_flagged_order();
+		update_option( WooPaymentsDatabaseCache::EARLY_FRAUD_WARNING_ORDERS_KEY, array( 'data' => array() ), false );
+		update_option( WooPaymentsDatabaseCache::EARLY_FRAUD_WARNING_ORDERS_KEY_TEST_MODE, array( 'data' => array() ), false );
+
+		try {
+			$this->register_request_classes( $fixture['container'], $state, 'front' );
+			wc_create_refund(
+				array(
+					'order_id' => $order->get_id(),
+					'amount'   => 10,
+				)
+			);
+
+			$this->assertFalse( get_option( WooPaymentsDatabaseCache::EARLY_FRAUD_WARNING_ORDERS_KEY ) );
+			$this->assertFalse( get_option( WooPaymentsDatabaseCache::EARLY_FRAUD_WARNING_ORDERS_KEY_TEST_MODE ) );
+		} finally {
+			wc_get_container()->reset_all_replacements();
+		}
+	}
+
+	/**
+	 * @testdox On a $_dataName request, the early fraud warning service is resolved only when a refund happens.
+	 * @dataProvider front_request_provider
+	 *
+	 * @param string $state Effective setup tier.
+	 */
+	public function test_front_request_resolves_the_early_fraud_warning_service_only_on_a_refund( string $state ): void {
+		$fixture = $this->create_container( $state, $this->create_payment_details_controller(), array( WooPaymentsEarlyFraudWarningOrderService::class ) );
+		$runtime = $fixture['runtime'];
+		$order   = wc_create_order();
+
+		try {
+			$this->register_request_classes( $fixture['container'], $state, 'front' );
+
+			$this->assertNotContains( WooPaymentsEarlyFraudWarningOrderService::class, $runtime->resolved );
+
+			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- WooCommerce's refund hook, fired as wc_create_refund() does.
+			do_action( 'woocommerce_order_refunded', $order->get_id(), 0 );
+
+			$this->assertContains( WooPaymentsEarlyFraudWarningOrderService::class, $runtime->resolved );
+		} finally {
+			wc_get_container()->reset_all_replacements();
+		}
+	}
+
+	/** @return array<string,array{string}> */
+	public static function front_request_provider(): array {
+		return array(
+			'connected front' => array( WooPaymentsSetupTier::CONNECTED ),
+			'active front'    => array( WooPaymentsSetupTier::ACTIVE ),
+		);
+	}
+
+	/**
+	 * Create a $10.00 test-mode order holding an actionable early fraud warning.
+	 *
+	 * @return WC_Order
+	 */
+	private function create_flagged_order(): WC_Order {
+		$order = wc_create_order();
+		$order->set_total( 10 );
+		$order->update_meta_data( '_charge_id', 'ch_' . $order->get_id() );
+		$order->update_meta_data( '_wcpay_mode', 'test' );
+		$order->update_meta_data(
+			'_wcpay_early_fraud_warning',
+			array(
+				'efw_id'         => 'issfr_' . $order->get_id(),
+				'efw_actionable' => true,
+				'efw_type'       => 'made_with_stolen_card',
+				'created'        => 1792314010,
+			)
+		);
+		$order->update_meta_data( '_wcpay_early_fraud_warning_actionable', '1792314010' );
+		$order->save();
+
+		return $order;
 	}
 
 	/**

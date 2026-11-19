@@ -351,10 +351,9 @@ describe( 'overview task builders', () => {
 				active_early_fraud_warning_count: 2,
 			}
 		);
-		expect( task.href ).toContain(
-			'path=%2Fwoopayments%2Ftransactions%2Fdetails'
+		expect( task.route ).toBe(
+			'/woopayments/transactions/details?id=ch_warning_one'
 		);
-		expect( task.href ).toContain( 'id=ch_warning_one' );
 	} );
 
 	// Client 11.1.0 `overview/index.js:105` calls getTasks() without showGoLiveTask: the go-live task is a WC Home task only.

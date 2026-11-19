@@ -67,6 +67,10 @@ jest.mock( '../../promotions/spotlight', () => ( {
 
 jest.mock( '../overview/data', () => ( {
 	createWooPaymentsAccountSession: jest.fn(),
+	// A store with no early fraud warning that needs action.
+	getWooPaymentsActiveEarlyFraudWarnings: jest.fn( () =>
+		Promise.resolve( [] )
+	),
 	getWooPaymentsDepositsOverview: jest.fn(),
 	getWooPaymentsDisputeReadiness: jest.fn(),
 	getWooPaymentsOverviewDisputes: jest.fn(),

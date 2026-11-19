@@ -33,6 +33,10 @@ jest.mock(
 jest.mock( '../../settings/data/actions', () => ( { saveOption: jest.fn() } ) );
 
 jest.mock( '../overview/data', () => ( {
+	// A store with no early fraud warning that needs action.
+	getWooPaymentsActiveEarlyFraudWarnings: jest.fn( () =>
+		Promise.resolve( [] )
+	),
 	getWooPaymentsDepositsOverview: jest.fn(),
 	getWooPaymentsDisputeReadiness: jest.fn(),
 	getWooPaymentsOverviewDisputes: jest.fn(),

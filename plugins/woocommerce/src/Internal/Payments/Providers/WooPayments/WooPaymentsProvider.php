@@ -150,8 +150,6 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 			CurrencyComplianceNotice::class,
 			NoticesPassthrough::class,
 			WooPaymentsFraudOrderTrackingService::class,
-			// Refunds are made from the order screen, over REST, by webhooks and their retries, and never on a shopper's page.
-			WooPaymentsEarlyFraudWarningOrderService::class,
 			WooPaymentsStoreSetupReportController::class,
 			WooPaymentsAccountMilestonesController::class,
 			WooPaymentsFeeDetailsNoteController::class,
@@ -171,7 +169,6 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 			ExtensionSync::class,
 			WooPaymentsApplePayDomainService::class,
 			WooPaymentsFraudOrderTrackingService::class,
-			WooPaymentsEarlyFraudWarningOrderService::class,
 			WooPaymentsStoreSetupReportController::class,
 			WooPaymentsAccountMilestonesController::class,
 			WooPaymentsFeeDetailsNoteController::class,
@@ -191,7 +188,6 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 			ExtensionSync::class,
 			WooPaymentsApplePayDomainService::class,
 			WooPaymentsFraudOrderTrackingService::class,
-			WooPaymentsEarlyFraudWarningOrderService::class,
 			WooPaymentsStoreSetupReportController::class,
 			WooPaymentsAccountMilestonesController::class,
 			WooPaymentsFeeDetailsNoteController::class,
@@ -210,7 +206,6 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 			WooPaymentsAccountMilestonesController::class,
 			WooPaymentsFeeDetailsNoteController::class,
 			WooPaymentsFraudOrderTrackingService::class,
-			WooPaymentsEarlyFraudWarningOrderService::class,
 			OrderStatusSync::class,
 			ExtensionSync::class,
 			WooPaymentsApplePayDomainService::class,
@@ -360,7 +355,8 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 				$matrix[ $state ][ $request ][] = SubscriptionsController::class;
 				// A REST server can start in any request, and an internal REST dispatch there must find the provider's routes, as
 				// WooCommerce's own routes and client 11.3.0's do (`includes/class-wc-payments.php:841`). The registrar resolves
-				// the controllers only when the server starts.
+				// the controllers only when the server starts. It also hands each refund to the early fraud warning service,
+				// resolved only then, since a refund can complete on any request, a shopper's page included.
 				$matrix[ $state ][ $request ][] = WooPaymentsAdminRestRouteRegistrar::class;
 				// Every request that can write a WooPayments log line numbers it under one request id, as client 11.1.0's logger
 				// context does on every request (`includes/class-wc-payments.php:552`, `src/Internal/LoggerContext.php:73-79`).

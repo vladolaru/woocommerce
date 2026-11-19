@@ -40,8 +40,9 @@ class WooPaymentsEarlyFraudWarningOrderServiceTest extends WC_REST_Unit_Test_Cas
 		$cache = new WooPaymentsDatabaseCache();
 		$cache->init( new LegacyProxy() );
 		$this->sut = new WooPaymentsEarlyFraudWarningOrderService();
-		$this->sut->init( $account, $cache );
-		$this->sut->register();
+		$this->sut->init( $cache );
+		// WooPaymentsAdminRestRouteRegistrar hands the refund over in production; its test covers that path.
+		add_action( 'woocommerce_order_refunded', array( $this->sut, 'handle_order_refunded' ) );
 		$controller = new WooPaymentsEarlyFraudWarningsRestController();
 		$controller->init( $account, $cache, $this->sut );
 		$controller->register_routes();

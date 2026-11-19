@@ -271,6 +271,8 @@ export interface WooPaymentsOverviewTask {
 	content?: ReactNode;
 	actionLabel?: string;
 	href?: string;
+	/** A settings-shell route the action opens in the app, without a page load (client 11.3.0 `getHistory().push()`). */
+	route?: string;
 	onClick?: () => void;
 	completed?: boolean;
 	level?: number;
@@ -279,6 +281,8 @@ export interface WooPaymentsOverviewTask {
 	isUrgent?: boolean;
 	/** Client 11.3.0 `task-list/index.js:204-206`: the task offers Dismiss, with an Undo. */
 	isDismissable?: boolean;
+	/** Client 11.3.0 `task-list/index.js:189`: a click on the row folds and unfolds the task's details. */
+	expandable?: boolean;
 }
 
 /** An order whose early fraud warning still needs action (client 11.3.0 `data/early-fraud-warnings/types.d.ts`). */

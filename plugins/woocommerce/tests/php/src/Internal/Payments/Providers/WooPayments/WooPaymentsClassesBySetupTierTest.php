@@ -155,8 +155,8 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 			'The takeover cleanup'                  => array( self::WCPAY . 'WooPaymentsEarlierAttemptCleanup', array( 'active ajax', 'active front', 'active rest', 'connected ajax', 'connected front', 'connected rest' ) ),
 			// A guest session becomes the shopper's account session on a page, AJAX or Store API request.
 			'The session payment values'            => array( self::WCPAY . 'WooPaymentsSessionService', array( 'active ajax', 'active front', 'active rest' ) ),
-			// Refunds are made from the order screen, over REST, by webhooks and their retries, and never on a shopper's page.
-			'The early fraud warning list'          => array( self::WCPAY . 'WooPaymentsEarlyFraudWarningOrderService', array( 'active admin', 'active ajax', 'active cli', 'active cron', 'active rest', 'connected admin', 'connected ajax', 'connected cli', 'connected cron', 'connected rest' ) ),
+			// No request loads it: the registrar hears every refund and resolves it only then.
+			'The early fraud warning list'          => array( self::WCPAY . 'WooPaymentsEarlyFraudWarningOrderService', array() ),
 			// A REST server can start in any request of a set-up store, and the registrar adds the routes when it does.
 			'The REST route registrar'              => array( WooPaymentsAdminRestRouteRegistrar::class, $set_up ),
 		);

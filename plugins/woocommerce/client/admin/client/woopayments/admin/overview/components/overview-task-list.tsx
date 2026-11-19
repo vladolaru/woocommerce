@@ -16,6 +16,7 @@ import type {
 } from '../types';
 import { getVisibleOverviewTasks } from './overview-tasks';
 import { saveOption } from '../../../settings/data/actions';
+import { navigateToSettingsPaymentsProviderRoute } from '../../utils';
 
 const DISMISSED_TASKS_OPTION = 'woocommerce_dismissed_todo_tasks';
 
@@ -99,11 +100,16 @@ export const OverviewTaskList = ( {
 						inProgress={ false }
 						inProgressLabel=""
 						level={ ( task.level ?? 3 ) as 1 | 2 | 3 }
+						expandable={ task.expandable }
 						expanded
 						showActionButton={ task.showActionButton !== false }
 						action={ () => {
 							task.onClick?.();
-							if ( task.href ) {
+							if ( task.route ) {
+								navigateToSettingsPaymentsProviderRoute(
+									task.route
+								);
+							} else if ( task.href ) {
 								window.location.assign( task.href );
 							}
 						} }

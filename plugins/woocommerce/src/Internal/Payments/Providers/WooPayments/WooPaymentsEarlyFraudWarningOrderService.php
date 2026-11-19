@@ -8,29 +8,23 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EarlyFraudWarningEventHandler;
-use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use WC_Order;
 
 /**
  * Lists the orders whose early fraud warning still needs action, and drops the cached lists when such an order is
  * refunded, as client 11.3.0 does (includes/class-wc-payments-order-service.php:1714-1777).
  *
+ * WooPaymentsAdminRestRouteRegistrar hears the refunds in every request and resolves this service only when one happens.
+ *
  * @since 11.4.0
  * @internal
  */
-class WooPaymentsEarlyFraudWarningOrderService implements RegisterHooksInterface {
+class WooPaymentsEarlyFraudWarningOrderService {
 
 	/**
 	 * The most orders with an actionable warning the list inspects, newest warning first.
 	 */
 	private const ORDER_LIMIT = 100;
-
-	/**
-	 * Account service, which knows the account's mode.
-	 *
-	 * @var WooPaymentsAccountService
-	 */
-	private WooPaymentsAccountService $account_service;
 
 	/**
 	 * Cache holding the lists.
@@ -44,34 +38,24 @@ class WooPaymentsEarlyFraudWarningOrderService implements RegisterHooksInterface
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsAccountService $account_service Account service.
-	 * @param WooPaymentsDatabaseCache  $database_cache  Cache holding the lists.
+	 * @param WooPaymentsDatabaseCache $database_cache Cache holding the lists.
 	 */
-	final public function init( WooPaymentsAccountService $account_service, WooPaymentsDatabaseCache $database_cache ): void {
-		$this->account_service = $account_service;
-		$this->database_cache  = $database_cache;
+	final public function init( WooPaymentsDatabaseCache $database_cache ): void {
+		$this->database_cache = $database_cache;
 	}
 
 	/**
-	 * Register the refund hook.
-	 *
-	 * @since 11.4.0
-	 */
-	public function register() {
-		add_action( 'woocommerce_order_refunded', array( $this, 'handle_order_refunded' ) );
-	}
-
-	/**
-	 * Get the orders of the account's mode whose stored warning is actionable and that are not fully refunded.
+	 * Get the orders of one mode whose stored warning is actionable and that are not fully refunded.
 	 *
 	 * The order query reads the index the warning handler keeps, so only the newest ORDER_LIMIT actionable warnings are
 	 * inspected, and a warning stored before that index existed is not listed.
 	 *
 	 * @since 11.4.0
 	 *
+	 * @param bool $is_test_mode Whether to list test-mode orders; the caller's one read of the account's mode.
 	 * @return array<int,array{order_id:int,order_number:string,charge_id:string,created:int}> Newest warning first.
 	 */
-	public function get_actionable_orders(): array {
+	public function get_actionable_orders( bool $is_test_mode ): array {
 		$orders = wc_get_orders(
 			array(
 				'limit'    => self::ORDER_LIMIT,
@@ -81,8 +65,7 @@ class WooPaymentsEarlyFraudWarningOrderService implements RegisterHooksInterface
 			)
 		);
 
-		$is_test_mode = $this->account_service->is_test_mode_enabled();
-		$rows         = array();
+		$rows = array();
 		foreach ( is_array( $orders ) ? $orders : array() as $order ) {
 			if ( ! $order instanceof WC_Order ) {
 				continue;
