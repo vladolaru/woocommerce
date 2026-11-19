@@ -90,9 +90,14 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	);
 
 	/**
-	 * Log reason of a checkout kept as paid on a stored succeeded status whose stored intent is not a payment intent.
+	 * Log reason of a checkout refused on an order whose stored succeeded status is not a payment intent's.
 	 */
-	private const REASON_KEPT_ON_A_STORED_SUCCESS_THAT_IS_NOT_A_PAYMENT = 'kept_on_a_stored_success_that_is_not_a_payment';
+	private const REASON_REFUSED_ON_A_STORED_SUCCESS_THAT_IS_NOT_A_PAYMENT = 'refused_on_a_stored_success_that_is_not_a_payment';
+
+	/**
+	 * Log reason of a refused checkout that leaves an order in a paid status as it is.
+	 */
+	private const REASON_PAID_ORDER_KEPT_ITS_STATUS = 'paid_order_kept_its_status_on_a_refused_checkout';
 
 	/**
 	 * Payment processing service.
@@ -1453,14 +1458,14 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		try {
 			return $this->process_order_payment( $order );
 		} catch ( Exception $exception ) {
-			$failure           = $exception instanceof PaymentOutcomeApplyException ? $exception->get_failure() : $exception;
-			$payment_succeeded = $this->is_succeeded_intent_outcome( $exception );
-			if ( $this->has_succeeded_intent( $order ) || $payment_succeeded ) {
+			$failure = $exception instanceof PaymentOutcomeApplyException ? $exception->get_failure() : $exception;
+			if ( $this->is_succeeded_intent_outcome( $exception ) || $this->has_succeeded_intent( $order ) ) {
 				// Client 11.1.0 logs the failure with its class, code and trace before this check (gw:1274).
 				$this->log_checkout_payment_failure( $order, $failure );
 
-				return $this->keep_succeeded_intent_order( $order, $failure->getMessage(), get_class( $failure ), ! $payment_succeeded );
+				return $this->keep_succeeded_intent_order( $order, $failure->getMessage(), get_class( $failure ) );
 			}
+			$this->log_stored_success_without_a_payment( $order );
 
 			if ( $exception instanceof PaymentOutcomeApplyException && PaymentOutcome::STATUS_AUTHORIZED === $exception->get_outcome()->get_status() ) {
 				return $this->keep_authorized_order_after_apply_failure( $order, $exception );
@@ -2567,16 +2572,84 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Whether the order's payment intent already succeeded.
+	 * Whether the order stores a payment intent that already succeeded.
 	 *
-	 * A refused checkout must not fail an order whose intent already succeeded, including a
-	 * subscription whose payment method was changed with a setup intent (client 11.1.0 `gw:1283`).
+	 * A refused checkout must not fail an order whose payment already succeeded. A stored succeeded status counts only beside
+	 * a stored payment intent: a setup intent's success, or a status with no intent, paid nothing. Client 11.3.0 keeps on the
+	 * stored status alone (`gw:1563`).
 	 *
 	 * @param WC_Order $order Order being paid.
 	 * @return bool
 	 */
 	private function has_succeeded_intent( WC_Order $order ): bool {
-		return 'succeeded' === (string) $order->get_meta( '_intention_status', true );
+		return 'succeeded' === (string) $order->get_meta( '_intention_status', true )
+			&& 0 === strpos( (string) $order->get_meta( '_intent_id', true ), 'pi_' );
+	}
+
+	/**
+	 * Log one warning when a refused checkout fails an order that stores a succeeded status beside no payment intent, which
+	 * client 11.3.0 keeps and answers as paid (`gw:1563-1584`).
+	 *
+	 * @param WC_Order $order Order being paid.
+	 */
+	private function log_stored_success_without_a_payment( WC_Order $order ): void {
+		if ( 'succeeded' !== (string) $order->get_meta( '_intention_status', true ) ) {
+			return;
+		}
+
+		$stored = WooPaymentsLogger::get_loggable_provider_id( (string) $order->get_meta( '_intent_id', true ) );
+		$this->get_logger()->log_always(
+			sprintf( 'Order #%1$d stores a succeeded status whose stored intent is not a payment intent (%2$s), so its checkout was refused rather than kept as paid.', $order->get_id(), $stored ),
+			'warning',
+			array(
+				'order_id'         => $order->get_id(),
+				'order_type'       => $order->get_type(),
+				'stored_intent_id' => $stored,
+				'reason'           => self::REASON_REFUSED_ON_A_STORED_SUCCESS_THAT_IS_NOT_A_PAYMENT,
+			)
+		);
+	}
+
+	/**
+	 * Tell whether a refused checkout leaves the order's status as it is because the order is in a paid status, as this
+	 * checkout loaded it or as stored now, and log one warning when it does.
+	 *
+	 * The lifecycle's own paid test, on both copies, as its late-failure skip reads them: a payment can land after this
+	 * checkout loaded the order. Client 11.3.0 fails any order but a subscription change (`gw:1604-1608`).
+	 *
+	 * @param WC_Order $order   Order being paid.
+	 * @param string   $failure The refusal code, or the exception class.
+	 * @return bool
+	 */
+	private function keeps_paid_order_status( WC_Order $order, string $failure ): bool {
+		$lifecycle = $this->get_lifecycle_service();
+		$paid      = $lifecycle->has_paid_status( $order );
+		if ( ! $paid ) {
+			try {
+				$paid = $lifecycle->has_paid_status( $lifecycle->get_fresh_order_from_data_store( $order ) );
+			} catch ( Throwable $read_failure ) {
+				// The stored order cannot be read, so the refusal writes the status as before.
+				$this->get_logger()->log_throwable_always(
+					sprintf( 'Reading order #%1$d again before failing its refused checkout raised %2$s.', $order->get_id(), get_class( $read_failure ) ),
+					$read_failure,
+					array( 'order_id' => $order->get_id() )
+				);
+				return false;
+			}
+		}
+
+		if ( $paid ) {
+			$this->get_logger()->log_always(
+				sprintf( 'Order #%1$d is in a paid status, so its refused checkout (%2$s) left the status as it is.', $order->get_id(), $failure ),
+				'warning',
+				array(
+					'order_id' => $order->get_id(),
+					'reason'   => self::REASON_PAID_ORDER_KEPT_ITS_STATUS,
+				)
+			);
+		}
+
+		return $paid;
 	}
 
 	/**
@@ -2585,17 +2658,14 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * Client 11.1.0 `gw:1283-1304`: the order keeps its status, gets a diagnostic note and a warning
 	 * log, and checkout returns success so a shopper who was already charged does not pay again.
 	 * The warning is written whatever the logging setting, so support sees every failure suppressed
-	 * on an order that was charged. A keep that rests on the stored status alone, when the stored
-	 * intent is not a payment intent, writes a second warning that names it.
+	 * on an order that was charged.
 	 *
-	 * @param WC_Order $order                 Order being paid.
-	 * @param string   $message               Error message of the failure.
-	 * @param string   $failure               The exception class, or the refusal code of a refusal returned rather than thrown.
-	 * @param bool     $on_stored_status_only Whether the keep rests on the stored succeeded status alone, with no payment in
-	 *                                        this checkout that reached a succeeded intent.
+	 * @param WC_Order $order   Order being paid.
+	 * @param string   $message Error message of the failure.
+	 * @param string   $failure The exception class, or the refusal code of a refusal returned rather than thrown.
 	 * @return array<string,string>
 	 */
-	private function keep_succeeded_intent_order( WC_Order $order, string $message, string $failure, bool $on_stored_status_only ): array {
+	private function keep_succeeded_intent_order( WC_Order $order, string $message, string $failure ): array {
 		$order->add_order_note(
 			sprintf(
 				/* translators: %s: error message from the downstream exception */
@@ -2611,21 +2681,6 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 				'order_id' => $order->get_id(),
 			)
 		);
-
-		$stored_intent_id = (string) $order->get_meta( '_intent_id', true );
-		if ( $on_stored_status_only && 0 !== strpos( $stored_intent_id, 'pi_' ) ) {
-			$stored = WooPaymentsLogger::get_loggable_provider_id( $stored_intent_id );
-			$this->get_logger()->log_always(
-				sprintf( 'Order #%1$d was kept as paid on a stored succeeded status whose stored intent is not a payment intent (%2$s).', $order->get_id(), $stored ),
-				'warning',
-				array(
-					'order_id'         => $order->get_id(),
-					'order_type'       => $order->get_type(),
-					'stored_intent_id' => $stored,
-					'reason'           => self::REASON_KEPT_ON_A_STORED_SUCCESS_THAT_IS_NOT_A_PAYMENT,
-				)
-			);
-		}
 
 		return array(
 			'result'   => 'success',
@@ -2727,13 +2782,14 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * Tell whether a handed-back outcome reached a succeeded intent.
 	 *
-	 * The order may not carry the intent status yet when applying the outcome failed before it was saved.
+	 * The order may not carry the intent status yet when applying the outcome failed before it was saved. A failed
+	 * outcome never counts, whatever status its data carries.
 	 *
 	 * @param Exception $exception Exception caught by process_payment().
 	 * @return bool
 	 */
 	private function is_succeeded_intent_outcome( Exception $exception ): bool {
-		if ( ! $exception instanceof PaymentOutcomeApplyException ) {
+		if ( ! $exception instanceof PaymentOutcomeApplyException || PaymentOutcome::STATUS_FAILED === $exception->get_outcome()->get_status() ) {
 			return false;
 		}
 
@@ -2744,8 +2800,8 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * Fail checkout after an exception when the order's intent has not succeeded.
 	 *
 	 * Client 11.1.0 `gw:1305-1439`: the order fails, except on a subscription payment-method change
-	 * (`:1326`); a payment that was attempted gets the failure note (`:1354-1401`); the shopper gets
-	 * the error as a notice and checkout returns a failure (`:1425`, `:1436-1439`).
+	 * (`:1326`) and, here, on an order in a paid status; a payment that was attempted gets the failure note
+	 * (`:1354-1401`); the shopper gets the error as a notice and checkout returns a failure (`:1425`, `:1436-1439`).
 	 *
 	 * @param WC_Order  $order   Order being paid.
 	 * @param Throwable $failure Failure raised while processing the payment.
@@ -2754,7 +2810,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	private function fail_checkout_after_exception( WC_Order $order, Throwable $failure ): array {
 		$this->log_checkout_payment_failure( $order, $failure );
 
-		if ( ! $this->is_subscription_payment_method_change_request( $order ) ) {
+		if ( ! $this->is_subscription_payment_method_change_request( $order ) && ! $this->keeps_paid_order_status( $order, get_class( $failure ) ) ) {
 			$order->update_status( OrderStatus::FAILED );
 		}
 
@@ -2883,6 +2939,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 *
 	 * Client 11.1.0 `gw:1272-1439`: an order whose intent already succeeded is kept (`gw:1283-1304`); otherwise the
 	 * refusal is logged (`gw:1274`), the order fails (`gw:1323-1328`), gets the refusal's note and the shopper the notice (`gw:1425`).
+	 * An order in a paid status keeps its status; the status note is then added as a note.
 	 * Unlike the catch, it does not fire `woocommerce_payments_order_failed` (`gw:1317`) or `wcpay_update_payment_result_on_error`
 	 * (`gw:1434`).
 	 *
@@ -2896,8 +2953,11 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return array<string,string>
 	 */
 	private function refuse_checkout( WC_Order $order, string $message, string $code, bool $fail_order = true, string $note = '', string $status_note = '', bool $keep_succeeded_intent_order = true ): array {
-		if ( $keep_succeeded_intent_order && $this->has_succeeded_intent( $order ) ) {
-			return $this->keep_succeeded_intent_order( $order, $message, $code, true );
+		if ( $keep_succeeded_intent_order ) {
+			if ( $this->has_succeeded_intent( $order ) ) {
+				return $this->keep_succeeded_intent_order( $order, $message, $code );
+			}
+			$this->log_stored_success_without_a_payment( $order );
 		}
 
 		// The refusal's code names it; the message is not logged, because a payment method error's message is Stripe.js text.
@@ -2910,7 +2970,11 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		);
 
 		if ( $fail_order ) {
-			$order->update_status( OrderStatus::FAILED, $status_note );
+			if ( ! $this->keeps_paid_order_status( $order, $code ) ) {
+				$order->update_status( OrderStatus::FAILED, $status_note );
+			} elseif ( '' !== $status_note ) {
+				$order->add_order_note( $status_note );
+			}
 		}
 
 		if ( '' !== $note ) {
