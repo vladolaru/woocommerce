@@ -77,6 +77,13 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	private const RECORDED_CHARGE = 'ch_3UJhOgBzWlxcwgpP0NcK21bQ';
 
 	/**
+	 * Text every capture failure note carries, whatever the amount and the platform's message.
+	 *
+	 * @var string
+	 */
+	private const CAPTURE_FAILURE_NOTE = '<strong>failed</strong> to complete using WooPayments';
+
+	/**
 	 * The System Under Test.
 	 *
 	 * @var WooPaymentsOrderAdminActionsController|null
@@ -2964,5 +2971,343 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		);
 
 		return $provider;
+	}
+
+	/**
+	 * @testdox After a failed capture read again as $read_status, the capture's own payment_intent.succeeded completes the order as a capture on an edited order total, with the capture note and no payment note.
+	 *
+	 * A failed capture stores requires_capture beside the intent whatever the read says, unless the authorization expired,
+	 * so the event is the capture of the stored authorization: it is recorded as one, with no amount check, as client
+	 * 11.3.0 completes it (class-wc-payments-order-service.php:484-485, :2193-2219). A capture passes through processing
+	 * on its way to succeeded. The merchant edits the order total after the failure, so an amount check would hold the order.
+	 *
+	 * @testWith ["succeeded"]
+	 *           ["processing"]
+	 *
+	 * @param string $read_status Status the read after the failure answers.
+	 */
+	public function test_payment_success_after_a_failed_capture_read_again_as_succeeded_or_processing_completes_it_as_a_capture( string $read_status ): void {
+		$order = $this->create_recorded_authorization_order( 'requires_capture', OrderStatus::ON_HOLD );
+		$read  = array_merge( $this->recorded_intent( 'capture_full_amount' ), array( 'status' => $read_status ) );
+		$this->run_operation_from( 'order screen', PaymentProcessingService::OPERATION_CAPTURE, $order, $this->create_transport( self::platform_bad_gateway(), self::http_json( 200, $read ) ) );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'requires_capture', $order->get_meta( '_intention_status', true ), 'The failure keeps the authorization.' );
+		$order->set_total( '15.00' );
+		$order->save();
+
+		wc_get_container()->get( EventIngestor::class )->process( $this->recorded_payment_success_event( wc_get_order( $order->get_id() ), self::RECORDED_INTENT, self::RECORDED_CHARGE ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::COMPLETED, $order->get_status(), 'The payment is complete; the order has nothing to ship.' );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( 1, $this->count_notes_containing( $order, 'was <strong>successfully captured</strong>' ) );
+		$this->assertSame( 0, $this->count_notes_containing( $order, 'was <strong>successfully charged</strong>' ), 'No payment note.' );
+		$this->assertSame( 0, $this->count_notes_containing( $order, 'does not pay this order' ) );
+	}
+
+	/**
+	 * @testdox A failed order screen capture of an earlier attempt the transaction ID names, beside the stored authorization, that the platform captured: the failure records the captured attempt, a move to Completed sends only its capture, and its own payment_intent.succeeded on an edited order total leaves the Completed order as it is, with no amount hold.
+	 *
+	 * The order screen acts on the transaction ID (class-wc-payment-gateway-wcpay.php:4341 in client 11.3.0), which names
+	 * the attempt E, while the stored intent A is a live authorization. The platform answers the capture of E with a 502
+	 * after Stripe captured it, and the read says succeeded. The failure writes E with requires_capture, so A is no longer
+	 * named: the move to Completed captures E, which the platform refuses as already captured, and never A, so nobody is
+	 * charged twice. E's own event then finds a paid order: it stores succeeded and the paid-order note, and neither checks
+	 * the edited total nor completes a payment.
+	 */
+	public function test_failed_capture_of_an_earlier_attempt_the_platform_captured_never_collects_the_stored_authorization(): void {
+		$order     = StoredPaymentRecords::authorization_with_another_attempts_transaction_id( 'pi_earlier', 'pi_A' );
+		$transport = $this->create_transport(
+			self::intent_answer( 'pi_earlier', 'requires_capture', $order ),
+			self::platform_bad_gateway(),
+			self::status_answer( 'pi_earlier', 'succeeded' ),
+			self::platform_refusal( 'This PaymentIntent could not be captured because it has a status of succeeded.' ),
+			self::status_answer( 'pi_earlier', 'succeeded' )
+		);
+
+		$this->run_operation_from( 'order screen', PaymentProcessingService::OPERATION_CAPTURE, $order, $transport );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( array( 'intentions/pi_earlier?test_mode=1', 'intentions/pi_earlier/capture', 'intentions/pi_earlier?test_mode=1' ), $this->request_paths( $transport ) );
+		$this->assertSame( array( 'pi_earlier', 'requires_capture', 'pi_earlier' ), array( $order->get_meta( '_intent_id', true ), $order->get_meta( '_intention_status', true ), $order->get_transaction_id() ), 'The failure records E.' );
+
+		$order->update_status( OrderStatus::COMPLETED );
+
+		$captures = array_values( array_filter( $this->request_paths( $transport ), static fn( string $path ): bool => '/capture' === substr( $path, -8 ) ) );
+		$this->assertSame( array( 'intentions/pi_earlier/capture', 'intentions/pi_earlier/capture' ), $captures, 'Completed captures E again, never A.' );
+
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$order = wc_get_order( $order->get_id() );
+		$order->set_total( '15.00' );
+		$order->save();
+
+		wc_get_container()->get( EventIngestor::class )->process( $this->recorded_payment_success_event( $order, 'pi_earlier', 'ch_earlier' ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::COMPLETED, $order->get_status() );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( 1, $this->count_notes_containing( $order, 'pi_earlier</a> (charge <code>ch_earlier</code>)' ) );
+		$this->assertSame( 1, $this->count_notes_containing( $order, 'succeeded, but this order already had a paid status, so its status was not changed' ) );
+		$this->assertSame( 0, $this->count_notes_containing( $order, 'was <strong>successfully charged</strong>' ), 'No payment note.' );
+		$this->assertSame( 0, $this->count_notes_containing( $order, 'does not pay this order' ), 'No amount hold.' );
+	}
+
+	/**
+	 * @testdox A capture refused on the intent the transaction ID names, on an order that stores no intent, stores that intent with requires_capture.
+	 *
+	 * A failed capture records its target and requires_capture, so the order names the authorization it acted on.
+	 */
+	public function test_failed_capture_on_an_order_storing_no_intent_stores_its_target(): void {
+		$order     = StoredPaymentRecords::authorization_with_another_attempts_transaction_id( 'pi_A', '' );
+		$transport = $this->create_transport(
+			self::intent_answer( 'pi_A', 'requires_capture', $order ),
+			self::platform_refusal( 'The payment could not be captured because the requested capture amount is greater than the amount you can capture for this charge.' ),
+			self::intent_answer( 'pi_A', 'requires_capture', $order )
+		);
+
+		$this->run_operation_from( 'order screen', PaymentProcessingService::OPERATION_CAPTURE, $order, $transport );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 3, count( $transport->requests ) );
+		$this->assertSame( array( 'pi_A', 'requires_capture', 'pi_A' ), array( $order->get_meta( '_intent_id', true ), $order->get_meta( '_intention_status', true ), $order->get_transaction_id() ) );
+	}
+
+	/**
+	 * @testdox A list capture of the authorization the transaction ID names, beside a stored declined retry, that fails and reads requires_capture again stores that authorization, so the order screen offers its capture.
+	 *
+	 * A 3DS attempt A sets the transaction ID; a declined retry B stores its intent and requires_payment_method; A is then
+	 * approved outside the store. The list offers A, the transaction ID. The failure records A with requires_capture.
+	 */
+	public function test_failed_list_capture_beside_a_stored_decline_stores_the_authorization(): void {
+		$order     = StoredPaymentRecords::authorization_with_another_attempts_transaction_id( 'pi_A', 'pi_B', 'requires_payment_method', OrderStatus::FAILED, '' );
+		$transport = $this->create_transport( self::intent_answer( 'pi_A', 'requires_capture', $order ), self::platform_bad_gateway(), self::intent_answer( 'pi_A', 'requires_capture', $order ) );
+
+		$this->run_operation_from( 'list', PaymentProcessingService::OPERATION_CAPTURE, $order, $transport );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( array( 'intentions/pi_A?test_mode=1', 'intentions/pi_A/capture', 'intentions/pi_A?test_mode=1' ), $this->request_paths( $transport ) );
+		$this->assertSame( array( 'pi_A', 'requires_capture', 'pi_A' ), array( $order->get_meta( '_intent_id', true ), $order->get_meta( '_intention_status', true ), $order->get_transaction_id() ) );
+		$this->assertSame( array( 'capture_charge', 'cancel_authorization' ), $this->order_screen_actions( $order ) );
+	}
+
+	/**
+	 * @testdox A list capture of the authorization the transaction ID names, beside a stored declined retry, that fails after the platform captured stores that authorization with requires_capture, and its own payment_intent.succeeded completes the order as a capture.
+	 *
+	 * A failed capture read again as succeeded writes its target and requires_capture over the stored status that is not an
+	 * authorization, as client 11.3.0 writes requires_capture after any failed capture (class-wc-payment-gateway-wcpay.php:4418),
+	 * so the capture's own event takes the capture path (class-wc-payments-order-service.php:484-485).
+	 */
+	public function test_failed_list_capture_read_again_as_succeeded_beside_a_stored_decline_completes_as_a_capture(): void {
+		$order     = StoredPaymentRecords::authorization_with_another_attempts_transaction_id( 'pi_A', 'pi_B', 'requires_payment_method', OrderStatus::FAILED, '' );
+		$transport = $this->create_transport( self::intent_answer( 'pi_A', 'requires_capture', $order ), self::platform_bad_gateway(), self::intent_answer( 'pi_A', 'succeeded', $order ) );
+
+		$this->run_operation_from( 'list', PaymentProcessingService::OPERATION_CAPTURE, $order, $transport );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( array( 'intentions/pi_A?test_mode=1', 'intentions/pi_A/capture', 'intentions/pi_A?test_mode=1' ), $this->request_paths( $transport ) );
+		$this->assertSame( array( 'pi_A', 'requires_capture', 'pi_A' ), array( $order->get_meta( '_intent_id', true ), $order->get_meta( '_intention_status', true ), $order->get_transaction_id() ) );
+
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		wc_get_container()->get( EventIngestor::class )->process( $this->recorded_payment_success_event( $order, 'pi_A', 'ch_A' ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$this->assertTrue( $order->is_paid(), 'The capture pays the order.' );
+		$this->assertSame( 1, $this->count_notes_containing( $order, 'was <strong>successfully captured</strong>' ) );
+		$this->assertSame( 0, $this->count_notes_containing( $order, 'was <strong>successfully charged</strong>' ), 'No payment note.' );
+	}
+
+	/**
+	 * @testdox A failed order screen capture on an order object loaded before another request stored an authorization keeps that authorization named, with requires_capture.
+	 *
+	 * The order screen acts on the object its request loaded, before the capture claims the order payment lock. The stale
+	 * object stores the earlier attempt with requires_capture; another request then stores the authorization A. The failure
+	 * writes the earlier attempt and requires_capture, which the stale object already holds, so the save changes nothing
+	 * and A stays stored. The row uses the order screen because the CPT store's status save reads the meta again before
+	 * the status hook fires.
+	 */
+	public function test_failed_capture_on_an_order_object_loaded_before_an_authorization_was_stored_keeps_it(): void {
+		$order = StoredPaymentRecords::authorization( 'pi_earlier', 'ch_earlier' );
+		$stale = wc_get_order( $order->get_id() );
+		// The request that loaded the order has read its meta before the other request writes; the CPT store reads it lazily.
+		$stale->get_meta_data();
+		$transport = $this->create_transport(
+			self::platform_refusal( 'This PaymentIntent could not be captured because it has a status of requires_payment_method.' ),
+			self::status_answer( 'pi_earlier', 'requires_payment_method' )
+		);
+		$other     = wc_get_order( $order->get_id() );
+		$other->update_meta_data( '_intent_id', 'pi_A' );
+		$other->save();
+
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $this->create_platform( null, null, new \ArrayObject() ) );
+		$this->sut->register();
+		$this->fire_order_hook( 'woocommerce_order_action_capture_charge', $stale );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( array( 'intentions/pi_earlier/capture', 'intentions/pi_earlier?test_mode=1' ), $this->request_paths( $transport ) );
+		$this->assertSame( array( 'pi_A', 'requires_capture', 'pi_earlier' ), array( $order->get_meta( '_intent_id', true ), $order->get_meta( '_intention_status', true ), $order->get_transaction_id() ) );
+		$this->assertSame( 1, $this->count_notes_containing( $order, self::CAPTURE_FAILURE_NOTE ) );
+	}
+
+	/**
+	 * Run a capture or cancel of an order the way a merchant starts it, over a platform transport: the order screen's
+	 * action, the authorizations list on the transaction ID, or a status change to Completed or Cancelled.
+	 *
+	 * @param string         $trigger   `order screen`, `list` or `status change`.
+	 * @param string         $operation Capture or cancel.
+	 * @param WC_Order       $order     Order.
+	 * @param FakeHttpClient $transport Platform transport the provider sends through.
+	 * @return mixed The list's answer, or null.
+	 */
+	private function run_operation_from( string $trigger, string $operation, WC_Order $order, FakeHttpClient $transport ) {
+		$provider   = $this->create_provider_over_fake_transport( $transport );
+		$is_capture = PaymentProcessingService::OPERATION_CAPTURE === $operation;
+		if ( 'list' === $trigger ) {
+			$transaction_id = (string) $order->get_transaction_id();
+			$controller     = new WooPaymentsAuthorizationsRestController();
+			$controller->init( $this->create_platform( self::intent_body( $transaction_id, 'requires_capture', $order ), null, new \ArrayObject() ), wc_get_container()->get( PaymentProcessingService::class ), $provider );
+			$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . ( $is_capture ? '/capture_authorization' : '/cancel_authorization' ) );
+			$request->set_param( 'order_id', $order->get_id() );
+			$request->set_param( 'payment_intent_id', $transaction_id );
+
+			return $is_capture ? $controller->capture_authorization( $request ) : $controller->cancel_authorization( $request );
+		}
+
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $provider, $this->create_platform( null, null, new \ArrayObject() ) );
+		$this->sut->register();
+		if ( 'status change' === $trigger ) {
+			wc_get_order( $order->get_id() )->update_status( $is_capture ? OrderStatus::COMPLETED : OrderStatus::CANCELLED );
+
+			return null;
+		}
+
+		$this->fire_order_hook( $is_capture ? 'woocommerce_order_action_capture_charge' : 'woocommerce_order_action_cancel_authorization', wc_get_order( $order->get_id() ) );
+
+		return null;
+	}
+
+	/**
+	 * Get the authorization actions the order screen offers for an order.
+	 *
+	 * @param WC_Order $order Order.
+	 * @return string[]
+	 */
+	private function order_screen_actions( WC_Order $order ): array {
+		global $theorder;
+		$theorder = wc_get_order( $order->get_id() );
+
+		return array_keys( $this->create_controller()->handle_woocommerce_order_actions( array() ) );
+	}
+
+	/**
+	 * Create a platform transport that answers the given responses in order.
+	 *
+	 * @param array<string,mixed> ...$responses Transport responses.
+	 * @return FakeHttpClient
+	 */
+	private function create_transport( array ...$responses ): FakeHttpClient {
+		$transport            = new FakeHttpClient();
+		$transport->responses = $responses;
+
+		return $transport;
+	}
+
+	/**
+	 * Build a JSON transport response.
+	 *
+	 * @param int                 $code HTTP status.
+	 * @param array<string,mixed> $body Decoded body.
+	 * @return array<string,mixed>
+	 */
+	private static function http_json( int $code, array $body ): array {
+		return array(
+			'response' => array( 'code' => $code ),
+			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
+			'body'     => (string) wp_json_encode( $body ),
+		);
+	}
+
+	/**
+	 * The platform's 502 when its own Stripe call failed (wpcom `class-platform-failure-exception.php:30`): the call may
+	 * have gone through.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private static function platform_bad_gateway(): array {
+		return self::http_json(
+			502,
+			array(
+				'code'    => 'wcpay_request_failure',
+				'message' => 'Error: cURL error when connecting to Stripe (see error properties for details).',
+				'data'    => array( 'status' => 502 ),
+			)
+		);
+	}
+
+	/**
+	 * The platform's 400 for a capture or cancel Stripe refused, with Stripe's message (HAND-BUILT envelope as in
+	 * WooPaymentsPaymentOperationServiceTest's failed-cancel row; the messages are the ones recorded on a local store).
+	 *
+	 * @param string $message Stripe's message.
+	 * @return array<string,mixed>
+	 */
+	private static function platform_refusal( string $message ): array {
+		return self::http_json(
+			400,
+			array(
+				'code'    => 'wcpay_bad_request',
+				'message' => $message,
+				'data'    => array( 'status' => 400 ),
+			)
+		);
+	}
+
+	/**
+	 * A platform answer for an intent read, reduced to its ID, status, amounts and the order it names.
+	 *
+	 * @param string   $intent_id Intent ID.
+	 * @param string   $status    Intent status.
+	 * @param WC_Order $order     Order its metadata names.
+	 * @return array<string,mixed>
+	 */
+	private static function intent_answer( string $intent_id, string $status, WC_Order $order ): array {
+		return self::http_json( 200, self::intent_body( $intent_id, $status, $order ) );
+	}
+
+	/**
+	 * An intent reduced to its ID, status, amounts and the order it names.
+	 *
+	 * @param string   $intent_id Intent ID.
+	 * @param string   $status    Intent status.
+	 * @param WC_Order $order     Order its metadata names.
+	 * @return array<string,mixed>
+	 */
+	private static function intent_body( string $intent_id, string $status, WC_Order $order ): array {
+		return array(
+			'id'                => $intent_id,
+			'status'            => $status,
+			'amount'            => 1099,
+			'amount_capturable' => 'requires_capture' === $status ? 1099 : 0,
+			'currency'          => 'usd',
+			'metadata'          => array( 'order_id' => (string) $order->get_id() ),
+		);
+	}
+
+	/**
+	 * A platform answer for an intent read, reduced to its ID and status.
+	 *
+	 * @param string $intent_id Intent ID.
+	 * @param string $status    Intent status.
+	 * @return array<string,mixed>
+	 */
+	private static function status_answer( string $intent_id, string $status ): array {
+		return self::http_json(
+			200,
+			array(
+				'id'     => $intent_id,
+				'status' => $status,
+			)
+		);
 	}
 }

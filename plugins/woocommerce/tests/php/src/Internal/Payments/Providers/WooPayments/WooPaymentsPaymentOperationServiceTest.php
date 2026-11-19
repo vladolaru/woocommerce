@@ -10407,11 +10407,12 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Re-fetches that show no expired authorization: one that fails, and one that finds the intent still capturable. The
-	 * capturable answer is the recorded authorize_manual_capture (Fixtures/platform-manual-capture.json) reduced to its ID
-	 * and status. On these rows native reads only the re-fetched status, which client 11.1.0 also uses to decide expiry
-	 * (includes/class-wc-payment-gateway-wcpay.php:4019-4021). The client also reads the re-fetched charge and ID for its
-	 * note and answer (:4035-4036, :4056); these rows do not cover that.
+	 * Re-fetches that show no expired authorization: one that fails, and ones that find the intent captured, processing or
+	 * still capturable. Only a canceled intent changes the failure, so these keep requires_capture as client 11.3.0 does
+	 * after any failed capture (includes/class-wc-payment-gateway-wcpay.php:4418), and the capture's own
+	 * payment_intent.succeeded completes the order as a capture. The captured and capturable answers are the recorded
+	 * capture_full_amount and authorize_manual_capture (Fixtures/platform-manual-capture.json) reduced to their ID and status;
+	 * processing is a HAND-BUILT status of a PaymentIntent (https://docs.stripe.com/payments/paymentintents/lifecycle).
 	 *
 	 * @return array<string,array{0:callable}>
 	 */
@@ -10421,6 +10422,18 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 				static function (): array {
 					throw new ApiException( 'Fetch failed.', 'wcpay_fetch_error', 500 );
 				},
+			),
+			'finds the intent captured'         => array(
+				static fn( string $intent_id ): array => array(
+					'id'     => $intent_id,
+					'status' => 'succeeded',
+				),
+			),
+			'finds the intent processing'       => array(
+				static fn( string $intent_id ): array => array(
+					'id'     => $intent_id,
+					'status' => 'processing',
+				),
 			),
 			'finds the intent still capturable' => array(
 				static fn( string $intent_id ): array => array(
