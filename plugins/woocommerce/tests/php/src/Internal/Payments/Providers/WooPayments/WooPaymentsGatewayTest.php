@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
@@ -2680,12 +2681,12 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should keep an order whose payment intent already succeeded when checkout reports a payment method creation error.
+	 * @testdox A payment method error on a Pending order storing another order's payment intent as succeeded keeps the order and answers success.
 	 *
+	 * Pins the recorded residual of register line 1216, the owner's decision: a stored payment intent's success is kept
+	 * even when the duplicate check has found that the intent pays another order (999999 here) and this order is unpaid.
 	 * WooPayments 11.1.0 throws the client error inside process_payment()'s try (`gw:1664-1666`), so the catch's
 	 * succeeded-intent check (`gw:1283-1304`) runs before the failed status (`gw:1326-1327`) and the failure note.
-	 * The order is still pending here: the earlier duplicate checks found no paid status, and the stored payment intent
-	 * pays another order.
 	 */
 	public function test_process_payment_method_creation_error_on_succeeded_intent_keeps_order(): void {
 		$order = $this->create_order();
@@ -3709,8 +3710,10 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should keep a paid checkout order and return success when post-payment processing throws.
+	 * @testdox A downstream exception on a Pending order storing another order's payment intent as succeeded keeps the order and answers success.
 	 *
+	 * Pins the recorded residual of register line 1216, the owner's decision: a stored payment intent's success is kept
+	 * even when the duplicate check has found that the intent pays another order (999999 here) and this order is unpaid.
 	 * WooPayments 11.1.0 `tests/unit/test-class-wc-payment-gateway-wcpay.php:4531`
 	 * (WOOPMNT-6145): when process_payment_for_order() throws after the intent succeeded, the catch
 	 * (`class-wc-payment-gateway-wcpay.php:1283-1304`) keeps the order status, adds the downstream-error
@@ -3800,14 +3803,13 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A payment method error posted with a saved card on a payment-method change storing a setup intent's success is refused and asks for the Failed status.
+	 * @testdox A payment method error posted with a saved card on a payment-method change storing a setup intent's success is refused and leaves the subscription as it is.
 	 *
-	 * The gateway sets the error only when Stripe.js fails to create a new payment method, and a saved card posts none, so
-	 * only a crafted request reaches this. It is not a new-method change, so the refusal moves the subscription and no
-	 * longer answers success from the stored setup intent's success. WooCommerce Subscriptions 9.4.1 then decides the
-	 * write (`WC_Subscription::update_status()`): an active subscription whose gateway supports suspension is saved as
-	 * Pending, since core maps the invalid `failed` to `pending`; any other subscription gets the "Unable to change
-	 * subscription status" note and an exception, which the gateway answers as a failure.
+	 * The checkout scripts set the error only when Stripe.js fails to create a new payment method, and a saved card posts
+	 * none, so no browser sends this. A validated change to a saved method is refused like a change to a new one: the
+	 * subscription keeps its status, as on every other refusal of a change and as WooPayments 11.3.0 never moves a
+	 * subscription on a change (`class-wc-payment-gateway-wcpay.php:1604-1608`), and the stored setup intent's success,
+	 * which paid nothing, does not answer success.
 	 */
 	public function test_payment_method_error_on_a_saved_card_change_with_a_stored_setup_intent_success_is_refused(): void {
 		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
@@ -3846,9 +3848,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertNull( $service->last_checkout_context, 'A refused checkout must not reach the provider.' );
 		$this->assertSame( array( 'failure', '' ), array( $result['result'] ?? '', $result['redirect'] ?? '' ) );
 		$this->assertSame( array( 'Your card number is invalid.' ), array_column( wc_get_notices( 'error' ), 'notice' ) );
-		$this->assertSame( OrderStatus::FAILED, wc_get_order( $subscription_id )->get_status(), 'The gateway asks for the Failed status; Subscriptions decides what it writes.' );
-		$lines = array_values( array_filter( $logger->entries, static fn( array $entry ): bool => 'refused_on_a_stored_success_that_is_not_a_payment' === ( $entry['context']['reason'] ?? '' ) ) );
-		$this->assertSame( array( 'shop_subscription', 'seti_S' ), array( $lines[0]['context']['order_type'] ?? null, $lines[0]['context']['stored_intent_id'] ?? null ) );
+		$this->assertSame( OrderStatus::PENDING, wc_get_order( $subscription_id )->get_status(), 'The subscription keeps its status.' );
+		$this->assertSame( array(), array_filter( $logger->entries, static fn( array $entry ): bool => 'refused_on_a_stored_success_that_is_not_a_payment' === ( $entry['context']['reason'] ?? '' ) ), 'A refusal that never keeps writes no stored-success line.' );
 	}
 
 	/**
@@ -6502,6 +6503,111 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'failure', $result['result'] ?? '' );
 		$this->assertSame( OrderStatus::PROCESSING, wc_get_order( $order->get_id() )->get_status() );
 		$this->assertContains( $message, wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ) );
+	}
+
+	/**
+	 * @testdox A checkout that meets $_dataName while another operation holds the order payment lock leaves the order Pending and logs the lock refusal.
+	 *
+	 * The Failed write claims the order payment lock first, as the lifecycle claims it before it decides on an order. The
+	 * lock held here is always another request's: no caller of process_payment() holds it, and this checkout's own claims
+	 * (the charge's, in PaymentProcessingService::process_checkout_outcome(), and the duplicate check's note) are released
+	 * in `finally` before a refusal or an exception reaches the write, so the claim never meets a hold of its own. The
+	 * holder may be recording a payment, so the status is left as it is; the shopper still gets the failure and its notice.
+	 *
+	 * @dataProvider provider_refusal_and_failure
+	 *
+	 * @param string $failure What the checkout meets: 'a refusal' (the phone check) or 'a failure' (an exception).
+	 */
+	public function test_refused_checkout_leaves_the_status_while_the_order_payment_lock_is_held( string $failure ): void {
+		$order      = $this->create_order();
+		$gateway    = $this->create_gateway_meeting( $failure, $order );
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		$lock       = wc_get_container()->get( OrderPaymentLock::class );
+		$token      = $lock->claim( $order, $vocabulary, 'pi_A', 'payment status update' );
+		$this->assertIsString( $token, 'Another operation holds the order payment lock.' );
+		$logger = $this->capture_logs();
+
+		$result = $gateway->process_payment( $order->get_id() );
+		$lock->release( $order, $vocabulary, $token );
+
+		$this->assertSame( array( 'failure', '' ), array( $result['result'] ?? '', $result['redirect'] ?? '' ) );
+		$this->assertSame( array( 'a refusal' === $failure ? 'Invalid phone number.' : 'Downstream step failed' ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+		$this->assertSame( OrderStatus::PENDING, wc_get_order( $order->get_id() )->get_status() );
+		$refusals = array_values( array_filter( $logger->warning_messages(), static fn( string $message ): bool => 0 === strpos( $message, 'order payment lock refused: ' ) ) );
+		$this->assertCount( 1, $refusals );
+		$this->assertStringStartsWith( sprintf( 'order payment lock refused: order %d, refused checkout refusal, held by payment status update for ', $order->get_id() ), $refusals[0] );
+	}
+
+	/**
+	 * @testdox A checkout that meets $_dataName on an order that cannot be read again under the order payment lock leaves the order Pending and releases the lock.
+	 *
+	 * The stored status is unknown, so the Failed write does not run, as the lifecycle writes nothing when its read under
+	 * the lock fails. The shopper still gets the failure and its notice, and the read failure is logged.
+	 *
+	 * @dataProvider provider_refusal_and_failure
+	 *
+	 * @param string $failure What the checkout meets: 'a refusal' (the phone check) or 'a failure' (an exception).
+	 */
+	public function test_refused_checkout_leaves_the_status_when_the_order_cannot_be_read_again( string $failure ): void {
+		$order     = $this->create_order();
+		$lifecycle = new class() extends OrderPaymentLifecycleService {
+			/**
+			 * Fail the read as the data store does for a missing order.
+			 *
+			 * @param WC_Order $order Order object.
+			 * @throws \Exception Always.
+			 */
+			public function get_fresh_order_from_data_store( WC_Order $order ): WC_Order {
+				unset( $order );
+				throw new \Exception( 'Invalid order.' );
+			}
+		};
+		$gateway   = $this->create_gateway_meeting( $failure, $order, $lifecycle );
+		$logger    = $this->capture_logs();
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( array( 'failure', '' ), array( $result['result'] ?? '', $result['redirect'] ?? '' ) );
+		$this->assertSame( array( 'a refusal' === $failure ? 'Invalid phone number.' : 'Downstream step failed' ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+		$this->assertSame( OrderStatus::PENDING, wc_get_order( $order->get_id() )->get_status() );
+		$read_failures = array_filter( $logger->entries, static fn( array $entry ): bool => sprintf( 'Reading order #%d again before failing its refused checkout raised Exception.', $order->get_id() ) === $entry['message'] );
+		$this->assertCount( 1, $read_failures );
+		$this->assertFalse( get_transient( ( new WooPaymentsPersistenceVocabulary() )->get_order_lock_key( $order ) ), 'The order payment lock is released.' );
+	}
+
+	/**
+	 * What a checkout meets before its Failed write.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public function provider_refusal_and_failure(): array {
+		return array(
+			'a refusal' => array( 'a refusal' ),
+			'a failure' => array( 'a failure' ),
+		);
+	}
+
+	/**
+	 * Create a gateway whose checkout of the order meets a refusal (an over-long phone number) or a failure (the processing
+	 * double throws).
+	 *
+	 * @param string                            $failure   'a refusal' or 'a failure'.
+	 * @param WC_Order                          $order     Order the checkout pays.
+	 * @param OrderPaymentLifecycleService|null $lifecycle Lifecycle service the gateway uses, or null for the container's.
+	 * @return WooPaymentsGateway
+	 */
+	private function create_gateway_meeting( string $failure, WC_Order $order, ?OrderPaymentLifecycleService $lifecycle = null ): WooPaymentsGateway {
+		if ( 'a refusal' === $failure ) {
+			$order->set_billing_phone( str_repeat( '1', 21 ) );
+			$order->save();
+		}
+		$service                     = new RecordingPaymentProcessingService();
+		$service->checkout_exception = new \RuntimeException( 'Downstream step failed' );
+		$gateway                     = new WooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider(), null, null, null, null, null, null, null, null, $lifecycle );
+		$_POST['wcpay-payment-method'] = 'pm_card_visa';
+
+		return $gateway;
 	}
 
 	/**

@@ -11,6 +11,7 @@ use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcomeApplyException;
@@ -1619,7 +1620,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			);
 		}
 
-		$payment_method_error_result = $this->maybe_fail_for_payment_method_creation_error( $order, $is_subscription_change );
+		$payment_method_error_result = $this->maybe_fail_for_payment_method_creation_error( $order, $is_subscription_payment_method_change );
 		if ( is_array( $payment_method_error_result ) ) {
 			return $payment_method_error_result;
 		}
@@ -2611,24 +2612,33 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Tell whether a refused checkout leaves the order's status as it is because the order is in a paid status, as this
-	 * checkout loaded it or as stored now, and log one warning when it does.
+	 * Move a refused checkout's order to Failed under the order payment lock, unless the order is in a paid status.
 	 *
-	 * The lifecycle's own paid test, on both copies, as its late-failure skip reads them: a payment can land after this
-	 * checkout loaded the order. Client 11.3.0 fails any order but a subscription change (`gw:1604-1608`).
+	 * The lifecycle's claim, read, decide and write: the order is read again under the lock and written on that copy only
+	 * when neither it nor this checkout's copy is paid (the lifecycle's own test), since a payment can land after this
+	 * checkout loaded the order. A held lock or a failed read leaves the status as it is: a webhook the lock refused is
+	 * delivered again. Client 11.3.0 fails any order but a subscription change, with no read and no lock (`gw:1604-1608`).
 	 *
-	 * @param WC_Order $order   Order being paid.
-	 * @param string   $failure The refusal code, or the exception class.
-	 * @return bool
+	 * @param WC_Order $order       Order being paid, as this checkout loaded it.
+	 * @param string   $failure     The refusal code, or the exception class.
+	 * @param string   $status_note Note attached to the Failed status transition.
+	 * @return bool Whether the order was moved to Failed.
 	 */
-	private function keeps_paid_order_status( WC_Order $order, string $failure ): bool {
-		$lifecycle = $this->get_lifecycle_service();
-		$paid      = $lifecycle->has_paid_status( $order );
-		if ( ! $paid ) {
+	private function fail_order_unless_paid( WC_Order $order, string $failure, string $status_note = '' ): bool {
+		$vocabulary         = new WooPaymentsPersistenceVocabulary();
+		$order_payment_lock = wc_get_container()->get( OrderPaymentLock::class );
+		$lock_token         = $order_payment_lock->claim( $order, $vocabulary, null, 'checkout refusal' );
+		if ( null === $lock_token ) {
+			$order_payment_lock->log_refusal( $order, $vocabulary, 'checkout refusal', WooPaymentsLogger::SOURCE );
+			return false;
+		}
+
+		try {
+			$lifecycle = $this->get_lifecycle_service();
 			try {
-				$paid = $lifecycle->has_paid_status( $lifecycle->get_fresh_order_from_data_store( $order ) );
+				$stored_order = $lifecycle->get_fresh_order_from_data_store( $order );
 			} catch ( Throwable $read_failure ) {
-				// The stored order cannot be read, so the refusal writes the status as before.
+				// The stored status cannot be read, so it is left as it is.
 				$this->get_logger()->log_throwable_always(
 					sprintf( 'Reading order #%1$d again before failing its refused checkout raised %2$s.', $order->get_id(), get_class( $read_failure ) ),
 					$read_failure,
@@ -2636,20 +2646,24 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 				);
 				return false;
 			}
-		}
 
-		if ( $paid ) {
-			$this->get_logger()->log_always(
-				sprintf( 'Order #%1$d is in a paid status, so its refused checkout (%2$s) left the status as it is.', $order->get_id(), $failure ),
-				'warning',
-				array(
-					'order_id' => $order->get_id(),
-					'reason'   => self::REASON_PAID_ORDER_KEPT_ITS_STATUS,
-				)
-			);
-		}
+			if ( $lifecycle->has_paid_status( $order ) || $lifecycle->has_paid_status( $stored_order ) ) {
+				$this->get_logger()->log_always(
+					sprintf( 'Order #%1$d is in a paid status, so its refused checkout (%2$s) left the status as it is.', $order->get_id(), $failure ),
+					'warning',
+					array(
+						'order_id' => $order->get_id(),
+						'reason'   => self::REASON_PAID_ORDER_KEPT_ITS_STATUS,
+					)
+				);
+				return false;
+			}
 
-		return $paid;
+			$stored_order->update_status( OrderStatus::FAILED, $status_note );
+			return true;
+		} finally {
+			$order_payment_lock->release( $order, $vocabulary, $lock_token );
+		}
 	}
 
 	/**
@@ -2800,7 +2814,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * Fail checkout after an exception when the order's intent has not succeeded.
 	 *
 	 * Client 11.1.0 `gw:1305-1439`: the order fails, except on a subscription payment-method change
-	 * (`:1326`) and, here, on an order in a paid status; a payment that was attempted gets the failure note
+	 * (`:1326`) and, here, unless fail_order_unless_paid() leaves the status; a payment that was attempted gets the failure note
 	 * (`:1354-1401`); the shopper gets the error as a notice and checkout returns a failure (`:1425`, `:1436-1439`).
 	 *
 	 * @param WC_Order  $order   Order being paid.
@@ -2810,8 +2824,8 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	private function fail_checkout_after_exception( WC_Order $order, Throwable $failure ): array {
 		$this->log_checkout_payment_failure( $order, $failure );
 
-		if ( ! $this->is_subscription_payment_method_change_request( $order ) && ! $this->keeps_paid_order_status( $order, get_class( $failure ) ) ) {
-			$order->update_status( OrderStatus::FAILED );
+		if ( ! $this->is_subscription_payment_method_change_request( $order ) ) {
+			$this->fail_order_unless_paid( $order, get_class( $failure ) );
 		}
 
 		if ( $this->checkout_payment_started ) {
@@ -2905,11 +2919,12 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * no trace. Client 11.1.0 handles its PAYMENT_METHOD_ERROR sentinel the same way
 	 * (class-payment-information.php:290-297).
 	 *
-	 * @param WC_Order $order                  Order being paid.
-	 * @param bool     $is_subscription_change Whether this is a validated subscription payment-method change.
+	 * @param WC_Order $order                                 Order being paid.
+	 * @param bool     $is_subscription_payment_method_change Whether this is a validated subscription payment-method change,
+	 *                                                        to a new or a saved method.
 	 * @return array<string,string>|null Failure result, or null when no client error was reported.
 	 */
-	private function maybe_fail_for_payment_method_creation_error( WC_Order $order, bool $is_subscription_change = false ): ?array {
+	private function maybe_fail_for_payment_method_creation_error( WC_Order $order, bool $is_subscription_payment_method_change = false ): ?array {
 		if ( self::PAYMENT_METHOD_ERROR_SENTINEL !== $this->get_request_payment_method_id() ) {
 			return null;
 		}
@@ -2921,16 +2936,17 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		// Client 11.1.0 reaches its catch with payment information built, so the merchant gets the payment-failed note
 		// (client 11.1.0 `gw:1354-1401`). On a subscription payment-method change $order is the subscription itself:
-		// 'failed' is not a valid subscription transition, and the existing method stays in place (`gw:1326`). An earlier
-		// change's succeeded intent does not turn the refusal into a success, as it does on client 11.1.0 (`gw:1283-1304`).
+		// 'failed' is not a valid subscription transition, and the existing method stays in place (`gw:1326`), whether the
+		// change posted a new or a saved method. An earlier change's succeeded intent does not turn the refusal into a
+		// success, as it does on client 11.1.0 (`gw:1283-1304`).
 		return $this->refuse_checkout(
 			$order,
 			$message,
 			'payment_method_error',
-			! $is_subscription_change,
+			! $is_subscription_payment_method_change,
 			wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_checkout_payment_failed_note_candidates( $order, $message, '', '', '' )[0],
 			'',
-			! $is_subscription_change
+			! $is_subscription_payment_method_change
 		);
 	}
 
@@ -2939,7 +2955,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 *
 	 * Client 11.1.0 `gw:1272-1439`: an order whose intent already succeeded is kept (`gw:1283-1304`); otherwise the
 	 * refusal is logged (`gw:1274`), the order fails (`gw:1323-1328`), gets the refusal's note and the shopper the notice (`gw:1425`).
-	 * An order in a paid status keeps its status; the status note is then added as a note.
+	 * Where fail_order_unless_paid() leaves the status, the status note is added as a plain note.
 	 * Unlike the catch, it does not fire `woocommerce_payments_order_failed` (`gw:1317`) or `wcpay_update_payment_result_on_error`
 	 * (`gw:1434`).
 	 *
@@ -2969,12 +2985,8 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			)
 		);
 
-		if ( $fail_order ) {
-			if ( ! $this->keeps_paid_order_status( $order, $code ) ) {
-				$order->update_status( OrderStatus::FAILED, $status_note );
-			} elseif ( '' !== $status_note ) {
-				$order->add_order_note( $status_note );
-			}
+		if ( $fail_order && ! $this->fail_order_unless_paid( $order, $code, $status_note ) && '' !== $status_note ) {
+			$order->add_order_note( $status_note );
 		}
 
 		if ( '' !== $note ) {
