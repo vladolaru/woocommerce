@@ -122,8 +122,9 @@ describe( 'OverviewTaskList', () => {
 		expect( screen.queryByText( 'Snoozed task' ) ).not.toBeInTheDocument();
 	} );
 
-	it( 'records the client dispute task click and opens the disputes list', async () => {
-		// Expected properties: client 11.2.0 `overview/task-list/tasks/dispute-task.tsx:54-58`.
+	// Client 11.3.0 `overview/task-list/tasks/dispute-task.tsx:54-78`: the action records the click, then moves inside the
+	// app with `getHistory().push()`.
+	it( 'records the client dispute task click and opens the disputes list inside the app, without a page load', async () => {
 		const tasks = buildOverviewTasks( {
 			shell: {
 				account: { connected: true },
@@ -143,11 +144,14 @@ describe( 'OverviewTaskList', () => {
 			/>
 		);
 
+		const push = jest
+			.spyOn( getHistory(), 'push' )
+			.mockImplementation( () => undefined );
 		const originalLocation = window.location;
 		const mockAssign = jest.fn();
 		Object.defineProperty( window, 'location', {
 			configurable: true,
-			value: { assign: mockAssign },
+			value: { ...originalLocation, assign: mockAssign },
 		} );
 		try {
 			await userEvent.click(
@@ -160,11 +164,10 @@ describe( 'OverviewTaskList', () => {
 			} );
 		}
 
-		expect( mockAssign ).toHaveBeenCalledWith(
-			expect.stringContaining(
-				'path=%2Fwoopayments%2Fdisputes&filter=awaiting_response'
-			)
+		expect( push ).toHaveBeenCalledWith(
+			'admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fdisputes&filter=awaiting_response'
 		);
+		expect( mockAssign ).not.toHaveBeenCalled();
 		expect( recordEvent ).toHaveBeenCalledWith(
 			'wcpay_overview_task_click',
 			{ task: 'dispute-resolution-task', active_dispute_count: 2 }

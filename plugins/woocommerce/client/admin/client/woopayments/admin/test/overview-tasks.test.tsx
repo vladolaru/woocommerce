@@ -240,7 +240,7 @@ describe( 'overview task builders', () => {
 		);
 	} );
 
-	it( 'builds an urgent single dispute task that links to the transaction details route', () => {
+	it( 'builds an urgent single dispute task that opens the transaction details route inside the app', () => {
 		const task = buildOverviewTasks( {
 			showUpdateDetailsTask: false,
 			shell: createShell(),
@@ -256,13 +256,14 @@ describe( 'overview task builders', () => {
 			actionLabel: 'Respond now',
 			level: 1,
 		} );
-		expect( task.href ).toContain(
-			'path=%2Fwoopayments%2Ftransactions%2Fdetails'
+		// Client 11.3.0 `dispute-task.tsx:60-68` pushes the transaction details inside the app, so no page URL.
+		expect( task.route ).toBe(
+			`/woopayments/transactions/details?id=${ RECORDED_DISPUTE.charge_id }`
 		);
-		expect( task.href ).toContain( `id=${ RECORDED_DISPUTE.charge_id }` );
+		expect( task.href ).toBeUndefined();
 	} );
 
-	it( 'builds a multiple-dispute task that links to the awaiting-response dispute list', () => {
+	it( 'builds a multiple-dispute task that opens the awaiting-response dispute list inside the app', () => {
 		const task = buildOverviewTasks( {
 			showUpdateDetailsTask: false,
 			shell: createShell(),
@@ -278,8 +279,11 @@ describe( 'overview task builders', () => {
 			title: 'Respond to 2 active disputes for a total of $35.00',
 			actionLabel: 'See disputes',
 		} );
-		expect( task.href ).toContain( 'path=%2Fwoopayments%2Fdisputes' );
-		expect( task.href ).toContain( 'filter=awaiting_response' );
+		// Client 11.3.0 `dispute-task.tsx:71-77` pushes the awaiting-response list inside the app, so no page URL.
+		expect( task.route ).toBe(
+			'/woopayments/disputes?filter=awaiting_response'
+		);
+		expect( task.href ).toBeUndefined();
 	} );
 
 	// Client 11.2.0 `overview/task-list/tasks/dispute-task.tsx:89-90, 111-113`: red when overdue or due within 72 hours,

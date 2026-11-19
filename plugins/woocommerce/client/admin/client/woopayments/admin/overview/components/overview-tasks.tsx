@@ -282,13 +282,12 @@ const buildDisputeTask = (
 		actionLabel: canOpenSingleDispute
 			? __( 'Respond now', 'woocommerce' )
 			: __( 'See disputes', 'woocommerce' ),
-		href: getSettingsPaymentsProviderRouteUrl(
-			canOpenSingleDispute
-				? `/woopayments/transactions/details?id=${ encodeURIComponent(
-						chargeId
-					) }`
-				: '/woopayments/disputes?filter=awaiting_response'
-		),
+		// Client 11.3.0 `dispute-task.tsx:54-78` pushes both targets with `getHistory().push()`.
+		route: canOpenSingleDispute
+			? `/woopayments/transactions/details?id=${ encodeURIComponent(
+					chargeId
+				) }`
+			: '/woopayments/disputes?filter=awaiting_response',
 		onClick: () =>
 			recordEvent( 'wcpay_overview_task_click', {
 				task: 'dispute-resolution-task',
