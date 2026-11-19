@@ -2259,6 +2259,45 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should return the fraud service's refusal of a ruleset limit before the account update and the local save.
+	 */
+	public function test_update_settings_returns_the_fraud_limit_refusal_before_any_other_save(): void {
+		$refusal               = new WP_Error(
+			'rest_invalid_param',
+			'Invalid parameter(s): advanced_fraud_protection_settings',
+			array(
+				'status' => 400,
+				'params' => array( 'advanced_fraud_protection_settings' => 'The maximum purchase price must be a number greater than zero.' ),
+			)
+		);
+		$fraud_ruleset_service = $this->createMock( WooPaymentsFraudRulesetService::class );
+		$fraud_ruleset_service->expects( $this->once() )->method( 'save_fraud_settings' )->willReturn( $refusal );
+		$account_service = $this->create_account_service();
+		$sut             = new WooPaymentsSettingsService();
+		$sut->init( $account_service, $this->api_client, $this->pm_promotions_service, wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ), wc_get_container()->get( PaymentMethodRegistry::class ), wc_get_container()->get( StripeBillingModule::class ), $fraud_ruleset_service, $this->create_duplicate_gateway_methods_service( $account_service ), $this->create_woopay_eligibility( $account_service ), new RecordingWooPayAppearanceStore( $this->woopay_session_service ), wc_get_container()->get( WooPaymentsFrontendTrackingController::class ), wc_get_container()->get( WooPaymentsLogger::class ), $this->store_setup_report );
+		$this->set_connected_account_data();
+		$stored_settings = array(
+			'enabled'               => 'no',
+			'account_business_name' => 'Old Name',
+		);
+		update_option( 'woocommerce_woocommerce_payments_settings', $stored_settings );
+
+		$result = $sut->update_settings(
+			array(
+				'is_wcpay_enabled'                   => true,
+				'account_business_name'              => 'New Name',
+				'current_protection_level'           => 'advanced',
+				'advanced_fraud_protection_settings' => array(),
+			)
+		);
+
+		$this->assertSame( $refusal, $result );
+		$this->assertNull( $this->api_client->last_account_settings, 'A refused ruleset stops the save before the account update.' );
+		$this->assertSame( $stored_settings, get_option( 'woocommerce_woocommerce_payments_settings' ), 'A refused ruleset stops the save before the local settings are written.' );
+		$this->assertSame( 0, $this->store_setup_report->sync_count );
+	}
+
+	/**
 	 * Client 11.1.0 prices the Standard and High purchase-price rule at $1,000 in the store currency, converted at the
 	 * Multi-Currency USD rate when USD is an enabled currency, whatever its Multi-Currency flag says
 	 * (includes/fraud-prevention/class-fraud-risk-tools.php:167-261, :396-445; automatic rates from the rates cache,

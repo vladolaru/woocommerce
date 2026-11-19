@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StoreCurrencyLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
+use WP_Error;
 
 /**
  * Keeps the store's fraud protection ruleset in step with the platform.
@@ -77,19 +78,139 @@ class WooPaymentsFraudRulesetService {
 	 * the platform keeps an unchanged ruleset as it is. An advanced level sent with the "error" sentinel saves nothing.
 	 *
 	 * The platform save comes first, so a rejected ruleset leaves the stored level, the cached ruleset and the account's cached AVS flag as they were.
+	 * A ruleset with a purchase price or item count limit that would apply to every order, or to none, is refused before
+	 * anything is sent or stored.
 	 *
 	 * @param array<string,mixed> $params Settings request parameters.
-	 * @return void
+	 * @return WP_Error|null The refusal of a ruleset limit, or null.
 	 * @throws ApiException When the platform rejects the ruleset.
 	 */
-	public function save_fraud_settings( array $params ): void {
+	public function save_fraud_settings( array $params ): ?WP_Error {
 		$fraud_settings = $this->get_requested_fraud_settings( $params );
-		if ( null !== $fraud_settings ) {
-			$this->api_client->save_fraud_ruleset( $fraud_settings['ruleset_config'] );
-			set_transient( 'wcpay_fraud_protection_settings', $fraud_settings['ruleset_config'], DAY_IN_SECONDS );
-			update_option( 'current_protection_level', $fraud_settings['protection_level'] );
-			$this->sync_cached_fraud_mitigation_settings_after_fraud_save( $fraud_settings );
+		if ( null === $fraud_settings ) {
+			return null;
 		}
+
+		$limits_error = self::get_limits_error( $fraud_settings['ruleset_config'] );
+		if ( null !== $limits_error ) {
+			return new WP_Error(
+				'rest_invalid_param',
+				sprintf(
+					/* translators: %s: settings field key. */
+					__( 'Invalid parameter(s): %s', 'woocommerce' ),
+					'advanced_fraud_protection_settings'
+				),
+				array(
+					'status'  => 400,
+					'params'  => array( 'advanced_fraud_protection_settings' => $limits_error ),
+					'details' => array(
+						'advanced_fraud_protection_settings' => array(
+							'code'    => 'rest_invalid_pattern',
+							'message' => $limits_error,
+							'data'    => null,
+						),
+					),
+				)
+			);
+		}
+
+		$this->api_client->save_fraud_ruleset( $fraud_settings['ruleset_config'] );
+		set_transient( 'wcpay_fraud_protection_settings', $fraud_settings['ruleset_config'], DAY_IN_SECONDS );
+		update_option( 'current_protection_level', $fraud_settings['protection_level'] );
+		$this->sync_cached_fraud_mitigation_settings_after_fraud_save( $fraud_settings );
+
+		return null;
+	}
+
+	/**
+	 * Get the message for the first purchase price or item count limit in a ruleset that the platform would apply to every
+	 * order, or to none: a value that is not a number, a limit below 1 as the platform reads it (`intval`, so 0.5 is 0), or a
+	 * minimum above the maximum in one rule and currency. Every rule is read, since the platform runs these checks under any rule key.
+	 *
+	 * @param array<int|string,mixed> $ruleset Fraud ruleset.
+	 * @return string|null
+	 */
+	private static function get_limits_error( array $ruleset ): ?string {
+		foreach ( $ruleset as $rule ) {
+			if ( ! is_array( $rule ) || ! is_array( $rule['check'] ?? null ) ) {
+				continue;
+			}
+
+			$limits = array();
+			foreach ( self::get_single_fraud_checks( $rule['check'] ) as $check ) {
+				$key        = $check['key'] ?? null;
+				$operator   = $check['operator'] ?? null;
+				$is_minimum = in_array( $operator, array( 'less_than', 'less_or_equal' ), true );
+				if ( ! in_array( $key, array( 'order_total', 'item_count' ), true ) || ( ! $is_minimum && ! in_array( $operator, array( 'greater_than', 'greater_or_equal' ), true ) ) ) {
+					continue;
+				}
+
+				$value = $check['value'] ?? null;
+				$parts = explode( '|', is_scalar( $value ) ? (string) $value : '', 2 );
+				if ( ! is_numeric( $parts[0] ) || (int) $parts[0] <= 0 ) {
+					return self::get_limit_message( $key, $is_minimum ? 'minimum' : 'maximum' );
+				}
+
+				$limits[ $key ][ $is_minimum ? 'minimum' : 'maximum' ][] = array( (int) $parts[0], strtolower( $parts[1] ?? '' ) );
+			}
+
+			foreach ( $limits as $key => $bounds ) {
+				foreach ( $bounds['minimum'] ?? array() as list( $minimum, $minimum_currency ) ) {
+					foreach ( $bounds['maximum'] ?? array() as list( $maximum, $maximum_currency ) ) {
+						if ( $minimum_currency === $maximum_currency && $minimum > $maximum ) {
+							return self::get_limit_message( $key, 'inverted' );
+						}
+					}
+				}
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Get the single checks of a fraud rule's check, inside any `and` and `or` lists.
+	 *
+	 * @param array<int|string,mixed> $check Fraud check.
+	 * @return array<int,array<int|string,mixed>>
+	 */
+	private static function get_single_fraud_checks( array $check ): array {
+		if ( ! in_array( $check['operator'] ?? null, array( 'and', 'or' ), true ) ) {
+			return array( $check );
+		}
+
+		$single_checks = array();
+		foreach ( is_array( $check['checks'] ?? null ) ? $check['checks'] : array() as $child_check ) {
+			if ( is_array( $child_check ) ) {
+				$single_checks = array_merge( $single_checks, self::get_single_fraud_checks( $child_check ) );
+			}
+		}
+
+		return $single_checks;
+	}
+
+	/**
+	 * Get the refusal message for a purchase price or item count limit.
+	 *
+	 * @param string $check_key Check key: order_total or item_count.
+	 * @param string $problem   The refused limit: minimum, maximum or inverted.
+	 * @return string
+	 */
+	private static function get_limit_message( string $check_key, string $problem ): string {
+		$messages = array(
+			'order_total' => array(
+				'minimum'  => __( 'The minimum purchase price must be a number greater than zero.', 'woocommerce' ),
+				'maximum'  => __( 'The maximum purchase price must be a number greater than zero.', 'woocommerce' ),
+				'inverted' => __( 'Maximum purchase price must be greater than the minimum purchase price.', 'woocommerce' ),
+			),
+			'item_count'  => array(
+				'minimum'  => __( 'The minimum items per order must be at least 1.', 'woocommerce' ),
+				'maximum'  => __( 'The maximum items per order must be at least 1.', 'woocommerce' ),
+				'inverted' => __( 'Maximum item count must be greater than the minimum item count.', 'woocommerce' ),
+			),
+		);
+
+		return $messages[ $check_key ][ $problem ];
 	}
 
 	/**

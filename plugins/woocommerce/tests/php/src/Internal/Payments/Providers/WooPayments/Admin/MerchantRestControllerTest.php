@@ -846,6 +846,57 @@ class MerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should answer the settings service's refusal of a fraud rule limit as the field-keyed error envelope.
+	 */
+	public function test_update_settings_passes_the_fraud_limit_refusal_through(): void {
+		$message = 'The maximum purchase price must be a number greater than zero.';
+		$this->mock_settings_service
+			->expects( $this->once() )
+			->method( 'update_settings' )
+			->willReturn(
+				new WP_Error(
+					'rest_invalid_param',
+					'Invalid parameter(s): advanced_fraud_protection_settings',
+					array(
+						'status'  => 400,
+						'params'  => array( 'advanced_fraud_protection_settings' => $message ),
+						'details' => array(
+							'advanced_fraud_protection_settings' => array(
+								'code'    => 'rest_invalid_pattern',
+								'message' => $message,
+								'data'    => null,
+							),
+						),
+					)
+				)
+			);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
+		$request->set_body_params(
+			array(
+				'current_protection_level'           => 'advanced',
+				'advanced_fraud_protection_settings' => array(
+					array(
+						'key'     => 'purchase_price_threshold',
+						'outcome' => 'block',
+						'check'   => array(
+							'key'      => 'order_total',
+							'operator' => 'greater_than',
+							'value'    => '-10000|USD',
+						),
+					),
+				),
+			)
+		);
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( 'rest_invalid_param', $response->get_data()['code'] );
+		$this->assertSame( $message, $response->get_data()['data']['params']['advanced_fraud_protection_settings'] );
+		$this->assertSame( 'rest_invalid_pattern', $response->get_data()['data']['details']['advanced_fraud_protection_settings']['code'] );
+	}
+
+	/**
 	 * @testdox Should $action WooPayments payment method promotions.
 	 * @testWith ["activate"]
 	 *           ["dismiss"]

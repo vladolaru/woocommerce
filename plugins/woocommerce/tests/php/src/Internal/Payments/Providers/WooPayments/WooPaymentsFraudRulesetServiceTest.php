@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
+use WP_Error;
 
 /**
  * Tests for the WooPaymentsFraudRulesetService class.
@@ -121,6 +122,189 @@ class WooPaymentsFraudRulesetServiceTest extends WC_Unit_Test_Case {
 			'platform error'     => array( 'no cached ruleset and a platform error', true, null, null, 'wcpay_server_error', false, 1, null ),
 			'platform has none'  => array( 'no cached ruleset and none on the platform', true, null, null, 'wcpay_fraud_ruleset_not_found', false, 1, array() ),
 			'no account'         => array( 'no account', false, null, array( 'ruleset_config' => $avs ), null, false, 0, null ),
+		);
+	}
+
+	/**
+	 * A limit below 1 as the platform reads it (`intval`), a value that is not a number, or a minimum above the maximum
+	 * makes the platform's purchase price or item count check fire for every order, or for none while it shows as set.
+	 *
+	 * @testdox Should refuse an advanced ruleset with $label, and send, cache and store nothing.
+	 * @dataProvider provide_refused_limits
+	 *
+	 * @param string           $label   Case.
+	 * @param array<int,mixed> $ruleset Submitted advanced ruleset.
+	 * @param string           $message Expected refusal message.
+	 */
+	public function test_save_fraud_settings_refuses_a_limit_that_fires_for_every_order_or_none( string $label, array $ruleset, string $message ): void {
+		unset( $label );
+		$stored_ruleset = array( self::avs_rule() );
+		set_transient( 'wcpay_fraud_protection_settings', $stored_ruleset, DAY_IN_SECONDS );
+		update_option( 'current_protection_level', 'standard' );
+
+		$result = $this->sut->save_fraud_settings(
+			array(
+				'current_protection_level'           => 'advanced',
+				'advanced_fraud_protection_settings' => $ruleset,
+			)
+		);
+
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertSame( 'rest_invalid_param', $result->get_error_code() );
+		$data = $result->get_error_data();
+		$this->assertSame( 400, $data['status'] );
+		$this->assertSame( array( 'advanced_fraud_protection_settings' => $message ), $data['params'] );
+		$this->assertSame( 'rest_invalid_pattern', $data['details']['advanced_fraud_protection_settings']['code'] );
+		$this->assertSame( $message, $data['details']['advanced_fraud_protection_settings']['message'] );
+		$this->assertSame( 0, $this->api_client->fraud_ruleset_saves, 'A refused ruleset is not sent to the platform.' );
+		$this->assertSame( $stored_ruleset, get_transient( 'wcpay_fraud_protection_settings' ), 'A refused ruleset is not cached.' );
+		$this->assertSame( 'standard', get_option( 'current_protection_level' ), 'A refused ruleset leaves the protection level.' );
+	}
+
+	/**
+	 * Refused advanced rulesets: case, ruleset and message.
+	 *
+	 * @return array<string,array{0:string,1:array<int,mixed>,2:string}>
+	 */
+	public function provide_refused_limits(): array {
+		$price_minimum  = 'The minimum purchase price must be a number greater than zero.';
+		$price_maximum  = 'The maximum purchase price must be a number greater than zero.';
+		$price_inverted = 'Maximum purchase price must be greater than the minimum purchase price.';
+		$items_minimum  = 'The minimum items per order must be at least 1.';
+		$items_maximum  = 'The maximum items per order must be at least 1.';
+		$items_inverted = 'Maximum item count must be greater than the minimum item count.';
+
+		return array(
+			'negative price maximum'                     => array( 'a negative price maximum', array( self::rule( 'purchase_price_threshold', self::limit( 'order_total', 'greater_than', '-10000|USD' ) ) ), $price_maximum ),
+			'negative price minimum in a list'           => array( 'a negative price minimum in an "or" list', array( self::rule( 'purchase_price_threshold', self::any_of( self::limit( 'order_total', 'less_than', '-10000|USD' ), self::limit( 'order_total', 'greater_than', '50000|USD' ) ) ) ), $price_minimum ),
+			'price minimum above the maximum'            => array( 'a price minimum above the maximum', array( self::rule( 'purchase_price_threshold', self::any_of( self::limit( 'order_total', 'less_than', '50000|USD' ), self::limit( 'order_total', 'greater_than', '10000|USD' ) ) ) ), $price_inverted ),
+			'zero price maximum'                         => array( 'a zero price maximum', array( self::rule( 'purchase_price_threshold', self::limit( 'order_total', 'greater_than', '0|USD' ) ) ), $price_maximum ),
+			'price maximum that is not a number'         => array( 'a price maximum that is not a number', array( self::rule( 'purchase_price_threshold', self::limit( 'order_total', 'greater_than', '100x|USD' ) ) ), $price_maximum ),
+			'empty price maximum'                        => array( 'an empty price maximum', array( self::rule( 'purchase_price_threshold', self::limit( 'order_total', 'greater_than', '' ) ) ), $price_maximum ),
+			'negative price maximum under the item rule' => array( 'a negative price maximum under the item count rule', array( self::rule( 'order_items_threshold', self::limit( 'order_total', 'greater_than', '-100|USD' ) ) ), $price_maximum ),
+			'negative price maximum under another rule'  => array( 'a negative price maximum under the address mismatch rule', array( self::avs_rule(), self::rule( 'address_mismatch', self::limit( 'order_total', 'greater_than', '-100|USD' ) ) ), $price_maximum ),
+			'price maximum below one minor unit'         => array( 'a price maximum of half a minor unit', array( self::rule( 'purchase_price_threshold', self::limit( 'order_total', 'greater_than', '0.5|USD' ) ) ), $price_maximum ),
+			'negative item maximum'                      => array( 'a negative item maximum', array( self::rule( 'order_items_threshold', self::limit( 'item_count', 'greater_than', -5 ) ) ), $items_maximum ),
+			'item minimum above the maximum'             => array( 'an item minimum above the maximum', array( self::rule( 'order_items_threshold', self::any_of( self::limit( 'item_count', 'less_than', 10 ), self::limit( 'item_count', 'greater_than', 3 ) ) ) ), $items_inverted ),
+			'zero item minimum'                          => array( 'a zero item minimum', array( self::rule( 'order_items_threshold', self::any_of( self::limit( 'item_count', 'less_than', 0 ), self::limit( 'item_count', 'greater_than', 10 ) ) ) ), $items_minimum ),
+		);
+	}
+
+	/**
+	 * Equal limits are allowed, as the extension allows them: a store with one price can mean them. A minimum and maximum in
+	 * different currencies are not compared, since the platform converts each one.
+	 *
+	 * @testdox Should save an advanced ruleset with $label.
+	 * @dataProvider provide_saved_limits
+	 *
+	 * @param string           $label   Case.
+	 * @param array<int,mixed> $ruleset Submitted advanced ruleset.
+	 */
+	public function test_save_fraud_settings_saves_limits_above_zero( string $label, array $ruleset ): void {
+		unset( $label );
+
+		$result = $this->sut->save_fraud_settings(
+			array(
+				'current_protection_level'           => 'advanced',
+				'advanced_fraud_protection_settings' => $ruleset,
+			)
+		);
+
+		$this->assertNull( $result );
+		$this->assertSame( 1, $this->api_client->fraud_ruleset_saves );
+		$this->assertSame( $ruleset, $this->api_client->last_fraud_ruleset );
+		$this->assertSame( $ruleset, get_transient( 'wcpay_fraud_protection_settings' ) );
+		$this->assertSame( 'advanced', get_option( 'current_protection_level' ) );
+	}
+
+	/**
+	 * Saved advanced rulesets: case and ruleset.
+	 *
+	 * @return array<string,array{0:string,1:array<int,mixed>}>
+	 */
+	public function provide_saved_limits(): array {
+		return array(
+			'price range'                          => array( 'a price range', array( self::rule( 'purchase_price_threshold', self::any_of( self::limit( 'order_total', 'less_than', '1999|USD' ), self::limit( 'order_total', 'greater_than', '50000|USD' ) ) ) ) ),
+			'equal price limits'                   => array( 'equal price limits', array( self::rule( 'purchase_price_threshold', self::any_of( self::limit( 'order_total', 'less_than', '5000|USD' ), self::limit( 'order_total', 'greater_than', '5000|USD' ) ) ) ) ),
+			'price limits in different currencies' => array( 'a price minimum in EUR above a maximum in USD', array( self::rule( 'purchase_price_threshold', self::any_of( self::limit( 'order_total', 'less_than', '20000|EUR' ), self::limit( 'order_total', 'greater_than', '10000|USD' ) ) ) ) ),
+		);
+	}
+
+	/**
+	 * @testdox Should save the $level preset, whose limits are above zero.
+	 * @testWith ["standard"]
+	 *           ["high"]
+	 *
+	 * @param string $level Protection level.
+	 */
+	public function test_save_fraud_settings_saves_a_preset( string $level ): void {
+		$result = $this->sut->save_fraud_settings(
+			array(
+				'current_protection_level'           => $level,
+				'advanced_fraud_protection_settings' => array(),
+			)
+		);
+
+		$this->assertNull( $result );
+		$this->assertSame( 1, $this->api_client->fraud_ruleset_saves );
+		$this->assertSame( $level, get_option( 'current_protection_level' ) );
+	}
+
+	/**
+	 * The page shows a stored negative limit with its warning, so the read keeps it; only a save refuses it.
+	 *
+	 * @testdox Should cache and serve a platform ruleset that holds a negative price maximum.
+	 */
+	public function test_platform_ruleset_with_a_negative_limit_is_still_cached_on_read(): void {
+		$this->connect();
+		$ruleset = array( self::rule( 'purchase_price_threshold', self::limit( 'order_total', 'greater_than', '-10000|USD' ) ) );
+		$this->api_client->latest_fraud_ruleset_response = array( 'ruleset_config' => $ruleset );
+
+		$this->assertSame( $ruleset, $this->sut->get_advanced_fraud_protection_settings() );
+		$this->assertSame( $ruleset, get_transient( 'wcpay_fraud_protection_settings' ) );
+	}
+
+	/**
+	 * Get a blocking rule.
+	 *
+	 * @param string              $key   Rule key.
+	 * @param array<string,mixed> $check Rule check.
+	 * @return array<string,mixed>
+	 */
+	private static function rule( string $key, array $check ): array {
+		return array(
+			'key'     => $key,
+			'outcome' => 'block',
+			'check'   => $check,
+		);
+	}
+
+	/**
+	 * Get a single limit check.
+	 *
+	 * @param string     $key      Check key.
+	 * @param string     $operator Check operator.
+	 * @param string|int $value    Check value.
+	 * @return array<string,mixed>
+	 */
+	private static function limit( string $key, string $operator, $value ): array {
+		return array(
+			'key'      => $key,
+			'operator' => $operator,
+			'value'    => $value,
+		);
+	}
+
+	/**
+	 * Get an "or" list of checks, as the settings page writes a range.
+	 *
+	 * @param array<string,mixed> ...$checks Checks.
+	 * @return array<string,mixed>
+	 */
+	private static function any_of( array ...$checks ): array {
+		return array(
+			'operator' => 'or',
+			'checks'   => $checks,
 		);
 	}
 

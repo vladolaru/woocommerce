@@ -870,7 +870,10 @@ class WooPaymentsSettingsService {
 	 */
 	private function update_provider_backed_settings( array $params, array $settings ): ?WP_Error {
 		try {
-			$this->fraud_ruleset_service->save_fraud_settings( $params );
+			$fraud_error = $this->fraud_ruleset_service->save_fraud_settings( $params );
+			if ( null !== $fraud_error ) {
+				return $fraud_error;
+			}
 		} catch ( ApiException $e ) {
 			return $this->api_exception_to_wp_error( $e );
 		}
