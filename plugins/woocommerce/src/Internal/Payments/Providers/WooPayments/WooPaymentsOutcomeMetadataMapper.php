@@ -27,7 +27,7 @@ final class WooPaymentsOutcomeMetadataMapper implements ProviderOutcomeMetadataM
 
 	/**
 	 * Map a payment outcome to WooPayments order meta, the intent's record included, except the intent of a failed outcome
-	 * whose plan keeps an earlier record.
+	 * whose attach kept an earlier payment's record.
 	 *
 	 * @param PaymentOutcome $outcome Provider outcome.
 	 * @return array<string,string>
@@ -42,9 +42,8 @@ final class WooPaymentsOutcomeMetadataMapper implements ProviderOutcomeMetadataM
 			}
 		}
 
-		// A failed payment whose attach kept an earlier payment's record, or a failed capture or cancel of another intent than
-		// the stored authorization, leaves the stored intent: client 11.3.0's failed writers store no intent
-		// (class-wc-payments-order-service.php:545-560; class-wc-payment-gateway-wcpay.php:4418, :4495).
+		// A failed payment whose attach kept an earlier payment's record leaves that record's intent: client 11.3.0's failed
+		// writer stores no intent (class-wc-payments-order-service.php:545-560).
 		$plan             = $outcome->get_effect_plan();
 		$keeps_the_intent = PaymentOutcome::STATUS_FAILED === $outcome->get_status() && $plan instanceof WooPaymentsOrderEffectPlan && $plan->keeps_earlier_record();
 		if ( '' !== $outcome->get_provider_payment_id() && ! $keeps_the_intent ) {
@@ -74,18 +73,14 @@ final class WooPaymentsOutcomeMetadataMapper implements ProviderOutcomeMetadataM
 	 *
 	 * The intention status the effects composed is kept, such as the status re-fetched after a failed cancel, which
 	 * client 11.1.0 saves (class-wc-payment-gateway-wcpay.php:4129); with none composed, the authorization stays
-	 * requires_capture. An operation on another intent than the stored authorization, whose plan keeps the earlier record,
-	 * writes neither the intent nor its status, so the stored authorization keeps both.
+	 * requires_capture.
 	 *
 	 * @param PaymentOutcome $outcome Provider outcome.
 	 * @return array<string,string>
 	 */
 	public function get_failed_capture_or_cancel_outcome_meta( PaymentOutcome $outcome ): array {
 		$meta = $this->get_outcome_meta( $outcome );
-		$plan = $outcome->get_effect_plan();
-		if ( $plan instanceof WooPaymentsOrderEffectPlan && $plan->keeps_earlier_record() ) {
-			unset( $meta['_intention_status'] );
-		} elseif ( ! isset( $outcome->get_data()[ self::OUTCOME_META_KEY ]['_intention_status'] ) ) {
+		if ( ! isset( $outcome->get_data()[ self::OUTCOME_META_KEY ]['_intention_status'] ) ) {
 			$meta['_intention_status'] = 'requires_capture';
 		}
 		ksort( $meta );

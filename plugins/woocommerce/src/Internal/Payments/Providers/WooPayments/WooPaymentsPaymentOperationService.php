@@ -611,7 +611,8 @@ class WooPaymentsPaymentOperationService {
 					// client 11.3.0 does after any failed capture (class-wc-payment-gateway-wcpay.php:4418): the capture's own
 					// payment_intent.succeeded then completes the order as a capture.
 					if ( null !== $read_intent && '' !== $read_status && 'succeeded' !== $read_status ) {
-						return $this->with_failure_plan( $context, $intent_id, self::with_outcome_data( $outcome, array( self::DATA_CAPTURE_FAILURE_READ_AGAIN => true ) ), WooPaymentsOrderEffectPlan::for_capture( $read_intent ) );
+						return self::with_outcome_data( $outcome, array( self::DATA_CAPTURE_FAILURE_READ_AGAIN => true ) )
+							->with_effect_plan( WooPaymentsOrderEffectPlan::for_capture( $read_intent ) );
 					}
 
 					$result = array(
@@ -621,7 +622,7 @@ class WooPaymentsPaymentOperationService {
 						'message'    => $exception->getMessage(),
 					);
 
-					return $this->with_failure_plan( $context, $intent_id, $outcome, WooPaymentsOrderEffectPlan::for_capture( $result ) );
+					return $outcome->with_effect_plan( WooPaymentsOrderEffectPlan::for_capture( $result ) );
 				}
 			}
 		}
@@ -718,51 +719,14 @@ class WooPaymentsPaymentOperationService {
 					// Not canceled: the plan carries the status the provider still reports so
 					// the applier records it with the failure note, as client 11.1.0 does
 					// (class-wc-payment-gateway-wcpay.php:4104-4110).
-					return $this->with_failure_plan( $context, $intent_id, $outcome, null !== $intent ? $this->cancel_plan( $context, $intent ) : null );
+					return null !== $intent
+						? $outcome->with_effect_plan( $this->cancel_plan( $context, $intent ) )
+						: $outcome;
 				}
 			}
 		}
 
 		return $this->unavailable_outcome( 'cancel' );
-	}
-
-	/**
-	 * Attach a failed capture's or cancel's effect plan, keeping the order's stored authorization when the operation acted
-	 * on another intent.
-	 *
-	 * The order screen and the authorizations list act on the transaction ID, which can name an earlier attempt while the
-	 * stored intent is the authorization waiting for its capture. A failure on that other intent writes only its failure
-	 * note: the stored intent and its requires_capture status stay, so the authorization is still named and capturable.
-	 * Client 11.3.0 never writes the intent on a failure (class-wc-payment-gateway-wcpay.php:4418, :4495).
-	 *
-	 * @param PaymentOperationContext         $context   Capture or cancel context.
-	 * @param string                          $intent_id The intent the operation acted on.
-	 * @param PaymentOutcome                  $outcome   Failed outcome.
-	 * @param WooPaymentsOrderEffectPlan|null $plan      The failure's effect plan, or null when no intent was read.
-	 * @return PaymentOutcome
-	 */
-	private function with_failure_plan( PaymentOperationContext $context, string $intent_id, PaymentOutcome $outcome, ?WooPaymentsOrderEffectPlan $plan ): PaymentOutcome {
-		$order            = $context->get_order();
-		$stored_intent_id = (string) $order->get_meta( '_intent_id', true );
-		$stored_status    = (string) $order->get_meta( '_intention_status', true );
-		if ( '' === $stored_intent_id || $intent_id === $stored_intent_id || 'requires_capture' !== $stored_status ) {
-			return null === $plan ? $outcome : $outcome->with_effect_plan( $plan );
-		}
-
-		if ( null !== $plan ) {
-			return $outcome->with_effect_plan( $plan->with_earlier_record_kept() );
-		}
-
-		// With no plan nothing composes the failure's meta, so the outcome carries the stored status and no intent, as the
-		// refusals before a request do.
-		return new PaymentOutcome(
-			$outcome->get_status(),
-			'',
-			$outcome->get_redirect_url(),
-			$outcome->get_payment_method_id(),
-			$outcome->get_customer_id(),
-			array_merge( $outcome->get_data(), array( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array( '_intention_status' => $stored_status ) ) )
-		);
 	}
 
 	/**
