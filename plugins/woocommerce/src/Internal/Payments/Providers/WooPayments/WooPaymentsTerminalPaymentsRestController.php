@@ -917,7 +917,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 	 * The intent is read again to catch an authorization that already expired (the site may have missed the charge.expired
 	 * webhook) and a capture that went through although the call failed, for example on a timeout. A canceled intent fails
 	 * the order with the expired note; a succeeded one is returned so the caller records the capture as it does any
-	 * capture; any other status is recorded with the plain capture failure, and a failed read records requires_capture.
+	 * capture; anything else records the plain capture failure.
 	 *
 	 * @param WC_Order $order     Order.
 	 * @param string   $intent_id Intent ID.
@@ -944,24 +944,21 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 			return null;
 		}
 
-		$this->record_failed_terminal_capture( $order, $intent_id, $message, '' !== $status ? $status : 'requires_capture' );
+		$this->record_failed_terminal_capture( $order, $intent_id, $message );
 
 		return null;
 	}
 
 	/**
-	 * Record a failed terminal capture: failure note and the intent status, a still-capturable authorization unless the
-	 * intent was read again after the failure.
+	 * Record a failed terminal capture: failure note, still-capturable authorization.
 	 *
-	 * The order keeps its status. The intent status is written with the note, which is added once per text, so a repeat
-	 * failure with the same note leaves the status the first one wrote.
+	 * The order keeps its status.
 	 *
-	 * @param WC_Order $order         Order.
-	 * @param string   $intent_id     Intent ID.
-	 * @param string   $message       Capture error message.
-	 * @param string   $intent_status Intent status to record.
+	 * @param WC_Order $order     Order.
+	 * @param string   $intent_id Intent ID.
+	 * @param string   $message   Capture error message.
 	 */
-	private function record_failed_terminal_capture( WC_Order $order, string $intent_id, string $message, string $intent_status = 'requires_capture' ): void {
+	private function record_failed_terminal_capture( WC_Order $order, string $intent_id, string $message ): void {
 		$charge_id       = (string) $order->get_meta( '_charge_id', true );
 		$note_candidates = $this->note_service->format_capture_failed_note_candidates( $order, $intent_id, $charge_id, $message );
 
@@ -970,12 +967,12 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 			$note_candidates[0],
 			'',
 			$note_candidates,
-			static function () use ( $order, $intent_status ): void {
+			static function () use ( $order ): void {
 				if ( 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ) ) {
 					$order->update_meta_data( '_wcpay_fraud_meta_box_type', 'review_failed' );
 				}
 
-				$order->update_meta_data( '_intention_status', $intent_status );
+				$order->update_meta_data( '_intention_status', 'requires_capture' );
 				$order->save();
 			}
 		);
