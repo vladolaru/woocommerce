@@ -320,10 +320,10 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 * An order that stores no intent ID has nothing to do (client 11.3.0 class-wc-payments-order-service.php:2331, :2387).
 	 * A stored requires_capture is the stored authorization, with no platform read, and a stored succeeded or canceled is
 	 * nothing. Any other stored status, empty included, is read from the platform once, before any order payment lock:
-	 * the operation acts on the read intent only when it awaits capture with an uncaptured succeeded charge, and is checked
-	 * against the order again under its own lock. Otherwise the status read is stored. A failed read leaves the order in
-	 * its new status with the operation's failure note. Client 11.3.0 class-wc-payments-order-service.php:2327-2370,
-	 * :2381-2429.
+	 * the operation acts on the read intent only when it awaits capture with an uncaptured succeeded charge. Otherwise the
+	 * status read is stored. A failed read leaves the order in its new status with the operation's failure note. Either
+	 * operation is checked against the order again under its own lock. Client 11.3.0
+	 * class-wc-payments-order-service.php:2327-2370, :2381-2429.
 	 *
 	 * @param WC_Order $order         Order whose status changed.
 	 * @param string   $operation     Capture or cancel.
@@ -421,10 +421,10 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 * cadence. The first refusal notes that the operation is pending, and the failure note is written only when the last
 	 * retry is refused too.
 	 *
-	 * An operation on an intent the status change read acts on that intent; the provider refuses it, sending nothing, when
-	 * the order read under the operation's lock no longer stores that intent (it is retried, with a new read) or stores a
-	 * settled status (nothing is left to do). A status change on the stored authorization acts on the order's stored
-	 * intent; the order screen's actions act on the transaction ID.
+	 * A status change acts on the intent it read, or else on the order's stored intent; the order screen's actions act on
+	 * the transaction ID. The provider refuses a status change's operation, sending nothing, when the order read under
+	 * the operation's lock no longer stores that intent (it is retried) or stores a settled status, or, for a capture, no
+	 * longer pays through WooPayments (nothing is left to do).
 	 *
 	 * @param WC_Order $order            Order.
 	 * @param string   $operation        Capture or cancel.
@@ -460,7 +460,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 				);
 
 			$refusal = $outcome->get_data()[ WooPaymentsPaymentOperationService::DATA_STATUS_CHANGE_REFUSAL ] ?? '';
-			if ( WooPaymentsPaymentOperationService::REFUSAL_INTENT_SETTLED === $refusal ) {
+			if ( in_array( $refusal, array( WooPaymentsPaymentOperationService::REFUSAL_INTENT_SETTLED, WooPaymentsPaymentOperationService::REFUSAL_PAYMENT_METHOD_CHANGED ), true ) ) {
 				return;
 			}
 

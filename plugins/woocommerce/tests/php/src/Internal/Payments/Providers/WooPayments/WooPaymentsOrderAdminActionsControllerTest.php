@@ -1782,6 +1782,207 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A $operation on the status change of an order storing the authorization is checked against the order read under its own lock: $_dataName.
+	 *
+	 * The status hook's order object is loaded before another request changes the order, and the operation claims the
+	 * order payment lock after. Client 11.3.0 acts on the order as its hook read it, with no lock
+	 * (class-wc-payments-order-service.php:2327-2350, :2381-2418). Here the order read under the lock decides: a capture
+	 * is not sent once another payment method took the order over, and neither operation is sent once the order stores a
+	 * settled status or another intent (retried, so it follows the new intent). A cancel on a taken-over order still goes,
+	 * since it takes no money.
+	 *
+	 * @dataProvider stored_authorizations_changed_between_the_hook_and_the_lock
+	 *
+	 * @param string $operation    Capture or cancel.
+	 * @param string $order_status Status the order changes to.
+	 * @param string $hook         Status hook.
+	 * @param array  $change       Payment method or meta another request stores between the hook and the lock.
+	 * @param bool   $sends        Whether the operation is sent for the authorization the hook found.
+	 * @param string $refusal      The refusal value the status change logs, or empty for none.
+	 */
+	public function test_status_change_on_the_stored_authorization_is_checked_against_the_order_under_its_lock( string $operation, string $order_status, string $hook, array $change, bool $sends, string $refusal ): void {
+		$order     = $this->create_recorded_authorization_order( 'requires_capture', $order_status );
+		$notes     = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$reads     = new \ArrayObject();
+		$transport = $this->create_operation_transport( $operation );
+		$settled   = $change['_intention_status'] ?? '';
+		if ( in_array( $settled, array( 'succeeded', 'canceled' ), true ) ) {
+			// A sent operation meets the platform's refusal and the read after it, as on a live store.
+			$transport->responses = array(
+				self::platform_refusal( PaymentProcessingService::OPERATION_CAPTURE === $operation ? 'This PaymentIntent could not be captured because it has already been captured.' : 'You cannot cancel this PaymentIntent because it has a status of ' . $settled . '.' ),
+				self::status_answer( self::RECORDED_INTENT, $settled ),
+			);
+		}
+		$logger    = RecordingWcLogger::install();
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $this->create_platform( null, null, $reads ) );
+		$this->sut->register();
+		$this->change_the_order_before_its_status_hook( $hook, $change );
+
+		$this->fire_order_hook( $hook, $order );
+
+		$retries = 'intent_changed' === $refusal;
+		$lines   = array_values( array_filter( $logger->contexts, static fn( array $context ): bool => isset( $context['refusal'] ) ) );
+		$this->assertCount( 0, $reads, 'The stored authorization is not read.' );
+		$this->assertSame( $sends ? array( $this->operation_path( $operation ) ) : array(), $this->request_paths( $transport ) );
+		$this->assertSame( '' === $refusal ? array() : array( $refusal ), array_column( $lines, 'refusal' ), 'One warning line names the refusal.' );
+		$this->assertSame( $retries ? array( 1 ) : array(), $this->get_pending_retries( $order ) );
+		$this->assertSame( $retries ? 1 : 0, $this->count_notes( $order, $this->pending_note( $operation ) ) );
+		$this->assertSame( 0, $this->count_notes( $order, $this->failure_note( $operation ) ) );
+		$this->assertSame( 0, $this->count_notes_containing( $order, 'failed' ), 'No failure note of any kind.' );
+		$stored = wc_get_order( $order->get_id() );
+		if ( '' !== $refusal ) {
+			$this->assertSame( $notes + ( $retries ? 1 : 0 ), count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) ), 'A refusal adds no note but the pending note of a retry.' );
+			$expected = array_merge(
+				array(
+					'payment_method'    => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+					'_intent_id'        => self::RECORDED_INTENT,
+					'_intention_status' => 'requires_capture',
+				),
+				$change
+			);
+			$actual   = array(
+				'payment_method'    => $stored->get_payment_method(),
+				'_intent_id'        => $stored->get_meta( '_intent_id', true ),
+				'_intention_status' => $stored->get_meta( '_intention_status', true ),
+			);
+			$this->assertSame( $expected, $actual, 'A refusal leaves the payment record as the other request stored it, its intent included.' );
+		}
+		if ( ! $retries ) {
+			return;
+		}
+
+		$jobs = as_get_scheduled_actions(
+			array(
+				'hook'     => self::RETRY_HOOK,
+				'status'   => \ActionScheduler_Store::STATUS_PENDING,
+				'per_page' => -1,
+			)
+		);
+		$this->assertCount( 1, $jobs );
+		$this->assertArrayNotHasKey( 'intent_id', reset( $jobs )->get_args(), 'The retry decides again on the stored authorization, with no read intent.' );
+		$transport->response['body'] = str_replace( self::RECORDED_INTENT, 'pi_newer_attempt', (string) $transport->response['body'] );
+		\ActionScheduler::runner()->process_action( (int) array_key_first( $jobs ) );
+
+		$this->assertCount( 0, $reads );
+		$this->assertSame( array( 'intentions/pi_newer_attempt/' . $operation ), $this->request_paths( $transport ), 'One retry later, the operation follows the intent the order now stores.' );
+	}
+
+	/**
+	 * Payment methods and meta another request stores between a status hook and the operation's lock, on an order storing
+	 * the authorization: whether the operation is sent for that authorization, and the refusal logged.
+	 *
+	 * @return array<string,array{string,string,string,array<string,string>,bool,string}>
+	 */
+	public function stored_authorizations_changed_between_the_hook_and_the_lock(): array {
+		$operations = $this->status_change_operation_data();
+		$capture    = $operations['capture'];
+		$cancel     = $operations['cancel'];
+		$taken_over = array( 'payment_method' => 'cod' );
+		$newer      = array(
+			'_intent_id'        => 'pi_newer_attempt',
+			'_intention_status' => 'requires_capture',
+		);
+		$unchanged  = array( '_intention_status' => 'requires_capture' );
+
+		return array(
+			'capture, another payment method took the order over' => array_merge( $capture, array( $taken_over, false, 'payment_method_changed' ) ),
+			'cancel, another payment method took the order over' => array_merge( $cancel, array( $taken_over, true, '' ) ),
+			'capture, the order stores a settled status' => array_merge( $capture, array( array( '_intention_status' => 'succeeded' ), false, 'intent_settled' ) ),
+			'cancel, the order stores a settled status'  => array_merge( $cancel, array( array( '_intention_status' => 'canceled' ), false, 'intent_settled' ) ),
+			'cancel, a success event stored succeeded'   => array_merge( $cancel, array( array( '_intention_status' => 'succeeded' ), false, 'intent_settled' ) ),
+			'capture, the order stores another authorization' => array_merge( $capture, array( $newer, false, 'intent_changed' ) ),
+			'cancel, the order stores another authorization' => array_merge( $cancel, array( $newer, false, 'intent_changed' ) ),
+			'capture, the order still stores the authorization' => array_merge( $capture, array( $unchanged, true, '' ) ),
+			'cancel, the order still stores the authorization' => array_merge( $cancel, array( $unchanged, true, '' ) ),
+		);
+	}
+
+	/**
+	 * @testdox A $operation on the status change of an order whose intent was read is checked against the payment method of the order read under its own lock.
+	 *
+	 * Another payment method takes the order over between the status change's read and the operation's lock. The capture
+	 * is not sent; the cancel takes no money, so it goes as before.
+	 *
+	 * @dataProvider status_change_operation_data
+	 *
+	 * @param string $operation    Capture or cancel.
+	 * @param string $order_status Status the order changes to.
+	 * @param string $hook         Status hook.
+	 */
+	public function test_status_change_on_a_read_intent_is_refused_once_another_payment_method_took_the_order_over( string $operation, string $order_status, string $hook ): void {
+		$order     = $this->create_recorded_authorization_order( 'requires_action', $order_status );
+		$reads     = new \ArrayObject();
+		$transport = $this->create_operation_transport( $operation );
+		$platform  = $this->create_platform(
+			$this->recorded_intent( 'authorize_manual_capture' ),
+			null,
+			$reads,
+			static function () use ( $order ): void {
+				$changed = wc_get_order( $order->get_id() );
+				$changed->set_payment_method( 'cod' );
+				$changed->save();
+			}
+		);
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $platform );
+		$this->sut->register();
+
+		$this->fire_order_hook( $hook, $order );
+
+		$is_capture = PaymentProcessingService::OPERATION_CAPTURE === $operation;
+		$this->assertCount( 1, $reads );
+		$this->assertSame( $is_capture ? array() : array( $this->operation_path( $operation ) ), $this->request_paths( $transport ) );
+		$this->assertSame( array(), $this->get_pending_retries( $order ) );
+		$this->assertSame( 0, $this->count_notes( $order, $this->pending_note( $operation ) ) );
+		$this->assertSame( 0, $this->count_notes( $order, $this->failure_note( $operation ) ) );
+		$this->assertSame( 'cod', wc_get_order( $order->get_id() )->get_payment_method() );
+	}
+
+	/**
+	 * @testdox A status change to Completed saved on an order another payment method took over after its load sends no capture.
+	 *
+	 * Core's own status save: another request takes the order over after the save and before the capture's lock. On the
+	 * posts store the save reads the meta again before the hook, so the change lands at the hook, as in a live store.
+	 */
+	public function test_a_status_change_saved_on_an_order_another_payment_method_took_over_sends_nothing(): void {
+		$order     = $this->create_recorded_authorization_order( 'requires_capture', OrderStatus::ON_HOLD );
+		$transport = $this->create_operation_transport( PaymentProcessingService::OPERATION_CAPTURE );
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $this->create_platform( null, null, new \ArrayObject() ) );
+		$this->sut->register();
+		$this->change_the_order_before_its_status_hook( 'woocommerce_order_status_completed', array( 'payment_method' => 'cod' ) );
+
+		wc_get_order( $order->get_id() )->update_status( OrderStatus::COMPLETED );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( array(), $this->request_paths( $transport ) );
+		$this->assertSame( array( 'cod', OrderStatus::COMPLETED, 'requires_capture' ), array( $order->get_payment_method(), $order->get_status(), $order->get_meta( '_intention_status', true ) ) );
+	}
+
+	/**
+	 * Store a change through a second order object when a status hook fires, before the operation the hook runs claims
+	 * the order payment lock, as another request writing the order then would.
+	 *
+	 * @param string               $hook   Status hook.
+	 * @param array<string,string> $change Payment method or meta to store.
+	 */
+	private function change_the_order_before_its_status_hook( string $hook, array $change ): void {
+		add_action(
+			$hook,
+			static function ( $order_id ) use ( $change ): void {
+				$other = wc_get_order( $order_id );
+				foreach ( $change as $key => $value ) {
+					if ( 'payment_method' === $key ) {
+						$other->set_payment_method( $value );
+					} else {
+						$other->update_meta_data( $key, $value );
+					}
+				}
+				$other->save();
+			},
+			9
+		);
+	}
+
+	/**
 	 * @testdox A status change whose intent no longer awaits capture does not store the status it read once the order changed after the read: $_dataName.
 	 *
 	 * The status read is stored only while the order still stores the intent read and no settled status. Client 11.3.0
