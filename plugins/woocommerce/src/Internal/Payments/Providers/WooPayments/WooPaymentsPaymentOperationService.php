@@ -94,14 +94,6 @@ class WooPaymentsPaymentOperationService {
 	public const DATA_STATUS_CHANGE_REFUSAL = 'status_change_refusal';
 
 	/**
-	 * Outcome data key set on a failed capture whose effect plan carries the intent read again after the failure, so the
-	 * effects record that intent's status in place of requires_capture.
-	 *
-	 * @since 11.4.0
-	 */
-	public const DATA_CAPTURE_FAILURE_READ_AGAIN = 'capture_failure_read_again';
-
-	/**
 	 * Refusal: the order no longer stores the intent that was read. The operation is tried again with a new read.
 	 *
 	 * @since 11.2.0
@@ -600,19 +592,9 @@ class WooPaymentsPaymentOperationService {
 					// The site may have missed the charge.expired webhook, so a failed capture
 					// re-fetches the intent: a canceled intent means the authorization expired,
 					// and the effect plan carries it so the expired note and failed status land.
-					$read_intent = $this->refetch_intent_after_failure( $intent_id );
-					$read_status = null !== $read_intent ? (string) ( $read_intent['status'] ?? '' ) : '';
-					if ( 'canceled' === $read_status ) {
-						return $outcome->with_effect_plan( WooPaymentsOrderEffectPlan::for_capture_expired( $read_intent ) );
-					}
-
-					// Any other status the intent still has is recorded with the failure note, as a failed cancel records the
-					// status it reads. A failed read, or a read that finds the intent succeeded, records requires_capture, as
-					// client 11.3.0 does after any failed capture (class-wc-payment-gateway-wcpay.php:4418): the capture's own
-					// payment_intent.succeeded then completes the order as a capture.
-					if ( null !== $read_intent && '' !== $read_status && 'succeeded' !== $read_status ) {
-						return self::with_outcome_data( $outcome, array( self::DATA_CAPTURE_FAILURE_READ_AGAIN => true ) )
-							->with_effect_plan( WooPaymentsOrderEffectPlan::for_capture( $read_intent ) );
+					$expired_intent = $this->refetch_intent_after_failure( $intent_id );
+					if ( null !== $expired_intent && 'canceled' === (string) ( $expired_intent['status'] ?? '' ) ) {
+						return $outcome->with_effect_plan( WooPaymentsOrderEffectPlan::for_capture_expired( $expired_intent ) );
 					}
 
 					$result = array(
@@ -648,24 +630,6 @@ class WooPaymentsPaymentOperationService {
 			$outcome->get_payment_method_id(),
 			$outcome->get_customer_id(),
 			array_merge( $outcome->get_data(), array( PaymentOutcome::DATA_PRESERVE_ORDER_STATUS => true ) )
-		);
-	}
-
-	/**
-	 * Get a copy of an outcome, without its effect plan, whose data also carries the given values.
-	 *
-	 * @param PaymentOutcome      $outcome Outcome.
-	 * @param array<string,mixed> $data    Data to add.
-	 * @return PaymentOutcome
-	 */
-	private static function with_outcome_data( PaymentOutcome $outcome, array $data ): PaymentOutcome {
-		return new PaymentOutcome(
-			$outcome->get_status(),
-			$outcome->get_provider_payment_id(),
-			$outcome->get_redirect_url(),
-			$outcome->get_payment_method_id(),
-			$outcome->get_customer_id(),
-			array_merge( $outcome->get_data(), $data )
 		);
 	}
 
