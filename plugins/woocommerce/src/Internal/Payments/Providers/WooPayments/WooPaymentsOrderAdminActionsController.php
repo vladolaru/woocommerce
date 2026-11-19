@@ -325,6 +325,9 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 * operation is checked against the order again under its own lock. Client 11.3.0
 	 * class-wc-payments-order-service.php:2327-2370, :2381-2429.
 	 *
+	 * A capture is never sent for an order whose payment method is not a WooPayments one, since it would take money a
+	 * second time. A cancel takes none, so it releases such an order's WooPayments authorization, as the client does.
+	 *
 	 * @param WC_Order $order         Order whose status changed.
 	 * @param string   $operation     Capture or cancel.
 	 * @param bool     $read_required Whether the platform is read whatever the stored status, for the retry of an
@@ -332,7 +335,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 * @return string|null An empty string for the stored authorization, the read intent's ID, or null for nothing to do.
 	 */
 	private function get_status_change_target( WC_Order $order, string $operation, bool $read_required = false ): ?string {
-		if ( ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) ) {
+		if ( PaymentProcessingService::OPERATION_CAPTURE === $operation && ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) ) {
 			return null;
 		}
 

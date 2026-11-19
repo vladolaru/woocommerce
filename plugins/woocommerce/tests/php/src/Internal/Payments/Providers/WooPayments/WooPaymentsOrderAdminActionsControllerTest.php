@@ -563,11 +563,11 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Automatic status actions should ignore captured and other-gateway orders.
+	 * @testdox A status change to Completed should capture nothing on a captured order or an order paid by another gateway.
 	 */
 	public function test_status_actions_ignore_ineligible_orders(): void {
 		$captured_order     = $this->create_authorized_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'succeeded', 'completed' );
-		$foreign_order      = $this->create_authorized_order( 'cod', 'requires_capture', 'cancelled' );
+		$foreign_order      = $this->create_authorized_order( 'cod', 'requires_capture', 'completed' );
 		$processing_service = $this->createMock( PaymentProcessingService::class );
 		$processing_service->expects( $this->never() )->method( 'capture' );
 		$processing_service->expects( $this->never() )->method( 'cancel' );
@@ -577,7 +577,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising the public WooCommerce status hook.
 		do_action( 'woocommerce_order_status_completed', $captured_order->get_id(), $captured_order, array() );
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising the public WooCommerce status hook.
-		do_action( 'woocommerce_order_status_cancelled', $foreign_order->get_id(), $foreign_order, array() );
+		do_action( 'woocommerce_order_status_completed', $foreign_order->get_id(), $foreign_order, array() );
 
 		$this->addToAssertionCount( 1 );
 	}
@@ -1958,6 +1958,244 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A change to Cancelled releases the WooPayments authorization an order kept when another payment method took it over: $_dataName.
+	 *
+	 * The takeover kept the authorization the order stores as requires_capture. Client 11.3.0 cancels it on the change to
+	 * Cancelled whatever the order's payment method (class-wc-payments-order-service.php:2327-2359). Only WooPayments's own
+	 * values change; the other payment method's are left as they were.
+	 *
+	 * @dataProvider orders_another_payment_method_took_over
+	 *
+	 * @param string $payment_method Payment method that took the order over.
+	 * @param string $transaction_id Order transaction ID after the takeover.
+	 */
+	public function test_cancelled_releases_the_authorization_another_payment_method_kept( string $payment_method, string $transaction_id ): void {
+		$order     = $this->create_taken_over_order( $payment_method, $transaction_id, 'requires_capture', OrderStatus::CANCELLED );
+		$meta      = $this->stored_meta( $order );
+		$reads     = new \ArrayObject();
+		$transport = $this->create_operation_transport( PaymentProcessingService::OPERATION_CANCEL );
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $this->create_platform( null, null, $reads ) );
+		$this->sut->register();
+
+		$this->fire_order_hook( 'woocommerce_order_status_cancelled', $order );
+
+		$this->assertCount( 0, $reads, 'The stored authorization is not read.' );
+		$this->assertSame( array( $this->operation_path( PaymentProcessingService::OPERATION_CANCEL ) ), $this->request_paths( $transport ) );
+		$this->assert_only_the_woopayments_values_changed( $order, $meta, $payment_method, $transaction_id );
+	}
+
+	/**
+	 * @testdox A change to Cancelled reads a payment still processing that an order kept when another payment method took it over, and releases it once it is an authorization.
+	 *
+	 * The takeover kept the payment the order stores as processing. Client 11.3.0 reads it and cancels a live authorization
+	 * (class-wc-payments-order-service.php:2327-2359).
+	 */
+	public function test_cancelled_reads_and_releases_a_processing_payment_another_payment_method_kept(): void {
+		$order     = $this->create_taken_over_order( 'cheque', self::RECORDED_INTENT, 'processing', OrderStatus::CANCELLED );
+		$meta      = $this->stored_meta( $order );
+		$reads     = new \ArrayObject();
+		$transport = $this->create_operation_transport( PaymentProcessingService::OPERATION_CANCEL );
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $this->create_platform( $this->recorded_intent( 'authorize_manual_capture' ), null, $reads ) );
+		$this->sut->register();
+
+		$this->fire_order_hook( 'woocommerce_order_status_cancelled', $order );
+
+		$this->assertSame( array( self::RECORDED_INTENT ), $reads->getArrayCopy() );
+		$this->assertSame( array( $this->operation_path( PaymentProcessingService::OPERATION_CANCEL ) ), $this->request_paths( $transport ) );
+		$this->assert_only_the_woopayments_values_changed( $order, $meta, 'cheque', self::RECORDED_INTENT );
+	}
+
+	/**
+	 * @testdox A change to Completed on an order another payment method took over sends nothing, not even a read: $_dataName.
+	 *
+	 * The order's other payment method may have been paid, so a capture of the kept authorization would take the money a
+	 * second time. Client 11.3.0 captures it (class-wc-payments-order-service.php:2381-2418).
+	 *
+	 * @dataProvider completed_orders_another_payment_method_took_over
+	 *
+	 * @param string $stored_status Intent status the order stores.
+	 * @param bool   $real_path     Whether the change runs over the shared processing service and a fake platform, or over
+	 *                              a processing service that must not be asked to capture.
+	 */
+	public function test_completed_sends_nothing_for_an_order_another_payment_method_took_over( string $stored_status, bool $real_path ): void {
+		$order     = $this->create_taken_over_order( 'cod', self::RECORDED_INTENT, $stored_status, OrderStatus::COMPLETED );
+		$notes     = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$reads     = new \ArrayObject();
+		$transport = $this->create_operation_transport( PaymentProcessingService::OPERATION_CAPTURE );
+		$platform  = $this->create_platform( $this->recorded_intent( 'authorize_manual_capture' ), null, $reads );
+		if ( $real_path ) {
+			$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $platform );
+		} else {
+			$processing_service = $this->createMock( PaymentProcessingService::class );
+			$processing_service->expects( $this->never() )->method( 'capture' );
+			$this->sut = $this->create_controller( $processing_service, null, $platform );
+		}
+		$logger = RecordingWcLogger::install();
+		$this->sut->register();
+
+		$this->fire_order_hook( 'woocommerce_order_status_completed', $order );
+
+		$stored = wc_get_order( $order->get_id() );
+		$this->assertCount( 0, $reads, 'The kept payment is not read.' );
+		$this->assertSame( array(), $this->request_paths( $transport ) );
+		$this->assertSame( array(), $logger->lines, 'No warning line.' );
+		$this->assertCount( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertSame( array(), $this->get_pending_retries( $order ) );
+		$this->assertSame(
+			array( 'cod', self::RECORDED_INTENT, OrderStatus::COMPLETED, $stored_status, '0.59' ),
+			array( $stored->get_payment_method(), $stored->get_transaction_id(), $stored->get_status(), $stored->get_meta( '_intention_status', true ), $stored->get_meta( '_wcpay_transaction_fee', true ) )
+		);
+	}
+
+	/**
+	 * Stored statuses of a payment an order kept when another payment method took it over, on each processing path.
+	 *
+	 * @return array<string,array{string,bool}>
+	 */
+	public function completed_orders_another_payment_method_took_over(): array {
+		return array(
+			'stored authorization, processing service'     => array( 'requires_capture', false ),
+			'stored authorization, platform'               => array( 'requires_capture', true ),
+			'payment still processing, processing service' => array( 'processing', false ),
+			'payment still processing, platform'           => array( 'processing', true ),
+		);
+	}
+
+	/**
+	 * @testdox A queued $operation retry on an order another payment method took over follows the change to $order_status.
+	 *
+	 * The retry goes through the status change's own check, so it cancels the kept authorization and never captures it.
+	 *
+	 * @dataProvider status_change_operation_data
+	 *
+	 * @param string $operation    Capture or cancel.
+	 * @param string $order_status Status the order changed to.
+	 */
+	public function test_a_queued_retry_follows_the_cancel_on_an_order_another_payment_method_took_over( string $operation, string $order_status ): void {
+		$this->set_ownership( 'builtin' );
+		$order     = $this->create_taken_over_order( 'cheque', self::RECORDED_INTENT, 'requires_capture', $order_status );
+		$reads     = new \ArrayObject();
+		$transport = $this->create_operation_transport( $operation );
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $this->create_platform( null, null, $reads ) );
+		$this->sut->register();
+		$this->register_retry_listener();
+		$action_id = as_schedule_single_action( time() - 1, self::RETRY_HOOK, $this->retry_args( $order, $operation, 1 ), 'woocommerce_payments' );
+
+		\ActionScheduler::runner()->process_action( $action_id );
+
+		$is_cancel = PaymentProcessingService::OPERATION_CANCEL === $operation;
+		$this->assertCount( 0, $reads );
+		$this->assertSame( $is_cancel ? array( $this->operation_path( $operation ) ) : array(), $this->request_paths( $transport ) );
+		$this->assertSame( $is_cancel ? 'canceled' : 'requires_capture', wc_get_order( $order->get_id() )->get_meta( '_intention_status', true ) );
+		$this->assertSame( 0, $this->count_notes( $order, $this->failure_note( $operation ) ) );
+	}
+
+	/**
+	 * @testdox A change to Cancelled sends nothing for an order of another payment method with nothing to release: $_dataName.
+	 *
+	 * @dataProvider orders_of_another_payment_method_with_nothing_to_release
+	 *
+	 * @param string $payment_method Order payment method.
+	 * @param string $stored_status  Intent status the order stores; empty for an order that never had a WooPayments attempt.
+	 */
+	public function test_cancelled_sends_nothing_for_another_payment_methods_order_with_nothing_to_release( string $payment_method, string $stored_status ): void {
+		if ( '' === $stored_status ) {
+			$order = wc_create_order();
+			$order->set_payment_method( $payment_method );
+			$order->set_status( OrderStatus::CANCELLED );
+			$order->save();
+		} else {
+			$order = $this->create_taken_over_order( $payment_method, self::RECORDED_INTENT, $stored_status, OrderStatus::CANCELLED );
+		}
+		$notes     = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$reads     = new \ArrayObject();
+		$transport = $this->create_operation_transport( PaymentProcessingService::OPERATION_CANCEL );
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $this->create_platform( $this->recorded_intent( 'authorize_manual_capture' ), null, $reads ) );
+		$this->sut->register();
+
+		$this->fire_order_hook( 'woocommerce_order_status_cancelled', $order );
+
+		$stored = wc_get_order( $order->get_id() );
+		$this->assertCount( 0, $reads );
+		$this->assertSame( array(), $this->request_paths( $transport ) );
+		$this->assertCount( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertSame( array( $payment_method, $stored_status ), array( $stored->get_payment_method(), $stored->get_meta( '_intention_status', true ) ) );
+	}
+
+	/**
+	 * Orders of another payment method a change to Cancelled leaves alone: a kept payment already settled, or no
+	 * WooPayments attempt at all.
+	 *
+	 * @return array<string,array{string,string}>
+	 */
+	public function orders_of_another_payment_method_with_nothing_to_release(): array {
+		return array(
+			'check payments, kept payment captured'       => array( 'cheque', 'succeeded' ),
+			'check payments, kept authorization canceled' => array( 'cheque', 'canceled' ),
+			'cash on delivery, never a WooPayments attempt' => array( 'cod', '' ),
+		);
+	}
+
+	/**
+	 * Orders another payment method took over, by the transaction ID it left: an offline method keeps the WooPayments
+	 * intent there, a card gateway names its own payment.
+	 *
+	 * @return array<string,array{string,string}>
+	 */
+	public function orders_another_payment_method_took_over(): array {
+		return array(
+			'check payments'                => array( 'cheque', self::RECORDED_INTENT ),
+			'card gateway, its own payment' => array( 'stripe', 'ch_other_gateway_payment' ),
+		);
+	}
+
+	/**
+	 * The order's stored meta, by key, as the data store holds it.
+	 *
+	 * @param WC_Order $order Order.
+	 * @return array<string,string>
+	 */
+	private function stored_meta( WC_Order $order ): array {
+		$meta = array();
+		foreach ( wc_get_order( $order->get_id() )->get_meta_data() as $entry ) {
+			$meta[ $entry->key ] = maybe_serialize( $entry->value );
+		}
+		ksort( $meta );
+
+		return $meta;
+	}
+
+	/**
+	 * Assert that releasing the kept authorization changed only WooPayments's own values on the order and left one
+	 * cancelled note.
+	 *
+	 * @param WC_Order             $order          Order before the change.
+	 * @param array<string,string> $meta_before    The order's stored meta before the change.
+	 * @param string               $payment_method Payment method that took the order over.
+	 * @param string               $transaction_id Order transaction ID after the takeover.
+	 */
+	private function assert_only_the_woopayments_values_changed( WC_Order $order, array $meta_before, string $payment_method, string $transaction_id ): void {
+		$stored   = wc_get_order( $order->get_id() );
+		$expected = array_merge( $meta_before, array( '_intention_status' => 'canceled' ) );
+		unset( $expected['_wcpay_transaction_fee'], $expected['_wcpay_net'] );
+		$this->assertSame( $expected, $this->stored_meta( $stored ), 'Only the intent status is written, and only the fee and net are deleted.' );
+		$this->assertSame( 'canceled', $stored->get_meta( '_intention_status', true ) );
+		$this->assertSame( self::RECORDED_INTENT, $stored->get_meta( '_intent_id', true ) );
+		$this->assertFalse( $stored->meta_exists( '_wcpay_transaction_fee' ) );
+		$this->assertFalse( $stored->meta_exists( '_wcpay_net' ) );
+		$this->assertFalse( $stored->meta_exists( '_wcpay_fraud_meta_box_type' ) );
+		$this->assertFalse( $stored->meta_exists( '_wcpay_fraud_outcome_status' ) );
+		$this->assertSame(
+			array( $payment_method, $transaction_id, OrderStatus::CANCELLED, 'cus_other_gateway', 'kept' ),
+			array( $stored->get_payment_method(), $stored->get_transaction_id(), $stored->get_status(), $stored->get_meta( '_stripe_customer_id', true ), $stored->get_meta( '_other_gateway_marker', true ) )
+		);
+		$this->assertSame( 1, $this->count_notes_containing( $order, 'was successfully <strong>cancelled</strong>' ) );
+		$this->assertSame( 0, $this->count_notes( $order, $this->failure_note( PaymentProcessingService::OPERATION_CANCEL ) ) );
+		$this->assertSame( 0, $this->count_notes( $order, $this->pending_note( PaymentProcessingService::OPERATION_CANCEL ) ) );
+		$this->assertSame( array(), $this->get_pending_retries( $order ) );
+	}
+
+	/**
 	 * Store a change through a second order object when a status hook fires, before the operation the hook runs claims
 	 * the order payment lock, as another request writing the order then would.
 	 *
@@ -2375,10 +2613,11 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	 * @param string $ownership    What changed since the retry was queued.
 	 * @param string $operation    Capture or cancel.
 	 * @param string $order_status Status the order changed to.
+	 * @param string $gateway_id   Order payment method.
 	 */
-	public function test_retry_the_built_in_cannot_run_completes_with_the_failure_note( string $ownership, string $operation, string $order_status ): void {
+	public function test_retry_the_built_in_cannot_run_completes_with_the_failure_note( string $ownership, string $operation, string $order_status, string $gateway_id = WooPaymentsPersistenceVocabulary::GATEWAY_ID ): void {
 		$this->set_ownership( $ownership );
-		$order = $this->create_authorized_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'requires_capture', $order_status );
+		$order = $this->create_authorized_order( $gateway_id, 'requires_capture', $order_status );
 		$order->add_order_note( $this->pending_note( $operation ) );
 		$http_requests = 0;
 		add_filter(
@@ -2461,9 +2700,10 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Ways the order actions controller stops loading, with each status-change operation.
+	 * Ways the order actions controller stops loading, with each status-change operation, and a cancel on an order another
+	 * payment method took over, which the built-in would also have run.
 	 *
-	 * @return array<string,array{string,string,string}>
+	 * @return array<string,array{0:string,1:string,2:string,3?:string}>
 	 */
 	public function retry_after_ownership_loss_data(): array {
 		return array(
@@ -2472,6 +2712,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 			'the feature is off, capture'      => array( 'feature_off', PaymentProcessingService::OPERATION_CAPTURE, OrderStatus::COMPLETED ),
 			'the feature is off, cancel'       => array( 'feature_off', PaymentProcessingService::OPERATION_CANCEL, OrderStatus::CANCELLED ),
 			'the built-in lost its account record, capture' => array( 'account_lost', PaymentProcessingService::OPERATION_CAPTURE, OrderStatus::COMPLETED ),
+			'the extension is active, cancel, the order is paid by another gateway' => array( 'extension', PaymentProcessingService::OPERATION_CANCEL, OrderStatus::CANCELLED, 'cheque' ),
 		);
 	}
 
@@ -2856,6 +3097,31 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		if ( '' !== $stored_status ) {
 			$order->update_meta_data( '_intention_status', $stored_status );
 		}
+		$order->save();
+
+		return $order;
+	}
+
+	/**
+	 * Create a saved order another payment method took over from a WooPayments attempt on the recorded manual-capture
+	 * authorization, which the takeover kept: the attempt's intent, stored status, mode, fee and net, a customer ID the
+	 * other gateway also writes, and one value of the other gateway's own.
+	 *
+	 * @param string $payment_method Payment method that took the order over.
+	 * @param string $transaction_id Order transaction ID after the takeover.
+	 * @param string $stored_status  Intent status the order stores.
+	 * @param string $order_status   Status the order is saved with, before its status hook fires.
+	 * @return WC_Order
+	 */
+	private function create_taken_over_order( string $payment_method, string $transaction_id, string $stored_status, string $order_status ): WC_Order {
+		$order = $this->create_recorded_authorization_order( $stored_status, $order_status );
+		$order->set_payment_method( $payment_method );
+		$order->set_transaction_id( $transaction_id );
+		$order->update_meta_data( '_wcpay_mode', 'test' );
+		$order->update_meta_data( '_wcpay_transaction_fee', '0.59' );
+		$order->update_meta_data( '_wcpay_net', '10.40' );
+		$order->update_meta_data( '_stripe_customer_id', 'cus_other_gateway' );
+		$order->update_meta_data( '_other_gateway_marker', 'kept' );
 		$order->save();
 
 		return $order;

@@ -17,10 +17,10 @@ use WC_Order;
  * the WooPayments extension was activated, the WooPayments feature was turned off, or the account is no longer connected.
  *
  * WooPaymentsOrderAdminActionsController queues the retry and runs it on a connected or active setup tier; there this
- * listener does nothing. Otherwise, while the order is still completed (capture) or cancelled (cancel), paid with
- * WooPayments and authorized, it writes the failure note client 11.1.0 writes when such a capture or cancel fails
- * (class-wc-payments-order-service.php:1827-1831, :1880-1884), so the merchant knows the authorization is still open.
- * It changes no status and calls no platform.
+ * listener does nothing. Otherwise, while the order is still completed (capture) or cancelled (cancel) and authorized,
+ * and for a capture paid with WooPayments, it writes the failure note client 11.1.0 writes when such a capture or
+ * cancel fails (class-wc-payments-order-service.php:1827-1831, :1880-1884), so the merchant knows the authorization is
+ * still open. It changes no status and calls no platform.
  *
  * @since 11.2.0
  * @internal
@@ -56,7 +56,8 @@ class WooPaymentsStatusChangeRetryListener implements RegisterHooksInterface {
 	 * Note that a retried status-change capture or cancel did not run, unless the order actions controller runs it.
 	 *
 	 * An operation on the stored authorization is noted while the order stores requires_capture; an operation on an
-	 * intent the status change read, while the order still stores that intent and no settled status.
+	 * intent the status change read, while the order still stores that intent and no settled status. A capture is noted
+	 * only on an order paid with WooPayments, which is the only order the built-in would have captured.
 	 *
 	 * @internal
 	 *
@@ -83,7 +84,7 @@ class WooPaymentsStatusChangeRetryListener implements RegisterHooksInterface {
 		if (
 			! $order instanceof WC_Order
 			|| ! $order->has_status( $statuses[ $operation ] )
-			|| ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() )
+			|| ( PaymentProcessingService::OPERATION_CAPTURE === $operation && ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) )
 		) {
 			return;
 		}

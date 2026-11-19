@@ -4631,6 +4631,78 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox charge.expired on a cancelled order another payment method took over fails it only while the order is unpaid.
+	 *
+	 * The order keeps the WooPayments authorization the takeover found holding money. Unpaid, the event is the order's
+	 * own payment, and the lifecycle moves the cancelled order to failed. Paid by a card or wallet, whose payment the
+	 * transaction ID names, the event is another charge and the order keeps its status.
+	 *
+	 * @dataProvider provider_charge_expired_on_a_cancelled_order_another_payment_method_took_over
+	 *
+	 * @param string $payment_method  Payment method that took the order over.
+	 * @param string $transaction_id  Order transaction ID after the takeover.
+	 * @param bool   $paid            Whether the other payment method paid the order.
+	 * @param string $expected_status Order status after the event.
+	 * @param string $expected_intent Stored intent status after the event.
+	 * @param int    $expired_notes   Number of authorization-expired notes after the event.
+	 */
+	public function test_charge_expired_fails_a_cancelled_order_another_payment_method_took_over( string $payment_method, string $transaction_id, bool $paid, string $expected_status, string $expected_intent, int $expired_notes ): void {
+		$order = wc_create_order();
+		$order->set_payment_method( $payment_method );
+		$order->set_total( '10.00' );
+		$order->set_status( OrderStatus::CANCELLED );
+		$order->save();
+		$order->set_transaction_id( $transaction_id );
+		if ( $paid ) {
+			$order->set_date_paid( time() );
+		}
+		$order->update_meta_data( '_intent_id', 'pi_kept_authorization' );
+		$order->update_meta_data( '_charge_id', 'ch_kept_authorization' );
+		$order->update_meta_data( '_intention_status', 'requires_capture' );
+		$order->update_meta_data( '_wcpay_mode', 'test' );
+		$order->save();
+		$note_service = wc_get_container()->get( WooPaymentsOrderNoteService::class );
+		$expired_note = sprintf(
+			'Payment authorization has <strong>expired</strong> (<a href="%1$s" target="_blank" rel="noopener noreferrer">pi_kept_authorization</a>).',
+			$note_service->transaction_url( 'pi_kept_authorization', 'ch_kept_authorization' )
+		);
+		$sut          = $this->create_charge_expired_ingestor( array( 'status' => 'canceled' ) );
+
+		$sut->process(
+			array(
+				'id'   => 'evt_kept_authorization_expired',
+				'type' => 'charge.expired',
+				'data' => array(
+					'object' => array(
+						'id'             => 'ch_kept_authorization',
+						'payment_intent' => 'pi_kept_authorization',
+					),
+				),
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( $expected_status, $order->get_status() );
+		$this->assertSame( $expected_intent, $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( $payment_method, $order->get_payment_method() );
+		$this->assertSame( $transaction_id, $order->get_transaction_id() );
+		$this->assertSame( $expired_notes, $this->count_order_notes_matching( $order, $expired_note ) );
+	}
+
+	/**
+	 * Cancelled orders another payment method took over, and what an expiry of the kept authorization leaves.
+	 *
+	 * @return array<string,array{0:string,1:string,2:bool,3:string,4:string,5:int}>
+	 */
+	public function provider_charge_expired_on_a_cancelled_order_another_payment_method_took_over(): array {
+		return array(
+			'check payments, unpaid' => array( 'cheque', 'pi_kept_authorization', false, 'failed', 'canceled', 1 ),
+			'card gateway, paid'     => array( 'stripe', 'ch_other_gateway_payment', true, 'cancelled', 'requires_capture', 0 ),
+		);
+	}
+
+	/**
 	 * @testdox charge.expired adds the current-locale translated authorization-expired note.
 	 */
 	public function test_charge_expired_adds_translated_authorization_expired_note(): void {
