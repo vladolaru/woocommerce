@@ -3052,11 +3052,15 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	 * @param string $read_status Status the read after the failure answers.
 	 */
 	public function test_payment_success_after_a_failed_capture_read_again_as_succeeded_or_processing_completes_it_as_a_capture( string $read_status ): void {
-		$order = $this->create_recorded_authorization_order( 'requires_capture', OrderStatus::ON_HOLD );
-		$read  = array_merge( $this->recorded_intent( 'capture_full_amount' ), array( 'status' => $read_status ) );
-		$this->run_operation_from( 'order screen', PaymentProcessingService::OPERATION_CAPTURE, $order, $this->create_transport( self::platform_bad_gateway(), self::http_json( 200, $read ) ) );
+		$order     = $this->create_recorded_authorization_order( 'requires_capture', OrderStatus::ON_HOLD );
+		$read      = array_merge( $this->recorded_intent( 'capture_full_amount' ), array( 'status' => $read_status ) );
+		$transport = $this->create_transport( self::platform_bad_gateway(), self::http_json( 200, $read ) );
+		$this->run_operation_from( 'order screen', PaymentProcessingService::OPERATION_CAPTURE, $order, $transport );
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( array( 'intentions/' . self::RECORDED_INTENT . '/capture', 'intentions/' . self::RECORDED_INTENT . '?test_mode=1' ), $this->request_paths( $transport ), 'The capture was sent, then the intent was read again.' );
+		$this->assertSame( array(), $transport->responses, 'Both queued answers were used.' );
+		$this->assertSame( 1, $this->count_notes_containing( $order, self::CAPTURE_FAILURE_NOTE ), 'The failed capture is noted once.' );
 		$this->assertSame( 'requires_capture', $order->get_meta( '_intention_status', true ), 'The failure keeps the authorization.' );
 		$order->set_total( '15.00' );
 		$order->save();
