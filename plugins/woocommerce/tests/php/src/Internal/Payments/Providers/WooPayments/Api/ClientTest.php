@@ -4369,6 +4369,94 @@ class ClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The $_dataName public platform request sends the default headers when a headers filter callback returns no array.
+	 * @dataProvider provide_public_requests_with_headers_that_are_not_an_array
+	 *
+	 * Such a result used to reach WordPress's HTTP API, which fails with a type error on it; signed requests already
+	 * ignored it.
+	 *
+	 * @param string $request  The public request: fraud_services or recommended.
+	 * @param mixed  $returned The headers filter callback's result.
+	 */
+	public function test_public_request_ignores_headers_that_are_not_an_array( string $request, $returned ): void {
+		$filter = static fn() => $returned;
+
+		$this->assertSame( array( 'Content-type' => 'application/json; charset=utf-8' ), $this->send_public_request_with_headers_filter( $request, $filter ) );
+	}
+
+	/**
+	 * Public requests and headers filter results that are not an array.
+	 *
+	 * @return array<string,array{0:string,1:mixed}>
+	 */
+	public function provide_public_requests_with_headers_that_are_not_an_array(): array {
+		$rows = array();
+		foreach ( array( 'fraud_services', 'recommended' ) as $request ) {
+			$rows[ "$request, true" ]      = array( $request, true );
+			$rows[ "$request, one" ]       = array( $request, 1 );
+			$rows[ "$request, false" ]     = array( $request, false );
+			$rows[ "$request, an object" ] = array( $request, new \stdClass() );
+		}
+
+		return $rows;
+	}
+
+	/**
+	 * @testdox The $_dataName public platform request sends the headers a headers filter callback adds.
+	 * @testWith ["fraud_services"]
+	 *           ["recommended"]
+	 *
+	 * @param string $request The public request: fraud_services or recommended.
+	 */
+	public function test_public_request_sends_headers_a_filter_adds( string $request ): void {
+		$filter = static fn( array $headers ): array => array_merge( $headers, array( 'X-Test' => '1' ) );
+
+		$this->assertSame(
+			array(
+				'Content-type' => 'application/json; charset=utf-8',
+				'X-Test'       => '1',
+			),
+			$this->send_public_request_with_headers_filter( $request, $filter )
+		);
+	}
+
+	/**
+	 * Send one public platform request with a headers filter callback and return the headers handed to WordPress's HTTP API.
+	 *
+	 * @param string   $request The public request: fraud_services or recommended.
+	 * @param callable $filter  The wcpay_api_request_headers callback.
+	 * @return mixed
+	 */
+	private function send_public_request_with_headers_filter( string $request, callable $filter ) {
+		$sent_headers = null;
+		$answer       = static function ( $preempt, array $parsed_args ) use ( &$sent_headers, $request ) {
+			unset( $preempt );
+			$sent_headers = $parsed_args['headers'];
+
+			return array(
+				'response' => array( 'code' => 200 ),
+				'headers'  => array( 'content-type' => 'application/json' ),
+				'body'     => 'fraud_services' === $request ? '{"stripe":[]}' : '[]',
+			);
+		};
+		add_filter( 'wcpay_api_request_headers', $filter );
+		add_filter( 'pre_http_request', $answer, 10, 2 );
+
+		try {
+			if ( 'fraud_services' === $request ) {
+				( new Client() )->fetch_public_fraud_services_config();
+			} else {
+				( new Client() )->get_recommended_payment_methods( 'US' );
+			}
+		} finally {
+			remove_filter( 'wcpay_api_request_headers', $filter );
+			remove_filter( 'pre_http_request', $answer, 10 );
+		}
+
+		return $sent_headers;
+	}
+
+	/**
 	 * @testdox Should build recommendation URLs from the Jetpack WPCOM JSON API base.
 	 */
 	public function test_get_recommended_payment_methods_uses_jetpack_wpcom_api_base(): void {

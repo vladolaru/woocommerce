@@ -1835,9 +1835,11 @@ class Client {
 		/**
 		 * Filters WooPayments public API request headers.
 		 *
+		 * A result that is not an array is ignored, as on signed requests.
+		 *
 		 * @since 11.0.0
 		 *
-	 * @param array<string,string> $headers Request headers.
+		 * @param array<string,string> $headers Request headers.
 		 */
 		$headers = apply_filters(
 			'wcpay_api_request_headers',
@@ -1845,6 +1847,7 @@ class Client {
 				'Content-type' => 'application/json; charset=utf-8',
 			)
 		);
+		$headers = is_array( $headers ) ? $headers : array( 'Content-type' => 'application/json; charset=utf-8' );
 
 		$response = wp_remote_get(
 			$url,
@@ -1899,6 +1902,8 @@ class Client {
 		/**
 		 * Filters WooPayments public API request headers.
 		 *
+		 * A result that is not an array is ignored, as on signed requests.
+		 *
 		 * @since 11.0.0
 		 *
 		 * @param array<string,string> $headers Request headers.
@@ -1909,6 +1914,7 @@ class Client {
 				'Content-type' => 'application/json; charset=utf-8',
 			)
 		);
+		$headers = is_array( $headers ) ? $headers : array( 'Content-type' => 'application/json; charset=utf-8' );
 
 		$response = wp_remote_get(
 			$request_args['url'],
