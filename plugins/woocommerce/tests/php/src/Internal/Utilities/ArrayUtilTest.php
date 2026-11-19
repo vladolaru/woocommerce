@@ -442,4 +442,86 @@ class ArrayUtilTest extends WC_Unit_Test_Case {
 		$this->assertTrue( ArrayUtil::array_is_list( $result['users'][0]['hobbies'] ) );
 		$this->assertTrue( ArrayUtil::array_is_list( $result['users'][1]['hobbies'] ) );
 	}
+
+	/**
+	 * @testdox `restore_typed_defaults` checks a filter result against its defaults: $_dataName.
+	 * @dataProvider provide_restore_typed_defaults_cases
+	 *
+	 * @param mixed               $filtered The filter's result.
+	 * @param array<string,mixed> $changes  The values expected in place of the defaults, then any extra keys.
+	 */
+	public function test_restore_typed_defaults( $filtered, array $changes ): void {
+		$defaults = array(
+			'pos'  => 'left',
+			'sep'  => ',',
+			'dec'  => 2,
+			'flag' => false,
+			'opt'  => null,
+			'list' => array( 'a' ),
+		);
+
+		$this->assertSame( array_merge( $defaults, $changes ), ArrayUtil::restore_typed_defaults( $filtered, $defaults ) );
+	}
+
+	/**
+	 * Filter results and the values expected in place of the defaults.
+	 *
+	 * @return array<string,array{0:mixed,1:array<string,mixed>}>
+	 */
+	public function provide_restore_typed_defaults_cases(): array {
+		$object = new \stdClass();
+
+		return array(
+			'null gives the defaults'                      => array( null, array() ),
+			'false gives the defaults'                     => array( false, array() ),
+			'true gives the defaults'                      => array( true, array() ),
+			'an empty string gives the defaults'           => array( '', array() ),
+			'a string gives the defaults'                  => array( 'x', array() ),
+			'zero gives the defaults'                      => array( 0, array() ),
+			'an object gives the defaults'                 => array( new \stdClass(), array() ),
+			'values of the same type are taken'            => array(
+				array(
+					'pos'  => 'right',
+					'sep'  => ' ',
+					'dec'  => 0,
+					'flag' => true,
+				),
+				array(
+					'pos'  => 'right',
+					'sep'  => ' ',
+					'dec'  => 0,
+					'flag' => true,
+				),
+			),
+			'an int for a string keeps the default'        => array( array( 'pos' => 1 ), array() ),
+			'an array for a string keeps the default'      => array( array( 'sep' => array() ), array() ),
+			'a word for an int keeps the default'          => array( array( 'dec' => 'abc' ), array() ),
+			'a float for an int keeps the default'         => array( array( 'dec' => 2.5 ), array() ),
+			'a string for a bool keeps the default'        => array( array( 'flag' => 'no' ), array() ),
+			'a string for a null keeps the default'        => array( array( 'opt' => 'x' ), array() ),
+			'a null for an int keeps the default'          => array( array( 'dec' => null ), array() ),
+			'the digit string 0 becomes an int'            => array( array( 'dec' => '0' ), array( 'dec' => 0 ) ),
+			'the digit string 3 becomes an int'            => array( array( 'dec' => '3' ), array( 'dec' => 3 ) ),
+			'a negative number string keeps the default'   => array( array( 'dec' => '-1' ), array() ),
+			'a padded number string keeps the default'     => array( array( 'dec' => ' 2' ), array() ),
+			'a decimal number string keeps the default'    => array( array( 'dec' => '2.5' ), array() ),
+			'an empty string for an int keeps the default' => array( array( 'dec' => '' ), array() ),
+			'a digit string for a string stays a string'   => array( array( 'pos' => '1' ), array( 'pos' => '1' ) ),
+			'missing keys are restored, extra keys kept'   => array(
+				array(
+					'pos'   => 'right',
+					'extra' => 1,
+					'more'  => array( 'nested' => $object ),
+				),
+				array(
+					'pos'   => 'right',
+					'extra' => 1,
+					'more'  => array( 'nested' => $object ),
+				),
+			),
+			'a nested array is taken whole'                => array( array( 'list' => array( 'b', 'c' ) ), array( 'list' => array( 'b', 'c' ) ) ),
+			'a string for an array keeps the default'      => array( array( 'list' => 'x' ), array() ),
+			'a null is kept for a null default'            => array( array( 'opt' => null ), array() ),
+		);
+	}
 }
