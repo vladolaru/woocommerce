@@ -62,6 +62,86 @@ class LocalizationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should check the currency format filter's result against the currency's own format: $_dataName.
+	 * @dataProvider provide_currency_format_filter_results
+	 *
+	 * A callback that forgets its return, or returns only the keys it changes, used to fatal or drop the decimals to 0.
+	 * The decimals as a digit string are what the Multi-Currency switcher plugin CURCY returns.
+	 *
+	 * @param string              $currency Currency code.
+	 * @param callable            $callback The format filter callback.
+	 * @param array<string,mixed> $changes  The values expected in place of the currency's own.
+	 */
+	public function test_checks_the_currency_format_filter_result( string $currency, callable $callback, array $changes ): void {
+		$hook = 'wcpay_' . strtolower( $currency ) . '_format';
+		switch_to_locale( 'en_US' );
+
+		try {
+			$service    = new LocalizationService();
+			$unfiltered = $service->get_currency_format( $currency );
+			add_filter( $hook, $callback );
+			$format = $service->get_currency_format( $currency );
+		} finally {
+			remove_filter( $hook, $callback );
+			restore_previous_locale();
+		}
+
+		$this->assertSame( array_merge( $unfiltered, $changes ), $format );
+	}
+
+	/**
+	 * Format filter callbacks and the values expected in place of the currency's own.
+	 *
+	 * @return array<string,array{0:string,1:callable,2:array<string,mixed>}>
+	 */
+	public static function provide_currency_format_filter_results(): array {
+		$no_return = static function ( $format ) {
+			unset( $format );
+		};
+
+		return array(
+			'USD, no return'                  => array( 'USD', $no_return, array() ),
+			'EUR, no return'                  => array( 'EUR', $no_return, array() ),
+			'USD, false'                      => array( 'USD', '__return_false', array() ),
+			'USD, a string'                   => array( 'USD', static fn() => 'x', array() ),
+			'USD, only the changed key'       => array(
+				'USD',
+				static fn() => array( 'currency_pos' => 'right_space' ),
+				array( 'currency_pos' => 'right_space' ),
+			),
+			'USD, decimals as a digit string' => array(
+				'USD',
+				static fn( $format ) => array_merge(
+					$format,
+					array(
+						'currency_pos' => 'right_space',
+						'thousand_sep' => ' ',
+						'decimal_sep'  => ',',
+						'num_decimals' => '0',
+					)
+				),
+				array(
+					'currency_pos' => 'right_space',
+					'thousand_sep' => ' ',
+					'decimal_sep'  => ',',
+					'num_decimals' => 0,
+				),
+			),
+			'USD, values of the wrong type'   => array(
+				'USD',
+				static fn( $format ) => array_merge(
+					$format,
+					array(
+						'thousand_sep' => array(),
+						'num_decimals' => 'abc',
+					)
+				),
+				array(),
+			),
+		);
+	}
+
+	/**
 	 * @testdox Should format a currency from its bundled default locale entry: $_dataName.
 	 *
 	 * Client 11.1.0 bundles the same CLDR-derived defaults (i18n/currency-info.php): EUR with a comma decimal separator and

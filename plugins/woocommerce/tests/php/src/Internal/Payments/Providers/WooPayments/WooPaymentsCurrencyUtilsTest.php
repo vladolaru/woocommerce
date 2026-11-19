@@ -52,4 +52,26 @@ class WooPaymentsCurrencyUtilsTest extends WC_Unit_Test_Case {
 			'Stripe two-decimal case' => array( 'Stripe two-decimal case', 100.0, 'HUF', 10000 ),
 		);
 	}
+
+	/**
+	 * @testdox An amount in a payment note is formatted as usual when a currency format callback forgets its return.
+	 *
+	 * The payment, refund, Fee details and webhook notes format their amounts through the currency format, with or
+	 * without Multi-Currency.
+	 */
+	public function test_format_currency_ignores_a_currency_format_callback_with_no_return(): void {
+		$expected = WooPaymentsCurrencyUtils::format_currency( 10.0, 'USD' );
+		$callback = static function ( $format ) {
+			unset( $format );
+		};
+		add_filter( 'wcpay_usd_format', $callback );
+
+		try {
+			$formatted = WooPaymentsCurrencyUtils::format_currency( 10.0, 'USD' );
+		} finally {
+			remove_filter( 'wcpay_usd_format', $callback );
+		}
+
+		$this->assertSame( $expected, $formatted );
+	}
 }

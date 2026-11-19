@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\LocalizationInterface;
+use Automattic\WooCommerce\Internal\Utilities\ArrayUtil;
 
 /**
  * Gives each currency's format for the user's locale and each country's locale data, from WooCommerce's locale info.
@@ -65,12 +66,17 @@ class LocalizationService implements LocalizationInterface {
 		/**
 		 * Filter to edit formatting for a specific currency.
 		 *
+		 * A format key given a value of another type, or left out, keeps the currency's own value; a string of digits for
+		 * `num_decimals` is read as a number. A result that is not an array is ignored.
+		 *
 		 * @since 11.0.0
 		 *
 		 * @param array<string,mixed> $currency_format The currency format settings.
 		 * @param string              $locale          The user's locale.
 		 */
-		return apply_filters( 'wcpay_' . strtolower( $currency_code ) . '_format', $currency_format, $locale );
+		$filtered_format = apply_filters( 'wcpay_' . strtolower( $currency_code ) . '_format', $currency_format, $locale );
+
+		return ArrayUtil::restore_typed_defaults( $filtered_format, $currency_format );
 	}
 
 	/**
