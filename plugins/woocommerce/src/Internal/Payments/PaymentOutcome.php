@@ -263,6 +263,18 @@ class PaymentOutcome {
 	public const DATA_NOTE_PER_OCCURRENCE = 'note_per_occurrence';
 
 	/**
+	 * Failed capture and cancel outcomes: flags that the authorization the operation acted on is still in place and is the
+	 * order's own, read from the provider after the failure.
+	 *
+	 * The failure's lifecycle event records the outcome's payment ID as the order's transaction ID, replacing a different one
+	 * with a warning that names it (PaymentLifecycleEvent::replaces_transaction_id()). Other outcomes do not read the flag.
+	 *
+	 * @since 11.4.0
+	 * @var string
+	 */
+	public const DATA_AUTHORIZATION_IN_PLACE = 'authorization_in_place';
+
+	/**
 	 * Outcome status.
 	 *
 	 * @var string

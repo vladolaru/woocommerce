@@ -611,7 +611,7 @@ class WooPaymentsPaymentOperationService {
 					// client 11.3.0 does after any failed capture (class-wc-payment-gateway-wcpay.php:4418): the capture's own
 					// payment_intent.succeeded then completes the order as a capture.
 					if ( null !== $read_intent && '' !== $read_status && 'succeeded' !== $read_status ) {
-						return $this->with_failure_plan( $context, $intent_id, self::with_outcome_data( $outcome, array( self::DATA_CAPTURE_FAILURE_READ_AGAIN => true ) ), WooPaymentsOrderEffectPlan::for_capture( $read_intent ) );
+						return $this->with_failure_plan( $context, $intent_id, $read_status, self::with_outcome_data( $outcome, array( self::DATA_CAPTURE_FAILURE_READ_AGAIN => true ) ), WooPaymentsOrderEffectPlan::for_capture( $read_intent ) );
 					}
 
 					$result = array(
@@ -621,7 +621,7 @@ class WooPaymentsPaymentOperationService {
 						'message'    => $exception->getMessage(),
 					);
 
-					return $this->with_failure_plan( $context, $intent_id, $outcome, WooPaymentsOrderEffectPlan::for_capture( $result ) );
+					return $this->with_failure_plan( $context, $intent_id, $read_status, $outcome, WooPaymentsOrderEffectPlan::for_capture( $result ) );
 				}
 			}
 		}
@@ -718,7 +718,7 @@ class WooPaymentsPaymentOperationService {
 					// Not canceled: the plan carries the status the provider still reports so
 					// the applier records it with the failure note, as client 11.1.0 does
 					// (class-wc-payment-gateway-wcpay.php:4104-4110).
-					return $this->with_failure_plan( $context, $intent_id, $outcome, null !== $intent ? $this->cancel_plan( $context, $intent ) : null );
+					return $this->with_failure_plan( $context, $intent_id, null !== $intent ? (string) ( $intent['status'] ?? '' ) : '', $outcome, null !== $intent ? $this->cancel_plan( $context, $intent ) : null );
 				}
 			}
 		}
@@ -728,24 +728,32 @@ class WooPaymentsPaymentOperationService {
 
 	/**
 	 * Attach a failed capture's or cancel's effect plan, keeping the order's stored authorization when the operation acted
-	 * on another intent.
+	 * on another intent, and naming the stored intent when the read after the failure finds it still authorized.
 	 *
 	 * The order screen and the authorizations list act on the transaction ID, which can name an earlier attempt while the
 	 * stored intent is the authorization waiting for its capture. A failure on that other intent writes only its failure
 	 * note: the stored intent and its requires_capture status stay, so the authorization is still named and capturable.
-	 * Client 11.3.0 never writes the intent on a failure (class-wc-payment-gateway-wcpay.php:4418, :4495).
+	 * Client 11.3.0 never writes the intent on a failure (class-wc-payment-gateway-wcpay.php:4418, :4495). A failure on the
+	 * stored intent that reads it as requires_capture flags the authorization in place, so the lifecycle records it as the
+	 * transaction ID (PaymentOutcome::DATA_AUTHORIZATION_IN_PLACE); the client names nothing, since its ownership never
+	 * reads the transaction ID.
 	 *
-	 * @param PaymentOperationContext         $context   Capture or cancel context.
-	 * @param string                          $intent_id The intent the operation acted on.
-	 * @param PaymentOutcome                  $outcome   Failed outcome.
-	 * @param WooPaymentsOrderEffectPlan|null $plan      The failure's effect plan, or null when no intent was read.
+	 * @param PaymentOperationContext         $context     Capture or cancel context.
+	 * @param string                          $intent_id   The intent the operation acted on.
+	 * @param string                          $read_status Status the read after the failure returned, or '' when the read failed.
+	 * @param PaymentOutcome                  $outcome     Failed outcome.
+	 * @param WooPaymentsOrderEffectPlan|null $plan        The failure's effect plan, or null when no intent was read.
 	 * @return PaymentOutcome
 	 */
-	private function with_failure_plan( PaymentOperationContext $context, string $intent_id, PaymentOutcome $outcome, ?WooPaymentsOrderEffectPlan $plan ): PaymentOutcome {
+	private function with_failure_plan( PaymentOperationContext $context, string $intent_id, string $read_status, PaymentOutcome $outcome, ?WooPaymentsOrderEffectPlan $plan ): PaymentOutcome {
 		$order            = $context->get_order();
 		$stored_intent_id = (string) $order->get_meta( '_intent_id', true );
 		$stored_status    = (string) $order->get_meta( '_intention_status', true );
 		if ( '' === $stored_intent_id || $intent_id === $stored_intent_id || 'requires_capture' !== $stored_status ) {
+			if ( 'requires_capture' === $read_status && $intent_id === $stored_intent_id ) {
+				$outcome = self::with_outcome_data( $outcome, array( PaymentOutcome::DATA_AUTHORIZATION_IN_PLACE => true ) );
+			}
+
 			return null === $plan ? $outcome : $outcome->with_effect_plan( $plan );
 		}
 

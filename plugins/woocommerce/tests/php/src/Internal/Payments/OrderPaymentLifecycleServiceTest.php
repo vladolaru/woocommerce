@@ -823,6 +823,105 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A started event records its payment reference as the transaction ID: $_dataName.
+	 *
+	 * A started event fills an empty transaction ID. One whose reference the provider read as the order's authorization
+	 * still in place after a failed capture or cancel also replaces a different transaction ID, with one warning naming
+	 * both values, as a completion that keeps the order status does; without that, a different transaction ID stays.
+	 *
+	 * @dataProvider started_events_and_the_transaction_id
+	 *
+	 * @param string      $stored_txn   Transaction ID the order stores.
+	 * @param bool        $replaces     Whether the event says its reference is the authorization in place.
+	 * @param string      $expected_txn Transaction ID stored after the event.
+	 * @param string|null $replaced     Transaction ID the warning names as replaced, or null when no warning.
+	 */
+	public function test_started_event_records_its_payment_reference( string $stored_txn, bool $replaces, string $expected_txn, ?string $replaced ): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( 'on-hold' );
+		$order->set_transaction_id( $stored_txn );
+		$order->save();
+
+		$this->apply_event_under_lock(
+			$order,
+			new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_STARTED, 'pi_authorized', array( '_intention_status' => 'requires_capture' ), array(), 'Capture failed.', null, array(), false, false, array(), false, false, null, $replaces )
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'on-hold', $order->get_status() );
+		$this->assertSame( $expected_txn, $order->get_transaction_id() );
+		$this->assertSame( 'requires_capture', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Capture failed.' ) );
+		$lines = $this->authorization_replacement_lines();
+		if ( null === $replaced ) {
+			$this->assertCount( 0, $lines, 'Nothing different was replaced, so no line is written.' );
+			return;
+		}
+		$this->assertCount( 1, $lines, 'One line names the replaced transaction ID.' );
+		$this->assertSame( 'warning', $lines[0]['level'] );
+		$this->assertSame( sprintf( 'Order #%1$d names the authorization %2$s that a failed capture or cancel left in place; its transaction ID %3$s was replaced.', $order->get_id(), $expected_txn, $replaced ), $lines[0]['message'] );
+		$this->assertSame(
+			array(
+				'source'                  => 'order-payments',
+				'order_id'                => $order->get_id(),
+				'payment_reference'       => $expected_txn,
+				'replaced_transaction_id' => $replaced,
+				'reason'                  => 'authorization_replaced_a_different_transaction_id',
+			),
+			$lines[0]['context']
+		);
+	}
+
+	/**
+	 * Started events by the transaction ID the order stores and whether the reference is the authorization in place.
+	 *
+	 * @return array<string,array{string,bool,string,string|null}>
+	 */
+	public static function started_events_and_the_transaction_id(): array {
+		return array(
+			'the authorization in place, no transaction ID' => array( '', true, 'pi_authorized', null ),
+			'the authorization in place, the same transaction ID' => array( 'pi_authorized', true, 'pi_authorized', null ),
+			'the authorization in place, another attempt\'s transaction ID' => array( 'pi_earlier', true, 'pi_authorized', 'pi_earlier' ),
+			'no flag, no transaction ID'                 => array( '', false, 'pi_authorized', null ),
+			'no flag, another attempt\'s transaction ID' => array( 'pi_earlier', false, 'pi_earlier', null ),
+		);
+	}
+
+	/**
+	 * @testdox A started event whose replacement of the transaction ID fails to save writes no warning.
+	 *
+	 * The save's hook throws, and core keeps the exception as the order's last save error and goes on, so nothing of the
+	 * replacement is stored and no line says it is.
+	 */
+	public function test_started_event_whose_replacement_fails_to_save_writes_no_warning(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( 'on-hold' );
+		$order->set_transaction_id( 'pi_earlier' );
+		$order->save();
+		$failed = 0;
+		$fail   = static function ( $saved ) use ( $order, &$failed ): void {
+			if ( 0 === $failed && $saved instanceof WC_Order && $saved->get_id() === $order->get_id() ) {
+				++$failed;
+				throw new \Exception( 'Save failed.' );
+			}
+		};
+		add_action( 'woocommerce_before_order_object_save', $fail, PHP_INT_MAX );
+
+		try {
+			$this->apply_event_under_lock(
+				$order,
+				new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_STARTED, 'pi_authorized', array( '_intention_status' => 'requires_capture' ), array(), null, null, array(), false, false, array(), false, false, null, true )
+			);
+		} finally {
+			remove_action( 'woocommerce_before_order_object_save', $fail, PHP_INT_MAX );
+		}
+
+		$this->assertSame( 1, $failed, 'The event\'s save failed.' );
+		$this->assertSame( 'pi_earlier', wc_get_order( $order->get_id() )->get_transaction_id(), 'Nothing was stored.' );
+		$this->assertCount( 0, $this->authorization_replacement_lines() );
+	}
+
+	/**
 	 * @testdox An event that keeps the order status and is skipped, or fails, leaves no transaction ID on the order object or in the store: $label.
 	 *
 	 * A skipped event writes nothing, so a later save of the same object writes no transaction ID either; a failed event
@@ -2023,6 +2122,15 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	 */
 	private function apply_event( WC_Order $order, PaymentLifecycleEvent $event, ?ProviderPersistenceVocabularyInterface $persistence_vocabulary = null ): void {
 		$this->sut->apply( $order, $event, $persistence_vocabulary ?? $this->persistence_vocabulary );
+	}
+
+	/**
+	 * The captured warnings that name an authorization a failed capture or cancel left in place.
+	 *
+	 * @return array<int,array{level:string,message:string,context:array}>
+	 */
+	private function authorization_replacement_lines(): array {
+		return array_values( array_filter( $this->captured_logs, static fn( array $log ): bool => 'authorization_replaced_a_different_transaction_id' === ( $log['context']['reason'] ?? '' ) ) );
 	}
 
 	/**

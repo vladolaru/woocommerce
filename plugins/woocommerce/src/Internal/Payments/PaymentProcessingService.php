@@ -912,7 +912,14 @@ class PaymentProcessingService {
 					array(),
 					$this->get_lifecycle_note( $outcome ),
 					$this->get_lifecycle_note_type( $outcome ),
-					$this->get_lifecycle_note_equivalents( $outcome )
+					$this->get_lifecycle_note_equivalents( $outcome ),
+					false,
+					false,
+					array(),
+					false,
+					false,
+					null,
+					true === ( $outcome->get_data()[ PaymentOutcome::DATA_AUTHORIZATION_IN_PLACE ] ?? false )
 				),
 				$provider->get_persistence_vocabulary()
 			);
