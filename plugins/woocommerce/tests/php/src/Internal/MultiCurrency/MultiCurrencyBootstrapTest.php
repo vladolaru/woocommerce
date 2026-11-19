@@ -684,9 +684,9 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should retain provider roots, and the explicit-price controller, for an empty core-owned REST request without the public filter.
+	 * @testdox Should register only the explicit-price controller when an empty core-owned REST request loads, and the provider roots then the REST controller when its REST server starts.
 	 */
-	public function test_empty_core_owned_rest_request_retains_provider_roots_without_the_public_filter(): void {
+	public function test_empty_core_owned_rest_request_registers_provider_roots_and_the_controller_when_the_server_starts(): void {
 		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false );
 		$resolver_calls = 0;
 		$sut            = new MultiCurrencyBootstrap(
@@ -698,8 +698,18 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 
 		$sut->register( $container, 'rest' );
 
+		$this->assertSame( 0, $resolver_calls );
+		$this->assertSame( array( MultiCurrencyExplicitPriceController::class ), $container->registered );
+
+		$GLOBALS['wp_rest_server'] = null; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- A fresh server for this request, cleared again below.
+		try {
+			rest_get_server();
+		} finally {
+			$GLOBALS['wp_rest_server'] = null; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- See above.
+		}
+
 		$this->assertSame( 1, $resolver_calls );
-		$this->assertSame( array( 'ProviderRoot', self::CORE_ROOTS[21], MultiCurrencyExplicitPriceController::class ), $container->registered );
+		$this->assertSame( array( MultiCurrencyExplicitPriceController::class, 'ProviderRoot', self::CORE_ROOTS[21] ), $container->registered );
 	}
 
 	/**
@@ -744,7 +754,6 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$storefront = array( self::CORE_ROOTS[16], self::CORE_ROOTS[17], self::CORE_ROOTS[19], self::CORE_ROOTS[20] );
 		$history    = array( self::CORE_ROOTS[4], self::CORE_ROOTS[23] );
 		$settings   = self::CORE_ROOTS[18];
-		$rest       = self::CORE_ROOTS[21];
 		$override   = self::CORE_ROOTS[22];
 		$admin      = array( self::CORE_ROOTS[24], self::CORE_ROOTS[25] );
 		// Outside the configured tier the explicit-price controller registers on every request, so a late filter still applies.
@@ -752,18 +761,18 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		return array(
 			'configured front' => array( true, false, 'front', array_merge( $base, $price, $compat, $storefront ) ),
 			'configured ajax'  => array( true, false, 'ajax', array_merge( $base, $price, $compat, array( self::CORE_ROOTS[19], self::CORE_ROOTS[20] ), $history ) ),
-			'configured rest'  => array( true, false, 'rest', array_merge( $base, $price, $compat, array( self::CORE_ROOTS[17], self::CORE_ROOTS[19], self::CORE_ROOTS[20] ), $history, array( $rest, $override ) ) ),
+			'configured rest'  => array( true, false, 'rest', array_merge( $base, $price, $compat, array( self::CORE_ROOTS[17], self::CORE_ROOTS[19], self::CORE_ROOTS[20] ), $history, array( $override ) ) ),
 			'configured admin' => array( true, false, 'admin', array_merge( $base, $price, $compat, array( self::CORE_ROOTS[4], self::CORE_ROOTS[17], $settings, self::CORE_ROOTS[23] ), $admin ) ),
 			'configured cron'  => array( true, false, 'cron', array_merge( $base, array( self::CORE_ROOTS[1], self::CORE_ROOTS[2] ), $compat, $history ) ),
 			'configured cli'   => array( true, false, 'cli', array_merge( $base, array( self::CORE_ROOTS[1], self::CORE_ROOTS[2] ), $compat, $history ) ),
 			'historical admin' => array( false, true, 'admin', array_merge( array_merge( $base, array( self::CORE_ROOTS[4], $settings, self::CORE_ROOTS[23] ), $admin ), $explicit ) ),
-			'historical rest'  => array( false, true, 'rest', array_merge( array_merge( $base, array( self::CORE_ROOTS[4], $rest, $override, self::CORE_ROOTS[23] ) ), $explicit ) ),
+			'historical rest'  => array( false, true, 'rest', array_merge( array_merge( $base, array( self::CORE_ROOTS[4], $override, self::CORE_ROOTS[23] ) ), $explicit ) ),
 			'historical cron'  => array( false, true, 'cron', array_merge( array_merge( $base, $history ), $explicit ) ),
 			'historical front' => array( false, true, 'front', $explicit ),
 			'historical ajax'  => array( false, true, 'ajax', $explicit ),
 			'historical cli'   => array( false, true, 'cli', $explicit ),
 			'empty admin'      => array( false, false, 'admin', array_merge( array( $settings, self::CORE_ROOTS[25] ), $explicit ) ),
-			'empty rest'       => array( false, false, 'rest', array_merge( array( $rest ), $explicit ) ),
+			'empty rest'       => array( false, false, 'rest', $explicit ),
 			'empty front'      => array( false, false, 'front', $explicit ),
 			'empty ajax'       => array( false, false, 'ajax', $explicit ),
 			'empty cron'       => array( false, false, 'cron', $explicit ),

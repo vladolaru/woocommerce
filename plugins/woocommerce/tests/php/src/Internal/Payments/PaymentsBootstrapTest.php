@@ -12,7 +12,7 @@ use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendPricesController;
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRestController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRestRequestOverrideController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\UsageDetector;
 use Automattic\WooCommerce\Internal\Payments\PaymentsBootstrap;
@@ -60,7 +60,7 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 1, $rest_checks, 'The request must be classified once for both bootstraps.' );
 		$multi_currency_provider = array_search( WooPaymentsProvider::get_multi_currency_classes()[0], $container->resolved, true );
-		$multi_currency_rest     = array_search( MultiCurrencyRestController::class, $container->resolved, true );
+		$multi_currency_rest     = array_search( MultiCurrencyRestRequestOverrideController::class, $container->resolved, true );
 		$payments_rest_class     = WooPaymentsProvider::get_classes_by_setup_tier()[ WooPaymentsSetupTier::CONNECTED ]['rest'][1];
 		$payments_rest           = array_search( $payments_rest_class, $container->resolved, true );
 		$this->assertNotFalse( $multi_currency_provider );
@@ -97,7 +97,7 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 			$this->restore_request_uri( $previous_uri );
 		}
 
-		$this->assertNotContains( MultiCurrencyRestController::class, $container->resolved, 'A null answer is not a REST request.' );
+		$this->assertNotContains( MultiCurrencyRestRequestOverrideController::class, $container->resolved, 'A null answer is not a REST request.' );
 		$this->assertContains( MultiCurrencyFrontendPricesController::class, $container->resolved, 'Multi-Currency must still start.' );
 	}
 

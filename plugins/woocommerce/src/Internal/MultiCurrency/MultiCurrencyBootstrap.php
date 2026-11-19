@@ -30,8 +30,9 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
  * Starts Multi-Currency for the request: syncs the payments owner and, while WooCommerce runs Multi-Currency, registers
  * the order listeners and the module's classes for the request type.
  *
- * A class the request lacks registers when it is needed: cron classes under Action Scheduler, Subscriptions classes once
- * a cart holds a subscription in another currency.
+ * A class the request lacks registers when it is needed: the REST controller when WordPress starts its REST server, in every
+ * request type, cron classes under Action Scheduler, Subscriptions classes once a cart holds a subscription in another
+ * currency.
  *
  * @since 11.2.0
  * @internal
@@ -39,11 +40,11 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
 final class MultiCurrencyBootstrap {
 
 	/**
-	 * Runtime container retained for an admin-originated internal REST dispatch.
+	 * Runtime container kept for the REST server, in every request type.
 	 *
 	 * @var Container|RuntimeContainer|null
 	 */
-	private $admin_rest_container = null;
+	private $rest_container = null;
 
 	/**
 	 * Container for the cron classes this request registers when Action Scheduler first runs an action.
@@ -60,7 +61,7 @@ final class MultiCurrencyBootstrap {
 	private $order_container = null;
 
 	/**
-	 * Classes this request registered when WooCommerce loaded.
+	 * Classes this request registered when WooCommerce loaded, and since.
 	 *
 	 * @var array<int,class-string>
 	 */
@@ -232,20 +233,20 @@ final class MultiCurrencyBootstrap {
 		add_action( 'woocommerce_order_refunded', array( $this, 'handle_woocommerce_order_refunded' ), 50, 2 );
 		add_action( 'woocommerce_order_status_changed', array( $this, 'handle_woocommerce_order_status_changed' ) );
 		add_filter( 'woocommerce_analytics_update_order_stats_data', array( $this, 'handle_woocommerce_analytics_update_order_stats_data' ), 99999, 2 );
+		// A REST server can start in any request, and an internal REST dispatch there must find the routes, as the client's
+		// do (client 11.3.0 `includes/multi-currency/MultiCurrency.php:350`). The controller resolves only when the server starts.
+		$this->rest_container = $container;
+		add_action( 'rest_api_init', array( $this, 'register_admin_rest_controller' ), 0 );
 
 		$classes = $this->get_module_classes_for_request( $container, $request_type );
 		if ( ! empty( $classes ) ) {
-			if ( RequestTypeUtil::ADMIN === $request_type ) {
-				$this->admin_rest_container = $container;
-				add_action( 'rest_api_init', array( $this, 'register_admin_rest_controller' ), 0 );
-			}
-
 			if ( array( MultiCurrencyExplicitPriceController::class ) !== $classes ) {
 				$classes = array_merge( $this->get_provider_classes(), $classes );
 			}
 
 			$this->register_classes( $container, $classes );
 		}
+		$this->registered_classes = $classes;
 
 		$this->register_cron_classes_on_demand( $container, $request_type, $classes );
 
@@ -333,7 +334,6 @@ final class MultiCurrencyBootstrap {
 		}
 
 		$this->on_demand_container = $container;
-		$this->registered_classes  = $registered;
 		// Action Scheduler fires this before it checks the action has callbacks and runs it (`ActionScheduler_Abstract_QueueRunner::process_action()`).
 		add_action( 'action_scheduler_before_execute', array( $this, 'handle_action_scheduler_before_execute' ), 0 );
 	}
@@ -441,22 +441,22 @@ final class MultiCurrencyBootstrap {
 	}
 
 	/**
-	 * Register the Multi-Currency REST controller during an internal dispatch from an admin page.
+	 * Register the Multi-Currency REST controller when WordPress starts its REST server, in every request type.
+	 *
+	 * The routes answer from the provider's rate source, so the provider's classes register first where this request's
+	 * load did not register them.
 	 *
 	 * @since 11.2.0
 	 */
 	public function register_admin_rest_controller(): void {
-		if ( null === $this->admin_rest_container ) {
+		$container = $this->rest_container;
+		if ( null === $container ) {
 			return;
 		}
 
-		/**
-		 * Multi-Currency REST controller.
-		 *
-		 * @var MultiCurrencyRestController $controller
-		 */
-		$controller = $this->admin_rest_container->get( MultiCurrencyRestController::class );
-		$controller->register();
+		$classes = array_values( array_diff( array_merge( $this->get_provider_classes(), array( MultiCurrencyRestController::class ) ), $this->registered_classes ) );
+		$this->register_classes( $container, $classes );
+		$this->registered_classes = array_merge( $this->registered_classes, $classes );
 	}
 
 	/**
@@ -513,20 +513,19 @@ final class MultiCurrencyBootstrap {
 			'configured' => array(
 				RequestTypeUtil::FRONT => array_merge( self::BASE, self::PRICE, self::COMPAT, self::STOREFRONT ),
 				RequestTypeUtil::AJAX  => array_merge( self::BASE, self::PRICE, self::COMPAT, array( MultiCurrencyStorefrontIntegrationController::class, MultiCurrencyAsyncPriceRendererController::class ), self::HISTORY ),
-				RequestTypeUtil::REST  => array_merge( self::BASE, self::PRICE, self::COMPAT, array( MultiCurrencySwitcherBlockController::class, MultiCurrencyStorefrontIntegrationController::class, MultiCurrencyAsyncPriceRendererController::class ), self::HISTORY, array( MultiCurrencyRestController::class, MultiCurrencyRestRequestOverrideController::class ) ),
+				RequestTypeUtil::REST  => array_merge( self::BASE, self::PRICE, self::COMPAT, array( MultiCurrencySwitcherBlockController::class, MultiCurrencyStorefrontIntegrationController::class, MultiCurrencyAsyncPriceRendererController::class ), self::HISTORY, array( MultiCurrencyRestRequestOverrideController::class ) ),
 				RequestTypeUtil::ADMIN => array_merge( self::BASE, self::PRICE, self::COMPAT, array( MultiCurrencyAnalyticsController::class, MultiCurrencySwitcherBlockController::class, MultiCurrencySettingsController::class, MultiCurrencyTrackerController::class ), self::ADMIN ),
 				RequestTypeUtil::CRON  => array_merge( self::BASE, array( MultiCurrencyFrontendCurrenciesController::class, MultiCurrencyFrontendPricesController::class ), self::COMPAT, self::HISTORY ),
 				RequestTypeUtil::CLI   => array_merge( self::BASE, array( MultiCurrencyFrontendCurrenciesController::class, MultiCurrencyFrontendPricesController::class ), self::COMPAT, self::HISTORY ),
 			),
 			'historical' => array(
 				RequestTypeUtil::ADMIN => array_merge( self::BASE, array( MultiCurrencyAnalyticsController::class, MultiCurrencySettingsController::class, MultiCurrencyTrackerController::class ), self::ADMIN ),
-				RequestTypeUtil::REST  => array_merge( self::BASE, array( MultiCurrencyAnalyticsController::class, MultiCurrencyRestController::class, MultiCurrencyRestRequestOverrideController::class, MultiCurrencyTrackerController::class ) ),
+				RequestTypeUtil::REST  => array_merge( self::BASE, array( MultiCurrencyAnalyticsController::class, MultiCurrencyRestRequestOverrideController::class, MultiCurrencyTrackerController::class ) ),
 				RequestTypeUtil::CRON  => array_merge( self::BASE, self::HISTORY ),
 			),
 			'empty'      => array(
 				// The availability note targets stores without currencies yet (client 11.1.0 `MultiCurrency.php:380,1135-1145`).
 				RequestTypeUtil::ADMIN => array( MultiCurrencySettingsController::class, MultiCurrencyAdminNoteController::class ),
-				RequestTypeUtil::REST  => array( MultiCurrencyRestController::class ),
 			),
 		);
 
