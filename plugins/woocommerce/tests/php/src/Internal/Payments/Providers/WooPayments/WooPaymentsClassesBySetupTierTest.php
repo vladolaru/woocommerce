@@ -15,9 +15,17 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\UserPre
 use Automattic\WooCommerce\Internal\Payments\ProviderGatewaysController;
 use Automattic\WooCommerce\Internal\Payments\PaymentGatewayProviderInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountMilestonesController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsApplePayDomainService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsConnectionFeatures;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudOrderTrackingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogEntryFormat;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderAdminActionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderCardInfo;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderStatusChangeController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStoreSetupReportController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTestModeOrderEmailService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminRestRouteRegistrar;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\CutoverController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\DataMigration;
@@ -27,6 +35,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooCommerceUpdateListener;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\ExtensionSync;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\OrderStatusSync;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\PreflightGuard;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use WC_Unit_Test_Case;
@@ -37,6 +47,39 @@ use WC_Unit_Test_Case;
 class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 
 	private const WCPAY = 'Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\\';
+
+	/**
+	 * Classes whose hooks are domain events: an order status change, an order save, a refund, an account refresh, a connection
+	 * change, a plugin change, or a store URL change; and the emails a status change sends.
+	 *
+	 * Any request can fire those events, so every request type of a set-up store loads them. Classes whose hooks fire only inside
+	 * a Store API dispatch, a checkout, a shopper session, an admin screen or a scheduled action are not listed: the requests
+	 * without them cannot fire those hooks, or the bootstrap registers the scheduled-action handlers before the first action
+	 * runs. The loan-approved note is not listed either: it waits for a merchant's account refresh by design.
+	 */
+	private const DOMAIN_EVENT_CLASSES = array(
+		WooPaymentsOrderAdminActionsController::class,
+		WooPaymentsAccountMilestonesController::class,
+		WooPaymentsFraudOrderTrackingService::class,
+		WooPaymentsAdminRestRouteRegistrar::class,
+		WebhookReliabilityService::class,
+		WooPaymentsAccountService::class,
+		WooPaymentsTestModeOrderEmailService::class,
+		WooPaymentsStoreSetupReportController::class,
+		OrderStatusSync::class,
+		ExtensionSync::class,
+		WooPaymentsApplePayDomainService::class,
+	);
+
+	/**
+	 * Classes the connected front request leaves out although the active front request and another connected request type load them.
+	 *
+	 * The customer service acts only inside a WooPayments checkout, and the order status change controller only on admin screens.
+	 */
+	private const LEFT_OUT_OF_THE_CONNECTED_FRONT = array(
+		WooPaymentsCustomerService::class,
+		WooPaymentsOrderStatusChangeController::class,
+	);
 
 	/**
 	 * @testdox The Fee details job's handler, the store setup report and the account milestones load on the same requests.
@@ -210,26 +253,32 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 		}
 	}
 
-	/** @testdox Mutation requests retain their required observers. */
-	public function test_provider_matrix_keeps_required_mutation_observers(): void {
-		$matrix         = WooPaymentsProvider::get_classes_by_setup_tier();
-		$connected_rest = $matrix[ WooPaymentsSetupTier::CONNECTED ]['rest'];
-		$active_front   = $matrix[ WooPaymentsSetupTier::ACTIVE ]['front'];
+	/** @testdox Every request type of a connected and an active store loads each class that hooks a domain event. */
+	public function test_every_set_up_request_loads_the_classes_that_hook_domain_events(): void {
+		$matrix = WooPaymentsProvider::get_classes_by_setup_tier();
 
-		foreach (
-			array(
-				self::WCPAY . 'WooPaymentsOrderAdminActionsController',
-				self::WCPAY . 'WooPay\OrderStatusSync',
-				self::WCPAY . 'WooPaymentsApplePayDomainService',
-				self::WCPAY . 'WooPaymentsFraudOrderTrackingService',
-				self::WCPAY . 'WooPaymentsStoreSetupReportController',
-				self::WCPAY . 'WooPaymentsAccountMilestonesController',
-			) as $observer
-		) {
-			$this->assertContains( $observer, $connected_rest, $observer . ' must observe connected REST mutations.' );
+		foreach ( array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
+			foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
+				foreach ( self::DOMAIN_EVENT_CLASSES as $class_name ) {
+					$this->assertContains( $class_name, ( $matrix[ $state ][ $request ] ?? array() ), "The $state $request request must load $class_name." );
+				}
+			}
 		}
+	}
 
-		$this->assertContains( self::WCPAY . 'WooPaymentsFraudOrderTrackingService', $active_front, 'Active shopper order creation must retain tracking hooks.' );
+	/** @testdox A class the active front request and another connected request type load is on the connected front request, or left out for a stated reason. */
+	public function test_a_class_the_active_front_and_another_connected_request_load_is_classed_for_the_connected_front(): void {
+		$matrix         = WooPaymentsProvider::get_classes_by_setup_tier();
+		$connected      = $matrix[ WooPaymentsSetupTier::CONNECTED ];
+		$on_other_types = array_merge( $connected['admin'], $connected['ajax'], $connected['rest'], $connected['cron'], $connected['cli'] );
+		$shared         = array_intersect( $matrix[ WooPaymentsSetupTier::ACTIVE ]['front'], $on_other_types );
+
+		foreach ( array_unique( $shared ) as $class_name ) {
+			$this->assertTrue(
+				in_array( $class_name, $connected['front'], true ) || in_array( $class_name, self::LEFT_OUT_OF_THE_CONNECTED_FRONT, true ),
+				"$class_name is on the active front request and on another connected request type, but not on the connected front request: list it there, or leave it out for a stated reason."
+			);
+		}
 	}
 
 	/** @testdox The WooPayments admin pages' navigation and shared settings register together on connected and active admin requests only. */

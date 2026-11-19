@@ -233,9 +233,29 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 				RequestTypeUtil::CRON  => $cutover_cron,
 			),
 			WooPaymentsSetupTier::CONNECTED => array(
+				// Order status changes, order saves, account refreshes and connection changes reach a connected store on any request,
+				// and the client hooks them on every request, gateway enabled or not (client 11.3.0 `includes/class-wc-payment-gateway-wcpay.php:783-784`,
+				// `includes/class-wc-payments.php:628`).
 				// The VAT details link lands on a front-end URL (client 11.1.0 `includes/class-wc-payments-vat-redirect-service.php:25`).
 				// The classic checkout and the pay page clean up an earlier attempt another gateway took over, also with the checkout off.
-				RequestTypeUtil::FRONT => array_merge( $gateway_prefix, array( WooPaymentsVatDetailsRedirect::class, WooPaymentsEarlierAttemptCleanup::class ) ),
+				RequestTypeUtil::FRONT => array_merge(
+					$gateway_prefix,
+					array(
+						WooPaymentsAccountService::class,
+						WebhookReliabilityService::class,
+						WooPaymentsOrderAdminActionsController::class,
+						OrderStatusSync::class,
+						ExtensionSync::class,
+						WooPaymentsApplePayDomainService::class,
+						WooPaymentsFraudOrderTrackingService::class,
+						WooPaymentsStoreSetupReportController::class,
+						WooPaymentsAccountMilestonesController::class,
+						WooPaymentsFeeDetailsNoteController::class,
+						WooPaymentsTestModeOrderEmailService::class,
+						WooPaymentsVatDetailsRedirect::class,
+						WooPaymentsEarlierAttemptCleanup::class,
+					)
+				),
 				RequestTypeUtil::ADMIN => array_merge( $gateway_prefix, $connected_admin ),
 				RequestTypeUtil::AJAX  => array_merge( $gateway_prefix, $connected_ajax ),
 				RequestTypeUtil::REST  => array_merge( $gateway_prefix, $connected_rest ),

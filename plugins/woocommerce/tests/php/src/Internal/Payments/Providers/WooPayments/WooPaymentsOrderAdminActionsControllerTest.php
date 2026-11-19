@@ -13,12 +13,14 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Transport
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLevel3Service;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
+use Automattic\WooCommerce\Internal\Payments\PaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
+use Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPlatformEvents;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\StoredPaymentRecords;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
@@ -931,6 +933,69 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( OrderStatus::COMPLETED, $order->get_status() );
 		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
 		$this->assert_order_has_note_containing( $order, 'was <strong>successfully captured</strong>' );
+	}
+
+	/**
+	 * @testdox A status change to $order_status on a connected store's front request sends the $operation for the stored authorization and writes its note, with the WooPayments checkout off.
+	 *
+	 * A fulfilment callback, XML-RPC or a plugin's cron event run from a page changes an order's status on a front request.
+	 * The connected front request's classes load through the payments bootstrap, as WooCommerce loads them, with the
+	 * platform on a fake transport. Client 11.3.0 hooks the same status changes on every request, gateway enabled or not
+	 * (class-wc-payment-gateway-wcpay.php:783-784, class-wc-payments.php:628).
+	 *
+	 * @dataProvider status_change_operation_data
+	 *
+	 * @param string $operation    Capture or cancel.
+	 * @param string $order_status Status the order changes to.
+	 */
+	public function test_a_connected_front_request_sends_the_operation_on_a_status_change( string $operation, string $order_status ): void {
+		$order     = $this->create_recorded_authorization_order( 'requires_capture', OrderStatus::ON_HOLD );
+		$transport = $this->create_operation_transport( $operation );
+		$client    = new Client();
+		$client->init( $transport, wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( TransportLog::class ) );
+		wc_get_container()->replace( Client::class, $client );
+		wc_get_container()->reset_all_resolved();
+		// A warm account cache, as on a store in use: no account refresh runs, so the platform sees only the intent request.
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'               => array(
+					'account_id'        => 'acct_front_row',
+					'country'           => 'US',
+					'is_live'           => true,
+					'payments_enabled'  => true,
+					'details_submitted' => true,
+					'fraud_services'    => array( 'stripe' => array() ),
+				),
+				'fetched'            => time(),
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			)
+		);
+
+		try {
+			$bootstrap = new PaymentsBootstrap(
+				static fn(): array => WooPaymentsProvider::get_classes_by_setup_tier()[ WooPaymentsSetupTier::CONNECTED ][ RequestTypeUtil::FRONT ],
+				static fn(): bool => false
+			);
+			$bootstrap->register( wc_get_container(), RequestTypeUtil::FRONT );
+
+			wc_get_order( $order->get_id() )->update_status( $order_status );
+		} finally {
+			wc_get_container()->reset_all_replacements();
+			wc_get_container()->reset_all_resolved();
+		}
+
+		$is_capture = PaymentProcessingService::OPERATION_CAPTURE === $operation;
+		$order      = wc_get_order( $order->get_id() );
+		$this->assertSame( array( $this->operation_path( $operation ) ), $this->request_paths( $transport ), 'The status change sends exactly one request, for the stored authorization.' );
+		if ( $is_capture ) {
+			$this->assertSame( 1099, json_decode( (string) $transport->requests[0]['body'], true )['amount_to_capture'] ?? null, 'The capture is for the order total.' );
+		}
+		$this->assertSame( $order_status, $order->get_status() );
+		$this->assertSame( $is_capture ? 'succeeded' : 'canceled', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( 1, $this->count_notes_containing( $order, $is_capture ? 'was <strong>successfully captured</strong>' : 'was successfully <strong>cancelled</strong>' ) );
+		$this->assertSame( $is_capture ? 1 : 0, $this->count_pending_fee_details_jobs( $order ), 'A capture queues the Fee details job; a cancel queues none.' );
 	}
 
 	/**
