@@ -548,9 +548,9 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( '', $subscription->get_meta( '_wcpay_payment_method_details', true ) );
 		$this->assertSame( '', $subscription->get_meta( '_wcpay_raw_payment_method_details', true ) );
 		$this->assertSame( 'pm_callback_replay', $order->get_meta( '_payment_method_id', true ) );
-		$this->assertSame( 'pm_callback_replay', $subscription->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( '', $subscription->get_meta( '_payment_method_id', true ) );
 		$this->assertSame( 'cus_callback_replay', $order->get_meta( '_stripe_customer_id', true ) );
-		$this->assertSame( 'cus_callback_replay', $subscription->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( '', $subscription->get_meta( '_stripe_customer_id', true ) );
 		$this->assertSame( 'seti_callback_replay', $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( array( $token->get_id() ), array_values( $order->get_payment_tokens() ) );
 		$this->assertSame( array( $token->get_id() ), array_values( $subscription->get_payment_tokens() ) );

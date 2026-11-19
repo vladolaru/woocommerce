@@ -55,6 +55,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionsController;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
@@ -64,6 +65,7 @@ use Automattic\WooCommerce\Tests\Internal\Payments\RecordingProvider;
 use Automattic\WooCommerce\Utilities\OrderUtil;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\StoredPaymentRecords;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\SubscriptionPaymentIdsOnSave;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Order;
 use WC_Order_Refund;
@@ -9465,10 +9467,11 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A checkout with a saved card keeps the valid customer on the order and its subscription when a response filter returns a non-string customer.
+	 * @testdox A checkout with a saved card keeps the valid customer on the order when a response filter returns a non-string customer, and its subscription takes that customer at its next save.
 	 *
 	 * A `wcpay_api_request_response` callback can return any value for `customer`; the outcome falls back to the customer the
-	 * request was sent for instead of casting `true` to '1', which the order meta and the subscription sync would then store.
+	 * request was sent for instead of casting `true` to '1', which the order meta would then store and the subscription would
+	 * take at its next save.
 	 * The response is the recorded REC-SUB succeeded intent (`Fixtures/platform-intention-subscription.json`, pair
 	 * `renewal_off_session`).
 	 */
@@ -9480,6 +9483,8 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_stripe_customer_id', 'cus_UsIeTbmGHPc9jY' );
 		$order->save();
 		$subscription = $this->create_woopayments_order( '10.99' );
+		$subscription->set_parent_id( $order->get_id() );
+		$subscription->save();
 		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $order->get_id() => array( 'parent' => array( $subscription->get_id() ) ) );
 
@@ -9524,7 +9529,129 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
 		$this->assertSame( 'cus_UsIeTbmGHPc9jY', wc_get_order( $order->get_id() )->get_meta( '_stripe_customer_id', true ) );
-		$this->assertSame( 'cus_UsIeTbmGHPc9jY', wc_get_order( $subscription->get_id() )->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( '', wc_get_order( $subscription->get_id() )->get_meta( '_stripe_customer_id', true ), 'The payment writes no customer on the subscription.' );
+
+		SubscriptionPaymentIdsOnSave::register( $this );
+		wc_get_order( $subscription->get_id() )->save();
+
+		$this->assertSame( 'cus_UsIeTbmGHPc9jY', wc_get_order( $subscription->get_id() )->get_meta( '_stripe_customer_id', true ), "The subscription's next save gives it the parent's valid customer, never the filtered value." );
+	}
+
+	/**
+	 * @testdox A renewal charges the customer its sign-up charged, with the subscription's own card.
+	 *
+	 * The sign-up's payment writes neither ID on the subscription. Subscriptions saves the subscription when its parent is
+	 * paid, and that save gives it the parent's customer (client 11.3.0 trait-wc-payment-gateway-wcpay-subscriptions.php:1113-1168).
+	 * The renewal is built as Subscriptions builds it, with the subscription's IDs and tokens copied, and falls back to the
+	 * parent's customer when the subscription has none. Both responses are the recorded REC-SUB succeeded intent
+	 * (`Fixtures/platform-intention-subscription.json`, pair `renewal_off_session`), the renewal's with its own IDs.
+	 */
+	public function test_a_renewal_charges_the_customer_its_sign_up_charged(): void {
+		$user_id     = $this->factory()->user->create();
+		$saved_token = $this->create_card_token( $user_id, 'pm_1UJhOFBzWlxcwgpPvcySvyc5' );
+		$parent      = $this->create_woopayments_order( '10.99' );
+		$parent->set_customer_id( $user_id );
+		$parent->save();
+		$subscription = $this->create_woopayments_order( '10.99' );
+		$subscription->set_customer_id( $user_id );
+		$subscription->set_parent_id( $parent->get_id() );
+		$subscription->save();
+		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $parent->get_id() => array( 'parent' => array( $subscription->get_id() ) ) );
+
+		$recorded               = $this->load_recorded_intent_entry( 'platform-intention-subscription.json', 'renewal_off_session' );
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			array(
+				'response' => array( 'code' => $recorded['http_status'] ),
+				'headers'  => array( 'content-type' => $recorded['content_type'] ),
+				'body'     => wp_json_encode( $recorded['body'] ),
+			),
+			array(
+				'response' => array( 'code' => $recorded['http_status'] ),
+				'headers'  => array( 'content-type' => $recorded['content_type'] ),
+				'body'     => str_replace( array( 'pi_3UJhOUBzWlxcwgpP0FGWIQQW', 'ch_3UJhOUBzWlxcwgpP0xdwB1w8' ), array( 'pi_n14_renewal', 'ch_n14_renewal' ), (string) wp_json_encode( $recorded['body'] ) ),
+			),
+		);
+		$parent_id              = $parent->get_id();
+		$customer_service       = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+		// The user's customer at sign-up, and another one for any later order: the platform customer the user has by the time the
+		// renewal runs (recreated, as WooPaymentsCustomerService::replace_missing_customer_for_order() does). A renewal that does not
+		// carry the sign-up's customer asks this service and sends the other one.
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturnCallback(
+			static fn( WC_Order $order ): string => $parent_id === $order->get_id() ? 'cus_UsIeTbmGHPc9jY' : 'cus_recreated_after_signup'
+		);
+		$provider = $this->create_provider_over_fake_transport( $http_client, $this->create_account_service( false ), $customer_service );
+
+		// The shopper who picks their saved card is logged in.
+		wp_set_current_user( $user_id );
+		wc_get_container()->get( PaymentProcessingService::class )->process_checkout_outcome(
+			PaymentOperationContext::for_checkout(
+				$parent,
+				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+				'',
+				array(
+					'payment_token'       => (string) $saved_token->get_id(),
+					'save_payment_method' => false,
+				)
+			),
+			$provider
+		);
+		wp_set_current_user( 0 );
+
+		// Subscriptions saves the subscription when its parent is paid (class-wc-subscriptions-order.php:595).
+		SubscriptionPaymentIdsOnSave::register( $this );
+		wc_get_order( $subscription->get_id() )->save();
+
+		$this->assertSame( 'cus_UsIeTbmGHPc9jY', wc_get_order( $subscription->get_id() )->get_meta( '_stripe_customer_id', true ), 'After its activation save the subscription holds the sign-up customer.' );
+
+		// Subscriptions copies the subscription's meta and tokens onto a new renewal (class-wc-subscriptions-data-copier.php:102-123, :228-230).
+		$subscription = wc_get_order( $subscription->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $subscription );
+		$renewal = $this->create_woopayments_order( '10.99' );
+		$renewal->set_customer_id( $user_id );
+		foreach ( array( '_payment_method_id', '_stripe_customer_id' ) as $meta_key ) {
+			$value = (string) $subscription->get_meta( $meta_key, true );
+			if ( '' !== $value ) {
+				$renewal->update_meta_data( $meta_key, $value );
+			}
+		}
+		$renewal->save();
+		$renewal->get_data_store()->update_payment_token_ids( $renewal, $subscription->get_payment_tokens() );
+
+		WooCommerceSubscriptionsDoubles::load();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::RENEWAL_SUBSCRIPTIONS ] = array( $renewal->get_id() => array( $subscription->get_id() ) );
+		wc_get_container()->replace( WooPaymentsProvider::class, $provider );
+		try {
+			( new SubscriptionsController() )->scheduled_subscription_payment( 10.99, wc_get_order( $renewal->get_id() ) );
+		} finally {
+			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::RENEWAL_SUBSCRIPTIONS ] );
+		}
+
+		$charges = array_values(
+			array_filter(
+				$http_client->requests,
+				static fn( array $request ): bool => 'POST' === $request['method'] && '/sites/123/wcpay/intentions' === $request['path']
+			)
+		);
+		$this->assertSame(
+			array( 'cus_UsIeTbmGHPc9jY', 'cus_UsIeTbmGHPc9jY' ),
+			array_map( static fn( array $request ) => json_decode( (string) $request['body'], true )['customer'] ?? null, $charges ),
+			'The renewal sends the customer its sign-up charged.'
+		);
+		$this->assertSame(
+			array(),
+			array_values(
+				array_filter(
+					wc_get_order_notes( array( 'order_id' => $renewal->get_id() ) ),
+					static fn( $note ): bool => str_contains( $note->content, 'Recovered missing subscription payment method token from the parent order.' )
+				)
+			),
+			"The renewal charges the subscription's own card, not one rebuilt from the parent."
+		);
 	}
 
 	/**

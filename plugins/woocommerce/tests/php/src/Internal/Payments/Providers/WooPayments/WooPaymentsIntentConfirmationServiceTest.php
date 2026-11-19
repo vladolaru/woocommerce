@@ -28,6 +28,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTo
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\StoredPaymentRecords;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\SubscriptionPaymentIdsOnSave;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -117,10 +118,10 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Saving the payment method keeps the order's saved customer on the order and the related subscription when the intent's customer is not a string.
+	 * @testdox Saving the payment method keeps the order's saved customer when the intent's customer is not a string, and the related subscription takes that customer at its next save.
 	 *
 	 * A `wcpay_api_request_response` callback can hand back any value for `customer`; a coerced `true` must not replace the
-	 * order's valid customer ID on the subscriptions the saved token is synced to.
+	 * order's valid customer ID on the order, from which the subscription takes it when saved.
 	 */
 	public function test_saving_the_payment_method_ignores_a_non_string_intent_customer(): void {
 		$order = $this->create_woopayments_order( '10.99' );
@@ -128,6 +129,8 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_stripe_customer_id', 'cus_saved' );
 		$order->save();
 		$subscription = $this->create_woopayments_order( '10.99' );
+		$subscription->set_parent_id( $order->get_id() );
+		$subscription->save();
 
 		$intent             = $this->load_recorded_manual_3ds_entry( 'classic_checkout_challenge_completed' )['body'];
 		$intent['customer'] = true;
@@ -136,8 +139,13 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 
 		$sut->confirm_fetched_intent_for_order( $order, $intent, true );
 
-		$this->assertSame( 'cus_saved', wc_get_order( $subscription->get_id() )->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( '', wc_get_order( $subscription->get_id() )->get_meta( '_stripe_customer_id', true ), 'The payment writes no customer on the subscription.' );
 		$this->assertSame( 'cus_saved', wc_get_order( $order->get_id() )->get_meta( '_stripe_customer_id', true ) );
+
+		SubscriptionPaymentIdsOnSave::register( $this );
+		wc_get_order( $subscription->get_id() )->save();
+
+		$this->assertSame( 'cus_saved', wc_get_order( $subscription->get_id() )->get_meta( '_stripe_customer_id', true ), "The subscription's next save gives it the order's valid customer, never the intent's." );
 	}
 
 	/**

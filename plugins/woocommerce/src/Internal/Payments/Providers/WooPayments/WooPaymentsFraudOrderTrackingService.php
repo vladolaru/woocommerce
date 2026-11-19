@@ -117,10 +117,10 @@ class WooPaymentsFraudOrderTrackingService implements RegisterHooksInterface {
 	/**
 	 * Bring a subscription order's payment method and customer IDs up to date before it is tracked.
 	 *
-	 * Client 11.1.0 `maybe_schedule_subscription_order_tracking()` (trait-wc-payment-gateway-wcpay-subscriptions.php:1108-1160),
+	 * Client 11.3.0 `maybe_schedule_subscription_order_tracking()` (trait-wc-payment-gateway-wcpay-subscriptions.php:1113-1168),
 	 * run first on every order update: the order's latest token wins; without one, an order with no payment method ID takes
-	 * its parent's, or is left alone; a missing customer ID comes from the parent. This code runs it for the card gateway's
-	 * orders only, where client 11.1.0 writes these WooPayments IDs onto any gateway's order.
+	 * its parent's, or is left alone; a missing customer ID comes from the parent. It runs for every WooPayments gateway's
+	 * orders, as client 11.3.0 (trait:1123-1126); a payment writes neither ID onto a subscription itself.
 	 *
 	 * @param WC_Order $order Order being updated.
 	 */
@@ -182,13 +182,15 @@ class WooPaymentsFraudOrderTrackingService implements RegisterHooksInterface {
 			return;
 		}
 
+		if ( WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( $order->get_payment_method() ) ) {
+			$this->maybe_repair_subscription_order_tracking_meta( $order );
+		}
+
 		// Client 11.1.0 tracks Sift orders for the main card gateway only, an exact gateway-ID match, never the split
 		// sub-gateways (class-wc-payment-gateway-wcpay.php:4505), so Sift trains on the same orders here.
 		if ( WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $order->get_payment_method() ) {
 			return;
 		}
-
-		$this->maybe_repair_subscription_order_tracking_meta( $order );
 
 		if ( ! $this->is_sift_tracking_enabled() ) {
 			return;

@@ -1437,7 +1437,6 @@ class WooPaymentsOrderEffectApplier {
 	private function apply_token_effects( PaymentOperationContext $context, PaymentOutcome $outcome, bool $is_recurring ): ?array {
 		$payment_data      = $context->get_payment_data();
 		$payment_method_id = $outcome->get_payment_method_id();
-		$customer_id       = $outcome->get_customer_id();
 		$order             = $context->get_order();
 		$payer_user_id     = WooPaymentsCustomerService::get_payer_user_id( $order );
 
@@ -1445,7 +1444,7 @@ class WooPaymentsOrderEffectApplier {
 			if ( WooPaymentsTokenService::is_using_saved_payment_token( $payment_data ) ) {
 				$payment_token_id = isset( $payment_data['payment_token'] ) ? (string) $payment_data['payment_token'] : '';
 				$token            = $this->token_service->get_valid_token_from_token_id( $payment_token_id, $payer_user_id );
-				return $token instanceof WC_Payment_Token && $this->attach_and_sync_token( $order, $token, $payment_method_id, $customer_id ) ? array() : null;
+				return $token instanceof WC_Payment_Token && $this->attach_and_sync_token( $order, $token ) ? array() : null;
 			}
 
 			if ( empty( $payment_data['save_payment_method'] ) && ! $is_recurring ) {
@@ -1464,7 +1463,7 @@ class WooPaymentsOrderEffectApplier {
 				$token                  = $this->token_service->get_or_create_token_for_user( $payment_method_id, $payer_user_id );
 				$payment_method_details = array();
 			}
-			if ( $token instanceof WC_Payment_Token && $this->attach_and_sync_token( $order, $token, $payment_method_id, $customer_id ) ) {
+			if ( $token instanceof WC_Payment_Token && $this->attach_and_sync_token( $order, $token ) ) {
 				return $payment_method_details;
 			}
 		} catch ( Throwable $exception ) {
@@ -1503,18 +1502,16 @@ class WooPaymentsOrderEffectApplier {
 	/**
 	 * Attach a token to an order and synchronize related subscriptions.
 	 *
-	 * @param WC_Order         $order             Order being updated.
-	 * @param WC_Payment_Token $token             WooCommerce token.
-	 * @param string           $payment_method_id Provider payment method ID.
-	 * @param string           $customer_id       Provider customer ID.
+	 * @param WC_Order         $order Order being updated.
+	 * @param WC_Payment_Token $token WooCommerce token.
 	 * @return bool Whether the token was attached and synchronized.
 	 */
-	private function attach_and_sync_token( WC_Order $order, WC_Payment_Token $token, string $payment_method_id, string $customer_id ): bool {
+	private function attach_and_sync_token( WC_Order $order, WC_Payment_Token $token ): bool {
 		if ( ! $this->token_service->attach_token_to_order( $order, $token ) ) {
 			return false;
 		}
 
-		$this->token_service->sync_related_subscriptions_payment_token( $order, $token, $payment_method_id, $customer_id );
+		$this->token_service->sync_related_subscriptions_payment_token( $order, $token );
 
 		return true;
 	}
@@ -1565,7 +1562,7 @@ class WooPaymentsOrderEffectApplier {
 		}
 
 		$this->token_service->attach_token_to_order( $order, $token );
-		$this->token_service->sync_related_subscriptions_payment_token( $order, $token, $payment_method_id, $outcome->get_customer_id() );
+		$this->token_service->sync_related_subscriptions_payment_token( $order, $token );
 		$this->action_scheduler->schedule_job(
 			WooPaymentsTokenService::UPDATE_SAVED_PAYMENT_METHOD_ACTION,
 			array(

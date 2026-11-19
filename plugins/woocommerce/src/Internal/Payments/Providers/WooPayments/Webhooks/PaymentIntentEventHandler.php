@@ -1254,12 +1254,7 @@ class PaymentIntentEventHandler {
 			// copies the subscription's tokens into each new renewal order, so a
 			// subscription left pointing at the replaced card would charge it on
 			// the next renewal.
-			$token_service->sync_related_subscriptions_payment_token(
-				$order,
-				$token,
-				$payment_method_id,
-				(string) $order->get_meta( '_stripe_customer_id', true )
-			);
+			$token_service->sync_related_subscriptions_payment_token( $order, $token );
 
 			// The note says the subscription moved to the new card, so it is written only where the copy above reached a
 			// subscription: one the order is the parent or a switch of. A renewal's subscription keeps its own card.

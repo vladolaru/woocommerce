@@ -750,7 +750,7 @@ class WooPaymentsIntentConfirmationService {
 			}
 			if ( $token instanceof \WC_Payment_Token ) {
 				$this->token_service->attach_token_to_order( $order, $token );
-				$this->token_service->sync_related_subscriptions_payment_token( $order, $token, $payment_method_id, WooPaymentsIntentCodec::result_customer_id( $intent, '' ) );
+				$this->token_service->sync_related_subscriptions_payment_token( $order, $token );
 
 				return array(
 					'error'                  => null,

@@ -1331,27 +1331,22 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Copy a saved payment token and provider metadata to the subscriptions the order is the parent or a switch of.
+	 * Copy a saved payment token to the subscriptions the order is the parent or a switch of.
 	 *
 	 * The token goes to every such subscription, whatever its gateway, as client 11.3.0 does
 	 * (trait-wc-payment-gateway-wcpay-subscriptions.php:718-730), so a manual subscription that Subscriptions moves to the
-	 * order's gateway when a switch completes already has the card. The provider IDs are written only on a subscription on
-	 * the order's gateway, because another gateway may keep its own values under the same keys.
+	 * order's gateway when a switch completes already has the card. Its payment method and customer IDs are written when it is
+	 * saved, and only on a WooPayments gateway, by WooPaymentsFraudOrderTrackingService (client 11.3.0 trait:1113-1168).
 	 *
 	 * @since 11.0.0
 	 *
-	 * @param WC_Order         $order             Related order.
-	 * @param WC_Payment_Token $token             Saved payment token.
-	 * @param string           $payment_method_id Provider payment method ID.
-	 * @param string           $customer_id       WooPayments customer ID.
+	 * @param WC_Order         $order Related order.
+	 * @param WC_Payment_Token $token Saved payment token.
 	 */
-	public function sync_related_subscriptions_payment_token( WC_Order $order, WC_Payment_Token $token, string $payment_method_id, string $customer_id ): void {
+	public function sync_related_subscriptions_payment_token( WC_Order $order, WC_Payment_Token $token ): void {
 		if ( 0 >= $token->get_id() ) {
 			return;
 		}
-
-		$provider_payment_method_id = '' !== $payment_method_id ? $payment_method_id : (string) $token->get_token();
-		$provider_customer_id       = '' !== $customer_id ? $customer_id : (string) $order->get_meta( '_stripe_customer_id', true );
 
 		foreach ( $this->get_related_subscriptions_for_order( $order ) as $subscription ) {
 			if ( ! $subscription instanceof WC_Order ) {
@@ -1361,16 +1356,6 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 			$active_token = $this->get_active_token_for_order( $subscription );
 			if ( ! $active_token instanceof WC_Payment_Token || $token->get_id() !== $active_token->get_id() ) {
 				$subscription->add_payment_token( $token );
-			}
-
-			$is_same_gateway = $order->get_payment_method() === $subscription->get_payment_method();
-
-			if ( $is_same_gateway && '' !== $provider_payment_method_id ) {
-				$subscription->update_meta_data( '_payment_method_id', $provider_payment_method_id );
-			}
-
-			if ( $is_same_gateway && '' !== $provider_customer_id ) {
-				$subscription->update_meta_data( '_stripe_customer_id', $provider_customer_id );
 			}
 
 			$subscription->save();

@@ -1999,9 +1999,9 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $order->get_id() => array( 'parent' => array( $subscription->get_id() ) ) );
 
 		$sut = $this->create_service();
-		$sut->sync_related_subscriptions_payment_token( $order, $token_b, 'pm_subscription_b', 'cus_subscription' );
-		$sut->sync_related_subscriptions_payment_token( $order, $token_a, 'pm_subscription_a', 'cus_subscription' );
-		$sut->sync_related_subscriptions_payment_token( $order, $token_a, 'pm_subscription_a', 'cus_subscription' );
+		$sut->sync_related_subscriptions_payment_token( $order, $token_b );
+		$sut->sync_related_subscriptions_payment_token( $order, $token_a );
+		$sut->sync_related_subscriptions_payment_token( $order, $token_a );
 
 		$subscription = wc_get_order( $subscription->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $subscription );
@@ -2041,7 +2041,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 			'The lookup double must return three distinct subscriptions.'
 		);
 
-		$sut->sync_related_subscriptions_payment_token( $parent, $token, 'pm_multi', 'cus_multi' );
+		$sut->sync_related_subscriptions_payment_token( $parent, $token );
 
 		$monthly       = wc_get_order( $monthly->get_id() );
 		$yearly        = wc_get_order( $yearly->get_id() );
@@ -2095,7 +2095,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $order->get_id() => array( 'switch' => array( $subscription->get_id() ) ) );
 		$sut = $this->create_service();
 
-		$sut->sync_related_subscriptions_payment_token( $order, $card, 'pm_card', 'cus_card' );
+		$sut->sync_related_subscriptions_payment_token( $order, $card );
 
 		$subscription = wc_get_order( $subscription->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $subscription );

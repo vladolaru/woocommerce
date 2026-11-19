@@ -20,6 +20,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\StoredPaymentRecords;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\SubscriptionPaymentIdsOnSave;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use RuntimeException;
 use WC_Order;
@@ -1225,6 +1226,76 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A switch order paid by card adds its card to the subscription and leaves the subscription's IDs to its next save, which keeps its own customer.
+	 *
+	 * Client 11.3.0 only appends the token (trait-wc-payment-gateway-wcpay-subscriptions.php:718-730) and writes the IDs when the
+	 * subscription is saved: the payment method ID from its last token, the customer only when it has none (:1113-1168). A
+	 * subscription's customer can differ from its parent's after a renewal's customer recovery
+	 * (WooPaymentsCustomerService::replace_stale_subscription_customer_id()).
+	 */
+	public function test_switch_order_charge_leaves_the_subscriptions_ids_to_its_save(): void {
+		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
+		$user_id      = $this->factory()->user->create();
+		$parent       = $this->create_woopayments_order();
+		$order        = $this->create_woopayments_order();
+		$subscription = $this->create_woopayments_order();
+		$parent->update_meta_data( '_stripe_customer_id', 'cus_parent' );
+		$parent->save();
+		$order->set_customer_id( $user_id );
+		$order->save();
+		$subscription->set_customer_id( $user_id );
+		$subscription->set_parent_id( $parent->get_id() );
+		$subscription->update_meta_data( '_payment_method_id', 'pm_old' );
+		$subscription->update_meta_data( '_stripe_customer_id', 'cus_subscription' );
+		$subscription->save();
+		$GLOBALS['wcpay_test_order_subscription_relationships'] = array(
+			$order->get_id() => array( 'switch' => array( $subscription->get_id() ) ),
+		);
+
+		$token_service = $this->create_token_service(
+			array(
+				'pm_switch' => array(
+					'id'   => 'pm_switch',
+					'type' => 'card',
+					'card' => array(
+						'brand'     => 'visa',
+						'last4'     => '4242',
+						'exp_month' => 12,
+						'exp_year'  => 2030,
+					),
+				),
+			)
+		);
+		$outcome       = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_switch', '', 'pm_switch', 'cus_switch' );
+		$plan          = WooPaymentsOrderEffectPlan::for_payment_intent(
+			array(
+				'id'             => 'pi_switch',
+				'status'         => 'succeeded',
+				'payment_method' => 'pm_switch',
+			),
+			true
+		);
+
+		$this->apply_charge( $this->create_applier( $token_service ), PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_switch' ), $outcome, $plan );
+		$subscription = wc_get_order( $subscription->get_id() );
+		$tokens       = \WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$token        = reset( $tokens );
+
+		$this->assertInstanceOf( WC_Order::class, $subscription );
+		$this->assertInstanceOf( WC_Payment_Token_CC::class, $token );
+		$this->assertSame( 'cus_subscription', $subscription->get_meta( '_stripe_customer_id', true ), "The switch's payment does not overwrite the subscription's customer." );
+		$this->assertSame( 'pm_old', $subscription->get_meta( '_payment_method_id', true ), 'The payment writes no payment method ID on the subscription.' );
+		$this->assertSame( array( $token->get_id() ), array_values( $subscription->get_payment_tokens() ), 'The switched subscription renews on the new card.' );
+
+		SubscriptionPaymentIdsOnSave::register( $this );
+		$subscription->save();
+		$subscription = wc_get_order( $subscription->get_id() );
+
+		$this->assertSame( 'cus_subscription', $subscription->get_meta( '_stripe_customer_id', true ), "The subscription's save keeps its own customer." );
+		$this->assertSame( 'pm_switch', $subscription->get_meta( '_payment_method_id', true ), "The subscription's save takes its new card's payment method ID." );
+	}
+
+	/**
 	 * @testdox A recurring PaymentIntent whose token cannot be saved keeps its paid outcome, identity and note.
 	 */
 	public function test_recurring_token_failure_keeps_the_paid_outcome(): void {
@@ -1369,7 +1440,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$token_service->method( 'get_or_create_token_for_user' )->willReturn( $token );
 		$token_service->expects( $this->once() )
 			->method( 'sync_related_subscriptions_payment_token' )
-			->with( $this->isInstanceOf( WC_Order::class ), $token, 'pm_ordered', 'cus_ordered' );
+			->with( $this->isInstanceOf( WC_Order::class ), $token );
 		$note_service = $this->getMockBuilder( WooPaymentsOrderNoteService::class )
 			->onlyMethods( array( 'format_payment_success_note_candidates' ) )
 			->getMock();

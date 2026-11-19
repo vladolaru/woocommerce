@@ -5448,8 +5448,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 					'subscription_gateway'        => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 					'subscription_title'          => 'Visa credit card',
 					'subscription_tokens'         => $expected_token_ids,
-					'subscription_payment_method' => 'pm_free_trial',
-					'subscription_customer'       => 'cus_free_trial',
+					'subscription_payment_method' => '',
+					'subscription_customer'       => '',
 					'subscription_last4'          => '',
 					'subscription_card_brand'     => '',
 					'subscription_details'        => '',
@@ -5474,8 +5474,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 					'subscription_gateway'        => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 					'subscription_title'          => 'Visa credit card',
 					'subscription_tokens'         => $expected_token_ids,
-					'subscription_payment_method' => 'pm_free_trial',
-					'subscription_customer'       => 'cus_free_trial',
+					'subscription_payment_method' => '',
+					'subscription_customer'       => '',
 					'subscription_last4'          => '',
 					'subscription_card_brand'     => '',
 					'subscription_details'        => '',
@@ -5492,8 +5492,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( $use_saved_token ? '' : 'seti_free_trial', $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( $use_saved_token ? '' : 'succeeded', $order->get_meta( '_intention_status', true ), 'No intent, no intention status.' );
 		$this->assertSame( 'Visa credit card', $subscription->get_payment_method_title() );
-		$this->assertSame( 'pm_free_trial', $subscription->get_meta( '_payment_method_id', true ) );
-		$this->assertSame( 'cus_free_trial', $subscription->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( '', $subscription->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( '', $subscription->get_meta( '_stripe_customer_id', true ) );
 		$this->assertSame( '', $subscription->get_meta( 'last4', true ) );
 		$this->assertSame( '', $subscription->get_meta( '_card_brand', true ) );
 		$this->assertSame( '', $subscription->get_meta( '_wcpay_payment_method_details', true ) );

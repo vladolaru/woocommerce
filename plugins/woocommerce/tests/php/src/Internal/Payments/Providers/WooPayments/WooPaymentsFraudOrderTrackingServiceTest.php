@@ -11,6 +11,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudOrderTrackingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\SepaToken;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -349,21 +351,85 @@ class WooPaymentsFraudOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The repair leaves orders of other gateways alone, split WooPayments gateways included.
+	 * @testdox With WooCommerce Subscriptions, a SEPA order's payment method and customer IDs are brought up to date as a card order's are: $_dataName.
 	 *
-	 * Native departure: the client repairs every updated order, writing WooPayments meta onto other gateways' orders.
+	 * Client 11.3.0 runs the copy for every WooPayments gateway's order (trait-wc-payment-gateway-wcpay-subscriptions.php:1123-1126):
+	 * the latest token's payment method ID, or the parent's without one, and the parent's customer when the order has none.
+	 * A payment writes neither ID onto a subscription, so for a SEPA subscription this copy is the only writer.
+	 *
+	 * @dataProvider provide_sepa_orders
+	 *
+	 * @param bool   $has_token                  Whether the order holds a saved SEPA token.
+	 * @param string $expected_payment_method_id The payment method ID the order ends with.
 	 */
-	public function test_repair_leaves_other_gateways_orders_alone(): void {
+	public function test_repairs_a_sepa_order_from_its_token_or_parent( bool $has_token, string $expected_payment_method_id ): void {
 		$this->make_subscriptions_available();
 		$service = $this->create_service( new RecordingActionSchedulerService() );
-		$parent  = $this->create_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( '_payment_method_id' => 'pm_parent' ) );
+		$parent  = $this->create_order(
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+			array(
+				'_payment_method_id'  => 'pm_parent',
+				'_stripe_customer_id' => 'cus_parent',
+			)
+		);
 		$order   = $this->create_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_sepa_debit' );
+		if ( $has_token ) {
+			// The token class map is what lets WC_Payment_Tokens::get() load a SEPA token.
+			( new WooPaymentsTokenClassMapController() )->register();
+			$token = new SepaToken();
+			$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_sepa_debit' );
+			$token->set_user_id( 1 );
+			$token->set_token( 'pm_sepa_token' );
+			$token->set_last4( '6789' );
+			$token->save();
+			$order->add_payment_token( $token );
+		}
 		$order->set_parent_id( $parent->get_id() );
 		$order->save();
 
 		$service->handle_woocommerce_update_order( $order->get_id(), $order );
 
-		$this->assertSame( '', wc_get_order( $order->get_id() )->get_meta( '_payment_method_id', true ) );
+		$saved = wc_get_order( $order->get_id() );
+		$this->assertSame( $expected_payment_method_id, $saved->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( 'cus_parent', $saved->get_meta( '_stripe_customer_id', true ) );
+	}
+
+	/**
+	 * SEPA orders with and without a saved token.
+	 *
+	 * @return array<string,array{0:bool,1:string}>
+	 */
+	public function provide_sepa_orders(): array {
+		return array(
+			'no token, the parent holds both IDs' => array( false, 'pm_parent' ),
+			'a saved SEPA token, the parent holds both IDs' => array( true, 'pm_sepa_token' ),
+		);
+	}
+
+	/**
+	 * @testdox With WooCommerce Subscriptions, an order of another gateway takes no WooPayments IDs from its parent.
+	 *
+	 * Client 11.3.0 runs the copy for WooPayments gateways only (trait-wc-payment-gateway-wcpay-subscriptions.php:1123-1126).
+	 */
+	public function test_repair_leaves_other_gateways_orders_alone(): void {
+		$this->make_subscriptions_available();
+		$service = $this->create_service( new RecordingActionSchedulerService() );
+		$parent  = $this->create_order(
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+			array(
+				'_payment_method_id'  => 'pm_parent',
+				'_stripe_customer_id' => 'cus_parent',
+			)
+		);
+		$order   = $this->create_order( 'bacs' );
+		$order->set_parent_id( $parent->get_id() );
+		$order->save();
+
+		$service->handle_woocommerce_update_order( $order->get_id(), $order );
+
+		$saved = wc_get_order( $order->get_id() );
+		$this->assertSame( '', $saved->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( '', $saved->get_meta( '_stripe_customer_id', true ) );
 	}
 
 	/**

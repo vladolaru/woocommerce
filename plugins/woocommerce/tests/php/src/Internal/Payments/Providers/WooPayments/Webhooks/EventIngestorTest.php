@@ -860,8 +860,8 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertContains( $token->get_id(), array_map( 'absint', $order->get_payment_tokens() ), 'The order itself takes the repaired token.' );
 		if ( $expect_token ) {
 			$this->assertContains( $token->get_id(), array_map( 'absint', $subscription->get_payment_tokens() ), 'WCS copies the subscription tokens into each new renewal order; a stale subscription charges the replaced card next renewal.' );
-			$this->assertSame( 'pm_123', $subscription->get_meta( '_payment_method_id', true ) );
-			$this->assertSame( 'cus_123', $subscription->get_meta( '_stripe_customer_id', true ), 'The order\'s customer goes with the token.' );
+			$this->assertSame( '', $subscription->get_meta( '_payment_method_id', true ), 'The repair writes no payment method ID on the subscription; its save does.' );
+			$this->assertSame( '', $subscription->get_meta( '_stripe_customer_id', true ), 'The repair writes no customer on the subscription; its save does.' );
 		} else {
 			$this->assertSame( '', $subscription->get_meta( '_stripe_customer_id', true ), 'A renewal\'s subscription takes no customer.' );
 			$this->assertSame( array(), $subscription->get_payment_tokens() );
