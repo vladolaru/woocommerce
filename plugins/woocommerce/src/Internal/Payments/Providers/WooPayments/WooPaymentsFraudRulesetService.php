@@ -79,7 +79,7 @@ class WooPaymentsFraudRulesetService {
 	 *
 	 * The platform save comes first, so a rejected ruleset leaves the stored level, the cached ruleset and the account's cached AVS flag as they were.
 	 * A ruleset with a purchase price or item count limit that would apply to every order, or to none, is refused before
-	 * anything is sent or stored.
+	 * anything is sent or stored, unless it is the stored ruleset: a save that leaves the fraud rules as they are still goes through.
 	 *
 	 * @param array<string,mixed> $params Settings request parameters.
 	 * @return WP_Error|null The refusal of a ruleset limit, or null.
@@ -92,7 +92,7 @@ class WooPaymentsFraudRulesetService {
 		}
 
 		$limits_error = self::get_limits_error( $fraud_settings['ruleset_config'] );
-		if ( null !== $limits_error ) {
+		if ( null !== $limits_error && ! $this->is_stored_fraud_ruleset( $fraud_settings['ruleset_config'] ) ) {
 			return new WP_Error(
 				'rest_invalid_param',
 				sprintf(
@@ -124,8 +124,9 @@ class WooPaymentsFraudRulesetService {
 
 	/**
 	 * Get the message for the first purchase price or item count limit in a ruleset that the platform would apply to every
-	 * order, or to none: a value that is not a number, a limit below 1 as the platform reads it (`intval`, so 0.5 is 0), or a
-	 * minimum above the maximum in one rule and currency. Every rule is read, since the platform runs these checks under any rule key.
+	 * order, or to none: a value that is not a number, a limit below 1 as the platform reads it (`intval`, so 0.5 is 0, and an
+	 * inclusive bound counts as whole units), or a minimum above the maximum in one rule, currency and `or` list. Every rule is
+	 * read, since the platform runs these checks under any rule key.
 	 *
 	 * @param array<int|string,mixed> $ruleset Fraud ruleset.
 	 * @return string|null
@@ -137,7 +138,7 @@ class WooPaymentsFraudRulesetService {
 			}
 
 			$limits = array();
-			foreach ( self::get_single_fraud_checks( $rule['check'] ) as $check ) {
+			foreach ( self::get_single_fraud_checks( $rule['check'] ) as list( $check, $is_disjunction ) ) {
 				$key        = $check['key'] ?? null;
 				$operator   = $check['operator'] ?? null;
 				$is_minimum = in_array( $operator, array( 'less_than', 'less_or_equal' ), true );
@@ -145,19 +146,32 @@ class WooPaymentsFraudRulesetService {
 					continue;
 				}
 
-				$value = $check['value'] ?? null;
-				$parts = explode( '|', is_scalar( $value ) ? (string) $value : '', 2 );
-				if ( ! is_numeric( $parts[0] ) || (int) $parts[0] <= 0 ) {
+				// The platform applies intval() to a number, and to a string's part before "|". A float is cast as it is: its
+				// string form rounds 0.9999999999999999 up to 1 and caps a float above PHP_INT_MAX, which intval() wraps.
+				$value  = $check['value'] ?? null;
+				$parts  = is_string( $value ) ? explode( '|', $value, 2 ) : array( $value );
+				$amount = $parts[0];
+				if ( ! is_numeric( $amount ) || ( is_float( $amount ) && ! ( abs( $amount ) < 9.2e18 ) ) ) {
 					return self::get_limit_message( $key, $is_minimum ? 'minimum' : 'maximum' );
 				}
 
-				$limits[ $key ][ $is_minimum ? 'minimum' : 'maximum' ][] = array( (int) $parts[0], strtolower( $parts[1] ?? '' ) );
+				// Amounts and counts are whole numbers, so "<= 5" is "< 6" and ">= 5" is "> 4".
+				$amount = (int) $amount + ( 'less_or_equal' === $operator ? 1 : ( 'greater_or_equal' === $operator ? -1 : 0 ) );
+				if ( $amount <= 0 ) {
+					return self::get_limit_message( $key, $is_minimum ? 'minimum' : 'maximum' );
+				}
+
+				if ( $is_disjunction ) {
+					// An item count has no currency; the platform compares a price without one in the order's own units.
+					$currency = 'item_count' === $key ? '' : strtolower( (string) ( $parts[1] ?? '' ) );
+					$limits[ $key ][ $is_minimum ? 'minimum' : 'maximum' ][] = array( $amount, $currency );
+				}
 			}
 
 			foreach ( $limits as $key => $bounds ) {
 				foreach ( $bounds['minimum'] ?? array() as list( $minimum, $minimum_currency ) ) {
 					foreach ( $bounds['maximum'] ?? array() as list( $maximum, $maximum_currency ) ) {
-						if ( $minimum_currency === $maximum_currency && $minimum > $maximum ) {
+						if ( ( $minimum_currency === $maximum_currency || '' === $minimum_currency || '' === $maximum_currency ) && $minimum > $maximum ) {
 							return self::get_limit_message( $key, 'inverted' );
 						}
 					}
@@ -169,20 +183,59 @@ class WooPaymentsFraudRulesetService {
 	}
 
 	/**
-	 * Get the single checks of a fraud rule's check, inside any `and` and `or` lists.
+	 * Whether a requested ruleset is the stored one, read as the settings page reads it, so a limit the extension let in does
+	 * not block saves that leave the fraud rules unchanged. Compared strictly, after the two changes a JSON round trip
+	 * through the page can make: key order, and a whole-number float read back as an integer.
 	 *
-	 * @param array<int|string,mixed> $check Fraud check.
-	 * @return array<int,array<int|string,mixed>>
+	 * @param array<int|string,mixed> $ruleset Requested ruleset.
+	 * @return bool
 	 */
-	private static function get_single_fraud_checks( array $check ): array {
-		if ( ! in_array( $check['operator'] ?? null, array( 'and', 'or' ), true ) ) {
-			return array( $check );
+	private function is_stored_fraud_ruleset( array $ruleset ): bool {
+		$stored_ruleset = $this->get_advanced_fraud_protection_settings();
+
+		return is_array( $stored_ruleset ) && self::normalize_fraud_ruleset( $stored_ruleset ) === self::normalize_fraud_ruleset( $ruleset );
+	}
+
+	/**
+	 * Normalize a ruleset, or a value inside one, for comparison: keys sorted at every level, and a whole-number float as an integer.
+	 *
+	 * @param mixed $value Ruleset, or a value inside one.
+	 * @return mixed
+	 */
+	private static function normalize_fraud_ruleset( $value ) {
+		if ( is_float( $value ) && floor( $value ) === $value && abs( $value ) < 9.2e18 ) {
+			return (int) $value;
+		}
+
+		if ( ! is_array( $value ) ) {
+			return $value;
+		}
+
+		ksort( $value, SORT_STRING );
+		foreach ( $value as $key => $child_value ) {
+			$value[ $key ] = self::normalize_fraud_ruleset( $child_value );
+		}
+
+		return $value;
+	}
+
+	/**
+	 * Get the single checks of a fraud rule's check, inside any `and` and `or` lists, each with whether every list above it is an `or`.
+	 *
+	 * @param array<int|string,mixed> $check          Fraud check.
+	 * @param bool                    $is_disjunction Whether every list above this check is an `or`.
+	 * @return array<int,array{0:array<int|string,mixed>,1:bool}>
+	 */
+	private static function get_single_fraud_checks( array $check, bool $is_disjunction = true ): array {
+		$operator = $check['operator'] ?? null;
+		if ( ! in_array( $operator, array( 'and', 'or' ), true ) ) {
+			return array( array( $check, $is_disjunction ) );
 		}
 
 		$single_checks = array();
 		foreach ( is_array( $check['checks'] ?? null ) ? $check['checks'] : array() as $child_check ) {
 			if ( is_array( $child_check ) ) {
-				$single_checks = array_merge( $single_checks, self::get_single_fraud_checks( $child_check ) );
+				$single_checks = array_merge( $single_checks, self::get_single_fraud_checks( $child_check, $is_disjunction && 'or' === $operator ) );
 			}
 		}
 

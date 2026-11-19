@@ -348,6 +348,7 @@ const AmountThresholdInput = ( {
 					className="components-text-control__input is-next-40px-default-size"
 					type="number"
 					min="0"
+					step="any"
 					value={ value }
 					placeholder="0.00"
 					aria-describedby={ `${ helpId } ${ currencyDescriptionId }` }

@@ -1222,6 +1222,20 @@ describe( 'FraudProtectionAdvancedSettingsPage', () => {
 			}
 		} );
 
+		it( 'lets both price limits take any decimal above their floor of zero', async () => {
+			render( <FraudProtectionAdvancedSettingsPage /> );
+			await enableFilter( 'Enable Purchase Price Threshold filter' );
+
+			for ( const label of [
+				'Minimum purchase price',
+				'Maximum purchase price',
+			] ) {
+				const input = screen.getByLabelText( label );
+				expect( input ).toHaveAttribute( 'min', '0' );
+				expect( input ).toHaveAttribute( 'step', 'any' );
+			}
+		} );
+
 		it( 'still saves a decimal price minimum in minor units', async () => {
 			mockSaveSettings.mockResolvedValueOnce( true );
 			render( <FraudProtectionAdvancedSettingsPage /> );

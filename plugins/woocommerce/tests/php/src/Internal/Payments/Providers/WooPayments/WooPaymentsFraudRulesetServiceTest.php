@@ -187,12 +187,21 @@ class WooPaymentsFraudRulesetServiceTest extends WC_Unit_Test_Case {
 			'negative item maximum'                      => array( 'a negative item maximum', array( self::rule( 'order_items_threshold', self::limit( 'item_count', 'greater_than', -5 ) ) ), $items_maximum ),
 			'item minimum above the maximum'             => array( 'an item minimum above the maximum', array( self::rule( 'order_items_threshold', self::any_of( self::limit( 'item_count', 'less_than', 10 ), self::limit( 'item_count', 'greater_than', 3 ) ) ) ), $items_inverted ),
 			'zero item minimum'                          => array( 'a zero item minimum', array( self::rule( 'order_items_threshold', self::any_of( self::limit( 'item_count', 'less_than', 0 ), self::limit( 'item_count', 'greater_than', 10 ) ) ) ), $items_minimum ),
+			'item maximum that wraps negative'           => array( 'an item maximum of 9.3e18, which the platform reads as a negative number', array( self::rule( 'order_items_threshold', self::limit( 'item_count', 'greater_than', 9.3e18 ) ) ), $items_maximum ),
+			'item maximum just below one'                => array( 'an item maximum of 0.9999999999999999, which the platform reads as 0', array( self::rule( 'order_items_threshold', self::limit( 'item_count', 'greater_than', 0.9999999999999999 ) ) ), $items_maximum ),
+			'item maximum of 2^64 or more'               => array( 'an item maximum of 2e19, past the largest whole number', array( self::rule( 'order_items_threshold', self::limit( 'item_count', 'greater_than', 2e19 ) ) ), $items_maximum ),
+			'inclusive item minimum equal to a maximum'  => array( 'an inclusive item minimum equal to the maximum', array( self::rule( 'order_items_threshold', self::any_of( self::limit( 'item_count', 'less_or_equal', 5 ), self::limit( 'item_count', 'greater_than', 5 ) ) ) ), $items_inverted ),
+			'inclusive price maximum of one minor unit'  => array( 'an inclusive price maximum of one minor unit', array( self::rule( 'purchase_price_threshold', self::limit( 'order_total', 'greater_or_equal', '1|USD' ) ) ), $price_maximum ),
+			'item minimum with a currency suffix'        => array( 'an item minimum with a currency suffix above the maximum', array( self::rule( 'order_items_threshold', self::any_of( self::limit( 'item_count', 'less_than', '10|USD' ), self::limit( 'item_count', 'greater_than', 3 ) ) ) ), $items_inverted ),
+			'item limits with different suffixes'        => array( 'item limits with different currency suffixes, the minimum above the maximum', array( self::rule( 'order_items_threshold', self::any_of( self::limit( 'item_count', 'less_than', '10|USD' ), self::limit( 'item_count', 'greater_than', '3|EUR' ) ) ) ), $items_inverted ),
+			'price minimum with no currency'             => array( 'a price minimum with no currency above the maximum', array( self::rule( 'purchase_price_threshold', self::any_of( self::limit( 'order_total', 'less_than', '20000|' ), self::limit( 'order_total', 'greater_than', '10000|USD' ) ) ) ), $price_inverted ),
 		);
 	}
 
 	/**
 	 * Equal limits are allowed, as the extension allows them: a store with one price can mean them. A minimum and maximum in
-	 * different currencies are not compared, since the platform converts each one.
+	 * different currencies are not compared, since the platform converts each one, and neither are limits in an "and" list,
+	 * where a minimum above the maximum is a band.
 	 *
 	 * @testdox Should save an advanced ruleset with $label.
 	 * @dataProvider provide_saved_limits
@@ -227,6 +236,81 @@ class WooPaymentsFraudRulesetServiceTest extends WC_Unit_Test_Case {
 			'price range'                          => array( 'a price range', array( self::rule( 'purchase_price_threshold', self::any_of( self::limit( 'order_total', 'less_than', '1999|USD' ), self::limit( 'order_total', 'greater_than', '50000|USD' ) ) ) ) ),
 			'equal price limits'                   => array( 'equal price limits', array( self::rule( 'purchase_price_threshold', self::any_of( self::limit( 'order_total', 'less_than', '5000|USD' ), self::limit( 'order_total', 'greater_than', '5000|USD' ) ) ) ) ),
 			'price limits in different currencies' => array( 'a price minimum in EUR above a maximum in USD', array( self::rule( 'purchase_price_threshold', self::any_of( self::limit( 'order_total', 'less_than', '20000|EUR' ), self::limit( 'order_total', 'greater_than', '10000|USD' ) ) ) ) ),
+			'item band in an "and" list'           => array( 'an item band of 4 to 9 in an "and" list', array( self::rule( 'order_items_threshold', self::all_of( self::limit( 'item_count', 'greater_than', 3 ), self::limit( 'item_count', 'less_than', 10 ) ) ) ) ),
+			'whole-number float item maximum'      => array( 'an item maximum sent as the float 10.0', array( self::rule( 'order_items_threshold', self::limit( 'item_count', 'greater_than', 10.0 ) ) ) ),
+		);
+	}
+
+	/**
+	 * A limit the extension's page let in stays in force until the merchant changes the fraud rules: a save that posts the
+	 * stored ruleset back, as every settings screen does, goes through, and a changed ruleset is checked. The stored side
+	 * is read as the settings page reads it, fetching it when nothing is cached.
+	 *
+	 * @testdox Should check only a changed ruleset: $label.
+	 * @dataProvider provide_rulesets_against_the_stored_one
+	 *
+	 * @param string           $label     Case.
+	 * @param array<int,mixed> $stored    Ruleset stored on the platform.
+	 * @param bool             $is_cached Whether the stored ruleset is cached.
+	 * @param array<int,mixed> $posted    Submitted advanced ruleset.
+	 * @param string|null      $message   Expected refusal message, or null when the ruleset is saved.
+	 */
+	public function test_save_fraud_settings_checks_only_a_ruleset_that_differs_from_the_stored_one( string $label, array $stored, bool $is_cached, array $posted, ?string $message ): void {
+		unset( $label );
+		$this->connect();
+		$this->api_client->latest_fraud_ruleset_response = array( 'ruleset_config' => $stored );
+		if ( $is_cached ) {
+			set_transient( 'wcpay_fraud_protection_settings', $stored, DAY_IN_SECONDS );
+		}
+
+		$result = $this->sut->save_fraud_settings(
+			array(
+				'current_protection_level'           => 'advanced',
+				'advanced_fraud_protection_settings' => $posted,
+			)
+		);
+
+		if ( null === $message ) {
+			$this->assertNull( $result );
+			$this->assertSame( 1, $this->api_client->fraud_ruleset_saves, 'The platform save is made as before.' );
+			$this->assertSame( $posted, $this->api_client->last_fraud_ruleset );
+			$this->assertSame( $posted, get_transient( 'wcpay_fraud_protection_settings' ) );
+		} else {
+			$this->assertInstanceOf( WP_Error::class, $result );
+			$this->assertSame( array( 'advanced_fraud_protection_settings' => $message ), $result->get_error_data()['params'] );
+			$this->assertSame( 0, $this->api_client->fraud_ruleset_saves );
+		}
+		$this->assertSame( $is_cached ? 0 : 1, $this->api_client->latest_fraud_ruleset_requests );
+	}
+
+	/**
+	 * Rulesets posted against a stored one: case, stored ruleset, whether it is cached, posted ruleset and refusal message.
+	 *
+	 * @return array<string,array{0:string,1:array<int,mixed>,2:bool,3:array<int,mixed>,4:string|null}>
+	 */
+	public function provide_rulesets_against_the_stored_one(): array {
+		$items_maximum   = 'The maximum items per order must be at least 1.';
+		$stored_negative = array( self::rule( 'order_items_threshold', self::limit( 'item_count', 'greater_than', -5 ) ) );
+		$reordered       = array(
+			array(
+				'check'   => array(
+					'value'    => -5,
+					'operator' => 'greater_than',
+					'key'      => 'item_count',
+				),
+				'outcome' => 'block',
+				'key'     => 'order_items_threshold',
+			),
+		);
+
+		return array(
+			'unchanged'               => array( 'the stored negative item maximum posted back unchanged is saved', $stored_negative, true, $stored_negative, null ),
+			'changed'                 => array( 'another rule added beside the stored negative item maximum is refused', $stored_negative, true, array( self::avs_rule(), $stored_negative[0] ), $items_maximum ),
+			'corrected'               => array( 'the stored negative item maximum corrected is saved', $stored_negative, true, array( self::rule( 'order_items_threshold', self::limit( 'item_count', 'greater_than', 5 ) ) ), null ),
+			'cold cache'              => array( 'with nothing cached, the stored ruleset is fetched and the same one posted back is saved', $stored_negative, false, $stored_negative, null ),
+			'whole-number float'      => array( 'a stored -5.0, which the page posts back as -5, is saved', array( self::rule( 'order_items_threshold', self::limit( 'item_count', 'greater_than', -5.0 ) ) ), true, $stored_negative, null ),
+			'key order'               => array( 'the stored ruleset posted back with its keys in another order is saved', $reordered, true, $stored_negative, null ),
+			'word over a stored zero' => array( 'a word posted over a stored zero item maximum, equal only in a loose compare, is refused', array( self::rule( 'order_items_threshold', self::limit( 'item_count', 'greater_than', 0 ) ) ), true, array( self::rule( 'order_items_threshold', self::limit( 'item_count', 'greater_than', 'x' ) ) ), $items_maximum ),
 		);
 	}
 
@@ -282,9 +366,9 @@ class WooPaymentsFraudRulesetServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Get a single limit check.
 	 *
-	 * @param string     $key      Check key.
-	 * @param string     $operator Check operator.
-	 * @param string|int $value    Check value.
+	 * @param string           $key      Check key.
+	 * @param string           $operator Check operator.
+	 * @param string|int|float $value    Check value.
 	 * @return array<string,mixed>
 	 */
 	private static function limit( string $key, string $operator, $value ): array {
@@ -304,6 +388,19 @@ class WooPaymentsFraudRulesetServiceTest extends WC_Unit_Test_Case {
 	private static function any_of( array ...$checks ): array {
 		return array(
 			'operator' => 'or',
+			'checks'   => $checks,
+		);
+	}
+
+	/**
+	 * Get an "and" list of checks.
+	 *
+	 * @param array<string,mixed> ...$checks Checks.
+	 * @return array<string,mixed>
+	 */
+	private static function all_of( array ...$checks ): array {
+		return array(
+			'operator' => 'and',
 			'checks'   => $checks,
 		);
 	}
