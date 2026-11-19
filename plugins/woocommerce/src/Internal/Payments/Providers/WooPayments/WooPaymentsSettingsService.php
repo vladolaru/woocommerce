@@ -269,7 +269,7 @@ class WooPaymentsSettingsService {
 		$settings = $this->account_service->get_gateway_settings();
 		// The availability filter runs before any account read, as client 11.1.0 get_settings() does (class-wc-rest-payments-settings-controller.php:513-516).
 		$available_payment_method_ids = $this->get_available_payment_method_ids();
-		$account_fields               = $this->get_account_backed_response_fields( $settings );
+		$account_fields               = $this->get_account_backed_response_fields();
 		$enabled_payment_method_ids   = $this->sanitize_payment_method_ids(
 			$this->get_array_setting( $settings, 'upe_enabled_payment_method_ids' ),
 			$available_payment_method_ids
@@ -464,7 +464,7 @@ class WooPaymentsSettingsService {
 			}
 		}
 
-		$error = $this->update_provider_backed_settings( $params, $settings );
+		$error = $this->update_provider_backed_settings( $params );
 		if ( is_wp_error( $error ) ) {
 			return $error;
 		}
@@ -554,15 +554,6 @@ class WooPaymentsSettingsService {
 
 		if ( array_key_exists( 'is_stripe_billing_enabled', $params ) ) {
 			$this->stripe_billing_module->set_stripe_billing_enabled( (bool) $params['is_stripe_billing_enabled'] );
-		}
-
-		foreach ( array_keys( self::ACCOUNT_SETTING_MAP ) as $request_key ) {
-			if ( ! array_key_exists( $request_key, $params ) ) {
-				continue;
-			}
-
-			// Store exactly what update_provider_backed_settings() sent to the platform: the local mirror is a cache-unavailable fallback for the account data, so a value that diverges from the wire (e.g. a sanitized-to-empty color) would misreport the account. Format guarantees live at the REST boundary validators; the mirror's read path, the JSON settings response, encodes at output.
-			$settings[ $request_key ] = $params[ $request_key ];
 		}
 
 		// Save every setting in one write; persist() then copies each method's enabled state to its gateway.
@@ -864,11 +855,10 @@ class WooPaymentsSettingsService {
 	/**
 	 * Save the fraud settings, then the changed account settings, on the platform; a failure stops before the next step.
 	 *
-	 * @param array<string,mixed> $params   Request parameters.
-	 * @param array<string,mixed> $settings Current gateway settings.
+	 * @param array<string,mixed> $params Request parameters.
 	 * @return WP_Error|null
 	 */
-	private function update_provider_backed_settings( array $params, array $settings ): ?WP_Error {
+	private function update_provider_backed_settings( array $params ): ?WP_Error {
 		try {
 			$fraud_error = $this->fraud_ruleset_service->save_fraud_settings( $params );
 			if ( null !== $fraud_error ) {
@@ -878,7 +868,7 @@ class WooPaymentsSettingsService {
 			return $this->api_exception_to_wp_error( $e );
 		}
 
-		$account_response_fields = $this->get_account_backed_response_fields( $settings );
+		$account_response_fields = $this->get_account_backed_response_fields();
 		$account_settings        = array();
 		foreach ( self::ACCOUNT_SETTING_MAP as $request_key => $account_key ) {
 			if ( array_key_exists( $request_key, $params ) && ( $account_response_fields[ $request_key ] ?? null ) !== $params[ $request_key ] ) {
@@ -895,7 +885,7 @@ class WooPaymentsSettingsService {
 		) {
 			$account_settings['deposit_schedule_interval'] = array_key_exists( 'deposit_schedule_interval', $params )
 				? $params['deposit_schedule_interval']
-				: ( $settings['deposit_schedule_interval'] ?? '' );
+				: $account_response_fields['deposit_schedule_interval'];
 		}
 
 		// A payout schedule change clears the next-payout notice's dismissal, so the Payouts page shows the notice again.
@@ -1141,34 +1131,32 @@ class WooPaymentsSettingsService {
 	}
 
 	/**
-	 * Get the account fields of the settings: the cached account's values, or, for the keys a settings save stores, the
-	 * stored settings where the account has none.
+	 * Get the account fields of the settings: the cached account's values, empty where the account has none.
 	 *
-	 * @param array<string,mixed> $settings Gateway settings.
 	 * @return array<string,mixed>
 	 */
-	private function get_account_backed_response_fields( array $settings ): array {
+	private function get_account_backed_response_fields(): array {
 		$account_data = $this->account_service->get_cached_account_data();
 
 		return array(
 			'account_country'                    => $this->get_account_string_setting( $account_data, array( 'country' ) ),
-			'account_statement_descriptor'       => $this->get_account_string_setting( $account_data, array( 'statement_descriptor' ), $this->get_string_setting( $settings, 'account_statement_descriptor' ) ),
-			'account_statement_descriptor_kanji' => $this->get_account_string_setting( $account_data, array( 'statement_descriptor_kanji' ), $this->get_string_setting( $settings, 'account_statement_descriptor_kanji' ) ),
-			'account_statement_descriptor_kana'  => $this->get_account_string_setting( $account_data, array( 'statement_descriptor_kana' ), $this->get_string_setting( $settings, 'account_statement_descriptor_kana' ) ),
-			'account_business_name'              => $this->get_account_string_setting( $account_data, array( 'business_profile', 'name' ), $this->get_string_setting( $settings, 'account_business_name' ) ),
-			'account_business_url'               => $this->get_account_string_setting( $account_data, array( 'business_profile', 'url' ), $this->get_string_setting( $settings, 'account_business_url' ) ),
-			'account_business_support_address'   => $this->get_account_array_setting( $account_data, array( 'business_profile', 'support_address' ), $this->get_array_setting( $settings, 'account_business_support_address' ) ),
-			'account_business_support_email'     => $this->get_account_string_setting( $account_data, array( 'business_profile', 'support_email' ), $this->get_string_setting( $settings, 'account_business_support_email' ) ),
-			'account_business_support_phone'     => $this->get_account_string_setting( $account_data, array( 'business_profile', 'support_phone' ), $this->get_string_setting( $settings, 'account_business_support_phone' ) ),
-			'account_branding_logo'              => $this->get_account_string_setting( $account_data, array( 'branding', 'logo' ), $this->get_string_setting( $settings, 'account_branding_logo' ) ),
-			'account_branding_icon'              => $this->get_account_string_setting( $account_data, array( 'branding', 'icon' ), $this->get_string_setting( $settings, 'account_branding_icon' ) ),
-			'account_branding_primary_color'     => $this->get_account_string_setting( $account_data, array( 'branding', 'primary_color' ), $this->get_string_setting( $settings, 'account_branding_primary_color' ) ),
-			'account_branding_secondary_color'   => $this->get_account_string_setting( $account_data, array( 'branding', 'secondary_color' ), $this->get_string_setting( $settings, 'account_branding_secondary_color' ) ),
+			'account_statement_descriptor'       => $this->get_account_string_setting( $account_data, array( 'statement_descriptor' ) ),
+			'account_statement_descriptor_kanji' => $this->get_account_string_setting( $account_data, array( 'statement_descriptor_kanji' ) ),
+			'account_statement_descriptor_kana'  => $this->get_account_string_setting( $account_data, array( 'statement_descriptor_kana' ) ),
+			'account_business_name'              => $this->get_account_string_setting( $account_data, array( 'business_profile', 'name' ) ),
+			'account_business_url'               => $this->get_account_string_setting( $account_data, array( 'business_profile', 'url' ) ),
+			'account_business_support_address'   => $this->get_account_array_setting( $account_data, array( 'business_profile', 'support_address' ) ),
+			'account_business_support_email'     => $this->get_account_string_setting( $account_data, array( 'business_profile', 'support_email' ) ),
+			'account_business_support_phone'     => $this->get_account_string_setting( $account_data, array( 'business_profile', 'support_phone' ) ),
+			'account_branding_logo'              => $this->get_account_string_setting( $account_data, array( 'branding', 'logo' ) ),
+			'account_branding_icon'              => $this->get_account_string_setting( $account_data, array( 'branding', 'icon' ) ),
+			'account_branding_primary_color'     => $this->get_account_string_setting( $account_data, array( 'branding', 'primary_color' ) ),
+			'account_branding_secondary_color'   => $this->get_account_string_setting( $account_data, array( 'branding', 'secondary_color' ) ),
 			'account_domestic_currency'          => $this->account_service->get_account_domestic_currency(),
-			'account_communications_email'       => $this->get_account_string_setting( $account_data, array( 'communications_email' ), $this->get_string_setting( $settings, 'account_communications_email' ) ),
-			'deposit_schedule_interval'          => $this->get_account_string_setting( $account_data, array( 'deposits', 'interval' ), $this->get_string_setting( $settings, 'deposit_schedule_interval' ) ),
-			'deposit_schedule_monthly_anchor'    => $this->get_account_nullable_int_setting( $account_data, array( 'deposits', 'monthly_anchor' ), $this->get_nullable_int_setting( $settings, 'deposit_schedule_monthly_anchor' ) ),
-			'deposit_schedule_weekly_anchor'     => $this->get_account_string_setting( $account_data, array( 'deposits', 'weekly_anchor' ), $this->get_string_setting( $settings, 'deposit_schedule_weekly_anchor' ) ),
+			'account_communications_email'       => $this->get_account_string_setting( $account_data, array( 'communications_email' ) ),
+			'deposit_schedule_interval'          => $this->get_account_string_setting( $account_data, array( 'deposits', 'interval' ) ),
+			'deposit_schedule_monthly_anchor'    => $this->get_account_nullable_int_setting( $account_data, array( 'deposits', 'monthly_anchor' ) ),
+			'deposit_schedule_weekly_anchor'     => $this->get_account_string_setting( $account_data, array( 'deposits', 'weekly_anchor' ) ),
 			'deposit_delay_days'                 => $this->get_account_nullable_int_setting( $account_data, array( 'deposits', 'delay_days' ) ),
 			'deposit_status'                     => $this->get_account_string_setting( $account_data, array( 'deposits', 'status' ) ),
 			'deposit_restrictions'               => $this->get_account_string_setting( $account_data, array( 'deposits', 'restrictions' ) ),
@@ -1181,27 +1169,25 @@ class WooPaymentsSettingsService {
 	 *
 	 * @param array<string,mixed> $account_data Account data.
 	 * @param string[]            $path         Nested path.
-	 * @param string              $fallback     Fallback value.
 	 * @return string
 	 */
-	private function get_account_string_setting( array $account_data, array $path, string $fallback = '' ): string {
-		$value = $this->get_account_path_value( $account_data, $path, $fallback );
+	private function get_account_string_setting( array $account_data, array $path ): string {
+		$value = $this->get_account_path_value( $account_data, $path, '' );
 
-		return is_scalar( $value ) ? (string) $value : $fallback;
+		return is_scalar( $value ) ? (string) $value : '';
 	}
 
 	/**
 	 * Get a nested account value as an array.
 	 *
-	 * @param array<string,mixed>     $account_data Account data.
-	 * @param string[]                $path         Nested path.
-	 * @param array<int|string,mixed> $fallback     Fallback value.
+	 * @param array<string,mixed> $account_data Account data.
+	 * @param string[]            $path         Nested path.
 	 * @return array<int|string,mixed>
 	 */
-	private function get_account_array_setting( array $account_data, array $path, array $fallback = array() ): array {
-		$value = $this->get_account_path_value( $account_data, $path, $fallback );
+	private function get_account_array_setting( array $account_data, array $path ): array {
+		$value = $this->get_account_path_value( $account_data, $path, array() );
 
-		return is_array( $value ) ? $value : $fallback;
+		return is_array( $value ) ? $value : array();
 	}
 
 	/**
@@ -1209,13 +1195,12 @@ class WooPaymentsSettingsService {
 	 *
 	 * @param array<string,mixed> $account_data Account data.
 	 * @param string[]            $path         Nested path.
-	 * @param int|null            $fallback     Fallback value.
 	 * @return int|null
 	 */
-	private function get_account_nullable_int_setting( array $account_data, array $path, ?int $fallback = null ): ?int {
-		$value = $this->get_account_path_value( $account_data, $path, $fallback );
+	private function get_account_nullable_int_setting( array $account_data, array $path ): ?int {
+		$value = $this->get_account_path_value( $account_data, $path, null );
 
-		return is_numeric( $value ) ? (int) $value : $fallback;
+		return is_numeric( $value ) ? (int) $value : null;
 	}
 
 	/**
@@ -1274,17 +1259,6 @@ class WooPaymentsSettingsService {
 	 */
 	private function get_array_setting( array $settings, string $key, array $fallback = array() ): array {
 		return isset( $settings[ $key ] ) && is_array( $settings[ $key ] ) ? $settings[ $key ] : $fallback;
-	}
-
-	/**
-	 * Get a nullable integer setting.
-	 *
-	 * @param array<string,mixed> $settings Settings.
-	 * @param string              $key      Setting key.
-	 * @return int|null
-	 */
-	private function get_nullable_int_setting( array $settings, string $key ): ?int {
-		return isset( $settings[ $key ] ) && is_numeric( $settings[ $key ] ) ? (int) $settings[ $key ] : null;
 	}
 
 	/**

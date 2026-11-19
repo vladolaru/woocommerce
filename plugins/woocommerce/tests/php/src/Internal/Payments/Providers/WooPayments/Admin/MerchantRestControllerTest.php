@@ -631,15 +631,8 @@ class MerchantRestControllerTest extends WC_Unit_Test_Case {
 			),
 			'valid statement descriptor'              => array( array( 'account_statement_descriptor' => 'WOO STORE' ), 'US', null ),
 			'valid communications email'              => array( array( 'account_communications_email' => 'merchant@example.com' ), 'US', null ),
-			'valid hex branding color and empty secondary color' => array(
-				array(
-					'account_branding_primary_color'   => '#123ABC',
-					'account_branding_secondary_color' => '',
-				),
-				'US',
-				null,
-			),
-			'scheme-less business URL'                => array( array( 'account_business_url' => 'example.test/store' ), 'US', null ),
+			'branding color that is not hex'          => array( array( 'account_branding_primary_color' => 'red' ), 'US', null ),
+			'business URL with an unknown scheme'     => array( array( 'account_business_url' => 'foo:bar' ), 'US', null ),
 			'empty business support email'            => array( array( 'account_business_support_email' => '' ), 'US', null ),
 			'empty support phone on a non-Japanese account' => array( array( 'account_business_support_phone' => '' ), 'US', null ),
 			'+81 support phone on a Japanese account' => array( array( 'account_business_support_phone' => '+81312345678' ), 'JP', null ),
@@ -718,8 +711,8 @@ class MerchantRestControllerTest extends WC_Unit_Test_Case {
 		$phone      = 'account_business_support_phone';
 
 		return array(
-			'unknown fraud settings string'                => array( array( 'advanced_fraud_protection_settings' => 'not_a_ruleset' ), 'US', 'advanced_fraud_protection_settings', 'rest_invalid_param', true, null ),
-			'invalid advanced fraud ruleset'               => array(
+			'unknown fraud settings string'             => array( array( 'advanced_fraud_protection_settings' => 'not_a_ruleset' ), 'US', 'advanced_fraud_protection_settings', 'rest_invalid_param', true, null ),
+			'invalid advanced fraud ruleset'            => array(
 				array(
 					'current_protection_level'           => 'advanced',
 					'advanced_fraud_protection_settings' => array( array( 'bogus' => true ) ),
@@ -730,26 +723,24 @@ class MerchantRestControllerTest extends WC_Unit_Test_Case {
 				false,
 				'rest_invalid_pattern',
 			),
-			'invalid payment method ID'                    => array( array( 'enabled_payment_method_ids' => array( 'card', 'not_a_payment_method' ) ), 'US', 'enabled_payment_method_ids', 'rest_invalid_param', true, null ),
-			'duplicate payment method IDs'                 => array( array( 'enabled_payment_method_ids' => array( 'card', 'link', 'link' ) ), 'US', 'enabled_payment_method_ids', 'rest_invalid_param', true, null ),
-			'descriptor shorter than 5 characters'         => array( array( $descriptor => 'WOOP' ), 'US', $descriptor, 'rest_invalid_param', true, 'rest_invalid_pattern' ),
-			'descriptor longer than 22 characters'         => array( array( $descriptor => 'WOOPAYMENTS STORE NAME XL' ), 'US', $descriptor, 'rest_invalid_param', true, 'rest_invalid_pattern' ),
-			'descriptor without a Latin letter'            => array( array( $descriptor => '1234567890' ), 'US', $descriptor, 'rest_invalid_param', true, 'rest_invalid_pattern' ),
-			'descriptor with an asterisk'                  => array( array( $descriptor => 'WOO*STORE' ), 'US', $descriptor, 'rest_invalid_param', true, 'rest_invalid_pattern' ),
-			'descriptor with a double quote'               => array( array( $descriptor => 'WOO"STORE' ), 'US', $descriptor, 'rest_invalid_param', true, 'rest_invalid_pattern' ),
-			'descriptor with a single quote'               => array( array( $descriptor => "WOO'STORE" ), 'US', $descriptor, 'rest_invalid_param', true, 'rest_invalid_pattern' ),
-			'descriptor with angle brackets'               => array( array( $descriptor => 'WOO<STORE>' ), 'US', $descriptor, 'rest_invalid_param', true, 'rest_invalid_pattern' ),
-			'descriptor of only whitespace'                => array( array( $descriptor => '      ' ), 'US', $descriptor, 'rest_invalid_param', true, 'rest_invalid_pattern' ),
-			'empty communications email'                   => array( array( $email => '' ), 'US', $email, 'rest_invalid_param', true, 'rest_invalid_pattern' ),
-			'malformed communications email'               => array( array( $email => 'not-an-email' ), 'US', $email, 'rest_invalid_param', true, 'rest_invalid_pattern' ),
-			'communications email without a domain'        => array( array( $email => 'merchant@' ), 'US', $email, 'rest_invalid_param', true, 'rest_invalid_pattern' ),
-			'malformed branding color'                     => array( array( 'account_branding_primary_color' => '#eeeeee onload=alert(1)' ), 'US', 'account_branding_primary_color', null, false, 'rest_invalid_pattern' ),
-			'business URL whose scheme esc_url_raw strips' => array( array( 'account_business_url' => 'javascript:alert(document.cookie)' ), 'US', 'account_business_url', null, false, 'rest_invalid_pattern' ),
-			'malformed business support email'             => array( array( 'account_business_support_email' => 'not-an-email' ), 'US', 'account_business_support_email', null, false, 'rest_invalid_pattern' ),
-			'malformed support phone'                      => array( array( $phone => 'not a phone!' ), 'US', $phone, 'rest_invalid_param', false, 'rest_invalid_pattern' ),
-			'US support phone on a Japanese account'       => array( array( $phone => '+12345678901' ), 'JP', $phone, null, false, 'rest_invalid_pattern' ),
-			'empty support phone on a Japanese account'    => array( array( $phone => '' ), 'JP', $phone, null, false, 'rest_invalid_pattern' ),
-			'support address with an unknown key'          => array(
+			'invalid payment method ID'                 => array( array( 'enabled_payment_method_ids' => array( 'card', 'not_a_payment_method' ) ), 'US', 'enabled_payment_method_ids', 'rest_invalid_param', true, null ),
+			'duplicate payment method IDs'              => array( array( 'enabled_payment_method_ids' => array( 'card', 'link', 'link' ) ), 'US', 'enabled_payment_method_ids', 'rest_invalid_param', true, null ),
+			'descriptor shorter than 5 characters'      => array( array( $descriptor => 'WOOP' ), 'US', $descriptor, 'rest_invalid_param', true, 'rest_invalid_pattern' ),
+			'descriptor longer than 22 characters'      => array( array( $descriptor => 'WOOPAYMENTS STORE NAME XL' ), 'US', $descriptor, 'rest_invalid_param', true, 'rest_invalid_pattern' ),
+			'descriptor without a Latin letter'         => array( array( $descriptor => '1234567890' ), 'US', $descriptor, 'rest_invalid_param', true, 'rest_invalid_pattern' ),
+			'descriptor with an asterisk'               => array( array( $descriptor => 'WOO*STORE' ), 'US', $descriptor, 'rest_invalid_param', true, 'rest_invalid_pattern' ),
+			'descriptor with a double quote'            => array( array( $descriptor => 'WOO"STORE' ), 'US', $descriptor, 'rest_invalid_param', true, 'rest_invalid_pattern' ),
+			'descriptor with a single quote'            => array( array( $descriptor => "WOO'STORE" ), 'US', $descriptor, 'rest_invalid_param', true, 'rest_invalid_pattern' ),
+			'descriptor with angle brackets'            => array( array( $descriptor => 'WOO<STORE>' ), 'US', $descriptor, 'rest_invalid_param', true, 'rest_invalid_pattern' ),
+			'descriptor of only whitespace'             => array( array( $descriptor => '      ' ), 'US', $descriptor, 'rest_invalid_param', true, 'rest_invalid_pattern' ),
+			'empty communications email'                => array( array( $email => '' ), 'US', $email, 'rest_invalid_param', true, 'rest_invalid_pattern' ),
+			'malformed communications email'            => array( array( $email => 'not-an-email' ), 'US', $email, 'rest_invalid_param', true, 'rest_invalid_pattern' ),
+			'communications email without a domain'     => array( array( $email => 'merchant@' ), 'US', $email, 'rest_invalid_param', true, 'rest_invalid_pattern' ),
+			'malformed business support email'          => array( array( 'account_business_support_email' => 'not-an-email' ), 'US', 'account_business_support_email', null, false, 'rest_invalid_pattern' ),
+			'malformed support phone'                   => array( array( $phone => 'not a phone!' ), 'US', $phone, 'rest_invalid_param', false, 'rest_invalid_pattern' ),
+			'US support phone on a Japanese account'    => array( array( $phone => '+12345678901' ), 'JP', $phone, null, false, 'rest_invalid_pattern' ),
+			'empty support phone on a Japanese account' => array( array( $phone => '' ), 'JP', $phone, null, false, 'rest_invalid_pattern' ),
+			'support address with an unknown key'       => array(
 				array(
 					'account_business_support_address' => array(
 						'city'   => 'Portland',

@@ -1191,25 +1191,10 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	 * @param string                   $description Case.
 	 * @param array<string,mixed>|null $account     Cached account data, or null for no cached account.
 	 * @param array<string,mixed>      $expected    Expected receipt merchant settings.
-	 * @param bool                     $saved       Whether business details with other values are saved in the settings.
 	 */
-	public function test_payment_intent_succeeded_sends_ipp_receipt_email_for_card_present_charge( string $description, ?array $account, array $expected, bool $saved = true ): void {
+	public function test_payment_intent_succeeded_sends_ipp_receipt_email_for_card_present_charge( string $description, ?array $account, array $expected ): void {
 		unset( $description );
-		// Business details saved in the settings, with other values: the receipt must not show them.
-		$saved_details = array(
-			'account_business_name'            => 'Saved Store',
-			'account_business_support_address' => array(
-				'line1'       => '9 Saved Road',
-				'line2'       => '',
-				'city'        => 'Oakland',
-				'state'       => 'CA',
-				'postal_code' => '94601',
-				'country'     => 'US',
-			),
-			'account_business_support_phone'   => '+1 555 0999',
-			'account_business_support_email'   => 'saved@example.test',
-		);
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) + ( $saved ? $saved_details : array() ) );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		if ( null !== $account ) {
 			$this->cache_woopayments_account( $account );
 		}
@@ -1248,7 +1233,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	 * Accounts keep the shape recorded in ../Fixtures/platform-test-drive-account.json `account.business_profile` (:597-603),
 	 * with varied values; `support_address: []` is as recorded.
 	 *
-	 * @return array<string,array{0:string,1:array<string,mixed>|null,2:array<string,mixed>,3?:bool}>
+	 * @return array<string,array{0:string,1:array<string,mixed>|null,2:array<string,mixed>}>
 	 */
 	public function ipp_receipt_merchant_details_provider(): array {
 		$address = array(
@@ -1316,15 +1301,6 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 				$empty,
 			),
 			'no account'                => array( 'no account', null, $empty ),
-			'nothing saved'             => array(
-				'nothing saved',
-				array(
-					'account_id' => 'acct_123',
-					'is_live'    => true,
-				),
-				$empty,
-				false,
-			),
 		);
 	}
 

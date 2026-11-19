@@ -190,26 +190,6 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 				'platform_checkout_custom_message'       => 'Custom WooPay message.',
 				'platform_checkout_store_logo'           => 'file_logo',
 				'upe_enabled_payment_method_ids'         => array( 'card', 'link' ),
-				'account_country'                        => 'US',
-				'account_statement_descriptor'           => 'NATIVE STORE',
-				'account_business_name'                  => 'Native Store',
-				'account_business_url'                   => 'https://example.test',
-				'account_business_support_address'       => array( 'city' => 'San Francisco' ),
-				'account_business_support_email'         => 'support@example.test',
-				'account_business_support_phone'         => '+15555550123',
-				'account_branding_logo'                  => 'file_logo',
-				'account_branding_icon'                  => 'file_icon',
-				'account_branding_primary_color'         => '#111111',
-				'account_branding_secondary_color'       => '#eeeeee',
-				'account_domestic_currency'              => 'usd',
-				'account_communications_email'           => 'owner@example.test',
-				'deposit_schedule_interval'              => 'weekly',
-				'deposit_schedule_weekly_anchor'         => 'monday',
-				'deposit_schedule_monthly_anchor'        => 15,
-				'deposit_delay_days'                     => 2,
-				'deposit_status'                         => 'enabled',
-				'deposit_restrictions'                   => array( 'minimum_balance' => 1000 ),
-				'deposit_completed_waiting_period'       => true,
 				'current_protection_level'               => 'advanced',
 				'advanced_fraud_protection_settings'     => array( array( 'key' => 'avs_check' ) ),
 				'express_checkout_product_methods'       => array( 'payment_request' ),
@@ -959,21 +939,6 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_get_settings_sources_account_and_deposit_fields_from_cached_account_data(): void {
 		update_option(
-			'woocommerce_woocommerce_payments_settings',
-			array(
-				'account_country'                  => 'GB',
-				'account_statement_descriptor'     => 'STALE STORE',
-				'account_business_name'            => 'Stale Store',
-				'deposit_schedule_interval'        => 'daily',
-				'deposit_schedule_weekly_anchor'   => 'monday',
-				'deposit_schedule_monthly_anchor'  => 1,
-				'deposit_delay_days'               => 7,
-				'deposit_status'                   => 'stale',
-				'deposit_restrictions'             => array( 'stale' => true ),
-				'deposit_completed_waiting_period' => false,
-			)
-		);
-		update_option(
 			'wcpay_account_data',
 			array(
 				'data'    => array(
@@ -1051,6 +1016,38 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'restricted', $settings['deposit_status'] );
 		$this->assertSame( 'schedule_locked', $settings['deposit_restrictions'] );
 		$this->assertTrue( $settings['deposit_completed_waiting_period'] );
+	}
+
+	/**
+	 * Client 11.3.0 reads these fields through the account only, and an absent field as empty
+	 * (includes/class-wc-payment-gateway-wcpay.php:3706-3716, :3901-3910, :3937-3946).
+	 *
+	 * @testdox Should read every account field as empty without an account cache, whatever the stored settings hold.
+	 */
+	public function test_get_settings_reads_account_fields_as_empty_without_an_account_cache(): void {
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'account_statement_descriptor'     => 'STORED STORE',
+				'account_business_name'            => 'Stored Store',
+				'account_business_url'             => 'https://stored.example',
+				'account_business_support_address' => array( 'city' => 'Stored City' ),
+				'account_business_support_email'   => 'stored@example.test',
+				'account_branding_primary_color'   => '#111111',
+				'account_communications_email'     => 'owner@stored.example',
+				'deposit_schedule_interval'        => 'weekly',
+				'deposit_schedule_weekly_anchor'   => 'monday',
+				'deposit_schedule_monthly_anchor'  => 15,
+			)
+		);
+
+		$settings = $this->sut->get_settings();
+
+		foreach ( array( 'account_statement_descriptor', 'account_business_name', 'account_business_url', 'account_business_support_email', 'account_branding_primary_color', 'account_communications_email', 'deposit_schedule_interval', 'deposit_schedule_weekly_anchor' ) as $key ) {
+			$this->assertSame( '', $settings[ $key ], $key . ' reads empty.' );
+		}
+		$this->assertSame( array(), $settings['account_business_support_address'] );
+		$this->assertNull( $settings['deposit_schedule_monthly_anchor'] );
 	}
 
 	/**
@@ -1533,15 +1530,15 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should propagate provider-backed account settings through the API client.
 	 */
 	public function test_update_settings_persists_provider_backed_account_settings_through_api_client(): void {
-		update_option(
-			'woocommerce_woocommerce_payments_settings',
+		$this->set_connected_account_fields(
 			array(
-				'account_statement_descriptor'       => 'OLD STORE',
-				'account_business_support_email'     => 'old@example.test',
-				'deposit_schedule_interval'          => 'daily',
-				'deposit_schedule_weekly_anchor'     => 'monday',
-				'deposit_schedule_monthly_anchor'    => 1,
-				'advanced_fraud_protection_settings' => array(),
+				'statement_descriptor' => 'OLD STORE',
+				'business_profile'     => array( 'support_email' => 'old@example.test' ),
+				'deposits'             => array(
+					'interval'       => 'daily',
+					'weekly_anchor'  => 'monday',
+					'monthly_anchor' => 1,
+				),
 			)
 		);
 
@@ -1599,8 +1596,9 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			$this->api_client->last_fraud_ruleset
 		);
 		$this->assertIsArray( $stored );
-		$this->assertSame( 'NATIVE STORE', $stored['account_statement_descriptor'] );
-		$this->assertSame( 'support@example.test', $stored['account_business_support_email'] );
+		$this->assertArrayNotHasKey( 'account_statement_descriptor', $stored );
+		$this->assertArrayNotHasKey( 'account_business_support_email', $stored );
+		$this->assertArrayNotHasKey( 'deposit_schedule_interval', $stored );
 		$this->assertSame( 'advanced', get_option( 'current_protection_level' ) );
 		$this->assertSame( $this->api_client->last_fraud_ruleset, get_transient( 'wcpay_fraud_protection_settings' ) );
 	}
@@ -1609,7 +1607,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should surface the platform-rejected field as an inline error envelope for inline-capable settings.
 	 */
 	public function test_update_settings_surfaces_platform_param_for_inline_error_fields(): void {
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'account_statement_descriptor' => 'OLD STORE' ) );
+		$this->set_connected_account_fields( array( 'statement_descriptor' => 'OLD STORE' ) );
 		$this->api_client->update_account_exception = new ApiException(
 			'Error: Invalid statement descriptor.',
 			'invalid_request_error',
@@ -1638,7 +1636,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 * @param array<string,mixed> $error_data Platform error data carried by the exception.
 	 */
 	public function test_update_settings_marks_unmapped_platform_rejection_for_server_error_shape( array $error_data ): void {
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'account_business_name' => 'Old Name' ) );
+		$this->set_connected_account_fields( array( 'business_profile' => array( 'name' => 'Old Name' ) ) );
 		$this->api_client->update_account_exception = new ApiException(
 			'Error: The account update was rejected.',
 			'invalid_request_error',
@@ -1669,33 +1667,39 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should store account fields exactly as sent to the platform.
+	 * @testdox Should send account fields to the platform as posted, and write none of them to the stored settings.
 	 */
-	public function test_update_settings_stores_account_fields_exactly_as_sent(): void {
+	public function test_update_settings_writes_no_account_field_to_the_stored_settings(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array() );
-
 		$params = array(
-			'account_business_name'            => '  Native Store  ',
-			'account_statement_descriptor'     => 'NATIVE STORE',
-			'account_business_support_phone'   => '+1 555 0123',
-			'account_business_url'             => 'example.test/store',
-			'account_business_support_email'   => 'support@example.test',
-			'account_communications_email'     => 'merchant@example.test',
-			'account_branding_primary_color'   => '#123ABC',
-			'account_branding_secondary_color' => '#eeeeee',
-			'account_business_support_address' => array( 'city' => 'San Francisco' ),
+			'account_statement_descriptor'       => 'NATIVE STORE',
+			'account_statement_descriptor_kanji' => 'ネイティブ',
+			'account_statement_descriptor_kana'  => 'ネイティブ',
+			'account_business_name'              => '  Native Store  ',
+			'account_business_url'               => 'example.test/store',
+			'account_business_support_address'   => array( 'city' => 'San Francisco' ),
+			'account_business_support_email'     => 'support@example.test',
+			'account_business_support_phone'     => '+1 555 0123',
+			'account_branding_logo'              => 'file_logo',
+			'account_branding_icon'              => 'file_icon',
+			'account_branding_primary_color'     => '#123ABC',
+			'account_branding_secondary_color'   => '#eeeeee',
+			'account_communications_email'       => 'merchant@example.test',
+			'deposit_schedule_interval'          => 'monthly',
+			'deposit_schedule_monthly_anchor'    => 15,
+			'deposit_schedule_weekly_anchor'     => 'friday',
 		);
 
 		$result = $this->sut->update_settings( $params );
-		$stored = get_option( 'woocommerce_woocommerce_payments_settings' );
 
 		$this->assertIsArray( $result );
+		$stored = get_option( 'woocommerce_woocommerce_payments_settings' );
 		$this->assertIsArray( $stored );
-		foreach ( $params as $key => $value ) {
-			$this->assertSame( $value, $stored[ $key ], "The stored mirror of {$key} must be byte-identical to the request value." );
+		foreach ( array_keys( $params ) as $key ) {
+			$this->assertArrayNotHasKey( $key, $stored );
 		}
-		$this->assertSame( '  Native Store  ', $this->api_client->last_account_settings['business_name'], 'The wire payload must carry the same raw value as the stored mirror.' );
-		$this->assertSame( 'example.test/store', $this->api_client->last_account_settings['business_url'], 'The wire payload must not be mutated by URL sanitization.' );
+		$this->assertSame( '  Native Store  ', $this->api_client->last_account_settings['business_name'], 'The platform gets the raw value.' );
+		$this->assertSame( 'example.test/store', $this->api_client->last_account_settings['business_url'], 'The platform gets the URL unchanged.' );
 	}
 
 	/**
@@ -2178,29 +2182,29 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should include the current payout interval when only a payout anchor changes.
+	 * Client 11.3.0 reads the interval from the account when only an anchor is posted
+	 * (includes/admin/class-wc-rest-payments-settings-controller.php:931-933).
+	 *
+	 * @testdox Should send the account's payout interval when only a payout anchor changes, whatever the stored settings hold.
 	 */
 	public function test_update_settings_includes_payout_interval_for_anchor_updates(): void {
-		update_option(
-			'woocommerce_woocommerce_payments_settings',
+		$this->set_connected_account_fields(
 			array(
-				'deposit_schedule_interval'       => 'weekly',
-				'deposit_schedule_weekly_anchor'  => 'monday',
-				'deposit_schedule_monthly_anchor' => 1,
+				'deposits' => array(
+					'interval'       => 'monthly',
+					'monthly_anchor' => 1,
+				),
 			)
 		);
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'deposit_schedule_interval' => 'weekly' ) );
 
-		$result = $this->sut->update_settings(
-			array(
-				'deposit_schedule_weekly_anchor' => 'friday',
-			)
-		);
+		$result = $this->sut->update_settings( array( 'deposit_schedule_monthly_anchor' => 15 ) );
 
 		$this->assertIsArray( $result );
 		$this->assertSame(
 			array(
-				'deposit_schedule_weekly_anchor' => 'friday',
-				'deposit_schedule_interval'      => 'weekly',
+				'deposit_schedule_monthly_anchor' => 15,
+				'deposit_schedule_interval'       => 'monthly',
 			),
 			$this->api_client->last_account_settings
 		);
@@ -2213,21 +2217,20 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should save the fraud ruleset before the account update when $label.
 	 * @dataProvider provide_platform_failures_around_the_fraud_save
 	 *
-	 * @param string $label          Case.
-	 * @param string $failing_call   The platform call that fails: "account" or "fraud".
-	 * @param string $account_key    The account setting the request changes.
-	 * @param string $stored_value   The account setting's stored value.
-	 * @param string $new_value      The account setting's requested value.
-	 * @param int    $fraud_saves    Expected fraud ruleset saves.
-	 * @param string $level          Expected stored protection level.
-	 * @param bool   $account_update Whether the account update reaches the platform.
+	 * @param string              $label          Case.
+	 * @param string              $failing_call   The platform call that fails: "account" or "fraud".
+	 * @param string              $account_key    The account setting the request changes.
+	 * @param array<string,mixed> $stored_account The account's cached value of that setting, shaped as the platform returns it.
+	 * @param string              $new_value      The account setting's requested value.
+	 * @param int                 $fraud_saves    Expected fraud ruleset saves.
+	 * @param string              $level          Expected stored protection level.
+	 * @param bool                $account_update Whether the account update reaches the platform.
 	 */
-	public function test_update_settings_saves_fraud_before_the_account_update( string $label, string $failing_call, string $account_key, string $stored_value, string $new_value, int $fraud_saves, string $level, bool $account_update ): void {
+	public function test_update_settings_saves_fraud_before_the_account_update( string $label, string $failing_call, string $account_key, array $stored_account, string $new_value, int $fraud_saves, string $level, bool $account_update ): void {
 		unset( $label );
-		$this->set_connected_account_data();
+		$this->set_connected_account_fields( $stored_account );
 		update_option( 'current_protection_level', 'standard' );
 		set_transient( 'wcpay_fraud_protection_settings', $this->get_standard_fraud_ruleset_fixture(), DAY_IN_SECONDS );
-		update_option( 'woocommerce_woocommerce_payments_settings', array( $account_key => $stored_value ) );
 		update_option( 'wcpay_next_deposit_notice_dismissed', true );
 		if ( 'account' === $failing_call ) {
 			$this->api_client->update_account_exception = new ApiException( 'Error: The account update was rejected.', 'invalid_request_error', 400 );
@@ -2255,13 +2258,16 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Platform failures around the fraud save: the failing call, the account change, and what the platform and the store keep.
 	 *
-	 * @return array<string,array{0:string,1:string,2:string,3:string,4:string,5:int,6:string,7:bool}>
+	 * @return array<string,array{0:string,1:string,2:string,3:array<string,mixed>,4:string,5:int,6:string,7:bool}>
 	 */
 	public function provide_platform_failures_around_the_fraud_save(): array {
+		$old_name     = array( 'business_profile' => array( 'name' => 'Old Name' ) );
+		$old_interval = array( 'deposits' => array( 'interval' => 'daily' ) );
+
 		return array(
-			'the account update is rejected' => array( 'the platform rejects the account update', 'account', 'account_business_name', 'Old Name', 'New Name', 1, 'high', true ),
-			'the fraud save fails'           => array( 'the platform fraud save fails', 'fraud', 'account_business_name', 'Old Name', 'New Name', 0, 'standard', false ),
-			'the fraud save fails with a payout schedule change' => array( 'the platform fraud save fails while the payout schedule changes', 'fraud', 'deposit_schedule_interval', 'daily', 'weekly', 0, 'standard', false ),
+			'the account update is rejected' => array( 'the platform rejects the account update', 'account', 'account_business_name', $old_name, 'New Name', 1, 'high', true ),
+			'the fraud save fails'           => array( 'the platform fraud save fails', 'fraud', 'account_business_name', $old_name, 'New Name', 0, 'standard', false ),
+			'the fraud save fails with a payout schedule change' => array( 'the platform fraud save fails while the payout schedule changes', 'fraud', 'deposit_schedule_interval', $old_interval, 'weekly', 0, 'standard', false ),
 		);
 	}
 
@@ -2282,11 +2288,8 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$account_service = $this->create_account_service();
 		$sut             = new WooPaymentsSettingsService();
 		$sut->init( $account_service, $this->api_client, $this->pm_promotions_service, wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ), wc_get_container()->get( PaymentMethodRegistry::class ), wc_get_container()->get( StripeBillingModule::class ), $fraud_ruleset_service, $this->create_duplicate_gateway_methods_service( $account_service ), $this->create_woopay_eligibility( $account_service ), new RecordingWooPayAppearanceStore( $this->woopay_session_service ), wc_get_container()->get( WooPaymentsFrontendTrackingController::class ), wc_get_container()->get( WooPaymentsLogger::class ), $this->store_setup_report );
-		$this->set_connected_account_data();
-		$stored_settings = array(
-			'enabled'               => 'no',
-			'account_business_name' => 'Old Name',
-		);
+		$this->set_connected_account_fields( array( 'business_profile' => array( 'name' => 'Old Name' ) ) );
+		$stored_settings = array( 'enabled' => 'no' );
 		update_option( 'woocommerce_woocommerce_payments_settings', $stored_settings );
 
 		$result = $sut->update_settings(
@@ -2572,14 +2575,14 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should clear the next-deposit notice dismissal only when the save changes the payout schedule ($scenario).
 	 * @dataProvider provide_next_deposit_dismissal_saves
 	 *
-	 * @param string               $scenario        Case.
-	 * @param array<string,string> $stored_settings Stored WooPayments settings.
-	 * @param array<string,string> $update          Settings update.
-	 * @param bool                 $kept            Whether the dismissal is kept.
+	 * @param string               $scenario       Case.
+	 * @param array<string,mixed>  $stored_account Cached account fields, shaped as the platform returns them.
+	 * @param array<string,string> $update         Settings update.
+	 * @param bool                 $kept           Whether the dismissal is kept.
 	 */
-	public function test_update_settings_next_deposit_notice_dismissal( string $scenario, array $stored_settings, array $update, bool $kept ): void {
+	public function test_update_settings_next_deposit_notice_dismissal( string $scenario, array $stored_account, array $update, bool $kept ): void {
 		unset( $scenario );
-		update_option( 'woocommerce_woocommerce_payments_settings', $stored_settings );
+		$this->set_connected_account_fields( $stored_account );
 		update_option( 'wcpay_next_deposit_notice_dismissed', true );
 
 		$result = $this->sut->update_settings( $update );
@@ -2593,21 +2596,21 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Provide saves around the next-deposit notice dismissal: case, stored settings, update, whether the dismissal is kept.
+	 * Provide saves around the next-deposit notice dismissal: case, cached account fields, update, whether the dismissal is kept.
 	 *
-	 * @return array<string,array{0:string,1:array<string,string>,2:array<string,string>,3:bool}>
+	 * @return array<string,array{0:string,1:array<string,mixed>,2:array<string,string>,3:bool}>
 	 */
 	public function provide_next_deposit_dismissal_saves(): array {
 		return array(
 			'schedule change'    => array(
 				'schedule change',
-				array( 'deposit_schedule_interval' => 'daily' ),
+				array( 'deposits' => array( 'interval' => 'daily' ) ),
 				array( 'deposit_schedule_interval' => 'weekly' ),
 				false,
 			),
 			'no schedule change' => array(
 				'no schedule change',
-				array( 'account_business_name' => 'Old Name' ),
+				array( 'business_profile' => array( 'name' => 'Old Name' ) ),
 				array( 'account_business_name' => 'New Name' ),
 				true,
 			),
@@ -2648,15 +2651,13 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should reject unavailable enabled methods before any platform mutation lands.
 	 */
 	public function test_update_settings_rejects_unavailable_methods_before_any_platform_mutation(): void {
-		$this->set_connected_account_data();
-		update_option(
-			'woocommerce_woocommerce_payments_settings',
+		$this->set_connected_account_fields(
 			array(
-				'upe_enabled_payment_method_ids' => array( 'card' ),
-				'account_statement_descriptor'   => 'OLD STORE',
-				'deposit_schedule_interval'      => 'daily',
+				'statement_descriptor' => 'OLD STORE',
+				'deposits'             => array( 'interval' => 'daily' ),
 			)
 		);
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) );
 		update_option( 'wcpay_next_deposit_notice_dismissed', true );
 
 		$result = $this->sut->update_settings(
@@ -3038,10 +3039,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	public function test_update_settings_requests_capabilities_before_the_fraud_and_account_calls(): void {
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
-			array(
-				'upe_enabled_payment_method_ids' => array( 'card' ),
-				'account_business_name'          => 'Old Name',
-			)
+			array( 'upe_enabled_payment_method_ids' => array( 'card' ) )
 		);
 		// The account cache in the client's wrapper (includes/class-database-cache.php:364-382), with the capabilities the
 		// client reads for the request (includes/class-wc-payments-account.php:2441-2462; gateway
@@ -3050,13 +3048,14 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			'wcpay_account_data',
 			array(
 				'data'    => array(
-					'account_id'   => 'acct_capability_test',
-					'is_live'      => true,
-					'capabilities' => array(
+					'account_id'       => 'acct_capability_test',
+					'is_live'          => true,
+					'business_profile' => array( 'name' => 'Old Name' ),
+					'capabilities'     => array(
 						'card_payments' => 'active',
 						'link_payments' => 'unrequested',
 					),
-					'fees'         => array(
+					'fees'             => array(
 						'card' => array(),
 						'link' => array(),
 					),
@@ -3261,6 +3260,44 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A caller that posts back the whole settings read saves it, with no account update.
+	 */
+	public function test_settings_route_saves_the_whole_settings_read_posted_back(): void {
+		$this->set_connected_account_fields(
+			array(
+				'country'              => 'US',
+				'statement_descriptor' => 'EXAMPLE STORE',
+				'business_profile'     => array(
+					'name'          => 'Example Store',
+					'url'           => 'https://example.test',
+					'support_email' => 'help@example.test',
+					'support_phone' => '+12025550123',
+				),
+				'branding'             => array(
+					'primary_color'   => '#123456',
+					'secondary_color' => '',
+				),
+				'communications_email' => 'owner@example.test',
+				'deposits'             => array(
+					'interval'      => 'weekly',
+					'weekly_anchor' => 'monday',
+				),
+			)
+		);
+		set_transient( 'wcpay_fraud_protection_settings', array(), DAY_IN_SECONDS );
+		$this->make_builtin_active();
+
+		try {
+			$response = $this->post_settings( $this->sut->get_settings() );
+
+			$this->assertSame( 200, $response->get_status(), (string) wp_json_encode( $response->get_data() ) );
+			$this->assertNull( $this->api_client->last_account_settings );
+		} finally {
+			$this->clear_builtin_active();
+		}
+	}
+
+	/**
 	 * @testdox Should keep split gateway availability aligned with canonical enabled methods.
 	 */
 	public function test_update_settings_projects_enabled_methods_to_split_gateways(): void {
@@ -3369,10 +3406,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	public function test_update_settings_diffs_account_fields_against_cached_account_data(): void {
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
-			array(
-				'saved_cards'                  => 'no',
-				'account_statement_descriptor' => 'STALE LOCAL',
-			)
+			array( 'saved_cards' => 'no' )
 		);
 		update_option(
 			'wcpay_account_data',
@@ -3616,6 +3650,18 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 				'errored' => false,
 			)
 		);
+	}
+
+	/**
+	 * Set connected account data, with these account fields over the defaults.
+	 *
+	 * @param array<string,mixed> $fields Account fields, shaped as the platform returns them.
+	 */
+	private function set_connected_account_fields( array $fields ): void {
+		$this->set_connected_account_data();
+		$account_data         = get_option( 'wcpay_account_data' );
+		$account_data['data'] = array_replace_recursive( $account_data['data'], $fields );
+		update_option( 'wcpay_account_data', $account_data );
 	}
 
 	/**

@@ -743,17 +743,6 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 				)
 			);
 		}
-		// Settings saved with other values must not be read: the account is the only source.
-		update_option(
-			'woocommerce_woocommerce_payments_settings',
-			array(
-				'account_business_name'            => 'Saved Store',
-				'account_business_support_address' => array( 'line1' => '9 Saved Road' ),
-				'account_business_support_email'   => 'saved@example.test',
-				'account_business_support_phone'   => '+15550999',
-				'account_branding_logo'            => 'file_saved_logo',
-			)
-		);
 		$sut = $this->create_service_with_api_client( $this->create_account_api_client( array(), false, $connected ) );
 
 		$this->assertSame(

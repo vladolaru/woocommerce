@@ -33,13 +33,6 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 	private RecordingTerminalApiClient $api_client;
 
 	/**
-	 * Mocked WooPayments gateway settings.
-	 *
-	 * @var array<string,mixed>
-	 */
-	private array $gateway_settings = array();
-
-	/**
 	 * Cached account data the account service double answers.
 	 *
 	 * @var array<string,mixed>
@@ -60,7 +53,6 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 		parent::setUp();
 
 		$this->api_client            = new RecordingTerminalApiClient();
-		$this->gateway_settings      = array();
 		$this->account_data          = array();
 		$this->account_refresh_calls = 0;
 		$this->sut                   = $this->create_controller();
@@ -276,8 +268,7 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 	public function test_generate_print_receipt_uses_order_and_charge_receipt_data(): void {
 		$order = $this->create_order( 12.34, 'USD' );
 
-		$this->account_data     = $this->get_receipt_account();
-		$this->gateway_settings = $this->get_saved_business_details();
+		$this->account_data = $this->get_receipt_account();
 		$this->prepare_receipt_payment( $order, array( 'network' => 'eftpos_au' ) );
 		// Override: a second address line, which the recorded account leaves empty.
 		$this->account_data['business_profile']['support_address']['line2'] = 'Suite 400';
@@ -293,8 +284,6 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertStringContainsString( 'Generated Receipt Lab', $html );
 		$this->assertSame( array( '123 Support St', 'Suite 400', 'San Francisco CA 94107 US' ), $this->get_receipt_address_lines( $html ), 'Every address component comes from the account.' );
 		$this->assertStringContainsString( '+1 555 0200 generated@example.com', $html );
-		$this->assertStringNotContainsString( 'Saved Store', $html, 'Business details saved in the settings must not be printed.' );
-		$this->assertStringNotContainsString( '9 Saved Road', $html );
 		$this->assertStringContainsString( 'Order ' . $order->get_id(), $html );
 		$this->assertStringContainsString( 'AMOUNT PAID', $html );
 		$this->assertStringContainsString( 'eftpos - 0978', $html );
@@ -333,8 +322,7 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 		$order->set_currency( 'USD' );
 		$order->set_total( $line_subtotal );
 		$order->save();
-		$this->account_data     = $this->get_receipt_account();
-		$this->gateway_settings = $this->get_saved_business_details();
+		$this->account_data = $this->get_receipt_account();
 		$this->prepare_receipt_payment( $order );
 
 		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/readers/receipts/pi_receipt' );
@@ -370,7 +358,6 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->account_data                       = $this->get_receipt_account();
 		$this->account_data['branding']['logo']   = 'file_logo_123';
-		$this->gateway_settings                   = array( 'account_branding_logo' => 'file_saved_logo' );
 		$this->api_client->file_contents_response = array(
 			'content_type' => 'image/png',
 			'file_content' => base64_encode( 'logo-bytes' ), // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Test fixture image payload.
@@ -390,12 +377,11 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Generated receipts fetch no logo when the account has none, whatever the settings hold.
+	 * @testdox Generated receipts fetch no logo when the account has none.
 	 */
 	public function test_generate_print_receipt_fetches_no_logo_without_an_account_logo(): void {
-		$order                  = $this->create_order( 12.34, 'USD' );
-		$this->account_data     = $this->get_receipt_account();
-		$this->gateway_settings = array( 'account_branding_logo' => 'file_saved_logo' );
+		$order              = $this->create_order( 12.34, 'USD' );
+		$this->account_data = $this->get_receipt_account();
 		$this->prepare_receipt_payment( $order );
 
 		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/readers/receipts/pi_receipt' );
@@ -423,9 +409,8 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 		update_option( 'woocommerce_store_address_2', 'Unit 8' );
 		update_option( 'woocommerce_store_city', 'Seattle' );
 		update_option( 'woocommerce_store_postcode', '98101' );
-		$order                  = $this->create_order( 12.34, 'USD' );
-		$this->account_data     = $account;
-		$this->gateway_settings = $this->get_saved_business_details();
+		$order              = $this->create_order( 12.34, 'USD' );
+		$this->account_data = $account;
 		$this->prepare_receipt_payment( $order );
 
 		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/readers/receipts/pi_receipt' );
@@ -469,7 +454,7 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 				'empty support address',
 				$no_address,
 				array( '<h1 class="title">Generated Receipt Lab</h1>', '+1 555 0200 generated@example.com' ),
-				array( '<div class="store__address">', '500 Store Avenue', '9 Saved Road' ),
+				array( '<div class="store__address">', '500 Store Avenue' ),
 			),
 			'no business profile'     => array(
 				'no business profile',
@@ -478,13 +463,13 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 					'is_live'    => true,
 				),
 				array( '<h1 class="title"></h1>' ),
-				array( '<div class="store__address">', 'Saved Store', get_bloginfo( 'name' ) . '</h1>', get_option( 'admin_email' ) ),
+				array( '<div class="store__address">', get_bloginfo( 'name' ) . '</h1>', get_option( 'admin_email' ) ),
 			),
 			'partial support address' => array(
 				'partial support address',
 				$partial_address,
 				array( '<h1 class="title">Generated Receipt Lab</h1>' ),
-				array( '500 Store Avenue', 'Unit 8', 'Seattle', '98101', '9 Saved Road' ),
+				array( '500 Store Avenue', 'Unit 8', 'Seattle', '98101' ),
 				array( '4 Partial Pier', '', 'Portland   ' ),
 			),
 		);
@@ -504,9 +489,8 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 	public function test_preview_print_receipt_reads_the_account_where_the_request_gives_nothing( string $description, array $params, array $account, array $contains, array $not_contains, array $address_lines ): void {
 		unset( $description );
 		update_option( 'woocommerce_store_address', '500 Store Avenue' );
-		$this->account_data     = $account;
-		$this->gateway_settings = $this->get_saved_business_details();
-		$request                = new WP_REST_Request( 'POST', '/wc/v3/payments/readers/receipts/preview' );
+		$this->account_data = $account;
+		$request            = new WP_REST_Request( 'POST', '/wc/v3/payments/readers/receipts/preview' );
 		$request->set_body_params( $params );
 
 		$html = $this->sut->preview_print_receipt( $request )->get_data()['html_content'];
@@ -536,11 +520,10 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 		$no_address                                        = $account;
 		$no_address['business_profile']['support_address'] = array();
 		$from_account                                      = array( '<h1 class="title">Generated Receipt Lab</h1>', '123 Support St', '+1 555 0200 generated@example.com' );
-		$not_saved = array( 'Saved Store', '9 Saved Road', 'saved@example.test' );
 
 		return array(
-			'nothing in the request'            => array( 'nothing in the request', array(), $account, $from_account, $not_saved, $account_lines ),
-			'empty address in the request'      => array( 'empty address in the request', array( 'accountBusinessSupportAddress' => array() ), $account, $from_account, $not_saved, $account_lines ),
+			'nothing in the request'            => array( 'nothing in the request', array(), $account, $from_account, array(), $account_lines ),
+			'empty address in the request'      => array( 'empty address in the request', array( 'accountBusinessSupportAddress' => array() ), $account, $from_account, array(), $account_lines ),
 			'request fields'                    => array(
 				'request fields',
 				array(
@@ -574,7 +557,7 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 				array( 'Alias Store', '7 Alias Lane', '+1 555 0300', 'alias@example.test' ),
 				$account_lines,
 			),
-			'account without a support address' => array( 'account without a support address', array(), $no_address, array( '<div class="store__address">' ), array( '500 Store Avenue', '9 Saved Road' ), array( '', '', '   ' ) ),
+			'account without a support address' => array( 'account without a support address', array(), $no_address, array( '<div class="store__address">' ), array( '500 Store Avenue' ), array( '', '', '   ' ) ),
 		);
 	}
 
@@ -668,28 +651,6 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * Get business details saved in the gateway settings with values the account does not have.
-	 *
-	 * @return array<string,mixed>
-	 */
-	private function get_saved_business_details(): array {
-		return array(
-			'account_business_name'            => 'Saved Store',
-			'account_business_support_address' => array(
-				'line1'       => '9 Saved Road',
-				'line2'       => '',
-				'city'        => 'Oakland',
-				'state'       => 'CA',
-				'postal_code' => '94601',
-				'country'     => 'US',
-			),
-			'account_business_support_phone'   => '+1 555 0999',
-			'account_business_support_email'   => 'saved@example.test',
-			'account_branding_logo'            => 'file_saved_logo',
-		);
-	}
-
-	/**
 	 * Answer the receipt route's intent and charge reads with a succeeded card-present payment for the order.
 	 *
 	 * The intent's status and associated charge, then the charge's order number, as client 11.1.0 reads them in
@@ -750,7 +711,7 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 	private function create_controller( bool $test_mode = true, ?WooPaymentsCardReadersRestController $controller = null ): WooPaymentsCardReadersRestController {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_test_mode_enabled', 'get_mode', 'get_gateway_setting', 'refresh_account_data', 'get_cached_account_data' ) )
+			->onlyMethods( array( 'is_test_mode_enabled', 'get_mode', 'refresh_account_data', 'get_cached_account_data' ) )
 			->getMock();
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( $test_mode );
 		$account_service->method( 'get_cached_account_data' )->willReturnCallback(
@@ -766,11 +727,6 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 			}
 		);
 		$account_service->method( 'get_mode' )->willReturn( $test_mode ? 'test' : 'live' );
-		$account_service->method( 'get_gateway_setting' )->willReturnCallback(
-			function ( string $key, $fallback = null ) {
-				return array_key_exists( $key, $this->gateway_settings ) ? $this->gateway_settings[ $key ] : $fallback;
-			}
-		);
 
 		$controller = $controller ?? new WooPaymentsCardReadersRestController();
 		$controller->init( $this->api_client, $account_service );
