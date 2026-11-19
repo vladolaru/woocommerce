@@ -133,12 +133,10 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 		$cutover_cron          = array( ReconciliationJob::class );
 		$cutover_every_request = array( PluginLifecycleListener::class );
 
-		$connected_rest_controllers = WooPaymentsAdminRestRouteRegistrar::get_connected_controller_roots();
-		$connected_admin            = array(
+		$connected_admin           = array(
 			...$cutover_admin,
 			NavigationController::class,
 			SharedSettings::class,
-			WooPaymentsAdminRestRouteRegistrar::class,
 			WooPaymentsAccountService::class,
 			WebhookReliabilityService::class,
 			LinkController::class,
@@ -161,7 +159,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 			NotesController::class,
 			WooPaymentsLoanApprovedNote::class,
 		);
-		$connected_ajax             = array(
+		$connected_ajax            = array(
 			WooPaymentsAccountService::class,
 			WebhookReliabilityService::class,
 			WooPaymentsCustomerService::class,
@@ -179,33 +177,28 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 			// The built-in still applies webhooks with its checkout off, so another gateway's checkout cleans up an earlier attempt.
 			WooPaymentsEarlierAttemptCleanup::class,
 		);
-		$connected_rest             = array_merge(
-			array(
-				WooPaymentsAccountService::class,
-				WebhookReliabilityService::class,
-				WooPaymentsCustomerService::class,
-				WooPaymentsOrderAdminActionsController::class,
-				OrderStatusSync::class,
-				// Plugins are also (de)activated over REST (wp/v2/plugins); client 11.1.0 hooks the WooPay extension sync on every
-				// request (`includes/class-wc-payments.php:597`, `includes/woopay/class-woopay-scheduler.php:45-52`).
-				ExtensionSync::class,
-				WooPaymentsApplePayDomainService::class,
-			),
-			$connected_rest_controllers,
-			array(
-				WooPaymentsFraudOrderTrackingService::class,
-				WooPaymentsStoreSetupReportController::class,
-				WooPaymentsAccountMilestonesController::class,
-				WooPaymentsFeeDetailsNoteController::class,
-				WooPaymentsTestModeOrderEmailService::class,
-				UserPreferenceFields::class,
-				HomeTasks::class,
-				WooPaymentsLoanApprovedNote::class,
-				// The Store API checkout and order-pay routes clean up an earlier attempt another gateway took over.
-				WooPaymentsEarlierAttemptCleanup::class,
-			)
+		$connected_rest            = array(
+			WooPaymentsAccountService::class,
+			WebhookReliabilityService::class,
+			WooPaymentsCustomerService::class,
+			WooPaymentsOrderAdminActionsController::class,
+			OrderStatusSync::class,
+			// Plugins are also (de)activated over REST (wp/v2/plugins); client 11.1.0 hooks the WooPay extension sync on every
+			// request (`includes/class-wc-payments.php:597`, `includes/woopay/class-woopay-scheduler.php:45-52`).
+			ExtensionSync::class,
+			WooPaymentsApplePayDomainService::class,
+			WooPaymentsFraudOrderTrackingService::class,
+			WooPaymentsStoreSetupReportController::class,
+			WooPaymentsAccountMilestonesController::class,
+			WooPaymentsFeeDetailsNoteController::class,
+			WooPaymentsTestModeOrderEmailService::class,
+			UserPreferenceFields::class,
+			HomeTasks::class,
+			WooPaymentsLoanApprovedNote::class,
+			// The Store API checkout and order-pay routes clean up an earlier attempt another gateway took over.
+			WooPaymentsEarlierAttemptCleanup::class,
 		);
-		$connected_cron             = array(
+		$connected_cron            = array(
 			...$cutover_cron,
 			WooPaymentsAccountService::class,
 			WebhookReliabilityService::class,
@@ -221,14 +214,14 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 			WooPaymentsTestModeOrderEmailService::class,
 			WooPaymentsLoanApprovedNote::class,
 		);
-		$gateway_prefix             = array(
+		$gateway_prefix            = array(
 			self::class,
 			WooPaymentsGatewayListController::class,
 			// Card info for orders paid with WooPayments, wherever an order renders: client 11.1.0 registers it on every request
 			// (`includes/class-wc-payments.php:674-675`).
 			WooPaymentsOrderCardInfo::class,
 		);
-		$active_maintenance_prefix  = array_merge(
+		$active_maintenance_prefix = array_merge(
 			array( DataMigration::class ),
 			$gateway_prefix
 		);
@@ -360,6 +353,10 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 		foreach ( array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
 			foreach ( array( RequestTypeUtil::FRONT, RequestTypeUtil::ADMIN, RequestTypeUtil::AJAX, RequestTypeUtil::REST, RequestTypeUtil::CRON, RequestTypeUtil::CLI ) as $request ) {
 				$matrix[ $state ][ $request ][] = SubscriptionsController::class;
+				// A REST server can start in any request, and an internal REST dispatch there must find the provider's routes, as
+				// WooCommerce's own routes and client 11.3.0's do (`includes/class-wc-payments.php:841`). The registrar resolves
+				// the controllers only when the server starts.
+				$matrix[ $state ][ $request ][] = WooPaymentsAdminRestRouteRegistrar::class;
 				// Every request that can write a WooPayments log line numbers it under one request id, as client 11.1.0's logger
 				// context does on every request (`includes/class-wc-payments.php:552`, `src/Internal/LoggerContext.php:73-79`).
 				$matrix[ $state ][ $request ][] = WooPaymentsLogEntryFormat::class;

@@ -10,7 +10,6 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\NavigationController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\NoticesPassthrough;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\SharedSettings;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\MerchantRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\HomeTasks;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\UserPreferenceFields;
 use Automattic\WooCommerce\Internal\Payments\ProviderGatewaysController;
@@ -156,10 +155,21 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 			'The takeover cleanup'                  => array( self::WCPAY . 'WooPaymentsEarlierAttemptCleanup', array( 'active ajax', 'active front', 'active rest', 'connected ajax', 'connected front', 'connected rest' ) ),
 			// A guest session becomes the shopper's account session on a page, AJAX or Store API request.
 			'The session payment values'            => array( self::WCPAY . 'WooPaymentsSessionService', array( 'active ajax', 'active front', 'active rest' ) ),
-			// Merchant routes serve REST requests; admin requests defer them to internal REST initialization.
-			'The merchant REST controller'          => array( MerchantRestController::class, array( 'active rest', 'connected rest' ) ),
-			'The admin REST route registrar'        => array( WooPaymentsAdminRestRouteRegistrar::class, array( 'active admin', 'connected admin' ) ),
+			// A REST server can start in any request of a set-up store, and the registrar adds the routes when it does.
+			'The REST route registrar'              => array( WooPaymentsAdminRestRouteRegistrar::class, $set_up ),
 		);
+	}
+
+	/**
+	 * @testdox No REST controller is a root on any request, so a request that starts no REST server resolves none.
+	 */
+	public function test_no_rest_controller_is_a_root(): void {
+		$controllers = WooPaymentsAdminRestRouteRegistrar::get_connected_controller_roots();
+		foreach ( WooPaymentsProvider::get_classes_by_setup_tier() as $state => $request_groups ) {
+			foreach ( $request_groups as $request => $roots ) {
+				$this->assertSame( array(), array_values( array_intersect( $controllers, $roots ) ), "The $state $request request must leave the REST controllers to the registrar." );
+			}
+		}
 	}
 
 	/**

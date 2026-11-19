@@ -15,10 +15,11 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Sessio
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * On admin requests, registers the WooPayments REST controllers when WordPress starts its REST server, so a REST call
- * made inside the admin request, such as a preload, finds the routes.
+ * Registers the WooPayments REST controllers when WordPress starts its REST server, in every request of a connected or
+ * active store, so a REST request and an internal REST dispatch (an admin preload, WP-CLI, cron) find the routes.
  *
- * REST requests register the controllers directly; the WooPay session routes register only in the active setup tier.
+ * A request that starts no REST server resolves no controller. The WooPay session routes register only in the active
+ * setup tier.
  *
  * @since 11.2.0
  * @internal
@@ -46,7 +47,7 @@ final class WooPaymentsAdminRestRouteRegistrar implements RegisterHooksInterface
 	}
 
 	/**
-	 * Register the deferred admin REST hook.
+	 * Register the deferred REST hook.
 	 *
 	 * @since 11.2.0
 	 */
@@ -55,7 +56,7 @@ final class WooPaymentsAdminRestRouteRegistrar implements RegisterHooksInterface
 	}
 
 	/**
-	 * Resolve and register the route controllers for an internal REST dispatch.
+	 * Resolve and register the route controllers once WordPress starts its REST server.
 	 *
 	 * Each controller registers its routes later on this hook, at priority 10: through WooCommerce's REST server, or on its own
 	 * callback for the webhook and WooPay session controllers.

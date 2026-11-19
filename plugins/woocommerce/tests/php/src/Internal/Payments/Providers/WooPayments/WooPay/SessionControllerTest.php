@@ -293,6 +293,105 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Under WP-CLI, once a REST server starts on a store with WooPay on, the session controller's callbacks return early and write nothing.
+	 */
+	public function test_callbacks_registered_by_a_wp_cli_rest_server_write_nothing(): void {
+		$this->make_base_gateway_available();
+		$this->sut = $this->create_controller( true, $this->create_real_enabled_session_service() );
+		$this->assertTrue( $this->woopay_eligibility->is_woopay_enabled(), 'Premise: WooPay is on.' );
+		$session = new class() extends \WC_Session {
+			/** Tell whether a write changed the session. */
+			public function is_dirty(): bool {
+				return (bool) $this->_dirty;
+			}
+		};
+
+		WC()->session = $session;
+		$order        = wc_create_order();
+		$order->set_billing_email( 'shopper@example.com' );
+		$order->set_customer_ip_address( '192.0.2.10' );
+		$order->save();
+		$meta_before = wp_list_pluck( $order->get_meta_data(), 'value', 'key' );
+		$cookies     = 0;
+		add_filter(
+			'woocommerce_set_cookie_enabled',
+			static function () use ( &$cookies ) {
+				++$cookies;
+				return false;
+			}
+		);
+		wp_set_current_user( 0 );
+
+		// The registrar calls register() from its rest_api_init callback at priority 0.
+		add_action( 'rest_api_init', array( $this->sut, 'register' ), 0 );
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Starting the REST server as rest_get_server() does.
+		do_action( 'rest_api_init', $this->server );
+
+		$this->assertArrayHasKey( '/payments/woopay/session', $this->server->get_routes() );
+		$this->assertSame( 7, $this->apply_controller_filters( 'determine_current_user', array( 7 ) ) );
+		$this->assertSame( 5, $this->apply_controller_filters( 'automatewoo/referrals/referred_order_advocate', array( 5 ) ) );
+		$this->assertFalse( $this->apply_controller_filters( 'woocommerce_order_needs_payment', array( false, $order, array() ) ) );
+		$this->assertSame( array( 'source' => 'renewal' ), $this->apply_controller_filters( 'wcpay_metadata_from_order', array( array( 'source' => 'renewal' ), $order ) ) );
+		$this->call_controller_callbacks( 'woocommerce_order_payment_status_changed', array( $order->get_id() ) );
+		$this->call_controller_callbacks( 'woocommerce_store_api_checkout_update_order_from_request', array( $order ) );
+		$this->call_controller_callbacks( 'woocommerce_store_api_checkout_order_processed', array( $order ) );
+		$this->call_controller_callbacks( 'woocommerce_payment_complete', array( $order->get_id() ) );
+		$this->call_controller_callbacks( 'woocommerce_checkout_process', array() );
+		$this->call_controller_callbacks( 'shutdown', array() );
+		$order->save();
+
+		$this->assertSame( 0, get_current_user_id() );
+		$this->assertFalse( $session->is_dirty(), 'No session value changes.' );
+		$this->assertSame( 0, $cookies, 'No cookie is set.' );
+		$this->assertSame( 0, wc_notice_count() );
+		$stored = wc_get_order( $order->get_id() );
+		$this->assertSame( '192.0.2.10', $stored->get_customer_ip_address() );
+		$this->assertSame( $meta_before, wp_list_pluck( $stored->get_meta_data(), 'value', 'key' ) );
+		$this->assertFalse( wp_next_scheduled( 'woopay_restore_order_customer_id', array( $order->get_id() ) ) );
+	}
+
+	/**
+	 * Run only the callbacks the controller and its Store API request handler added to a filter, as WordPress would.
+	 *
+	 * @param string           $hook Filter name.
+	 * @param array<int,mixed> $args Arguments the filter passes.
+	 * @return mixed The filtered value.
+	 */
+	private function apply_controller_filters( string $hook, array $args ) {
+		return $this->call_controller_callbacks( $hook, $args, true );
+	}
+
+	/**
+	 * Run only the callbacks the controller and its Store API request handler added to a hook, as WordPress would.
+	 *
+	 * @param string           $hook      Hook name.
+	 * @param array<int,mixed> $args      Arguments the hook passes.
+	 * @param bool             $is_filter Whether each callback's return value replaces the first argument.
+	 * @return mixed The first argument after every callback.
+	 */
+	private function call_controller_callbacks( string $hook, array $args, bool $is_filter = false ) {
+		global $wp_filter;
+
+		$called = 0;
+		foreach ( $wp_filter[ $hook ]->callbacks ?? array() as $callbacks ) {
+			foreach ( $callbacks as $callback ) {
+				$function = $callback['function'];
+				if ( ! is_array( $function ) || ! in_array( $function[0], array( $this->sut, $this->store_api_request_handler ), true ) ) {
+					continue;
+				}
+				$result = call_user_func_array( $function, array_slice( $args, 0, (int) $callback['accepted_args'] ) );
+				if ( $is_filter ) {
+					$args[0] = $result;
+				}
+				++$called;
+			}
+		}
+		$this->assertGreaterThan( 0, $called, "The controller adds a callback to $hook." );
+
+		return $args[0] ?? null;
+	}
+
+	/**
 	 * @testdox Should not load WooPay on an archive whose term ID equals the post ID of a page with a product_page shortcode.
 	 */
 	public function test_enqueue_frontend_assets_skips_an_archive_whose_term_id_matches_a_product_page(): void {
