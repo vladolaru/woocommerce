@@ -83,6 +83,13 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	private RecordingPmPromotionsService $pm_promotions_service;
 
 	/**
+	 * The account service the settings service and its fraud service read.
+	 *
+	 * @var WooPaymentsAccountService
+	 */
+	private WooPaymentsAccountService $account_service;
+
+	/**
 	 * Original WooCommerce options mutated by focused settings-contract tests.
 	 *
 	 * @var array<string,mixed>
@@ -103,9 +110,9 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->woopay_session_service = new RecordingWooPaySessionService();
 		$this->pm_promotions_service  = new RecordingPmPromotionsService();
 		$this->store_setup_report     = new RecordingStoreSetupReportController();
-		$account_service              = $this->create_account_service();
+		$this->account_service        = $this->create_account_service();
 		$this->sut                    = new WooPaymentsSettingsService();
-		$this->sut->init( $account_service, $this->api_client, $this->pm_promotions_service, wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ), wc_get_container()->get( PaymentMethodRegistry::class ), wc_get_container()->get( StripeBillingModule::class ), $this->create_fraud_ruleset_service( $account_service ), $this->create_duplicate_gateway_methods_service( $account_service ), $this->create_woopay_eligibility( $account_service ), new RecordingWooPayAppearanceStore( $this->woopay_session_service ), wc_get_container()->get( WooPaymentsFrontendTrackingController::class ), wc_get_container()->get( WooPaymentsLogger::class ), $this->store_setup_report );
+		$this->sut->init( $this->account_service, $this->api_client, $this->pm_promotions_service, wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ), wc_get_container()->get( PaymentMethodRegistry::class ), wc_get_container()->get( StripeBillingModule::class ), $this->create_fraud_ruleset_service( $this->account_service ), $this->create_duplicate_gateway_methods_service( $this->account_service ), $this->create_woopay_eligibility( $this->account_service ), new RecordingWooPayAppearanceStore( $this->woopay_session_service ), wc_get_container()->get( WooPaymentsFrontendTrackingController::class ), wc_get_container()->get( WooPaymentsLogger::class ), $this->store_setup_report );
 	}
 
 	/**
@@ -2295,6 +2302,24 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->assertNull( $this->api_client->last_account_settings, 'A refused ruleset stops the save before the account update.' );
 		$this->assertSame( $stored_settings, get_option( 'woocommerce_woocommerce_payments_settings' ), 'A refused ruleset stops the save before the local settings are written.' );
 		$this->assertSame( 0, $this->store_setup_report->sync_count );
+	}
+
+	/**
+	 * @testdox An account reset clears the cached fraud ruleset and protection level, so the next read takes the new account's.
+	 */
+	public function test_account_reset_clears_the_cached_fraud_ruleset_and_level(): void {
+		$this->set_connected_account_data();
+		update_option( 'current_protection_level', 'high' );
+		set_transient( 'wcpay_fraud_protection_settings', $this->get_high_fraud_ruleset_fixture(), DAY_IN_SECONDS );
+
+		$this->account_service->cleanup_after_account_reset();
+
+		$this->assertFalse( get_transient( 'wcpay_fraud_protection_settings' ) );
+		$this->assertFalse( get_option( 'current_protection_level' ) );
+		$this->set_connected_account_data();
+		$this->api_client->latest_fraud_ruleset_response = array( 'ruleset_config' => $this->get_standard_fraud_ruleset_fixture() );
+		$this->assertSame( 'standard', $this->sut->get_settings()['current_protection_level'] );
+		$this->assertSame( 1, $this->api_client->latest_fraud_ruleset_requests );
 	}
 
 	/**

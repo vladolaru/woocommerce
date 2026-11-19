@@ -403,6 +403,9 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		$this->legacy_proxy->call_function( 'delete_transient', WooPaymentsPaymentsSettingsAdapter::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT );
 		$this->legacy_proxy->call_function( 'delete_transient', self::ONBOARDING_INIT_IN_PROGRESS_TRANSIENT );
 		$this->legacy_proxy->call_function( 'delete_transient', self::ONBOARDING_DISABLED_TRANSIENT );
+		// The cached fraud ruleset and level are the old account's; the next read fetches the new account's.
+		$this->legacy_proxy->call_function( 'delete_transient', 'wcpay_fraud_protection_settings' );
+		$this->legacy_proxy->call_function( 'delete_option', 'current_protection_level' );
 
 		$this->database_cache->delete_all();
 
