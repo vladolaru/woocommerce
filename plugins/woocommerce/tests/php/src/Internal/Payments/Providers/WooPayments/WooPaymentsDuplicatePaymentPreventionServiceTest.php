@@ -1174,6 +1174,37 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	}
 
 	/**
+	 * @testdox Should stop a second payment on a paid order when the escape-hatch filter returns $label instead of false.
+	 * @testWith ["null, a missing return", null]
+	 *           ["an empty string", ""]
+	 *           ["zero", 0]
+	 *           ["the string zero", "0"]
+	 *           ["an empty array", []]
+	 *
+	 * A callback that returns false only inside a condition returns null for every other paid order.
+	 *
+	 * @param string $label    The result's description.
+	 * @param mixed  $returned The callback's result.
+	 */
+	public function test_check_order_already_paid_stops_payment_unless_the_filter_returns_false( string $label, $returned ): void {
+		unset( $label );
+		$order  = $this->create_order( 'hash', 'completed' );
+		$filter = static fn() => $returned;
+		add_filter( 'wcpay_should_prevent_payment_for_paid_order', $filter );
+
+		try {
+			$result = $this->create_service()->check_order_already_paid( $order, $this->create_gateway() );
+		} finally {
+			remove_filter( 'wcpay_should_prevent_payment_for_paid_order', $filter );
+		}
+
+		$this->assertIsArray( $result );
+		$this->assertStringContainsString( 'wcpay_previous_successful_intent=yes', $result['redirect'] );
+		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+		$this->assertStringContainsString( 'detected and prevented a second payment', (string) $notes[0]->content );
+	}
+
+	/**
 	 * @testdox Should read the stored status fresh so a stale in-memory instance cannot slip a second payment through.
 	 */
 	public function test_check_order_already_paid_reads_the_stored_status_past_a_stale_instance(): void {

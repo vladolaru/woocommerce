@@ -526,9 +526,10 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 		 *
 		 * Escape hatch for a flow that legitimately re-runs payment against an entity that
 		 * was already paid, and cannot say so through the order's status — the subscription
-		 * payment-method change exempted above is one such flow. Returning false lets the
-		 * payment through, so only do it for a specific flow you recognise: a blanket false
-		 * restores the double-charge this guard exists to stop.
+		 * payment-method change exempted above is one such flow. Only false lets the payment
+		 * through; any other value, a missing return included, keeps it stopped. Return false
+		 * only for a specific flow you recognise: a blanket false restores the double-charge
+		 * this guard exists to stop.
 		 *
 		 * Keeps this name because extensions listen to it.
 		 *
@@ -538,7 +539,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 		 * @param WC_Order $order          The order about to be paid a second time.
 		 * @param string   $status         The order's stored status.
 		 */
-		if ( ! apply_filters( 'wcpay_should_prevent_payment_for_paid_order', true, $order, $status ) ) {
+		if ( false === apply_filters( 'wcpay_should_prevent_payment_for_paid_order', true, $order, $status ) ) {
 			return null;
 		}
 
