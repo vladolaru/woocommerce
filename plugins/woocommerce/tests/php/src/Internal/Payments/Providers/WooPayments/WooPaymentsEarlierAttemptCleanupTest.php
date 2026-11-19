@@ -206,6 +206,37 @@ class WooPaymentsEarlierAttemptCleanupTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A cancel the platform refuses at shutdown is noted as not cancelled when a response filter callback returns null.
+	 *
+	 * The null used to replace the refusal with an empty success, so the note said the earlier payment was cancelled and
+	 * the merchant lost the prompt to check that it was not charged.
+	 */
+	public function test_refused_cancel_is_noted_when_a_response_callback_returns_null(): void {
+		$order                     = StoredPaymentRecords::attempt_before_a_takeover( 'requires_action', 'pi_A', 'pi_A' );
+		$this->transport->response = self::platform_answer(
+			400,
+			array(
+				'error' => array(
+					'code'    => 'payment_intent_unexpected_state',
+					'message' => 'You cannot cancel this PaymentIntent because it has a status of succeeded.',
+				),
+			)
+		);
+		do_action( 'woocommerce_store_api_checkout_order_processed', $order );
+		add_filter( 'wcpay_api_request_response', '__return_null' );
+
+		try {
+			$this->sut->finish_earlier_attempts();
+		} finally {
+			remove_filter( 'wcpay_api_request_response', '__return_null' );
+		}
+
+		$this->assertSame( array( 'POST /sites/123/wcpay/intentions/pi_A/cancel' ), $this->sent_requests() );
+		$this->assertSame( 1, self::count_notes( $order, sprintf( 'The earlier WooPayments payment %1$s could not be cancelled when the customer checked out with another payment method. Check that it was not charged.', self::linked_id( 'pi_A' ) ) ) );
+		$this->assertSame( 0, self::count_notes( $order, 'The earlier WooPayments payment <code>pi_A</code> was cancelled because the customer checked out with another payment method.' ) );
+	}
+
+	/**
 	 * @testdox A takeover after a declined attempt removes its values and lists it, with no read and no cancel, and leaves a transaction ID that names an earlier attempt ($_dataName).
 	 * @dataProvider provide_declined_takeovers
 	 *

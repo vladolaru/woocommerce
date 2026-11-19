@@ -2559,14 +2559,18 @@ class Client {
 			 *
 			 * Keeps this name because extensions listen to it.
 			 *
+			 * A result that is neither an array nor a `WP_Error` is ignored.
+			 *
 			 * @since 11.0.0
 			 *
-			 * @param mixed  $response Transport response.
-			 * @param string $method   HTTP method.
-			 * @param string $url      Public WordPress.com API URL; on a site-scoped request it holds a `%s` placeholder where the site ID goes.
-			 * @param string $api      WooPayments API path.
+			 * @param array|WP_Error $response Transport response.
+			 * @param string         $method   HTTP method.
+			 * @param string         $url      Public WordPress.com API URL; on a site-scoped request it holds a `%s` placeholder where the site ID goes.
+			 * @param string         $api      WooPayments API path.
 			 */
-			$response      = apply_filters( 'wcpay_api_request_response', $response, $method, $filter_url, $api );
+			$filtered_response = apply_filters( 'wcpay_api_request_response', $response, $method, $filter_url, $api );
+			// A callback that returns neither is ignored, so it cannot turn the platform's answer into an empty success.
+			$response      = is_array( $filtered_response ) || $filtered_response instanceof WP_Error ? $filtered_response : $response;
 			$response_code = $response instanceof WP_Error ? 0 : (int) wp_remote_retrieve_response_code( $response );
 
 			if ( ! $this->should_retry_request_response( $response, $response_code, $retries, $retries_limit, $stop_trying_at ) ) {

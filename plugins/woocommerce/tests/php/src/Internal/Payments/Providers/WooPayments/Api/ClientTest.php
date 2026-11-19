@@ -3824,6 +3824,149 @@ class ClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The platform's refusal of a refund still reaches the caller when a response filter callback returns $label.
+	 * @testWith ["null", null]
+	 *           ["false", false]
+	 *           ["true", true]
+	 *           ["an empty string", ""]
+	 *           ["a string", "x"]
+	 *           ["zero", 0]
+	 *
+	 * Such a result used to replace the platform's answer with an empty success, which the refund recorded as completed.
+	 *
+	 * @param string $label    The result's description.
+	 * @param mixed  $returned The callback's result.
+	 */
+	public function test_response_filter_result_that_is_not_a_response_is_ignored( string $label, $returned ): void {
+		unset( $label );
+		$http_client           = new FakeHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => 400 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode(
+				array(
+					'error' => array(
+						'code'    => 'charge_already_refunded',
+						'type'    => 'invalid_request_error',
+						'message' => 'Charge ch_test has already been refunded.',
+					),
+				)
+			),
+		);
+		$filter                = static fn() => $returned;
+
+		$sut = new Client();
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
+		add_filter( 'wcpay_api_request_response', $filter );
+
+		try {
+			$sut->refund_charge( 'ch_test', 250, 'requested_by_customer', 'native_transport', 'idem_test' );
+			$exception = null;
+		} catch ( ApiException $caught ) {
+			$exception = $caught;
+		} finally {
+			remove_filter( 'wcpay_api_request_response', $filter );
+		}
+
+		$this->assertInstanceOf( ApiException::class, $exception, 'The refusal must not become a success.' );
+		$this->assertSame( 'charge_already_refunded', $exception->get_error_code() );
+		$this->assertSame( 400, $exception->get_http_code() );
+	}
+
+	/**
+	 * @testdox The platform's answer is kept when a response filter callback returns an object, which used to be an error on every request.
+	 */
+	public function test_response_filter_object_result_is_ignored(): void {
+		$http_client           = new FakeHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode(
+				array(
+					'id'     => 're_1',
+					'status' => 'succeeded',
+				)
+			),
+		);
+		$filter                = static fn() => new \stdClass();
+
+		$sut = new Client();
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
+		add_filter( 'wcpay_api_request_response', $filter );
+
+		try {
+			$result = $sut->refund_charge( 'ch_test', 250, 'requested_by_customer', 'native_transport', 'idem_test' );
+		} finally {
+			remove_filter( 'wcpay_api_request_response', $filter );
+		}
+
+		$this->assertSame( 're_1', $result['id'] );
+	}
+
+	/**
+	 * @testdox A transport failure is still retried when a response filter callback returns null.
+	 */
+	public function test_response_filter_null_result_keeps_the_transport_retry(): void {
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			new WP_Error( 'http_request_failed', 'Could not connect to WPCOM.' ),
+			array(
+				'response' => array( 'code' => 200 ),
+				'headers'  => array( 'content-type' => 'application/json' ),
+				'body'     => wp_json_encode( array( 'id' => 'cus_retry' ) ),
+			),
+		);
+		$filter                 = '__return_null';
+
+		$sut = new Client();
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
+		add_filter( 'wcpay_api_request_response', $filter );
+
+		try {
+			$result = $sut->create_customer(
+				array(
+					'name'  => 'Ada Lovelace',
+					'email' => 'ada@example.com',
+				)
+			);
+		} finally {
+			remove_filter( 'wcpay_api_request_response', $filter );
+		}
+
+		$this->assertSame( 'cus_retry', $result );
+		$this->assertSame( 2, $http_client->request_count );
+	}
+
+	/**
+	 * @testdox A WP_Error a response filter callback returns still fails the request.
+	 */
+	public function test_response_filter_error_result_fails_the_request(): void {
+		$http_client           = new FakeHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode( array( 'id' => 're_1' ) ),
+		);
+		$filter                = static fn() => new WP_Error( 'test_refused', 'Refused by a callback.' );
+
+		$sut = new Client();
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
+		add_filter( 'wcpay_api_request_response', $filter );
+
+		try {
+			$sut->refund_charge( 'ch_test', 250, 'requested_by_customer', 'native_transport', 'idem_test' );
+			$exception = null;
+		} catch ( ApiException $caught ) {
+			$exception = $caught;
+		} finally {
+			remove_filter( 'wcpay_api_request_response', $filter );
+		}
+
+		$this->assertInstanceOf( ApiException::class, $exception );
+		$this->assertSame( 'wcpay_http_request_failed', $exception->get_error_code() );
+	}
+
+	/**
 	 * @testdox Should fail the embedded account session once, without retrying, on the platform's session failure (wcpay_server_error, HTTP 500).
 	 */
 	public function test_create_embedded_account_session_throws_on_platform_server_error(): void {

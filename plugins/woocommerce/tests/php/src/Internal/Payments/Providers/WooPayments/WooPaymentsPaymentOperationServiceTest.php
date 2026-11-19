@@ -6161,6 +6161,56 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A refund the platform refuses is recorded as failed, not completed, when a response filter callback returns null.
+	 *
+	 * The null used to replace the refusal with an empty success, which recorded a completed refund with no refund ID.
+	 */
+	public function test_refused_refund_is_not_recorded_as_completed_when_a_response_callback_returns_null(): void {
+		$order = $this->create_woopayments_order( '10.00' );
+		$order->update_meta_data( '_charge_id', 'ch_refused' );
+		$order->save();
+		$refund = wc_create_refund(
+			array(
+				'order_id'       => $order->get_id(),
+				'amount'         => 10.0,
+				'reason'         => 'requested_by_customer',
+				'refund_payment' => false,
+			)
+		);
+		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
+
+		$http_client           = new FakeHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => 400 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode(
+				array(
+					'error' => array(
+						'code'    => 'charge_already_refunded',
+						'type'    => 'invalid_request_error',
+						'message' => 'Charge ch_refused has already been refunded.',
+					),
+				)
+			),
+		);
+		$provider              = $this->create_provider_over_fake_transport( $http_client, $this->create_account_service( true ) );
+		add_filter( 'wcpay_api_request_response', '__return_null' );
+
+		try {
+			$result = wc_get_container()->get( PaymentProcessingService::class )->process_refund(
+				PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 10.0, 'requested_by_customer' ),
+				$provider
+			);
+		} finally {
+			remove_filter( 'wcpay_api_request_response', '__return_null' );
+		}
+
+		$this->assertWPError( $result );
+		$this->assertNotSame( 'successful', wc_get_order( $order->get_id() )->get_meta( '_wcpay_refund_status', true ) );
+		$this->assertSame( '', wc_get_order( $refund->get_id() )->get_meta( '_wcpay_refund_id', true ) );
+	}
+
+	/**
 	 * @testdox Each refund call sends its own Idempotency-Key, and a transport retry inside one call reuses it.
 	 *
 	 * Client 11.1.0 `process_refund()` sets no caller key on the refund request
