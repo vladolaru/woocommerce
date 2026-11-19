@@ -2305,6 +2305,95 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * The Standard and High rulesets are built from the selling countries and the currency threshold, so a save that does
+	 * not carry the fraud settings re-sends the rebuilt one when it differs from the cached one, without reading the platform.
+	 *
+	 * @testdox A save without the fraud settings at the $level level with $label sends $saves ruleset(s) and keeps the level.
+	 * @dataProvider provide_built_ruleset_refreshes
+	 *
+	 * @param string $label  Case.
+	 * @param string $level  Stored protection level.
+	 * @param string $cached The cached ruleset: "before" for one built before the countries changed, "current", or "none".
+	 * @param int    $saves  Expected platform ruleset saves.
+	 */
+	public function test_update_settings_refreshes_a_built_fraud_ruleset_without_the_fraud_settings( string $label, string $level, string $cached, int $saves ): void {
+		unset( $label );
+		$this->set_connected_account_data();
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'woocommerce_allowed_countries', 'specific' );
+		update_option( 'woocommerce_specific_allowed_countries', array( 'US', 'CA' ) );
+		update_option( 'current_protection_level', $level );
+		if ( 'none' !== $cached ) {
+			$countries = 'before' === $cached ? 'us|ca' : 'us|ca|gb';
+			set_transient( 'wcpay_fraud_protection_settings', $this->get_built_fraud_ruleset_fixture( $level, $countries ), DAY_IN_SECONDS );
+		}
+		update_option( 'woocommerce_specific_allowed_countries', array( 'US', 'CA', 'GB' ) );
+
+		$result = $this->sut->update_settings( array( 'is_saved_cards_enabled' => true ) );
+
+		$this->assertIsArray( $result );
+		$this->assertSame( $saves, $this->api_client->fraud_ruleset_saves );
+		$this->assertSame( 0, $this->api_client->latest_fraud_ruleset_requests, 'The save reads no ruleset from the platform.' );
+		$this->assertSame( $level, get_option( 'current_protection_level' ) );
+		if ( 1 === $saves ) {
+			$expected = $this->get_built_fraud_ruleset_fixture( $level, 'us|ca|gb' );
+			$this->assertSame( $expected, $this->api_client->last_fraud_ruleset );
+			$this->assertSame( $expected, get_transient( 'wcpay_fraud_protection_settings' ) );
+		}
+	}
+
+	/**
+	 * Refreshes of a built ruleset: level, cached ruleset and platform saves.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string,3:int}>
+	 */
+	public function provide_built_ruleset_refreshes(): array {
+		return array(
+			'standard, countries changed' => array( 'the selling countries changed since the last build', 'standard', 'before', 1 ),
+			'high, countries changed'     => array( 'the selling countries changed since the last build', 'high', 'before', 1 ),
+			'standard, nothing changed'   => array( 'nothing changed since the last build', 'standard', 'current', 0 ),
+			'standard, nothing cached'    => array( 'no cached ruleset', 'standard', 'none', 1 ),
+			'basic'                       => array( 'the selling countries changed', 'basic', 'before', 0 ),
+			'advanced'                    => array( 'the selling countries changed', 'advanced', 'before', 0 ),
+		);
+	}
+
+	/**
+	 * @testdox A failed refresh of a built ruleset is logged and the save it follows succeeds.
+	 */
+	public function test_update_settings_logs_a_failed_built_fraud_ruleset_refresh_and_saves(): void {
+		$this->set_connected_account_data();
+		update_option( 'current_protection_level', 'standard' );
+		$this->api_client->save_fraud_ruleset_exception = new ApiException( 'Platform unavailable.', 'wcpay_server_error', 500 );
+		$logger = RecordingWcLogger::install();
+
+		$result = $this->sut->update_settings( array( 'is_saved_cards_enabled' => true ) );
+
+		$this->assertIsArray( $result );
+		$this->assertTrue( $result['is_saved_cards_enabled'] );
+		$context = $this->get_logged_context( $logger, 'WooPayments fraud ruleset refresh after a settings save failed.' );
+		$this->assertSame( 500, $context['http_status'] );
+	}
+
+	/**
+	 * @testdox A save that carries the fraud settings sends only the requested ruleset.
+	 */
+	public function test_update_settings_with_the_fraud_settings_sends_no_second_ruleset(): void {
+		$this->set_connected_account_data();
+		update_option( 'current_protection_level', 'standard' );
+
+		$this->sut->update_settings(
+			array(
+				'current_protection_level'           => 'high',
+				'advanced_fraud_protection_settings' => array(),
+			)
+		);
+
+		$this->assertSame( 1, $this->api_client->fraud_ruleset_saves );
+		$this->assertSame( $this->get_high_fraud_ruleset_fixture(), $this->api_client->last_fraud_ruleset );
+	}
+
+	/**
 	 * @testdox An account reset clears the cached fraud ruleset and protection level, so the next read takes the new account's.
 	 */
 	public function test_account_reset_clears_the_cached_fraud_ruleset_and_level(): void {
@@ -2320,6 +2409,25 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->api_client->latest_fraud_ruleset_response = array( 'ruleset_config' => $this->get_standard_fraud_ruleset_fixture() );
 		$this->assertSame( 'standard', $this->sut->get_settings()['current_protection_level'] );
 		$this->assertSame( 1, $this->api_client->latest_fraud_ruleset_requests );
+	}
+
+	/**
+	 * @testdox After an account reset, a save without the fraud settings sends no ruleset built from the old account's level, and answers the new account's.
+	 */
+	public function test_update_settings_after_an_account_reset_takes_the_new_accounts_fraud_level(): void {
+		$this->set_connected_account_data();
+		update_option( 'current_protection_level', 'standard' );
+		set_transient( 'wcpay_fraud_protection_settings', $this->get_standard_fraud_ruleset_fixture(), DAY_IN_SECONDS );
+		$this->account_service->cleanup_after_account_reset();
+		$this->set_connected_account_data();
+		$this->api_client->latest_fraud_ruleset_response = array( 'ruleset_config' => array() );
+
+		$result = $this->sut->update_settings( array( 'is_saved_cards_enabled' => true ) );
+
+		$this->assertIsArray( $result );
+		$this->assertSame( 0, $this->api_client->fraud_ruleset_saves );
+		$this->assertSame( 'basic', $result['current_protection_level'] );
+		$this->assertSame( array(), get_transient( 'wcpay_fraud_protection_settings' ) );
 	}
 
 	/**
@@ -3744,6 +3852,21 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 				$this->get_fraud_check_fixture( 'ip_billing_country_same', 'equals', false )
 			),
 		);
+	}
+
+	/**
+	 * Get the High ruleset fixture for the high level, and the Standard one otherwise, as built for a store selling to
+	 * specific countries.
+	 *
+	 * @param string $level     Protection level.
+	 * @param string $countries Lower-case pipe-separated selling countries.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function get_built_fraud_ruleset_fixture( string $level, string $countries ): array {
+		$ruleset             = 'high' === $level ? $this->get_high_fraud_ruleset_fixture() : $this->get_standard_fraud_ruleset_fixture();
+		$ruleset[0]['check'] = $this->get_fraud_check_fixture( 'ip_country', 'not_in', $countries );
+
+		return $ruleset;
 	}
 
 	/**
