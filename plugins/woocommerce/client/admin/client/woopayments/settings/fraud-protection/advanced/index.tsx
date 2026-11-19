@@ -171,7 +171,7 @@ const validateThresholds = ( settings: ProtectionSettingsUI ) => {
 		const minItems = maybeParseInteger( orderItems.min_items ) ?? 0;
 		const maxItems = maybeParseInteger( orderItems.max_items ) ?? 0;
 
-		if ( ! minItems && ! maxItems ) {
+		if ( minItems < 0 || maxItems < 0 || ( ! minItems && ! maxItems ) ) {
 			return __(
 				'An item range must be set for the "Order Item Threshold" filter.',
 				'woocommerce'
@@ -193,7 +193,11 @@ const validateThresholds = ( settings: ProtectionSettingsUI ) => {
 		const minAmount = maybeParseFloat( purchasePrice.min_amount ) ?? 0;
 		const maxAmount = maybeParseFloat( purchasePrice.max_amount ) ?? 0;
 
-		if ( ! minAmount && ! maxAmount ) {
+		if (
+			minAmount < 0 ||
+			maxAmount < 0 ||
+			( ! minAmount && ! maxAmount )
+		) {
 			return __(
 				'A price range must be set for the "Purchase Price threshold" filter.',
 				'woocommerce'
@@ -287,7 +291,7 @@ const getThresholdNotice = ( {
 	rangeMessage: string;
 	orderMessage: string;
 } ) => {
-	if ( ! minimum && ! maximum ) {
+	if ( minimum < 0 || maximum < 0 || ( ! minimum && ! maximum ) ) {
 		return (
 			<Notice status="warning" isDismissible={ false }>
 				{ rangeMessage }
@@ -343,6 +347,7 @@ const AmountThresholdInput = ( {
 					id={ id }
 					className="components-text-control__input is-next-40px-default-size"
 					type="number"
+					min="0"
 					value={ value }
 					placeholder="0.00"
 					aria-describedby={ `${ helpId } ${ currencyDescriptionId }` }
@@ -500,6 +505,11 @@ const ThresholdControls = ( {
 	}
 
 	const updateField = ( field: string ) => ( value: string ) => {
+		// A negative limit fires for every order or for none. Dropping the update puts the controlled field back.
+		if ( value.startsWith( '-' ) ) {
+			return;
+		}
+
 		onSettingsChange( {
 			...settings,
 			[ setting ]: {

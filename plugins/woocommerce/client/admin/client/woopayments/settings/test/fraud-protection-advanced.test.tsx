@@ -2,7 +2,14 @@
  * External dependencies
  */
 import { dispatch } from '@wordpress/data';
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import {
+	act,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+	within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { recordEvent } from '@woocommerce/tracks';
 import { getHistory } from '@woocommerce/navigation';
@@ -1117,6 +1124,221 @@ describe( 'FraudProtectionAdvancedSettingsPage', () => {
 			] )
 		);
 		expect( mockSaveSettings ).toHaveBeenCalled();
+	} );
+
+	describe( 'negative fraud rule limits', () => {
+		// A negative maximum fires for every order and a negative minimum for none, so the fields refuse one and the
+		// page refuses to save one it was given.
+		const priceRangeWarning =
+			'A price range must be set for this filter to take effect.';
+		const itemRangeWarning =
+			'An item range must be set for this filter to take effect.';
+		const renderWithRules = ( rules: unknown[] ) => {
+			mockUseAdvancedFraudProtectionSettings.mockReturnValue( [
+				rules,
+				setAdvancedFraudProtectionSettings,
+			] );
+			render( <FraudProtectionAdvancedSettingsPage /> );
+		};
+		const priceRule = (
+			checks: Array< { operator: string; value: string } >
+		) => ( {
+			key: Rules.RULE_PURCHASE_PRICE_THRESHOLD,
+			outcome: Outcomes.BLOCK,
+			check:
+				checks.length === 1
+					? { key: Checks.CHECK_ORDER_TOTAL, ...checks[ 0 ] }
+					: {
+							operator: CheckOperators.LIST_OPERATOR_OR,
+							checks: checks.map( ( check ) => ( {
+								key: Checks.CHECK_ORDER_TOTAL,
+								...check,
+							} ) ),
+						},
+		} );
+		const enableFilter = ( name: string ) =>
+			userEvent.click( screen.getByRole( 'checkbox', { name } ) );
+		const saveAndExpectRefusal = async ( message: string ) => {
+			// Save is offered only once the page is dirty; ticking another filter is the merchant's own change.
+			await enableFilter( 'Enable AVS Mismatch filter' );
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Save changes' } )
+			);
+
+			expect(
+				await screen.findByText(
+					`Settings were not saved. ${ message }`,
+					{
+						selector: '.components-notice__content',
+					}
+				)
+			).toBeInTheDocument();
+			expect( mockSaveSettings ).not.toHaveBeenCalled();
+			expect( setAdvancedFraudProtectionSettings ).not.toHaveBeenCalled();
+		};
+
+		it( 'keeps a negative value typed into the price maximum out of the field', async () => {
+			render( <FraudProtectionAdvancedSettingsPage /> );
+			await enableFilter( 'Enable Purchase Price Threshold filter' );
+			const maximum = screen.getByLabelText( 'Maximum purchase price' );
+
+			fireEvent.change( maximum, { target: { value: '-1' } } );
+
+			expect( maximum ).toHaveValue( null );
+			expect(
+				screen.getByText( priceRangeWarning, {
+					selector: '.components-notice__content',
+				} )
+			).toBeInTheDocument();
+		} );
+
+		it( 'keeps a negative value pasted into the price minimum out of the field', async () => {
+			render( <FraudProtectionAdvancedSettingsPage /> );
+			await enableFilter( 'Enable Purchase Price Threshold filter' );
+			const minimum = screen.getByLabelText( 'Minimum purchase price' );
+			await userEvent.click( minimum );
+
+			await userEvent.paste( minimum, '-100' );
+
+			expect( minimum ).toHaveValue( null );
+		} );
+
+		it( 'gives both price limits a floor of zero and keeps them number fields', async () => {
+			render( <FraudProtectionAdvancedSettingsPage /> );
+			await enableFilter( 'Enable Purchase Price Threshold filter' );
+
+			for ( const label of [
+				'Minimum purchase price',
+				'Maximum purchase price',
+			] ) {
+				expect( screen.getByLabelText( label ) ).toHaveAttribute(
+					'min',
+					'0'
+				);
+				expect( screen.getByLabelText( label ) ).toHaveAttribute(
+					'type',
+					'number'
+				);
+			}
+		} );
+
+		it( 'still saves a decimal price minimum in minor units', async () => {
+			mockSaveSettings.mockResolvedValueOnce( true );
+			render( <FraudProtectionAdvancedSettingsPage /> );
+			await enableFilter( 'Enable Purchase Price Threshold filter' );
+			await userEvent.type(
+				screen.getByLabelText( 'Minimum purchase price' ),
+				'19.99'
+			);
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Save changes' } )
+			);
+
+			expect( setAdvancedFraudProtectionSettings ).toHaveBeenCalledWith(
+				expect.arrayContaining( [
+					expect.objectContaining( {
+						key: Rules.RULE_PURCHASE_PRICE_THRESHOLD,
+						check: {
+							key: Checks.CHECK_ORDER_TOTAL,
+							operator: CheckOperators.OPERATOR_LT,
+							value: '1999|USD',
+						},
+					} ),
+				] )
+			);
+		} );
+
+		it( 'shows a stored negative price maximum with the range warning and refuses to save it', async () => {
+			renderWithRules( [
+				priceRule( [
+					{
+						operator: CheckOperators.OPERATOR_GT,
+						value: '-10000|USD',
+					},
+				] ),
+			] );
+
+			expect(
+				screen.getByLabelText( 'Maximum purchase price' )
+			).toHaveValue( -100 );
+			expect(
+				screen.getByText( priceRangeWarning, {
+					selector: '.components-notice__content',
+				} )
+			).toBeInTheDocument();
+			await saveAndExpectRefusal(
+				'A price range must be set for the "Purchase Price threshold" filter.'
+			);
+		} );
+
+		it( 'shows a stored negative price minimum with the range warning and refuses to save it', async () => {
+			renderWithRules( [
+				priceRule( [
+					{
+						operator: CheckOperators.OPERATOR_LT,
+						value: '-10000|USD',
+					},
+					{
+						operator: CheckOperators.OPERATOR_GT,
+						value: '50000|USD',
+					},
+				] ),
+			] );
+
+			expect(
+				screen.getByLabelText( 'Minimum purchase price' )
+			).toHaveValue( -100 );
+			expect(
+				screen.getByText( priceRangeWarning, {
+					selector: '.components-notice__content',
+				} )
+			).toBeInTheDocument();
+			await saveAndExpectRefusal(
+				'A price range must be set for the "Purchase Price threshold" filter.'
+			);
+		} );
+
+		it( 'keeps a negative value pasted into the item maximum out of the field', async () => {
+			render( <FraudProtectionAdvancedSettingsPage /> );
+			await enableFilter( 'Enable Order Items Threshold filter' );
+			const maximum = screen.getByLabelText( 'Maximum items per order' );
+			await userEvent.click( maximum );
+
+			await userEvent.paste( maximum, '-5' );
+
+			expect( maximum ).toHaveValue( null );
+			expect(
+				screen.getByText( itemRangeWarning, {
+					selector: '.components-notice__content',
+				} )
+			).toBeInTheDocument();
+		} );
+
+		it( 'shows a stored negative item maximum with the range warning and refuses to save it', async () => {
+			renderWithRules( [
+				{
+					key: Rules.RULE_ORDER_ITEMS_THRESHOLD,
+					outcome: Outcomes.BLOCK,
+					check: {
+						key: Checks.CHECK_ITEM_COUNT,
+						operator: CheckOperators.OPERATOR_GT,
+						value: -5,
+					},
+				},
+			] );
+
+			expect(
+				screen.getByLabelText( 'Maximum items per order' )
+			).toHaveValue( -5 );
+			expect(
+				screen.getByText( itemRangeWarning, {
+					selector: '.components-notice__content',
+				} )
+			).toBeInTheDocument();
+			await saveAndExpectRefusal(
+				'An item range must be set for the "Order Item Threshold" filter.'
+			);
+		} );
 	} );
 
 	it( 'adds rule context to filter action radio groups for screen readers', async () => {
