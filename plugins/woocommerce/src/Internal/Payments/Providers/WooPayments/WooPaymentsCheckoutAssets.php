@@ -461,13 +461,15 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 		/**
 		 * Filters the accountIdForIntentConfirmation value printed in the checkout config.
 		 *
-		 * No WooCommerce script reads it; the WooPay platform site, which sets it, runs its own WooPayments build.
+		 * No WooCommerce script reads it; the WooPay platform site, which sets it, runs its own WooPayments build. A value
+		 * that is not a string is ignored.
 		 *
 		 * @since 11.0.0
 		 *
 		 * @param string $account_id The account ID for intent confirmation.
 		 */
-		$account_id_for_intent_confirmation = (string) apply_filters( 'wc_payments_account_id_for_intent_confirmation', '' );
+		$account_id_for_intent_confirmation = apply_filters( 'wc_payments_account_id_for_intent_confirmation', '' );
+		$account_id_for_intent_confirmation = is_string( $account_id_for_intent_confirmation ) ? $account_id_for_intent_confirmation : '';
 		$shared_script_config               = $this->get_shared_script_config();
 		$card_definition                    = $this->payment_method_registry->get( 'card' );
 		$config                             = array(

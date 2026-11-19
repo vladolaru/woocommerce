@@ -652,6 +652,44 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should print the intent confirmation account ID only when its filter returns a string: $_dataName.
+	 * @dataProvider provide_intent_confirmation_account_ids
+	 *
+	 * An object used to fail the checkout render in the string cast, and an array printed "Array".
+	 *
+	 * @param mixed  $returned The filter callback's result.
+	 * @param string $expected The printed value.
+	 */
+	public function test_get_payment_fields_js_config_prints_only_a_string_intent_confirmation_account_id( $returned, string $expected ): void {
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $this->create_account_service( true ), $this->create_woopay_session_service( true ), $this->create_woopay_eligibility( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new PaymentMethodRegistry() );
+		$filter = static fn() => $returned;
+		add_filter( 'wc_payments_account_id_for_intent_confirmation', $filter );
+
+		try {
+			$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		} finally {
+			remove_filter( 'wc_payments_account_id_for_intent_confirmation', $filter );
+		}
+
+		$this->assertSame( $expected, $config['accountIdForIntentConfirmation'] );
+	}
+
+	/**
+	 * Intent confirmation account ID filter results and the printed value.
+	 *
+	 * @return array<string,array{0:mixed,1:string}>
+	 */
+	public function provide_intent_confirmation_account_ids(): array {
+		return array(
+			'an object'  => array( new \stdClass(), '' ),
+			'an array'   => array( array( 'acct_1' ), '' ),
+			'a number'   => array( 123, '' ),
+			'an account' => array( 'acct_test_1', 'acct_test_1' ),
+		);
+	}
+
+	/**
 	 * The classic card form names its brand logos and brand popover for screen readers (woopayments-checkout.js:1893,
 	 * :1966); the labels come from the config so they are translated.
 	 *
