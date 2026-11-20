@@ -530,7 +530,7 @@ class WooPaymentsPaymentOperationService {
 			$this->refund_ambiguity_service->clear_sent_request( $order, $key );
 		}
 
-		if ( $is_held_key_retry ) {
+		if ( $is_held_key_retry && $outcome->is_successful() ) {
 			$refusal = $this->refund_ambiguity_service->settle_held_key_answer( $order, $result );
 			if ( null !== $refusal ) {
 				return self::refused_refund_outcome( $refusal );

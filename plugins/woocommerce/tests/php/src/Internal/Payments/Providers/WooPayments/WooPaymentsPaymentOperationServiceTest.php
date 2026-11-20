@@ -9843,8 +9843,117 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertCount( 2, $trail );
 		$this->assertStringStartsWith( 'POST refunds ', $trail[0] );
 		$this->assertStringStartsWith( 'POST refunds ', $trail[1] );
+		$this->assertNotSame( substr( $trail[0], 13 ), substr( $trail[1], 13 ), 'Each refund call sends its own key.' );
 		$this->assertSame( 're_first_of_two', wc_get_order( $first_row )->get_meta( '_wcpay_refund_id', true ) );
 		$this->assertSame( 're_second_of_two', wc_get_order( $second_row )->get_meta( '_wcpay_refund_id', true ) );
+	}
+
+	/**
+	 * @testdox A held-key resend whose refund comes back $status fails the call without linking the dead call's row or saying it went through, and the next call finds that refund did not go through and sends.
+	 *
+	 * The call died after it recorded its request and before the platform answered. The repeat finds nothing listed and
+	 * resends under the held key; Stripe replays a refund that did not go through. It moved no money, so the record stays
+	 * for the next call, which lists the refund, clears the record and sends under its own key.
+	 *
+	 * @testWith ["failed"]
+	 *           ["canceled"]
+	 *
+	 * @param string $status Status of the replayed refund.
+	 */
+	public function test_held_key_resend_answered_with_an_unsuccessful_refund_keeps_the_record( string $status ): void {
+		$order                  = $this->create_refund_hold_order();
+		$died                   = $this->record_a_refund_call_that_died_before_its_answer( $order, 'key_died_unanswered' );
+		$replayed               = $this->recorded_refund_answer( self::F458_REFUND_555, 'key_died_unanswered', 555 );
+		$replayed['status']     = $status;
+		$listed                 = $this->recorded_refund_list_with_marker( self::F458_REFUND_555, 'key_died_unanswered' );
+		$listed['data']         = array_map( static fn( array $refund ): array => self::F458_REFUND_555 === $refund['id'] ? array_merge( $refund, array( 'status' => $status ) ) : $refund, $listed['data'] );
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			self::http_json( 200, $this->recorded_refund_list() ),
+			self::http_json( 200, $replayed ),
+			self::http_json( 200, $listed ),
+			self::http_json( 200, $this->recorded_refund_answer( 're_sent_after_the_failure', 'key_not_read', 555 ) ),
+		);
+		$provider               = $this->create_refund_hold_provider( $http_client );
+
+		list( $failed )     = $this->run_refund( $provider, $order, 5.55 );
+		$hold_after_failure = self::refund_hold_of( $order );
+		list( $sent, $row ) = $this->run_refund( $provider, $order, 5.55 );
+		$trail              = self::request_trail( $http_client );
+
+		$this->assertWPError( $failed );
+		$this->assertNotSame( WooPaymentsRefundAmbiguityService::REFUSAL_ALREADY_RECORDED, $failed->get_error_code(), 'The call is not told the refund went through.' );
+		$this->assertSame( '', wc_get_order( $died->get_id() )->get_meta( '_wcpay_refund_id', true ), 'The dead row is not linked to a refund that did not go through.' );
+		$this->assertSame( 'key_died_unanswered', is_array( $hold_after_failure ) ? ( $hold_after_failure['key'] ?? null ) : null, 'The record stays for the next call.' );
+		$this->assertTrue( $sent );
+		$this->assertCount( 4, $trail );
+		$this->assertSame( array( self::refund_list_trail(), 'POST refunds key_died_unanswered', self::refund_list_trail() ), array_slice( $trail, 0, 3 ) );
+		$this->assertStringStartsWith( 'POST refunds ', $trail[3] );
+		$this->assertNotSame( 'POST refunds key_died_unanswered', $trail[3], 'The next call sends under its own key.' );
+		$this->assertSame( 're_sent_after_the_failure', wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
+	}
+
+	/**
+	 * @testdox A held-key resend that went through links the dead call's row before it clears the record, so a death between the two saves leaves the record for the next call.
+	 *
+	 * The link's save throws, standing in for a request that dies between the two saves.
+	 */
+	public function test_held_key_resend_links_the_dead_row_before_it_clears_the_record(): void {
+		$order = $this->create_refund_hold_order();
+		$this->record_a_refund_call_that_died_before_its_answer( $order, 'key_died_unanswered' );
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			self::http_json( 200, $this->recorded_refund_list() ),
+			self::http_json( 200, $this->recorded_refund_answer( 're_replayed_to_the_repeat', 'key_died_unanswered', 555 ) ),
+		);
+		$provider               = $this->create_refund_hold_provider( $http_client );
+		$die                    = static function ( string $query ): string {
+			if ( preg_match( '/^\s*(INSERT|UPDATE)/i', $query ) && false !== strpos( $query, '_wcpay_refund_id' ) && false !== strpos( $query, 're_replayed_to_the_repeat' ) ) {
+				throw new \RuntimeException( 'The request died between the two saves.' );
+			}
+
+			return $query;
+		};
+		add_filter( 'query', $die );
+		try {
+			$this->run_refund( $provider, $order, 5.55 );
+		} catch ( \RuntimeException $exception ) {
+			$this->assertSame( 'The request died between the two saves.', $exception->getMessage() );
+		} finally {
+			remove_filter( 'query', $die );
+		}
+
+		$hold = self::refund_hold_of( $order );
+		$this->assertSame( array( self::refund_list_trail(), 'POST refunds key_died_unanswered' ), self::request_trail( $http_client ) );
+		$this->assertSame( 'key_died_unanswered', is_array( $hold ) ? ( $hold['key'] ?? null ) : null, 'The record stays for the next call.' );
+	}
+
+	/**
+	 * Leave what a refund call that dies after its request was recorded and before the platform answered leaves: its own
+	 * gateway row, unlinked, and the order's record of the request, inside the held-key window.
+	 *
+	 * @param WC_Order $order Order.
+	 * @param string   $key   Key the dead call sent under.
+	 * @return WC_Order_Refund The dead call's row.
+	 */
+	private function record_a_refund_call_that_died_before_its_answer( WC_Order $order, string $key ): WC_Order_Refund {
+		$row = $this->create_refund_row( $order, 5.55, 'requested_by_customer' );
+		// A gateway refund's row carries no manual record mark.
+		$row->delete_meta_data( RefundRowCapture::MANUAL_REFUND_META );
+		$row->save_meta_data();
+		wc_get_container()->get( WooPaymentsRefundAmbiguityService::class )->record_sent_request(
+			wc_get_order( $order->get_id() ),
+			$key,
+			array(
+				'charge' => self::F458_CHARGE,
+				'amount' => 555,
+				'reason' => 'requested_by_customer',
+				'source' => 'woocommerce_core',
+			),
+			$row->get_id()
+		);
+
+		return $row;
 	}
 
 	/**

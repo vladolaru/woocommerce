@@ -274,16 +274,18 @@ class WooPaymentsRefundAmbiguityService {
 		$record = $order->get_meta( WooPaymentsPaymentOperationService::REFUND_AMBIGUITY_META, true );
 		$key    = is_array( $record ) ? (string) ( $record['key'] ?? '' ) : '';
 
-		// Log before clearing: the refund went through, so a log callback that throws must leave the record for the next call.
+		// Log and link before clearing: the refund went through, so a log callback that throws or a death before the link leaves the record.
 		$refund_id = (string) ( $refund['id'] ?? '' );
 		$this->log_cleared( $order, array( 'key' => $key ), sprintf( 'resending its request under the held key returned refund %s', $refund_id ) );
-		$this->clear_record( $order );
 		// The first call's own row, still unlinked, records this refund, so this call never links a row of its own to it.
 		$first_row = is_array( $record ) && ! empty( $record['sent'] ) && '' !== $refund_id ? $this->get_unlinked_row( $order, (int) ( $record['wc_refund_id'] ?? 0 ), 0 ) : null;
 		if ( null !== $first_row ) {
 			$first_row->update_meta_data( '_wcpay_refund_id', $refund_id );
 			$first_row->save_meta_data();
-		} elseif ( '' === $refund_id || ! $this->is_recorded_on_order( $order, $refund_id ) ) {
+		}
+
+		$this->clear_record( $order );
+		if ( null === $first_row && ( '' === $refund_id || ! $this->is_recorded_on_order( $order, $refund_id ) ) ) {
 			return null;
 		}
 
