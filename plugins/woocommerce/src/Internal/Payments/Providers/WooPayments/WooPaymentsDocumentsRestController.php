@@ -26,29 +26,6 @@ use WP_REST_Server;
  */
 class WooPaymentsDocumentsRestController extends RestApiControllerBase {
 
-	private const LIST_QUERY_PARAMS = array(
-		'page'         => true,
-		'pagesize'     => true,
-		'sort'         => true,
-		'direction'    => true,
-		'limit'        => true,
-		'match'        => true,
-		'date_before'  => true,
-		'date_after'   => true,
-		'date_between' => true,
-		'type_is'      => true,
-		'type_is_not'  => true,
-	);
-
-	private const SUMMARY_QUERY_PARAMS = array(
-		'match'        => true,
-		'date_before'  => true,
-		'date_after'   => true,
-		'date_between' => true,
-		'type_is'      => true,
-		'type_is_not'  => true,
-	);
-
 	/**
 	 * Raw document response currently being served through rest_pre_serve_request.
 	 *
@@ -102,13 +79,6 @@ class WooPaymentsDocumentsRestController extends RestApiControllerBase {
 			return;
 		}
 
-		$this->register_documents_routes();
-	}
-
-	/**
-	 * Register the Documents and VAT routes.
-	 */
-	private function register_documents_routes(): void {
 		register_rest_route( $this->route_namespace, '/payments/documents', $this->get_readable_route( 'get_documents' ) );
 		register_rest_route( $this->route_namespace, '/payments/documents/summary', $this->get_readable_route( 'get_documents_summary' ) );
 		register_rest_route( $this->route_namespace, '/payments/documents/(?P<document_id>[\w-]+)', $this->get_readable_route( 'get_document' ) );
@@ -160,7 +130,7 @@ class WooPaymentsDocumentsRestController extends RestApiControllerBase {
 	 */
 	public function get_documents( WP_REST_Request $request ) {
 		try {
-			return new WP_REST_Response( $this->api_client->get_documents( $this->get_allowed_params( $request, self::LIST_QUERY_PARAMS ) ) );
+			return new WP_REST_Response( $this->api_client->get_documents( $this->get_non_null_params( $request ) ) );
 		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
@@ -175,7 +145,7 @@ class WooPaymentsDocumentsRestController extends RestApiControllerBase {
 	 */
 	public function get_documents_summary( WP_REST_Request $request ) {
 		try {
-			return new WP_REST_Response( $this->api_client->get_documents_summary( $this->get_allowed_params( $request, self::SUMMARY_QUERY_PARAMS ) ) );
+			return new WP_REST_Response( $this->api_client->get_documents_summary( $this->get_non_null_params( $request ) ) );
 		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
@@ -322,18 +292,16 @@ class WooPaymentsDocumentsRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Extract allowed params from the request without normalizing platform-facing names.
+	 * Get the request's non-null params without normalizing platform-facing names. The API client keeps only the keys
+	 * each documents endpoint takes.
 	 *
-	 * @param WP_REST_Request    $request Request.
-	 * @param array<string,bool> $allowed Allowed param map.
+	 * @param WP_REST_Request $request Request.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
 	 * @return array<string,mixed>
 	 */
-	private function get_allowed_params( WP_REST_Request $request, array $allowed ): array {
-		$query = array_intersect_key( $request->get_params(), $allowed );
-
+	private function get_non_null_params( WP_REST_Request $request ): array {
 		return array_filter(
-			$query,
+			$request->get_params(),
 			static function ( $value ): bool {
 				return null !== $value;
 			}

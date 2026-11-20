@@ -45,24 +45,14 @@ class TransactionsListRequest extends PaginatedListRequest {
 	 */
 	public static function from_rest_request( WP_REST_Request $request ) {
 		$transactions_request = parent::from_rest_request( $request );
-		$date_between         = $request->get_param( 'date_between' );
-		$user_timezone        = $request->get_param( 'user_timezone' );
-
-		if ( null !== $date_between ) {
-			$date_between = array_map(
-				static function ( $transaction_date ) use ( $user_timezone ): ?string {
-					return self::format_transaction_date_by_timezone( is_scalar( $transaction_date ) ? (string) $transaction_date : null, is_scalar( $user_timezone ) ? (string) $user_timezone : null );
-				},
-				(array) $date_between
-			);
-		}
+		$user_timezone        = self::get_scalar_param( $request, 'user_timezone' );
 
 		$transactions_request->set_filters(
 			array(
 				'match'                    => $request->get_param( 'match' ),
-				'date_before'              => self::format_transaction_date_by_timezone( self::get_scalar_param( $request, 'date_before' ), self::get_scalar_param( $request, 'user_timezone' ) ),
-				'date_after'               => self::format_transaction_date_by_timezone( self::get_scalar_param( $request, 'date_after' ), self::get_scalar_param( $request, 'user_timezone' ) ),
-				'date_between'             => $date_between,
+				'date_before'              => self::format_transaction_date_by_timezone( self::get_scalar_param( $request, 'date_before' ), $user_timezone ),
+				'date_after'               => self::format_transaction_date_by_timezone( self::get_scalar_param( $request, 'date_after' ), $user_timezone ),
+				'date_between'             => self::format_date_between( $request->get_param( 'date_between' ), $user_timezone ),
 				'type_is'                  => $request->get_param( 'type_is' ),
 				'type_is_not'              => $request->get_param( 'type_is_not' ),
 				'type_is_in'               => null === $request->get_param( 'type_is_in' ) ? null : (array) $request->get_param( 'type_is_in' ),
@@ -100,21 +90,12 @@ class TransactionsListRequest extends PaginatedListRequest {
 	 */
 	public static function filters_from_rest_request( WP_REST_Request $request ): array {
 		$user_timezone = self::get_scalar_param( $request, 'user_timezone' );
-		$date_between  = $request->get_param( 'date_between' );
-		if ( null !== $date_between ) {
-			$date_between = array_map(
-				static function ( $transaction_date ) use ( $user_timezone ): ?string {
-					return self::format_transaction_date_by_timezone( is_scalar( $transaction_date ) ? (string) $transaction_date : null, $user_timezone );
-				},
-				(array) $date_between
-			);
-		}
 
 		$filters = array(
 			'match'        => $request->get_param( 'match' ),
 			'date_before'  => self::format_transaction_date_by_timezone( self::get_scalar_param( $request, 'date_before' ), $user_timezone ),
 			'date_after'   => self::format_transaction_date_by_timezone( self::get_scalar_param( $request, 'date_after' ), $user_timezone ),
-			'date_between' => $date_between,
+			'date_between' => self::format_date_between( $request->get_param( 'date_between' ), $user_timezone ),
 			// `type_is_in` is kept too, so the totals cover the same transaction types as the list.
 			'type_is_in'   => null === $request->get_param( 'type_is_in' ) ? null : (array) $request->get_param( 'type_is_in' ),
 		);
@@ -192,6 +173,26 @@ class TransactionsListRequest extends PaginatedListRequest {
 		$value = $request->get_param( $param );
 
 		return is_scalar( $value ) ? (string) $value : null;
+	}
+
+	/**
+	 * Shift each `date_between` entry to the merchant's time zone; a non-scalar entry becomes null.
+	 *
+	 * @param mixed       $date_between  Raw `date_between` param.
+	 * @param string|null $user_timezone The merchant's time zone, as the browser reports it.
+	 * @return array<int|string,string|null>|null
+	 */
+	private static function format_date_between( $date_between, ?string $user_timezone ): ?array {
+		if ( null === $date_between ) {
+			return null;
+		}
+
+		return array_map(
+			static function ( $transaction_date ) use ( $user_timezone ): ?string {
+				return self::format_transaction_date_by_timezone( is_scalar( $transaction_date ) ? (string) $transaction_date : null, $user_timezone );
+			},
+			(array) $date_between
+		);
 	}
 
 	/**

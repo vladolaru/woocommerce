@@ -22,22 +22,6 @@ class AuthorizationsListRequest extends PaginatedListRequest {
 	protected $hook = 'wcpay_list_authorizations_request';
 
 	/**
-	 * Create a request from normalized params.
-	 *
-	 * @param array<string,mixed> $params Request params.
-	 * @return self
-	 */
-	public static function from_params( array $params ): self {
-		$request = new self();
-
-		foreach ( $params as $key => $value ) {
-			$request->set_param( $key, $value );
-		}
-
-		return $request;
-	}
-
-	/**
 	 * Returns the request's API.
 	 *
 	 * @return string

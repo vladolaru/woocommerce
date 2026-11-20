@@ -94,9 +94,11 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 	 * Register the report routes.
 	 */
 	public function register_routes(): void {
+		$fees_collection_args = $this->get_fees_collection_args();
+
 		register_rest_route( $this->route_namespace, '/payments/reports/balance', $this->get_readable_route( 'get_balance_summary', $this->get_balance_args() ) );
-		register_rest_route( $this->route_namespace, '/payments/reports/fees', $this->get_readable_route( 'get_fees', $this->get_fees_collection_args() ) );
-		register_rest_route( $this->route_namespace, '/payments/reports/fees/summary', $this->get_readable_route( 'get_fees_summary', $this->get_fees_collection_args() ) );
+		register_rest_route( $this->route_namespace, '/payments/reports/fees', $this->get_readable_route( 'get_fees', $fees_collection_args ) );
+		register_rest_route( $this->route_namespace, '/payments/reports/fees/summary', $this->get_readable_route( 'get_fees_summary', $fees_collection_args ) );
 		register_rest_route( $this->route_namespace, '/payments/reports/fees/download', $this->get_creatable_route( 'get_fees_export' ) );
 		register_rest_route( $this->route_namespace, '/payments/reports/fees/download/(?P<export_id>[^/\\\\%]+)', $this->get_readable_route( 'get_export_url' ) );
 		register_rest_route( $this->route_namespace, '/payments/reports/transactions', $this->get_readable_route( 'get_report_transactions', $this->get_collection_args( 'date' ) ) );
@@ -192,7 +194,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 					$filters,
 					$this->get_scalar_param( $request, 'user_email' ),
 					$deposit_id,
-					$this->get_optional_string_param( $request, 'locale' )
+					$this->get_sanitized_param_or_null( $request, 'locale' )
 				)
 			);
 		} catch ( ApiException $exception ) {
@@ -480,12 +482,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 	 * @throws ApiException When a filter callback returns no request.
 	 */
 	private function get_filtered_fees_list_params( WP_REST_Request $request ): array {
-		$fees_request = new TransactionsListRequest();
-		foreach ( $this->get_fees_list_params( $request ) as $key => $value ) {
-			$fees_request->set_param( $key, $value );
-		}
-
-		$filtered_request = $fees_request->get_filtered_request();
+		$filtered_request = TransactionsListRequest::from_params( $this->get_fees_list_params( $request ) )->get_filtered_request();
 
 		$params = $this->filter_empty_params( $filtered_request->get_params() );
 
@@ -501,13 +498,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 	 */
 	private function get_fees_list_params( WP_REST_Request $request ): array {
 		return array_merge(
-			array(
-				'page'      => max( 1, (int) ( $request->get_param( 'page' ) ?? 1 ) ),
-				'pagesize'  => max( 1, (int) ( $request->get_param( 'per_page' ) ?? 25 ) ),
-				'sort'      => $this->get_scalar_param( $request, 'sort', 'date' ),
-				'direction' => $this->get_scalar_param( $request, 'direction', 'desc' ),
-				'limit'     => 100,
-			),
+			$this->get_paging_params( $request, 'date' ),
 			$this->get_fees_filters( $request )
 		);
 	}
@@ -523,21 +514,18 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 		$search             = $this->normalize_string_list( $request->get_param( 'search' ) );
 		$identifier_filters = $this->get_identifier_filters_from_search( $search );
 		$type               = $this->normalize_string_list( $request->get_param( 'type' ) );
-		$user_timezone      = $this->get_optional_string_param( $request, 'user_timezone' );
-		$date_between       = $this->normalize_date_filters_by_timezone(
-			$this->normalize_string_list( $request->get_param( 'date_between' ) ),
-			$user_timezone
-		);
+		$user_timezone      = $this->get_sanitized_param_or_null( $request, 'user_timezone' );
+		$dates              = $this->get_date_filters( $request, $user_timezone );
 
 		$filters = array(
-			'source_is'     => $this->get_optional_string_param( $request, 'payment_method_type' ),
+			'source_is'     => $this->get_sanitized_param_or_null( $request, 'payment_method_type' ),
 			'type_is_in'    => $type ?? self::DEFAULT_FEE_BEARING_TYPES,
-			'order_id_is'   => $this->get_optional_string_param( $request, 'order_id' ),
-			'deposit_id'    => $this->get_optional_string_param( $request, 'deposit_id' ),
-			'date_before'   => TransactionsListRequest::format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_before' ), $user_timezone ),
-			'date_after'    => TransactionsListRequest::format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_after' ), $user_timezone ),
-			'date_between'  => $date_between,
-			'match'         => $this->get_optional_string_param( $request, 'match' ),
+			'order_id_is'   => $this->get_sanitized_param_or_null( $request, 'order_id' ),
+			'deposit_id'    => $this->get_sanitized_param_or_null( $request, 'deposit_id' ),
+			'date_before'   => $dates['date_before'],
+			'date_after'    => $dates['date_after'],
+			'date_between'  => $dates['date_between'],
+			'match'         => $this->get_sanitized_param_or_null( $request, 'match' ),
 			'search'        => empty( $identifier_filters ) ? $search : null,
 			'user_timezone' => $user_timezone,
 		);
@@ -556,37 +544,28 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 	 * @throws ApiException When a filter callback returns no request.
 	 */
 	private function get_report_transactions_list_params( WP_REST_Request $request ): array {
-		$user_timezone = $this->get_optional_string_param( $request, 'user_timezone' );
+		$user_timezone = $this->get_sanitized_param_or_null( $request, 'user_timezone' );
+		$dates         = $this->get_date_filters( $request, $user_timezone );
 
-		$params = array(
-			'page'              => max( 1, (int) ( $request->get_param( 'page' ) ?? 1 ) ),
-			'pagesize'          => max( 1, (int) ( $request->get_param( 'per_page' ) ?? 25 ) ),
-			'sort'              => $this->get_scalar_param( $request, 'sort', 'date' ),
-			'direction'         => $this->get_scalar_param( $request, 'direction', 'desc' ),
-			'limit'             => 100,
-			'type_is'           => $this->get_optional_string_param( $request, 'type' ),
-			'order_id_is'       => $this->get_optional_string_param( $request, 'order_id' ),
-			'customer_email_is' => $this->get_optional_string_param( $request, 'customer_email' ),
-			'source_is'         => $this->get_optional_string_param( $request, 'payment_method_type' ),
-			'deposit_id'        => $this->get_optional_string_param( $request, 'deposit_id' ),
-			'date_before'       => TransactionsListRequest::format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_before' ), $user_timezone ),
-			'date_after'        => TransactionsListRequest::format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_after' ), $user_timezone ),
-			'date_between'      => $this->normalize_date_filters_by_timezone(
-				$this->normalize_string_list( $request->get_param( 'date_between' ) ),
-				$user_timezone
-			),
-			'match'             => $this->get_optional_string_param( $request, 'match' ),
-			'user_timezone'     => $user_timezone,
+		$params = array_merge(
+			$this->get_paging_params( $request, 'date' ),
+			array(
+				'type_is'           => $this->get_sanitized_param_or_null( $request, 'type' ),
+				'order_id_is'       => $this->get_sanitized_param_or_null( $request, 'order_id' ),
+				'customer_email_is' => $this->get_sanitized_param_or_null( $request, 'customer_email' ),
+				'source_is'         => $this->get_sanitized_param_or_null( $request, 'payment_method_type' ),
+				'deposit_id'        => $this->get_sanitized_param_or_null( $request, 'deposit_id' ),
+				'date_before'       => $dates['date_before'],
+				'date_after'        => $dates['date_after'],
+				'date_between'      => $dates['date_between'],
+				'match'             => $this->get_sanitized_param_or_null( $request, 'match' ),
+				'user_timezone'     => $user_timezone,
+			)
 		);
 
 		$params = $this->filter_empty_params( $params );
 
-		$transactions_request = new TransactionsListRequest();
-		foreach ( $params as $key => $value ) {
-			$transactions_request->set_param( $key, $value );
-		}
-
-		$filtered_request = $transactions_request->get_filtered_request();
+		$filtered_request = TransactionsListRequest::from_params( $params )->get_filtered_request();
 
 		return $this->order_service->map_transaction_search_params( $filtered_request->get_params() );
 	}
@@ -599,40 +578,70 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 	 * @return array<string,mixed>
 	 */
 	private function get_report_authorizations_list_params( WP_REST_Request $request ): array {
-		$user_timezone = $this->get_optional_string_param( $request, 'user_timezone' );
-		$date_between  = $this->normalize_date_filters_by_timezone(
-			$this->normalize_string_list( $request->get_param( 'date_between' ) ),
-			$user_timezone
+		$dates = $this->get_date_filters( $request, $this->get_sanitized_param_or_null( $request, 'user_timezone' ) );
+
+		$params = array_merge(
+			$this->get_paging_params( $request, 'created' ),
+			array(
+				'match'             => $this->get_sanitized_param_or_null( $request, 'match' ),
+				'order_id_is'       => $this->get_sanitized_param_or_null( $request, 'order_id' ),
+				'customer_email_is' => $this->get_sanitized_param_or_null( $request, 'customer_email' ),
+				'source_is'         => $this->get_sanitized_param_or_null( $request, 'payment_method_type' ),
+			)
 		);
 
-		$params = array(
-			'page'              => max( 1, (int) ( $request->get_param( 'page' ) ?? 1 ) ),
-			'pagesize'          => max( 1, (int) ( $request->get_param( 'per_page' ) ?? 25 ) ),
-			'sort'              => $this->get_scalar_param( $request, 'sort', 'created' ),
-			'direction'         => $this->get_scalar_param( $request, 'direction', 'desc' ),
-			'limit'             => 100,
-			'match'             => $this->get_optional_string_param( $request, 'match' ),
-			'order_id_is'       => $this->get_optional_string_param( $request, 'order_id' ),
-			'customer_email_is' => $this->get_optional_string_param( $request, 'customer_email' ),
-			'source_is'         => $this->get_optional_string_param( $request, 'payment_method_type' ),
-		);
-
+		$date_between = $dates['date_between'];
 		if ( is_array( $date_between ) && isset( $date_between[0], $date_between[1] ) ) {
 			$params['from_date'] = $this->get_report_authorization_timestamp( $date_between[0] );
 			$params['to_date']   = $this->get_report_authorization_timestamp( $date_between[1] );
 		}
 
-		$date_before = TransactionsListRequest::format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_before' ), $user_timezone );
-		if ( null !== $date_before ) {
-			$params['from_date'] = $this->get_report_authorization_timestamp( $date_before );
+		if ( null !== $dates['date_before'] ) {
+			$params['from_date'] = $this->get_report_authorization_timestamp( $dates['date_before'] );
 		}
 
-		$date_after = TransactionsListRequest::format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_after' ), $user_timezone );
-		if ( null !== $date_after ) {
-			$params['to_date'] = $this->get_report_authorization_timestamp( $date_after );
+		if ( null !== $dates['date_after'] ) {
+			$params['to_date'] = $this->get_report_authorization_timestamp( $dates['date_after'] );
 		}
 
 		return $this->filter_empty_params( $params );
+	}
+
+	/**
+	 * Get the page, page size, sort, direction and limit params every report list sends first.
+	 *
+	 * @param WP_REST_Request $request      Request.
+	 * @param string          $default_sort Sort field when the request names none.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return array<string,mixed>
+	 */
+	private function get_paging_params( WP_REST_Request $request, string $default_sort ): array {
+		return array(
+			'page'      => max( 1, (int) ( $request->get_param( 'page' ) ?? 1 ) ),
+			'pagesize'  => max( 1, (int) ( $request->get_param( 'per_page' ) ?? 25 ) ),
+			'sort'      => $this->get_scalar_param( $request, 'sort', $default_sort ),
+			'direction' => $this->get_scalar_param( $request, 'direction', 'desc' ),
+			'limit'     => 100,
+		);
+	}
+
+	/**
+	 * Get the `date_before`, `date_after` and `date_between` filters, shifted to the merchant's time zone.
+	 *
+	 * @param WP_REST_Request $request       Request.
+	 * @param string|null     $user_timezone User timezone offset.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return array{date_before: string|null, date_after: string|null, date_between: string[]|null}
+	 */
+	private function get_date_filters( WP_REST_Request $request, ?string $user_timezone ): array {
+		return array(
+			'date_before'  => TransactionsListRequest::format_transaction_date_by_timezone( $this->get_sanitized_param_or_null( $request, 'date_before' ), $user_timezone ),
+			'date_after'   => TransactionsListRequest::format_transaction_date_by_timezone( $this->get_sanitized_param_or_null( $request, 'date_after' ), $user_timezone ),
+			'date_between' => $this->normalize_date_filters_by_timezone(
+				$this->normalize_string_list( $request->get_param( 'date_between' ) ),
+				$user_timezone
+			),
+		);
 	}
 
 	/**
@@ -857,14 +866,14 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Get an optional string param.
+	 * Get a param as sanitized text, or null when it is missing, not a scalar, or empty after sanitizing.
 	 *
 	 * @param WP_REST_Request $request Request.
 	 * @param string          $name    Param name.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
 	 * @return string|null
 	 */
-	private function get_optional_string_param( WP_REST_Request $request, string $name ): ?string {
+	private function get_sanitized_param_or_null( WP_REST_Request $request, string $name ): ?string {
 		$value = $this->get_scalar_param( $request, $name );
 
 		return '' === $value ? null : $value;

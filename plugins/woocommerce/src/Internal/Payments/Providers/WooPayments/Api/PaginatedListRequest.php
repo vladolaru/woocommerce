@@ -51,6 +51,22 @@ abstract class PaginatedListRequest extends AbstractRequest {
 	}
 
 	/**
+	 * Create a request from normalized params.
+	 *
+	 * @param array<string,mixed> $params Request params.
+	 * @return static
+	 */
+	public static function from_params( array $params ): self {
+		$list_request = new static();
+
+		foreach ( $params as $key => $value ) {
+			$list_request->set_param( $key, $value );
+		}
+
+		return $list_request;
+	}
+
+	/**
 	 * Set filters.
 	 *
 	 * Null values are skipped. A key with a typed `set_<key>()` setter goes through it, with its type check; any other key

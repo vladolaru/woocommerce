@@ -5,10 +5,12 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDocumentsRestController;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
 use WC_REST_Unit_Test_Case;
 use WP_Error;
 use WP_REST_Request;
@@ -178,9 +180,11 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Documents list forwards only the known platform query parameters.
+	 * @testdox Documents list sends the platform only the known query parameters.
 	 */
 	public function test_get_documents_forwards_allow_listed_query_parameters(): void {
+		$http_client = $this->create_platform_transport( array( 'data' => array() ) );
+		$this->sut   = $this->create_controller_with_transport( $http_client );
 		$this->sut->register_routes();
 
 		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/documents' );
@@ -203,12 +207,17 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 		$response = $this->server->dispatch( $request );
 
 		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( 1, $http_client->request_count );
+		$this->assertSame( 'GET', $http_client->last_method );
+		$this->assertSame( '/sites/123/wcpay/documents', wp_parse_url( $http_client->last_path, PHP_URL_PATH ) );
 		$this->assertSame(
 			array(
+				'test_mode'    => '0',
 				'page'         => '2',
 				'pagesize'     => '50',
 				'sort'         => 'date',
 				'direction'    => 'desc',
+				'limit'        => '100',
 				'match'        => 'all',
 				'date_before'  => '2026-06-18',
 				'date_after'   => '2026-06-01',
@@ -216,9 +225,9 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 				'type_is'      => 'vat_invoice',
 				'type_is_not'  => 'statement',
 			),
-			$this->api_client->last_documents_query
+			$this->get_sent_query( $http_client )
 		);
-		$this->assertSame( $this->api_client->documents_response, $response->get_data() );
+		$this->assertSame( array( 'data' => array() ), $response->get_data() );
 	}
 
 	/**
@@ -244,9 +253,11 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Documents summary forwards filters only.
+	 * @testdox Documents summary sends the platform the filters only.
 	 */
 	public function test_get_documents_summary_forwards_filter_only_parameters(): void {
+		$http_client = $this->create_platform_transport( array( 'count' => 0 ) );
+		$this->sut   = $this->create_controller_with_transport( $http_client );
 		$this->sut->register_routes();
 
 		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/documents/summary' );
@@ -268,8 +279,12 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 		$response = $this->server->dispatch( $request );
 
 		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( 1, $http_client->request_count );
+		$this->assertSame( 'GET', $http_client->last_method );
+		$this->assertSame( '/sites/123/wcpay/documents/summary', wp_parse_url( $http_client->last_path, PHP_URL_PATH ) );
 		$this->assertSame(
 			array(
+				'test_mode'    => '0',
 				'match'        => 'all',
 				'date_before'  => '2026-06-18',
 				'date_after'   => '2026-06-01',
@@ -277,8 +292,9 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 				'type_is'      => 'vat_invoice',
 				'type_is_not'  => 'statement',
 			),
-			$this->api_client->last_documents_summary_query
+			$this->get_sent_query( $http_client )
 		);
+		$this->assertSame( array( 'count' => 0 ), $response->get_data() );
 	}
 
 	/**
@@ -576,6 +592,59 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 		$controller->init( $this->api_client, $account_service );
 
 		return $controller;
+	}
+
+	/**
+	 * Create a controller whose API client is the real one, sending through the given fake platform transport.
+	 *
+	 * @param FakeHttpClient $http_client Fake platform transport.
+	 * @return WooPaymentsDocumentsRestController
+	 */
+	private function create_controller_with_transport( FakeHttpClient $http_client ): WooPaymentsDocumentsRestController {
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_test_mode_enabled', 'is_documents_enabled' ) )
+			->getMock();
+		$account_service->method( 'is_documents_enabled' )->willReturn( true );
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( false );
+
+		$api_client = new Client();
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
+
+		$controller = new WooPaymentsDocumentsRestController();
+		$controller->init( $api_client, $account_service );
+
+		return $controller;
+	}
+
+	/**
+	 * Create a fake platform transport that answers every request with the given JSON body.
+	 *
+	 * @param array<string,mixed> $body Response body.
+	 * @return FakeHttpClient
+	 */
+	private function create_platform_transport( array $body ): FakeHttpClient {
+		$http_client           = new FakeHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode( $body ),
+		);
+
+		return $http_client;
+	}
+
+	/**
+	 * Get the query the last platform request sent.
+	 *
+	 * @param FakeHttpClient $http_client Fake platform transport.
+	 * @return array<string,mixed>
+	 */
+	private function get_sent_query( FakeHttpClient $http_client ): array {
+		$query = array();
+		parse_str( (string) wp_parse_url( $http_client->last_path, PHP_URL_QUERY ), $query );
+
+		return $query;
 	}
 
 	/**
