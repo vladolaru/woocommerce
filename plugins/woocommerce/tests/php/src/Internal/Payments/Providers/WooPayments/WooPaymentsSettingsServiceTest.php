@@ -2861,47 +2861,6 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should check Link and WooPay against the stored methods the page shows, and against every stored method while availability is unknown: $scenario.
-	 * @testWith ["Link without fees, which the page hides", ["card"], false]
-	 *           ["Link with fees, which the page shows", ["card", "link"], true]
-	 *           ["availability unknown, with no fees cached", null, true]
-	 *
-	 * @param string        $scenario       Case.
-	 * @param string[]|null $fee_method_ids The methods with fees in the account cache; null leaves the fees out.
-	 * @param bool          $is_refused     Whether turning WooPay on is refused.
-	 */
-	public function test_update_settings_checks_link_and_woopay_against_the_methods_the_page_shows( string $scenario, ?array $fee_method_ids, bool $is_refused ): void {
-		$this->store_link_and_woopay_account( true, 'active', $fee_method_ids );
-		update_option(
-			'woocommerce_woocommerce_payments_settings',
-			array(
-				'enabled'                        => 'yes',
-				'platform_checkout'              => 'no',
-				'upe_enabled_payment_method_ids' => array( 'card', 'link' ),
-			)
-		);
-		$stored_before = $this->get_raw_option_value( 'woocommerce_woocommerce_payments_settings' );
-
-		$result = $this->sut->update_settings( array( 'is_woopay_enabled' => true ) );
-
-		if ( $is_refused ) {
-			$this->assertInstanceOf( WP_Error::class, $result, $scenario );
-			$this->assertSame( 400, $result->get_error_data()['status'], $scenario );
-			$this->assertSame(
-				"Link by Stripe and WooPay can't be enabled at the same time. Disable one of them.",
-				$result->get_error_data()['params']['enabled_payment_method_ids'],
-				$scenario
-			);
-			$this->assertSame( $stored_before, $this->get_raw_option_value( 'woocommerce_woocommerce_payments_settings' ), 'A refused save must leave the settings option byte-identical.' );
-			return;
-		}
-		$this->assertIsArray( $result, $scenario );
-		$stored = get_option( 'woocommerce_woocommerce_payments_settings' );
-		$this->assertSame( 'yes', $stored['platform_checkout'], 'WooPay is saved on beside a Link the page hides.' );
-		$this->assertSame( array( 'card', 'link' ), $stored['upe_enabled_payment_method_ids'], 'A save that does not post the list keeps the hidden method stored.' );
-	}
-
-	/**
 	 * @testdox Should refuse turning on WooPay beside Link on an expired account cache, applying nothing submitted.
 	 */
 	public function test_update_settings_refuses_link_and_woopay_together_on_an_expired_account_cache(): void {
@@ -3626,27 +3585,26 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 * Store a connected account with card and Link fees, active card payments, the given Link capability status and WooPay
 	 * eligibility (`platform_checkout_eligible`, as client 11.1.0 `includes/class-wc-payments-features.php:193-209` reads it).
 	 *
-	 * @param bool          $woopay_eligible Whether the account is eligible for WooPay.
-	 * @param string        $link_status     The `link_payments` capability status.
-	 * @param string[]|null $fee_method_ids  The methods with fees; null leaves the fees out of the account.
+	 * @param bool   $woopay_eligible Whether the account is eligible for WooPay.
+	 * @param string $link_status     The `link_payments` capability status.
 	 */
-	private function store_link_and_woopay_account( bool $woopay_eligible, string $link_status, ?array $fee_method_ids = array( 'card', 'link' ) ): void {
-		$account = array(
-			'account_id'                 => 'acct_native_test',
-			'is_live'                    => true,
-			'platform_checkout_eligible' => $woopay_eligible,
-			'capabilities'               => array(
-				'card_payments' => 'active',
-				'link_payments' => $link_status,
-			),
-		);
-		if ( null !== $fee_method_ids ) {
-			$account['fees'] = array_fill_keys( $fee_method_ids, array() );
-		}
+	private function store_link_and_woopay_account( bool $woopay_eligible, string $link_status ): void {
 		update_option(
 			'wcpay_account_data',
 			array(
-				'data'    => $account,
+				'data'    => array(
+					'account_id'                 => 'acct_native_test',
+					'is_live'                    => true,
+					'platform_checkout_eligible' => $woopay_eligible,
+					'capabilities'               => array(
+						'card_payments' => 'active',
+						'link_payments' => $link_status,
+					),
+					'fees'                       => array(
+						'card' => array(),
+						'link' => array(),
+					),
+				),
 				'fetched' => time(),
 				'errored' => false,
 			)

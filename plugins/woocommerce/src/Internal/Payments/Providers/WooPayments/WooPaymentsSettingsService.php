@@ -443,11 +443,8 @@ class WooPaymentsSettingsService {
 			&& in_array( 'card', $method_ids, true )
 			&& in_array( 'link', $method_ids, true )
 			&& $this->woopay_eligibility->is_woopay_eligible();
-		// Read the stored list as persistence stores it, through sanitize_key() (the synchronizer's normalize_string_list()),
-		// and as the page shows it, through availability, so a hidden method blocks nothing; with availability unknown, all of it.
-		$available_method_ids    = null !== $enabled_methods_update ? $enabled_methods_update['available'] : $this->get_available_payment_method_ids();
+		// Read the stored list as persistence stores it, through sanitize_key() (the synchronizer's normalize_string_list()).
 		$stored_method_ids       = array_map( 'sanitize_key', $this->normalize_payment_method_ids( $this->get_array_setting( $settings, 'upe_enabled_payment_method_ids', array( 'card' ) ) ) );
-		$stored_method_ids       = empty( $available_method_ids ) ? $stored_method_ids : array_values( array_intersect( $stored_method_ids, $available_method_ids ) );
 		$is_woopay_on_after_save = array_key_exists( 'is_woopay_enabled', $params )
 			? $this->is_yes( $this->normalize_setting_value( $params['is_woopay_enabled'], 'bool' ) )
 			: $was_woopay_enabled;
