@@ -499,8 +499,10 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 
 	/**
 	 * Look up what the charge sent under an unpaid order's kept key did, when no stored intent shows money, with the
-	 * lookup a refused retry of its checkout uses: the account's intents created within an hour of when the key was kept
-	 * (the order's creation for a key kept before that time was saved), a window that does not move between runs.
+	 * lookup a refused retry of its checkout uses: the account's intents created from an hour before the key was kept (the
+	 * order's creation for a key kept before that time was saved) to an hour after the later of that time and the order's
+	 * last change, which every checkout attempt saves before it charges. Core picks the order by that change and nothing
+	 * here saves it, so the window does not move between runs.
 	 *
 	 * Only an intent whose metadata names the order by ID and key can pay it. A key kept in another mode than the store's
 	 * cannot be looked up, since the list is read in the store's mode. The lookup tells only whether it failed (a transport
@@ -517,11 +519,13 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 			return null;
 		}
 
-		$kept_at = (int) $order->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_KEPT_AT_META, true );
-		$created = $order->get_date_created();
-		$since   = 0 < $kept_at ? $kept_at : ( null === $created ? 0 : $created->getTimestamp() );
+		$kept_at  = (int) $order->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_KEPT_AT_META, true );
+		$created  = $order->get_date_created();
+		$since    = 0 < $kept_at ? $kept_at : ( null === $created ? 0 : $created->getTimestamp() );
+		$modified = $order->get_date_modified();
+		$until    = max( $since, null === $modified ? 0 : $modified->getTimestamp() );
 		try {
-			$lookup = wc_get_container()->get( WooPaymentsChargeAmbiguityService::class )->find_order_intents( $order, array(), $since, $since );
+			$lookup = wc_get_container()->get( WooPaymentsChargeAmbiguityService::class )->find_order_intents( $order, array(), $since, $until );
 		} catch ( Throwable $exception ) {
 			$this->logger->log_throwable( sprintf( 'The charge of unpaid order #%d could not be looked up before its cancel.', $order->get_id() ), $exception, array( 'order_id' => $order->get_id() ) );
 			$lookup = array(

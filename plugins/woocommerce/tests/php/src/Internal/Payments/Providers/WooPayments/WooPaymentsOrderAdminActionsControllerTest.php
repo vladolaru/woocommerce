@@ -4320,7 +4320,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Core's hold-stock job settles from the account's intents an unpaid order that keeps only a charge key: a $status payment of its own goes $expected, with one lookup around the time the key was kept and no release.
+	 * @testdox Core's hold-stock job settles from the account's intents an unpaid order that keeps only a charge key: a $status payment of its own goes $expected, with one lookup from the time the key was kept to the order's last change and no release.
 	 *
 	 * @testWith ["succeeded", "processing"]
 	 *           ["requires_capture", "on-hold"]
@@ -4331,6 +4331,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	public function test_unpaid_order_keeping_only_a_charge_key_is_settled_from_the_payment_the_lookup_finds( string $status, string $expected ): void {
 		$kept_at    = time() - 3 * HOUR_IN_SECONDS;
 		$order      = $this->create_key_only_order( $kept_at );
+		$changed_at = $this->reload( $order )->get_date_modified()->getTimestamp();
 		$transport  = $this->create_transport( self::http_json( 200, self::intent_list( self::key_only_intent( $order, $status ) ) ) );
 		$processing = $this->createMock( PaymentProcessingService::class );
 		$processing->expects( $this->never() )->method( 'cancel' );
@@ -4338,7 +4339,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$this->run_unpaid_order_job( $transport, $processing );
 
 		$order = $this->reload( $order );
-		$this->assertSame( array( $kept_at - HOUR_IN_SECONDS, $kept_at + HOUR_IN_SECONDS ), $this->listed_window( $transport ), 'One account list, an hour either side of when the key was kept.' );
+		$this->assertSame( array( $kept_at - HOUR_IN_SECONDS, max( $kept_at, $changed_at ) + HOUR_IN_SECONDS ), $this->listed_window( $transport ), 'One account list, from an hour before the key was kept to an hour after the later of that and the last change.' );
 		$this->assertSame( $expected, $order->get_status() );
 		$this->assertSame( 'pi_unpaid', $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( 0, $this->count_notes_containing( $order, 'Unpaid order cancelled' ) );
@@ -5353,6 +5354,70 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Core's hold-stock job settles an unpaid order whose kept charge key a later attempt sent after the key's first hour: the lookup's window ends an hour after the order's last change, and the payment it finds is applied, not cancelled.
+	 *
+	 * Attempt 1 keeps the key and dies before sending it. The shopper retries 80 minutes later: the same key creates the
+	 * intent, and that request dies after the platform's answer.
+	 */
+	public function test_unpaid_order_lookup_covers_an_attempt_after_the_key_was_kept(): void {
+		$kept_at = time() - 4 * HOUR_IN_SECONDS;
+		$order   = $this->create_key_only_order( $kept_at );
+		$this->age_unpaid_order( $order, null, 4 * HOUR_IN_SECONDS - 80 * MINUTE_IN_SECONDS );
+		$retried    = $kept_at + 80 * MINUTE_IN_SECONDS;
+		$intent     = self::key_only_intent( $order, 'succeeded' );
+		$transport  = $this->create_transport_answering(
+			static function ( string $path ) use ( $intent, $retried ): array {
+				parse_str( (string) wp_parse_url( $path, PHP_URL_QUERY ), $query );
+
+				return self::http_json( 200, (int) ( $query['created']['lte'] ?? 0 ) >= $retried ? self::intent_list( $intent ) : self::intent_list() );
+			}
+		);
+		$processing = $this->createMock( PaymentProcessingService::class );
+		$processing->expects( $this->never() )->method( 'cancel' );
+
+		$this->run_unpaid_order_job( $transport, $processing );
+
+		$this->assertSame( array( $kept_at - HOUR_IN_SECONDS, $retried + HOUR_IN_SECONDS ), $this->listed_window( $transport ) );
+		$this->assertSame( OrderStatus::PROCESSING, $this->reload( $order )->get_status() );
+	}
+
+	/**
+	 * @testdox The lookup's window for an unpaid order kept unchecked is the same on two runs: from an hour before the key was kept to an hour after the order's last change.
+	 */
+	public function test_unpaid_order_lookup_window_does_not_move_between_runs(): void {
+		$kept_at             = time() - 5 * HOUR_IN_SECONDS;
+		$order               = $this->create_key_only_order( $kept_at );
+		$modified            = (int) $this->reload( $order )->get_date_modified()->getTimestamp();
+		$transport           = $this->create_transport();
+		$transport->response = self::http_json( 200, array( 'has_more' => true ) + self::intent_list() );
+		$windows             = array();
+
+		for ( $run = 0; $run < 2; $run++ ) {
+			$this->run_unpaid_order_job( $transport );
+			$windows[]           = $this->listed_window( $transport );
+			$transport->requests = array();
+		}
+
+		$this->assertSame( OrderStatus::PENDING, $this->reload( $order )->get_status() );
+		$this->assertSame( array( $kept_at - HOUR_IN_SECONDS, $modified + HOUR_IN_SECONDS ), $windows[0] );
+		$this->assertSame( $windows[0], $windows[1] );
+	}
+
+	/**
+	 * @testdox The lookup's window ends an hour after the key was kept when the key was kept after the order's last change.
+	 */
+	public function test_unpaid_order_lookup_window_ends_after_a_key_kept_later_than_the_last_change(): void {
+		$kept_at = time() - 2 * HOUR_IN_SECONDS;
+		$order   = $this->create_key_only_order( $kept_at );
+		$this->age_unpaid_order( $order, null, 4 * HOUR_IN_SECONDS );
+		$transport = $this->create_transport( self::http_json( 200, self::intent_list() ) );
+
+		$this->run_unpaid_order_job( $transport );
+
+		$this->assertSame( array( $kept_at - HOUR_IN_SECONDS, $kept_at + HOUR_IN_SECONDS ), $this->listed_window( $transport ) );
+	}
+
+	/**
 	 * Create a Pending checkout order for a shipped product, paid through WooPayments, storing an intent, last changed three
 	 * hours ago.
 	 *
@@ -5716,5 +5781,49 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$transport->response = $response;
 
 		return $transport;
+	}
+
+	/**
+	 * Create a platform transport that answers each request from its path.
+	 *
+	 * @param callable $answer Gets the request path and returns the transport response.
+	 * @return FakeHttpClient
+	 */
+	private function create_transport_answering( callable $answer ): FakeHttpClient {
+		return new class( $answer ) extends FakeHttpClient {
+			/**
+			 * Answers a request from its path.
+			 *
+			 * @var callable
+			 */
+			private $answer;
+
+			/**
+			 * Keep the callback.
+			 *
+			 * @param callable $answer Answers a request from its path.
+			 */
+			public function __construct( callable $answer ) {
+				$this->answer = $answer;
+			}
+
+			/**
+			 * Record the request as the fake transport does, then answer it from its path.
+			 *
+			 * @param string      $method         HTTP method.
+			 * @param string      $path           Path.
+			 * @param array       $headers        Headers.
+			 * @param string|null $body           Body.
+			 * @param int         $timeout        Timeout.
+			 * @param bool        $use_user_token Whether the user token is used.
+			 * @param bool        $blocking       Whether the request blocks.
+			 * @return mixed
+			 */
+			public function request( string $method, string $path, array $headers = array(), ?string $body = null, int $timeout = 70, bool $use_user_token = false, bool $blocking = true ) {
+				parent::request( $method, $path, $headers, $body, $timeout, $use_user_token, $blocking );
+
+				return ( $this->answer )( $path );
+			}
+		};
 	}
 }
