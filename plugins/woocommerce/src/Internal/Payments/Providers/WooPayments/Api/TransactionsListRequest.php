@@ -139,14 +139,19 @@ class TransactionsListRequest extends PaginatedListRequest {
 	}
 
 	/**
-	 * Set a filter.
+	 * Set the search terms, with `Order #N` and `Subscription #N` terms replaced by the orders' charge IDs, as client
+	 * 11.3.0's List_Transactions::set_search() does (class-list-transactions.php:170-175).
 	 *
-	 * @param mixed $value Filter value.
+	 * @param mixed $value Search terms.
 	 */
 	public function set_search( $value ): void {
-		if ( ! empty( $value ) ) {
-			$this->set_param( 'search', $value );
+		if ( empty( $value ) ) {
+			return;
 		}
+
+		$params = wc_get_container()->get( WooPaymentsOrderDetailsService::class )->map_transaction_search_params( array( 'search' => $value ) );
+
+		$this->set_param( 'search', $params['search'] );
 	}
 
 	/**

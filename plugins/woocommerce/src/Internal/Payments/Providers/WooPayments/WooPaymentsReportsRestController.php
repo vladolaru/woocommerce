@@ -245,16 +245,13 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 	 */
 	public function get_report_transaction( WP_REST_Request $request ) {
 		try {
+			$transaction_request = new TransactionsListRequest();
+			$transaction_request->set_filters( array( 'transaction_id_is' => (string) $request->get_param( 'id' ) ) );
+			$transaction_request->set_sort_by( 'date' );
+			$transaction_request->set_page_size( 1 );
+
 			$rows = $this->prepare_report_transaction_rows(
-				$this->extract_response_rows(
-					$this->api_client->get_transactions(
-						array(
-							'transaction_id_is' => (string) $request->get_param( 'id' ),
-							'sort'              => 'date',
-							'pagesize'          => 1,
-						)
-					)
-				)
+				$this->extract_response_rows( $this->api_client->get_transactions( $transaction_request->get_filtered_request()->get_params() ) )
 			);
 
 			return new WP_REST_Response( $rows[0] ?? array() );
@@ -473,8 +470,9 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Get the Fees list params after the `wcpay_list_transactions_request` filter ran, with order-number searches mapped to
-	 * charge IDs.
+	 * Get the Fees list params after the `wcpay_list_transactions_request` filter ran. The filters are built, with
+	 * order-number searches mapped to charge IDs, before the filter, and nothing runs after it, as in client 11.3.0
+	 * (class-wc-rest-payments-reports-fees-controller.php:108-125).
 	 *
 	 * @param WP_REST_Request $request Request.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
@@ -482,11 +480,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 	 * @throws ApiException When a filter callback returns no request.
 	 */
 	private function get_filtered_fees_list_params( WP_REST_Request $request ): array {
-		$filtered_request = TransactionsListRequest::from_params( $this->get_fees_list_params( $request ) )->get_filtered_request();
-
-		$params = $this->filter_empty_params( $filtered_request->get_params() );
-
-		return $this->order_service->map_transaction_search_params( $params );
+		return TransactionsListRequest::from_params( $this->get_fees_list_params( $request ) )->get_filtered_request()->get_params();
 	}
 
 	/**
@@ -536,7 +530,11 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Get Transaction report list params.
+	 * Get the Transaction report list params after the `wcpay_list_transactions_request` filter ran.
+	 *
+	 * Client 11.3.0 class-wc-rest-payments-reports-transactions-controller.php:59-73: the transactions list request with
+	 * every list filter (order-number searches mapped, dates shifted by `user_timezone`, which is not sent), then the page
+	 * size, type, order, customer email and payment method on top. Nothing runs after the filter.
 	 *
 	 * @param WP_REST_Request $request Request.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
@@ -544,30 +542,23 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 	 * @throws ApiException When a filter callback returns no request.
 	 */
 	private function get_report_transactions_list_params( WP_REST_Request $request ): array {
-		$user_timezone = $this->get_sanitized_param_or_null( $request, 'user_timezone' );
-		$dates         = $this->get_date_filters( $request, $user_timezone );
+		$transactions_request = TransactionsListRequest::from_rest_request( $request );
+		$transactions_request->set_page_size( (int) ( $request->get_param( 'per_page' ) ?? 25 ) );
 
-		$params = array_merge(
-			$this->get_paging_params( $request, 'date' ),
+		$type = $request->get_param( 'type' );
+		if ( $type ) {
+			$transactions_request->set_param( 'type_is', $type );
+		}
+
+		$transactions_request->set_filters(
 			array(
-				'type_is'           => $this->get_sanitized_param_or_null( $request, 'type' ),
-				'order_id_is'       => $this->get_sanitized_param_or_null( $request, 'order_id' ),
-				'customer_email_is' => $this->get_sanitized_param_or_null( $request, 'customer_email' ),
-				'source_is'         => $this->get_sanitized_param_or_null( $request, 'payment_method_type' ),
-				'deposit_id'        => $this->get_sanitized_param_or_null( $request, 'deposit_id' ),
-				'date_before'       => $dates['date_before'],
-				'date_after'        => $dates['date_after'],
-				'date_between'      => $dates['date_between'],
-				'match'             => $this->get_sanitized_param_or_null( $request, 'match' ),
-				'user_timezone'     => $user_timezone,
+				'order_id_is'       => $request->get_param( 'order_id' ),
+				'customer_email_is' => $request->get_param( 'customer_email' ),
+				'source_is'         => $request->get_param( 'payment_method_type' ),
 			)
 		);
 
-		$params = $this->filter_empty_params( $params );
-
-		$filtered_request = TransactionsListRequest::from_params( $params )->get_filtered_request();
-
-		return $this->order_service->map_transaction_search_params( $filtered_request->get_params() );
+		return $transactions_request->get_filtered_request()->get_params();
 	}
 
 	/**

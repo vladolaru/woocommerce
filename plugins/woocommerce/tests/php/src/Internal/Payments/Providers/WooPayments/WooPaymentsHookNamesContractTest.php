@@ -230,7 +230,7 @@ class WooPaymentsHookNamesContractTest extends WC_Unit_Test_Case {
 	 * hook with the fixture's arity; it says nothing about a second native site of the same name
 	 * (for example `wcpay_database_cache_ttl` also fires from
 	 * `DatabaseCache`, and
-	 * `wcpay_list_transactions_request` also fires from `WooPaymentsReportsRestController` twice).
+	 * `wcpay_list_transactions_request` also fires from `WooPaymentsReportsRestController` three times).
 	 * This closes that gap statically, without a second runtime probe per secondary site. A site may also use the arity of
 	 * another client 11.2.0 site of the hook (the fixture's `sites`), as `wcpay_metadata_from_order` fires with two
 	 * arguments on the zero-total WooPay save-user path (class-wc-payment-gateway-wcpay.php:1962).

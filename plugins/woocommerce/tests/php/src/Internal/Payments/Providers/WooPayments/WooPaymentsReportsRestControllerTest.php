@@ -517,7 +517,7 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 'get_transactions', $this->api_client->last_call['method'] );
 		$this->assertSame( 50, $this->api_client->last_call['query']['pagesize'] );
 		$this->assertSame( 'refund', $this->api_client->last_call['query']['type_is'] );
-		$this->assertSame( '123', $this->api_client->last_call['query']['order_id_is'] );
+		$this->assertSame( 123, $this->api_client->last_call['query']['order_id_is'], 'The route arg absints the order ID, and client 11.3.0 sends it as read.' );
 		$this->assertSame( 'ada@example.com', $this->api_client->last_call['query']['customer_email_is'] );
 		$this->assertSame( 'card', $this->api_client->last_call['query']['source_is'] );
 		$this->assertSame( 'report-transactions-custom', $this->api_client->last_call['query']['extension_custom_param'] );
@@ -635,6 +635,7 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testWith ["/wc/v3/payments/reports/fees", "wcpay_list_transactions_request", false]
 	 *           ["/wc/v3/payments/reports/transactions", "wcpay_list_transactions_request", false]
 	 *           ["/wc/v3/payments/reports/transactions", "wcpay_list_transactions_request", true]
+	 *           ["/wc/v3/payments/reports/transactions/txn_123", "wcpay_list_transactions_request", false]
 	 *
 	 * @param string $path      Route path.
 	 * @param string $hook      Request filter.
@@ -654,6 +655,345 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 500, $response->get_status() );
 		$this->assertSame( 'wcpay_invalid_filtered_request', $response->get_data()['code'] );
 		$this->assertSame( "Invalid WooPayments request returned by {$hook}.", $response->get_data()['message'] );
+	}
+
+	/**
+	 * @testdox Fees list sends a search term a callback sets through set_param() as written, as client 11.3.0 does.
+	 *
+	 * Client 11.3.0 maps the Fees search before the filter (class-wc-rest-payments-reports-fees-controller.php:123) and runs
+	 * nothing after it (:125).
+	 */
+	public function test_fees_list_sends_a_callback_set_param_search_as_written(): void {
+		$order = $this->create_order_with_charge( 'ch_m' );
+		$term  = __( 'Order #', 'woocommerce' ) . $order->get_id();
+		$this->create_controller( true )->register_routes();
+		add_filter(
+			'wcpay_list_transactions_request',
+			static function ( TransactionsListRequest $request ) use ( $term ): TransactionsListRequest {
+				$request->set_param( 'search', array( $term ) );
+
+				return $request;
+			}
+		);
+
+		$this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/reports/fees' ) );
+
+		$this->assertSame( array( $term ), $this->api_client->last_call['query']['search'] );
+	}
+
+	/**
+	 * @testdox Fees list sends an empty value a callback sets, as client 11.3.0 does.
+	 */
+	public function test_fees_list_sends_a_callback_empty_value(): void {
+		$this->create_controller( true )->register_routes();
+		add_filter(
+			'wcpay_list_transactions_request',
+			static function ( TransactionsListRequest $request ): TransactionsListRequest {
+				$request->set_param( 'match', '' );
+
+				return $request;
+			}
+		);
+
+		$this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/reports/fees' ) );
+
+		$this->assertArrayHasKey( 'match', $this->api_client->last_call['query'] );
+		$this->assertSame( '', $this->api_client->last_call['query']['match'] );
+	}
+
+	/**
+	 * @testdox Transactions report list maps a merchant's order search before the filter and sends a callback's set_param() term as written.
+	 *
+	 * Client 11.3.0 builds the list with List_Transactions::from_rest_request()
+	 * (class-wc-rest-payments-reports-transactions-controller.php:61), whose set_search() maps the terms.
+	 */
+	public function test_report_transactions_list_maps_search_before_the_filter(): void {
+		$order_n = $this->create_order_with_charge( 'ch_n' );
+		$order_m = $this->create_order_with_charge( 'ch_m' );
+		$term_m  = __( 'Order #', 'woocommerce' ) . $order_m->get_id();
+		$this->create_controller( true )->register_routes();
+		$seen = array();
+		add_filter(
+			'wcpay_list_transactions_request',
+			static function ( TransactionsListRequest $request ) use ( &$seen ): TransactionsListRequest {
+				$seen[] = $request->get_param( 'search' );
+
+				return $request;
+			}
+		);
+
+		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/reports/transactions' );
+		$request->set_query_params( array( 'search' => array( __( 'Order #', 'woocommerce' ) . $order_n->get_id() ) ) );
+		$this->server->dispatch( $request );
+
+		$this->assertSame( array( array( 'ch_n' ) ), $seen );
+		$this->assertSame( array( 'ch_n' ), $this->api_client->last_call['query']['search'] );
+
+		add_filter(
+			'wcpay_list_transactions_request',
+			static function ( TransactionsListRequest $request ) use ( $term_m ): TransactionsListRequest {
+				$request->set_param( 'search', array( $term_m ) );
+
+				return $request;
+			},
+			20
+		);
+		$this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/reports/transactions' ) );
+
+		$this->assertSame( array( $term_m ), $this->api_client->last_call['query']['search'] );
+	}
+
+	/**
+	 * @testdox Transactions report list sends $filter as client 11.3.0 does.
+	 * @dataProvider provide_report_transactions_list_filters
+	 *
+	 * Client 11.3.0 reads every filter in List_Transactions::from_rest_request() (class-list-transactions.php:79-104), then
+	 * applies per_page, type, order_id, customer_email and payment_method_type on top (reports controller :62-71). The date
+	 * filters are shifted by `user_timezone`, which is not sent.
+	 *
+	 * @param string              $filter   Case.
+	 * @param array<string,mixed> $query    Query params.
+	 * @param array<string,mixed> $expected Expected platform params; null means the key is not sent.
+	 */
+	public function test_report_transactions_list_sends_the_client_filters( string $filter, array $query, array $expected ): void {
+		unset( $filter );
+		$this->create_controller( true )->register_routes();
+
+		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/reports/transactions' );
+		$request->set_query_params( $query );
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+		foreach ( $expected as $key => $value ) {
+			if ( null === $value ) {
+				$this->assertArrayNotHasKey( $key, $this->api_client->last_call['query'] );
+				continue;
+			}
+			$this->assertArrayHasKey( $key, $this->api_client->last_call['query'] );
+			$this->assertSame( $value, $this->api_client->last_call['query'][ $key ] );
+		}
+	}
+
+	/**
+	 * Every filter client 11.3.0's report list reads that the report list did not.
+	 *
+	 * @return array<string,array{0:string,1:array<string,mixed>,2:array<string,mixed>}>
+	 */
+	public function provide_report_transactions_list_filters(): array {
+		$cases = array();
+		foreach ( array( 'type_is_not', 'source_device_is', 'source_device_is_not', 'channel_is', 'channel_is_not', 'customer_country_is', 'customer_country_is_not', 'risk_level_is', 'risk_level_is_not', 'store_currency_is', 'customer_currency_is', 'customer_currency_is_not', 'source_is_not', 'loan_id_is' ) as $name ) {
+			$cases[ $name ] = array( $name, array( $name => 'value-' . $name ), array( $name => 'value-' . $name ) );
+		}
+
+		$cases['type_is']                                    = array( 'type_is', array( 'type_is' => 'charge' ), array( 'type_is' => 'charge' ) );
+		$cases['type_is, replaced by type']                  = array(
+			'type_is',
+			array(
+				'type_is' => 'charge',
+				'type'    => 'refund',
+			),
+			array( 'type_is' => 'refund' ),
+		);
+		$cases['type_is_in, cast to an array']               = array( 'type_is_in', array( 'type_is_in' => 'charge' ), array( 'type_is_in' => array( 'charge' ) ) );
+		$cases['source_is']                                  = array( 'source_is', array( 'source_is' => 'card' ), array( 'source_is' => 'card' ) );
+		$cases['source_is, replaced by payment_method_type'] = array(
+			'source_is',
+			array(
+				'source_is'           => 'card',
+				'payment_method_type' => 'sepa_debit',
+			),
+			array( 'source_is' => 'sepa_debit' ),
+		);
+		$cases['search, cast to an array']                   = array( 'search', array( 'search' => 'Ada' ), array( 'search' => array( 'Ada' ) ) );
+		$cases['channel_is, an empty string kept']           = array( 'channel_is', array( 'channel_is' => '' ), array( 'channel_is' => '' ) );
+		$cases['user_timezone, not sent']                    = array(
+			'user_timezone',
+			array(
+				'user_timezone' => '+03:00',
+				'date_after'    => '2026-06-01T00:00:00Z',
+			),
+			array(
+				'user_timezone' => null,
+				'date_after'    => '2026-06-01 03:00:00',
+			),
+		);
+
+		return $cases;
+	}
+
+	/**
+	 * @testdox Transactions report row runs the list request filter once and sends client 11.3.0's request.
+	 *
+	 * Client 11.3.0 get_transaction() (class-wc-rest-payments-reports-transactions-controller.php:91-98): List_Transactions
+	 * with `transaction_id_is`, sort `date` and page size 1, sent through the filter.
+	 */
+	public function test_report_transaction_runs_the_list_filter(): void {
+		$this->create_controller( true )->register_routes();
+		$seen = array();
+		add_filter(
+			'wcpay_list_transactions_request',
+			static function ( TransactionsListRequest $request ) use ( &$seen ): TransactionsListRequest {
+				$seen[] = array(
+					'transaction_id_is' => $request->get_param( 'transaction_id_is' ),
+					'pagesize'          => $request->get_param( 'pagesize' ),
+					'sort'              => $request->get_param( 'sort' ),
+				);
+
+				return $request;
+			}
+		);
+
+		$this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/reports/transactions/txn_123' ) );
+
+		$this->assertSame(
+			array(
+				array(
+					'transaction_id_is' => 'txn_123',
+					'pagesize'          => 1,
+					'sort'              => 'date',
+				),
+			),
+			$seen
+		);
+		$this->assertSame(
+			array(
+				'page'              => 0,
+				'pagesize'          => 1,
+				'sort'              => 'date',
+				'direction'         => 'desc',
+				'limit'             => 100,
+				'transaction_id_is' => 'txn_123',
+			),
+			$this->api_client->last_call['query']
+		);
+	}
+
+	/**
+	 * @testdox $path sends GET transactions with the returned request's params, whatever API or method that request names.
+	 * @testWith ["/wc/v3/payments/reports/fees"]
+	 *           ["/wc/v3/payments/reports/transactions"]
+	 *           ["/wc/v3/payments/reports/transactions/txn_123"]
+	 *
+	 * The list request filter fires in the controller and only the returned request's params are kept (register row 523).
+	 *
+	 * @param string $path Route path.
+	 */
+	public function test_list_filter_returned_request_api_and_method_are_ignored( string $path ): void {
+		$this->create_controller( true )->register_routes();
+		add_filter(
+			'wcpay_list_transactions_request',
+			static function () {
+				$other = new class() extends TransactionsListRequest {
+					/**
+					 * Another API.
+					 *
+					 * @return string
+					 */
+					public function get_api(): string {
+						return 'deposits';
+					}
+
+					/**
+					 * Another method.
+					 *
+					 * @return string
+					 */
+					public function get_method(): string {
+						return 'POST';
+					}
+				};
+				$other->set_param( 'extension_custom_param', 'other-request' );
+
+				return $other;
+			}
+		);
+
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', $path ) );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( 'get_transactions', $this->api_client->last_call['method'] );
+		$this->assertSame( 'other-request', $this->api_client->last_call['query']['extension_custom_param'] );
+	}
+
+	/**
+	 * @testdox The Fees page's list, summary and export requests reach the platform unchanged ($scenario).
+	 * @testWith ["without a search", false]
+	 *           ["with an order search, a type and a payment method", true]
+	 *
+	 * The queries are the ones the page builds (client/admin/client/woopayments/admin/reports/query.ts:24-52, :157-184).
+	 *
+	 * @param string $scenario   Case.
+	 * @param bool   $with_order Whether the merchant searches for an order and filters by type and payment method.
+	 */
+	public function test_fees_page_requests_reach_the_platform_unchanged( string $scenario, bool $with_order ): void {
+		unset( $scenario );
+		$order = $this->create_order_with_charge( 'ch_page' );
+		$this->create_controller( true )->register_routes();
+		$filters = array(
+			'date_after'    => '2026-06-01T00:00:00Z',
+			'user_timezone' => '+03:00',
+		);
+		if ( $with_order ) {
+			$filters = array(
+				'date_after'          => '2026-06-01T00:00:00Z',
+				'payment_method_type' => 'card',
+				'type'                => array( 'charge' ),
+				'search'              => array( __( 'Order #', 'woocommerce' ) . $order->get_id() ),
+				'user_timezone'       => '+03:00',
+			);
+		}
+		$types    = $with_order ? array( 'charge' ) : array( 'charge', 'payment', 'payment_failure_refund', 'payment_refund', 'refund', 'refund_failure', 'dispute', 'dispute_reversal', 'fee_refund', 'network_costs' );
+		$expected = $with_order
+			? array(
+				'source_is'     => 'card',
+				'type_is_in'    => $types,
+				'date_after'    => '2026-06-01 03:00:00',
+				'search'        => array( 'ch_page' ),
+				'user_timezone' => '+03:00',
+			)
+			: array(
+				'type_is_in'    => $types,
+				'date_after'    => '2026-06-01 03:00:00',
+				'user_timezone' => '+03:00',
+			);
+
+		$list = new WP_REST_Request( 'GET', '/wc/v3/payments/reports/fees' );
+		$list->set_query_params(
+			array(
+				'page'      => '1',
+				'per_page'  => '25',
+				'sort'      => 'date',
+				'direction' => 'desc',
+			) + $filters
+		);
+		$this->server->dispatch( $list );
+		$this->assertSame(
+			array(
+				'page'      => 1,
+				'pagesize'  => 25,
+				'sort'      => 'date',
+				'direction' => 'desc',
+				'limit'     => 100,
+			) + $expected,
+			$this->api_client->last_call['query']
+		);
+
+		$summary = new WP_REST_Request( 'GET', '/wc/v3/payments/reports/fees/summary' );
+		$summary->set_query_params( $filters );
+		$this->server->dispatch( $summary );
+		$this->assertSame( 'get_transactions_summary', $this->api_client->last_call['method'] );
+		$this->assertSame( $expected, $this->api_client->last_call['filters'] );
+
+		$export = new WP_REST_Request( 'POST', '/wc/v3/payments/reports/fees/download' );
+		$export->set_query_params(
+			$filters + array(
+				'user_email' => 'merchant@example.com',
+				'locale'     => 'en_US',
+			)
+		);
+		$this->server->dispatch( $export );
+		$this->assertSame( 'start_transactions_export', $this->api_client->last_call['method'] );
+		$this->assertSame( $expected, $this->api_client->last_call['filters'] );
 	}
 
 	/**

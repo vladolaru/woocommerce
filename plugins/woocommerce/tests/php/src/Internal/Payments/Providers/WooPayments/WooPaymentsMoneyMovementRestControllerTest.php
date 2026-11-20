@@ -1052,6 +1052,197 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	}
 
 	/**
+	 * @testdox Transactions list maps a merchant's order search before the list request filter, so a callback reads the charge ID.
+	 *
+	 * Client 11.3.0 maps the terms in List_Transactions::set_search() (class-list-transactions.php:170-175), reached from
+	 * from_rest_request() (:101, :104), before Request::send() applies the filter.
+	 */
+	public function test_transactions_list_filter_reads_the_mapped_order_search(): void {
+		$order = $this->create_order_with_charge( 'ch_n', 'pi_n' );
+		$this->create_transactions_controller()->register_routes();
+		$seen = array();
+		add_filter(
+			'wcpay_list_transactions_request',
+			static function ( TransactionsListRequest $request ) use ( &$seen ): TransactionsListRequest {
+				$seen[] = $request->get_param( 'search' );
+
+				return $request;
+			}
+		);
+
+		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/transactions' );
+		$request->set_query_params( array( 'search' => array( __( 'Order #', 'woocommerce' ) . $order->get_id() ) ) );
+		$this->server->dispatch( $request );
+
+		$this->assertSame( array( array( 'ch_n' ) ), $seen );
+		$this->assertSame( array( 'ch_n' ), $this->api_client->last_call['query']['search'] );
+	}
+
+	/**
+	 * @testdox Transactions list sends a search term a callback sets through set_param() as written, as client 11.3.0 does.
+	 *
+	 * Client 11.3.0 runs nothing after the filter (class-wc-rest-payments-transactions-controller.php:144-149), and its
+	 * set_param() does not map.
+	 */
+	public function test_transactions_list_sends_a_callback_set_param_search_as_written(): void {
+		$order = $this->create_order_with_charge( 'ch_m', 'pi_m' );
+		$term  = __( 'Order #', 'woocommerce' ) . $order->get_id();
+		$this->create_transactions_controller()->register_routes();
+		add_filter(
+			'wcpay_list_transactions_request',
+			static function ( TransactionsListRequest $request ) use ( $term ): TransactionsListRequest {
+				$request->set_param( 'search', array( $term ) );
+
+				return $request;
+			}
+		);
+
+		$this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/transactions' ) );
+
+		$this->assertSame( array( $term ), $this->api_client->last_call['query']['search'] );
+	}
+
+	/**
+	 * @testdox Transactions list maps a search term a callback sets through set_search() exactly once, as client 11.3.0 does.
+	 */
+	public function test_transactions_list_maps_a_callback_set_search_term_once(): void {
+		$order = $this->create_order_with_charge( 'ch_m', 'pi_m' );
+		$spy   = new class() extends WooPaymentsOrderDetailsService {
+			/**
+			 * Number of search mapping calls.
+			 *
+			 * @var int
+			 */
+			public $calls = 0;
+
+			/**
+			 * Count the call and map.
+			 *
+			 * @param array<string,mixed> $params Transaction request params.
+			 * @return array<string,mixed>
+			 */
+			public function map_transaction_search_params( array $params ): array {
+				++$this->calls;
+
+				return parent::map_transaction_search_params( $params );
+			}
+		};
+		$spy->init( new WooPaymentsOrderDataService(), wc_get_container()->get( WooPaymentsLevel3Service::class ) );
+		wc_get_container()->replace( WooPaymentsOrderDetailsService::class, $spy );
+		$controller = new WooPaymentsTransactionsRestController();
+		$controller->init( $this->api_client, $spy );
+		$controller->register_routes();
+		add_filter(
+			'wcpay_list_transactions_request',
+			static function ( TransactionsListRequest $request ) use ( $order ): TransactionsListRequest {
+				$request->set_search( array( __( 'Order #', 'woocommerce' ) . $order->get_id() ) );
+
+				return $request;
+			}
+		);
+
+		$this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/transactions' ) );
+
+		$this->assertSame( array( 'ch_m' ), $this->api_client->last_call['query']['search'] );
+		$this->assertSame( 1, $spy->calls, 'The callback term should be mapped exactly once.' );
+	}
+
+	/**
+	 * @testdox Transactions list sends GET transactions with the returned request's params, whatever API or method that request names.
+	 *
+	 * The list request filter fires in the controller and only the returned request's params are kept (register row 523).
+	 */
+	public function test_transactions_list_ignores_a_returned_request_api_and_method(): void {
+		$this->create_transactions_controller()->register_routes();
+		add_filter(
+			'wcpay_list_transactions_request',
+			static function () {
+				$other = new class() extends TransactionsListRequest {
+					/**
+					 * Another API.
+					 *
+					 * @return string
+					 */
+					public function get_api(): string {
+						return 'deposits';
+					}
+
+					/**
+					 * Another method.
+					 *
+					 * @return string
+					 */
+					public function get_method(): string {
+						return 'POST';
+					}
+				};
+				$other->set_param( 'extension_custom_param', 'other-request' );
+
+				return $other;
+			}
+		);
+
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/transactions' ) );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( 'get_transactions', $this->api_client->last_call['method'] );
+		$this->assertSame( 'other-request', $this->api_client->last_call['query']['extension_custom_param'] );
+	}
+
+	/**
+	 * @testdox The Payments > Transactions page's list, summary and export requests reach the platform unchanged ($scenario).
+	 * @testWith ["without a search", false]
+	 *           ["with an order search", true]
+	 *
+	 * The queries are the ones the page builds (admin/money-movement/transactions-list.tsx:138-145, query.ts:332-336).
+	 *
+	 * @param string $scenario   Case.
+	 * @param bool   $with_order Whether the merchant searches for an order.
+	 */
+	public function test_transactions_page_requests_reach_the_platform_unchanged( string $scenario, bool $with_order ): void {
+		unset( $scenario );
+		$order = $this->create_order_with_charge( 'ch_page', 'pi_page' );
+		$this->create_transactions_controller()->register_routes();
+		$query = array(
+			'page'          => '1',
+			'pagesize'      => '25',
+			'sort'          => 'date',
+			'direction'     => 'desc',
+			'user_timezone' => '+00:00',
+		);
+		if ( $with_order ) {
+			$query['search'] = array( __( 'Order #', 'woocommerce' ) . $order->get_id() );
+		}
+		$search = $with_order ? array( 'search' => array( 'ch_page' ) ) : array();
+
+		$list = new WP_REST_Request( 'GET', '/wc/v3/payments/transactions' );
+		$list->set_query_params( $query );
+		$this->server->dispatch( $list );
+		$this->assertSame(
+			array(
+				'page'      => 1,
+				'pagesize'  => 25,
+				'sort'      => 'date',
+				'direction' => 'desc',
+				'limit'     => 100,
+			) + $search,
+			$this->api_client->last_call['query']
+		);
+
+		$summary = new WP_REST_Request( 'GET', '/wc/v3/payments/transactions/summary' );
+		$summary->set_query_params( $query );
+		$this->server->dispatch( $summary );
+		$this->assertSame( 'get_transactions_summary', $this->api_client->last_call['method'] );
+		$this->assertSame( $search, $this->api_client->last_call['filters'] );
+
+		$export = new WP_REST_Request( 'POST', '/wc/v3/payments/transactions/download' );
+		$export->set_body_params( $query + array( 'user_email' => 'merchant@example.com' ) );
+		$this->server->dispatch( $export );
+		$this->assertSame( 'start_transactions_export', $this->api_client->last_call['method'] );
+		$this->assertSame( $search, $this->api_client->last_call['filters'] );
+	}
+
+	/**
 	 * @testdox Transactions list flags a payment whose order holds an early fraud warning, and leaves the key out otherwise.
 	 *
 	 * Client 11.2.0 class-list-transactions.php:309-316 (tests/unit/core/server/request/test-class-list-transactions-request.php:238-290).

@@ -327,8 +327,8 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Get the transactions list params after the `wcpay_list_transactions_request` filter ran, with order-number searches
-	 * mapped to charge IDs.
+	 * Get the transactions list params after the `wcpay_list_transactions_request` filter ran. Order-number searches are
+	 * mapped to charge IDs before the filter, and nothing runs after it, as in client 11.3.0.
 	 *
 	 * @param WP_REST_Request $request Request.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
@@ -336,11 +336,7 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 	 * @throws ApiException When a filter callback returns no request.
 	 */
 	private function get_filtered_transactions_list_params( WP_REST_Request $request ): array {
-		$transactions_request = TransactionsListRequest::from_rest_request( $request );
-
-		$filtered_request = $transactions_request->get_filtered_request();
-
-		return $this->order_service->map_transaction_search_params( $filtered_request->get_params() );
+		return TransactionsListRequest::from_rest_request( $request )->get_filtered_request()->get_params();
 	}
 
 	/**
