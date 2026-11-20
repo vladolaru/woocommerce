@@ -402,7 +402,10 @@ class WooPaymentsIntentConfirmationService {
 				$displayed = true;
 				$this->log_payment_not_own( $stored_order, $intent, $is_redirect_return );
 			} else {
+				// Every write goes on the one order read after the refusal, so none adds a second row of a key it saved.
 				$this->attach_charge_details_after_refusal( $stored_order, $event );
+				$this->apply_display_details( $stored_order, $intent, $setup_payment_details );
+				$displayed = true;
 			}
 		}
 		if ( null !== $refusing_order ) {
@@ -414,7 +417,7 @@ class WooPaymentsIntentConfirmationService {
 			throw new WooPaymentsIntentConfirmationException( esc_html__( "We're not able to process this payment. Please try again later.", 'woocommerce' ), 409 );
 		}
 		if ( ! $displayed ) {
-			// A subscription's card change, or a refused claim: no event is applied, and the display details are written as before.
+			// A subscription's card change takes no claim: no event is applied, and the display details are written on the caller's order.
 			$this->apply_display_details( $order, $intent, $setup_payment_details );
 		}
 

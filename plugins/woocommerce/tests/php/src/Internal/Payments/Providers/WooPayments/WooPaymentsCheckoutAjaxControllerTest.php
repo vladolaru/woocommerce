@@ -18,6 +18,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
+use Automattic\WooCommerce\Utilities\OrderUtil;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAjaxController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
@@ -2399,6 +2400,80 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Order-status callback, refused the order payment lock, stores one row of each key it writes: $_dataName.
+	 *
+	 * The refused request writes the charge and the display details on the one order it reads after the refusal. Writing
+	 * the display details on the older object it was called with added a second row of the charge's payment method details.
+	 *
+	 * @dataProvider provider_refused_callback_row_counts
+	 *
+	 * @param string $pair Recorded intent pair: a decline with its failed charge, or a completed challenge.
+	 */
+	public function test_update_order_status_refused_the_lock_stores_one_row_per_key( string $pair ): void {
+		$intent = $this->load_recorded_manual_3ds_entry( $pair )['body'];
+		$order  = $this->create_woopayments_order( '10.99' );
+		$order->set_transaction_id( $intent['id'] );
+		$order->update_meta_data( '_intent_id', $intent['id'] );
+		$order->update_meta_data( '_intention_status', 'requires_action' );
+		$order->save();
+		$lock       = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		$lock_token = null;
+		$hold       = static function () use ( $order, $lock, $vocabulary, $intent, &$lock_token ): void {
+			$lock_token = $lock->claim( wc_get_order( $order->get_id() ), $vocabulary, (string) $intent['id'], 'payment status update' );
+		};
+
+		try {
+			$this->create_controller( $this->bind_intents_to_order( $this->create_api_client_returning( $intent, $hold ), $order ) )->confirm_order_payment(
+				array(
+					'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+					'order_id'    => $order->get_id(),
+					'intent_id'   => (string) $intent['id'],
+				)
+			);
+		} finally {
+			$this->assertNotNull( $lock_token, 'Another operation holds the lock.' );
+			$lock->release( $order, $vocabulary, $lock_token );
+		}
+
+		$rows = $this->count_order_meta_rows( $order->get_id() );
+		foreach ( array( '_charge_id', '_charge_risk_level', '_wcpay_payment_method_details' ) as $key ) {
+			$this->assertSame( 1, $rows[ $key ] ?? 0, "One row of $key." );
+		}
+		$this->assertSame( array(), array_filter( $rows, static fn( int $count ): bool => 1 < $count ), 'No key has a second row.' );
+	}
+
+	/**
+	 * Callbacks refused the order payment lock, for a paid intent and a declined one.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function provider_refused_callback_row_counts(): array {
+		return array(
+			'a completed challenge' => array( 'classic_checkout_challenge_completed' ),
+			'a decline'             => array( 'blocks_post_authentication_decline' ),
+		);
+	}
+
+	/**
+	 * Count the stored meta rows of an order per key, in the table that holds them.
+	 *
+	 * @param int $order_id Order ID.
+	 * @return array<string,int> Row count per meta key.
+	 */
+	private function count_order_meta_rows( int $order_id ): array {
+		global $wpdb;
+
+		if ( OrderUtil::custom_orders_table_usage_is_enabled() ) {
+			$results = $wpdb->get_results( $wpdb->prepare( "SELECT meta_key, COUNT(*) AS row_count FROM {$wpdb->prefix}wc_orders_meta WHERE order_id = %d GROUP BY meta_key", $order_id ), ARRAY_A );
+		} else {
+			$results = $wpdb->get_results( $wpdb->prepare( "SELECT meta_key, COUNT(*) AS row_count FROM {$wpdb->postmeta} WHERE post_id = %d GROUP BY meta_key", $order_id ), ARRAY_A );
+		}
+
+		return array_map( 'intval', array_column( $results, 'row_count', 'meta_key' ) );
+	}
+
+	/**
 	 * Count the warning lines the order-status callback logs when it refuses an order another payment method holds.
 	 *
 	 * @param RecordingWcLogger $logger Recording logger.
@@ -3232,6 +3307,10 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( $saves_charge ? 'normal' : '', $reloaded->get_meta( '_charge_risk_level', true ) );
 		$details = json_decode( (string) $reloaded->get_meta( '_wcpay_payment_method_details', true ), true );
 		$this->assertSame( $saves_charge ? $intent['charges']['data'][0]['payment_method_details'] : null, $details, "The charge's payment method details, as os:1373-1378 store them." );
+		$rows = $this->count_order_meta_rows( $order->get_id() );
+		foreach ( array( '_charge_id', '_charge_risk_level', '_wcpay_payment_method_details' ) as $key ) {
+			$this->assertSame( $saves_charge ? 1 : 0, $rows[ $key ] ?? 0, "Rows of $key." );
+		}
 	}
 
 	/**
