@@ -122,12 +122,12 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 		$this->sut->release( $order, $this->persistence_vocabulary, $first_token );
 
 		$this->assertSame( 'second_key', get_transient( $lock_key ), 'A former holder must not release the current holder lock.' );
-		$this->assertSame( 'refund', get_transient( $lock_key . '_holder' )['operation'] ?? null, 'A former holder must not delete the current holder record.' );
+		$this->assertSame( 'refund', $this->read_holder_record( $order )['operation'] ?? null, 'A former holder must not delete the current holder record.' );
 
 		$this->sut->release( $order, $this->persistence_vocabulary, $second_token );
 
 		$this->assertFalse( get_transient( $lock_key ), 'The holder must be able to release its lock.' );
-		$this->assertFalse( get_transient( $lock_key . '_holder' ), 'Releasing the lock must delete its holder record.' );
+		$this->assertFalse( $this->read_holder_record( $order ), 'Releasing the lock must delete its holder record.' );
 		$sentinel_token = $this->sut->claim( $order, $this->persistence_vocabulary, null, 'payment operation' );
 		$this->assertNotNull( $sentinel_token, 'A released lock must be claimable again.' );
 		$this->assertSame( '-1', get_transient( $lock_key ), 'A claim without a reference must store the WooPayments sentinel.' );
@@ -721,10 +721,9 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	 * @return mixed The record, or false when there is none.
 	 */
 	private function read_holder_record( \WC_Order $order ) {
-		$holder_key = $this->persistence_vocabulary->get_order_lock_key( $order ) . '_holder';
-		$stored     = $this->read_lock_row( '_transient_' . $holder_key );
+		$holder_row = wc_get_container()->get( TransientRowLock::class )->read_holder( $this->persistence_vocabulary->get_order_lock_key( $order ) . '_holder' );
 
-		return null === $stored ? false : maybe_unserialize( $stored );
+		return null === $holder_row ? false : maybe_unserialize( $holder_row['record'] );
 	}
 
 	/**
@@ -749,7 +748,8 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Store a holder record directly in the database, as a request that died holding the lock leaves it.
+	 * Store a holder record directly in the database, as a request that died holding the lock leaves it, naming the lock
+	 * row present when it is stored.
 	 *
 	 * @param string $lock_key   Lock transient key.
 	 * @param string $operation  Operation the record names.
@@ -757,14 +757,20 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	 * @param int    $claimed_at When the record's claim was made.
 	 */
 	private function insert_holder_row( string $lock_key, string $operation, string $lock_value, int $claimed_at ): void {
+		global $wpdb;
+
+		$record = array(
+			'operation'  => $operation,
+			'lock_value' => $lock_value,
+			'token'      => 'token_of_a_dead_request',
+			'claimed_at' => $claimed_at,
+		);
 		$this->insert_lock_row(
 			'_transient_' . $lock_key . '_holder',
 			maybe_serialize(
 				array(
-					'operation'  => $operation,
-					'lock_value' => $lock_value,
-					'token'      => 'token_of_a_dead_request',
-					'claimed_at' => $claimed_at,
+					'lock_row' => (int) $wpdb->get_var( $wpdb->prepare( "SELECT option_id FROM {$wpdb->options} WHERE option_name = %s", '_transient_' . $lock_key ) ),
+					'record'   => maybe_serialize( $record ),
 				)
 			)
 		);

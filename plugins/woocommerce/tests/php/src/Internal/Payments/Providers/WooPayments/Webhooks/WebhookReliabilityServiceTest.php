@@ -1773,9 +1773,11 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		global $wpdb;
 
 		$holder_key           = $vocabulary->get_order_lock_key( $order ) . '_holder';
-		$holder               = maybe_unserialize( $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", '_transient_' . $holder_key ) ) );
+		$envelope             = maybe_unserialize( $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", '_transient_' . $holder_key ) ) );
+		$holder               = maybe_unserialize( $envelope['record'] );
 		$holder['claimed_at'] = $claimed_at;
-		$wpdb->update( $wpdb->options, array( 'option_value' => maybe_serialize( $holder ) ), array( 'option_name' => '_transient_' . $holder_key ) );
+		$envelope['record']   = maybe_serialize( $holder );
+		$wpdb->update( $wpdb->options, array( 'option_value' => maybe_serialize( $envelope ) ), array( 'option_name' => '_transient_' . $holder_key ) );
 	}
 
 	/**

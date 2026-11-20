@@ -13,7 +13,8 @@ namespace Automattic\WooCommerce\Internal\Payments;
  * The order payment lock is built on it, and provider code that needs a row lock uses the same class; a claim inserts
  * with INSERT IGNORE because add_option() and set_transient() can let two requests both believe they stored the lock.
  * An expired lock is taken over with one compare-and-set UPDATE.
- * A release deletes the rows only while they hold the caller's value; an optional holder record fences it on a token.
+ * A release deletes the rows only while they hold the caller's value; an optional holder record fences it on a token
+ * and on the lock row its claim holds.
  *
  * @since 11.2.0
  * @internal
@@ -29,7 +30,7 @@ class TransientRowLock {
 	 * then writes its holder record; a takeover also replaces the former holder's record in the same UPDATE, so the
 	 * former holder can no longer release the lock. Only a lock removed without its release, by the expired-transient
 	 * cleanup or an unconditional unlock, can leave a former holder's record in place until a new claim's holder write
-	 * replaces it.
+	 * replaces it. The holder row names the lock row its claim holds, so that record cannot release a new claim's lock.
 	 *
 	 * The rows are always in the options table, written and read with SQL around WordPress's option caches, on every
 	 * store. A holder record keeps the release token apart from a lock value other readers expect.
@@ -41,7 +42,7 @@ class TransientRowLock {
 	 * @param int         $ttl          Lock time-to-live, in seconds.
 	 * @param string|null $holder_key   Transient key of the holder record, if the caller keeps one.
 	 * @param string|null $holder_value Holder record of this claim, as stored. Required with a holder key.
-	 * @param array|null  $taken_over   Set when this claim, with a holder, took an expired lock over: the former value and holder record, as stored.
+	 * @param array|null  $taken_over   Set when this claim, with a holder, took an expired lock over: the former value as stored, and the former caller's record.
 	 * @phpstan-param array{value:string,holder:string|null}|null $taken_over
 	 * @return bool True when this request holds the lock.
 	 */
@@ -67,10 +68,12 @@ class TransientRowLock {
 			)
 		);
 
+		// Read before the expiry insert, which overwrites the insert ID.
+		$lock_row = 1 === $inserted ? (int) $wpdb->insert_id : 0;
 		if ( 1 === $inserted ) {
 			$claimed = $this->write_claimed_lock_expiry( $value_option, $timeout_option, $value, $leftover_timeout, $expiration );
 		} else {
-			$claimed = $this->take_over_expired_lock_rows( $value_option, $timeout_option, $value, $expiration, $holder, $taken_over );
+			$claimed = $this->take_over_expired_lock_rows( $value_option, $timeout_option, $value, $expiration, $holder, $taken_over, $lock_row );
 		}
 
 		if ( $claimed && null !== $holder ) {
@@ -79,7 +82,7 @@ class TransientRowLock {
 					"INSERT INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, 'off'), (%s, %s, 'off')
 					ON DUPLICATE KEY UPDATE option_value = VALUES(option_value)",
 					$holder['option'],
-					$holder['value'],
+					$this->wrap_holder( $holder['value'], $lock_row ),
 					$holder['timeout_option'],
 					$expiration
 				)
@@ -94,15 +97,16 @@ class TransientRowLock {
 	/**
 	 * Release the lock rows of a transient, but only while they still hold the caller's value.
 	 *
-	 * With a holder, the lock is released only while the holder row still holds the caller's record too, and the
-	 * holder rows are deleted with it. One statement checks and deletes, so a takeover that ran meanwhile is kept.
+	 * With a holder, the lock is released only while the holder row still holds the caller's record too, and only the
+	 * lock row that record names; the holder rows are deleted with it. One statement checks and deletes, so a takeover
+	 * that ran meanwhile is kept.
 	 *
 	 * @since 11.2.0
 	 *
 	 * @param string      $key          Transient key of the lock.
 	 * @param string      $value        Lock value the caller claimed, as stored.
 	 * @param string|null $holder_key   Transient key of the holder record, if the caller keeps one.
-	 * @param string|null $holder_value Holder record of the caller's claim, as stored. Required with a holder key.
+	 * @param string|null $holder_value The holder row as stored, as read_holder() returned it. Required with a holder key.
 	 */
 	public function release( string $key, string $value, ?string $holder_key = null, ?string $holder_value = null ): void {
 		global $wpdb;
@@ -121,19 +125,25 @@ class TransientRowLock {
 				$value
 			);
 		} else {
+			$envelope = $this->unwrap_holder( $holder['value'] );
+			if ( null === $envelope ) {
+				return;
+			}
+
 			// A takeover rewrites the holder record in the same statement that takes the lock over.
 			$delete = $wpdb->prepare(
 				"DELETE lock_value, lock_timeout, lock_holder, lock_holder_timeout FROM {$wpdb->options} AS lock_value
 				INNER JOIN {$wpdb->options} AS lock_holder ON lock_holder.option_name = %s AND lock_holder.option_value = %s
 				LEFT JOIN {$wpdb->options} AS lock_timeout ON lock_timeout.option_name = %s
 				LEFT JOIN {$wpdb->options} AS lock_holder_timeout ON lock_holder_timeout.option_name = %s
-				WHERE lock_value.option_name = %s AND lock_value.option_value = %s",
+				WHERE lock_value.option_name = %s AND lock_value.option_value = %s AND lock_value.option_id = %d",
 				$holder['option'],
 				$holder['value'],
 				$timeout_option,
 				$holder['timeout_option'],
 				$value_option,
-				$value
+				$value,
+				$envelope['lock_row']
 			);
 		}
 
@@ -170,6 +180,29 @@ class TransientRowLock {
 	}
 
 	/**
+	 * Read a holder row straight from the database, expired or not.
+	 *
+	 * The order payment lock reads its holder through it to release a claim and to name the holder in a refusal line.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param string $holder_key Transient key of the holder record.
+	 * @return array{record:string,stored:string,expires:int|null}|null The caller's record, the row as stored and its expiry, or null when there is no holder row this class wrote.
+	 */
+	public function read_holder( string $holder_key ): ?array {
+		$holder_option  = '_transient_' . $holder_key;
+		$timeout_option = '_transient_timeout_' . $holder_key;
+		$rows           = $this->select_lock_rows( $holder_option, $timeout_option );
+		$envelope       = isset( $rows[ $holder_option ] ) ? $this->unwrap_holder( (string) $rows[ $holder_option ]->option_value ) : null;
+
+		return null === $envelope ? null : array(
+			'record'  => $envelope['record'],
+			'stored'  => (string) $rows[ $holder_option ]->option_value,
+			'expires' => isset( $rows[ $timeout_option ] ) ? (int) $rows[ $timeout_option ]->option_value : null,
+		);
+	}
+
+	/**
 	 * Read the value and expiry rows of a lock straight from the database, and one more row when asked.
 	 *
 	 * @param string $value_option   Lock value option name.
@@ -182,7 +215,7 @@ class TransientRowLock {
 
 		return (array) $wpdb->get_results(
 			$wpdb->prepare(
-				"SELECT option_name, option_value FROM {$wpdb->options} WHERE option_name IN (%s, %s, %s)",
+				"SELECT option_name, option_value, option_id FROM {$wpdb->options} WHERE option_name IN (%s, %s, %s)",
 				$value_option,
 				$timeout_option,
 				'' === $other_option ? $value_option : $other_option
@@ -275,10 +308,11 @@ class TransientRowLock {
 	 * @param string                                                       $stored_value   Lock value to store.
 	 * @param string                                                       $expiration     New lock expiry timestamp.
 	 * @param array{option:string,timeout_option:string,value:string}|null $holder         Holder rows of this claim, if any.
-	 * @param array{value:string,holder:string|null}|null                  $taken_over     Set, with a holder, to the former value and holder record when the takeover wins.
+	 * @param array{value:string,holder:string|null}|null                  $taken_over     Set, with a holder, to the former value and the former caller's record when the takeover wins.
+	 * @param int                                                          $lock_row       Set, with a holder, to the ID of the value row the takeover changes.
 	 * @return bool True when this request took the lock over.
 	 */
-	private function take_over_expired_lock_rows( string $value_option, string $timeout_option, string $stored_value, string $expiration, ?array $holder, ?array &$taken_over ): bool {
+	private function take_over_expired_lock_rows( string $value_option, string $timeout_option, string $stored_value, string $expiration, ?array $holder, ?array &$taken_over, int &$lock_row ): bool {
 		global $wpdb;
 
 		// The former holder record is read with the rows it described: a winning takeover overwrites it.
@@ -315,28 +349,31 @@ class TransientRowLock {
 			);
 		}
 
-		$won = 0 < (int) $wpdb->query(
+		// The takeover changes only the row it read, so the holder record it writes names the row it holds.
+		$lock_row = (int) $rows[ $value_option ]->option_id;
+		$won      = 0 < (int) $wpdb->query(
 			$wpdb->prepare(
 				"UPDATE {$wpdb->options} AS lock_value
 				INNER JOIN {$wpdb->options} AS lock_timeout ON lock_timeout.option_name = %s
 				LEFT JOIN {$wpdb->options} AS lock_holder ON lock_holder.option_name = %s
 				SET lock_value.option_value = %s, lock_timeout.option_value = %s, lock_holder.option_value = %s
-				WHERE lock_value.option_name = %s AND lock_value.option_value = %s AND lock_timeout.option_value = %s",
+				WHERE lock_value.option_name = %s AND lock_value.option_value = %s AND lock_timeout.option_value = %s AND lock_value.option_id = %d",
 				$timeout_option,
 				$holder['option'],
 				$stored_value,
 				$expiration,
-				$holder['value'],
+				$this->wrap_holder( $holder['value'], $lock_row ),
 				$value_option,
 				$rows[ $value_option ]->option_value,
-				$rows[ $timeout_option ]->option_value
+				$rows[ $timeout_option ]->option_value,
+				$lock_row
 			)
 		);
 
 		if ( $won ) {
 			$taken_over = array(
 				'value'  => (string) $rows[ $value_option ]->option_value,
-				'holder' => isset( $rows[ $holder['option'] ] ) ? (string) $rows[ $holder['option'] ]->option_value : null,
+				'holder' => isset( $rows[ $holder['option'] ] ) ? ( $this->unwrap_holder( (string) $rows[ $holder['option'] ]->option_value )['record'] ?? null ) : null,
 			);
 		}
 
@@ -360,6 +397,34 @@ class TransientRowLock {
 			'timeout_option' => '_transient_timeout_' . $holder_key,
 			'value'          => $holder_value,
 		);
+	}
+
+	/**
+	 * Build the stored holder row: the caller's record and the ID of the lock's value row its claim holds.
+	 *
+	 * @param string $record   Holder record of the caller's claim.
+	 * @param int    $lock_row ID of the lock's value row.
+	 * @return string
+	 */
+	private function wrap_holder( string $record, int $lock_row ): string {
+		return maybe_serialize(
+			array(
+				'lock_row' => $lock_row,
+				'record'   => $record,
+			)
+		);
+	}
+
+	/**
+	 * Read a stored holder row built by wrap_holder(). Keys other than its two are ignored.
+	 *
+	 * @param string $stored Holder row as stored.
+	 * @return array{lock_row:int,record:string}|null
+	 */
+	private function unwrap_holder( string $stored ): ?array {
+		$envelope = maybe_unserialize( $stored );
+
+		return is_array( $envelope ) && isset( $envelope['lock_row'], $envelope['record'] ) && is_int( $envelope['lock_row'] ) && is_string( $envelope['record'] ) ? $envelope : null;
 	}
 
 	/**

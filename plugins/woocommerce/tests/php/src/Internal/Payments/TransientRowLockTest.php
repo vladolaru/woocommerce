@@ -112,21 +112,134 @@ class TransientRowLockTest extends WC_Unit_Test_Case {
 	 * @testdox With a holder, a release should keep the lock once a takeover replaced the holder record.
 	 */
 	public function test_release_with_a_holder_keeps_a_takeover_that_reused_the_lock_value(): void {
-		$this->assertTrue( $this->sut->claim( self::KEY, 'same_value', 300, self::KEY . '_holder', 'former_holder' ) );
+		$holder_key = self::KEY . '_holder';
+		$this->assertTrue( $this->sut->claim( self::KEY, 'same_value', 300, $holder_key, 'former_holder' ) );
+		$former = $this->sut->read_holder( $holder_key )['stored'] ?? '';
 		$this->update_row( '_transient_timeout_' . self::KEY, (string) ( time() - 10 ) );
-		$this->assertTrue( $this->sut->claim( self::KEY, 'same_value', 300, self::KEY . '_holder', 'successor_holder' ) );
+		$this->assertTrue( $this->sut->claim( self::KEY, 'same_value', 300, $holder_key, 'successor_holder' ) );
 
-		$this->sut->release( self::KEY, 'same_value', self::KEY . '_holder', 'former_holder' );
+		$this->sut->release( self::KEY, 'same_value', $holder_key, $former );
 
 		$this->assertSame( 'same_value', $this->sut->read( self::KEY ) );
-		$this->assertSame( 'successor_holder', $this->read_row( '_transient_' . self::KEY . '_holder' ) );
+		$this->assertSame( 'successor_holder', $this->sut->read_holder( $holder_key )['record'] ?? null );
 
-		$this->sut->release( self::KEY, 'same_value', self::KEY . '_holder', 'successor_holder' );
+		$this->sut->release( self::KEY, 'same_value', $holder_key, $this->sut->read_holder( $holder_key )['stored'] ?? '' );
 
 		$this->assertNull( $this->read_row( '_transient_' . self::KEY ) );
 		$this->assertNull( $this->read_row( '_transient_timeout_' . self::KEY ) );
-		$this->assertNull( $this->read_row( '_transient_' . self::KEY . '_holder' ) );
-		$this->assertNull( $this->read_row( '_transient_timeout_' . self::KEY . '_holder' ) );
+		$this->assertNull( $this->read_row( '_transient_' . $holder_key ) );
+		$this->assertNull( $this->read_row( '_transient_timeout_' . $holder_key ) );
+	}
+
+	/**
+	 * @testdox A former holder's release, after the lock's own rows were deleted by name, should keep a later claim of the lock.
+	 */
+	public function test_release_by_a_former_holder_after_its_lock_rows_were_deleted_keeps_a_later_claim_of_the_lock(): void {
+		$holder_key = self::KEY . '_holder';
+		$this->assertTrue( $this->sut->claim( self::KEY, 'same_value', 300, $holder_key, 'former_holder' ) );
+		$former = (string) $this->read_row( '_transient_' . $holder_key );
+		// An unconditional unlock or the expired-transient cleanup deletes the lock's rows by name and leaves the holder rows.
+		$this->delete_row( '_transient_' . self::KEY );
+		$this->delete_row( '_transient_timeout_' . self::KEY );
+
+		// The former holder releases right after the later claim inserts its value row, before it writes its holder record.
+		$released    = false;
+		$seen_insert = false;
+		$release     = function ( $query ) use ( &$release, &$released, &$seen_insert, $holder_key, $former ) {
+			if ( ! $seen_insert ) {
+				$seen_insert = 0 === strpos( ltrim( $query ), 'INSERT IGNORE' ) && false !== strpos( $query, "'_transient_" . self::KEY . "'" );
+				return $query;
+			}
+			remove_filter( 'query', $release );
+			$released = true;
+			$this->sut->release( self::KEY, 'same_value', $holder_key, $former );
+			return $query;
+		};
+		add_filter( 'query', $release );
+		$claimed = $this->sut->claim( self::KEY, 'same_value', 300, $holder_key, 'successor_holder' );
+		remove_filter( 'query', $release );
+
+		$this->assertTrue( $released, 'The former holder must have released.' );
+		$this->assertTrue( $claimed );
+		$this->assertSame( 'same_value', $this->read_row( '_transient_' . self::KEY ), 'The former holder must not delete the later claim\'s lock.' );
+		$this->assertNotNull( $this->read_row( '_transient_timeout_' . self::KEY ), 'The later claim keeps its expiry.' );
+		$this->assertSame( 'successor_holder', $this->sut->read_holder( $holder_key )['record'] ?? null, 'The holder record is the later claim\'s.' );
+		$this->assertFalse( $this->sut->claim( self::KEY, 'third', 300, $holder_key, 'third_holder' ), 'A third claim must be refused.' );
+
+		$this->sut->release( self::KEY, 'same_value', $holder_key, $this->sut->read_holder( $holder_key )['stored'] ?? '' );
+
+		$this->assertNull( $this->read_row( '_transient_' . self::KEY ) );
+		$this->assertNull( $this->read_row( '_transient_timeout_' . self::KEY ) );
+		$this->assertNull( $this->read_row( '_transient_' . $holder_key ) );
+		$this->assertNull( $this->read_row( '_transient_timeout_' . $holder_key ) );
+	}
+
+	/**
+	 * @testdox A takeover should be refused when the value row it read is deleted and made again before its write.
+	 */
+	public function test_takeover_of_a_value_row_remade_after_its_read_is_refused(): void {
+		$holder_key = self::KEY . '_holder';
+		$this->insert_rows( 'same_value', time() - 10 );
+
+		// Right after the takeover reads the expired rows, the value row is deleted and inserted again with the same value.
+		$remade    = false;
+		$seen_read = false;
+		$remake    = function ( $query ) use ( &$remake, &$remade, &$seen_read ) {
+			if ( ! $seen_read ) {
+				$seen_read = 0 === strpos( ltrim( $query ), 'SELECT option_name' ) && false !== strpos( $query, "'_transient_" . self::KEY . "'" );
+				return $query;
+			}
+			remove_filter( 'query', $remake );
+			$remade = true;
+			$this->delete_row( '_transient_' . self::KEY );
+			$GLOBALS['wpdb']->insert(
+				$GLOBALS['wpdb']->options,
+				array(
+					'option_name'  => '_transient_' . self::KEY,
+					'option_value' => 'same_value',
+					'autoload'     => 'off',
+				)
+			);
+			return $query;
+		};
+		add_filter( 'query', $remake );
+		$claimed = $this->sut->claim( self::KEY, 'same_value', 300, $holder_key, 'taker_holder' );
+		remove_filter( 'query', $remake );
+
+		$this->assertTrue( $remade, 'The value row must have been made again.' );
+		$this->assertFalse( $claimed, 'A takeover must not win a row it did not read.' );
+		$this->assertNull( $this->read_row( '_transient_' . $holder_key ), 'A refused takeover writes no holder record.' );
+
+		$this->assertTrue( $this->sut->claim( self::KEY, 'same_value', 300, $holder_key, 'next_holder' ), 'The next claim takes the remade row over.' );
+		$this->sut->release( self::KEY, 'same_value', $holder_key, $this->sut->read_holder( $holder_key )['stored'] ?? '' );
+
+		$this->assertNull( $this->read_row( '_transient_' . self::KEY ), 'The next claim can release the row it took over.' );
+		$this->assertNull( $this->read_row( '_transient_timeout_' . self::KEY ) );
+		$this->assertNull( $this->read_row( '_transient_' . $holder_key ) );
+	}
+
+	/**
+	 * @testdox The holder read should return the caller's record, the stored row and its expiry, expired or not, and nothing for a row it did not write.
+	 */
+	public function test_holder_read_returns_the_record_its_expiry_and_the_stored_row_expired_or_not(): void {
+		$holder_key = self::KEY . '_holder';
+		$this->assertTrue( $this->sut->claim( self::KEY, 'value', 300, $holder_key, 'caller_record' ) );
+
+		$live = $this->sut->read_holder( $holder_key );
+		$this->assertSame( 'caller_record', $live['record'] ?? null );
+		$this->assertSame( $this->read_row( '_transient_' . $holder_key ), $live['stored'] ?? null );
+		$this->assertIsInt( $live['expires'] ?? null );
+		$this->assertGreaterThanOrEqual( time() + 290, $live['expires'] );
+
+		$past = time() - 10;
+		$this->update_row( '_transient_timeout_' . $holder_key, (string) $past );
+		$expired = $this->sut->read_holder( $holder_key );
+		$this->assertSame( 'caller_record', $expired['record'] ?? null, 'An expired holder row is read too.' );
+		$this->assertSame( $this->read_row( '_transient_' . $holder_key ), $expired['stored'] ?? null );
+		$this->assertSame( $past, $expired['expires'] ?? null );
+
+		$this->update_row( '_transient_' . $holder_key, 'caller_record' );
+		$this->assertNull( $this->sut->read_holder( $holder_key ), 'A holder row this class did not write reads as none.' );
 	}
 
 	/**
@@ -201,6 +314,17 @@ class TransientRowLockTest extends WC_Unit_Test_Case {
 		global $wpdb;
 
 		$wpdb->update( $wpdb->options, array( 'option_value' => $value ), array( 'option_name' => $name ) );
+	}
+
+	/**
+	 * Delete a lock row by name, as an unconditional unlock or the expired-transient cleanup does.
+	 *
+	 * @param string $name Option name.
+	 */
+	private function delete_row( string $name ): void {
+		global $wpdb;
+
+		$wpdb->delete( $wpdb->options, array( 'option_name' => $name ) );
 	}
 
 	/**

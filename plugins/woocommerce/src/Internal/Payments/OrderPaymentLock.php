@@ -215,7 +215,8 @@ class OrderPaymentLock {
 	 */
 	public function log_refusal( WC_Order $order, ProviderPersistenceVocabularyInterface $persistence_vocabulary, string $refused_operation, ?string $source = null, array $extra_context = array(), bool $retry_queued = false ): ?int {
 		$lock_value       = $this->read_lock_transient( $persistence_vocabulary->get_order_lock_key( $order ) );
-		$holder           = $this->read_lock_transient( $this->get_lock_holder_key( $order, $persistence_vocabulary ) );
+		$holder_row       = $this->row_lock->read_holder( $this->get_lock_holder_key( $order, $persistence_vocabulary ) );
+		$holder           = null === $holder_row || ( null !== $holder_row['expires'] && $holder_row['expires'] < time() ) ? false : maybe_unserialize( $holder_row['record'] );
 		$holder_operation = null;
 		$lock_age_seconds = null;
 		$claimed_at       = null;
@@ -268,22 +269,20 @@ class OrderPaymentLock {
 	 * @param string                                 $lock_token          Token the claim returned.
 	 */
 	public function release( WC_Order $order, ProviderPersistenceVocabularyInterface $persistence_vocabulary, string $lock_token ): void {
-		global $wpdb;
-
 		unset( $this->held_claims[ $lock_token ] );
 		$lock_key   = $persistence_vocabulary->get_order_lock_key( $order );
 		$holder_key = $this->get_lock_holder_key( $order, $persistence_vocabulary );
 
 		// The holder row is read as stored, expired or not: the delete below matches it exactly, so it removes a lock this
 		// claim still holds and never one a later claim took over.
-		$stored_holder = $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", '_transient_' . $holder_key ) );
-		$holder        = null === $stored_holder ? null : maybe_unserialize( $stored_holder );
+		$holder_row = $this->row_lock->read_holder( $holder_key );
+		$holder     = null === $holder_row ? null : maybe_unserialize( $holder_row['record'] );
 
-		if ( ! $this->is_holder_of_claim( $holder, $lock_token ) ) {
+		if ( null === $holder_row || ! $this->is_holder_of_claim( $holder, $lock_token ) ) {
 			return;
 		}
 
-		$this->row_lock->release( $lock_key, maybe_serialize( $holder['lock_value'] ), $holder_key, $stored_holder );
+		$this->row_lock->release( $lock_key, maybe_serialize( $holder['lock_value'] ), $holder_key, $holder_row['stored'] );
 	}
 
 	/**
