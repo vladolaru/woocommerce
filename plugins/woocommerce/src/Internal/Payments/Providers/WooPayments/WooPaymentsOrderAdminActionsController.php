@@ -289,11 +289,12 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	/**
 	 * Keep an unpaid WooPayments order that core's hold-stock job would cancel while its payment may have been taken.
 	 *
-	 * An order with a paid date, or that stores an intent while its order payment lock is held, is kept with no read. An
-	 * order storing an intent not canceled has it read: money that is the order's own is applied as the attached-intent
-	 * check applies it, so an authorization goes On hold, while a disputed payment gets its note and the order is kept.
-	 * With no money, the order is cancelled only if, read again, it is unchanged and its lock is free. An unreadable
-	 * payment keeps the order to the next run, until a day after its creation: then core cancels it, with a note.
+	 * An order with a paid date, or whose order payment lock is held, is kept with no read. An order storing an intent
+	 * not canceled has it read, and one keeping only a charge key has the key's charge looked up: money that is the
+	 * order's own, or a voucher of its own still payable, is applied as the attached-intent check applies it, so an
+	 * authorization or a voucher goes On hold, while a disputed payment gets its note and the order is kept. With no
+	 * money, the order is cancelled only if, read again, it is unchanged and its lock is free. An unreadable payment
+	 * keeps the order to the next run, until a day after its creation: then core cancels it, with a note.
 	 *
 	 * @internal
 	 *
@@ -310,16 +311,18 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 			return false;
 		}
 
-		$state      = self::get_unpaid_payment_state( $order );
 		$vocabulary = $this->provider->get_persistence_vocabulary();
-		if ( 0 !== strpos( $state['intent_id'], 'pi_' ) || 'canceled' === $state['intent_status'] ) {
-			return $should_cancel;
-		}
 		if ( $this->order_payment_lock->is_held( $order, $vocabulary ) ) {
 			return false;
 		}
 
-		$intent = $this->read_unpaid_order_intent( $order, $state['intent_id'] );
+		$state    = self::get_unpaid_payment_state( $order );
+		$key_only = '' === $state['intent_id'] && '' !== $state['charge_key'];
+		if ( ! $key_only && ( 0 !== strpos( $state['intent_id'], 'pi_' ) || 'canceled' === $state['intent_status'] ) ) {
+			return $should_cancel;
+		}
+
+		$intent = $key_only ? $this->find_unpaid_order_charge( $order ) : $this->read_unpaid_order_intent( $order, $state['intent_id'] );
 		if ( null === $intent ) {
 			$created = $order->get_date_created();
 			if ( null !== $created && time() < $created->getTimestamp() + DAY_IN_SECONDS ) {
@@ -330,8 +333,8 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 			return $should_cancel;
 		}
 
-		if ( WooPaymentsIntentCodec::intent_belongs_to_order( $intent, $order ) && null !== WooPaymentsChargeAmbiguityService::find_intent_with_money( array( $intent ) ) ) {
-			$this->apply_unpaid_order_payment( $order, $state['intent_id'], $intent );
+		if ( WooPaymentsIntentCodec::intent_belongs_to_order( $intent, $order ) && self::holds_or_may_take_money( $intent ) ) {
+			$this->apply_unpaid_order_payment( $order, $key_only ? (string) ( $intent['id'] ?? '' ) : $state['intent_id'], $intent );
 
 			return false;
 		}
@@ -339,6 +342,18 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 		$fresh_order = $this->lifecycle_service->get_fresh_order_from_data_store( $order );
 
 		return self::get_unpaid_payment_state( $fresh_order ) === $state && ! $this->order_payment_lock->is_held( $fresh_order, $vocabulary ) ? $should_cancel : false;
+	}
+
+	/**
+	 * Tell whether an unpaid order's intent holds the shopper's money or, as an offline voucher awaiting payment, may still
+	 * take it, as the charge lookup counts it (WooPaymentsChargeAmbiguityService::may_hold_or_take_money()).
+	 *
+	 * @param array<string,mixed> $intent The intent read.
+	 * @return bool
+	 */
+	private static function holds_or_may_take_money( array $intent ): bool {
+		return null !== WooPaymentsChargeAmbiguityService::find_intent_with_money( array( $intent ) )
+			|| ( 'requires_action' === (string) ( $intent['status'] ?? '' ) && WooPaymentsIntentCodec::is_offline_payment_method_intent( $intent ) );
 	}
 
 	/**
@@ -388,6 +403,46 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 		);
 
 		return $intent;
+	}
+
+	/**
+	 * Look up what the charge sent under an unpaid order's kept key did, for an order that stores no intent, with the
+	 * lookup a refused retry of its checkout uses: the account's intents created within an hour of when the key was kept
+	 * (the order's creation for a key kept before that time was saved), a window that does not move between runs.
+	 *
+	 * Only an intent whose metadata names the order by ID and key can pay it. A key kept in another mode than the store's
+	 * cannot be looked up, since the list is read in the store's mode. A transport or server error stops the reads for the
+	 * rest of the run, as for a read intent.
+	 *
+	 * @param WC_Order $order Unpaid order.
+	 * @return array<string,mixed>|null The order's own intent that holds money, an empty array when the lookup found none,
+	 *                                  or null when it could not tell.
+	 */
+	private function find_unpaid_order_charge( WC_Order $order ): ?array {
+		$mode = (string) $order->get_meta( '_wcpay_mode', true );
+		if ( $this->unpaid_order_reads_stopped || ( '' !== $mode && wc_get_container()->get( WooPaymentsAccountService::class )->get_order_mode() !== $mode ) ) {
+			return null;
+		}
+
+		$kept_at = (int) $order->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_KEPT_AT_META, true );
+		$created = $order->get_date_created();
+		$since   = 0 < $kept_at ? $kept_at : ( null === $created ? 0 : $created->getTimestamp() );
+		try {
+			$lookup = wc_get_container()->get( WooPaymentsChargeAmbiguityService::class )->find_order_intents( $order, array(), $since, $since );
+		} catch ( Throwable $exception ) {
+			$this->logger->log_throwable( sprintf( 'The charge of unpaid order #%d could not be looked up before its cancel.', $order->get_id() ), $exception, array( 'order_id' => $order->get_id() ) );
+			$lookup = array(
+				'status'  => WooPaymentsChargeAmbiguityService::LOOKUP_FAILED,
+				'intents' => array(),
+			);
+		}
+
+		$this->unpaid_order_reads_stopped = WooPaymentsChargeAmbiguityService::LOOKUP_FAILED === $lookup['status'];
+		if ( WooPaymentsChargeAmbiguityService::LOOKUP_DONE !== $lookup['status'] ) {
+			return null;
+		}
+
+		return WooPaymentsChargeAmbiguityService::find_intent_with_money( $lookup['intents'] ) ?? array();
 	}
 
 	/**

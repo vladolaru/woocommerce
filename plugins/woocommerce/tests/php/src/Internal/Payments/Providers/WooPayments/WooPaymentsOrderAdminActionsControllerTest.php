@@ -41,6 +41,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderMode;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
@@ -4298,6 +4299,321 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Core's hold-stock job settles from the account's intents an unpaid order that keeps only a charge key: a $status payment of its own goes $expected, with one lookup around the time the key was kept and no release.
+	 *
+	 * @testWith ["succeeded", "processing"]
+	 *           ["requires_capture", "on-hold"]
+	 *
+	 * @param string $status   Status of the order's own intent in the list.
+	 * @param string $expected Order status at the end.
+	 */
+	public function test_unpaid_order_keeping_only_a_charge_key_is_settled_from_the_payment_the_lookup_finds( string $status, string $expected ): void {
+		$kept_at    = time() - 3 * HOUR_IN_SECONDS;
+		$order      = $this->create_key_only_order( $kept_at );
+		$transport  = $this->create_transport( self::http_json( 200, self::intent_list( self::key_only_intent( $order, $status ) ) ) );
+		$processing = $this->createMock( PaymentProcessingService::class );
+		$processing->expects( $this->never() )->method( 'cancel' );
+
+		$this->run_unpaid_order_job( $transport, $processing );
+
+		$order = $this->reload( $order );
+		$this->assertSame( array( $kept_at - HOUR_IN_SECONDS, $kept_at + HOUR_IN_SECONDS ), $this->listed_window( $transport ), 'One account list, an hour either side of when the key was kept.' );
+		$this->assertSame( $expected, $order->get_status() );
+		$this->assertSame( 'pi_unpaid', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 0, $this->count_notes_containing( $order, 'Unpaid order cancelled' ) );
+	}
+
+	/**
+	 * @testdox Core's hold-stock job puts On hold, with the mismatch note, an unpaid order keeping only a charge key whose own payment the lookup finds is for another amount.
+	 */
+	public function test_unpaid_order_keeping_only_a_charge_key_whose_payment_is_for_another_amount_goes_on_hold(): void {
+		$order     = $this->create_key_only_order( time() - 3 * HOUR_IN_SECONDS );
+		$transport = $this->create_transport( self::http_json( 200, self::intent_list( self::key_only_intent( $order, 'succeeded', 500 ) ) ) );
+
+		$this->run_unpaid_order_job( $transport );
+
+		$order = $this->reload( $order );
+		$this->assertSame( OrderStatus::ON_HOLD, $order->get_status() );
+		$this->assertSame( 1, $this->count_notes_containing( $order, 'was put <strong>on hold</strong>' ) );
+		$this->assertSame( 0, $this->count_notes_containing( $order, 'Unpaid order cancelled' ) );
+	}
+
+	/**
+	 * @testdox Core's hold-stock job keeps an unpaid order keeping only a charge key whose own payment the lookup finds disputed, with the disputed-payment note naming that payment once.
+	 */
+	public function test_unpaid_order_keeping_only_a_charge_key_whose_payment_is_disputed_is_kept_with_its_note(): void {
+		$order                                      = $this->create_key_only_order( time() - 3 * HOUR_IN_SECONDS );
+		$disputed                                   = self::key_only_intent( $order, 'succeeded' );
+		$disputed['charges']['data'][0]['disputed'] = true;
+		$transport                                  = $this->create_transport( self::http_json( 200, self::intent_list( $disputed ) ), self::http_json( 200, self::intent_list( $disputed ) ) );
+
+		$this->run_unpaid_order_job( $transport );
+		$this->age_unpaid_order( $order );
+		$this->run_unpaid_order_job( $transport );
+
+		$order = $this->reload( $order );
+		$this->assertCount( 2, $this->request_paths( $transport ) );
+		$this->assertSame( OrderStatus::PENDING, $order->get_status() );
+		$this->assertSame( 1, $this->count_notes_containing( $order, '(pi_unpaid) is disputed' ) );
+	}
+
+	/**
+	 * @testdox Core's hold-stock job looks up an unpaid order keeping a charge key with no time kept from the order's creation.
+	 */
+	public function test_unpaid_order_keeping_a_charge_key_with_no_time_kept_is_looked_up_from_its_creation(): void {
+		$order     = $this->create_key_only_order( null );
+		$created   = (int) $order->get_date_created()->getTimestamp();
+		$transport = $this->create_transport( self::http_json( 200, self::intent_list() ) );
+
+		$this->run_unpaid_order_job( $transport );
+
+		$this->assertSame( array( $created - HOUR_IN_SECONDS, $created + HOUR_IN_SECONDS ), $this->listed_window( $transport ) );
+		$this->assertSame( OrderStatus::CANCELLED, $this->reload( $order )->get_status() );
+	}
+
+	/**
+	 * @testdox Core's hold-stock job cancels an unpaid order keeping only a charge key when the lookup finds no money of its own: $_dataName.
+	 *
+	 * @dataProvider key_only_lookups_without_money
+	 *
+	 * @param string                         $case_name Case name.
+	 * @param array<int,array<string,mixed>> $intents   Intents the account list returns, as built for the order.
+	 */
+	public function test_unpaid_order_keeping_only_a_charge_key_is_cancelled_when_the_lookup_finds_no_money( string $case_name, array $intents ): void {
+		unset( $case_name );
+		$order = $this->create_key_only_order( time() - 3 * HOUR_IN_SECONDS );
+		$list  = array();
+		foreach ( $intents as $intent ) {
+			$list[] = array_replace_recursive( self::key_only_intent( $order, (string) $intent['status'] ), $intent );
+		}
+		$transport = $this->create_transport( self::http_json( 200, self::intent_list( ...$list ) ) );
+
+		$this->run_unpaid_order_job( $transport );
+
+		$order = $this->reload( $order );
+		$this->assertCount( 1, $this->request_paths( $transport ), 'One lookup; the Cancelled listener reads nothing.' );
+		$this->assertSame( OrderStatus::CANCELLED, $order->get_status() );
+		$this->assertSame( 1, $this->count_notes_containing( $order, 'Unpaid order cancelled' ) );
+		$this->assertSame( 0, $this->count_notes_containing( $order, 'could not be checked' ) );
+	}
+
+	/**
+	 * Account lists in which an unpaid order keeping only a charge key has no money of its own.
+	 *
+	 * @return array<string,array{0:string,1:array<int,array<string,mixed>>}>
+	 */
+	public function key_only_lookups_without_money(): array {
+		return array(
+			'no intent'                => array( 'no intent', array() ),
+			'its own intent declined'  => array( 'its own intent declined', array( array( 'status' => 'requires_payment_method' ) ) ),
+			'its own payment refunded' => array(
+				'its own payment refunded',
+				array(
+					array(
+						'status'  => 'succeeded',
+						'charges' => array(
+							'data' => array(
+								array(
+									'refunded'        => true,
+									'amount_refunded' => 1099,
+								),
+							),
+						),
+					),
+				),
+			),
+			'another order\'s payment' => array(
+				'another order\'s payment',
+				array(
+					array(
+						'status'   => 'succeeded',
+						'metadata' => array(
+							'order_id'  => '999999',
+							'order_key' => 'wc_order_other',
+						),
+					),
+				),
+			),
+		);
+	}
+
+	/**
+	 * @testdox Core's hold-stock job keeps an unpaid order keeping only a charge key while the lookup cannot tell whether it was paid, $_dataName, and applies nothing.
+	 *
+	 * A loose match is an intent naming the order by ID without its key: it may be another store's order, so it never pays.
+	 *
+	 * @dataProvider key_only_lookups_that_cannot_tell
+	 *
+	 * @param string $case_name Case name.
+	 * @param mixed  $response  Transport response to the account list.
+	 * @param string $mode      Mode the order kept with the key; `store` for the store's.
+	 * @param int    $reads     Requests expected.
+	 */
+	public function test_unpaid_order_keeping_only_a_charge_key_is_kept_while_the_lookup_cannot_tell( string $case_name, $response, string $mode, int $reads ): void {
+		unset( $case_name );
+		$order = $this->create_key_only_order( time() - 3 * HOUR_IN_SECONDS, 'store' === $mode ? WooPaymentsOrderMode::PRODUCTION : $mode );
+		if ( is_callable( $response ) ) {
+			$response = $response( $order );
+		}
+		$transport           = $this->create_transport();
+		$transport->response = $response;
+
+		$this->run_unpaid_order_job( $transport );
+
+		$order = $this->reload( $order );
+		$this->assertCount( $reads, $this->request_paths( $transport ) );
+		$this->assertSame( OrderStatus::PENDING, $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_intent_id', true ), 'Nothing applied.' );
+		$this->assertSame( 0, $this->count_notes_containing( $order, 'could not be checked' ) + $this->count_notes_containing( $order, 'Unpaid order cancelled' ), 'Kept with no note.' );
+	}
+
+	/**
+	 * Lookups that cannot tell whether an unpaid order keeping only a charge key was paid.
+	 *
+	 * @return array<string,array{0:string,1:mixed,2:string,3:int}>
+	 */
+	public function key_only_lookups_that_cannot_tell(): array {
+		return array(
+			'more intents than one page'     => array(
+				'more intents than one page',
+				static fn( WC_Order $order ): array => self::http_json( 200, array( 'has_more' => true ) + self::intent_list( self::key_only_intent( $order, 'requires_payment_method' ) ) ),
+				'store',
+				1,
+			),
+			'a loose match holding money'    => array(
+				'a loose match holding money',
+				static fn( WC_Order $order ): array => self::http_json( 200, self::intent_list( self::unpaid_intent( $order, 'succeeded' ) ) ),
+				'store',
+				1,
+			),
+			'a refused list'                 => array(
+				'a refused list',
+				self::http_json(
+					400,
+					array(
+						'code'    => 'invalid_request_error',
+						'message' => 'Invalid created filter.',
+						'data'    => array( 'status' => 400 ),
+					)
+				),
+				'store',
+				1,
+			),
+			'an answer with no list'         => array( 'an answer with no list', self::http_json( 200, array( 'object' => 'list' ) ), 'store', 1 ),
+			'the key kept in the other mode' => array( 'the key kept in the other mode', self::http_json( 200, array( 'data' => array() ) ), WooPaymentsOrderMode::TEST, 0 ),
+		);
+	}
+
+	/**
+	 * @testdox Core's hold-stock job lets core cancel, with the one note, an unpaid order keeping only a charge key that the lookup could not tell about for a day after its creation.
+	 */
+	public function test_unpaid_order_keeping_only_a_charge_key_the_lookup_cannot_tell_about_is_cancelled_a_day_after_its_creation(): void {
+		$order               = $this->create_key_only_order( time() - 3 * HOUR_IN_SECONDS );
+		$transport           = $this->create_transport();
+		$transport->response = self::http_json( 200, array( 'has_more' => true ) + self::intent_list() );
+
+		$this->age_unpaid_order( $order, DAY_IN_SECONDS - MINUTE_IN_SECONDS );
+		$this->run_unpaid_order_job( $transport );
+		$this->assertSame( OrderStatus::PENDING, $this->reload( $order )->get_status(), 'Kept a minute before the day ends.' );
+
+		$this->age_unpaid_order( $order, DAY_IN_SECONDS + MINUTE_IN_SECONDS );
+		$this->run_unpaid_order_job( $transport );
+
+		$order = $this->reload( $order );
+		$this->assertCount( 2, $this->request_paths( $transport ) );
+		$this->assertSame( OrderStatus::CANCELLED, $order->get_status() );
+		$this->assertSame( 1, $this->count_notes( $order, 'The payment for this order could not be checked for a day, so the order is cancelled as unpaid. Before treating it as unpaid, check whether WooPayments received a payment for it.' ) );
+	}
+
+	/**
+	 * @testdox Core's hold-stock job keeps, with no platform read, an unpaid order whose order payment lock is held while it $_dataName.
+	 *
+	 * A checkout holds the lock while its charge is in flight, before any intent is stored.
+	 *
+	 * @testWith ["keeps only a charge key", "key"]
+	 *           ["stores the last attempt's canceled intent", "canceled"]
+	 *
+	 * @param string $case_name Case name.
+	 * @param string $stores    What the order stores: `key` for only a charge key, `canceled` for a canceled intent.
+	 */
+	public function test_unpaid_order_whose_lock_is_held_is_kept_unread_whatever_it_stores( string $case_name, string $stores ): void {
+		unset( $case_name );
+		$order = 'key' === $stores ? $this->create_key_only_order( time() - 3 * HOUR_IN_SECONDS ) : $this->create_unpaid_order( 'canceled' );
+		$this->assertNotNull( wc_get_container()->get( OrderPaymentLock::class )->claim( $order, new WooPaymentsPersistenceVocabulary(), 'charge_key_kept', 'payment operation' ) );
+		$transport = $this->create_transport( self::http_json( 200, self::intent_list() ) );
+
+		$this->run_unpaid_order_job( $transport );
+
+		$this->assertSame( array(), $this->request_paths( $transport ) );
+		$this->assertSame( OrderStatus::PENDING, $this->reload( $order )->get_status() );
+	}
+
+	/**
+	 * @testdox Core's hold-stock job puts On hold, instead of cancelling, an unpaid order whose stored intent the platform reads as a Multibanco voucher still awaiting payment.
+	 */
+	public function test_unpaid_order_whose_multibanco_voucher_awaits_payment_goes_on_hold(): void {
+		$order                             = $this->create_unpaid_order( 'requires_action' );
+		$voucher                           = self::unpaid_intent( $order, 'requires_action' );
+		$voucher['payment_method_options'] = array( 'multibanco' => array() );
+		$voucher['next_action']            = array(
+			'type'                       => 'multibanco_display_details',
+			'multibanco_display_details' => array(
+				'entity'     => '12345',
+				'reference'  => '123 456 789',
+				'expires_at' => time() + 3 * DAY_IN_SECONDS,
+			),
+		);
+		$transport                         = $this->create_transport( self::http_json( 200, $voucher ) );
+		$processing                        = $this->createMock( PaymentProcessingService::class );
+		$processing->expects( $this->never() )->method( 'cancel' );
+
+		$this->run_unpaid_order_job( $transport, $processing );
+
+		$order = $this->reload( $order );
+		$this->assertCount( 1, $this->request_paths( $transport ) );
+		$this->assertSame( OrderStatus::ON_HOLD, $order->get_status() );
+		$this->assertSame( 0, $this->count_notes_containing( $order, 'Unpaid order cancelled' ) );
+	}
+
+	/**
+	 * @testdox After a transport or server error, core's hold-stock job looks up no unpaid order keeping only a charge key for the rest of the run; a refused lookup stops nothing: $_dataName.
+	 *
+	 * Core's job takes the orders in the order they were created.
+	 *
+	 * @testWith ["a lookup's server error", "key", 502, 1]
+	 *           ["a read's server error before a lookup", "intent", 502, 1]
+	 *           ["a refused lookup", "key", 400, 2]
+	 *
+	 * @param string $case_name Case name.
+	 * @param string $first     What the first order stores: `key` for only a charge key, `intent` for an intent.
+	 * @param int    $code      HTTP status of every answer.
+	 * @param int    $reads     Requests expected for the two orders.
+	 */
+	public function test_unpaid_order_lookup_failure_stops_the_run_only_for_a_transport_or_server_error( string $case_name, string $first, int $code, int $reads ): void {
+		unset( $case_name );
+		$orders              = array(
+			'key' === $first ? $this->create_key_only_order( time() - 3 * HOUR_IN_SECONDS ) : $this->create_unpaid_order( 'requires_action' ),
+			$this->create_key_only_order( time() - 3 * HOUR_IN_SECONDS ),
+		);
+		$transport           = $this->create_transport();
+		$transport->response = 502 === $code ? self::platform_bad_gateway() : self::http_json(
+			$code,
+			array(
+				'code'    => 'invalid_request_error',
+				'message' => 'Refused.',
+				'data'    => array( 'status' => $code ),
+			)
+		);
+
+		$this->run_unpaid_order_job( $transport );
+
+		$this->assertCount( $reads, $this->request_paths( $transport ) );
+		foreach ( $orders as $order ) {
+			$this->assertSame( OrderStatus::PENDING, $this->reload( $order )->get_status() );
+		}
+	}
+
+	/**
 	 * Create a Pending checkout order for a shipped product, paid through WooPayments, storing an intent, last changed three
 	 * hours ago.
 	 *
@@ -4478,6 +4794,69 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 			'payment_method'    => 'pm_unpaid',
 			'metadata'          => array( 'order_id' => (string) $order->get_id() ),
 			'charges'           => array( 'data' => $charges ),
+		);
+	}
+
+	/**
+	 * Create a Pending checkout order that keeps a charge key and stores no intent, as a checkout request that died after
+	 * the platform's answer leaves it, last changed three hours ago.
+	 *
+	 * @param int|null $kept_at Unix time the key was kept, or null for a key kept with no time.
+	 * @param string   $mode    Mode the key was kept in.
+	 * @return WC_Order
+	 */
+	private function create_key_only_order( ?int $kept_at, string $mode = WooPaymentsOrderMode::PRODUCTION ): WC_Order {
+		$order = $this->create_unpaid_order( '', '' );
+		$order->update_meta_data( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, 'charge_key_kept' );
+		if ( null !== $kept_at ) {
+			$order->update_meta_data( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_KEPT_AT_META, (string) $kept_at );
+		}
+		$order->update_meta_data( '_wcpay_mode', $mode );
+		$order->save();
+		$this->age_unpaid_order( $order );
+
+		return $order;
+	}
+
+	/**
+	 * Get the creation window of the one account list the transport received.
+	 *
+	 * @param FakeHttpClient $transport Platform transport.
+	 * @return array<int,int> The window's start and end.
+	 */
+	private function listed_window( FakeHttpClient $transport ): array {
+		$this->assertCount( 1, $transport->requests );
+		parse_str( (string) wp_parse_url( (string) $transport->requests[0]['path'], PHP_URL_QUERY ), $query );
+
+		return array( (int) ( $query['created']['gte'] ?? 0 ), (int) ( $query['created']['lte'] ?? 0 ) );
+	}
+
+	/**
+	 * An intent of the order as the account list returns it, its metadata naming the order by ID and key.
+	 *
+	 * @param WC_Order $order  Order its metadata names.
+	 * @param string   $status Intent status.
+	 * @param int      $amount Amount in cents.
+	 * @return array<string,mixed>
+	 */
+	private static function key_only_intent( WC_Order $order, string $status, int $amount = 1099 ): array {
+		$intent                          = self::unpaid_intent( $order, $status, $amount );
+		$intent['metadata']['order_key'] = $order->get_order_key();
+
+		return $intent;
+	}
+
+	/**
+	 * A PaymentIntents list page holding the given intents and no more.
+	 *
+	 * @param array<string,mixed> ...$intents Intents.
+	 * @return array<string,mixed>
+	 */
+	private static function intent_list( array ...$intents ): array {
+		return array(
+			'object'   => 'list',
+			'data'     => $intents,
+			'has_more' => false,
 		);
 	}
 }
