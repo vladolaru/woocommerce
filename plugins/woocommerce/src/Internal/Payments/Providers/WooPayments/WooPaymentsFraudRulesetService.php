@@ -128,7 +128,6 @@ class WooPaymentsFraudRulesetService {
 	 * Re-send the Standard or High ruleset when a rebuild from the selling countries, the currency threshold and the review
 	 * setting differs from the cached one, or none is cached. It reads the stored level and the cache directly, so it makes
 	 * no platform read and leaves the level alone. A platform failure is logged: the save it follows was not about fraud.
-	 * A rebuilt ruleset the limits check refuses is logged and not sent.
 	 *
 	 * @return void
 	 */
@@ -141,10 +140,6 @@ class WooPaymentsFraudRulesetService {
 		$ruleset = 'standard' === $level ? $this->get_standard_fraud_ruleset() : $this->get_high_fraud_ruleset();
 		$cached  = get_transient( 'wcpay_fraud_protection_settings' );
 		if ( is_array( $cached ) && self::normalize_fraud_ruleset( $cached ) === self::normalize_fraud_ruleset( $ruleset ) ) {
-			return;
-		}
-		if ( null !== self::get_limits_error( $ruleset ) ) {
-			$this->logger->log_always( 'WooPayments fraud ruleset refresh skipped: a rebuilt limit would apply to every order or to none.', 'warning', array( 'protection_level' => $level ) );
 			return;
 		}
 
