@@ -298,8 +298,12 @@ describe( 'WooPayments settings store across settings routes', () => {
 		);
 		await save();
 
-		expect( posts[ 0 ] ).toEqual( { is_debug_log_enabled: true } );
-		expect( server.is_test_mode_enabled ).toBe( false );
+		expect( posts[ 0 ] ).toEqual(
+			expect.objectContaining( {
+				is_test_mode_enabled: false,
+				is_debug_log_enabled: true,
+			} )
+		);
 	} );
 
 	it( 'saves live mode after leaving while the settings still load, then going live and coming back', async () => {
@@ -352,8 +356,9 @@ describe( 'WooPayments settings store across settings routes', () => {
 		);
 		await save();
 
-		expect( posts[ 0 ] ).not.toHaveProperty( 'is_test_mode_enabled' );
-		expect( server.is_test_mode_enabled ).toBe( false );
+		expect( posts[ 0 ] ).toEqual(
+			expect.objectContaining( { is_test_mode_enabled: false } )
+		);
 	} );
 
 	it.each( [
@@ -437,8 +442,9 @@ describe( 'WooPayments settings store across settings routes', () => {
 			screen.getByRole( 'checkbox', { name: 'Log error messages' } )
 		);
 		await save();
-		expect( posts[ 0 ] ).not.toHaveProperty( 'is_test_mode_enabled' );
-		expect( server.is_test_mode_enabled ).toBe( false );
+		expect( posts[ 0 ] ).toEqual(
+			expect.objectContaining( { is_test_mode_enabled: false } )
+		);
 	} );
 
 	it( "leaves nothing to save when the next visit's read fails", async () => {
@@ -602,9 +608,11 @@ describe( 'WooPayments settings store across settings routes', () => {
 		);
 		await save();
 
-		expect( posts[ 0 ] ).not.toHaveProperty( 'is_saved_cards_enabled' );
 		expect( posts[ 0 ] ).toEqual(
-			expect.objectContaining( { current_protection_level: 'advanced' } )
+			expect.objectContaining( {
+				is_saved_cards_enabled: true,
+				current_protection_level: 'advanced',
+			} )
 		);
 	} );
 
@@ -637,6 +645,11 @@ describe( 'WooPayments settings store across settings routes', () => {
 		);
 		await save();
 
-		expect( posts[ 0 ] ).toEqual( { is_saved_cards_enabled: false } );
+		expect( posts[ 0 ] ).toEqual(
+			expect.objectContaining( {
+				is_debug_log_enabled: false,
+				is_saved_cards_enabled: false,
+			} )
+		);
 	} );
 } );

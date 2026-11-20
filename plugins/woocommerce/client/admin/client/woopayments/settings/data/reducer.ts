@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { isEqual } from 'lodash';
+import { isEqual, isEqualWith } from 'lodash';
 
 /**
  * Internal dependencies
@@ -40,21 +40,13 @@ const ORDER_FREE_LIST_SETTINGS = [
 	'express_checkout_checkout_methods',
 ];
 
-// The dirty check and the save both compare a setting with its saved value through this, so they cannot disagree.
-export const isSameSetting = (
-	key: string,
-	value: unknown,
-	savedValue: unknown
-) =>
-	ORDER_FREE_LIST_SETTINGS.includes( key ) &&
-	Array.isArray( value ) &&
-	Array.isArray( savedValue )
-		? isEqual( [ ...value ].sort(), [ ...savedValue ].sort() )
-		: isEqual( value, savedValue );
-
 const isSameSettings = ( data: SettingsData, savedData: SettingsData ) =>
-	Object.keys( { ...data, ...savedData } ).every( ( key ) =>
-		isSameSetting( key, data[ key ], savedData[ key ] )
+	isEqualWith( data, savedData, ( value, savedValue, key ) =>
+		ORDER_FREE_LIST_SETTINGS.includes( String( key ) ) &&
+		Array.isArray( value ) &&
+		Array.isArray( savedValue )
+			? isEqual( [ ...value ].sort(), [ ...savedValue ].sort() )
+			: undefined
 	);
 
 // An edit that returns every setting to its saved value leaves nothing to save.

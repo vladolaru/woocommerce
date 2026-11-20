@@ -5,14 +5,12 @@ import directApiFetch from '@wordpress/api-fetch';
 import { dispatch, select } from '@wordpress/data';
 import { apiFetch } from '@wordpress/data-controls';
 import { __ } from '@wordpress/i18n';
-import { pick } from 'lodash';
 
 /**
  * Internal dependencies
  */
 import ACTION_TYPES from './action-types';
 import { NAMESPACE } from './constants';
-import { isSameSetting } from './reducer';
 import { STORE_NAME } from './store-name';
 
 type SettingsValues = Record< string, unknown >;
@@ -29,17 +27,6 @@ type SettingsSaveResponse = {
 	};
 	payment_method_statuses?: unknown;
 };
-
-// Settings the server reads together, so a change to one is sent with the others.
-const SETTINGS_SAVED_TOGETHER = [
-	[ 'current_protection_level', 'advanced_fraud_protection_settings' ],
-	[
-		'deposit_schedule_interval',
-		'deposit_schedule_weekly_anchor',
-		'deposit_schedule_monthly_anchor',
-	],
-	[ 'is_manual_capture_enabled', 'enabled_payment_method_ids' ],
-];
 
 function hasFieldLevelErrorDetails( error: SettingsSaveError ) {
 	const details = error.data?.details;
@@ -256,16 +243,18 @@ export function* saveSettings(): Generator<
 	try {
 		const settings = select( STORE_NAME ).getSettings();
 		const savedSettings = select( STORE_NAME ).getSavedSettings();
-		// Only the changed settings are sent, with the others of their group, so a stored value the merchant did not touch
-		// cannot block the save. Client 11.3.0 sends every setting (client/data/settings/actions.js:183-194).
-		const changedKeys = Object.keys( settings ).filter(
-			( key ) =>
-				! isSameSetting( key, settings[ key ], savedSettings[ key ] )
-		);
-		const groupKeys = SETTINGS_SAVED_TOGETHER.filter( ( group ) =>
-			group.some( ( key ) => changedKeys.includes( key ) )
-		).flat();
-		const data = pick( settings, [ ...changedKeys, ...groupKeys ] );
+		// The checkbox is also the Features page's Multi-Currency switch, so a save sends it only when it was changed here:
+		// a page loaded before a Features page change must not switch Multi-Currency back. Client 11.1.0 sends every
+		// setting (client/data/settings/actions.js:186-194), its checkbox being the only switch.
+		const {
+			is_multi_currency_enabled: isMultiCurrencyEnabled,
+			...otherSettings
+		} = settings;
+		const data =
+			'is_multi_currency_enabled' in settings &&
+			isMultiCurrencyEnabled !== savedSettings.is_multi_currency_enabled
+				? settings
+				: otherSettings;
 
 		yield updateIsSavingSettings( true, null );
 

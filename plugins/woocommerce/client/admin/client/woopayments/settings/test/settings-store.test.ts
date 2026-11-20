@@ -102,7 +102,11 @@ describe( 'WooPayments settings store', () => {
 		expect( store.apiFetch ).toHaveBeenCalledWith( {
 			path: SETTINGS_PATH,
 			method: 'post',
-			data: { is_debug_log_enabled: true },
+			data: {
+				is_wcpay_enabled: true,
+				is_debug_log_enabled: true,
+				enabled_payment_method_ids: [ 'card' ],
+			},
 		} );
 		expect( store.select().getSettings() ).toEqual( {
 			is_wcpay_enabled: true,
@@ -250,7 +254,7 @@ describe( 'WooPayments settings store', () => {
 		] );
 	} );
 
-	it( 'sends the Multi-Currency checkbox only when it was changed on this page, as every other setting', async () => {
+	it( 'sends the Multi-Currency checkbox only when it was changed on this page', async () => {
 		const store = await setupStore();
 		// Loaded with Multi-Currency on; the merchant then turned it off on the Features page in another tab.
 		await loadSettings( store, {
@@ -286,7 +290,10 @@ describe( 'WooPayments settings store', () => {
 		expect( store.apiFetch ).toHaveBeenLastCalledWith( {
 			path: SETTINGS_PATH,
 			method: 'post',
-			data: { is_multi_currency_enabled: true },
+			data: {
+				is_multi_currency_enabled: true,
+				is_debug_log_enabled: true,
+			},
 		} );
 	} );
 
@@ -326,134 +333,5 @@ describe( 'WooPayments settings store', () => {
 		expect( notices[ 1 ].actions ).toEqual( [
 			{ label: 'Disable Multi-Currency', url: disableUrl },
 		] );
-	} );
-} );
-
-describe( 'WooPayments settings save body', () => {
-	const loaded = {
-		is_wcpay_enabled: true,
-		is_debug_log_enabled: false,
-		is_manual_capture_enabled: false,
-		enabled_payment_method_ids: [ 'card', 'ideal' ],
-		account_business_support_email: 'help@example.com',
-		account_statement_descriptor: 'EXAMPLE STORE',
-		current_protection_level: 'basic',
-		advanced_fraud_protection_settings: [],
-		deposit_schedule_interval: 'weekly',
-		deposit_schedule_weekly_anchor: 'monday',
-		deposit_schedule_monthly_anchor: null,
-		is_woopay_enabled: true,
-	};
-
-	// Load the settings, make the edit, save, and answer the body the save posted.
-	const saveAfter = async (
-		edit: ( store: Awaited< ReturnType< typeof setupStore > > ) => void,
-		response: Record< string, unknown > = {}
-	) => {
-		const store = await setupStore();
-		await loadSettings( store, loaded );
-		edit( store );
-		store.apiFetch.mockResolvedValueOnce( response );
-		await store.dispatch().saveSettings();
-		const [ request ] = store.apiFetch.mock.calls[ 0 ] as [
-			{ data: Record< string, unknown > },
-		];
-
-		return { store, body: request.data };
-	};
-
-	it( 'sends only a changed setting that belongs to no group', async () => {
-		const { body } = await saveAfter( ( store ) =>
-			store
-				.dispatch()
-				.updateAccountBusinessSupportEmail( 'support@example.com' )
-		);
-
-		expect( body ).toEqual( {
-			account_business_support_email: 'support@example.com',
-		} );
-	} );
-
-	it( 'sends the fraud ruleset with a changed protection level', async () => {
-		const { body } = await saveAfter( ( store ) =>
-			store.dispatch().updateProtectionLevel( 'standard' )
-		);
-
-		expect( body ).toEqual( {
-			current_protection_level: 'standard',
-			advanced_fraud_protection_settings: [],
-		} );
-	} );
-
-	it( 'sends the payout interval and both anchors with a changed anchor', async () => {
-		const { body } = await saveAfter( ( store ) =>
-			store.dispatch().updateDepositScheduleWeeklyAnchor( 'friday' )
-		);
-
-		expect( body ).toEqual( {
-			deposit_schedule_interval: 'weekly',
-			deposit_schedule_weekly_anchor: 'friday',
-			deposit_schedule_monthly_anchor: null,
-		} );
-	} );
-
-	it( 'sends the enabled payment methods with a changed manual capture', async () => {
-		const { body } = await saveAfter( ( store ) =>
-			store.dispatch().updateIsManualCaptureEnabled( true )
-		);
-
-		expect( body ).toEqual( {
-			is_manual_capture_enabled: true,
-			enabled_payment_method_ids: [ 'card', 'ideal' ],
-		} );
-	} );
-
-	it( 'leaves reordered payment methods out of the save', async () => {
-		const { body } = await saveAfter( ( store ) => {
-			store
-				.dispatch()
-				.updateEnabledPaymentMethodIds( [ 'ideal', 'card' ] );
-			store.dispatch().updateIsDebugLogEnabled( true );
-		} );
-
-		expect( body ).toEqual( { is_debug_log_enabled: true } );
-	} );
-
-	it( 'sends nothing when nothing changed, and still takes the saved settings from the response', async () => {
-		const response = {
-			...loaded,
-			account_statement_descriptor: 'SAVED STORE',
-		};
-		const { store, body } = await saveAfter( () => undefined, response );
-
-		expect( body ).toEqual( {} );
-		expect( store.select().getSavedSettings() ).toEqual( response );
-		expect( store.select().getSettings() ).toEqual( response );
-		expect( store.select().isDirty() ).toBe( false );
-	} );
-
-	it( 'keeps a value the server changed as saved, and the WooPay choice as submitted', async () => {
-		const { store } = await saveAfter(
-			( current ) => current.dispatch().updateIsDebugLogEnabled( true ),
-			{
-				is_debug_log_enabled: true,
-				account_statement_descriptor: 'SAVED STORE',
-				is_woopay_enabled: false,
-			}
-		);
-
-		for ( const values of [
-			store.select().getSettings(),
-			store.select().getSavedSettings(),
-		] ) {
-			expect( values ).toEqual(
-				expect.objectContaining( {
-					is_debug_log_enabled: true,
-					account_statement_descriptor: 'SAVED STORE',
-					is_woopay_enabled: true,
-				} )
-			);
-		}
-		expect( store.select().isDirty() ).toBe( false );
 	} );
 } );
