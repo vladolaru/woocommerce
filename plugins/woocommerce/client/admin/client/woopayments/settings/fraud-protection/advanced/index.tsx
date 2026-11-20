@@ -64,13 +64,6 @@ import {
 } from '../../settings-values';
 import './style.scss';
 
-type WindowWithWooSettings = Window & {
-	wcSettings?: {
-		adminUrl?: string;
-		countries?: Record< string, string >;
-	};
-};
-
 const CVC_VERIFICATION_DOC_URL =
 	'https://woocommerce.com/document/woopayments/fraud-and-disputes/fraud-protection/#advanced-configuration';
 const IP_ADDRESS_DOC_URL = 'https://simple.wikipedia.org/wiki/IP_address';
@@ -129,16 +122,14 @@ type FraudProtectionEnvironment = ReturnType<
 >;
 
 const getWooCommerceGeneralSettingsUrl = () => {
-	const adminUrl =
-		( window as WindowWithWooSettings ).wcSettings?.adminUrl || '';
+	const adminUrl = window.wcSettings?.adminUrl || '';
 	const separator = adminUrl.endsWith( '/' ) || adminUrl === '' ? '' : '/';
 
 	return `${ adminUrl }${ separator }admin.php?page=wc-settings&tab=general`;
 };
 
 const getCountryNames = ( countryCodes: string[] ) => {
-	const countryNames =
-		( window as WindowWithWooSettings ).wcSettings?.countries || {};
+	const countryNames = window.wcSettings?.countries || {};
 
 	return countryCodes.map( ( countryCode ) => {
 		return decodeEntities( countryNames[ countryCode ] || countryCode );
@@ -832,6 +823,14 @@ export const FraudProtectionAdvancedSettingsPage = () => {
 		);
 	}
 
+	const ruleProps = {
+		settings: protectionSettingsUI,
+		onSettingsChange: updateProtectionSettingsUI,
+	};
+	const ruleToggleProps = {
+		...ruleProps,
+		isReviewFeatureActive: environment.isReviewFeatureActive,
+	};
 	const supportsAllCountries = environment.allowedCountriesType === 'all';
 	const isSellingToSupportedAvsLocations =
 		isSellingToAvsSupportedLocations( environment );
@@ -916,13 +915,7 @@ export const FraudProtectionAdvancedSettingsPage = () => {
 											'This filter compares the post code submitted by the customer against the post code on file with the card issuer. The payment will be blocked if the two post codes do not match. AVS checks are not supported by every country or card issuer, so this filter will not block all payments with a mismatched post code.',
 											'woocommerce'
 										) }
-										settings={ protectionSettingsUI }
-										onSettingsChange={
-											updateProtectionSettingsUI
-										}
-										isReviewFeatureActive={
-											environment.isReviewFeatureActive
-										}
+										{ ...ruleToggleProps }
 									/>
 									<RuleDescription>
 										{ __(
@@ -984,13 +977,7 @@ export const FraudProtectionAdvancedSettingsPage = () => {
 													),
 												}
 											) }
-											settings={ protectionSettingsUI }
-											onSettingsChange={
-												updateProtectionSettingsUI
-											}
-											isReviewFeatureActive={
-												environment.isReviewFeatureActive
-											}
+											{ ...ruleToggleProps }
 										/>
 									) }
 									{ ! supportsAllCountries && (
@@ -1042,13 +1029,7 @@ export const FraudProtectionAdvancedSettingsPage = () => {
 												),
 											}
 										) }
-										settings={ protectionSettingsUI }
-										onSettingsChange={
-											updateProtectionSettingsUI
-										}
-										isReviewFeatureActive={
-											environment.isReviewFeatureActive
-										}
+										{ ...ruleToggleProps }
 									/>
 									<RuleDescription>
 										{ __(
@@ -1078,13 +1059,7 @@ export const FraudProtectionAdvancedSettingsPage = () => {
 											'This filter screens for differences between the shipping information and the billing information (country). When enabled the payment will be blocked.',
 											'woocommerce'
 										) }
-										settings={ protectionSettingsUI }
-										onSettingsChange={
-											updateProtectionSettingsUI
-										}
-										isReviewFeatureActive={
-											environment.isReviewFeatureActive
-										}
+										{ ...ruleToggleProps }
 									/>
 									<RuleDescription>
 										{ __(
@@ -1116,22 +1091,13 @@ export const FraudProtectionAdvancedSettingsPage = () => {
 											'This filter compares the purchase price of an order to the minimum and maximum purchase amounts that you specify. When enabled the payment will be blocked.',
 											'woocommerce'
 										) }
-										settings={ protectionSettingsUI }
-										onSettingsChange={
-											updateProtectionSettingsUI
-										}
-										isReviewFeatureActive={
-											environment.isReviewFeatureActive
-										}
+										{ ...ruleToggleProps }
 									>
 										<ThresholdControls
 											setting={
 												Rules.RULE_PURCHASE_PRICE_THRESHOLD
 											}
-											settings={ protectionSettingsUI }
-											onSettingsChange={
-												updateProtectionSettingsUI
-											}
+											{ ...ruleProps }
 											environment={ environment }
 										/>
 									</RuleToggle>
@@ -1165,22 +1131,13 @@ export const FraudProtectionAdvancedSettingsPage = () => {
 											'This filter compares the amount of items in an order to the minimum and maximum counts that you specify. When enabled the payment will be blocked.',
 											'woocommerce'
 										) }
-										settings={ protectionSettingsUI }
-										onSettingsChange={
-											updateProtectionSettingsUI
-										}
-										isReviewFeatureActive={
-											environment.isReviewFeatureActive
-										}
+										{ ...ruleToggleProps }
 									>
 										<ThresholdControls
 											setting={
 												Rules.RULE_ORDER_ITEMS_THRESHOLD
 											}
-											settings={ protectionSettingsUI }
-											onSettingsChange={
-												updateProtectionSettingsUI
-											}
+											{ ...ruleProps }
 											environment={ environment }
 										/>
 									</RuleToggle>

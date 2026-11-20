@@ -146,6 +146,8 @@ export const FraudProtectionSettings = () => {
 		savedAdvancedFraudProtectionSettings.length > 0;
 	const isAdvancedSelected =
 		normalizedProtectionLevel === ProtectionLevel.ADVANCED;
+	const canConfigureAdvanced =
+		isAdvancedSelected && ! hasFraudProtectionSettingsError;
 
 	const onLevelChange = ( level: string ) => () => {
 		recordEvent( 'wcpay_fraud_protection_risk_level_preset_enabled', {
@@ -157,7 +159,7 @@ export const FraudProtectionSettings = () => {
 	const onConfigureAdvanced = (
 		event: MouseEvent< HTMLAnchorElement | HTMLButtonElement >
 	) => {
-		if ( ! isAdvancedSelected || hasFraudProtectionSettingsError ) {
+		if ( ! canConfigureAdvanced ) {
 			event.preventDefault();
 			return;
 		}
@@ -253,15 +255,11 @@ export const FraudProtectionSettings = () => {
 					<Button
 						variant="secondary"
 						href={
-							isAdvancedSelected &&
-							! hasFraudProtectionSettingsError
+							canConfigureAdvanced
 								? advancedSettingsUrl
 								: undefined
 						}
-						disabled={
-							! isAdvancedSelected ||
-							hasFraudProtectionSettingsError
-						}
+						disabled={ ! canConfigureAdvanced }
 						onClick={ onConfigureAdvanced }
 					>
 						{ isAdvancedSettingsConfigured
