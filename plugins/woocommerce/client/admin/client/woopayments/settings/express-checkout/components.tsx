@@ -5,6 +5,13 @@ import { CheckboxControl, Notice } from '@wordpress/components';
 import { __ } from '@wordpress/i18n';
 import type { ReactNode } from 'react';
 
+/**
+ * Internal dependencies
+ */
+import { SettingsSection } from '../settings-shell';
+import { ExpressCheckoutMethodIcons } from './method-icons';
+import type { ExpressCheckoutMethod } from './settings-utils';
+
 export type ExpressCheckoutLocation = 'product' | 'cart' | 'checkout';
 
 type LocationCheckboxesProps = {
@@ -28,6 +35,85 @@ export const ExpressCheckoutInlineNotice = ( {
 	>
 		{ children }
 	</Notice>
+);
+
+/**
+ * The method subpage's first section: the method's icons and description above its enable controls.
+ *
+ * @param props             The component props.
+ * @param props.methodId    The express checkout method.
+ * @param props.title       The section's hidden title.
+ * @param props.description The translated description shown under the icons.
+ * @param props.children    The section's controls.
+ */
+export const ExpressCheckoutEnableSection = ( {
+	methodId,
+	title,
+	description,
+	children,
+}: {
+	methodId: ExpressCheckoutMethod;
+	title: string;
+	description: string;
+	children: ReactNode;
+} ) => (
+	<SettingsSection
+		className="woopayments-express-checkout-settings__enable"
+		title={ title }
+		hideTitle
+		description={
+			<>
+				<ExpressCheckoutMethodIcons methodId={ methodId } />
+				<p>{ description }</p>
+			</>
+		}
+	>
+		{ children }
+	</SettingsSection>
+);
+
+/**
+ * The method subpage's "Settings" section, which holds the button appearance controls.
+ *
+ * @param props             The component props.
+ * @param props.description The translated description of the section.
+ * @param props.children    The section's controls.
+ */
+export const ExpressCheckoutGeneralSection = ( {
+	description,
+	children,
+}: {
+	description: string;
+	children: ReactNode;
+} ) => (
+	<SettingsSection
+		className="woopayments-express-checkout-settings__general"
+		title={ __( 'Settings', 'woocommerce' ) }
+		description={ <p>{ description }</p> }
+	>
+		{ children }
+	</SettingsSection>
+);
+
+export const ExpressCheckoutInPaymentMethodsListCheckbox = ( {
+	checked,
+	help,
+	onChange,
+}: {
+	checked: boolean;
+	help: string;
+	onChange: ( value: boolean ) => void;
+} ) => (
+	<CheckboxControl
+		checked={ checked }
+		label={ __(
+			'Enable express checkout methods as options in the payment methods list',
+			'woocommerce'
+		) }
+		help={ help }
+		onChange={ ( value ) => onChange( Boolean( value ) ) }
+		__nextHasNoMarginBottom
+	/>
 );
 
 export const ExpressCheckoutLocationCheckboxes = ( {

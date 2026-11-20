@@ -11,7 +11,7 @@ import {
 	ExpressCheckoutInlineNotice,
 	ExpressCheckoutPreviewFallback,
 } from './components';
-import { asSettingsRecord } from '../settings-values';
+import { asSettingsRecord, asString } from '../settings-values';
 import WooPayLogoImage from './assets/woopay-preview-logo.svg';
 import {
 	useGetSettings,
@@ -65,9 +65,6 @@ const BUTTON_HEIGHT_BY_SIZE: Record< string, number > = {
 const STRIPE_SCRIPT_ID = 'woopayments-settings-stripe-js';
 const STRIPE_SCRIPT_URL = 'https://js.stripe.com/v3/';
 let stripeScriptPromise: Promise< StripeFactory | undefined > | null = null;
-
-const isRecord = ( value: unknown ): value is Record< string, unknown > =>
-	!! value && typeof value === 'object' && ! Array.isArray( value );
 
 const getStripeFactory = (): StripeFactory | undefined =>
 	( window as typeof window & { Stripe?: StripeFactory } ).Stripe;
@@ -154,24 +151,14 @@ const getStripeButtonType = ( type: string ): string =>
 const getStripePreviewConfig = (
 	settings: Record< string, unknown >
 ): StripePreviewConfig => {
-	const preview = settings.express_checkout_preview;
-	if ( ! isRecord( preview ) || ! isRecord( preview.stripe ) ) {
-		return {};
-	}
+	const stripe = asSettingsRecord(
+		asSettingsRecord( settings.express_checkout_preview ).stripe
+	);
 
 	return {
-		publishableKey:
-			typeof preview.stripe.publishableKey === 'string'
-				? preview.stripe.publishableKey
-				: '',
-		accountId:
-			typeof preview.stripe.accountId === 'string'
-				? preview.stripe.accountId
-				: '',
-		locale:
-			typeof preview.stripe.locale === 'string'
-				? preview.stripe.locale
-				: 'auto',
+		publishableKey: asString( stripe.publishableKey ),
+		accountId: asString( stripe.accountId ),
+		locale: asString( stripe.locale, 'auto' ),
 	};
 };
 

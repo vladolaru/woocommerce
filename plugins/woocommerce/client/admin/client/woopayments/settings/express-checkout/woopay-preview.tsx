@@ -49,22 +49,20 @@ const getAppearance = ( value: unknown ): WooPayAppearance | undefined => {
 
 	let variables: AppearanceRule | undefined;
 	if ( isObject( value.variables ) ) {
-		variables = {};
+		const nextVariables: AppearanceRule = {};
 		Object.entries( value.variables ).forEach( ( [ key, item ] ) => {
 			const stringValue = getString( item );
 
 			if ( stringValue ) {
-				variables = {
-					...variables,
-					[ key ]: stringValue,
-				};
+				nextVariables[ key ] = stringValue;
 			}
 		} );
+		variables = nextVariables;
 	}
 
 	let rules: Record< string, AppearanceRule > | undefined;
 	if ( isObject( value.rules ) ) {
-		rules = {};
+		const nextRules: Record< string, AppearanceRule > = {};
 		Object.entries( value.rules ).forEach( ( [ key, item ] ) => {
 			if ( ! isObject( item ) ) {
 				return;
@@ -80,12 +78,10 @@ const getAppearance = ( value: unknown ): WooPayAppearance | undefined => {
 			} );
 
 			if ( Object.keys( rule ).length > 0 ) {
-				rules = {
-					...rules,
-					[ key ]: rule,
-				};
+				nextRules[ key ] = rule;
 			}
 		} );
+		rules = nextRules;
 	}
 
 	return { variables, rules };

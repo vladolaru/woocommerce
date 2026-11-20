@@ -8,14 +8,19 @@ import { __ } from '@wordpress/i18n';
  * Internal dependencies
  */
 import { ExpressCheckoutAppearanceSettings } from './appearance-settings';
-import { ExpressCheckoutLocationCheckboxes } from './components';
-import { SettingsSection } from '../settings-shell';
-import { ExpressCheckoutMethodIcons } from './method-icons';
+import {
+	ExpressCheckoutEnableSection,
+	ExpressCheckoutGeneralSection,
+	ExpressCheckoutInPaymentMethodsListCheckbox,
+	ExpressCheckoutLocationCheckboxes,
+	type ExpressCheckoutLocation,
+} from './components';
 import {
 	getExpressCheckoutFeatureFlags,
 	isExpressCheckoutInPaymentMethodsListSupported,
 } from './settings-utils';
 import { asSettingsRecord } from '../settings-values';
+import type { BooleanSetting } from '../sections/utils';
 import {
 	useExpressCheckoutInPaymentMethodsEnabledSettings,
 	useGetAvailablePaymentMethodIds,
@@ -35,24 +40,15 @@ export const PaymentRequestSettings = () => {
 	const supportsPaymentMethodsListMode =
 		isExpressCheckoutInPaymentMethodsListSupported( settings );
 	const [ isPaymentRequestEnabled, setIsPaymentRequestEnabled ] =
-		usePaymentRequestEnabledSettings() as [
-			boolean,
-			( value: boolean ) => void,
-		];
+		usePaymentRequestEnabledSettings() as BooleanSetting;
 	const [
 		isExpressCheckoutInPaymentMethodsEnabled,
 		setIsExpressCheckoutInPaymentMethodsEnabled,
-	] = useExpressCheckoutInPaymentMethodsEnabledSettings() as [
-		boolean,
-		( value: boolean ) => void,
-	];
+	] = useExpressCheckoutInPaymentMethodsEnabledSettings() as BooleanSetting;
 	const [ paymentRequestLocations, updatePaymentRequestLocation ] =
 		usePaymentRequestLocations() as [
 			string[],
-			(
-				location: 'product' | 'cart' | 'checkout',
-				value: boolean
-			) => void,
+			( location: ExpressCheckoutLocation, value: boolean ) => void,
 		];
 	const isPaymentMethodsListMode =
 		supportsPaymentMethodsListMode &&
@@ -70,21 +66,13 @@ export const PaymentRequestSettings = () => {
 
 	return (
 		<>
-			<SettingsSection
-				className="woopayments-express-checkout-settings__enable"
+			<ExpressCheckoutEnableSection
+				methodId="payment_request"
 				title={ __( 'Apple Pay / Google Pay', 'woocommerce' ) }
-				hideTitle
-				description={
-					<>
-						<ExpressCheckoutMethodIcons methodId="payment_request" />
-						<p>
-							{ __(
-								'Allow your customers to collect payments via Apple Pay and Google Pay.',
-								'woocommerce'
-							) }
-						</p>
-					</>
-				}
+				description={ __(
+					'Allow your customers to collect payments via Apple Pay and Google Pay.',
+					'woocommerce'
+				) }
 			>
 				<CheckboxControl
 					checked={ isPaymentRequestEnabled }
@@ -102,19 +90,10 @@ export const PaymentRequestSettings = () => {
 					__nextHasNoMarginBottom
 				/>
 				{ supportsPaymentMethodsListMode && (
-					<CheckboxControl
+					<ExpressCheckoutInPaymentMethodsListCheckbox
 						checked={ isExpressCheckoutInPaymentMethodsEnabled }
-						label={ __(
-							'Enable express checkout methods as options in the payment methods list',
-							'woocommerce'
-						) }
 						help={ paymentMethodsListModeHelp }
-						onChange={ ( value ) =>
-							setIsExpressCheckoutInPaymentMethodsEnabled(
-								Boolean( value )
-							)
-						}
-						__nextHasNoMarginBottom
+						onChange={ setIsExpressCheckoutInPaymentMethodsEnabled }
 					/>
 				) }
 				<ExpressCheckoutLocationCheckboxes
@@ -123,23 +102,15 @@ export const PaymentRequestSettings = () => {
 					isPaymentMethodsListMode={ isPaymentMethodsListMode }
 					onChange={ updatePaymentRequestLocation }
 				/>
-			</SettingsSection>
-			<SettingsSection
-				className="woopayments-express-checkout-settings__general"
-				title={ __( 'Settings', 'woocommerce' ) }
-				description={
-					<>
-						<p>
-							{ __(
-								'Configure the display of Apple Pay and Google Pay buttons on your store.',
-								'woocommerce'
-							) }
-						</p>
-					</>
-				}
+			</ExpressCheckoutEnableSection>
+			<ExpressCheckoutGeneralSection
+				description={ __(
+					'Configure the display of Apple Pay and Google Pay buttons on your store.',
+					'woocommerce'
+				) }
 			>
 				<ExpressCheckoutAppearanceSettings currentMethod="payment_request" />
-			</SettingsSection>
+			</ExpressCheckoutGeneralSection>
 		</>
 	);
 };

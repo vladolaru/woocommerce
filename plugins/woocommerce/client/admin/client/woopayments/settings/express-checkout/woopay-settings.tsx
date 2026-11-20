@@ -24,14 +24,17 @@ import type { ChangeEvent } from 'react';
  */
 import { ExpressCheckoutAppearanceSettings } from './appearance-settings';
 import {
+	ExpressCheckoutEnableSection,
+	ExpressCheckoutGeneralSection,
 	ExpressCheckoutInlineNotice,
 	ExpressCheckoutLocationCheckboxes,
+	type ExpressCheckoutLocation,
 } from './components';
 import { SettingsSection } from '../settings-shell';
-import { ExpressCheckoutMethodIcons } from './method-icons';
 import { TextLink } from '../text-link';
 import { getExpressCheckoutFeatureFlags } from './settings-utils';
 import { asSettingsRecord, asString } from '../settings-values';
+import type { BooleanSetting, StringSetting } from '../sections/utils';
 import {
 	useEnabledPaymentMethodIds,
 	useGetSavedSettings,
@@ -231,25 +234,20 @@ export const WooPaySettings = () => {
 	const featureFlags = getExpressCheckoutFeatureFlags( settings );
 	const [ enabledMethodIds ] = useEnabledPaymentMethodIds() as [ string[] ];
 	const [ isWooPayEnabled, setIsWooPayEnabled ] =
-		useWooPayEnabledSettings() as [ boolean, ( value: boolean ) => void ];
+		useWooPayEnabledSettings() as BooleanSetting;
 	const isWooPaySaved = Boolean(
 		asSettingsRecord( useGetSavedSettings() ).is_woopay_enabled
 	);
 	const [ wooPayLocations, updateWooPayLocation ] = useWooPayLocations() as [
 		string[],
-		( location: 'product' | 'cart' | 'checkout', value: boolean ) => void,
+		( location: ExpressCheckoutLocation, value: boolean ) => void,
 	];
 	const [ isWooPayGlobalThemeSupportEnabled, setWooPayGlobalThemeSupport ] =
-		useWooPayGlobalThemeSupportEnabledSettings() as [
-			boolean,
-			( value: boolean ) => void,
-		];
+		useWooPayGlobalThemeSupportEnabledSettings() as BooleanSetting;
 	const [ wooPayCustomMessage, setWooPayCustomMessage ] =
-		useWooPayCustomMessage() as [ string, ( value: string ) => void ];
-	const [ wooPayStoreLogo, setWooPayStoreLogo ] = useWooPayStoreLogo() as [
-		string,
-		( value: string ) => void,
-	];
+		useWooPayCustomMessage() as StringSetting;
+	const [ wooPayStoreLogo, setWooPayStoreLogo ] =
+		useWooPayStoreLogo() as StringSetting;
 	const showIncompatibilityNotice = Boolean(
 		useWooPayShowIncompatibilityNotice()
 	);
@@ -288,21 +286,13 @@ export const WooPaySettings = () => {
 
 	return (
 		<>
-			<SettingsSection
-				className="woopayments-express-checkout-settings__enable"
+			<ExpressCheckoutEnableSection
+				methodId="woopay"
 				title={ __( 'WooPay', 'woocommerce' ) }
-				hideTitle
-				description={
-					<>
-						<ExpressCheckoutMethodIcons methodId="woopay" />
-						<p>
-							{ __(
-								'Allow your customers to collect payments via WooPay.',
-								'woocommerce'
-							) }
-						</p>
-					</>
-				}
+				description={ __(
+					'Allow your customers to collect payments via WooPay.',
+					'woocommerce'
+				) }
 			>
 				{ showIncompatibilityNotice && ! isStripeLinkEnabled && (
 					<ExpressCheckoutInlineNotice>
@@ -385,7 +375,7 @@ export const WooPaySettings = () => {
 					isMethodEnabled={ isWooPayEnabled }
 					onChange={ updateWooPayLocation }
 				/>
-			</SettingsSection>
+			</ExpressCheckoutEnableSection>
 			<SettingsSection
 				className="woopayments-express-checkout-settings__appearance-card"
 				title={ __( 'Checkout appearance', 'woocommerce' ) }
@@ -481,22 +471,14 @@ export const WooPaySettings = () => {
 				</BaseControl>
 			</SettingsSection>
 			{ featureFlags.woopayExpressCheckout && (
-				<SettingsSection
-					className="woopayments-express-checkout-settings__general"
-					title={ __( 'Settings', 'woocommerce' ) }
-					description={
-						<>
-							<p>
-								{ __(
-									'Configure the display of WooPay buttons on your store.',
-									'woocommerce'
-								) }
-							</p>
-						</>
-					}
+				<ExpressCheckoutGeneralSection
+					description={ __(
+						'Configure the display of WooPay buttons on your store.',
+						'woocommerce'
+					) }
 				>
 					<ExpressCheckoutAppearanceSettings currentMethod="woopay" />
-				</SettingsSection>
+				</ExpressCheckoutGeneralSection>
 			) }
 		</>
 	);

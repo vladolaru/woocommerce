@@ -8,11 +8,16 @@ import { __ } from '@wordpress/i18n';
  * Internal dependencies
  */
 import { ExpressCheckoutAppearanceSettings } from './appearance-settings';
-import { ExpressCheckoutLocationCheckboxes } from './components';
-import { SettingsSection } from '../settings-shell';
-import { ExpressCheckoutMethodIcons } from './method-icons';
+import {
+	ExpressCheckoutEnableSection,
+	ExpressCheckoutGeneralSection,
+	ExpressCheckoutInPaymentMethodsListCheckbox,
+	ExpressCheckoutLocationCheckboxes,
+	type ExpressCheckoutLocation,
+} from './components';
 import { isExpressCheckoutInPaymentMethodsListSupported } from './settings-utils';
 import { asSettingsRecord } from '../settings-values';
+import type { BooleanSetting } from '../sections/utils';
 import {
 	useAmazonPayEnabledSettings,
 	useAmazonPayLocations,
@@ -25,46 +30,29 @@ export const AmazonPaySettings = () => {
 	const supportsPaymentMethodsListMode =
 		isExpressCheckoutInPaymentMethodsListSupported( settings );
 	const [ isAmazonPayEnabled, setIsAmazonPayEnabled ] =
-		useAmazonPayEnabledSettings() as [
-			boolean,
-			( value: boolean ) => void,
-		];
+		useAmazonPayEnabledSettings() as BooleanSetting;
 	const [ amazonPayLocations, updateAmazonPayLocation ] =
 		useAmazonPayLocations() as [
 			string[],
-			(
-				location: 'product' | 'cart' | 'checkout',
-				value: boolean
-			) => void,
+			( location: ExpressCheckoutLocation, value: boolean ) => void,
 		];
 	const [
 		isExpressCheckoutInPaymentMethodsEnabled,
 		setIsExpressCheckoutInPaymentMethodsEnabled,
-	] = useExpressCheckoutInPaymentMethodsEnabledSettings() as [
-		boolean,
-		( value: boolean ) => void,
-	];
+	] = useExpressCheckoutInPaymentMethodsEnabledSettings() as BooleanSetting;
 	const isPaymentMethodsListMode =
 		supportsPaymentMethodsListMode &&
 		isExpressCheckoutInPaymentMethodsEnabled;
 
 	return (
 		<>
-			<SettingsSection
-				className="woopayments-express-checkout-settings__enable"
+			<ExpressCheckoutEnableSection
+				methodId="amazon_pay"
 				title={ __( 'Amazon Pay', 'woocommerce' ) }
-				hideTitle
-				description={
-					<>
-						<ExpressCheckoutMethodIcons methodId="amazon_pay" />
-						<p>
-							{ __(
-								'Allow your customers to collect payments via Amazon Pay.',
-								'woocommerce'
-							) }
-						</p>
-					</>
-				}
+				description={ __(
+					'Allow your customers to collect payments via Amazon Pay.',
+					'woocommerce'
+				) }
 			>
 				<CheckboxControl
 					checked={ isAmazonPayEnabled }
@@ -82,22 +70,13 @@ export const AmazonPaySettings = () => {
 					__nextHasNoMarginBottom
 				/>
 				{ supportsPaymentMethodsListMode && (
-					<CheckboxControl
+					<ExpressCheckoutInPaymentMethodsListCheckbox
 						checked={ isExpressCheckoutInPaymentMethodsEnabled }
-						label={ __(
-							'Enable express checkout methods as options in the payment methods list',
-							'woocommerce'
-						) }
 						help={ __(
 							'Apple Pay, Google Pay, and Amazon Pay will appear as options in the payment methods list instead of as separate express checkout buttons.',
 							'woocommerce'
 						) }
-						onChange={ ( value ) =>
-							setIsExpressCheckoutInPaymentMethodsEnabled(
-								Boolean( value )
-							)
-						}
-						__nextHasNoMarginBottom
+						onChange={ setIsExpressCheckoutInPaymentMethodsEnabled }
 					/>
 				) }
 				<ExpressCheckoutLocationCheckboxes
@@ -106,26 +85,18 @@ export const AmazonPaySettings = () => {
 					isPaymentMethodsListMode={ isPaymentMethodsListMode }
 					onChange={ updateAmazonPayLocation }
 				/>
-			</SettingsSection>
-			<SettingsSection
-				className="woopayments-express-checkout-settings__general"
-				title={ __( 'Settings', 'woocommerce' ) }
-				description={
-					<>
-						<p>
-							{ __(
-								'Configure the display of Amazon Pay buttons on your store.',
-								'woocommerce'
-							) }
-						</p>
-					</>
-				}
+			</ExpressCheckoutEnableSection>
+			<ExpressCheckoutGeneralSection
+				description={ __(
+					'Configure the display of Amazon Pay buttons on your store.',
+					'woocommerce'
+				) }
 			>
 				<ExpressCheckoutAppearanceSettings
 					currentMethod="amazon_pay"
 					includeCta={ false }
 				/>
-			</SettingsSection>
+			</ExpressCheckoutGeneralSection>
 		</>
 	);
 };

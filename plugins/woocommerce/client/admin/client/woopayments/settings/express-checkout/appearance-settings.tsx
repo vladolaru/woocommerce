@@ -16,6 +16,7 @@ import { __ } from '@wordpress/i18n';
 import { ExpressCheckoutPreview } from './express-checkout-preview';
 import { ExpressCheckoutSettingsNotices } from './notices';
 import type { ExpressCheckoutMethod } from './settings-utils';
+import type { StringSetting } from '../sections/utils';
 import {
 	usePaymentRequestButtonBorderRadius,
 	usePaymentRequestButtonSize,
@@ -91,18 +92,10 @@ export const ExpressCheckoutAppearanceSettings = ( {
 	currentMethod: ExpressCheckoutMethod;
 	includeCta?: boolean;
 } ) => {
-	const [ buttonType, setButtonType ] = usePaymentRequestButtonType() as [
-		string,
-		( value: string ) => void,
-	];
-	const [ size, setSize ] = usePaymentRequestButtonSize() as [
-		string,
-		( value: string ) => void,
-	];
-	const [ theme, setTheme ] = usePaymentRequestButtonTheme() as [
-		string,
-		( value: string ) => void,
-	];
+	const [ buttonType, setButtonType ] =
+		usePaymentRequestButtonType() as StringSetting;
+	const [ size, setSize ] = usePaymentRequestButtonSize() as StringSetting;
+	const [ theme, setTheme ] = usePaymentRequestButtonTheme() as StringSetting;
 	const [ radius, setRadius ] = usePaymentRequestButtonBorderRadius() as [
 		number,
 		( value: number ) => void,

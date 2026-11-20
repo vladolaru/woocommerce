@@ -37,31 +37,6 @@ const DEFAULT_EXPRESS_CHECKOUT_FEATURE_FLAGS: ExpressCheckoutFeatureFlags = {
 	amazonPay: true,
 };
 
-export const getExpressCheckoutFeatureFlags = (
-	settings: SettingsRecord
-): ExpressCheckoutFeatureFlags => {
-	const flags = asSettingsRecord( settings.feature_flags );
-
-	return {
-		woopay: asBoolean(
-			flags.woopay,
-			DEFAULT_EXPRESS_CHECKOUT_FEATURE_FLAGS.woopay
-		),
-		woopayExpressCheckout: asBoolean(
-			flags.woopayExpressCheckout,
-			DEFAULT_EXPRESS_CHECKOUT_FEATURE_FLAGS.woopayExpressCheckout
-		),
-		isDynamicCheckoutPlaceOrderButtonEnabled: asBoolean(
-			flags.isDynamicCheckoutPlaceOrderButtonEnabled,
-			DEFAULT_EXPRESS_CHECKOUT_FEATURE_FLAGS.isDynamicCheckoutPlaceOrderButtonEnabled
-		),
-		amazonPay: asBoolean(
-			flags.amazonPay,
-			DEFAULT_EXPRESS_CHECKOUT_FEATURE_FLAGS.amazonPay
-		),
-	};
-};
-
 export const isExpressFeatureEnabled = (
 	settings: SettingsRecord,
 	flagName: ExpressCheckoutFeatureFlagName,
@@ -72,9 +47,24 @@ export const isExpressFeatureEnabled = (
 	return asBoolean( flags[ flagName ], fallback );
 };
 
+export const getExpressCheckoutFeatureFlags = (
+	settings: SettingsRecord
+): ExpressCheckoutFeatureFlags => ( {
+	woopay: isExpressFeatureEnabled( settings, 'woopay' ),
+	woopayExpressCheckout: isExpressFeatureEnabled(
+		settings,
+		'woopayExpressCheckout'
+	),
+	isDynamicCheckoutPlaceOrderButtonEnabled: isExpressFeatureEnabled(
+		settings,
+		'isDynamicCheckoutPlaceOrderButtonEnabled'
+	),
+	amazonPay: isExpressFeatureEnabled( settings, 'amazonPay' ),
+} );
+
 // Client 11.1.0 offers WooPay on the `woopay` flag alone; `woopayExpressCheckout` only hides the subpage's 'general' section.
 export const isWooPayAvailable = ( settings: SettingsRecord ) =>
-	getExpressCheckoutFeatureFlags( settings ).woopay;
+	isExpressFeatureEnabled( settings, 'woopay' );
 
 export const isAmazonPayExpressCheckoutAvailable = (
 	settings: SettingsRecord
