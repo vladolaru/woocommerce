@@ -389,20 +389,7 @@ class WooPaymentsOrderEffectApplier {
 			return $this->compose_returned_payment_intent_failure( $context->get_order(), $outcome, $plan );
 		}
 
-		return $this->apply_returned_intent_waiting( $context->get_order(), $outcome, $plan, self::is_offline_payment_method_intent( $result ) );
-	}
-
-	/**
-	 * Tell whether an intent is for an offline payment method, by the first of its payment method options, as client 11.3.0
-	 * reads the method for its on-hold writer (class-wc-payments-api-abstract-intention.php:201-203; Payment_Method::OFFLINE_PAYMENT_METHODS).
-	 *
-	 * @param array<string,mixed> $intent Provider intent response.
-	 * @return bool
-	 */
-	private static function is_offline_payment_method_intent( array $intent ): bool {
-		$options = isset( $intent['payment_method_options'] ) && is_array( $intent['payment_method_options'] ) ? array_keys( $intent['payment_method_options'] ) : array();
-
-		return isset( $options[0] ) && in_array( (string) $options[0], WooPaymentsDuplicatePaymentPreventionService::OFFLINE_PAYMENT_METHODS, true );
+		return $this->apply_returned_intent_waiting( $context->get_order(), $outcome, $plan, WooPaymentsIntentCodec::is_offline_payment_method_intent( $result ) );
 	}
 
 	/**

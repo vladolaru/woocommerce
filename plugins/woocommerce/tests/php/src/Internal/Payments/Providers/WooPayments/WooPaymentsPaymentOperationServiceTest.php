@@ -2306,6 +2306,136 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A Multibanco voucher of the order still awaiting payment on the account's list stops the clear: the attempt is refused as unable to check, the key and record stay, the merchant gets one note, and the order is not paid from it.
+	 *
+	 * A voucher waits in requires_action until the shopper pays it, so the earlier request can still take money. Client
+	 * 11.3.0 puts such an order on hold by its offline method list (Payment_Method::OFFLINE_PAYMENT_METHODS).
+	 */
+	public function test_payable_voucher_on_the_account_list_never_clears(): void {
+		$order                  = $this->create_order_with_kept_key();
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			self::stripe_idempotency_error( 'key_kept' ),
+			self::intent_list( array( self::voucher_intent( $order, 'requires_action' ) ) ),
+			self::succeeded_charge( 'pi_resent', 'pm_new' ),
+		);
+		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_sent' );
+		$since                  = time();
+
+		$outcome = $this->charge_attempt( $sut, $order, 'pm_new', 'key_attempt' );
+		$trail   = self::request_trail( $http_client );
+
+		$this->assertSame( array( 'POST intentions key_kept', 'account list' ), self::with_account_lists_checked( $trail, $order->get_date_created()->getTimestamp(), $since ) );
+		$this->assert_refused_while_the_voucher_can_be_paid( $outcome, wc_get_order( $order->get_id() ), $trail, $http_client );
+	}
+
+	/**
+	 * @testdox A payable Multibanco voucher on the customer's list stops the clear there too: the account list is read, and the attempt is refused as unable to check.
+	 */
+	public function test_payable_voucher_on_the_customer_list_never_clears(): void {
+		$order = $this->create_order_with_kept_key();
+		$order->update_meta_data(
+			WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META,
+			array(
+				'order_id'       => $order->get_id(),
+				'customers'      => array( 'cus_sent' ),
+				'failed_at'      => time() - 60,
+				'last_failed_at' => time() - 60,
+			)
+		);
+		$order->save_meta_data();
+		$listed                 = self::intent_list( array( self::voucher_intent( $order, 'requires_action' ) ) );
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array( self::stripe_idempotency_error( 'key_kept' ), $listed, $listed, self::succeeded_charge( 'pi_resent', 'pm_new' ) );
+		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_sent' );
+		$since                  = time();
+
+		$outcome = $this->charge_attempt( $sut, $order, 'pm_new', 'key_attempt' );
+		$trail   = self::request_trail( $http_client );
+
+		$this->assertSame(
+			array( 'POST intentions key_kept', 'GET intentions?test_mode=0&customer=cus_sent&limit=100', 'account list' ),
+			self::with_account_lists_checked( $trail, $order->get_date_created()->getTimestamp(), $since )
+		);
+		$this->assert_refused_while_the_voucher_can_be_paid( $outcome, wc_get_order( $order->get_id() ), $trail, $http_client );
+	}
+
+	/**
+	 * @testdox While the voucher can still be paid, the next press is refused the same way: no charge, the key kept, and still one note.
+	 */
+	public function test_next_press_while_a_voucher_can_be_paid_is_refused_the_same_way(): void {
+		$order                  = $this->create_order_with_kept_key();
+		$listed                 = self::intent_list( array( self::voucher_intent( $order, 'requires_action' ) ) );
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			self::stripe_idempotency_error( 'key_kept' ),
+			$listed,
+			self::stripe_idempotency_error( 'key_kept' ),
+			$listed,
+			self::succeeded_charge( 'pi_resent', 'pm_card' ),
+		);
+		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_sent' );
+		$since                  = time();
+		$this->charge_attempt( $sut, $order, 'pm_new', 'key_attempt' );
+
+		$outcome = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_card', 'key_next' );
+		$trail   = self::request_trail( $http_client );
+
+		$this->assertSame(
+			array( 'POST intentions key_kept', 'account list', 'POST intentions key_kept', 'account list' ),
+			self::with_account_lists_checked( $trail, $order->get_date_created()->getTimestamp(), $since )
+		);
+		$this->assert_refused_while_the_voucher_can_be_paid( $outcome, wc_get_order( $order->get_id() ), $trail, $http_client );
+	}
+
+	/**
+	 * @testdox A card intent of the order waiting on authentication still clears: the key and record are retired and the shopper is told they were not charged.
+	 *
+	 * Only an offline method stops the clear. A lost answer leaves the shopper no way to finish a card's authentication.
+	 */
+	public function test_card_awaiting_authentication_still_clears(): void {
+		$card = static fn( WC_Order $order ): array => self::order_intent(
+			$order,
+			'pi_card',
+			'requires_action',
+			1000,
+			array(
+				'payment_method_types'   => array( 'card' ),
+				'payment_method_options' => array( 'card' => array( 'request_three_d_secure' => 'automatic' ) ),
+				'next_action'            => array( 'type' => 'use_stripe_sdk' ),
+			)
+		);
+
+		$this->assert_earlier_intent_clears( $card );
+	}
+
+	/**
+	 * @testdox A Multibanco voucher that can no longer be paid ($_dataName) clears: the key and record are retired and the shopper is told they were not charged.
+	 *
+	 * Stripe moves an unpaid voucher out of requires_action when it expires (https://docs.stripe.com/payments/multibanco),
+	 * and a cancelled one to canceled.
+	 *
+	 * @dataProvider provide_vouchers_that_can_no_longer_be_paid
+	 *
+	 * @param string $status The voucher's status.
+	 */
+	public function test_voucher_that_can_no_longer_be_paid_clears( string $status ): void {
+		$this->assert_earlier_intent_clears( static fn( WC_Order $order ): array => self::voucher_intent( $order, $status ) );
+	}
+
+	/**
+	 * Statuses of a voucher that can no longer be paid.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public function provide_vouchers_that_can_no_longer_be_paid(): array {
+		return array(
+			'expired'   => array( 'requires_payment_method' ),
+			'cancelled' => array( 'canceled' ),
+		);
+	}
+
+	/**
 	 * @testdox An intent that names the order loosely ($_dataName) and holds money stops the conclusion: the attempt is refused as unable to check, the key kept, one note, and the order is not paid from it.
 	 *
 	 * WooPay can pay an order before it calls the store, and the store accepts such a payment when it names the order by ID
@@ -3321,6 +3451,91 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			),
 			$overrides
 		);
+	}
+
+	/**
+	 * A Multibanco voucher the store's charge path created for an order.
+	 *
+	 * Shape: a test-mode Multibanco PaymentIntent as the platform returns it (`payment_method_types` and
+	 * `payment_method_options` naming multibanco, currency eur) and, while it waits for payment, the
+	 * multibanco_display_details next action (https://docs.stripe.com/api/payment_intents/object#payment_intent_object-next_action-multibanco_display_details).
+	 *
+	 * @param WC_Order $order  Order.
+	 * @param string   $status Intent status.
+	 * @return array<string,mixed>
+	 */
+	private static function voucher_intent( WC_Order $order, string $status ): array {
+		$overrides = array(
+			'currency'               => 'eur',
+			'payment_method_types'   => array( 'multibanco' ),
+			'payment_method_options' => array( 'multibanco' => array() ),
+		);
+		if ( 'requires_action' === $status ) {
+			$overrides['next_action'] = array(
+				'type'                       => 'multibanco_display_details',
+				'multibanco_display_details' => array(
+					'entity'             => '12345',
+					'reference'          => '123456789',
+					'hosted_voucher_url' => 'https://payments.stripe.com/multibanco/voucher/test',
+					'expires_at'         => time() + 7 * DAY_IN_SECONDS,
+				),
+			);
+		}
+
+		return self::order_intent( $order, 'pi_voucher', $status, 1000, $overrides );
+	}
+
+	/**
+	 * Assert an attempt was refused as unable to check because the voucher can still be paid: nothing charged, the key and
+	 * record kept, one merchant note, and no "not charged" copy.
+	 *
+	 * @param PaymentOutcome $outcome     The attempt's outcome.
+	 * @param WC_Order       $order       The order, read fresh.
+	 * @param string[]       $trail       Requests as request_trail() prints them.
+	 * @param FakeHttpClient $http_client Platform answers, with the bait still queued.
+	 */
+	private function assert_refused_while_the_voucher_can_be_paid( PaymentOutcome $outcome, WC_Order $order, array $trail, FakeHttpClient $http_client ): void {
+		$this->assertSame( 0, self::posts_after_lookup( $trail ) );
+		$this->assertCount( 1, $http_client->responses, 'The bait is still queued.' );
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( 'wcpay_charge_lookup_failed', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
+		$this->assertArrayNotHasKey( WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY, $outcome->get_data() );
+		$this->assertSame( '', $outcome->get_provider_payment_id(), 'The order is not paid from the voucher.' );
+		$this->assertSame( 'key_kept', $order->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+		$this->assertIsArray( $order->get_meta( WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META, true ) );
+		$this->assertCount( 1, self::note_texts_containing( $order, 'could not be checked' ) );
+		$this->assertSame( array(), self::note_texts_containing( $order, 'did not go through' ) );
+	}
+
+	/**
+	 * Assert that an earlier intent of the order on the account's list clears: the attempt is refused without a charge,
+	 * the key and record retired, the shopper told they were not charged, and the merchant gets the "did not go through" note.
+	 *
+	 * @param callable $build_intent Builds the order's earlier intent from the order.
+	 */
+	private function assert_earlier_intent_clears( callable $build_intent ): void {
+		$order                  = $this->create_order_with_kept_key();
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			self::stripe_idempotency_error( 'key_kept' ),
+			self::intent_list( array( $build_intent( $order ) ) ),
+			self::succeeded_charge( 'pi_resent', 'pm_new' ),
+		);
+		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_sent' );
+		$since                  = time();
+
+		$outcome = $this->charge_attempt( $sut, $order, 'pm_new', 'key_attempt' );
+		$fresh   = wc_get_order( $order->get_id() );
+		$trail   = self::request_trail( $http_client );
+
+		$this->assertSame( array( 'POST intentions key_kept', 'account list' ), self::with_account_lists_checked( $trail, $order->get_date_created()->getTimestamp(), $since ) );
+		$this->assertSame( 0, self::posts_after_lookup( $trail ) );
+		$this->assertCount( 1, $http_client->responses, 'The bait is still queued.' );
+		$this->assertSame( 'wcpay_earlier_charge_not_paid', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
+		$this->assertSame( 'Your payment did not go through and you were not charged. Please place your order again.', $outcome->get_data()[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? null );
+		$this->assertSame( '', $fresh->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+		$this->assertSame( '', $fresh->get_meta( WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META, true ) );
+		$this->assertSame( array( 'An earlier payment attempt for this order did not go through.' ), self::note_texts_containing( $fresh, 'An earlier payment attempt' ) );
 	}
 
 	/**

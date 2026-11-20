@@ -90,8 +90,9 @@ class WooPaymentsChargeAmbiguityService {
 	 * List the PaymentIntents created for an order.
 	 *
 	 * No money is concluded only from the account's intents created since the key was kept, every page read, with none
-	 * naming the order and holding money; the customer's list, read first when the earlier requests were sent with one
-	 * customer, only finds a payment faster. A transport failure or a server error leaves the lookup failed.
+	 * naming the order and holding money or a payable voucher; the customer's list, read first when the earlier requests
+	 * were sent with one customer, only finds a payment faster. A transport failure or a server error leaves the lookup
+	 * failed.
 	 *
 	 * @param WC_Order          $order          Order whose earlier charge is looked up.
 	 * @param array<int,string> $customer_ids   Customers the earlier charge requests under the key were sent with.
@@ -161,7 +162,8 @@ class WooPaymentsChargeAmbiguityService {
 	 * @param array<string,mixed> $page         The list page.
 	 * @param WC_Order            $order        Order whose earlier charge is looked up.
 	 * @return array<int,array<string,mixed>>|null The order's intents, newest first, possibly none; null when the answer
-	 *                                             has no list, or cannot rule out money (more pages, or a loose match).
+	 *                                             has no list, or cannot rule out money (more pages, a loose match, or a
+	 *                                             payable voucher).
 	 */
 	private function get_order_intents_from_list( array $page, WC_Order $order ): ?array {
 		if ( ! isset( $page['data'] ) || ! is_array( $page['data'] ) ) {
@@ -170,6 +172,7 @@ class WooPaymentsChargeAmbiguityService {
 
 		$order_intents = array();
 		$loose_money   = false;
+		$payable       = false;
 		foreach ( $page['data'] as $intent ) {
 			if ( ! is_array( $intent ) ) {
 				continue;
@@ -178,6 +181,8 @@ class WooPaymentsChargeAmbiguityService {
 			$metadata = isset( $intent['metadata'] ) && is_array( $intent['metadata'] ) ? $intent['metadata'] : array();
 			if ( (string) $order->get_id() === (string) ( $metadata['order_id'] ?? '' ) && $order->get_order_key() === (string) ( $metadata['order_key'] ?? '' ) ) {
 				$order_intents[] = $intent;
+				// A voucher awaiting payment may still be paid, so it stops a clear but never pays.
+				$payable = $payable || ( 'requires_action' === (string) ( $intent['status'] ?? '' ) && WooPaymentsIntentCodec::is_offline_payment_method_intent( $intent ) );
 			} elseif ( WooPaymentsIntentCodec::intent_belongs_to_order( $intent, $order ) && null !== self::find_intent_with_money( array( $intent ) ) ) {
 				// Named by order ID alone, or by number on WooPay: it may be another order's, so it stops a clear but never pays.
 				$loose_money = true;
@@ -185,7 +190,7 @@ class WooPaymentsChargeAmbiguityService {
 		}
 
 		// A page with more behind it may hold the payment on the next one, so it can find money but never clear it.
-		return ( ! empty( $page['has_more'] ) || $loose_money ) && null === self::find_intent_with_money( $order_intents ) ? null : $order_intents;
+		return ( ! empty( $page['has_more'] ) || $loose_money || $payable ) && null === self::find_intent_with_money( $order_intents ) ? null : $order_intents;
 	}
 
 	/**

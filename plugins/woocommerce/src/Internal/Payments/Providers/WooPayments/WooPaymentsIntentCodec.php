@@ -404,6 +404,19 @@ class WooPaymentsIntentCodec {
 	}
 
 	/**
+	 * Tell whether an intent is for an offline payment method, by the first of its payment method options, as client 11.3.0
+	 * reads the method for its on-hold writer (class-wc-payments-api-abstract-intention.php:201-203; Payment_Method::OFFLINE_PAYMENT_METHODS).
+	 *
+	 * @param array<string,mixed> $intent Provider intent response.
+	 * @return bool
+	 */
+	public static function is_offline_payment_method_intent( array $intent ): bool {
+		$options = isset( $intent['payment_method_options'] ) && is_array( $intent['payment_method_options'] ) ? array_keys( $intent['payment_method_options'] ) : array();
+
+		return isset( $options[0] ) && in_array( (string) $options[0], WooPaymentsDuplicatePaymentPreventionService::OFFLINE_PAYMENT_METHODS, true );
+	}
+
+	/**
 	 * Tell whether an intent's metadata names the order: its `order_id`, or for an intent paid on WooPay its `order_number`.
 	 *
 	 * @param array<string,mixed> $intent Intent response.
