@@ -3155,27 +3155,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A caller that posts back the whole settings read saves it, with no account update.
 	 */
 	public function test_settings_route_saves_the_whole_settings_read_posted_back(): void {
-		$this->set_connected_account_fields(
-			array(
-				'country'              => 'US',
-				'statement_descriptor' => 'EXAMPLE STORE',
-				'business_profile'     => array(
-					'name'          => 'Example Store',
-					'url'           => 'https://example.test',
-					'support_email' => 'help@example.test',
-					'support_phone' => '+12025550123',
-				),
-				'branding'             => array(
-					'primary_color'   => '#123456',
-					'secondary_color' => '',
-				),
-				'communications_email' => 'owner@example.test',
-				'deposits'             => array(
-					'interval'      => 'weekly',
-					'weekly_anchor' => 'monday',
-				),
-			)
-		);
+		$this->set_whole_settings_account_fields();
 		set_transient( 'wcpay_fraud_protection_settings', array(), DAY_IN_SECONDS );
 		$this->make_builtin_active();
 
@@ -3184,6 +3164,32 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 
 			$this->assertSame( 200, $response->get_status(), (string) wp_json_encode( $response->get_data() ) );
 			$this->assertNull( $this->api_client->last_account_settings );
+		} finally {
+			$this->clear_builtin_active();
+		}
+	}
+
+	/**
+	 * @testdox A caller that posts back the whole settings read with one account field and one local flag changed saves both, sending only the changed account field.
+	 */
+	public function test_settings_route_saves_the_changes_in_a_whole_settings_read_posted_back(): void {
+		$this->set_whole_settings_account_fields();
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
+		set_transient( 'wcpay_fraud_protection_settings', array(), DAY_IN_SECONDS );
+		$this->make_builtin_active();
+
+		try {
+			$params                                   = $this->sut->get_settings();
+			$params['account_business_support_email'] = 'support@example.test';
+			$params['is_debug_log_enabled']           = true;
+
+			$response = $this->post_settings( $params );
+
+			$this->assertSame( 200, $response->get_status(), (string) wp_json_encode( $response->get_data() ) );
+			$this->assertSame( array( 'business_support_email' => 'support@example.test' ), $this->api_client->last_account_settings );
+			$stored = get_option( 'woocommerce_woocommerce_payments_settings' );
+			$this->assertIsArray( $stored );
+			$this->assertSame( 'yes', $stored['enable_logging'] );
 		} finally {
 			$this->clear_builtin_active();
 		}
@@ -3554,6 +3560,33 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$account_data         = get_option( 'wcpay_account_data' );
 		$account_data['data'] = array_replace_recursive( $account_data['data'], $fields );
 		update_option( 'wcpay_account_data', $account_data );
+	}
+
+	/**
+	 * Set a connected account with every account field the settings page shows filled in.
+	 */
+	private function set_whole_settings_account_fields(): void {
+		$this->set_connected_account_fields(
+			array(
+				'country'              => 'US',
+				'statement_descriptor' => 'EXAMPLE STORE',
+				'business_profile'     => array(
+					'name'          => 'Example Store',
+					'url'           => 'https://example.test',
+					'support_email' => 'help@example.test',
+					'support_phone' => '+12025550123',
+				),
+				'branding'             => array(
+					'primary_color'   => '#123456',
+					'secondary_color' => '',
+				),
+				'communications_email' => 'owner@example.test',
+				'deposits'             => array(
+					'interval'      => 'weekly',
+					'weekly_anchor' => 'monday',
+				),
+			)
+		);
 	}
 
 	/**
