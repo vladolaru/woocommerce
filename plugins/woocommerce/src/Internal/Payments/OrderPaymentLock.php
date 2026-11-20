@@ -32,6 +32,13 @@ class OrderPaymentLock {
 	private const LOCK_REFUSAL_LOG_SOURCE = 'order-payments';
 
 	/**
+	 * Fixed prefix of the warning logged when a claim takes over an expired lock, so it can be found in logs.
+	 *
+	 * @var string
+	 */
+	private const LOCK_TAKEOVER_LOG_PREFIX = 'order payment lock taken over';
+
+	/**
 	 * Lock held in the database rows of a transient.
 	 *
 	 * @var TransientRowLock
@@ -59,7 +66,8 @@ class OrderPaymentLock {
 	 * The lock value names what the claim processes, or the provider's sentinel when it names nothing; the runtime only
 	 * logs it, and other code of the provider may compare it. A holder record names the operation, for the refusal log,
 	 * and carries a token unique to this claim. Releasing needs that token, so an operation that ran past the lock TTL
-	 * cannot release a lock a later claim took over, even one with the same lock value.
+	 * cannot release a lock a later claim took over, even one with the same lock value. A claim that takes over an expired
+	 * lock logs one warning naming the former holder, whose request never released it.
 	 *
 	 * @since 11.2.0
 	 *
@@ -85,16 +93,62 @@ class OrderPaymentLock {
 		);
 
 		if ( $this->lock_lives_in_object_cache() ) {
+			$former_holder = wp_cache_get( $holder_key, 'transient' );
 			if ( ! wp_cache_add( $lock_key, $value, 'transient', $ttl ) ) {
 				return null;
 			}
 
-			wp_cache_set( $holder_key, $holder, 'transient', $ttl );
+			// The cache drops an expired lock but keeps its holder record for a day, so the next claim can name the former
+			// holder; a release deletes both, so a record left here belongs to a holder that never released.
+			wp_cache_set( $holder_key, $holder, 'transient', DAY_IN_SECONDS );
+			if ( false !== $former_holder ) {
+				$this->log_takeover( $order, $operation, null, $former_holder );
+			}
 
 			return $token;
 		}
 
-		return $this->row_lock->claim( $lock_key, maybe_serialize( $value ), $ttl, $holder_key, maybe_serialize( $holder ) ) ? $token : null;
+		$taken_over = null;
+		$claimed    = $this->row_lock->claim( $lock_key, maybe_serialize( $value ), $ttl, $holder_key, maybe_serialize( $holder ), $taken_over );
+		if ( null !== $taken_over ) {
+			$this->log_takeover( $order, $operation, $taken_over['value'], null === $taken_over['holder'] ? null : maybe_unserialize( $taken_over['holder'] ) );
+		}
+
+		return $claimed ? $token : null;
+	}
+
+	/**
+	 * Log a warning when a claim takes over an expired lock, naming the former holder's operation and its age.
+	 *
+	 * @param WC_Order    $order         Order whose lock was taken over.
+	 * @param string      $operation     Operation of the claim that took the lock over.
+	 * @param string|null $former_value  Former lock value as stored, or null on the object cache, where it is gone.
+	 * @param mixed       $former_holder Former holder record.
+	 */
+	private function log_takeover( WC_Order $order, string $operation, ?string $former_value, $former_holder ): void {
+		// On the database the record describes the former lock only when both carry the same lock value, as in log_refusal().
+		$describes        = is_array( $former_holder ) && isset( $former_holder['operation'], $former_holder['lock_value'], $former_holder['claimed_at'] ) && ( null === $former_value || (string) maybe_unserialize( $former_value ) === $former_holder['lock_value'] );
+		$former_operation = $describes ? (string) $former_holder['operation'] : null;
+		$former_age       = $describes ? max( 0, time() - (int) $former_holder['claimed_at'] ) : null;
+
+		wc_get_logger()->warning(
+			sprintf(
+				'%1$s: order %2$d, by %3$s, from %4$s claimed %5$s ago',
+				self::LOCK_TAKEOVER_LOG_PREFIX,
+				$order->get_id(),
+				$operation,
+				$former_operation ?? 'an unknown operation',
+				null === $former_age ? 'an unknown time' : $former_age . 's'
+			),
+			array(
+				'source'             => self::LOCK_REFUSAL_LOG_SOURCE,
+				'order_id'           => $order->get_id(),
+				'operation'          => $operation,
+				'former_operation'   => $former_operation,
+				'former_age_seconds' => $former_age,
+				'former_lock_value'  => $former_value ?? ( $describes ? (string) $former_holder['lock_value'] : null ),
+			)
+		);
 	}
 
 	/**

@@ -41,10 +41,14 @@ class TransientRowLock {
 	 * @param int         $ttl          Lock time-to-live, in seconds.
 	 * @param string|null $holder_key   Transient key of the holder record, if the caller keeps one.
 	 * @param string|null $holder_value Holder record of this claim, as stored. Required with a holder key.
+	 * @param array|null  $taken_over   Set when this claim, with a holder, took an expired lock over: the former value and holder record, as stored.
+	 * @phpstan-param array{value:string,holder:string|null}|null $taken_over
 	 * @return bool True when this request holds the lock.
 	 */
-	public function claim( string $key, string $value, int $ttl, ?string $holder_key = null, ?string $holder_value = null ): bool {
+	public function claim( string $key, string $value, int $ttl, ?string $holder_key = null, ?string $holder_value = null, ?array &$taken_over = null ): bool {
 		global $wpdb;
+
+		$taken_over = null;
 
 		$value_option   = '_transient_' . $key;
 		$timeout_option = '_transient_timeout_' . $key;
@@ -66,7 +70,7 @@ class TransientRowLock {
 		if ( 1 === $inserted ) {
 			$claimed = $this->write_claimed_lock_expiry( $value_option, $timeout_option, $value, $leftover_timeout, $expiration );
 		} else {
-			$claimed = $this->take_over_expired_lock_rows( $value_option, $timeout_option, $value, $expiration, $holder );
+			$claimed = $this->take_over_expired_lock_rows( $value_option, $timeout_option, $value, $expiration, $holder, $taken_over );
 		}
 
 		if ( $claimed && null !== $holder ) {
@@ -166,20 +170,22 @@ class TransientRowLock {
 	}
 
 	/**
-	 * Read the value and expiry rows of a lock straight from the database.
+	 * Read the value and expiry rows of a lock straight from the database, and one more row when asked.
 	 *
 	 * @param string $value_option   Lock value option name.
 	 * @param string $timeout_option Lock expiry option name.
+	 * @param string $other_option   Another option to read in the same query, such as a holder record.
 	 * @return array<string,\stdClass> Rows keyed by option name.
 	 */
-	private function select_lock_rows( string $value_option, string $timeout_option ): array {
+	private function select_lock_rows( string $value_option, string $timeout_option, string $other_option = '' ): array {
 		global $wpdb;
 
 		return (array) $wpdb->get_results(
 			$wpdb->prepare(
-				"SELECT option_name, option_value FROM {$wpdb->options} WHERE option_name IN (%s, %s)",
+				"SELECT option_name, option_value FROM {$wpdb->options} WHERE option_name IN (%s, %s, %s)",
 				$value_option,
-				$timeout_option
+				$timeout_option,
+				'' === $other_option ? $value_option : $other_option
 			),
 			OBJECT_K
 		);
@@ -269,12 +275,14 @@ class TransientRowLock {
 	 * @param string                                                       $stored_value   Lock value to store.
 	 * @param string                                                       $expiration     New lock expiry timestamp.
 	 * @param array{option:string,timeout_option:string,value:string}|null $holder         Holder rows of this claim, if any.
+	 * @param array{value:string,holder:string|null}|null                  $taken_over     Set, with a holder, to the former value and holder record when the takeover wins.
 	 * @return bool True when this request took the lock over.
 	 */
-	private function take_over_expired_lock_rows( string $value_option, string $timeout_option, string $stored_value, string $expiration, ?array $holder ): bool {
+	private function take_over_expired_lock_rows( string $value_option, string $timeout_option, string $stored_value, string $expiration, ?array $holder, ?array &$taken_over ): bool {
 		global $wpdb;
 
-		$rows = $this->select_lock_rows( $value_option, $timeout_option );
+		// The former holder record is read with the rows it described: a winning takeover overwrites it.
+		$rows = $this->select_lock_rows( $value_option, $timeout_option, null === $holder ? '' : $holder['option'] );
 
 		if ( ! isset( $rows[ $value_option ] ) ) {
 			return false;
@@ -307,7 +315,7 @@ class TransientRowLock {
 			);
 		}
 
-		return 0 < (int) $wpdb->query(
+		$won = 0 < (int) $wpdb->query(
 			$wpdb->prepare(
 				"UPDATE {$wpdb->options} AS lock_value
 				INNER JOIN {$wpdb->options} AS lock_timeout ON lock_timeout.option_name = %s
@@ -324,6 +332,15 @@ class TransientRowLock {
 				$rows[ $timeout_option ]->option_value
 			)
 		);
+
+		if ( $won ) {
+			$taken_over = array(
+				'value'  => (string) $rows[ $value_option ]->option_value,
+				'holder' => isset( $rows[ $holder['option'] ] ) ? (string) $rows[ $holder['option'] ]->option_value : null,
+			);
+		}
+
+		return $won;
 	}
 
 	/**

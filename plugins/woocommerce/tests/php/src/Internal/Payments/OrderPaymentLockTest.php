@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use WC_Unit_Test_Case;
 
 /**
@@ -439,6 +440,213 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'taker_key', $this->read_lock_row( '_transient_' . $lock_key ), 'Reading an expired lock must not delete the new holder value.' );
 		$this->assertNotNull( $this->read_lock_row( '_transient_timeout_' . $lock_key ), 'Reading an expired lock must not delete the new holder expiry.' );
 		$this->assertNull( $this->sut->claim( $order, $this->persistence_vocabulary, 'third_key', 'payment operation' ), 'A third claimant must not win while the taker holds the lock.' );
+	}
+
+	/**
+	 * @testdox A claim that takes over an expired lock logs one warning naming the former holder's operation and age.
+	 */
+	public function test_takeover_of_an_expired_lock_logs_the_former_holder(): void {
+		$this->skip_when_transients_live_in_object_cache();
+		$order    = wc_create_order();
+		$lock_key = $this->persistence_vocabulary->get_order_lock_key( $order );
+		$this->insert_lock_rows( $lock_key, 'pi_dead', time() - 12 );
+		$this->insert_holder_row( $lock_key, 'checkout', 'pi_dead', time() - 312 );
+		$logger = RecordingWcLogger::install();
+
+		$this->assertNotNull( $this->sut->claim( $order, $this->persistence_vocabulary, 'pi_dead', 'payment status update' ) );
+
+		$lines = $this->get_takeover_lines( $logger );
+		$this->assertCount( 1, $lines, 'One takeover line is logged.' );
+		$age = $lines[0]['context']['former_age_seconds'];
+		$this->assertContains( $age, array( 312, 313 ), 'The age counts from the former claim, not from its expiry.' );
+		$this->assertSame( 'warning', $lines[0]['level'] );
+		$this->assertSame( sprintf( 'order payment lock taken over: order %d, by payment status update, from checkout claimed %ds ago', $order->get_id(), $age ), $lines[0]['message'] );
+		$this->assertSame(
+			array(
+				'source'             => 'order-payments',
+				'order_id'           => $order->get_id(),
+				'operation'          => 'payment status update',
+				'former_operation'   => 'checkout',
+				'former_age_seconds' => $age,
+				'former_lock_value'  => 'pi_dead',
+			),
+			$lines[0]['context']
+		);
+	}
+
+	/**
+	 * @testdox A claim that takes over an expired lock whose holder record names another lock value logs the former holder as unknown.
+	 */
+	public function test_takeover_with_a_holder_record_of_another_lock_logs_an_unknown_holder(): void {
+		$this->skip_when_transients_live_in_object_cache();
+		$order    = wc_create_order();
+		$lock_key = $this->persistence_vocabulary->get_order_lock_key( $order );
+		$this->insert_lock_rows( $lock_key, 'pi_dead', time() - 12 );
+		$this->insert_holder_row( $lock_key, 'checkout', 'pi_other', time() - 312 );
+		$logger = RecordingWcLogger::install();
+
+		$this->assertNotNull( $this->sut->claim( $order, $this->persistence_vocabulary, 'pi_dead', 'payment status update' ) );
+
+		$lines = $this->get_takeover_lines( $logger );
+		$this->assertCount( 1, $lines );
+		$this->assertSame( sprintf( 'order payment lock taken over: order %d, by payment status update, from an unknown operation claimed an unknown time ago', $order->get_id() ), $lines[0]['message'] );
+		$this->assertNull( $lines[0]['context']['former_operation'] );
+		$this->assertNull( $lines[0]['context']['former_age_seconds'] );
+		$this->assertSame( 'pi_dead', $lines[0]['context']['former_lock_value'] );
+	}
+
+	/**
+	 * @testdox A claim that takes no lock over logs no takeover line: a fresh claim, a claim after a release, a refused claim.
+	 */
+	public function test_claim_that_takes_no_lock_over_logs_no_takeover(): void {
+		$order  = wc_create_order();
+		$logger = RecordingWcLogger::install();
+
+		$token = $this->sut->claim( $order, $this->persistence_vocabulary, 'pi_first', 'checkout' );
+		$this->assertNotNull( $token );
+		$this->assertNull( $this->sut->claim( $order, $this->persistence_vocabulary, 'pi_second', 'refund' ) );
+		$this->sut->log_refusal( $order, $this->persistence_vocabulary, 'refund' );
+		$this->sut->release( $order, $this->persistence_vocabulary, $token );
+		$this->assertNotNull( $this->sut->claim( $order, $this->persistence_vocabulary, 'pi_third', 'capture' ) );
+
+		$this->assertSame( array(), $this->get_takeover_lines( $logger ) );
+		$this->assertCount( 1, $logger->lines, 'The refusal line is the only line.' );
+		$this->assertStringStartsWith( 'order payment lock refused: ', $logger->lines[0][1] );
+		$this->clear_order_payment_lock( $order, $this->persistence_vocabulary );
+	}
+
+	/**
+	 * @testdox Of two overlapping takeovers of an expired lock, only the winner logs a takeover line.
+	 */
+	public function test_only_the_winning_takeover_logs_a_line(): void {
+		$this->skip_when_transients_live_in_object_cache();
+		$order    = wc_create_order();
+		$lock_key = $this->persistence_vocabulary->get_order_lock_key( $order );
+		$this->insert_lock_rows( $lock_key, 'pi_dead', time() - 12 );
+		$this->insert_holder_row( $lock_key, 'checkout', 'pi_dead', time() - 312 );
+		$logger = RecordingWcLogger::install();
+
+		// A rival request takes the expired lock over right before this request writes its own takeover.
+		$rival_token = 'not run';
+		$rival       = function ( $query ) use ( &$rival, &$rival_token, $order, $lock_key ) {
+			if ( 0 === strpos( ltrim( $query ), 'UPDATE' ) && false !== strpos( $query, '_transient_timeout_' . $lock_key ) ) {
+				remove_filter( 'query', $rival );
+				$rival_token = $this->sut->claim( $order, $this->persistence_vocabulary, 'pi_dead', 'refund' );
+			}
+			return $query;
+		};
+		add_filter( 'query', $rival );
+		$claimed = $this->sut->claim( $order, $this->persistence_vocabulary, 'pi_dead', 'payment status update' );
+		remove_filter( 'query', $rival );
+
+		$this->assertNotNull( $rival_token, 'The rival takeover must have run and won.' );
+		$this->assertNull( $claimed, 'This takeover must lose.' );
+		$lines = $this->get_takeover_lines( $logger );
+		$this->assertCount( 1, $lines, 'Only the winning takeover logs.' );
+		$this->assertSame( 'refund', $lines[0]['context']['operation'] );
+		$this->assertSame( 'checkout', $lines[0]['context']['former_operation'] );
+	}
+
+	/**
+	 * @testdox With transients in the object cache, a claim made after the cache dropped an expired lock logs the former holder, whose record is kept for a day.
+	 */
+	public function test_object_cache_claim_after_the_lock_expired_logs_the_former_holder(): void {
+		global $wp_object_cache;
+
+		$order     = wc_create_order();
+		$lock_key  = $this->persistence_vocabulary->get_order_lock_key( $order );
+		$was_ext   = wp_using_ext_object_cache( true );
+		$was_cache = $wp_object_cache;
+		// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Records the expiry of each write; restored below.
+		$wp_object_cache = new class() extends \WP_Object_Cache {
+			/**
+			 * Expiry of each write, by key.
+			 *
+			 * @var array<string,int>
+			 */
+			public array $expiries = array();
+
+			/**
+			 * Record the expiry, then store.
+			 *
+			 * @param int|string $key    Key.
+			 * @param mixed      $data   Data.
+			 * @param string     $group  Group.
+			 * @param int        $expire Expiry.
+			 * @return bool
+			 */
+			public function set( $key, $data, $group = 'default', $expire = 0 ) {
+				$this->expiries[ (string) $key ] = (int) $expire;
+				return parent::set( $key, $data, $group, $expire );
+			}
+		};
+
+		$logger = RecordingWcLogger::install();
+		try {
+			$this->assertNotNull( $this->sut->claim( $order, $this->persistence_vocabulary, 'pi_dead', 'checkout' ) );
+			$this->assertSame( DAY_IN_SECONDS, $wp_object_cache->expiries[ $lock_key . '_holder' ] ?? null, 'The holder record outlives its lock.' );
+			$this->assertSame( array(), $this->get_takeover_lines( $logger ) );
+			// The cache drops the expired lock and keeps the holder record.
+			wp_cache_delete( $lock_key, 'transient' );
+
+			$this->assertNotNull( $this->sut->claim( $order, $this->persistence_vocabulary, 'pi_dead', 'payment status update' ) );
+
+			$lines = $this->get_takeover_lines( $logger );
+			$this->assertCount( 1, $lines );
+			$this->assertSame( sprintf( 'order payment lock taken over: order %d, by payment status update, from checkout claimed %ds ago', $order->get_id(), $lines[0]['context']['former_age_seconds'] ), $lines[0]['message'] );
+			$this->assertSame( 'checkout', $lines[0]['context']['former_operation'] );
+			$this->assertLessThanOrEqual( 1, $lines[0]['context']['former_age_seconds'] );
+			$this->assertSame( 'pi_dead', $lines[0]['context']['former_lock_value'] );
+		} finally {
+			wp_cache_delete( $lock_key, 'transient' );
+			wp_cache_delete( $lock_key . '_holder', 'transient' );
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restores the cache replaced above.
+			$wp_object_cache = $was_cache;
+			wp_using_ext_object_cache( (bool) $was_ext );
+		}
+	}
+
+	/**
+	 * Get the takeover lines a recording logger holds.
+	 *
+	 * @param RecordingWcLogger $logger Recording logger.
+	 * @return array<int,array{level:string,message:string,context:array<string,mixed>}>
+	 */
+	private function get_takeover_lines( RecordingWcLogger $logger ): array {
+		$lines = array();
+		foreach ( $logger->lines as $index => $line ) {
+			if ( 0 === strpos( $line[1], 'order payment lock taken over: ' ) ) {
+				$lines[] = array(
+					'level'   => $line[0],
+					'message' => $line[1],
+					'context' => $logger->contexts[ $index ],
+				);
+			}
+		}
+
+		return $lines;
+	}
+
+	/**
+	 * Store a holder record directly in the database, as a request that died holding the lock leaves it.
+	 *
+	 * @param string $lock_key   Lock transient key.
+	 * @param string $operation  Operation the record names.
+	 * @param string $lock_value Lock value the record names.
+	 * @param int    $claimed_at When the record's claim was made.
+	 */
+	private function insert_holder_row( string $lock_key, string $operation, string $lock_value, int $claimed_at ): void {
+		$this->insert_lock_row(
+			'_transient_' . $lock_key . '_holder',
+			maybe_serialize(
+				array(
+					'operation'  => $operation,
+					'lock_value' => $lock_value,
+					'token'      => 'token_of_a_dead_request',
+					'claimed_at' => $claimed_at,
+				)
+			)
+		);
 	}
 
 	/**
