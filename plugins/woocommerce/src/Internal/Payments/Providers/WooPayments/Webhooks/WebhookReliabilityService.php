@@ -223,7 +223,7 @@ class WebhookReliabilityService implements RegisterHooksInterface {
 	 * succeed, so it is removed with one error line and the job completes. Any other failure of a retried type schedules
 	 * the job again, at most three more times after 1 minute, 10 minutes and 1 hour, then the event is removed with an
 	 * error line; other types get this one attempt. The failure is re-thrown so Action Scheduler records it, since
-	 * Action Scheduler does not retry a failed action by itself.
+	 * Action Scheduler does not retry a failed action by itself. A retry that finds no stored copy logs an error and completes.
 	 *
 	 * @param string $event_id Event ID.
 	 * @throws \Throwable When the ingestor fails other than by refusing the event; the event is kept for the next attempt unless none is left.
@@ -231,6 +231,13 @@ class WebhookReliabilityService implements RegisterHooksInterface {
 	public function process_event( string $event_id ): void {
 		$event = $this->get_failed_event( $event_id );
 		if ( null === $event ) {
+			wc_get_logger()->error(
+				sprintf( 'WooPayments webhook event %s has no stored copy: another attempt already applied it, or its copy was lost.', $event_id ),
+				array(
+					'source'   => WooPaymentsLogger::SOURCE,
+					'event_id' => $event_id,
+				)
+			);
 			return;
 		}
 

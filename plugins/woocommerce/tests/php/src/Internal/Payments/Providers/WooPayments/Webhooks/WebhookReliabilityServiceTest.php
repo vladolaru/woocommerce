@@ -369,7 +369,7 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Processing a missing failed event payload is skipped.
+	 * @testdox Processing a missing failed event payload is skipped, with one error line naming the event.
 	 */
 	public function test_process_event_skips_missing_payload(): void {
 		$ingestor = new RecordingEventIngestor();
@@ -378,10 +378,15 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 			new StaticFailedEventsApiClient(),
 			$ingestor
 		);
+		$logger   = RecordingWcLogger::install();
 
 		$service->process_event( 'evt_missing' );
 
 		$this->assertSame( array(), $ingestor->processed_events );
+		$errors = $logger->get_errors();
+		$this->assertCount( 1, $errors, 'A retry that finds no stored copy says so once.' );
+		$this->assertStringContainsString( 'evt_missing', $errors[0][1] );
+		$this->assertSame( 'woopayments', $errors[0][2] );
 	}
 
 	/**
