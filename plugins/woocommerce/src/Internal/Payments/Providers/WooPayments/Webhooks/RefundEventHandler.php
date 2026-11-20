@@ -223,8 +223,10 @@ class RefundEventHandler {
 			$died_row = $this->get_row_left_by_unfinished_refund( $order, $charge_id, $refund, $refund_amount, $currency );
 			if ( $died_row instanceof WC_Order_Refund ) {
 				$this->add_note_and_metadata_for_created_refund( $order, $died_row, $refund_id, $balance_txn_id, $is_pending_refund );
-				// wc_create_refund() never reached that row: the fully refunded status comes from its filter, with no e-mail.
-				if ( 0 < (float) $order->get_total() && 0 >= (float) $order->get_remaining_refund_amount() ) {
+				// wc_create_refund() never reached that row: its two filters decide the status, as core asks them for an existing refund, with no e-mail.
+				// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- WooCommerce core filter, documented in includes/wc-order-functions.php.
+				$is_partially_refunded = (bool) apply_filters( 'woocommerce_order_is_partially_refunded', 0 < (float) $order->get_remaining_refund_amount() || ( $order->has_free_item() && 0 < $order->get_remaining_refund_items() ), $order->get_id(), $died_row->get_id() );
+				if ( 0 < (float) $order->get_total() && ! $is_partially_refunded ) {
 					// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- WooCommerce core filter, documented in includes/wc-order-functions.php.
 					$status = apply_filters( 'woocommerce_order_fully_refunded_status', OrderStatus::REFUNDED, $order->get_id(), $died_row->get_id() );
 					if ( $status ) {

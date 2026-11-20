@@ -1669,19 +1669,93 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A full refund whose call died keeps the order's status when core's partially refunded filter says the order is partly refunded, and the filter gets core's arguments for a refund that exists.
+	 *
+	 * wc_create_refund() asks `woocommerce_order_is_partially_refunded` before the fully refunded status
+	 * (wc-order-functions.php:732-738); the dead call's row never reached it, so the event asks it with the order and that row.
+	 */
+	public function test_full_refund_whose_call_died_asks_core_partially_refunded_filter(): void {
+		$order           = StoredPaymentRecords::payment();
+		$keep_processing = static fn(): string => '';
+		add_filter( 'woocommerce_order_fully_refunded_status', $keep_processing );
+		$row             = $this->create_row_left_by_a_dead_refund_call( $order, 10.99, 'key_died' );
+		remove_filter( 'woocommerce_order_fully_refunded_status', $keep_processing );
+		$seen = array();
+		add_filter(
+			'woocommerce_order_is_partially_refunded',
+			static function ( $is_partially_refunded, $order_id, $refund_id ) use ( &$seen ) {
+				$seen[] = array( $is_partially_refunded, $order_id, $refund_id );
+
+				return true;
+			},
+			10,
+			3
+		);
+
+		$this->sut->process( 'charge.refunded', $this->dead_call_refund_charge( 1099, 'key_died' ) );
+
+		$this->assertSame( array( array( false, $order->get_id(), $row->get_id() ) ), $seen, 'Core\'s default and arguments for a refund that exists.' );
+		$this->assertSame( 're_A', wc_get_order( $row->get_id() )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( OrderStatus::PROCESSING, wc_get_order( $order->get_id() )->get_status() );
+	}
+
+	/**
+	 * @testdox A full refund of the paid line whose call died leaves the order's status as it is while a free item is left, as core does.
+	 *
+	 * Core counts an order with a free item not yet refunded as partly refunded (wc-order-functions.php:732-738).
+	 */
+	public function test_full_refund_whose_call_died_with_a_free_item_left_keeps_the_status(): void {
+		$order = StoredPaymentRecords::payment();
+		$paid  = new \WC_Order_Item_Product();
+		$paid->set_name( 'Paid item' );
+		$paid->set_quantity( 1 );
+		$paid->set_subtotal( '10.99' );
+		$paid->set_total( '10.99' );
+		$order->add_item( $paid );
+		$free = new \WC_Order_Item_Product();
+		$free->set_name( 'Free item' );
+		$free->set_quantity( 1 );
+		$free->set_subtotal( '0' );
+		$free->set_total( '0' );
+		$order->add_item( $free );
+		$order->save();
+		$keep_processing = static fn(): string => '';
+		add_filter( 'woocommerce_order_fully_refunded_status', $keep_processing );
+		$row             = $this->create_row_left_by_a_dead_refund_call(
+			$order,
+			10.99,
+			'key_died',
+			array(
+				$paid->get_id() => array(
+					'qty'          => 1,
+					'refund_total' => 10.99,
+				),
+			)
+		);
+		remove_filter( 'woocommerce_order_fully_refunded_status', $keep_processing );
+
+		$this->sut->process( 'charge.refunded', $this->dead_call_refund_charge( 1099, 'key_died' ) );
+
+		$this->assertSame( 're_A', wc_get_order( $row->get_id() )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( OrderStatus::PROCESSING, wc_get_order( $order->get_id() )->get_status() );
+	}
+
+	/**
 	 * Create the row a WP Admin refund call left when it died after the platform answered, and the order's record of its
 	 * request, written by the refund ambiguity service as the call does before it sends.
 	 *
-	 * @param WC_Order $order  Paid order holding the charge ch_A.
-	 * @param float    $amount Refund amount.
-	 * @param string   $key    Key the call sent under.
+	 * @param WC_Order                                     $order      Paid order holding the charge ch_A.
+	 * @param float                                        $amount     Refund amount.
+	 * @param string                                       $key        Key the call sent under.
+	 * @param array<int,array{qty:int,refund_total:float}> $line_items Line items the refund names, by item ID.
 	 * @return WC_Order_Refund
 	 */
-	private function create_row_left_by_a_dead_refund_call( WC_Order $order, float $amount, string $key ): WC_Order_Refund {
+	private function create_row_left_by_a_dead_refund_call( WC_Order $order, float $amount, string $key, array $line_items = array() ): WC_Order_Refund {
 		$row = wc_create_refund(
 			array(
 				'order_id'       => $order->get_id(),
 				'amount'         => $amount,
+				'line_items'     => $line_items,
 				'refund_payment' => false,
 			)
 		);
