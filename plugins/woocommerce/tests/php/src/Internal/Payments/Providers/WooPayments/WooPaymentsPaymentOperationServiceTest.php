@@ -2389,6 +2389,57 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A payable Multibanco voucher that names the order by its ID alone stops the clear like one with money: the attempt is refused as unable to check, and the order is not paid from it.
+	 *
+	 * It may be another order's, or this order's voucher whose order key a metadata filter dropped, so it never pays.
+	 */
+	public function test_payable_voucher_naming_the_order_by_id_alone_never_clears(): void {
+		$order                  = $this->create_order_with_kept_key();
+		$voucher                = self::voucher_intent( $order, 'requires_action' );
+		$voucher['metadata']    = array( 'order_id' => (string) $order->get_id() );
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			self::stripe_idempotency_error( 'key_kept' ),
+			self::intent_list( array( $voucher ) ),
+			self::succeeded_charge( 'pi_resent', 'pm_new' ),
+		);
+		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_sent' );
+		$since                  = time();
+
+		$outcome = $this->charge_attempt( $sut, $order, 'pm_new', 'key_attempt' );
+		$trail   = self::request_trail( $http_client );
+
+		$this->assertSame( array( 'POST intentions key_kept', 'account list' ), self::with_account_lists_checked( $trail, $order->get_date_created()->getTimestamp(), $since ) );
+		$this->assert_refused_while_the_voucher_can_be_paid( $outcome, wc_get_order( $order->get_id() ), $trail, $http_client );
+	}
+
+	/**
+	 * @testdox A payable Multibanco voucher of the order still stops the clear when an older declined intent of the order follows it on the list.
+	 */
+	public function test_payable_voucher_beside_an_older_declined_intent_never_clears(): void {
+		$order                  = $this->create_order_with_kept_key();
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			self::stripe_idempotency_error( 'key_kept' ),
+			self::intent_list(
+				array(
+					self::voucher_intent( $order, 'requires_action' ),
+					self::order_intent( $order, 'pi_declined', 'requires_payment_method', 1000, array( 'created' => time() - 120 ) ),
+				)
+			),
+			self::succeeded_charge( 'pi_resent', 'pm_new' ),
+		);
+		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_sent' );
+		$since                  = time();
+
+		$outcome = $this->charge_attempt( $sut, $order, 'pm_new', 'key_attempt' );
+		$trail   = self::request_trail( $http_client );
+
+		$this->assertSame( array( 'POST intentions key_kept', 'account list' ), self::with_account_lists_checked( $trail, $order->get_date_created()->getTimestamp(), $since ) );
+		$this->assert_refused_while_the_voucher_can_be_paid( $outcome, wc_get_order( $order->get_id() ), $trail, $http_client );
+	}
+
+	/**
 	 * @testdox A card intent of the order waiting on authentication still clears: the key and record are retired and the shopper is told they were not charged.
 	 *
 	 * Only an offline method stops the clear. A lost answer leaves the shopper no way to finish a card's authentication.

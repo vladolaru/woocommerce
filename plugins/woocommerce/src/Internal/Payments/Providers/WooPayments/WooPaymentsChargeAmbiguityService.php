@@ -181,16 +181,26 @@ class WooPaymentsChargeAmbiguityService {
 			$metadata = isset( $intent['metadata'] ) && is_array( $intent['metadata'] ) ? $intent['metadata'] : array();
 			if ( (string) $order->get_id() === (string) ( $metadata['order_id'] ?? '' ) && $order->get_order_key() === (string) ( $metadata['order_key'] ?? '' ) ) {
 				$order_intents[] = $intent;
-				// A voucher awaiting payment may still be paid, so it stops a clear but never pays.
-				$payable = $payable || ( 'requires_action' === (string) ( $intent['status'] ?? '' ) && WooPaymentsIntentCodec::is_offline_payment_method_intent( $intent ) );
-			} elseif ( WooPaymentsIntentCodec::intent_belongs_to_order( $intent, $order ) && null !== self::find_intent_with_money( array( $intent ) ) ) {
+				$payable         = $payable || self::may_hold_or_take_money( $intent );
+			} elseif ( WooPaymentsIntentCodec::intent_belongs_to_order( $intent, $order ) && self::may_hold_or_take_money( $intent ) ) {
 				// Named by order ID alone, or by number on WooPay: it may be another order's, so it stops a clear but never pays.
 				$loose_money = true;
 			}
 		}
 
-		// A page with more behind it may hold the payment on the next one, so it can find money but never clear it.
+		// More pages, a loose match that may hold or take money, or a strict match that may still be paid (a voucher awaiting
+		// payment) can each hide the payment, so the page can find money but never clear it.
 		return ( ! empty( $page['has_more'] ) || $loose_money || $payable ) && null === self::find_intent_with_money( $order_intents ) ? null : $order_intents;
+	}
+
+	/**
+	 * Tell whether an intent holds the shopper's money or, as an offline voucher awaiting payment, may still take it.
+	 *
+	 * @param array<string,mixed> $intent Intent response.
+	 * @return bool
+	 */
+	private static function may_hold_or_take_money( array $intent ): bool {
+		return null !== self::find_intent_with_money( array( $intent ) ) || ( 'requires_action' === (string) ( $intent['status'] ?? '' ) && WooPaymentsIntentCodec::is_offline_payment_method_intent( $intent ) );
 	}
 
 	/**
