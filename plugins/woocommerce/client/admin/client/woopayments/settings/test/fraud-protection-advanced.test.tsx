@@ -1780,6 +1780,60 @@ describe( 'FraudProtectionAdvancedSettingsPage', () => {
 			);
 		} );
 
+		it( 'keeps an edit made while a save runs when the response changes the account AVS flag', async () => {
+			let resolveSave: ( didSave: boolean ) => void = () => {};
+			mockSaveSettings.mockReturnValueOnce(
+				new Promise< boolean >( ( resolve ) => {
+					resolveSave = resolve;
+				} )
+			);
+			const { rerender } = render(
+				<FraudProtectionAdvancedSettingsPage />
+			);
+
+			await userEvent.click(
+				getCheckbox( 'Enable AVS Mismatch filter' )
+			);
+			await userEvent.click( getSaveButton() );
+			rerender( <FraudProtectionAdvancedSettingsPage /> );
+			await userEvent.click(
+				getCheckbox( 'Enable Address Mismatch filter' )
+			);
+			// The save response brings the same rules and turns the account's AVS flag on.
+			storedRuleset = JSON.parse( JSON.stringify( storedRuleset ) );
+			mockUseGetSettings.mockReturnValue( {
+				...getSettingsRecord(),
+				fraud_protection: {
+					decline_on_avs_failure: true,
+					decline_on_cvc_failure: true,
+				},
+			} );
+			rerender( <FraudProtectionAdvancedSettingsPage /> );
+			await act( async () => {
+				resolveSave( true );
+			} );
+
+			expect(
+				getCheckbox( 'Enable Address Mismatch filter' )
+			).toBeChecked();
+			expect( getSaveButton() ).not.toHaveAttribute(
+				'aria-disabled',
+				'true'
+			);
+
+			mockSaveSettings.mockResolvedValueOnce( true );
+			await userEvent.click( getSaveButton() );
+
+			expect(
+				JSON.stringify(
+					setAdvancedFraudProtectionSettings.mock.calls[ 1 ][ 0 ]
+				)
+			).toBe(
+				'[{"key":"avs_verification","outcome":"block","check":{"key":"avs_mismatch","operator":"equals","value":true}},' +
+					'{"key":"address_mismatch","outcome":"block","check":{"key":"billing_shipping_address_same","operator":"equals","value":false}}]'
+			);
+		} );
+
 		it( 'reads the loaded account flags into the form when the stored rules stay empty', () => {
 			mockUseSettings.mockReturnValue( {
 				isLoading: true,

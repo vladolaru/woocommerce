@@ -709,7 +709,13 @@ export const FraudProtectionAdvancedSettingsPage = () => {
 	);
 	const readKeyRef = useRef< string | null >( null );
 	const editCountRef = useRef( 0 );
-	if ( readKeyRef.current !== readKey ) {
+	// An edit made after the latest save started is never read over, whatever changed: 11.3.0 keeps the rules it
+	// submitted, so its form keeps such an edit even when the save response changes the account's AVS flag.
+	const saveEditCountRef = useRef< number | null >( null );
+	const isEditedSinceSave =
+		saveEditCountRef.current !== null &&
+		saveEditCountRef.current !== editCountRef.current;
+	if ( readKeyRef.current !== readKey && ! isEditedSinceSave ) {
 		readKeyRef.current = readKey;
 		const ruleset =
 			Array.isArray( advancedFraudProtectionSettings ) ||
@@ -805,6 +811,7 @@ export const FraudProtectionAdvancedSettingsPage = () => {
 
 		const ruleset = writeRuleset( protectionSettingsUI, environment );
 		const editCountAtSave = editCountRef.current;
+		saveEditCountRef.current = editCountAtSave;
 
 		updateAdvancedFraudProtectionSettings( ruleset );
 		void Promise.resolve( saveSettings() ).then( ( didSave ) => {
