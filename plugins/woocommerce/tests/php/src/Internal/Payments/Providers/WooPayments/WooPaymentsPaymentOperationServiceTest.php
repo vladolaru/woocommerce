@@ -8241,6 +8241,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertCount( 0, wc_get_order( $order->get_id() )->get_refunds() );
 		$this->assertSame( 'failed', wc_get_order( $order->get_id() )->get_meta( '_wcpay_refund_status', true ) );
 		$this->assertSame( 'The refund returned status "' . $status . '". Reason: No reason provided.', $result->get_error_message() );
+		$this->assertSame( '', self::refund_hold_of( $order ), 'A failed status clears the kept request.' );
 	}
 
 	/**
@@ -8904,6 +8905,367 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertStringStartsWith( 'POST refunds ', $trail[1] );
 		$this->assertSame( 're_f458_after_m5', wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
 		$this->assertSame( '', self::refund_hold_of( $order ) );
+	}
+
+	/**
+	 * @testdox A same-amount refund repeated after a call died past the platform's answer links the dead call's row and is refused, with no second refund.
+	 *
+	 * The death leaves the platform refund, its own row unlinked and the order's record of the request. The repeat finds
+	 * the refund by its marker; the dead row records it, so it is linked and this call refused whatever its amount.
+	 */
+	public function test_refund_repeated_after_a_death_links_the_dead_row_and_refuses(): void {
+		$order                  = $this->create_refund_hold_order();
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			self::http_json( 200, $this->recorded_refund_answer( self::F458_REFUND_555, self::F458_KEY_555, 555 ) ),
+			self::http_json( 200, $this->recorded_refund_list() ),
+		);
+		$provider               = $this->create_refund_hold_provider( $http_client );
+		$died                   = $this->die_after_refund_answer( $provider, $order, 5.55, self::F458_KEY_555 );
+
+		list( $result ) = $this->run_refund( $provider, $order, 5.55 );
+		$rows           = wc_get_order( $order->get_id() )->get_refunds();
+
+		$this->assertSame( array( 'POST refunds ' . self::F458_KEY_555, self::refund_list_trail() ), self::request_trail( $http_client ), 'No second refund is sent.' );
+		$this->assertWPError( $result );
+		$this->assertSame( WooPaymentsRefundAmbiguityService::REFUSAL_ALREADY_RECORDED, $result->get_error_code() );
+		$this->assertSame( 'The earlier refund of $5.55 went through and is recorded on the order. No new refund was sent. Reload the order to see it.', $result->get_error_message() );
+		$this->assertSame( array( $died->get_id() ), array_map( static fn( WC_Order_Refund $row ): int => $row->get_id(), $rows ), 'One row: the dead call\'s.' );
+		$this->assertSame( self::F458_REFUND_555, wc_get_order( $died->get_id() )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( '', self::refund_hold_of( $order ) );
+	}
+
+	/**
+	 * @testdox A refund for another amount after a call died past the platform's answer links the dead row and is refused once; the next call is sent with no lookup.
+	 */
+	public function test_refund_for_another_amount_after_a_death_is_refused_once_then_sent(): void {
+		$order                  = $this->create_refund_hold_order();
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			self::http_json( 200, $this->recorded_refund_answer( self::F458_REFUND_555, self::F458_KEY_555, 555 ) ),
+			self::http_json( 200, $this->recorded_refund_list() ),
+			self::http_json( 200, $this->recorded_refund_answer( 're_after_the_death', 'key_not_read', 200 ) ),
+		);
+		$provider               = $this->create_refund_hold_provider( $http_client );
+		$died                   = $this->die_after_refund_answer( $provider, $order, 5.55, self::F458_KEY_555 );
+
+		list( $refused )    = $this->run_refund( $provider, $order, 2.00 );
+		list( $sent, $row ) = $this->run_refund( $provider, $order, 2.00 );
+		$trail              = self::request_trail( $http_client );
+
+		$this->assertWPError( $refused );
+		$this->assertSame( 'The earlier refund of $5.55 went through and is recorded on the order. No new refund was sent. Reload the order to see it.', $refused->get_error_message() );
+		$this->assertSame( self::F458_REFUND_555, wc_get_order( $died->get_id() )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertTrue( $sent );
+		$this->assertCount( 3, $trail );
+		$this->assertSame( self::refund_list_trail(), $trail[1] );
+		$this->assertStringStartsWith( 'POST refunds ', $trail[2], 'The next call is sent with no lookup.' );
+		$this->assertNotSame( 'POST refunds ' . self::F458_KEY_555, $trail[2] );
+		$this->assertSame( 're_after_the_death', wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
+	}
+
+	/**
+	 * @testdox When the dead call's row was deleted, a same-amount repeat is answered by the refund it found, linked to this call's own row, with no second refund.
+	 */
+	public function test_refund_repeated_after_a_death_whose_row_was_deleted_links_this_calls_row(): void {
+		$order                  = $this->create_refund_hold_order();
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			self::http_json( 200, $this->recorded_refund_answer( self::F458_REFUND_555, self::F458_KEY_555, 555 ) ),
+			self::http_json( 200, $this->recorded_refund_list() ),
+		);
+		$provider               = $this->create_refund_hold_provider( $http_client );
+		$this->die_after_refund_answer( $provider, $order, 5.55, self::F458_KEY_555 )->delete( true );
+
+		list( $result, $row ) = $this->run_refund( $provider, $order, 5.55 );
+
+		$this->assertTrue( $result );
+		$this->assertSame( array( 'POST refunds ' . self::F458_KEY_555, self::refund_list_trail() ), self::request_trail( $http_client ) );
+		$this->assertSame( self::F458_REFUND_555, wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertCount( 1, wc_get_order( $order->get_id() )->get_refunds() );
+		$this->assertSame( '', self::refund_hold_of( $order ) );
+	}
+
+	/**
+	 * @testdox A repeat after a death links the dead call's own row before a manual row of the same amount, which stays untouched, and is refused.
+	 *
+	 * The record names the dead row as the attempt's own, which is stronger evidence than a manual row made after it.
+	 */
+	public function test_refund_repeated_after_a_death_links_the_dead_row_before_a_manual_row(): void {
+		$order                  = $this->create_refund_hold_order();
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			self::http_json( 200, $this->recorded_refund_answer( self::F458_REFUND_555, self::F458_KEY_555, 555 ) ),
+			self::http_json( 200, $this->recorded_refund_list() ),
+		);
+		$provider               = $this->create_refund_hold_provider( $http_client );
+		$died                   = $this->die_after_refund_answer( $provider, $order, 5.55, self::F458_KEY_555 );
+		$manual                 = $this->create_refund_row( $order, 5.55, 'Refund manually' );
+
+		list( $result ) = $this->run_refund( $provider, $order, 5.55 );
+
+		$this->assertWPError( $result );
+		$this->assertSame( WooPaymentsRefundAmbiguityService::REFUSAL_ALREADY_RECORDED, $result->get_error_code() );
+		$this->assertSame( array( 'POST refunds ' . self::F458_KEY_555, self::refund_list_trail() ), self::request_trail( $http_client ) );
+		$this->assertSame( self::F458_REFUND_555, wc_get_order( $died->get_id() )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( '', wc_get_order( $manual->get_id() )->get_meta( '_wcpay_refund_id', true ), 'The manual row is untouched.' );
+	}
+
+	/**
+	 * @testdox A call whose kept request never reached the platform, 300 s or more after it was sent, lists the refunds, finds nothing and is sent under its own key.
+	 */
+	public function test_refund_after_a_kept_request_that_never_reached_the_platform_is_sent(): void {
+		$order = $this->create_refund_hold_order();
+		$died  = $this->create_refund_row( $order, 5.55, 'requested_by_customer' );
+		wc_get_container()->get( WooPaymentsRefundAmbiguityService::class )->record_sent_request(
+			wc_get_order( $order->get_id() ),
+			'key_never_reached',
+			array(
+				'charge' => self::F458_CHARGE,
+				'amount' => 555,
+				'reason' => 'requested_by_customer',
+				'source' => 'woocommerce_core',
+			),
+			$died->get_id()
+		);
+		$this->seed_refund_hold(
+			$order,
+			array_merge(
+				self::refund_hold_of( $order ),
+				array(
+					'failed_at'      => time() - 400,
+					'last_failed_at' => time() - 400,
+				)
+			)
+		);
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			self::http_json( 200, $this->recorded_refund_list() ),
+			self::http_json( 200, $this->recorded_refund_answer( 're_after_nothing_reached', 'key_not_read', 555 ) ),
+		);
+		$provider               = $this->create_refund_hold_provider( $http_client );
+
+		list( $result, $row ) = $this->run_refund( $provider, $order, 5.55 );
+		$trail                = self::request_trail( $http_client );
+
+		$this->assertTrue( $result );
+		$this->assertSame( self::refund_list_trail(), $trail[0] ?? null );
+		$this->assertStringStartsWith( 'POST refunds ', $trail[1] ?? '' );
+		$this->assertNotSame( 'POST refunds key_never_reached', $trail[1] ?? '' );
+		$this->assertSame( 're_after_nothing_reached', wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( '', self::refund_hold_of( $order ) );
+	}
+
+	/**
+	 * @testdox A genuine second refund of the same amount after a normal first one meets no record: both are sent, with no lookup, and both rows are linked.
+	 */
+	public function test_genuine_second_refund_of_the_same_amount_is_sent_with_no_lookup(): void {
+		$order                  = $this->create_refund_hold_order();
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			self::http_json( 200, $this->recorded_refund_answer( 're_first_of_two', 'key_not_read', 555 ) ),
+			self::http_json( 200, $this->recorded_refund_answer( 're_second_of_two', 'key_not_read', 555 ) ),
+		);
+		$provider               = $this->create_refund_hold_provider( $http_client );
+
+		list( $first, $first_row )   = $this->run_refund( $provider, $order, 5.55 );
+		$hold_after_first            = self::refund_hold_of( $order );
+		list( $second, $second_row ) = $this->run_refund( $provider, $order, 5.55 );
+		$trail                       = self::request_trail( $http_client );
+
+		$this->assertTrue( $first );
+		$this->assertTrue( $second );
+		$this->assertSame( '', $hold_after_first, 'The save that links the row clears the request.' );
+		$this->assertCount( 2, $trail );
+		$this->assertStringStartsWith( 'POST refunds ', $trail[0] );
+		$this->assertStringStartsWith( 'POST refunds ', $trail[1] );
+		$this->assertSame( 're_first_of_two', wc_get_order( $first_row )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( 're_second_of_two', wc_get_order( $second_row )->get_meta( '_wcpay_refund_id', true ) );
+	}
+
+	/**
+	 * @testdox When the refund event arrives before the repeat, it links the dead call's row and keeps the record, so a later same-amount repeat is refused once and the next is sent.
+	 */
+	public function test_refund_event_after_a_death_links_the_dead_row_and_a_late_repeat_is_refused_once(): void {
+		$order = $this->create_refund_hold_order();
+		$order->set_status( OrderStatus::PROCESSING );
+		$order->update_meta_data( '_intent_id', 'pi_f458' );
+		$order->save();
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			self::http_json( 200, $this->recorded_refund_answer( self::F458_REFUND_555, self::F458_KEY_555, 555 ) ),
+			self::http_json( 200, $this->recorded_refund_list() ),
+			self::http_json( 200, $this->recorded_refund_answer( 're_after_the_event', 'key_not_read', 555 ) ),
+		);
+		$provider               = $this->create_refund_hold_provider( $http_client );
+		$died                   = $this->die_after_refund_answer( $provider, $order, 5.55, self::F458_KEY_555 );
+
+		wc_get_container()->get( RefundEventHandler::class )->process( 'charge.refunded', self::charge_refunded_event( 'pi_f458', self::F458_REFUND_555, 555, self::F458_KEY_555 ) );
+		$rows_after_event = wc_get_order( $order->get_id() )->get_refunds();
+		$this->assertSame( array( $died->get_id() ), array_map( static fn( WC_Order_Refund $refund ): int => $refund->get_id(), $rows_after_event ), 'The event links the dead row instead of adding one.' );
+		$this->assertSame( self::F458_REFUND_555, wc_get_order( $died->get_id() )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertIsArray( self::refund_hold_of( $order ), 'The event keeps the record.' );
+		$this->seed_refund_hold(
+			$order,
+			array_merge(
+				self::refund_hold_of( $order ),
+				array(
+					'failed_at'      => time() - 1000,
+					'last_failed_at' => time() - 1000,
+				)
+			)
+		);
+		list( $refused )    = $this->run_refund( $provider, $order, 5.55 );
+		list( $sent, $row ) = $this->run_refund( $provider, $order, 5.55 );
+		$trail              = self::request_trail( $http_client );
+
+		$this->assertWPError( $refused );
+		$this->assertSame( WooPaymentsRefundAmbiguityService::REFUSAL_ALREADY_RECORDED, $refused->get_error_code() );
+		$this->assertTrue( $sent );
+		$this->assertCount( 3, $trail );
+		$this->assertSame( self::refund_list_trail(), $trail[1] );
+		$this->assertStringStartsWith( 'POST refunds ', $trail[2] );
+		$this->assertSame( 're_after_the_event', wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
+	}
+
+	/**
+	 * @testdox An ambiguous answer to a call's own request turns its kept request into today's ambiguity record, so a same-amount call long after the webhook linked its refund is sent.
+	 */
+	public function test_ambiguous_answer_to_a_sent_request_keeps_the_already_recorded_window(): void {
+		$order                  = $this->create_refund_hold_order();
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array( self::stripe_api_error( 500 ) );
+		$provider               = $this->create_refund_hold_provider( $http_client );
+
+		list( $ambiguous ) = $this->run_refund( $provider, $order, 5.55 );
+		$held_key          = (string) ( $http_client->requests[0]['headers']['Idempotency-Key'] ?? '' );
+		$this->link_local_refund_row( $order, 5.55, 're_linked_by_the_webhook' );
+		$this->seed_refund_hold(
+			$order,
+			array_merge(
+				self::refund_hold_of( $order ),
+				array(
+					'failed_at'      => time() - 1000,
+					'last_failed_at' => time() - 1000,
+				)
+			)
+		);
+		$list                   = $this->recorded_refund_list_with_marker( self::F458_REFUND_555, $held_key );
+		$list['data'][0]['id']  = 're_linked_by_the_webhook';
+		$http_client->responses = array(
+			self::http_json( 200, $list ),
+			self::http_json( 200, $this->recorded_refund_answer( 're_sent_later', 'key_not_read', 555 ) ),
+		);
+
+		list( $later, $row ) = $this->run_refund( $provider, $order, 5.55 );
+
+		$this->assertWPError( $ambiguous );
+		$this->assertTrue( $later );
+		$this->assertSame( 're_sent_later', wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
+	}
+
+	/**
+	 * @testdox When the lock vanished and the platform replays the first call's finished refund to a second call before the first linked its row, the first call's row is linked, the second call refused, and the first call's own link writes nothing twice.
+	 *
+	 * A flush on an object-cache store can drop the lock while the first call is in its request. The second call finds the
+	 * kept request inside 300 s, with nothing listed yet, and resends it under the held key; Stripe answers with the first
+	 * call's refund. That refund belongs to the first call's row, so this call never links its own row to it.
+	 */
+	public function test_refund_replayed_to_a_second_call_before_the_first_links_books_one_row(): void {
+		$order                  = $this->create_refund_hold_order();
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			self::http_json( 200, $this->recorded_refund_answer( self::F458_REFUND_555, 'key_first_call', 555 ) ),
+			self::http_json( 200, $this->recorded_refund_list() ),
+			self::http_json( 200, $this->recorded_refund_answer( self::F458_REFUND_555, 'key_first_call', 555 ) ),
+		);
+		$provider               = $this->create_refund_hold_provider( $http_client );
+		$second                 = null;
+		$second_row             = 0;
+		$vanish_then_second     = function ( $response, $method ) use ( &$vanish_then_second, &$second, &$second_row, $provider, $order ) {
+			if ( 'POST' === $method ) {
+				remove_filter( 'wcpay_api_request_response', $vanish_then_second, 10 );
+				$vocabulary = new WooPaymentsPersistenceVocabulary();
+				delete_transient( $vocabulary->get_order_lock_key( $order ) );
+				delete_transient( $vocabulary->get_order_lock_key( $order ) . '_holder' );
+				list( $second, $second_row ) = $this->run_refund( $provider, $order, 5.55 );
+			}
+
+			return $response;
+		};
+		add_filter( 'wcpay_api_request_response', $vanish_then_second, 10, 2 );
+
+		list( $first, $first_row ) = $this->run_refund( $provider, $order, 5.55 );
+		$trail                     = self::request_trail( $http_client );
+		$rows                      = wc_get_order( $order->get_id() )->get_refunds();
+
+		$this->assertWPError( $second );
+		$this->assertSame( WooPaymentsRefundAmbiguityService::REFUSAL_ALREADY_RECORDED, $second->get_error_code() );
+		$this->assertFalse( wc_get_order( $second_row ), 'The second call\'s row is deleted.' );
+		$this->assertCount( 3, $trail );
+		$this->assertSame( $trail[0], $trail[2], 'The second call resends the first call\'s request under its key.' );
+		$this->assertSame( self::refund_list_trail(), $trail[1] );
+		$this->assertTrue( $first, 'The first call then finishes, finding its row already linked.' );
+		$this->assertSame( array( $first_row ), array_map( static fn( WC_Order_Refund $refund ): int => $refund->get_id(), $rows ), 'One refund at the platform, one row.' );
+		$this->assertSame( self::F458_REFUND_555, wc_get_order( $first_row )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertCount( 1, self::note_texts_containing( $order, self::F458_REFUND_555 ), 'The refund note is written once.' );
+		$this->assertSame( '', self::refund_hold_of( $order ) );
+	}
+
+	/**
+	 * Leave what a refund call that dies after the platform answered leaves: the platform refund, the call's own gateway row
+	 * unlinked, and whatever the provider wrote on the order before and during the request. The outcome is never applied.
+	 *
+	 * @param WooPaymentsProvider $provider Provider over the test's transport, whose next answer is the refund.
+	 * @param WC_Order            $order    Order.
+	 * @param float               $amount   Refund amount.
+	 * @param string              $key      Key the dead call sent under.
+	 * @return WC_Order_Refund The dead call's row.
+	 */
+	private function die_after_refund_answer( WooPaymentsProvider $provider, WC_Order $order, float $amount, string $key ): WC_Order_Refund {
+		$row = $this->create_refund_row( $order, $amount, 'requested_by_customer' );
+		// A gateway refund's row carries no manual record mark.
+		$row->delete_meta_data( RefundRowCapture::MANUAL_REFUND_META );
+		$row->save_meta_data();
+		$context = PaymentOperationContext::for_refund( wc_get_order( $order->get_id() ), WooPaymentsPersistenceVocabulary::GATEWAY_ID, $amount, 'requested_by_customer' )
+			->with_payment_data( array( PaymentOperationContext::PAYMENT_DATA_REFUND_ID => $row->get_id() ) );
+
+		$this->assertTrue( $provider->refund( $context, $key )->is_successful(), 'The platform answered before the request died.' );
+
+		return $row;
+	}
+
+	/**
+	 * A `charge.refunded` event for the recorded charge, its latest refund carrying the given marker.
+	 *
+	 * @param string $intent_id Intent the charge pays.
+	 * @param string $refund_id Refund ID.
+	 * @param int    $amount    Refund amount in minor units.
+	 * @param string $marker    The refund's `metadata.refund_attempt`.
+	 * @return array<string,mixed>
+	 */
+	private static function charge_refunded_event( string $intent_id, string $refund_id, int $amount, string $marker ): array {
+		return array(
+			'id'             => self::F458_CHARGE,
+			'status'         => 'succeeded',
+			'captured'       => true,
+			'amount'         => 4321,
+			'currency'       => 'usd',
+			'payment_intent' => $intent_id,
+			'refunds'        => array(
+				'data' => array(
+					array(
+						'id'                  => $refund_id,
+						'amount'              => $amount,
+						'currency'            => 'usd',
+						'reason'              => 'requested_by_customer',
+						'status'              => 'succeeded',
+						'balance_transaction' => 'txn_f458',
+						'metadata'            => array( 'refund_attempt' => $marker ),
+					),
+				),
+			),
+		);
 	}
 
 	/**

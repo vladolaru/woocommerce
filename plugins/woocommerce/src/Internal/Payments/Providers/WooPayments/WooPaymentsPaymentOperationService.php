@@ -367,7 +367,7 @@ class WooPaymentsPaymentOperationService {
 	 * then records it here, so the call links that refund. Otherwise an earlier refund call of the order whose answer was
 	 * ambiguous is settled first, from the charge's refunds, so a retry never refunds twice: this call may link the earlier
 	 * refund, resend it under its kept key, or be refused with no request. An ambiguous answer to this call's own request
-	 * keeps its key for the next call.
+	 * keeps its key for the next call. Each request is kept on the order from before it is sent until its row is linked.
 	 *
 	 * @param PaymentOperationContext $context         Payment context.
 	 * @param string                  $idempotency_key Key minted fresh for this refund call.
@@ -500,16 +500,27 @@ class WooPaymentsPaymentOperationService {
 	 * @return PaymentOutcome
 	 */
 	private function send_refund( WC_Order $order, array $request, string $key, bool $is_held_key_retry, int $own_row_id ): PaymentOutcome {
+		if ( ! $is_held_key_retry ) {
+			$this->refund_ambiguity_service->record_sent_request( $order, $key, $request, $own_row_id );
+		}
+
 		try {
 			$result = $this->api_client->refund_charge( $request['charge'], $request['amount'], $request['reason'], $request['source'], $key );
 		} catch ( ApiException $exception ) {
-			// A definitive answer leaves any kept record as it was: after a held-key retry, a 400 can be Stripe's refusal of a
-			// key still in use or the replay of a stored failure, neither of which settles the earlier attempt.
+			// A definitive answer clears this call's own request. After a held-key retry it leaves the record as it was: a 400
+			// can be Stripe's refusal of a key still in use or the replay of a stored failure, neither of which settles it.
 			if ( $exception->has_ambiguous_outcome() ) {
 				$this->refund_ambiguity_service->record_ambiguous_answer( $order, $key, $request, $own_row_id );
+			} elseif ( ! $is_held_key_retry ) {
+				$this->refund_ambiguity_service->clear_sent_request( $order, $key );
 			}
 
 			return WooPaymentsIntentCodec::failed_transport_outcome( 'refund', $exception );
+		}
+
+		$outcome = WooPaymentsIntentCodec::outcome_from_refund_result( $result );
+		if ( ! $is_held_key_retry && ! $outcome->is_successful() ) {
+			$this->refund_ambiguity_service->clear_sent_request( $order, $key );
 		}
 
 		if ( $is_held_key_retry ) {
@@ -519,7 +530,7 @@ class WooPaymentsPaymentOperationService {
 			}
 		}
 
-		return WooPaymentsIntentCodec::outcome_from_refund_result( $result )->with_effect_plan( WooPaymentsOrderEffectPlan::for_refund( $result ) );
+		return $outcome->with_effect_plan( WooPaymentsOrderEffectPlan::for_refund( $result ) );
 	}
 
 	/**

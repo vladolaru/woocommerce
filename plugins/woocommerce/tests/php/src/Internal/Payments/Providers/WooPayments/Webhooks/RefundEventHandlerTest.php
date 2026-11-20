@@ -25,6 +25,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundAmbiguityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\RefundEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\OtherChargeRecorder;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockWithClaimHook;
@@ -1582,6 +1584,142 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 			'a WooPayments payment kept on a bank transfer order, delivered again after a failed delivery, with logging off' => array( $kept, false, true, 1, 1 ),
 			'a WooPayments order' => array( static fn(): WC_Order => StoredPaymentRecords::payment(), true, false, 1, 0 ),
 		);
+	}
+
+	/**
+	 * @testdox A refund event whose refund carries the key of a refund call that died after the platform answered: $_dataName.
+	 *
+	 * The dead call left its own row unlinked and its request recorded on the order. The event links that row instead of
+	 * creating a second one, only when the record names it, it is unlinked, and the marker and amount match; the record
+	 * stays for the next refund call. A partial refund with an amount left changes no status.
+	 *
+	 * @dataProvider provider_events_after_a_dead_refund_call
+	 *
+	 * @param string $marker        The event refund's `metadata.refund_attempt`.
+	 * @param string $row_linked_to Provider refund the dead row already carries, or ''.
+	 * @param bool   $links         Whether the event links the dead row.
+	 */
+	public function test_refund_event_links_the_row_a_dead_refund_call_left( string $marker, string $row_linked_to, bool $links ): void {
+		$order = StoredPaymentRecords::payment();
+		$row   = $this->create_row_left_by_a_dead_refund_call( $order, 4.00, 'key_died' );
+		if ( '' !== $row_linked_to ) {
+			$row->update_meta_data( '_wcpay_refund_id', $row_linked_to );
+			$row->save_meta_data();
+		}
+
+		$this->sut->process( 'charge.refunded', $this->dead_call_refund_charge( 400, $marker ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$rows  = $order->get_refunds();
+		$this->assertCount( $links ? 1 : 2, $rows );
+		$this->assertSame( $links ? 're_A' : $row_linked_to, (string) wc_get_order( $row->get_id() )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertCount( 1, array_filter( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), static fn( $note ): bool => false !== strpos( (string) $note->content, 're_A' ) ), 'The created note is written once.' );
+		$this->assertTrue( ! empty( $order->get_meta( WooPaymentsPaymentOperationService::REFUND_AMBIGUITY_META, true )['sent'] ), 'The record stays for the next refund call.' );
+		$this->assertSame( OrderStatus::PROCESSING, $order->get_status() );
+	}
+
+	/**
+	 * Events after a dead refund call: the refund's marker, what the dead row already carries, and whether it is linked.
+	 *
+	 * @return array<string,array{0:string,1:string,2:bool}>
+	 */
+	public function provider_events_after_a_dead_refund_call(): array {
+		return array(
+			'the marker matches, so the dead row is linked' => array( 'key_died', '', true ),
+			'another marker, so the event creates its own row' => array( 'key_other', '', false ),
+			'the dead row already carries another refund, so the event creates its own row' => array( 'key_died', 're_other', false ),
+		);
+	}
+
+	/**
+	 * @testdox A full refund whose call died is linked by its event, and the order takes the fully refunded status core's filter gives: $_dataName.
+	 *
+	 * wc_create_refund() sets that status for a row it creates (wc-order-functions.php:743-756), and the dead call's row never
+	 * reached it. The status comes from the same filter, with no fully refunded action and so no refund e-mail. Core's
+	 * own fully refunded handler then finds nothing left and adds no row or note.
+	 *
+	 * @testWith ["no filter", "refunded"]
+	 *           ["a filter giving completed", "completed"]
+	 *
+	 * @param string $filter   Whether a store filters the status.
+	 * @param string $expected Expected order status.
+	 */
+	public function test_full_refund_whose_call_died_takes_the_fully_refunded_status( string $filter, string $expected ): void {
+		$order           = StoredPaymentRecords::payment();
+		$keep_processing = static fn(): string => '';
+		add_filter( 'woocommerce_order_fully_refunded_status', $keep_processing );
+		$row             = $this->create_row_left_by_a_dead_refund_call( $order, 10.99, 'key_died' );
+		remove_filter( 'woocommerce_order_fully_refunded_status', $keep_processing );
+		$this->assertSame( OrderStatus::PROCESSING, wc_get_order( $order->get_id() )->get_status(), 'The dead call never set a status.' );
+		$fully_refunded_actions = did_action( 'woocommerce_order_fully_refunded' );
+		if ( 'no filter' !== $filter ) {
+			add_filter( 'woocommerce_order_fully_refunded_status', static fn(): string => OrderStatus::COMPLETED );
+		}
+
+		$this->sut->process( 'charge.refunded', $this->dead_call_refund_charge( 1099, 'key_died' ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( array( $row->get_id() ), array_map( static fn( WC_Order_Refund $refund ): int => $refund->get_id(), $order->get_refunds() ) );
+		$this->assertSame( 're_A', wc_get_order( $row->get_id() )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( $expected, $order->get_status() );
+		$this->assertSame( $fully_refunded_actions, did_action( 'woocommerce_order_fully_refunded' ), 'No fully refunded action, so no refund e-mail.' );
+		$notes = array_map( static fn( $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertSame( array(), preg_grep( '/Order status set to refunded/', $notes ) );
+		$this->assertCount( 1, preg_grep( '/re_A/', $notes ) );
+	}
+
+	/**
+	 * Create the row a WP Admin refund call left when it died after the platform answered, and the order's record of its
+	 * request, written by the refund ambiguity service as the call does before it sends.
+	 *
+	 * @param WC_Order $order  Paid order holding the charge ch_A.
+	 * @param float    $amount Refund amount.
+	 * @param string   $key    Key the call sent under.
+	 * @return WC_Order_Refund
+	 */
+	private function create_row_left_by_a_dead_refund_call( WC_Order $order, float $amount, string $key ): WC_Order_Refund {
+		$row = wc_create_refund(
+			array(
+				'order_id'       => $order->get_id(),
+				'amount'         => $amount,
+				'refund_payment' => false,
+			)
+		);
+		$this->assertInstanceOf( WC_Order_Refund::class, $row );
+		$row->delete_meta_data( RefundRowCapture::MANUAL_REFUND_META );
+		$row->save_meta_data();
+		wc_get_container()->get( WooPaymentsRefundAmbiguityService::class )->record_sent_request(
+			wc_get_order( $order->get_id() ),
+			$key,
+			array(
+				'charge' => 'ch_A',
+				'amount' => (int) round( $amount * 100 ),
+				'reason' => '',
+				'source' => 'woocommerce_core',
+			),
+			$row->get_id()
+		);
+
+		return $row;
+	}
+
+	/**
+	 * A `charge.refunded` event for the stored payment's charge ch_A, its latest refund re_A carrying a marker.
+	 *
+	 * @param int    $amount Refund amount in minor units.
+	 * @param string $marker The refund's `metadata.refund_attempt`.
+	 * @return array<string,mixed>
+	 */
+	private function dead_call_refund_charge( int $amount, string $marker ): array {
+		$charge                                   = $this->get_successful_refund_charge();
+		$charge['id']                             = 'ch_A';
+		$charge['payment_intent']                 = 'pi_A';
+		$charge['amount']                         = 1099;
+		$charge['refunds']['data'][0]['id']       = 're_A';
+		$charge['refunds']['data'][0]['amount']   = $amount;
+		$charge['refunds']['data'][0]['metadata'] = array( 'refund_attempt' => $marker );
+
+		return $charge;
 	}
 
 	/**

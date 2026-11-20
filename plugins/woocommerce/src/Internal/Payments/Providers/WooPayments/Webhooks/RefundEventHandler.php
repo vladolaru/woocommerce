@@ -19,6 +19,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsHt
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Utilities\CurrencyUtil;
 use InvalidArgumentException;
@@ -218,6 +219,21 @@ class RefundEventHandler {
 				return;
 			}
 
+			// A refund call that died after the platform answered left its own row unlinked; the record stays for the next call.
+			$died_row = $this->get_row_left_by_unfinished_refund( $order, $charge_id, $refund, $refund_amount, $currency );
+			if ( $died_row instanceof WC_Order_Refund ) {
+				$this->add_note_and_metadata_for_created_refund( $order, $died_row, $refund_id, $balance_txn_id, $is_pending_refund );
+				// wc_create_refund() never reached that row: the fully refunded status comes from its filter, with no e-mail.
+				if ( 0 < (float) $order->get_total() && 0 >= (float) $order->get_remaining_refund_amount() ) {
+					// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- WooCommerce core filter, documented in includes/wc-order-functions.php.
+					$status = apply_filters( 'woocommerce_order_fully_refunded_status', OrderStatus::REFUNDED, $order->get_id(), $died_row->get_id() );
+					if ( $status ) {
+						$order->update_status( $status );
+					}
+				}
+				return;
+			}
+
 			if ( $refunded_amount > (float) $order->get_total() ) {
 				throw new InvalidArgumentException( esc_html( sprintf( 'The refund amount is not valid for charge ID: %s', $charge_id ) ) );
 			}
@@ -338,6 +354,30 @@ class RefundEventHandler {
 		}
 
 		return $refund;
+	}
+
+	/**
+	 * Get the row the order's sent refund record names, when it is this order's, unlinked, for the event refund's amount,
+	 * and the refund carries the record's key as its marker.
+	 *
+	 * @param WC_Order            $order         Order read under the lock.
+	 * @param string              $charge_id     Refunded charge.
+	 * @param array<string,mixed> $refund        The event's refund.
+	 * @param int                 $refund_amount Its amount in minor units.
+	 * @param string              $currency      Its currency.
+	 * @return WC_Order_Refund|null
+	 */
+	private function get_row_left_by_unfinished_refund( WC_Order $order, string $charge_id, array $refund, int $refund_amount, string $currency ): ?WC_Order_Refund {
+		$record = $order->get_meta( WooPaymentsPaymentOperationService::REFUND_AMBIGUITY_META, true );
+		$marker = (string) ( $refund['metadata']['refund_attempt'] ?? '' );
+		if ( ! is_array( $record ) || empty( $record['sent'] ) || (int) ( $record['order_id'] ?? 0 ) !== $order->get_id() || (string) ( $record['charge_id'] ?? '' ) !== $charge_id || '' === $marker || (string) ( $record['key'] ?? '' ) !== $marker ) {
+			return null;
+		}
+
+		$row = wc_get_order( (int) ( $record['wc_refund_id'] ?? 0 ) );
+
+		return $row instanceof WC_Order_Refund && $order->get_id() === $row->get_parent_id() && '' === (string) $row->get_meta( '_wcpay_refund_id', true )
+			&& WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $row->get_amount(), $currency ) === $refund_amount ? $row : null;
 	}
 
 	/**

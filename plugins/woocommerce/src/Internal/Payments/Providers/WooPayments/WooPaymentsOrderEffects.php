@@ -640,7 +640,10 @@ class WooPaymentsOrderEffects {
 		$balance_transaction_id = WooPaymentsIntentCodec::balance_transaction_id( $result['balance_transaction'] ?? null );
 		$refund_meta            = array( '_wcpay_refund_id' => $refund_id );
 		$effect_data            = array(
-			PaymentOutcome::DATA_ORDER_META  => array( '_wcpay_refund_status' => $refund_status ),
+			PaymentOutcome::DATA_ORDER_META  => array(
+				'_wcpay_refund_status' => $refund_status,
+				WooPaymentsPaymentOperationService::REFUND_AMBIGUITY_META => '',
+			),
 			PaymentOutcome::DATA_REFUND_META => $refund_meta,
 			PaymentOutcome::DATA_REFUND_NOTE => $rendered_note,
 		);

@@ -172,6 +172,48 @@ class WooPaymentsRefundAmbiguityService {
 	}
 
 	/**
+	 * Keep this call's request on the order, marked as sent, from before it is sent until the save that links its row, so
+	 * the next call or the refund event finds the row a call that died left. An ambiguous answer makes it an ambiguity record.
+	 *
+	 * @param WC_Order                                                    $order      Order being refunded.
+	 * @param string                                                      $key        Key the request is sent under.
+	 * @param array{charge:string,amount:int,reason:string,source:string} $request    Refund request.
+	 * @param int                                                         $own_row_id The refund row this call links; 0 when unknown, never guessed.
+	 */
+	public function record_sent_request( WC_Order $order, string $key, array $request, int $own_row_id ): void {
+		$now = time();
+		$order->update_meta_data(
+			WooPaymentsPaymentOperationService::REFUND_AMBIGUITY_META,
+			array(
+				'order_id'       => $order->get_id(),
+				'charge_id'      => $request['charge'],
+				'key'            => $key,
+				'amount'         => $request['amount'],
+				'currency'       => strtolower( (string) $order->get_currency() ),
+				'request'        => $request,
+				'wc_refund_id'   => $own_row_id,
+				'failed_at'      => $now,
+				'last_failed_at' => $now,
+				'sent'           => true,
+			)
+		);
+		$order->save_meta_data();
+	}
+
+	/**
+	 * Clear this call's kept request after an answer that refunded nothing.
+	 *
+	 * @param WC_Order $order Order being refunded.
+	 * @param string   $key   Key the request was sent under.
+	 */
+	public function clear_sent_request( WC_Order $order, string $key ): void {
+		$stored = $order->get_meta( WooPaymentsPaymentOperationService::REFUND_AMBIGUITY_META, true );
+		if ( is_array( $stored ) && ( $stored['key'] ?? null ) === $key && ! empty( $stored['sent'] ) ) {
+			$this->clear_record( $order );
+		}
+	}
+
+	/**
 	 * Record an ambiguous answer to a refund request, or move the latest failure time of the record for the same key.
 	 *
 	 * @param WC_Order                                                    $order      Order being refunded.
@@ -182,7 +224,7 @@ class WooPaymentsRefundAmbiguityService {
 	public function record_ambiguous_answer( WC_Order $order, string $key, array $request, int $own_row_id = 0 ): void {
 		$now    = time();
 		$record = $this->read_record( $order, $request['charge'] );
-		if ( null !== $record && $key === $record['key'] ) {
+		if ( null !== $record && $key === $record['key'] && ! $record['sent'] ) {
 			// A clock stepped back never moves the end of the held-key window earlier.
 			$record['last_failed_at'] = max( $record['last_failed_at'], $now );
 		} else {
@@ -236,7 +278,12 @@ class WooPaymentsRefundAmbiguityService {
 		$refund_id = (string) ( $refund['id'] ?? '' );
 		$this->log_cleared( $order, array( 'key' => $key ), sprintf( 'resending its request under the held key returned refund %s', $refund_id ) );
 		$this->clear_record( $order );
-		if ( '' === $refund_id || ! $this->is_recorded_on_order( $order, $refund_id ) ) {
+		// The first call's own row, still unlinked, records this refund, so this call never links a row of its own to it.
+		$first_row = is_array( $record ) && ! empty( $record['sent'] ) && '' !== $refund_id ? $this->get_unlinked_row( $order, (int) ( $record['wc_refund_id'] ?? 0 ), 0 ) : null;
+		if ( null !== $first_row ) {
+			$first_row->update_meta_data( '_wcpay_refund_id', $refund_id );
+			$first_row->save_meta_data();
+		} elseif ( '' === $refund_id || ! $this->is_recorded_on_order( $order, $refund_id ) ) {
 			return null;
 		}
 
@@ -347,7 +394,16 @@ class WooPaymentsRefundAmbiguityService {
 		}
 
 		$is_same_amount = $request['amount'] === $refund_amount && strtolower( (string) $order->get_currency() ) === $refund_currency;
-		if ( ! $this->is_recorded_on_order( $order, $refund_id ) ) {
+		$is_recorded    = $this->is_recorded_on_order( $order, $refund_id );
+		// The earlier call died after the platform answered, leaving its own row unlinked: that row records this refund, so
+		// it is linked and this call refused below, whatever its amount. The next call is a refund of its own.
+		$died_row = $record['sent'] && ! $is_recorded ? $this->get_unlinked_row( $order, $record['wc_refund_id'], $own_row_id ) : null;
+		if ( null !== $died_row ) {
+			$died_row->update_meta_data( '_wcpay_refund_id', $refund_id );
+			$died_row->save_meta_data();
+		}
+
+		if ( null === $died_row && ! $is_recorded ) {
 			// The merchant may have recorded it with Refund manually: that row records it, so this call is a refund of its
 			// own. The rows are in the order's currency, so only a refund in that currency can be one of them.
 			$manual_row = 0 < $own_row_id && strtolower( (string) $order->get_currency() ) === $refund_currency
@@ -375,7 +431,7 @@ class WooPaymentsRefundAmbiguityService {
 
 		// After refuse_earlier_found() told the merchant to refund the found amount, the webhook may have recorded it
 		// meanwhile: that refund is refused at any time, once, since the hold is cleared with it.
-		if ( $is_same_amount && ( '' !== $record['found_refund_id'] || time() - $record['last_failed_at'] <= self::ALREADY_RECORDED_WINDOW_SECONDS ) ) {
+		if ( ( $is_same_amount || null !== $died_row ) && ( '' !== $record['found_refund_id'] || $record['sent'] || time() - $record['last_failed_at'] <= self::ALREADY_RECORDED_WINDOW_SECONDS ) ) {
 			$this->clear_record( $order );
 
 			return $this->refuse(
@@ -387,7 +443,7 @@ class WooPaymentsRefundAmbiguityService {
 					__( 'The earlier refund of %s went through and is recorded on the order. No new refund was sent. Reload the order to see it.', 'woocommerce' ),
 					self::format_refund_amount( $refund, $order )
 				),
-				sprintf( 'its refund %s is already recorded on the order, and this same-amount call came soon after the failure or after the order was told to refund that amount', $refund_id )
+				sprintf( 'its refund %s is recorded on the order, and this call came for its amount soon after the failure or after the order was told to refund it, or after the call that sent it did not finish', $refund_id )
 			);
 		}
 
@@ -476,7 +532,7 @@ class WooPaymentsRefundAmbiguityService {
 	 *
 	 * @param WC_Order $order     Order being refunded.
 	 * @param string   $charge_id The order's charge.
-	 * @return array{order_id:int,charge_id:string,key:string,amount:int,currency:string,request:array{charge:string,amount:int,reason:string,source:string},wc_refund_id:int,failed_at:int,last_failed_at:int,found_refund_id:string,found_amount:int,found_currency:string}|null
+	 * @return array{order_id:int,charge_id:string,key:string,amount:int,currency:string,request:array{charge:string,amount:int,reason:string,source:string},wc_refund_id:int,failed_at:int,last_failed_at:int,found_refund_id:string,found_amount:int,found_currency:string,sent:bool}|null
 	 */
 	private function read_record( WC_Order $order, string $charge_id ): ?array {
 		$stored = $order->get_meta( WooPaymentsPaymentOperationService::REFUND_AMBIGUITY_META, true );
@@ -513,6 +569,7 @@ class WooPaymentsRefundAmbiguityService {
 			'found_refund_id' => (string) ( $stored['found_refund_id'] ?? '' ),
 			'found_amount'    => (int) ( $stored['found_amount'] ?? 0 ),
 			'found_currency'  => strtolower( (string) ( $stored['found_currency'] ?? '' ) ),
+			'sent'            => ! empty( $stored['sent'] ),
 		);
 	}
 
@@ -606,6 +663,24 @@ class WooPaymentsRefundAmbiguityService {
 		$refunds = $this->get_fresh_refunds( $order );
 
 		return array_values( array_filter( $refunds, static fn( WC_Order_Refund $refund ): bool => $own_row_id !== $refund->get_id() ) );
+	}
+
+	/**
+	 * Get the row an earlier call kept on the record while it is one of the order's refunds, not this call's own, unlinked.
+	 *
+	 * @param WC_Order $order      Order being refunded.
+	 * @param int      $row_id     The row the earlier call kept on the record; 0 when unknown.
+	 * @param int      $own_row_id The refund row this call links.
+	 * @return WC_Order_Refund|null
+	 */
+	private function get_unlinked_row( WC_Order $order, int $row_id, int $own_row_id ): ?WC_Order_Refund {
+		foreach ( $this->get_earlier_refund_rows( $order, $own_row_id ) as $row ) {
+			if ( 0 < $row_id && $row_id === $row->get_id() && '' === (string) $row->get_meta( '_wcpay_refund_id', true ) ) {
+				return $row;
+			}
+		}
+
+		return null;
 	}
 
 	/**
