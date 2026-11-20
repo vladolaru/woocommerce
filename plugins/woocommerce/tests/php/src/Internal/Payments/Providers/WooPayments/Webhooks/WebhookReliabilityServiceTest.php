@@ -70,7 +70,7 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Registers the account refresh listener and the two scheduled webhook actions.
+	 * @testdox Registers the account refresh listener, the two scheduled webhook actions and the sweep.
 	 */
 	public function test_registers_the_reliability_hooks(): void {
 		$this->sut->register();
@@ -78,6 +78,7 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 10, has_action( 'woocommerce_payments_account_refreshed', array( $this->sut, 'maybe_schedule_fetch_events' ) ) );
 		$this->assertSame( 10, has_action( 'wcpay_webhook_fetch_events', array( $this->sut, 'fetch_events_and_schedule_processing_jobs' ) ) );
 		$this->assertSame( 10, has_action( 'wcpay_webhook_process_event', array( $this->sut, 'process_event' ) ) );
+		$this->assertSame( 10, has_action( 'woocommerce_woopayments_sweep_queued_events', array( $this->sut, 'sweep_queued_events' ) ) );
 	}
 
 	/**
@@ -226,12 +227,17 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 					'hook' => 'wcpay_webhook_process_event',
 					'args' => array( 'event_id' => 'evt_1' ),
 				),
+			),
+			$scheduler->jobs_for( WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION )
+		);
+		$this->assertSame(
+			array(
 				array(
 					'hook' => 'wcpay_webhook_fetch_events',
 					'args' => array(),
 				),
 			),
-			$scheduler->scheduled_jobs
+			$scheduler->jobs_for( WebhookReliabilityService::WEBHOOK_FETCH_EVENTS_ACTION )
 		);
 	}
 
@@ -1135,7 +1141,7 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertNull( $store->get_event( $event_id ) );
-		$retries = array_filter( $scheduler->scheduled_jobs, static fn( array $job ): bool => isset( $job['timestamp'] ) );
+		$retries = array_filter( $scheduler->jobs_for( WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION ), static fn( array $job ): bool => isset( $job['timestamp'] ) );
 		$this->assertCount( count( WebhookReliabilityService::RETRY_DELAYS_SECONDS ), $retries, 'No attempt is scheduled after the last one.' );
 		// The message filter runs once per log handler, so a line is counted once.
 		$errors = array_values( array_unique( array_column( array_filter( $logged, static fn( array $entry ): bool => 'error' === $entry[0] && false !== strpos( $entry[1], $event_id ) ), 1 ) ) );
@@ -1302,9 +1308,10 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		$service->retry_failed_event( $event, $exception );
 
 		$this->assertSame( $event, $store->get_event( 'evt_money' ) );
-		$this->assertCount( 1, $scheduler->scheduled_jobs );
-		$this->assertSame( WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION, $scheduler->scheduled_jobs[0]['hook'] );
-		$this->assertSame( array( 'event_id' => 'evt_money' ), $scheduler->scheduled_jobs[0]['args'] );
+		$jobs = $scheduler->jobs_for( WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION );
+		$this->assertCount( 1, $jobs );
+		$this->assertSame( WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION, $jobs[0]['hook'] );
+		$this->assertSame( array( 'event_id' => 'evt_money' ), $jobs[0]['args'] );
 		$lock_notes = array_filter(
 			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
 			static fn( $note ): bool => false !== strpos( $note->content, 'kept the order locked' )
@@ -1440,12 +1447,171 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Queuing an event schedules one sweep a day and an hour later, and storing it again for its retry schedules none.
+	 */
+	public function test_queuing_an_event_schedules_one_sweep_and_a_retry_schedules_none(): void {
+		$scheduler = new RecordingActionSchedulerService();
+		$event     = array(
+			'id'   => 'evt_process',
+			'type' => 'payment_intent.succeeded',
+		);
+		$service   = $this->create_service( $scheduler, new StaticFailedEventsApiClient(), new ThrowingEventIngestor( new \RuntimeException( 'transient boom' ) ) );
+
+		$before = time();
+		$service->retry_failed_event( $event, new \RuntimeException( 'transient boom' ) );
+		$after  = time();
+		$sweeps = $scheduler->jobs_for( WebhookReliabilityService::QUEUED_EVENTS_SWEEP_ACTION );
+		$this->assertCount( 1, $sweeps );
+		$this->assertSame( array(), $sweeps[0]['args'] );
+		$this->assertGreaterThanOrEqual( $before + DAY_IN_SECONDS + HOUR_IN_SECONDS, $sweeps[0]['timestamp'] );
+		$this->assertLessThanOrEqual( $after + DAY_IN_SECONDS + HOUR_IN_SECONDS, $sweeps[0]['timestamp'] );
+
+		try {
+			$service->process_event( 'evt_process' );
+			$this->fail( 'The failure must still reach Action Scheduler.' );
+		} catch ( \RuntimeException $exception ) {
+			$this->assertSame( 'transient boom', $exception->getMessage() );
+		}
+
+		$this->assertCount( 2, $scheduler->jobs_for( WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION ), 'The job and its retry.' );
+		$this->assertCount( 1, $scheduler->jobs_for( WebhookReliabilityService::QUEUED_EVENTS_SWEEP_ACTION ), 'The retry\'s store schedules no second sweep.' );
+	}
+
+	/**
+	 * @testdox The sweep queues again, as one more retry, an event last stored over a day ago whose job is gone, and keeps a younger one and one whose job is pending.
+	 */
+	public function test_sweep_queues_again_a_queued_event_whose_job_is_gone_and_counts_it(): void {
+		$store   = new QueuedEventRows();
+		$service = $this->create_service( wc_get_container()->get( WooPaymentsActionSchedulerService::class ), new StaticFailedEventsApiClient(), new RecordingEventIngestor() );
+		$old     = time() - 2 * DAY_IN_SECONDS;
+		$events  = array(
+			'evt_sweep_lost'    => array( $old, 1 ),
+			'evt_sweep_pending' => array( $old, 1 ),
+			'evt_sweep_young'   => array( time() - HOUR_IN_SECONDS, 0 ),
+		);
+		foreach ( $events as $event_id => list( $stored_at, $attempts ) ) {
+			$store->set_event(
+				$event_id,
+				array(
+					'id'   => $event_id,
+					'type' => 'payment_intent.succeeded',
+					WebhookReliabilityService::RETRY_ATTEMPTS_EVENT_KEY => $attempts,
+				),
+				$stored_at
+			);
+		}
+		as_schedule_single_action( time() + HOUR_IN_SECONDS, WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION, array( 'event_id' => 'evt_sweep_pending' ), WooPaymentsActionSchedulerService::GROUP_ID );
+		$kept   = array(
+			'evt_sweep_pending' => $store->get_row( 'evt_sweep_pending' ),
+			'evt_sweep_young'   => $store->get_row( 'evt_sweep_young' ),
+		);
+		$logger = RecordingWcLogger::install();
+
+		$before = time();
+		$service->sweep_queued_events();
+
+		$lost = $store->get_row( 'evt_sweep_lost' );
+		$this->assertSame( 2, $lost['value']['event'][ WebhookReliabilityService::RETRY_ATTEMPTS_EVENT_KEY ] ?? null, 'Queuing again counts as a retry.' );
+		$this->assertGreaterThanOrEqual( $before, $lost['value']['stored_at'] ?? 0, 'The row is written again.' );
+		$this->assertSame( 1, $this->count_pending_reliability_actions( WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION, array( 'event_id' => 'evt_sweep_lost' ) ) );
+		$warnings = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] ) );
+		$this->assertCount( 1, $warnings );
+		$this->assertStringContainsString( 'evt_sweep_lost (payment_intent.succeeded) had no job left to process it; it is queued again (retry 2 of 3)', $warnings[0][1] );
+		$this->assertSame( array(), $logger->get_errors() );
+		foreach ( $kept as $event_id => $row ) {
+			$this->assertSame( $row, $store->get_row( $event_id ), "$event_id is kept as it was." );
+		}
+		$this->assertSame( 1, $this->count_pending_reliability_actions( WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION, array( 'event_id' => 'evt_sweep_pending' ) ) );
+		$this->assertSame( 0, $this->count_pending_reliability_actions( WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION, array( 'event_id' => 'evt_sweep_young' ) ) );
+		$this->assertSame( 1, $this->count_pending_reliability_actions( WebhookReliabilityService::QUEUED_EVENTS_SWEEP_ACTION ), 'The sweep runs again while queued events remain.' );
+	}
+
+	/**
+	 * @testdox The sweep drops, with one error line and no job, a queued event whose $scenario.
+	 * @testWith ["retries are used up"]
+	 *           ["row cannot be read"]
+	 *
+	 * @param string $scenario Which drop.
+	 */
+	public function test_sweep_drops_a_queued_event_whose_attempts_are_used_up_or_that_cannot_be_read( string $scenario ): void {
+		global $wpdb;
+		$store   = new QueuedEventRows();
+		$service = $this->create_service( wc_get_container()->get( WooPaymentsActionSchedulerService::class ), new StaticFailedEventsApiClient(), new RecordingEventIngestor() );
+		$used_up = 'retries are used up' === $scenario;
+		if ( $used_up ) {
+			$event = array(
+				'id'   => 'evt_sweep_drop',
+				'type' => 'charge.refunded',
+				WebhookReliabilityService::RETRY_ATTEMPTS_EVENT_KEY => count( WebhookReliabilityService::RETRY_DELAYS_SECONDS ),
+			);
+			$store->set_event( 'evt_sweep_drop', $event, time() - 2 * DAY_IN_SECONDS );
+			$store->set_transient_event( 'evt_sweep_drop', $event );
+		} else {
+			$wpdb->insert(
+				$wpdb->options,
+				array(
+					'option_name'  => QueuedEventRows::row_name( 'evt_sweep_drop' ),
+					'option_value' => 'not-an-event',
+					'autoload'     => 'off',
+				)
+			);
+		}
+		$logger = RecordingWcLogger::install();
+
+		$service->sweep_queued_events();
+
+		$this->assertNull( $store->get_row( 'evt_sweep_drop' ) );
+		$this->assertNull( $store->get_transient_event( 'evt_sweep_drop' ) );
+		$errors = $logger->get_errors();
+		$this->assertCount( 1, $errors );
+		$this->assertStringContainsString( $used_up ? 'evt_sweep_drop (charge.refunded) was dropped after 3 retries: no job will process it again.' : QueuedEventRows::row_name( 'evt_sweep_drop' ) . ' could not be read and was dropped', $errors[0][1] );
+		$this->assertSame( 'woopayments', $errors[0][2] );
+		$this->assertSame( 0, $this->count_pending_reliability_actions( WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION ) );
+		$this->assertSame( 0, $this->count_pending_reliability_actions( WebhookReliabilityService::QUEUED_EVENTS_SWEEP_ACTION ), 'With no queued event left, no sweep is scheduled.' );
+	}
+
+	/**
+	 * @testdox An event whose job dies hard after every queue again is queued again three times, then dropped.
+	 */
+	public function test_a_job_that_dies_hard_after_each_queue_again_is_dropped_after_its_attempts(): void {
+		$store   = new QueuedEventRows();
+		$service = $this->create_service( wc_get_container()->get( WooPaymentsActionSchedulerService::class ), new StaticFailedEventsApiClient(), new RecordingEventIngestor() );
+		$store->set_event(
+			'evt_sweep_dies',
+			array(
+				'id'   => 'evt_sweep_dies',
+				'type' => 'payment_intent.succeeded',
+			),
+			time() - 2 * DAY_IN_SECONDS
+		);
+		$logger = RecordingWcLogger::install();
+
+		for ( $sweep = 1; $sweep <= 4; $sweep++ ) {
+			$service->sweep_queued_events();
+			// The hard death: the job the sweep scheduled never runs process_event().
+			$this->unschedule_reliability_actions();
+			$event = $store->get_event( 'evt_sweep_dies' );
+			if ( null !== $event ) {
+				$store->set_event( 'evt_sweep_dies', $event, time() - 2 * DAY_IN_SECONDS );
+			}
+		}
+
+		$requeued = array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] && false !== strpos( $line[1], 'evt_sweep_dies' ) && false !== strpos( $line[1], 'queued again' ) );
+		$this->assertCount( 3, $requeued );
+		$errors = $logger->get_errors();
+		$this->assertCount( 1, $errors );
+		$this->assertStringContainsString( 'evt_sweep_dies (payment_intent.succeeded) was dropped after 3 retries', $errors[0][1] );
+		$this->assertNull( $store->get_row( 'evt_sweep_dies' ) );
+	}
+
+	/**
 	 * Remove reliability hooks for this SUT.
 	 */
 	private function remove_reliability_hooks(): void {
 		remove_action( 'woocommerce_payments_account_refreshed', array( $this->sut, 'maybe_schedule_fetch_events' ) );
 		remove_action( 'wcpay_webhook_fetch_events', array( $this->sut, 'fetch_events_and_schedule_processing_jobs' ) );
 		remove_action( 'wcpay_webhook_process_event', array( $this->sut, 'process_event' ) );
+		remove_action( 'woocommerce_woopayments_sweep_queued_events', array( $this->sut, 'sweep_queued_events' ) );
 	}
 
 	/**
@@ -1481,6 +1647,7 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 			array(
 				WebhookReliabilityService::WEBHOOK_FETCH_EVENTS_ACTION,
 				WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION,
+				WebhookReliabilityService::QUEUED_EVENTS_SWEEP_ACTION,
 			) as $hook
 		) {
 			foreach ( array( ActionScheduler_Store::STATUS_PENDING, ActionScheduler_Store::STATUS_RUNNING ) as $status ) {

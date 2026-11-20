@@ -8,7 +8,9 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountMilestonesController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteWordingSnapshot;
@@ -1661,6 +1663,7 @@ class ReconciliationJob implements RegisterHooksInterface {
 		// A rollback offers the switch again at once, on every admin page.
 		if ( self::SOURCE_ROLLBACK === $source ) {
 			delete_option( self::START_NOTICE_SNOOZED_UNTIL_OPTION );
+			as_unschedule_all_actions( WebhookReliabilityService::QUEUED_EVENTS_SWEEP_ACTION, array(), WooPaymentsActionSchedulerService::GROUP_ID );
 		}
 
 		return true;

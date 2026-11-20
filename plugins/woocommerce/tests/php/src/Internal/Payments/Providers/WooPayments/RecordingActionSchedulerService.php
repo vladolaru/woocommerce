@@ -37,4 +37,14 @@ class RecordingActionSchedulerService extends WooPaymentsActionSchedulerService 
 
 		$this->scheduled_jobs[] = $job;
 	}
+
+	/**
+	 * Get the recorded jobs of one hook, in the order they were scheduled.
+	 *
+	 * @param string $hook Hook name.
+	 * @return array<int,array{hook:string,args:array<int|string,mixed>,timestamp?:int}>
+	 */
+	public function jobs_for( string $hook ): array {
+		return array_values( array_filter( $this->scheduled_jobs, static fn( array $job ): bool => $hook === $job['hook'] ) );
+	}
 }

@@ -251,7 +251,7 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 					'args' => array( 'event_id' => 'evt_failed_push' ),
 				),
 			) : array(),
-			$this->scheduler->scheduled_jobs
+			$this->scheduler->jobs_for( WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION )
 		);
 	}
 
@@ -382,7 +382,7 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		}
 
 		$this->assertSame( 500, $response->get_status() );
-		$this->assertCount( 1, $this->scheduler->scheduled_jobs, 'One retry is queued.' );
+		$this->assertCount( 1, $this->scheduler->jobs_for( WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION ), 'One retry is queued.' );
 		$lines = array_values( array_filter( $logger->lines, static fn( array $line ): bool => in_array( $line[0], array( 'notice', 'warning', 'error' ), true ) ) );
 		$this->assertCount( 2, $lines );
 		$this->assertSame( 'notice', $lines[0][0] );
@@ -434,7 +434,7 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 					'args' => array( 'event_id' => 'evt_route' ),
 				),
 			) : array(),
-			$this->scheduler->scheduled_jobs
+			$this->scheduler->jobs_for( WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION )
 		);
 		$this->assertSame( array( $expected_log ), array_column( $logger->get_errors(), 1 ) );
 	}
@@ -584,7 +584,7 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 					'args' => array( 'event_id' => $event['id'] ),
 				),
 			),
-			$this->scheduler->scheduled_jobs
+			$this->scheduler->jobs_for( WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION )
 		);
 		$this->assertCount( $acknowledged ? 1 : 0, array_filter( $logger->lines, static fn( array $line ): bool => 'info' === $line[0] && 'woopayments' === $line[2] && str_contains( $line[1], 'no longer exists' ) ) );
 		$this->assertSame( $acknowledged ? array() : array( 'Failed processing a WooPayments webhook event.' ), array_column( $logger->get_errors(), 1 ) );
@@ -697,7 +697,7 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 					'args' => array( 'event_id' => 'evt_never' ),
 				),
 			),
-			$this->scheduler->scheduled_jobs
+			$this->scheduler->jobs_for( WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION )
 		);
 		$this->assertSame( $before, self::order_state( $order_id ), 'The order is not written and its refund rows are unchanged.' );
 		$this->assertSame(
@@ -798,7 +798,7 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		);
 
 		$this->assertSame( 500, $response->get_status() );
-		$this->assertCount( 1, $this->scheduler->scheduled_jobs );
+		$this->assertCount( 1, $this->scheduler->jobs_for( WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION ) );
 		$notes_before = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 
 		$order = wc_get_order( $order->get_id() );
@@ -811,7 +811,7 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertCount( $notes_before + 1, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 		$this->assertCount( 1, self::order_notes_containing( $order, 're_never' ), 'One failed-refund note names the refund.' );
 		$this->assertNull( ( new QueuedEventRows() )->get_event( 'evt_not_yet' ) );
-		$this->assertCount( 1, $this->scheduler->scheduled_jobs, 'The applied job schedules no other.' );
+		$this->assertCount( 1, $this->scheduler->jobs_for( WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION ), 'The applied job schedules no other.' );
 		$this->assertSame( array(), self::woopayments_log_lines( $logger ) );
 	}
 
@@ -842,7 +842,7 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->reliability_service->process_event( 'evt_race' );
 
 		$this->assertNull( ( new QueuedEventRows() )->get_event( 'evt_race' ) );
-		$this->assertCount( 1, $this->scheduler->scheduled_jobs, 'The quiet job schedules no other.' );
+		$this->assertCount( 1, $this->scheduler->jobs_for( WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION ), 'The quiet job schedules no other.' );
 		$this->assertSame( $before, self::order_state( $order->get_id() ), 'The order is not written.' );
 		$this->assertCount( 1, self::woopayments_log_lines( $logger ) );
 		$this->assertSame( array( 'Failed processing a WooPayments webhook event.' ), array_column( $logger->get_errors(), 1 ), 'Only the first delivery logs an error; nothing is dropped.' );
@@ -1215,7 +1215,7 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 					'args' => array( 'event_id' => 'evt_dispute_lock_retry' ),
 				),
 			),
-			$this->scheduler->scheduled_jobs
+			$this->scheduler->jobs_for( WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION )
 		);
 		$lock_notes = array_filter(
 			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
@@ -1284,7 +1284,7 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 					'args' => array( 'event_id' => 'evt_funds_lock_retry' ),
 				),
 			),
-			$this->scheduler->scheduled_jobs
+			$this->scheduler->jobs_for( WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION )
 		);
 		$this->assertSame( array(), self::order_notes_containing( $order, 'kept the order locked' ), 'Nothing is noted while a retry is due.' );
 

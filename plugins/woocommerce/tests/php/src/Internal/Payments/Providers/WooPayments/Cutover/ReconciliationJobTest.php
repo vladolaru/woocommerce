@@ -27,6 +27,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\ReconciliationJob;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\StateStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
@@ -4811,6 +4813,39 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertIsArray( $record );
 		$this->assertTrue( $sut->is_awaiting_start( $record ) );
 		$this->assertFalse( get_option( ReconciliationJob::START_NOTICE_SNOOZED_UNTIL_OPTION ) );
+	}
+
+	/**
+	 * @testdox A rollback unschedules a pending sweep of queued webhook events and leaves a pending webhook job alone.
+	 */
+	public function test_rollback_unschedules_a_pending_queued_events_sweep(): void {
+		$sut   = $this->create_job( true, $this->create_preflight_with_failures( array() ), null, true );
+		$store = $this->state_store;
+		$this->assertTrue( $sut->enqueue( 'merchant' ) );
+		$pending = $store->get_record();
+		$this->assertIsArray( $pending );
+		$this->scheduler->cancel( $pending['generation'], 1 );
+		$done                    = $pending;
+		$done['revision']        = $pending['revision'] + 1;
+		$done['state']           = StateStore::STATE_DONE;
+		$done['action_id']       = 0;
+		$done['current_step']    = 'done';
+		$done['next_attempt_at'] = null;
+		$this->assertTrue( $store->compare_and_set_record( $pending, $done ) );
+		$group = WooPaymentsActionSchedulerService::GROUP_ID;
+		$this->assertIsInt( as_schedule_single_action( time() + DAY_IN_SECONDS, WebhookReliabilityService::QUEUED_EVENTS_SWEEP_ACTION, array(), $group ) );
+		$this->assertIsInt( as_schedule_single_action( time() + MINUTE_IN_SECONDS, WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION, array( 'event_id' => 'evt_rollback' ), $group ) );
+
+		try {
+			$this->assertTrue( $sut->record_plugin_activation() );
+
+			$this->assertTrue( $sut->is_awaiting_start( (array) $store->get_record() ) );
+			$this->assertFalse( as_has_scheduled_action( WebhookReliabilityService::QUEUED_EVENTS_SWEEP_ACTION, null, $group ), 'No sweep is left on a store the built-in no longer owns.' );
+			$this->assertTrue( as_has_scheduled_action( WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION, array( 'event_id' => 'evt_rollback' ), $group ), 'The extension runs the queued webhook job.' );
+		} finally {
+			as_unschedule_all_actions( WebhookReliabilityService::QUEUED_EVENTS_SWEEP_ACTION );
+			as_unschedule_all_actions( WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION );
+		}
 	}
 
 	/**

@@ -18,6 +18,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\Prefl
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\StateStore;
 use Automattic\WooCommerce\Internal\Jetpack\JetpackConnection;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Jetpack_Options;
 use WC_Unit_Test_Case;
@@ -555,6 +557,19 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array( $unhandled_id ), array_column( $sut->get_unhandled_queue_actions(), 'action_id' ) );
 		$this->assertSame( array( 'wcpay_preflight_service_test' ), $sut->get_unhandled_queue_hooks() );
+	}
+
+	/**
+	 * @testdox A pending sweep of queued webhook events is not an unhandled queue action, so it never holds a switch back.
+	 */
+	public function test_a_pending_queued_events_sweep_is_not_an_unhandled_queue_action(): void {
+		$sweep_id                       = as_schedule_single_action( time() + DAY_IN_SECONDS, WebhookReliabilityService::QUEUED_EVENTS_SWEEP_ACTION, array(), WooPaymentsActionSchedulerService::GROUP_ID );
+		$this->scheduled_action_hooks[] = WebhookReliabilityService::QUEUED_EVENTS_SWEEP_ACTION;
+		$this->assertIsInt( $sweep_id );
+		$sut = $this->create_sut();
+
+		$this->assertContains( $sweep_id, array_column( $sut->get_queued_operational_actions(), 'action_id' ), 'The preflight reads the sweep.' );
+		$this->assertSame( array(), $sut->get_unhandled_queue_actions() );
 	}
 
 	/**

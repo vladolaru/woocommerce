@@ -82,6 +82,7 @@ class PreflightService {
 		WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_HOOK,
 		WebhookReliabilityService::WEBHOOK_FETCH_EVENTS_ACTION,
 		WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION,
+		WebhookReliabilityService::QUEUED_EVENTS_SWEEP_ACTION,
 		// Stripe Billing migration off Stripe, continued by the built-in WooPayments' migrator after the switch.
 		'wcpay_schedule_subscription_migrations',
 		'wcpay_migrate_subscription',

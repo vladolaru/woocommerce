@@ -33,10 +33,11 @@ class QueuedEventRows {
 	/**
 	 * Seed a queued event in its row, as the service stores it.
 	 *
-	 * @param string              $event_id Event ID.
-	 * @param array<string,mixed> $event    Event payload.
+	 * @param string              $event_id  Event ID.
+	 * @param array<string,mixed> $event     Event payload.
+	 * @param int|null            $stored_at When the row was last written; now when null.
 	 */
-	public function set_event( string $event_id, array $event ): void {
+	public function set_event( string $event_id, array $event, ?int $stored_at = null ): void {
 		global $wpdb;
 
 		$wpdb->replace(
@@ -46,7 +47,7 @@ class QueuedEventRows {
 				'option_value' => maybe_serialize(
 					array(
 						'event'     => $event,
-						'stored_at' => time(),
+						'stored_at' => $stored_at ?? time(),
 					)
 				),
 				'autoload'     => 'off',
