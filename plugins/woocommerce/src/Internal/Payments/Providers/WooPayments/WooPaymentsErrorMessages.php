@@ -101,6 +101,17 @@ class WooPaymentsErrorMessages {
 	}
 
 	/**
+	 * Get the message for a shopper whose earlier payment attempt for the order is still being processed.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return string
+	 */
+	public static function get_payment_in_progress_message(): string {
+		return __( 'Your previous payment attempt is still being processed, so please wait a moment and check for an order confirmation before trying again.', 'woocommerce' );
+	}
+
+	/**
 	 * Get provider error codes mapped to translated shopper-facing messages.
 	 *
 	 * @since 11.0.0

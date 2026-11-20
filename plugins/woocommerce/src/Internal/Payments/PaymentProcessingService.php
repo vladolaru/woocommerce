@@ -94,8 +94,8 @@ class PaymentProcessingService {
 		$idempotency_key        = $this->mint_idempotency_key();
 		$persistence_vocabulary = $provider->get_persistence_vocabulary();
 
-		// A refused checkout claim, a scheduled renewal's included, returns the in-progress outcome; the gateway shows the
-		// shopper its generic retry notice. Client 11.1.0 takes no lock at checkout, so the refusal is logged.
+		// A refused checkout claim, a scheduled renewal's included, returns the in-progress outcome flagged as a lock refusal,
+		// so the gateway can tell the shopper to wait. Client 11.1.0 takes no lock at checkout, so the refusal is logged.
 		$lock_token = $this->order_payment_lock->claim( $order, $persistence_vocabulary, $idempotency_key, 'checkout' );
 		if ( null === $lock_token ) {
 			$this->order_payment_lock->log_refusal( $order, $persistence_vocabulary, 'checkout' );

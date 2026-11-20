@@ -2238,7 +2238,10 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		$data    = $outcome->get_data();
 		$message = $data[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? '';
-		if ( ! is_string( $message ) || '' === trim( $message ) ) {
+		if ( ! empty( $data[ PaymentOutcome::DATA_ORDER_PAYMENT_LOCK_REFUSED ] ) ) {
+			// The earlier attempt may still be taking the payment, so the shopper is told to wait rather than to try again.
+			$message = WooPaymentsErrorMessages::get_payment_in_progress_message();
+		} elseif ( ! is_string( $message ) || '' === trim( $message ) ) {
 			$message = WooPaymentsErrorMessages::get_generic_message();
 		}
 

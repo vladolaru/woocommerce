@@ -6539,6 +6539,95 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A checkout through $surface that another request's order payment lock refuses tells the shopper to wait for that payment, reaches no charge and leaves the order Pending.
+	 *
+	 * The first press may still be taking the payment, so trying again now could pay twice; the shopper gets the sentence
+	 * WooPay's draft-order path already shows, instead of the generic "refresh and try again". Client 11.3.0 takes no
+	 * checkout lock and charges again on that press.
+	 *
+	 * @testWith ["the Store API"]
+	 *           ["classic checkout"]
+	 *
+	 * @param string $surface Checkout surface the second press comes through.
+	 */
+	public function test_checkout_refused_by_the_order_payment_lock_tells_the_shopper_to_wait( string $surface ): void {
+		wc_clear_notices();
+		$order = $this->create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->save();
+		$charged = false;
+		$gateway = new WooPaymentsGateway();
+		$gateway->init(
+			wc_get_container()->get( PaymentProcessingService::class ),
+			$this->create_provider_charging(
+				new PaymentOutcome( PaymentOutcome::STATUS_FAILED, '', '', '', '' ),
+				wc_get_container()->get( WooPaymentsTokenService::class ),
+				static function () use ( &$charged ): void {
+					$charged = true;
+				}
+			)
+		);
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		$lock       = wc_get_container()->get( OrderPaymentLock::class );
+		$token      = $lock->claim( $order, $vocabulary, 'pi_first_press', 'checkout' );
+		$this->assertIsString( $token, 'The first press holds the order payment lock.' );
+		$sentence = 'Your previous payment attempt is still being processed, so please wait a moment and check for an order confirmation before trying again.';
+
+		try {
+			if ( 'classic checkout' === $surface ) {
+				$_POST['wcpay-payment-method'] = 'pm_second_press';
+				$result                        = $gateway->process_payment( $order->get_id() );
+
+				$this->assertSame( 'failure', $result['result'] ?? '' );
+				$this->assertSame( array( $sentence ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+			} else {
+				$this->assertSame( $sentence, $this->store_api_payment_error( $gateway, $order, 'pm_second_press' ) );
+			}
+		} finally {
+			$lock->release( $order, $vocabulary, $token );
+		}
+
+		$this->assertFalse( $charged, 'The second press reaches no charge.' );
+		$this->assertSame( OrderStatus::PENDING, wc_get_order( $order->get_id() )->get_status() );
+	}
+
+	/**
+	 * Pay an order through the Store API's payment step for a legacy gateway, as a Blocks checkout does, and return the
+	 * shopper message of the error it throws.
+	 *
+	 * @param WooPaymentsGateway $gateway        Gateway.
+	 * @param WC_Order           $order          Order.
+	 * @param string             $payment_method Payment method the shopper submits.
+	 * @return string
+	 */
+	private function store_api_payment_error( WooPaymentsGateway $gateway, WC_Order $order, string $payment_method ): string {
+		$available_gateway_filter = static function ( array $gateways ) use ( $gateway ): array {
+			$gateways[ $gateway->id ] = $gateway;
+
+			return $gateways;
+		};
+		add_filter( 'woocommerce_available_payment_gateways', $available_gateway_filter );
+		$context = new StoreApiPaymentContext();
+		$context->set_order( $order );
+		$context->set_payment_method( $gateway->id );
+		$context->set_payment_data( array( 'wcpay-payment-method' => $payment_method ) );
+		$result = new StoreApiPaymentResult();
+
+		try {
+			( new StoreApiLegacy() )->process_legacy_payment( $context, $result );
+		} catch ( RouteException $exception ) {
+			$this->assertSame( 'woocommerce_rest_payment_error', $exception->getErrorCode() );
+			$this->assertSame( 400, $exception->getCode() );
+
+			return $exception->getMessage();
+		} finally {
+			remove_filter( 'woocommerce_available_payment_gateways', $available_gateway_filter );
+		}
+
+		$this->fail( 'A refused checkout must surface an error through the Store API.' );
+	}
+
+	/**
 	 * @testdox A checkout that meets $_dataName on an order that cannot be read again under the order payment lock leaves the order Pending and releases the lock.
 	 *
 	 * The stored status is unknown, so the Failed write does not run, as the lifecycle writes nothing when its read under

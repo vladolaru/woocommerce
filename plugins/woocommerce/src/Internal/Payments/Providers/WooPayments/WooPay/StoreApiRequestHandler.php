@@ -12,6 +12,7 @@ use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsErrorMessages;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
@@ -900,10 +901,7 @@ class StoreApiRequestHandler {
 		if ( null === $lock_token ) {
 			$order_payment_lock->log_refusal( $draft_order, $persistence_vocabulary, self::DRAFT_REUSE_OPERATION );
 
-			return new WP_Error(
-				'woocommerce_woopay_payment_in_progress',
-				__( 'Your previous payment attempt is still being processed, so please wait a moment and check for an order confirmation before trying again.', 'woocommerce' )
-			);
+			return new WP_Error( 'woocommerce_woopay_payment_in_progress', WooPaymentsErrorMessages::get_payment_in_progress_message() );
 		}
 
 		try {
