@@ -896,6 +896,9 @@ class WooPaymentsSettingsService {
 		try {
 			if ( ! empty( $account_settings ) ) {
 				$this->account_service->cache_account_update_answer( $this->api_client->update_account( $account_settings ) );
+				if ( array_key_exists( 'statement_descriptor', $account_settings ) ) {
+					delete_option( WooPaymentsDisputeReadinessService::STATEMENT_DESCRIPTOR_CONFIRMATION_OPTION );
+				}
 			}
 		} catch ( ApiException $e ) {
 			return $this->account_update_exception_to_wp_error( $e );

@@ -10,6 +10,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\Overvie
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsApplePayDomainService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPmPromotionsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeReadinessService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
@@ -133,6 +134,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_fraud_protection_welcome_tour_dismissed' );
 		delete_option( 'wcpay_frt_review_feature_active' );
 		delete_option( 'wcpay_next_deposit_notice_dismissed' );
+		delete_option( WooPaymentsDisputeReadinessService::STATEMENT_DESCRIPTOR_CONFIRMATION_OPTION );
 		delete_option( 'current_protection_level' );
 		delete_option( 'woocommerce_woocommerce_payments_ideal_settings' );
 		delete_option( 'woocommerce_woocommerce_payments_apple_pay_settings' );
@@ -1700,6 +1702,51 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( WP_Error::class, $result );
 		$this->assertSame( 'OLD STORE', get_option( 'wcpay_account_data' )['data']['statement_descriptor'] );
+	}
+
+	/**
+	 * @testdox Should ask to confirm the statement descriptor again only after an account update that sent it succeeds: $_dataName.
+	 * @dataProvider provide_descriptor_confirmation_saves
+	 *
+	 * @param array<string,mixed> $update       Settings saved.
+	 * @param bool                $update_fails Whether the account update fails.
+	 * @param bool                $cleared      Whether the confirmation is cleared.
+	 */
+	public function test_update_settings_clears_the_descriptor_confirmation( array $update, bool $update_fails, bool $cleared ): void {
+		$this->set_connected_account_fields(
+			array(
+				'statement_descriptor' => 'OLD STORE',
+				'business_profile'     => array( 'support_email' => 'old@example.test' ),
+			)
+		);
+		$confirmation = array(
+			'confirmed'             => true,
+			'confirmed_at'          => '2026-11-01T00:00:00+00:00',
+			'descriptor'            => 'OLD STORE',
+			'normalized_descriptor' => 'OLD STORE',
+		);
+		update_option( WooPaymentsDisputeReadinessService::STATEMENT_DESCRIPTOR_CONFIRMATION_OPTION, $confirmation, false );
+		$this->api_client->update_account_answer = array_replace( get_option( 'wcpay_account_data' )['data'], array( 'statement_descriptor' => 'NEW STORE' ) );
+		if ( $update_fails ) {
+			$this->api_client->update_account_exception = new ApiException( 'Refused.', 'wcpay_test_refused', 400 );
+		}
+
+		$this->sut->update_settings( $update );
+
+		$this->assertSame( $cleared ? false : $confirmation, get_option( WooPaymentsDisputeReadinessService::STATEMENT_DESCRIPTOR_CONFIRMATION_OPTION ) );
+	}
+
+	/**
+	 * Settings saves, with whether each clears the descriptor confirmation.
+	 *
+	 * @return array<string,array{array<string,mixed>,bool,bool}>
+	 */
+	public function provide_descriptor_confirmation_saves(): array {
+		return array(
+			'a saved descriptor clears it'      => array( array( 'account_statement_descriptor' => 'NEW STORE' ), false, true ),
+			'a support email save keeps it'     => array( array( 'account_business_support_email' => 'new@example.test' ), false, false ),
+			'a failed descriptor save keeps it' => array( array( 'account_statement_descriptor' => 'NEW STORE' ), true, false ),
+		);
 	}
 
 	/**
