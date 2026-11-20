@@ -800,9 +800,10 @@ class WooPaymentsPaymentOperationService {
 	 * Send a positive-amount charge under the order's kept key, or under the attempt key when none is kept.
 	 *
 	 * A kept key refused because the new request differs from the earlier one (a new card after a timeout) settles what
-	 * the earlier request did before anything is charged; see settle_earlier_charge(). A missing customer is replaced and
-	 * the charge retried, except while the order's ambiguity record exists, or for a saved card when the user has no other
-	 * customer.
+	 * the earlier request did before anything is charged; see settle_earlier_charge(). With no record, or a record that
+	 * names no customer, the account list is read from the order's creation. A scheduled renewal is not looked up. A
+	 * missing customer is replaced and the charge retried, except while the order's ambiguity record names a customer, or
+	 * for a saved card when the user has no other customer.
 	 *
 	 * @param PaymentOperationContext $context      Payment context.
 	 * @param array<string,mixed>     $request_data Charge request; its customer is replaced when the platform does not find it.
@@ -818,11 +819,11 @@ class WooPaymentsPaymentOperationService {
 			return $this->api_client->create_and_confirm_payment_intention( $request_data, $sent_key );
 		} catch ( ApiException $exception ) {
 			$record = $this->get_charge_ambiguity_record( $order );
-			if ( null !== $record && $this->is_unresolved_key_refusal_after_ambiguity( $attempt_key, $sent_key, $exception, $context ) ) {
-				return $this->settle_earlier_charge( $context, $request_data, $attempt_key, $sent_key, $record );
-			}
+			if ( $this->is_unresolved_key_refusal( $attempt_key, $sent_key, $exception ) ) {
+				if ( ! self::is_scheduled_renewal( $context ) ) {
+					return $this->settle_earlier_charge( $context, $request_data, $attempt_key, $sent_key, $record ?? $this->get_lookup_record_without_customer( $order ) );
+				}
 
-			if ( $attempt_key !== $sent_key && $this->is_idempotency_key_conflict( $exception ) && ! $exception->has_ambiguous_outcome() ) {
 				$this->log_unresolved_charge_key_refused( $order, $sent_key );
 			}
 
@@ -864,25 +865,22 @@ class WooPaymentsPaymentOperationService {
 	}
 
 	/**
-	 * Tell whether Stripe refused the order's unresolved charge key after an ambiguous failure because the new request differs.
+	 * Tell whether Stripe refused the order's unresolved charge key because the new request differs.
 	 *
-	 * The caller has found this order's ambiguity record. All three must hold too: a kept key was sent instead of the
-	 * attempt's own; Stripe answered with an idempotency error, which it raises only when it holds a finished result for the
-	 * key, and the answer is not ambiguous (a 409 or a server error means the earlier request may still be running, so its
-	 * intent may not be listable yet); the payment is not a scheduled renewal (a renewal retry resends the same body, so
-	 * Stripe replays the stored result instead).
+	 * All three must hold: a kept key was sent instead of the attempt's own; Stripe answered with an idempotency error,
+	 * which it raises only when it holds a finished result for the key; and the answer is not ambiguous (a 409 or a server
+	 * error means the earlier request may still be running, so its intent may not be listable yet). The caller leaves a
+	 * scheduled renewal out of the lookup, since a renewal retry resends the same body and Stripe replays the stored result.
 	 *
-	 * @param string                  $attempt_key Key minted fresh for this payment attempt.
-	 * @param string                  $sent_key    Key the request was sent with.
-	 * @param ApiException            $exception   Provider request failure.
-	 * @param PaymentOperationContext $context     Payment context.
+	 * @param string       $attempt_key Key minted fresh for this payment attempt.
+	 * @param string       $sent_key    Key the request was sent with.
+	 * @param ApiException $exception   Provider request failure.
 	 * @return bool
 	 */
-	private function is_unresolved_key_refusal_after_ambiguity( string $attempt_key, string $sent_key, ApiException $exception, PaymentOperationContext $context ): bool {
+	private function is_unresolved_key_refusal( string $attempt_key, string $sent_key, ApiException $exception ): bool {
 		return $attempt_key !== $sent_key
 			&& $this->is_idempotency_key_conflict( $exception )
-			&& ! $exception->has_ambiguous_outcome()
-			&& ! self::is_scheduled_renewal( $context );
+			&& ! $exception->has_ambiguous_outcome();
 	}
 
 	/**
@@ -897,6 +895,9 @@ class WooPaymentsPaymentOperationService {
 
 	/**
 	 * Get this order's record of the ambiguous charge failures that kept its charge key.
+	 *
+	 * With no record, or a record that names no customer, a refused kept key reads the account list from the order's
+	 * creation instead; see get_lookup_record_without_customer().
 	 *
 	 * @param WC_Order $order Order being charged.
 	 * @return array{customers:array<int,string>,failed_at:int,last_failed_at:int}|null Null when the order has no record
@@ -914,6 +915,32 @@ class WooPaymentsPaymentOperationService {
 			'failed_at'      => $record['failed_at'],
 			'last_failed_at' => $record['last_failed_at'],
 		);
+	}
+
+	/**
+	 * Get the account-list lookup for a refused kept key when the order's record names no customer, writing a record when
+	 * the order has none, so the cannot-check note is added once.
+	 *
+	 * The window starts at the order's creation, which comes before every request under the key, and not at the record's
+	 * first failure: a customer added by a later ambiguous failure keeps this start, so the customer list is never read as
+	 * complete from a point after the earlier request. No customer is passed, so the account list is read.
+	 *
+	 * @param WC_Order $order Order being charged.
+	 * @return array{customers:array<int,string>,failed_at:int,last_failed_at:int}
+	 */
+	private function get_lookup_record_without_customer( WC_Order $order ): array {
+		$created = $order->get_date_created();
+		$lookup  = array(
+			'customers'      => array(),
+			'failed_at'      => null === $created ? 0 : $created->getTimestamp(),
+			'last_failed_at' => time(),
+		);
+		if ( null === $this->read_charge_ambiguity_record( $order ) ) {
+			$order->update_meta_data( self::CHARGE_AMBIGUITY_META, array( 'order_id' => $order->get_id() ) + $lookup + array( 'cannot_check_noted' => false ) );
+			$order->save_meta_data();
+		}
+
+		return $lookup;
 	}
 
 	/**
@@ -979,13 +1006,14 @@ class WooPaymentsPaymentOperationService {
 	 * attached-intent guard does; none that did (or none at all) proves no money moved, so the key is
 	 * retired and the new payment method is charged now; a failed lookup refuses this attempt and keeps the key and the
 	 * record, so the next attempt looks again. When neither the customer's nor the account's intents can be listed, the
-	 * attempt is refused the same way and the merchant gets one note asking them to check the payment.
+	 * attempt is refused the same way and the merchant gets one note asking them to check the payment. With no record, or
+	 * a record that names no customer, the account list is read from the order's creation.
 	 *
 	 * @param PaymentOperationContext                                             $context      Payment context.
 	 * @param array<string,mixed>                                                 $request_data Charge request.
 	 * @param string                                                              $attempt_key  Key minted fresh for this payment attempt.
 	 * @param string                                                              $sent_key     Kept key Stripe refused.
-	 * @param array{customers:array<int,string>,failed_at:int,last_failed_at:int} $record       The order's ambiguity record, which the caller found.
+	 * @param array{customers:array<int,string>,failed_at:int,last_failed_at:int} $record       The order's ambiguity record, or the lookup from its creation.
 	 * @return array<string,mixed>|PaymentOutcome The new charge's PaymentIntent response, or the outcome to return instead.
 	 * @throws ApiException When recreating a missing customer for the new charge fails.
 	 */
@@ -1019,7 +1047,7 @@ class WooPaymentsPaymentOperationService {
 		if ( null !== $paid_intent ) {
 			$this->ambiguity_service->log_earlier_payment_found( $order, $sent_key, (string) ( $paid_intent['id'] ?? '' ) );
 
-			return $this->earlier_payment_outcome( $order, $paid_intent, $record['customers'][0] );
+			return $this->earlier_payment_outcome( $order, $paid_intent, $record['customers'][0] ?? '' );
 		}
 
 		$this->ambiguity_service->log_charging_after_no_earlier_payment( $order, $sent_key, count( $intents ) );
@@ -1191,14 +1219,12 @@ class WooPaymentsPaymentOperationService {
 	}
 
 	/**
-	 * Warn that an unresolved charge key could not replay the earlier request and no lookup settles what that request did.
+	 * Warn that a scheduled renewal's unresolved charge key could not replay the earlier request, which is not looked up.
 	 *
-	 * The new attempt sent a different body (a new card, for example), so it failed instead of replaying. With no record
-	 * of an ambiguous failure under the key (a request cut off mid-send), a record that names no customer to look up, or
-	 * for a scheduled renewal, the refusal is a definitive failure: failed_charge_outcome() retires the key and the next
-	 * attempt charges under a fresh one, as every client attempt does (`class-wc-payments-api-client.php:2690`). With a
-	 * record, settle_earlier_charge() runs instead. An ambiguous answer (a 409 or a server error) keeps the key, so it
-	 * gets no warning.
+	 * The new attempt sent a different body, so it failed instead of replaying. A scheduled renewal is not looked up, so
+	 * the refusal is a definitive failure: failed_charge_outcome() retires the key and the next attempt charges under a
+	 * fresh one, as every client attempt does (`class-wc-payments-api-client.php:2690`). Any other payment runs
+	 * settle_earlier_charge() instead. An ambiguous answer (a 409 or a server error) keeps the key, so it gets no warning.
 	 * Written whatever the logging setting, since support needs it to reconcile the order if the earlier request charged.
 	 *
 	 * @param WC_Order $order           Order being charged.
@@ -1207,7 +1233,7 @@ class WooPaymentsPaymentOperationService {
 	private function log_unresolved_charge_key_refused( WC_Order $order, string $idempotency_key ): void {
 		$this->logger->log_always(
 			sprintf(
-				'The charge idempotency key %1$s kept on order #%2$d was refused because the new payment request differs from the earlier one. The order has no record of an ambiguous failure under this key, the record names no customer to look up, or the payment is a scheduled renewal, so nothing looks up what the earlier request did: the key is retired and the next payment attempt for this order charges under a fresh key, with no protection against a charge the earlier request may have made.',
+				'The charge idempotency key %1$s kept on order #%2$d was refused because the new payment request differs from the earlier one. The payment is a scheduled renewal, which is not looked up, so the key is retired and the next payment attempt for this order charges under a fresh key, with no protection against a charge the earlier request may have made.',
 				$idempotency_key,
 				$order->get_id()
 			),
