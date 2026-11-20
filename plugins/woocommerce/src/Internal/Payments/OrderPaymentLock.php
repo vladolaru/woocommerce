@@ -101,13 +101,13 @@ class OrderPaymentLock {
 		);
 
 		if ( $this->lock_lives_in_object_cache() ) {
-			$former_holder = wp_cache_get( $holder_key, 'transient' );
 			if ( ! wp_cache_add( $lock_key, $value, 'transient', $ttl ) ) {
 				return null;
 			}
 
-			// The cache drops an expired lock but keeps its holder record for a day, so the next claim can name the former
-			// holder; a release deletes both, so a record left here belongs to a holder that never released.
+			// Read once the lock is won: a release deletes the holder record first, so a record left here belongs to a holder
+			// that never released or whose lock the cache lost. It is kept for a day for that.
+			$former_holder = wp_cache_get( $holder_key, 'transient' );
 			wp_cache_set( $holder_key, $holder, 'transient', DAY_IN_SECONDS );
 			if ( false !== $former_holder ) {
 				$this->log_takeover( $order, $operation, null, $former_holder );
@@ -150,6 +150,8 @@ class OrderPaymentLock {
 	 * Release, when the request ends, every claim it took and did not release: an exit, a fatal error or a timeout skips
 	 * the caller's `finally`. A claim that sent a money-moving request and has not saved its result keeps its lock to its
 	 * expiry, since nothing else reliably stops a repeat from moving the money twice.
+	 * Under WP-CLI, a fatal error or a timeout never reaches `shutdown`, so its claim stays to its expiry, as before; a
+	 * payment success it held up is retried just after that expiry (WebhookReliabilityService).
 	 *
 	 * @internal
 	 */
@@ -297,8 +299,9 @@ class OrderPaymentLock {
 				return;
 			}
 
-			wp_cache_delete( $lock_key, 'transient' );
+			// The record goes first, so a claim that wins the lock once it is gone finds no holder to report.
 			wp_cache_delete( $holder_key, 'transient' );
+			wp_cache_delete( $lock_key, 'transient' );
 
 			return;
 		}
