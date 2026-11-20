@@ -274,16 +274,16 @@ class WooPaymentsChargeAmbiguityService {
 	}
 
 	/**
-	 * Log, whatever the logging setting, that the earlier request took no money, so the new payment method is charged now.
+	 * Log, whatever the logging setting, that the earlier request took no money, so this payment attempt was refused and the key retired.
 	 *
 	 * @param WC_Order $order           Order being paid.
 	 * @param string   $idempotency_key Kept charge key the earlier request was sent with.
 	 * @param int      $intent_count    How many PaymentIntents the earlier request left for the order, none holding money.
 	 */
-	public function log_charging_after_no_earlier_payment( WC_Order $order, string $idempotency_key, int $intent_count ): void {
+	public function log_no_earlier_payment( WC_Order $order, string $idempotency_key, int $intent_count ): void {
 		$this->log(
 			sprintf(
-				'The charge idempotency key %1$s kept on order #%2$d was refused because the new payment request differs from the earlier one. The order has %3$d PaymentIntent(s) from it and none took the payment, so the key is retired and the new payment method is charged now under a fresh key.',
+				'The charge idempotency key %1$s kept on order #%2$d was refused because the new payment request differs from the earlier one. The order has %3$d PaymentIntent(s) from it and none took the payment, so the key is retired and this payment attempt is refused without a charge; the next attempt charges under a fresh key.',
 				$idempotency_key,
 				$order->get_id(),
 				$intent_count

@@ -3419,12 +3419,14 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A submission whose lookup fails is refused without a charge and leaves the order status, and the next submission charges the new card once.
+	 * @testdox A submission whose earlier request took nothing is refused without a charge and leaves the order pending, and the next submission charges the new card once.
 	 *
 	 * The order is pending again before the resubmit, as a Store API checkout leaves it, so a refusal that changed the
-	 * status would show.
+	 * status would show. The second submission's lookup fails, the third finds no intent and is refused, and the fourth,
+	 * with a new payment method and no kept key, charges once. The first submission's own failure is the staging, so the
+	 * Failed status notes are counted from the second submission on.
 	 */
-	public function test_process_checkout_refuses_when_the_lookup_fails_and_charges_once_on_the_next_submission(): void {
+	public function test_process_checkout_refuses_when_the_earlier_request_took_nothing_and_charges_once_on_the_next_submission(): void {
 		$order                  = $this->create_woopayments_order( '10.00' );
 		$idempotency_error      = $this->json_transport_response(
 			400,
@@ -3482,6 +3484,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $pending );
 		$pending->set_status( 'pending' );
 		$pending->save();
+		$failed_notes        = static fn(): array => array_values( array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $note ): bool => false !== strpos( $note, 'to Failed' ) ) );
+		$staged_failed_notes = $failed_notes();
 
 		$refused = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $pending, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_new' ), $provider );
 		$kept    = wc_get_order( $order->get_id() );
@@ -3493,14 +3497,26 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertIsArray( $kept->get_meta( WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META, true ) );
 		$this->assertCount( 3, $http_client->requests, 'A failed lookup must not charge.' );
 
-		$this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $kept, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_new' ), $provider );
+		$not_taken = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $kept, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_new' ), $provider );
+		$retired   = wc_get_order( $order->get_id() );
+		$is_post   = static fn( array $request ): bool => 'POST' === $request['method'];
+
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $not_taken->get_status() );
+		$this->assertSame( 'wcpay_earlier_charge_not_paid', $not_taken->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
+		$this->assertSame( 'pending', $retired->get_status() );
+		$this->assertSame( '', $retired->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+		$this->assertSame( '', $retired->get_meta( WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META, true ) );
+		$this->assertCount( 3, array_filter( $http_client->requests, $is_post ), 'A submission whose earlier request took nothing must not charge.' );
+
+		$this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $retired, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_newer' ), $provider );
 		$paid    = wc_get_order( $order->get_id() );
-		$charges = array_values( array_filter( $http_client->requests, static fn( array $request ): bool => 'POST' === $request['method'] ) );
+		$charges = array_values( array_filter( $http_client->requests, $is_post ) );
 
 		$this->assertSame( 'completed', $paid->get_status() );
 		$this->assertSame( 'pi_new_card', $paid->get_meta( '_intent_id', true ) );
 		$this->assertCount( 4, $charges, 'Two refused sends under the unresolved key, then exactly one charge of the new card.' );
 		$this->assertNotSame( $charges[0]['headers']['Idempotency-Key'], $charges[3]['headers']['Idempotency-Key'], 'The new card is charged under a fresh key.' );
+		$this->assertSame( $staged_failed_notes, $failed_notes(), 'The order does not go Failed from the second submission on.' );
 	}
 
 	/**

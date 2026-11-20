@@ -832,7 +832,7 @@ class WooPaymentsPaymentOperationService {
 			$record = $this->get_charge_ambiguity_record( $order );
 			if ( $this->is_unresolved_key_refusal( $attempt_key, $sent_key, $exception ) ) {
 				if ( ! self::is_scheduled_renewal( $context ) ) {
-					return $this->settle_earlier_charge( $context, $request_data, $attempt_key, $sent_key, $record ?? $this->get_lookup_record_without_customer( $order ) );
+					return $this->settle_earlier_charge( $context, $sent_key, $record ?? $this->get_lookup_record_without_customer( $order ) );
 				}
 
 				$this->log_unresolved_charge_key_refused( $order, $sent_key );
@@ -1014,21 +1014,19 @@ class WooPaymentsPaymentOperationService {
 	 * Runs under the checkout's order payment lock. The earlier request finished at Stripe, and its only money call creates
 	 * a PaymentIntent carrying the order's id and key, so the order's intents decide: one that took the payment pays the
 	 * order and the new payment method is not charged, unless its payment is disputed, which refuses this attempt as the
-	 * attached-intent guard does; none that did (or none at all) proves no money moved, so the key is
-	 * retired and the new payment method is charged now; a failed lookup refuses this attempt and keeps the key and the
+	 * attached-intent guard does; none that did (or none at all) proves no money moved, so the key is retired and this
+	 * attempt is refused without a charge, and the shopper's next attempt charges under a fresh key; a failed lookup
+	 * refuses this attempt and keeps the key and the
 	 * record, so the next attempt looks again. When neither the customer's nor the account's intents can be listed, the
 	 * attempt is refused the same way and the merchant gets one note asking them to check the payment. With no record, or
 	 * a record that names no customer, the account list is read from the order's creation.
 	 *
 	 * @param PaymentOperationContext                                             $context      Payment context.
-	 * @param array<string,mixed>                                                 $request_data Charge request.
-	 * @param string                                                              $attempt_key  Key minted fresh for this payment attempt.
 	 * @param string                                                              $sent_key     Kept key Stripe refused.
 	 * @param array{customers:array<int,string>,failed_at:int,last_failed_at:int} $record       The order's ambiguity record, or the lookup from its creation.
-	 * @return array<string,mixed>|PaymentOutcome The new charge's PaymentIntent response, or the outcome to return instead.
-	 * @throws ApiException When recreating a missing customer for the new charge fails.
+	 * @return PaymentOutcome
 	 */
-	private function settle_earlier_charge( PaymentOperationContext $context, array &$request_data, string $attempt_key, string $sent_key, array $record ) {
+	private function settle_earlier_charge( PaymentOperationContext $context, string $sent_key, array $record ): PaymentOutcome {
 		$order  = $context->get_order();
 		$lookup = $this->ambiguity_service->find_order_intents( $order, $record['customers'], $record['failed_at'], $record['last_failed_at'] );
 		if ( WooPaymentsChargeAmbiguityService::LOOKUP_CANNOT_CHECK === $lookup['status'] ) {
@@ -1061,14 +1059,14 @@ class WooPaymentsPaymentOperationService {
 			return $this->earlier_payment_outcome( $order, $paid_intent, $record['customers'][0] ?? '' );
 		}
 
-		$this->ambiguity_service->log_charging_after_no_earlier_payment( $order, $sent_key, count( $intents ) );
+		$this->ambiguity_service->log_no_earlier_payment( $order, $sent_key, count( $intents ) );
 		if ( array() !== $intents ) {
 			$order->add_order_note( __( 'An earlier payment attempt for this order did not go through.', 'woocommerce' ) );
 		}
 
 		$this->retire_charge_idempotency_key( $order );
 
-		return $this->send_charge_request( $context, $request_data, $attempt_key );
+		return $this->earlier_payment_not_taken_outcome();
 	}
 
 	/**
@@ -1168,6 +1166,30 @@ class WooPaymentsPaymentOperationService {
 			array(
 				PaymentOutcome::DATA_ERROR_CODE            => WooPaymentsDuplicatePaymentPreventionService::ERROR_DISPUTED_INTENT,
 				WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY => __( "This order's payment is under review. Please contact the store.", 'woocommerce' ),
+				PaymentOutcome::DATA_PRESERVE_ORDER_STATUS => true,
+			)
+		);
+	}
+
+	/**
+	 * Build the refusal for an attempt whose earlier request took no money.
+	 *
+	 * The key is already retired, so the next attempt charges under a fresh key. This attempt sends nothing more: its
+	 * payment method went out with the refused request, and the platform does not accept it twice. The order keeps its
+	 * status and the shopper is asked to place the order again.
+	 *
+	 * @return PaymentOutcome
+	 */
+	private function earlier_payment_not_taken_outcome(): PaymentOutcome {
+		return new PaymentOutcome(
+			PaymentOutcome::STATUS_FAILED,
+			'',
+			'',
+			'',
+			'',
+			array(
+				PaymentOutcome::DATA_ERROR_CODE            => 'wcpay_earlier_charge_not_paid',
+				WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY => __( 'Your payment did not go through and you were not charged. Please place your order again.', 'woocommerce' ),
 				PaymentOutcome::DATA_PRESERVE_ORDER_STATUS => true,
 			)
 		);
