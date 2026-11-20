@@ -34,6 +34,7 @@ import type {
 	WooPaymentsDocument,
 	WooPaymentsDocumentsAccountResponse,
 	WooPaymentsDocumentsDataView,
+	WooPaymentsDocumentsQuery,
 	WooPaymentsDocumentsSummary,
 } from './types';
 import { WooPaymentsVatModal } from './vat-modal';
@@ -189,6 +190,8 @@ export const WooPaymentsDocumentsPage = () => {
 
 		return rest;
 	}, [ isAdvanced, routeQuery ] );
+	// Load on the query's content, as the Fees report does: an address change that leaves the query as it was does not reload.
+	const serializedQuery = useMemo( () => JSON.stringify( query ), [ query ] );
 	const [ documents, setDocuments ] = useState< WooPaymentsDocument[] >( [] );
 	const [ summary, setSummary ] = useState< WooPaymentsDocumentsSummary >(
 		{}
@@ -253,6 +256,9 @@ export const WooPaymentsDocumentsPage = () => {
 
 	useEffect( () => {
 		let isMounted = true;
+		const requestQuery = JSON.parse(
+			serializedQuery
+		) as WooPaymentsDocumentsQuery;
 
 		setIsLoading( true );
 		setErrorMessage( null );
@@ -281,8 +287,8 @@ export const WooPaymentsDocumentsPage = () => {
 				}
 
 				const [ listResponse, summaryResponse ] = await Promise.all( [
-					getWooPaymentsDocuments( query ),
-					getWooPaymentsDocumentsSummary( query ),
+					getWooPaymentsDocuments( requestQuery ),
+					getWooPaymentsDocumentsSummary( requestQuery ),
 				] );
 
 				if ( ! isMounted ) {
@@ -314,7 +320,7 @@ export const WooPaymentsDocumentsPage = () => {
 		return () => {
 			isMounted = false;
 		};
-	}, [ query ] );
+	}, [ serializedQuery ] );
 
 	useEffect( () => {
 		if (

@@ -351,6 +351,34 @@ describe( 'WooPaymentsDocumentsPage', () => {
 		);
 	} );
 
+	// Client 11.3.0 `data/documents/hooks.ts:36-90`: the store resolves each distinct query once.
+	it( 'does not reload the list when the address changes but the query does not', async () => {
+		renderDocumentsPage();
+
+		await screen.findByText( summaryItem( '1 document' ) );
+		expect( mockGetDocumentsAccount ).toHaveBeenCalledTimes( 1 );
+		expect( mockGetDocuments ).toHaveBeenCalledTimes( 1 );
+		expect( mockGetDocumentsSummary ).toHaveBeenCalledTimes( 1 );
+
+		chooseFilter( 'Show', 'Advanced filters' );
+
+		expect( await screen.findByText( 'Filter Date' ) ).toBeInTheDocument();
+		await waitFor( () =>
+			expect(
+				screen.getByTestId( 'documents-dataviews' )
+			).toHaveAttribute( 'aria-busy', 'false' )
+		);
+		expect( mockGetDocumentsAccount ).toHaveBeenCalledTimes( 1 );
+		expect( mockGetDocuments ).toHaveBeenCalledTimes( 1 );
+		expect( mockGetDocumentsSummary ).toHaveBeenCalledTimes( 1 );
+		expect( screen.getByText( summaryItem( '1 document' ) ) ).toBeVisible();
+		expect(
+			screen.getByRole( 'button', {
+				name: 'Download Tax Invoice vat_invoice_123',
+			} )
+		).toBeInTheDocument();
+	} );
+
 	it( 'reads the list page from `paged`, since `page` names the admin screen', async () => {
 		renderDocumentsPage( [
 			'/woopayments/documents?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fdocuments&paged=3',
