@@ -179,32 +179,28 @@ const getProduct = (
 // letter lists, under which label and in which order, by reason, product type and refund or duplicate status.
 type AttachmentRule = {
 	reasons: string[];
-	label?: string;
-	order?: number;
 	productTypes?: string[];
 	refundStatuses?: string[];
 };
 
+const NON_PHYSICAL_PRODUCT_TYPES = [
+	'booking_reservation',
+	'digital_product_or_service',
+	'offline_service',
+	'event',
+	'other',
+];
+
 const STANDARD_ATTACHMENTS: Array< {
 	key: string;
 	label: string;
-	labelForReasons?: Array< {
-		reasons: string[];
-		label: string;
-		productTypes?: string[];
-		refundStatuses?: string[];
-	} >;
+	labelForReasons?: Array< AttachmentRule & { label: string } >;
 	labelForStatus?: { status: string; label: string };
 	onlyForReasons?: string[];
 	onlyForProductTypes?: string[];
 	excludeWhen?: ( reason: string, status?: string ) => boolean;
 	order?: number;
-	orderForReasons?: Array< {
-		reasons: string[];
-		order: number;
-		productTypes?: string[];
-		refundStatuses?: string[];
-	} >;
+	orderForReasons?: Array< AttachmentRule & { order: number } >;
 } > = [
 	{
 		key: 'receipt',
@@ -215,13 +211,7 @@ const STANDARD_ATTACHMENTS: Array< {
 				// For physical_product, `receipt` stays "Order receipt" (`duplicate_charge_documentation` is "Refund receipt").
 				reasons: [ 'credit_not_processed' ],
 				label: __( 'Refund receipt', 'woocommerce' ),
-				productTypes: [
-					'booking_reservation',
-					'digital_product_or_service',
-					'offline_service',
-					'event',
-					'other',
-				],
+				productTypes: NON_PHYSICAL_PRODUCT_TYPES,
 				refundStatuses: [ 'refund_has_been_issued' ],
 			},
 		],
@@ -273,13 +263,7 @@ const STANDARD_ATTACHMENTS: Array< {
 				// it explicitly with its proper label.
 				reasons: [ 'credit_not_processed' ],
 				label: __( 'Other documents', 'woocommerce' ),
-				productTypes: [
-					'booking_reservation',
-					'digital_product_or_service',
-					'offline_service',
-					'event',
-					'other',
-				],
+				productTypes: NON_PHYSICAL_PRODUCT_TYPES,
 				refundStatuses: [
 					'refund_was_not_owed',
 					'refund_has_been_issued',
@@ -291,13 +275,7 @@ const STANDARD_ATTACHMENTS: Array< {
 			{
 				reasons: [ 'credit_not_processed' ],
 				order: 100,
-				productTypes: [
-					'booking_reservation',
-					'digital_product_or_service',
-					'offline_service',
-					'event',
-					'other',
-				],
+				productTypes: NON_PHYSICAL_PRODUCT_TYPES,
 				refundStatuses: [
 					'refund_was_not_owed',
 					'refund_has_been_issued',

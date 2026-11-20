@@ -242,29 +242,29 @@ const buildRecommendedDocuments = (
 		buildRecommendedDocument( key, order, label, description )
 	);
 
-const OTHER_DOCUMENTS_DESCRIPTION = __(
-	'Any other relevant documents that will support your case.',
+const TERMS_OF_SERVICE_DESCRIPTION = __(
+	"A screenshot of your store's terms of service.",
 	'woocommerce'
 );
 
-const ORDER_RECEIPT_DESCRIPTION = __(
-	"A copy of the customer's receipt, which can be found in the receipt history for this transaction.",
+const CANCELLATION_LOGS_DESCRIPTION = __(
+	'Records showing no cancellation attempt or request was made before the charge, such as account activity, subscription status, or communication history.',
 	'woocommerce'
 );
 
-const REFUND_POLICY_DESCRIPTION = __(
-	"A screenshot of your store's refund policy.",
+const PRIOR_TRANSACTION_HISTORY_DESCRIPTION = __(
+	'Proof of past undisputed transactions from the same customer, with matching billing and device details.',
+	'woocommerce'
+);
+
+const SERVICE_COMPLETION_DESCRIPTION = __(
+	'Screenshots or documents showing the service was completed and delivered to the customer.',
 	'woocommerce'
 );
 
 const CUSTOMER_COMMUNICATION_DOCUMENT = buildRecommendedDocument(
 	'customer_communication',
-	20,
-	__( 'Customer communication', 'woocommerce' ),
-	__(
-		'Any correspondence with the customer regarding this purchase.',
-		'woocommerce'
-	)
+	20
 );
 
 const getDuplicateDocuments = (
@@ -274,12 +274,7 @@ const getDuplicateDocuments = (
 	const receiptDocuments: RecommendedDocumentField[] =
 		duplicateStatus === 'is_duplicate'
 			? buildRecommendedDocuments( [
-					[
-						'receipt',
-						10,
-						__( 'Order receipt', 'woocommerce' ),
-						ORDER_RECEIPT_DESCRIPTION,
-					],
+					[ 'receipt', 10 ],
 					[
 						'duplicate_charge_documentation',
 						15,
@@ -291,12 +286,7 @@ const getDuplicateDocuments = (
 					],
 				] )
 			: buildRecommendedDocuments( [
-					[
-						'receipt',
-						10,
-						__( 'Order receipt', 'woocommerce' ),
-						ORDER_RECEIPT_DESCRIPTION,
-					],
+					[ 'receipt', 10 ],
 					[
 						'duplicate_charge_documentation',
 						12,
@@ -323,44 +313,21 @@ const getDuplicateDocuments = (
 					'woocommerce'
 				)
 			),
-			buildRecommendedDocument(
-				'refund_policy',
-				25,
-				__( 'Refund policy', 'woocommerce' ),
-				REFUND_POLICY_DESCRIPTION
-			),
+			buildRecommendedDocument( 'refund_policy', 25 ),
 			buildRecommendedDocument(
 				'cancellation_policy',
 				30,
 				__( 'Terms of service', 'woocommerce' ),
-				__(
-					"A screenshot of your store's terms of service.",
-					'woocommerce'
-				)
+				TERMS_OF_SERVICE_DESCRIPTION
 			),
-			buildRecommendedDocument(
-				'uncategorized_file',
-				100,
-				__( 'Other documents', 'woocommerce' ),
-				OTHER_DOCUMENTS_DESCRIPTION
-			),
+			buildRecommendedDocument( 'uncategorized_file', 100 ),
 		];
 	}
 
 	return [
 		...receiptDocuments,
-		buildRecommendedDocument(
-			'refund_policy',
-			25,
-			__( 'Refund policy', 'woocommerce' ),
-			REFUND_POLICY_DESCRIPTION
-		),
-		buildRecommendedDocument(
-			'uncategorized_file',
-			100,
-			__( 'Other documents', 'woocommerce' ),
-			OTHER_DOCUMENTS_DESCRIPTION
-		),
+		buildRecommendedDocument( 'refund_policy', 25 ),
+		buildRecommendedDocument( 'uncategorized_file', 100 ),
 	];
 };
 
@@ -380,34 +347,19 @@ const getCreditNotProcessedDocuments = (
 						'woocommerce'
 					),
 				],
-				[
-					'customer_communication',
-					20,
-					__( 'Customer communication', 'woocommerce' ),
-					RECOMMENDED_DOCUMENT_DESCRIPTIONS.customer_communication,
-				],
-				[
-					'refund_policy',
-					25,
-					__( 'Refund policy', 'woocommerce' ),
-					REFUND_POLICY_DESCRIPTION,
-				],
+				[ 'customer_communication', 20 ],
+				[ 'refund_policy', 25 ],
 				[
 					'service_documentation',
 					100,
 					__( 'Other documents', 'woocommerce' ),
-					OTHER_DOCUMENTS_DESCRIPTION,
+					RECOMMENDED_DOCUMENT_DESCRIPTIONS.uncategorized_file,
 				],
 			] );
 		}
 
 		return buildRecommendedDocuments( [
-			[
-				'receipt',
-				10,
-				__( 'Order receipt', 'woocommerce' ),
-				ORDER_RECEIPT_DESCRIPTION,
-			],
+			[ 'receipt', 10 ],
 			[
 				'duplicate_charge_documentation',
 				12,
@@ -426,30 +378,15 @@ const getCreditNotProcessedDocuments = (
 					'woocommerce'
 				),
 			],
-			[
-				'customer_communication',
-				20,
-				__( 'Customer communication', 'woocommerce' ),
-				RECOMMENDED_DOCUMENT_DESCRIPTIONS.customer_communication,
-			],
+			[ 'customer_communication', 20 ],
 			[
 				'customer_signature',
 				25,
 				__( "Customer's signature", 'woocommerce' ),
 				RECOMMENDED_DOCUMENT_DESCRIPTIONS.customer_signature,
 			],
-			[
-				'refund_policy',
-				30,
-				__( 'Refund policy', 'woocommerce' ),
-				REFUND_POLICY_DESCRIPTION,
-			],
-			[
-				'uncategorized_file',
-				100,
-				__( 'Other documents', 'woocommerce' ),
-				OTHER_DOCUMENTS_DESCRIPTION,
-			],
+			[ 'refund_policy', 30 ],
+			[ 'uncategorized_file', 100 ],
 		] );
 	}
 
@@ -464,17 +401,12 @@ const getCreditNotProcessedDocuments = (
 					'woocommerce'
 				),
 			],
-			[
-				'refund_policy',
-				25,
-				__( 'Refund policy', 'woocommerce' ),
-				REFUND_POLICY_DESCRIPTION,
-			],
+			[ 'refund_policy', 25 ],
 			[
 				'customer_communication',
 				100,
 				__( 'Other documents', 'woocommerce' ),
-				OTHER_DOCUMENTS_DESCRIPTION,
+				RECOMMENDED_DOCUMENT_DESCRIPTIONS.uncategorized_file,
 			],
 		] );
 	}
@@ -503,7 +435,7 @@ const getCreditNotProcessedDocuments = (
 				'customer_communication',
 				100,
 				__( 'Other documents', 'woocommerce' ),
-				OTHER_DOCUMENTS_DESCRIPTION,
+				RECOMMENDED_DOCUMENT_DESCRIPTIONS.uncategorized_file,
 			],
 		] );
 	}
@@ -522,19 +454,43 @@ const getCreditNotProcessedDocuments = (
 			'cancellation_rebuttal',
 			20,
 			__( 'Cancellation logs', 'woocommerce' ),
-			__(
-				'Records showing no cancellation attempt or request was made before the charge, such as account activity, subscription status, or communication history.',
-				'woocommerce'
-			),
+			CANCELLATION_LOGS_DESCRIPTION,
 		],
 		[
 			'customer_communication',
 			100,
 			__( 'Other documents', 'woocommerce' ),
-			OTHER_DOCUMENTS_DESCRIPTION,
+			RECOMMENDED_DOCUMENT_DESCRIPTIONS.uncategorized_file,
 		],
 	] );
 };
+
+const FRAUDULENT_PRIOR_HISTORY_DOCUMENTS = buildRecommendedDocuments( [
+	[
+		'access_activity_log',
+		10,
+		__( 'Prior undisputed transaction history', 'woocommerce' ),
+		PRIOR_TRANSACTION_HISTORY_DESCRIPTION,
+	],
+	[ 'uncategorized_file', 100 ],
+] );
+
+const SUBSCRIPTION_CANCELED_SERVICE_DOCUMENTS = buildRecommendedDocuments( [
+	[ 'receipt', 10 ],
+	[
+		'cancellation_rebuttal',
+		25,
+		__( 'Cancellation logs', 'woocommerce' ),
+		CANCELLATION_LOGS_DESCRIPTION,
+	],
+	[
+		'cancellation_policy',
+		30,
+		__( 'Terms of service', 'woocommerce' ),
+		TERMS_OF_SERVICE_DESCRIPTION,
+	],
+	[ 'uncategorized_file', 100 ],
+] );
 
 const RECOMMENDED_DOCUMENTS_BY_REASON: Record<
 	string,
@@ -542,20 +498,12 @@ const RECOMMENDED_DOCUMENTS_BY_REASON: Record<
 > = {
 	fraudulent: {
 		physical_product: buildRecommendedDocuments( [
-			[
-				'receipt',
-				10,
-				__( 'Order receipt', 'woocommerce' ),
-				ORDER_RECEIPT_DESCRIPTION,
-			],
+			[ 'receipt', 10 ],
 			[
 				'access_activity_log',
 				15,
 				__( 'Prior undisputed transaction history', 'woocommerce' ),
-				__(
-					'Proof of past undisputed transactions from the same customer, with matching billing and device details.',
-					'woocommerce'
-				),
+				PRIOR_TRANSACTION_HISTORY_DESCRIPTION,
 			],
 			[
 				'customer_signature',
@@ -563,18 +511,8 @@ const RECOMMENDED_DOCUMENTS_BY_REASON: Record<
 				__( "Customer's signature", 'woocommerce' ),
 				RECOMMENDED_DOCUMENT_DESCRIPTIONS.customer_signature,
 			],
-			[
-				'refund_policy',
-				30,
-				__( 'Refund policy', 'woocommerce' ),
-				REFUND_POLICY_DESCRIPTION,
-			],
-			[
-				'uncategorized_file',
-				100,
-				__( 'Other documents', 'woocommerce' ),
-				OTHER_DOCUMENTS_DESCRIPTION,
-			],
+			[ 'refund_policy', 30 ],
+			[ 'uncategorized_file', 100 ],
 		] ),
 		digital_product_or_service: buildRecommendedDocuments( [
 			[
@@ -587,141 +525,39 @@ const RECOMMENDED_DOCUMENTS_BY_REASON: Record<
 				'service_documentation',
 				15,
 				__( 'Prior undisputed transaction history', 'woocommerce' ),
-				__(
-					'Proof of past undisputed transactions from the same customer, with matching billing and device details.',
-					'woocommerce'
-				),
+				PRIOR_TRANSACTION_HISTORY_DESCRIPTION,
 			],
-			[
-				'uncategorized_file',
-				100,
-				__( 'Other documents', 'woocommerce' ),
-				OTHER_DOCUMENTS_DESCRIPTION,
-			],
+			[ 'uncategorized_file', 100 ],
 		] ),
-		booking_reservation: buildRecommendedDocuments( [
-			[
-				'access_activity_log',
-				10,
-				__( 'Prior undisputed transaction history', 'woocommerce' ),
-				__(
-					'Proof of past undisputed transactions from the same customer, with matching billing and device details.',
-					'woocommerce'
-				),
-			],
-			[
-				'uncategorized_file',
-				100,
-				__( 'Other documents', 'woocommerce' ),
-				OTHER_DOCUMENTS_DESCRIPTION,
-			],
-		] ),
-		offline_service: buildRecommendedDocuments( [
-			[
-				'access_activity_log',
-				10,
-				__( 'Prior undisputed transaction history', 'woocommerce' ),
-				__(
-					'Proof of past undisputed transactions from the same customer, with matching billing and device details.',
-					'woocommerce'
-				),
-			],
-			[
-				'uncategorized_file',
-				100,
-				__( 'Other documents', 'woocommerce' ),
-				OTHER_DOCUMENTS_DESCRIPTION,
-			],
-		] ),
-		event: buildRecommendedDocuments( [
-			[
-				'access_activity_log',
-				10,
-				__( 'Prior undisputed transaction history', 'woocommerce' ),
-				__(
-					'Proof of past undisputed transactions from the same customer, with matching billing and device details.',
-					'woocommerce'
-				),
-			],
-			[
-				'uncategorized_file',
-				100,
-				__( 'Other documents', 'woocommerce' ),
-				OTHER_DOCUMENTS_DESCRIPTION,
-			],
-		] ),
-		other: buildRecommendedDocuments( [
-			[
-				'access_activity_log',
-				10,
-				__( 'Prior undisputed transaction history', 'woocommerce' ),
-				__(
-					'Proof of past undisputed transactions from the same customer, with matching billing and device details.',
-					'woocommerce'
-				),
-			],
-			[
-				'uncategorized_file',
-				100,
-				__( 'Other documents', 'woocommerce' ),
-				OTHER_DOCUMENTS_DESCRIPTION,
-			],
-		] ),
+		booking_reservation: FRAUDULENT_PRIOR_HISTORY_DOCUMENTS,
+		offline_service: FRAUDULENT_PRIOR_HISTORY_DOCUMENTS,
+		event: FRAUDULENT_PRIOR_HISTORY_DOCUMENTS,
+		other: FRAUDULENT_PRIOR_HISTORY_DOCUMENTS,
 	},
 	product_not_received: {
 		physical_product: buildRecommendedDocuments( [
-			[
-				'receipt',
-				10,
-				__( 'Order receipt', 'woocommerce' ),
-				ORDER_RECEIPT_DESCRIPTION,
-			],
+			[ 'receipt', 10 ],
 			[
 				'customer_signature',
 				25,
 				__( "Customer's signature", 'woocommerce' ),
 				RECOMMENDED_DOCUMENT_DESCRIPTIONS.customer_signature,
 			],
-			[
-				'refund_policy',
-				30,
-				__( 'Refund policy', 'woocommerce' ),
-				REFUND_POLICY_DESCRIPTION,
-			],
-			[
-				'uncategorized_file',
-				100,
-				__( 'Other documents', 'woocommerce' ),
-				OTHER_DOCUMENTS_DESCRIPTION,
-			],
+			[ 'refund_policy', 30 ],
+			[ 'uncategorized_file', 100 ],
 		] ),
 		digital_product_or_service: buildRecommendedDocuments( [
-			[
-				'receipt',
-				10,
-				__( 'Order receipt', 'woocommerce' ),
-				ORDER_RECEIPT_DESCRIPTION,
-			],
+			[ 'receipt', 10 ],
 			[
 				'access_activity_log',
 				15,
 				__( 'Login or usage records', 'woocommerce' ),
 				RECOMMENDED_DOCUMENT_DESCRIPTIONS.access_activity_log,
 			],
-			[
-				'uncategorized_file',
-				100,
-				__( 'Other documents', 'woocommerce' ),
-				OTHER_DOCUMENTS_DESCRIPTION,
-			],
+			[ 'uncategorized_file', 100 ],
 		] ),
 		booking_reservation: buildRecommendedDocuments( [
-			[
-				'receipt',
-				10,
-				__( 'Order receipt', 'woocommerce' ),
-				ORDER_RECEIPT_DESCRIPTION,
-			],
+			[ 'receipt', 10 ],
 			[
 				'service_documentation',
 				25,
@@ -740,43 +576,20 @@ const RECOMMENDED_DOCUMENTS_BY_REASON: Record<
 					'woocommerce'
 				),
 			],
-			[
-				'uncategorized_file',
-				100,
-				__( 'Other documents', 'woocommerce' ),
-				OTHER_DOCUMENTS_DESCRIPTION,
-			],
+			[ 'uncategorized_file', 100 ],
 		] ),
 		offline_service: buildRecommendedDocuments( [
-			[
-				'receipt',
-				10,
-				__( 'Order receipt', 'woocommerce' ),
-				ORDER_RECEIPT_DESCRIPTION,
-			],
+			[ 'receipt', 10 ],
 			[
 				'service_documentation',
 				15,
 				__( 'Proof of service completion', 'woocommerce' ),
-				__(
-					'Screenshots or documents showing the service was completed and delivered to the customer.',
-					'woocommerce'
-				),
+				SERVICE_COMPLETION_DESCRIPTION,
 			],
-			[
-				'uncategorized_file',
-				100,
-				__( 'Other documents', 'woocommerce' ),
-				OTHER_DOCUMENTS_DESCRIPTION,
-			],
+			[ 'uncategorized_file', 100 ],
 		] ),
 		event: buildRecommendedDocuments( [
-			[
-				'receipt',
-				10,
-				__( 'Order receipt', 'woocommerce' ),
-				ORDER_RECEIPT_DESCRIPTION,
-			],
+			[ 'receipt', 10 ],
 			[
 				'service_documentation',
 				15,
@@ -786,57 +599,29 @@ const RECOMMENDED_DOCUMENTS_BY_REASON: Record<
 					'woocommerce'
 				),
 			],
-			[
-				'uncategorized_file',
-				100,
-				__( 'Other documents', 'woocommerce' ),
-				OTHER_DOCUMENTS_DESCRIPTION,
-			],
+			[ 'uncategorized_file', 100 ],
 		] ),
 		other: buildRecommendedDocuments( [
-			[
-				'receipt',
-				10,
-				__( 'Order receipt', 'woocommerce' ),
-				ORDER_RECEIPT_DESCRIPTION,
-			],
+			[ 'receipt', 10 ],
 			[
 				'service_documentation',
 				15,
 				__( 'Service completion records', 'woocommerce' ),
-				__(
-					'Screenshots or documents showing the service was completed and delivered to the customer.',
-					'woocommerce'
-				),
+				SERVICE_COMPLETION_DESCRIPTION,
 			],
-			[
-				'uncategorized_file',
-				100,
-				__( 'Other documents', 'woocommerce' ),
-				OTHER_DOCUMENTS_DESCRIPTION,
-			],
+			[ 'uncategorized_file', 100 ],
 		] ),
 	},
 	product_unacceptable: {
 		physical_product: buildRecommendedDocuments( [
-			[
-				'receipt',
-				10,
-				__( 'Order receipt', 'woocommerce' ),
-				ORDER_RECEIPT_DESCRIPTION,
-			],
+			[ 'receipt', 10 ],
 			[
 				'customer_signature',
 				15,
 				__( "Customer's signature", 'woocommerce' ),
 				RECOMMENDED_DOCUMENT_DESCRIPTIONS.customer_signature,
 			],
-			[
-				'refund_policy',
-				25,
-				__( 'Refund policy', 'woocommerce' ),
-				REFUND_POLICY_DESCRIPTION,
-			],
+			[ 'refund_policy', 25 ],
 			[
 				'service_documentation',
 				30,
@@ -846,12 +631,7 @@ const RECOMMENDED_DOCUMENTS_BY_REASON: Record<
 					'woocommerce'
 				),
 			],
-			[
-				'uncategorized_file',
-				100,
-				__( 'Other documents', 'woocommerce' ),
-				OTHER_DOCUMENTS_DESCRIPTION,
-			],
+			[ 'uncategorized_file', 100 ],
 		] ),
 		digital_product_or_service: buildRecommendedDocuments( [
 			[
@@ -863,30 +643,15 @@ const RECOMMENDED_DOCUMENTS_BY_REASON: Record<
 					'woocommerce'
 				),
 			],
-			[
-				'receipt',
-				12,
-				__( 'Order receipt', 'woocommerce' ),
-				ORDER_RECEIPT_DESCRIPTION,
-			],
+			[ 'receipt', 12 ],
 			[
 				'access_activity_log',
 				15,
 				__( 'Login or usage records', 'woocommerce' ),
 				RECOMMENDED_DOCUMENT_DESCRIPTIONS.access_activity_log,
 			],
-			[
-				'refund_policy',
-				25,
-				__( 'Refund policy', 'woocommerce' ),
-				REFUND_POLICY_DESCRIPTION,
-			],
-			[
-				'uncategorized_file',
-				100,
-				__( 'Other documents', 'woocommerce' ),
-				OTHER_DOCUMENTS_DESCRIPTION,
-			],
+			[ 'refund_policy', 25 ],
+			[ 'uncategorized_file', 100 ],
 		] ),
 		booking_reservation: buildRecommendedDocuments( [
 			[
@@ -898,53 +663,20 @@ const RECOMMENDED_DOCUMENTS_BY_REASON: Record<
 					'woocommerce'
 				),
 			],
-			[
-				'receipt',
-				15,
-				__( 'Order receipt', 'woocommerce' ),
-				ORDER_RECEIPT_DESCRIPTION,
-			],
-			[
-				'refund_policy',
-				25,
-				__( 'Refund policy', 'woocommerce' ),
-				REFUND_POLICY_DESCRIPTION,
-			],
-			[
-				'uncategorized_file',
-				100,
-				__( 'Other documents', 'woocommerce' ),
-				OTHER_DOCUMENTS_DESCRIPTION,
-			],
+			[ 'receipt', 15 ],
+			[ 'refund_policy', 25 ],
+			[ 'uncategorized_file', 100 ],
 		] ),
 		offline_service: buildRecommendedDocuments( [
 			[
 				'service_documentation',
 				10,
 				__( 'Proof of delivered service', 'woocommerce' ),
-				__(
-					'Screenshots or documents showing the service was completed and delivered to the customer.',
-					'woocommerce'
-				),
+				SERVICE_COMPLETION_DESCRIPTION,
 			],
-			[
-				'receipt',
-				12,
-				__( 'Order receipt', 'woocommerce' ),
-				ORDER_RECEIPT_DESCRIPTION,
-			],
-			[
-				'refund_policy',
-				25,
-				__( 'Refund policy', 'woocommerce' ),
-				REFUND_POLICY_DESCRIPTION,
-			],
-			[
-				'uncategorized_file',
-				100,
-				__( 'Other documents', 'woocommerce' ),
-				OTHER_DOCUMENTS_DESCRIPTION,
-			],
+			[ 'receipt', 12 ],
+			[ 'refund_policy', 25 ],
+			[ 'uncategorized_file', 100 ],
 		] ),
 		event: buildRecommendedDocuments( [
 			[
@@ -956,103 +688,46 @@ const RECOMMENDED_DOCUMENTS_BY_REASON: Record<
 					'woocommerce'
 				),
 			],
-			[
-				'receipt',
-				12,
-				__( 'Order receipt', 'woocommerce' ),
-				ORDER_RECEIPT_DESCRIPTION,
-			],
-			[
-				'refund_policy',
-				25,
-				__( 'Refund policy', 'woocommerce' ),
-				REFUND_POLICY_DESCRIPTION,
-			],
-			[
-				'uncategorized_file',
-				100,
-				__( 'Other documents', 'woocommerce' ),
-				OTHER_DOCUMENTS_DESCRIPTION,
-			],
+			[ 'receipt', 12 ],
+			[ 'refund_policy', 25 ],
+			[ 'uncategorized_file', 100 ],
 		] ),
 		other: buildRecommendedDocuments( [
-			[
-				'receipt',
-				10,
-				__( 'Order receipt', 'woocommerce' ),
-				ORDER_RECEIPT_DESCRIPTION,
-			],
+			[ 'receipt', 10 ],
 			[
 				'cancellation_policy',
 				25,
 				__( 'Terms of service', 'woocommerce' ),
-				__(
-					"A screenshot of your store's terms of service.",
-					'woocommerce'
-				),
+				TERMS_OF_SERVICE_DESCRIPTION,
 			],
-			[
-				'uncategorized_file',
-				100,
-				__( 'Other documents', 'woocommerce' ),
-				OTHER_DOCUMENTS_DESCRIPTION,
-			],
+			[ 'uncategorized_file', 100 ],
 		] ),
 	},
 	subscription_canceled: {
 		physical_product: buildRecommendedDocuments( [
-			[
-				'receipt',
-				10,
-				__( 'Order receipt', 'woocommerce' ),
-				ORDER_RECEIPT_DESCRIPTION,
-			],
+			[ 'receipt', 10 ],
 			[
 				'cancellation_rebuttal',
 				25,
 				__( 'Cancellation logs', 'woocommerce' ),
-				__(
-					'Records showing no cancellation attempt or request was made before the charge, such as account activity, subscription status, or communication history.',
-					'woocommerce'
-				),
+				CANCELLATION_LOGS_DESCRIPTION,
 			],
-			[
-				'refund_policy',
-				30,
-				__( 'Refund policy', 'woocommerce' ),
-				REFUND_POLICY_DESCRIPTION,
-			],
+			[ 'refund_policy', 30 ],
 			[
 				'cancellation_policy',
 				35,
 				__( 'Terms of service', 'woocommerce' ),
-				__(
-					"A screenshot of your store's terms of service.",
-					'woocommerce'
-				),
+				TERMS_OF_SERVICE_DESCRIPTION,
 			],
-			[
-				'uncategorized_file',
-				100,
-				__( 'Other documents', 'woocommerce' ),
-				OTHER_DOCUMENTS_DESCRIPTION,
-			],
+			[ 'uncategorized_file', 100 ],
 		] ),
 		digital_product_or_service: buildRecommendedDocuments( [
-			[
-				'receipt',
-				10,
-				__( 'Order receipt', 'woocommerce' ),
-				ORDER_RECEIPT_DESCRIPTION,
-			],
+			[ 'receipt', 10 ],
 			[
 				'cancellation_rebuttal',
 				15,
 				__( 'Cancellation logs', 'woocommerce' ),
-				__(
-					'Records showing no cancellation attempt or request was made before the charge, such as account activity, subscription status, or communication history.',
-					'woocommerce'
-				),
+				CANCELLATION_LOGS_DESCRIPTION,
 			],
 			[
 				'access_activity_log',
@@ -1064,136 +739,22 @@ const RECOMMENDED_DOCUMENTS_BY_REASON: Record<
 				'cancellation_policy',
 				30,
 				__( 'Terms of service', 'woocommerce' ),
-				__(
-					"A screenshot of your store's terms of service.",
-					'woocommerce'
-				),
+				TERMS_OF_SERVICE_DESCRIPTION,
 			],
-			[
-				'uncategorized_file',
-				100,
-				__( 'Other documents', 'woocommerce' ),
-				OTHER_DOCUMENTS_DESCRIPTION,
-			],
+			[ 'uncategorized_file', 100 ],
 		] ),
-		booking_reservation: buildRecommendedDocuments( [
-			[
-				'receipt',
-				10,
-				__( 'Order receipt', 'woocommerce' ),
-				ORDER_RECEIPT_DESCRIPTION,
-			],
-			[
-				'cancellation_rebuttal',
-				25,
-				__( 'Cancellation logs', 'woocommerce' ),
-				__(
-					'Records showing no cancellation attempt or request was made before the charge, such as account activity, subscription status, or communication history.',
-					'woocommerce'
-				),
-			],
-			[
-				'cancellation_policy',
-				30,
-				__( 'Terms of service', 'woocommerce' ),
-				__(
-					"A screenshot of your store's terms of service.",
-					'woocommerce'
-				),
-			],
-			[
-				'uncategorized_file',
-				100,
-				__( 'Other documents', 'woocommerce' ),
-				OTHER_DOCUMENTS_DESCRIPTION,
-			],
-		] ),
-		offline_service: buildRecommendedDocuments( [
-			[
-				'receipt',
-				10,
-				__( 'Order receipt', 'woocommerce' ),
-				ORDER_RECEIPT_DESCRIPTION,
-			],
-			[
-				'cancellation_rebuttal',
-				25,
-				__( 'Cancellation logs', 'woocommerce' ),
-				__(
-					'Records showing no cancellation attempt or request was made before the charge, such as account activity, subscription status, or communication history.',
-					'woocommerce'
-				),
-			],
-			[
-				'cancellation_policy',
-				30,
-				__( 'Terms of service', 'woocommerce' ),
-				__(
-					"A screenshot of your store's terms of service.",
-					'woocommerce'
-				),
-			],
-			[
-				'uncategorized_file',
-				100,
-				__( 'Other documents', 'woocommerce' ),
-				OTHER_DOCUMENTS_DESCRIPTION,
-			],
-		] ),
-		event: buildRecommendedDocuments( [
-			[
-				'receipt',
-				10,
-				__( 'Order receipt', 'woocommerce' ),
-				ORDER_RECEIPT_DESCRIPTION,
-			],
-			[
-				'cancellation_rebuttal',
-				25,
-				__( 'Cancellation logs', 'woocommerce' ),
-				__(
-					'Records showing no cancellation attempt or request was made before the charge, such as account activity, subscription status, or communication history.',
-					'woocommerce'
-				),
-			],
-			[
-				'cancellation_policy',
-				30,
-				__( 'Terms of service', 'woocommerce' ),
-				__(
-					"A screenshot of your store's terms of service.",
-					'woocommerce'
-				),
-			],
-			[
-				'uncategorized_file',
-				100,
-				__( 'Other documents', 'woocommerce' ),
-				OTHER_DOCUMENTS_DESCRIPTION,
-			],
-		] ),
+		booking_reservation: SUBSCRIPTION_CANCELED_SERVICE_DOCUMENTS,
+		offline_service: SUBSCRIPTION_CANCELED_SERVICE_DOCUMENTS,
+		event: SUBSCRIPTION_CANCELED_SERVICE_DOCUMENTS,
 		other: buildRecommendedDocuments( [
-			[
-				'receipt',
-				10,
-				__( 'Order receipt', 'woocommerce' ),
-				ORDER_RECEIPT_DESCRIPTION,
-			],
+			[ 'receipt', 10 ],
 			[
 				'cancellation_policy',
 				25,
 				__( 'Terms of service', 'woocommerce' ),
-				__(
-					"A screenshot of your store's terms of service.",
-					'woocommerce'
-				),
+				TERMS_OF_SERVICE_DESCRIPTION,
 			],
-			[
-				'uncategorized_file',
-				100,
-				__( 'Other documents', 'woocommerce' ),
-				OTHER_DOCUMENTS_DESCRIPTION,
-			],
+			[ 'uncategorized_file', 100 ],
 		] ),
 	},
 };
@@ -1234,16 +795,13 @@ const getGeneralFallbackDocuments = (): RecommendedDocumentField[] =>
 			'refund_policy',
 			50,
 			__( 'Store refund policy', 'woocommerce' ),
-			REFUND_POLICY_DESCRIPTION,
+			RECOMMENDED_DOCUMENT_DESCRIPTIONS.refund_policy,
 		],
 		[
 			'service_documentation',
 			60,
 			__( 'Terms of service', 'woocommerce' ),
-			__(
-				"A screenshot of your store's terms of service.",
-				'woocommerce'
-			),
+			TERMS_OF_SERVICE_DESCRIPTION,
 		],
 	] );
 
@@ -1276,12 +834,7 @@ export const getRecommendedDocumentFields = ( {
 					'woocommerce'
 				)
 			),
-			buildRecommendedDocument(
-				'uncategorized_file',
-				0,
-				__( 'Other documents', 'woocommerce' ),
-				OTHER_DOCUMENTS_DESCRIPTION
-			),
+			buildRecommendedDocument( 'uncategorized_file', 0 ),
 		];
 	}
 
@@ -1298,18 +851,8 @@ export const getRecommendedDocumentFields = ( {
 	if ( ! documents ) {
 		documents = [
 			...buildRecommendedDocuments( [
-				[
-					'receipt',
-					10,
-					__( 'Order receipt', 'woocommerce' ),
-					ORDER_RECEIPT_DESCRIPTION,
-				],
-				[
-					'uncategorized_file',
-					100,
-					__( 'Other documents', 'woocommerce' ),
-					OTHER_DOCUMENTS_DESCRIPTION,
-				],
+				[ 'receipt', 10 ],
+				[ 'uncategorized_file', 100 ],
 			] ),
 			...( reason === 'unrecognized'
 				? getUnrecognizedFallbackDocuments()
