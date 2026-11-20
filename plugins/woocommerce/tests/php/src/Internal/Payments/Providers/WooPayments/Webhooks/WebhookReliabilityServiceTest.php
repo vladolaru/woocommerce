@@ -62,7 +62,8 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		$this->reset_legacy_proxy_mocks();
 		wc_get_container()->reset_all_replacements();
 		foreach ( array( 'evt_1', 'evt_process', 'evt_backlog_1', 'evt_backlog_2', 'evt_backlog_3', 'evt_backlog_4', 'evt_backlog_5' ) as $event_id ) {
-			delete_transient( FailedEventTransients::name( $event_id ) );
+			delete_transient( QueuedEventRows::name( $event_id ) );
+			( new QueuedEventRows() )->delete_event( $event_id );
 		}
 		delete_option( self::EXPECTED_LAST_FETCH_OPTION );
 		parent::tearDown();
@@ -218,7 +219,7 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 
 		$service->fetch_events_and_schedule_processing_jobs();
 
-		$this->assertSame( array( 'id' => 'evt_1' ), ( new FailedEventTransients() )->get_event( 'evt_1' ) );
+		$this->assertSame( array( 'id' => 'evt_1' ), ( new QueuedEventRows() )->get_event( 'evt_1' ) );
 		$this->assertSame(
 			array(
 				array(
@@ -277,7 +278,7 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Fetching failed events with the production scheduler queues every distinct event and skips an event without an ID.
 	 */
 	public function test_fetch_events_schedules_each_distinct_event_with_production_scheduler(): void {
-		$store   = new FailedEventTransients();
+		$store   = new QueuedEventRows();
 		$events  = array_map(
 			static function ( int $index ): array {
 				return array(
@@ -350,10 +351,10 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Processing a failed event consumes the transient and invokes the ingestor.
+	 * @testdox Processing a failed event consumes the stored copy and invokes the ingestor.
 	 */
-	public function test_process_event_consumes_transient_and_invokes_ingestor(): void {
-		$store    = new FailedEventTransients();
+	public function test_process_event_consumes_the_stored_copy_and_invokes_ingestor(): void {
+		$store    = new QueuedEventRows();
 		$ingestor = new RecordingEventIngestor();
 		$event    = array(
 			'id'   => 'evt_process',
@@ -366,6 +367,152 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertNull( $store->get_event( 'evt_process' ) );
 		$this->assertSame( array( $event ), $ingestor->processed_events );
+	}
+
+	/**
+	 * @testdox A queued event is kept in one row without autoload, with the extension-name copy beside it, and both go once it is applied.
+	 */
+	public function test_queued_event_is_kept_in_one_row_without_autoload_and_under_the_extension_name(): void {
+		$store    = new QueuedEventRows();
+		$ingestor = new RecordingEventIngestor();
+		$event    = array(
+			'id'   => 'evt_process',
+			'type' => 'payment_intent.succeeded',
+		);
+		$service  = $this->create_service( new RecordingActionSchedulerService(), new StaticFailedEventsApiClient(), $ingestor );
+
+		$this->assertTrue( $service->retry_failed_event( $event, new \RuntimeException( 'transient boom' ) ) );
+
+		global $wpdb;
+		$this->assertSame( '1', (string) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$wpdb->options} WHERE option_name = %s", QueuedEventRows::row_name( 'evt_process' ) ) ) );
+		$row = $store->get_row( 'evt_process' );
+		$this->assertSame( 'off', $row['autoload'] ?? null, 'The row is never loaded with every request.' );
+		$this->assertSame( $event, $row['value']['event'] ?? null );
+		$this->assertIsInt( $row['value']['stored_at'] ?? null );
+		$this->assertSame( $event, $store->get_transient_event( 'evt_process' ), 'The extension can still find the event after a return to it.' );
+
+		$service->process_event( 'evt_process' );
+
+		$this->assertSame( array( $event ), $ingestor->processed_events );
+		$this->assertNull( $store->get_row( 'evt_process' ) );
+		$this->assertNull( $store->get_transient_event( 'evt_process' ) );
+	}
+
+	/**
+	 * @testdox A queued event survives a flush of a persistent object cache and is applied once.
+	 */
+	public function test_queued_event_survives_a_cache_flush_and_is_applied(): void {
+		$ingestor = new RecordingEventIngestor();
+		$event    = array(
+			'id'   => 'evt_process',
+			'type' => 'payment_intent.succeeded',
+		);
+		$service  = $this->create_service( new RecordingActionSchedulerService(), new StaticFailedEventsApiClient(), $ingestor );
+		$was_ext  = wp_using_ext_object_cache( true );
+		try {
+			$service->retry_failed_event( $event, new \RuntimeException( 'transient boom' ) );
+			wp_cache_flush();
+			$service->process_event( 'evt_process' );
+		} finally {
+			wp_using_ext_object_cache( $was_ext );
+		}
+
+		$this->assertSame( array( $event ), $ingestor->processed_events );
+	}
+
+	/**
+	 * @testdox A stale "missing" entry for the row in WordPress's options cache does not hide a queued event.
+	 */
+	public function test_stale_missing_entry_in_the_options_cache_does_not_hide_a_queued_event(): void {
+		$ingestor = new RecordingEventIngestor();
+		$event    = array(
+			'id'   => 'evt_process',
+			'type' => 'payment_intent.succeeded',
+		);
+		$service  = $this->create_service( new RecordingActionSchedulerService(), new StaticFailedEventsApiClient(), $ingestor );
+		$service->retry_failed_event( $event, new \RuntimeException( 'transient boom' ) );
+		// The extension-name copy is gone, as a flush leaves it on an object-cache store, so only the row can answer.
+		delete_transient( QueuedEventRows::name( 'evt_process' ) );
+		wp_cache_set( 'notoptions', array( QueuedEventRows::row_name( 'evt_process' ) => true ), 'options' );
+
+		$service->process_event( 'evt_process' );
+
+		$this->assertSame( array( $event ), $ingestor->processed_events );
+	}
+
+	/**
+	 * @testdox An event kept only under the extension's transient name, as the extension or an earlier build queued it, is applied and removed.
+	 */
+	public function test_event_kept_only_under_the_extension_name_is_applied_and_removed(): void {
+		$store    = new QueuedEventRows();
+		$ingestor = new RecordingEventIngestor();
+		$event    = array(
+			'id'   => 'evt_process',
+			'type' => 'payment_intent.succeeded',
+		);
+		$service  = $this->create_service( new RecordingActionSchedulerService(), new StaticFailedEventsApiClient(), $ingestor );
+		$store->set_transient_event( 'evt_process', $event );
+
+		$service->process_event( 'evt_process' );
+
+		$this->assertSame( array( $event ), $ingestor->processed_events );
+		$this->assertNull( $store->get_transient_event( 'evt_process' ) );
+	}
+
+	/**
+	 * @testdox A queued event whose row $scenario logs $errors error line(s).
+	 * @testWith ["cannot be written", 1]
+	 *           ["is stored again with the same bytes in one second, changing nothing,", 0]
+	 *
+	 * @param string $scenario How the row write goes.
+	 * @param int    $errors   Expected error lines.
+	 */
+	public function test_queued_event_that_cannot_be_stored_is_logged( string $scenario, int $errors ): void {
+		$event   = array(
+			'id'   => 'evt_process',
+			'type' => 'payment_intent.succeeded',
+		);
+		$service = $this->create_service( new RecordingActionSchedulerService(), new StaticFailedEventsApiClient(), new RecordingEventIngestor() );
+		$logger  = RecordingWcLogger::install();
+
+		if ( 0 === $errors ) {
+			// Both stores must fall in one second, so the second writes the same bytes and MySQL reports 0 rows changed.
+			for ( $try = 0; $try < 3; $try++ ) {
+				$second = time();
+				$service->retry_failed_event( $event, new \RuntimeException( 'transient boom' ) );
+				$service->retry_failed_event( $event, new \RuntimeException( 'transient boom' ) );
+				if ( time() === $second ) {
+					break;
+				}
+			}
+			$this->assertSame( $event, ( new QueuedEventRows() )->get_event( 'evt_process' ) );
+		} else {
+			$failed = false;
+			$fail   = function ( $query ) use ( &$fail, &$failed ) {
+				if ( false !== strpos( (string) $query, QueuedEventRows::row_name( 'evt_process' ) ) && 0 === strpos( ltrim( (string) $query ), 'INSERT' ) ) {
+					$failed = true;
+					remove_filter( 'query', $fail );
+					return 'INSERT INTO a_table_that_does_not_exist (a) VALUES (1)';
+				}
+				return $query;
+			};
+			add_filter( 'query', $fail );
+			$suppress = $GLOBALS['wpdb']->suppress_errors( true );
+			try {
+				$service->retry_failed_event( $event, new \RuntimeException( 'transient boom' ) );
+			} finally {
+				$GLOBALS['wpdb']->suppress_errors( $suppress );
+				remove_filter( 'query', $fail );
+			}
+			$this->assertTrue( $failed, 'The row write must have failed (' . $scenario . ').' );
+		}
+
+		$lines = $logger->get_errors();
+		$this->assertCount( $errors, $lines );
+		if ( 1 === $errors ) {
+			$this->assertStringContainsString( 'evt_process could not be stored', $lines[0][1] );
+			$this->assertSame( 'woopayments', $lines[0][2] );
+		}
 	}
 
 	/**
@@ -397,7 +544,7 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 * @param int $delay    Expected delay of the next attempt, in seconds.
 	 */
 	public function test_process_event_schedules_a_bounded_retry_on_a_passing_failure( int $attempts, int $delay ): void {
-		$store     = new FailedEventTransients();
+		$store     = new QueuedEventRows();
 		$scheduler = new RecordingActionSchedulerService();
 		$event     = array(
 			'id'   => 'evt_process',
@@ -472,7 +619,7 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 			),
 		);
 		$ingestor  = wc_get_container()->get( EventIngestor::class );
-		$store     = new FailedEventTransients();
+		$store     = new QueuedEventRows();
 		$scheduler = new RecordingActionSchedulerService();
 		$service   = $this->create_service( $scheduler, new StaticFailedEventsApiClient(), $ingestor );
 
@@ -529,7 +676,7 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 * @param int      $delay      Otherwise, the delay of the next attempt, in seconds.
 	 */
 	public function test_lock_refused_retry_runs_at_the_holder_expiry_only_for_a_held_up_success( string $event_type, int $attempts, ?int $holder_age, bool $at_expiry, int $delay ): void {
-		$store      = new FailedEventTransients();
+		$store      = new QueuedEventRows();
 		$scheduler  = new RecordingActionSchedulerService();
 		$before     = time();
 		$claimed_at = null === $holder_age ? null : $before - $holder_age;
@@ -583,7 +730,7 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 * @testdox The last retry of a success brought forward to its holder's expiry is due when it would have been without that.
 	 */
 	public function test_last_retry_of_a_held_up_success_adds_the_seconds_brought_forward(): void {
-		$store     = new FailedEventTransients();
+		$store     = new QueuedEventRows();
 		$scheduler = new RecordingActionSchedulerService();
 		$event     = array(
 			'id'   => 'evt_process',
@@ -616,7 +763,7 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A success retried at its holder's expiry reaches the ingestor as delivered, without the retry count or the seconds brought forward.
 	 */
 	public function test_success_retried_at_the_holder_expiry_reaches_the_ingestor_as_delivered(): void {
-		$store    = new FailedEventTransients();
+		$store    = new QueuedEventRows();
 		$event    = array(
 			'id'   => 'evt_retried',
 			'type' => 'payment_intent.succeeded',
@@ -705,7 +852,7 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 				),
 			),
 		);
-		$store   = new FailedEventTransients();
+		$store   = new QueuedEventRows();
 		$service = $this->create_service( new RecordingActionSchedulerService(), new StaticFailedEventsApiClient(), wc_get_container()->get( EventIngestor::class ) );
 		$store->set_event( 'evt_last_attempt', $event + array( WebhookReliabilityService::RETRY_ATTEMPTS_EVENT_KEY => 3 ) );
 		$logger = RecordingWcLogger::install();
@@ -774,7 +921,7 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 			),
 		);
 		$ingestor  = wc_get_container()->get( EventIngestor::class );
-		$store     = new FailedEventTransients();
+		$store     = new QueuedEventRows();
 		$scheduler = new RecordingActionSchedulerService();
 		$service   = $this->create_service( $scheduler, new StaticFailedEventsApiClient(), $ingestor );
 
@@ -829,7 +976,7 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 * @param string $event_type Event type safe to apply late, retried only after a lock refusal.
 	 */
 	public function test_lock_refusal_is_retried_for_an_event_type_safe_to_apply_late( string $event_type ): void {
-		$store     = new FailedEventTransients();
+		$store     = new QueuedEventRows();
 		$scheduler = new RecordingActionSchedulerService();
 		$event     = array(
 			'id'   => 'evt_process',
@@ -878,7 +1025,7 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_failing_lock_refusal_note_on_the_last_attempt_keeps_the_refusal( string $hook ): void {
 		$order    = wc_create_order();
-		$store    = new FailedEventTransients();
+		$store    = new QueuedEventRows();
 		$event    = array(
 			'id'   => 'evt_lock_note_failure',
 			'type' => 'charge.dispute.funds_withdrawn',
@@ -912,7 +1059,7 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_lock_refusal_exhausted_twice_notes_its_order_once(): void {
 		$order   = wc_create_order();
-		$store   = new FailedEventTransients();
+		$store   = new QueuedEventRows();
 		$event   = array(
 			'id'   => 'evt_lock_exhausted_twice',
 			'type' => 'charge.dispute.funds_withdrawn',
@@ -950,7 +1097,7 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 			'type' => 'radar.early_fraud_warning.created',
 		);
 		$refusal   = new OrderPaymentLockRefusedException( $order->get_id(), 'early fraud warning webhook' );
-		$store     = new FailedEventTransients();
+		$store     = new QueuedEventRows();
 		$scheduler = new RecordingActionSchedulerService();
 		// Page shape of the platform's failed-events list (wpcom class-webhook-controller.php:346-357: object 'list', data,
 		// has_more). The event is reduced to id and type, all the reliability service reads; the ingestor is a stub.
@@ -1012,7 +1159,7 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 			'type' => 'payment_intent.succeeded',
 		);
 		$refusal   = new OrderPaymentLockRefusedException( $order->get_id(), 'payment webhook' );
-		$store     = new FailedEventTransients();
+		$store     = new QueuedEventRows();
 		$scheduler = new RecordingActionSchedulerService();
 		// Empty page of the platform's failed-events list (wpcom class-webhook-controller.php:346-357); unused here.
 		$provider       = new StaticFailedEventsApiClient(
@@ -1067,7 +1214,7 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 * @testdox An event out of retries is dropped with nothing more scheduled, and its line carries the platform error's status and code, never its message.
 	 */
 	public function test_dropped_event_log_leaves_out_platform_text(): void {
-		$store     = new FailedEventTransients();
+		$store     = new QueuedEventRows();
 		$scheduler = new RecordingActionSchedulerService();
 		$service   = $this->create_service( $scheduler, new StaticFailedEventsApiClient(), new ThrowingEventIngestor( self::make_provider_error() ) );
 		$store->set_event(
@@ -1107,7 +1254,7 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 * the platform's text; every other refusal's reason is a constant and stays on the line.
 	 */
 	public function test_refusal_wrapping_a_platform_error_leaves_out_its_text(): void {
-		$store   = new FailedEventTransients();
+		$store   = new QueuedEventRows();
 		$service = $this->create_service(
 			new RecordingActionSchedulerService(),
 			new StaticFailedEventsApiClient(),
@@ -1143,7 +1290,7 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_failed_refund_or_dispute_delivery_is_kept_and_retried( string $event_type, string $failure ): void {
 		$order     = wc_create_order();
-		$store     = new FailedEventTransients();
+		$store     = new QueuedEventRows();
 		$scheduler = new RecordingActionSchedulerService();
 		$event     = array(
 			'id'   => 'evt_money',
@@ -1178,10 +1325,10 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An event type off the retry list that fails gets one attempt, as with the WooPayments extension: no retry is scheduled.
+	 * @testdox An event type off the retry list that fails gets one attempt, as with the WooPayments extension: no retry is scheduled, and its stored copy is removed.
 	 */
 	public function test_process_event_does_not_retry_an_event_type_off_the_list(): void {
-		$store     = new FailedEventTransients();
+		$store     = new QueuedEventRows();
 		$scheduler = new RecordingActionSchedulerService();
 		$event     = array(
 			'id'   => 'evt_refund',
@@ -1199,14 +1346,15 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertSame( array(), $scheduler->scheduled_jobs );
-		$this->assertSame( $event, $store->get_event( 'evt_refund' ), 'The stored event is left as it was, with no retry count.' );
+		$this->assertNull( $store->get_event( 'evt_refund' ), 'The row is removed, as the extension removes its copy.' );
+		$this->assertNull( $store->get_transient_event( 'evt_refund' ), 'The extension-name copy is removed too.' );
 	}
 
 	/**
 	 * @testdox A retried event reaches the ingestor without the retry count and is removed once processed.
 	 */
 	public function test_retried_event_is_processed_without_the_retry_count(): void {
-		$store    = new FailedEventTransients();
+		$store    = new QueuedEventRows();
 		$ingestor = new RecordingEventIngestor();
 		$event    = array(
 			'id'   => 'evt_retried',
@@ -1228,7 +1376,7 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 * `Invalid_Webhook_Data_Exception` is logged as "Failed processing event {id}. Reason: {message}" and not re-thrown.
 	 */
 	public function test_process_event_drops_and_logs_a_refused_event_without_failing_the_job(): void {
-		$store     = new FailedEventTransients();
+		$store     = new QueuedEventRows();
 		$scheduler = new RecordingActionSchedulerService();
 		$service   = $this->create_service(
 			$scheduler,
@@ -1267,7 +1415,7 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		wc_get_container()->replace( StripeBillingModule::class, $module );
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 
-		$store     = new FailedEventTransients();
+		$store     = new QueuedEventRows();
 		$scheduler = new RecordingActionSchedulerService();
 		$service   = $this->create_service( $scheduler, new StaticFailedEventsApiClient(), wc_get_container()->get( EventIngestor::class ) );
 		$store->set_event(

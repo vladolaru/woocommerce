@@ -243,7 +243,7 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->assertSame( $expected_status, $response->get_status() );
 		$this->assertSame( array( 'result' => $expected_result ), $response->get_data() );
-		$this->assertSame( $kept ? $event : null, ( new FailedEventTransients() )->get_event( 'evt_failed_push' ) );
+		$this->assertSame( $kept ? $event : null, ( new QueuedEventRows() )->get_event( 'evt_failed_push' ) );
 		$this->assertSame(
 			$kept ? array(
 				array(
@@ -426,7 +426,7 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->assertSame( $expected_status, $response->get_status() );
 		$this->assertSame( array( 'result' => 400 === $expected_status ? 'bad_request' : 'error' ), $response->get_data() );
-		$this->assertSame( $kept ? $event : null, ( new FailedEventTransients() )->get_event( 'evt_route' ) );
+		$this->assertSame( $kept ? $event : null, ( new QueuedEventRows() )->get_event( 'evt_route' ) );
 		$this->assertSame(
 			$kept ? array(
 				array(
@@ -576,7 +576,7 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->assertSame( $acknowledged ? 200 : 500, $response->get_status() );
 		$this->assertSame( array( 'result' => $acknowledged ? 'success' : 'error' ), $response->get_data() );
-		$this->assertSame( $acknowledged ? null : $event, ( new FailedEventTransients() )->get_event( $event['id'] ) );
+		$this->assertSame( $acknowledged ? null : $event, ( new QueuedEventRows() )->get_event( $event['id'] ) );
 		$this->assertSame(
 			$acknowledged ? array() : array(
 				array(
@@ -689,7 +689,7 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 0, $saves, 'The order is not saved.' );
 		$this->assertSame( $quiet ? 200 : 500, $response->get_status() );
 		$this->assertSame( array( 'result' => $quiet ? 'success' : 'error' ), $response->get_data() );
-		$this->assertSame( $quiet ? null : $event, ( new FailedEventTransients() )->get_event( 'evt_never' ) );
+		$this->assertSame( $quiet ? null : $event, ( new QueuedEventRows() )->get_event( 'evt_never' ) );
 		$this->assertSame(
 			$quiet ? array() : array(
 				array(
@@ -810,7 +810,7 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 'failed', $order->get_meta( '_wcpay_refund_status', true ) );
 		$this->assertCount( $notes_before + 1, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 		$this->assertCount( 1, self::order_notes_containing( $order, 're_never' ), 'One failed-refund note names the refund.' );
-		$this->assertNull( ( new FailedEventTransients() )->get_event( 'evt_not_yet' ) );
+		$this->assertNull( ( new QueuedEventRows() )->get_event( 'evt_not_yet' ) );
 		$this->assertCount( 1, $this->scheduler->scheduled_jobs, 'The applied job schedules no other.' );
 		$this->assertSame( array(), self::woopayments_log_lines( $logger ) );
 	}
@@ -841,7 +841,7 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->reliability_service->process_event( 'evt_race' );
 
-		$this->assertNull( ( new FailedEventTransients() )->get_event( 'evt_race' ) );
+		$this->assertNull( ( new QueuedEventRows() )->get_event( 'evt_race' ) );
 		$this->assertCount( 1, $this->scheduler->scheduled_jobs, 'The quiet job schedules no other.' );
 		$this->assertSame( $before, self::order_state( $order->get_id() ), 'The order is not written.' );
 		$this->assertCount( 1, self::woopayments_log_lines( $logger ) );
@@ -1207,7 +1207,7 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		}
 
 		$this->assertSame( 500, $response->get_status() );
-		$this->assertSame( $event, ( new FailedEventTransients() )->get_event( 'evt_dispute_lock_retry' ) );
+		$this->assertSame( $event, ( new QueuedEventRows() )->get_event( 'evt_dispute_lock_retry' ) );
 		$this->assertSame(
 			array(
 				array(
@@ -1234,7 +1234,7 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 			static fn( $note ): bool => false !== strpos( $note->content, 'Payment has been disputed' )
 		);
 		$this->assertCount( 1, $notes );
-		$this->assertNull( ( new FailedEventTransients() )->get_event( 'evt_dispute_lock_retry' ) );
+		$this->assertNull( ( new QueuedEventRows() )->get_event( 'evt_dispute_lock_retry' ) );
 	}
 
 	/**
@@ -1276,7 +1276,7 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		}
 
 		$this->assertSame( 500, $response->get_status() );
-		$this->assertSame( $event, ( new FailedEventTransients() )->get_event( 'evt_funds_lock_retry' ) );
+		$this->assertSame( $event, ( new QueuedEventRows() )->get_event( 'evt_funds_lock_retry' ) );
 		$this->assertSame(
 			array(
 				array(
@@ -1292,7 +1292,7 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->reliability_service->process_event( 'evt_funds_lock_retry' );
 
 		$this->assertCount( 1, self::order_notes_containing( $order, 'Payment dispute and fees have been deducted from your next payout' ) );
-		$this->assertNull( ( new FailedEventTransients() )->get_event( 'evt_funds_lock_retry' ) );
+		$this->assertNull( ( new QueuedEventRows() )->get_event( 'evt_funds_lock_retry' ) );
 	}
 
 	/**

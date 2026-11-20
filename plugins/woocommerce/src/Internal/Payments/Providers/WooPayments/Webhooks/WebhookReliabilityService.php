@@ -18,7 +18,7 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
  * Fetches the WooPayments webhook events the platform could not deliver, and processes and retries failed events
- * through Action Scheduler, keeping each event in a one-day transient until its job runs.
+ * through Action Scheduler, keeping each event in an option row until its job ends it.
  *
  * @since 11.0.0
  * @internal
@@ -85,18 +85,26 @@ class WebhookReliabilityService implements RegisterHooksInterface {
 	const LAST_FETCH_OPTION_KEY = 'woocommerce_woopayments_last_webhook_fetch';
 
 	/**
-	 * Prefix of the transient that keeps a failed event until its job runs; the event ID's md5 follows it.
+	 * Prefix of the extension's name for a queued event: read only when no row exists, and written beside the row so the
+	 * extension can run queued jobs after a store returns to it. The event ID's md5 follows it.
 	 *
 	 * @var string
 	 */
 	const FAILED_EVENT_TRANSIENT_PREFIX = 'wcpay_failed_event_';
 
 	/**
-	 * Lifetime of a failed-event transient, in seconds.
+	 * Lifetime of the extension-name copy, in seconds.
 	 *
 	 * @var int
 	 */
 	private const FAILED_EVENT_TRANSIENT_TTL_SECONDS = DAY_IN_SECONDS;
+
+	/**
+	 * Prefix of the option row that keeps a queued event until its job ends it; the event ID's md5 follows it.
+	 *
+	 * @var string
+	 */
+	private const QUEUED_EVENT_OPTION_PREFIX = 'woocommerce_woopayments_queued_event_';
 
 	/**
 	 * Action Scheduler service.
@@ -259,6 +267,8 @@ class WebhookReliabilityService implements RegisterHooksInterface {
 		} catch ( \Throwable $exception ) {
 			if ( $this->is_retried_failure( $event, $exception ) ) {
 				$this->schedule_retry_or_give_up( $event_id, $event, $attempts, $exception, $brought_forward );
+			} else {
+				$this->delete_failed_event( $event_id );
 			}
 			throw $exception;
 		}
@@ -291,9 +301,8 @@ class WebhookReliabilityService implements RegisterHooksInterface {
 	 * Schedule the next attempt for a failed event, or drop it and log an error when no attempt is left.
 	 *
 	 * An event the order payment lock refused on every attempt also leaves a note on its order, so the merchant sees
-	 * that a payment update did not reach it. The dropped event is not kept: the platform marks a
-	 * listed event as fetched and the failed-event store is a one-day transient nothing else reads, so the note and the
-	 * error line naming the event are the trail.
+	 * that a payment update did not reach it. The dropped event is not kept: the platform marks a listed event as fetched
+	 * and the queued copy is deleted here, so the note and the error line naming the event are the trail.
 	 *
 	 * A payment success or authorization refused at its one-minute retry by a holder at least a minute old, so the one
 	 * that refused its first attempt too, is retried just after that holder's lock expires rather than ten minutes later.
@@ -415,33 +424,69 @@ class WebhookReliabilityService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Keep a failed event until its job runs.
+	 * Keep a failed event in its option row, with SQL so no cached answer hides it, and its extension-name copy beside it.
 	 *
 	 * @param string              $event_id Event ID.
 	 * @param array<string,mixed> $event    Event payload.
+	 * @return int|false Rows the write affected: 1 inserted, 2 updated, 0 for the same bytes stored again; false when it failed.
 	 */
-	private function store_failed_event( string $event_id, array $event ): void {
+	private function store_failed_event( string $event_id, array $event ) {
+		global $wpdb;
+		$name   = self::QUEUED_EVENT_OPTION_PREFIX . md5( $event_id );
+		$stored = $wpdb->query(
+			$wpdb->prepare(
+				"INSERT INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, 'off') ON DUPLICATE KEY UPDATE option_value = VALUES(option_value)",
+				$name,
+				maybe_serialize(
+					array(
+						'event'     => $event,
+						'stored_at' => time(),
+					)
+				)
+			)
+		);
+		wp_cache_delete( $name, 'options' );
 		set_transient( $this->get_failed_event_transient_name( $event_id ), $event, self::FAILED_EVENT_TRANSIENT_TTL_SECONDS );
+		if ( false === $stored ) {
+			wc_get_logger()->error(
+				sprintf( 'WooPayments webhook event %s could not be stored for its retry.', $event_id ),
+				array(
+					'source'   => WooPaymentsLogger::SOURCE,
+					'event_id' => $event_id,
+				)
+			);
+		}
+		return false === $stored ? false : (int) $stored;
 	}
 
 	/**
-	 * Read a kept failed event.
+	 * Read a kept failed event: its option row, or the extension-name copy only when no row holds it.
 	 *
 	 * @param string $event_id Event ID.
 	 * @return array<string,mixed>|null Event payload, or null when none is kept.
 	 */
 	private function get_failed_event( string $event_id ): ?array {
+		global $wpdb;
+		$row = maybe_unserialize( (string) $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", self::QUEUED_EVENT_OPTION_PREFIX . md5( $event_id ) ) ) );
+		if ( is_array( $row ) && isset( $row['event'] ) && is_array( $row['event'] ) ) {
+			return $row['event'];
+		}
+
 		$event = get_transient( $this->get_failed_event_transient_name( $event_id ) );
 
 		return is_array( $event ) ? $event : null;
 	}
 
 	/**
-	 * Forget a kept failed event.
+	 * Forget a kept failed event: its option row and the extension-name copy.
 	 *
 	 * @param string $event_id Event ID.
 	 */
 	private function delete_failed_event( string $event_id ): void {
+		global $wpdb;
+		$name = self::QUEUED_EVENT_OPTION_PREFIX . md5( $event_id );
+		$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->options} WHERE option_name = %s", $name ) );
+		wp_cache_delete( $name, 'options' );
 		delete_transient( $this->get_failed_event_transient_name( $event_id ) );
 	}
 }
