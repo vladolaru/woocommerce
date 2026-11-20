@@ -286,6 +286,21 @@ class OrderPaymentLock {
 	}
 
 	/**
+	 * Tell whether the order payment lock is held, without claiming it. An expired lock reads as free.
+	 *
+	 * For a caller that only waits while another operation runs, such as the check before core cancels an unpaid order.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param WC_Order                               $order                  Order.
+	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
+	 * @return bool
+	 */
+	public function is_held( WC_Order $order, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): bool {
+		return null !== $this->row_lock->read( $persistence_vocabulary->get_order_lock_key( $order ) );
+	}
+
+	/**
 	 * Tell whether a holder record belongs to the claim that returned a token.
 	 *
 	 * @param mixed  $holder     Holder record as stored.

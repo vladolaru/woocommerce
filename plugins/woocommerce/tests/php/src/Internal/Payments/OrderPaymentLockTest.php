@@ -703,6 +703,27 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox is_held() reads a claimed lock as held, and a released or expired one as free, without claiming it.
+	 */
+	public function test_is_held_reads_a_claimed_lock_as_held_and_a_released_or_expired_one_as_free(): void {
+		$order    = wc_create_order();
+		$lock_key = $this->persistence_vocabulary->get_order_lock_key( $order );
+		$this->assertFalse( $this->sut->is_held( $order, $this->persistence_vocabulary ), 'No lock is free.' );
+
+		$token = $this->sut->claim( $order, $this->persistence_vocabulary, 'native_charge_key', 'payment operation' );
+		$this->assertNotNull( $token );
+		$this->assertTrue( $this->sut->is_held( $order, $this->persistence_vocabulary ), 'A claimed lock is held.' );
+		$this->assertTrue( $this->sut->is_held( $order, $this->persistence_vocabulary ), 'Reading claims nothing, so the lock is still held.' );
+
+		$this->sut->release( $order, $this->persistence_vocabulary, $token );
+		$this->assertFalse( $this->sut->is_held( $order, $this->persistence_vocabulary ), 'A released lock is free.' );
+
+		$this->insert_lock_rows( $lock_key, 'stale_key', time() - 10 );
+		$this->assertFalse( $this->sut->is_held( $order, $this->persistence_vocabulary ), 'An expired lock is free.' );
+		$this->assertSame( 'stale_key', $this->read_lock_row( '_transient_' . $lock_key ), 'Reading an expired lock leaves its rows for the next claim.' );
+	}
+
+	/**
 	 * Build an order payment lock of its own, so its held claims and shutdown callback belong to the test.
 	 *
 	 * @return OrderPaymentLock

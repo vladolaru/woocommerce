@@ -7,8 +7,11 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Caches\OrderCache;
 use Automattic\WooCommerce\Enums\OrderInternalStatus;
 use Automattic\WooCommerce\Enums\OrderStatus;
+use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
+use Automattic\WooCommerce\Internal\Orders\UnpaidOrderTimeoutMarker;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLevel3Service;
@@ -21,10 +24,12 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil;
+use Automattic\WooCommerce\Utilities\OrderUtil;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPlatformEvents;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\StoredPaymentRecords;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentConfirmationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
@@ -3885,6 +3890,594 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 				'id'     => $intent_id,
 				'status' => $status,
 			)
+		);
+	}
+
+	/**
+	 * @testdox The unpaid-order check is hooked last on core's cancel filter, with the order.
+	 */
+	public function test_registers_the_unpaid_order_check_last(): void {
+		$this->sut = $this->create_controller();
+
+		$this->sut->register();
+
+		$this->assertSame( PHP_INT_MAX, has_filter( 'woocommerce_cancel_unpaid_order', array( $this->sut, 'handle_woocommerce_cancel_unpaid_order' ) ) );
+	}
+
+	/**
+	 * @testdox Core's hold-stock job cancels, with no read by the check, an unpaid order of another gateway and a WooPayments order that stores no payment intent to check, and keeps one made in WP Admin.
+	 *
+	 * Another gateway's order and an order made in WP Admin are answered as they came. An order storing no intent, a
+	 * setup intent or a canceled intent has nothing to check.
+	 */
+	public function test_unpaid_orders_without_a_payment_to_check_are_answered_as_they_came(): void {
+		$other_gateway = $this->create_unpaid_order( 'requires_action' );
+		$other_gateway->set_payment_method( 'cod' );
+		$other_gateway->save();
+		$this->age_unpaid_order( $other_gateway );
+		$admin_made = $this->create_unpaid_order( 'requires_action' );
+		$admin_made->set_created_via( 'admin' );
+		$admin_made->save();
+		$this->age_unpaid_order( $admin_made );
+		$no_intent    = $this->create_unpaid_order( '', '' );
+		$setup_intent = $this->create_unpaid_order( 'requires_action', 'seti_unpaid' );
+		$canceled     = $this->create_unpaid_order( 'canceled' );
+		$transport    = $this->create_transport();
+
+		$this->run_unpaid_order_job( $transport );
+
+		$this->assertEqualsCanonicalizing( array( 'intentions/pi_unpaid?test_mode=0', 'intentions/seti_unpaid?test_mode=0' ), $this->request_paths( $transport ), 'The check reads nothing in the order\'s mode; the Cancelled listener reads the other gateway\'s and the setup intent in the store\'s, as before.' );
+		foreach ( array( $other_gateway, $no_intent, $setup_intent, $canceled ) as $order ) {
+			$this->assertSame( OrderStatus::CANCELLED, $this->reload( $order )->get_status() );
+		}
+		$this->assertSame( OrderStatus::PENDING, $this->reload( $admin_made )->get_status() );
+	}
+
+	/**
+	 * @testdox The unpaid-order check returns another callback's answer unchanged when it does not keep the order.
+	 */
+	public function test_unpaid_order_check_returns_the_incoming_answer_unchanged(): void {
+		$this->sut = $this->create_controller();
+		$unmarked  = $this->create_unpaid_order( '', '' );
+		$marked    = $this->create_unpaid_order( 'requires_action' );
+
+		$this->assertSame( 'yes', $this->sut->handle_woocommerce_cancel_unpaid_order( 'yes', $unmarked ) );
+		$this->assertSame( 'yes', $this->sut->handle_woocommerce_cancel_unpaid_order( 'yes', null ) );
+		$this->assertSame( 0, $this->sut->handle_woocommerce_cancel_unpaid_order( 0, $marked ) );
+		$this->assertNull( $this->sut->handle_woocommerce_cancel_unpaid_order( null, $marked ) );
+	}
+
+	/**
+	 * @testdox Core's hold-stock job keeps, with no platform read, an unpaid WooPayments order that has a paid date.
+	 */
+	public function test_unpaid_order_with_a_paid_date_is_kept_unread(): void {
+		$order = $this->create_unpaid_order( 'requires_action' );
+		$order->set_date_paid( time() - HOUR_IN_SECONDS );
+		$order->save();
+		$this->age_unpaid_order( $order );
+		$transport = $this->create_transport();
+
+		$this->run_unpaid_order_job( $transport );
+
+		$this->assertSame( array(), $this->request_paths( $transport ) );
+		$this->assertSame( OrderStatus::PENDING, $this->reload( $order )->get_status() );
+	}
+
+	/**
+	 * @testdox Core's hold-stock job keeps, with no platform read, an unpaid order whose order payment lock is held, and reads it once the lock expired.
+	 */
+	public function test_unpaid_order_whose_lock_is_held_is_kept_unread_until_the_lock_expires(): void {
+		global $wpdb;
+		$order      = $this->create_unpaid_order( 'requires_action' );
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		$this->assertNotNull( wc_get_container()->get( OrderPaymentLock::class )->claim( $order, $vocabulary, 'pi_other', 'payment operation' ) );
+		$transport = $this->create_transport( self::http_json( 200, self::unpaid_intent( $order, 'requires_action' ) ) );
+
+		$this->run_unpaid_order_job( $transport );
+
+		$this->assertSame( array(), $this->request_paths( $transport ), 'A held lock keeps the order unread.' );
+		$this->assertSame( OrderStatus::PENDING, $this->reload( $order )->get_status() );
+
+		$wpdb->update( $wpdb->options, array( 'option_value' => (string) ( time() - 10 ) ), array( 'option_name' => '_transient_timeout_' . $vocabulary->get_order_lock_key( $order ) ) );
+		$this->age_unpaid_order( $order );
+
+		$this->run_unpaid_order_job( $transport );
+
+		$this->assertCount( 1, $this->request_paths( $transport ), 'An expired lock is free.' );
+		$this->assertSame( OrderStatus::CANCELLED, $this->reload( $order )->get_status() );
+	}
+
+	/**
+	 * @testdox Core's hold-stock job completes, instead of cancelling, an unpaid order whose stored $stored_status intent the platform reads as succeeded.
+	 *
+	 * A Pending order can store succeeded after a request died between its two writes.
+	 *
+	 * @testWith ["requires_action"]
+	 *           ["succeeded"]
+	 *
+	 * @param string $stored_status Intent status the order stores.
+	 */
+	public function test_unpaid_order_whose_payment_succeeded_is_completed( string $stored_status ): void {
+		$order     = $this->create_unpaid_order( $stored_status );
+		$transport = $this->create_transport( self::http_json( 200, self::unpaid_intent( $order, 'succeeded' ) ) );
+
+		$this->run_unpaid_order_job( $transport );
+
+		$order = $this->reload( $order );
+		$this->assertSame( array( 'intentions/pi_unpaid?test_mode=1' ), $this->request_paths( $transport ), 'One read, in the order\'s own mode.' );
+		$this->assertSame( OrderStatus::PROCESSING, $order->get_status() );
+		$this->assertSame( 1, $this->count_notes_containing( $order, 'successfully charged' ) );
+		$this->assertSame( 0, $this->count_notes_containing( $order, 'Unpaid order cancelled' ) );
+		$this->assertFalse( UnpaidOrderTimeoutMarker::is_marked( $order ) );
+	}
+
+	/**
+	 * @testdox Core's hold-stock job puts an unpaid order whose payment the platform holds as an authorization On hold, authorized, and releases nothing.
+	 */
+	public function test_unpaid_order_whose_payment_is_authorized_goes_on_hold(): void {
+		$order      = $this->create_unpaid_order( 'requires_action' );
+		$transport  = $this->create_transport( self::http_json( 200, self::unpaid_intent( $order, 'requires_capture' ) ) );
+		$processing = $this->createMock( PaymentProcessingService::class );
+		$processing->expects( $this->never() )->method( 'cancel' );
+
+		$this->run_unpaid_order_job( $transport, $processing );
+
+		$order = $this->reload( $order );
+		$this->assertSame( OrderStatus::ON_HOLD, $order->get_status() );
+		$this->assertSame( 'requires_capture', $order->get_meta( '_intention_status', true ) );
+		$this->assertCount( 1, $this->request_paths( $transport ), 'Only the read: no cancel is sent.' );
+	}
+
+	/**
+	 * @testdox Core's hold-stock job puts On hold, with the mismatch note, an unpaid order whose succeeded payment is for another amount.
+	 */
+	public function test_unpaid_order_whose_payment_is_for_another_amount_goes_on_hold(): void {
+		$order     = $this->create_unpaid_order( 'requires_action' );
+		$transport = $this->create_transport( self::http_json( 200, self::unpaid_intent( $order, 'succeeded', 500 ) ) );
+
+		$this->run_unpaid_order_job( $transport );
+
+		$order = $this->reload( $order );
+		$this->assertSame( OrderStatus::ON_HOLD, $order->get_status() );
+		$this->assertSame( 1, $this->count_notes_containing( $order, 'was put <strong>on hold</strong>' ) );
+		$this->assertSame( 0, $this->count_notes_containing( $order, 'Unpaid order cancelled' ) );
+	}
+
+	/**
+	 * @testdox Core's hold-stock job keeps an unpaid order whose payment is disputed, with the disputed-payment note once.
+	 */
+	public function test_unpaid_order_whose_payment_is_disputed_is_kept_with_its_note(): void {
+		$order     = $this->create_unpaid_order( 'requires_action' );
+		$disputed  = self::http_json( 200, self::unpaid_intent( $order, 'succeeded', 1099, array( 'disputed' => true ) ) );
+		$transport = $this->create_transport( $disputed, $disputed );
+
+		$this->run_unpaid_order_job( $transport );
+		$this->age_unpaid_order( $order );
+		$this->run_unpaid_order_job( $transport );
+
+		$order = $this->reload( $order );
+		$this->assertCount( 2, $this->request_paths( $transport ) );
+		$this->assertSame( OrderStatus::PENDING, $order->get_status() );
+		$this->assertSame( 1, $this->count_notes_containing( $order, 'is disputed' ) );
+	}
+
+	/**
+	 * @testdox A payment found on an unpaid order that cannot be applied keeps it, and core's job goes on to the next order.
+	 */
+	public function test_unpaid_order_whose_payment_cannot_be_applied_is_kept_and_the_job_goes_on(): void {
+		$order = $this->create_unpaid_order( 'requires_action' );
+		$next  = $this->create_unpaid_order( '', '' );
+		$next->set_payment_method( 'cod' );
+		$next->save();
+		$this->age_unpaid_order( $next );
+		$confirmation = $this->createMock( WooPaymentsIntentConfirmationService::class );
+		$confirmation->method( 'apply_attached_payment_intent' )->willThrowException( new RuntimeException( 'Lifecycle failed.' ) );
+		$transport = $this->create_transport( self::http_json( 200, self::unpaid_intent( $order, 'succeeded' ) ) );
+
+		$this->run_unpaid_order_job( $transport, null, array( WooPaymentsIntentConfirmationService::class => $confirmation ) );
+
+		$this->assertSame( OrderStatus::PENDING, $this->reload( $order )->get_status() );
+		$this->assertSame( OrderStatus::CANCELLED, $this->reload( $next )->get_status() );
+	}
+
+	/**
+	 * @testdox Core's hold-stock job cancels an unpaid order whose payment holds no money of its own, $_dataName, with one read across the check and the Cancelled listener.
+	 *
+	 * The Cancelled listener takes the check's answer: it stores the status read and reads nothing.
+	 *
+	 * @testWith ["awaiting action", "requires_action", {}, {}]
+	 *           ["fully refunded", "succeeded", {"refunded": true, "amount_refunded": 1099}, {}]
+	 *           ["paying another order", "succeeded", {}, {"order_id": "999999"}]
+	 *
+	 * @param string              $case_name Case name.
+	 * @param string              $status    Status the platform reads.
+	 * @param array<string,mixed> $charge    Charge fields.
+	 * @param array<string,mixed> $metadata  Intent metadata replacing the order's.
+	 */
+	public function test_unpaid_order_without_money_of_its_own_is_cancelled_with_one_read( string $case_name, string $status, array $charge, array $metadata ): void {
+		unset( $case_name );
+		$order  = $this->create_unpaid_order( 'requires_payment_method' );
+		$intent = self::unpaid_intent( $order, $status, 1099, $charge );
+		if ( array() !== $metadata ) {
+			$intent['metadata'] = $metadata;
+		}
+		$transport = $this->create_transport( self::http_json( 200, $intent ) );
+
+		$this->run_unpaid_order_job( $transport );
+
+		$order = $this->reload( $order );
+		$this->assertCount( 1, $this->request_paths( $transport ), 'The listener reads nothing.' );
+		$this->assertSame( OrderStatus::CANCELLED, $order->get_status() );
+		$this->assertSame( $status, $order->get_meta( '_intention_status', true ), 'The listener stores the status the check read.' );
+		$this->assertSame( 1, $this->count_notes_containing( $order, 'Unpaid order cancelled' ) );
+	}
+
+	/**
+	 * @testdox Core's hold-stock job keeps an unpaid order whose payment cannot be read, reads it again at the next run, and lets core cancel it a day after its creation with one note and no further read.
+	 */
+	public function test_unpaid_order_whose_payment_cannot_be_read_is_kept_for_a_day(): void {
+		$order     = $this->create_unpaid_order( 'requires_action' );
+		$transport = $this->create_transport();
+
+		$transport->response = new \WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out' );
+		$this->run_unpaid_order_job( $transport );
+
+		$order = $this->reload( $order );
+		$this->assertCount( 1, $this->request_paths( $transport ) );
+		$this->assertSame( OrderStatus::PENDING, $order->get_status() );
+		$this->assertSame( 0, $this->count_notes_containing( $order, 'could not be checked' ) + $this->count_notes_containing( $order, 'Unpaid order cancelled' ), 'Kept with no note.' );
+
+		$this->age_unpaid_order( $order, DAY_IN_SECONDS - MINUTE_IN_SECONDS );
+		$this->run_unpaid_order_job( $transport );
+
+		$this->assertCount( 2, $this->request_paths( $transport ) );
+		$this->assertSame( OrderStatus::PENDING, $this->reload( $order )->get_status(), 'Still kept a minute before the day ends.' );
+
+		$this->age_unpaid_order( $order, DAY_IN_SECONDS + MINUTE_IN_SECONDS );
+		$this->run_unpaid_order_job( $transport );
+
+		$order = $this->reload( $order );
+		$this->assertCount( 3, $this->request_paths( $transport ), 'The Cancelled listener does not read again.' );
+		$this->assertSame( OrderStatus::CANCELLED, $order->get_status() );
+		$this->assertSame( 1, $this->count_notes( $order, 'The payment for this order could not be checked for a day, so the order is cancelled as unpaid. Before treating it as unpaid, check whether WooPayments received a payment for it.' ) );
+		$this->assertSame( 1, $this->count_notes_containing( $order, 'Unpaid order cancelled' ) );
+		$this->assertSame( 1, $this->count_notes( $order, $this->failure_note( PaymentProcessingService::OPERATION_CANCEL ) ), 'The listener\'s failure note, as for its own failed read.' );
+	}
+
+	/**
+	 * @testdox Core's hold-stock job puts On hold, authorized, an unpaid order whose authorization could not be read at one run and is read at the next.
+	 */
+	public function test_unpaid_order_authorization_unread_at_one_run_goes_on_hold_at_the_next(): void {
+		$order      = $this->create_unpaid_order( 'requires_action' );
+		$transport  = $this->create_transport( self::platform_bad_gateway(), self::http_json( 200, self::unpaid_intent( $order, 'requires_capture' ) ) );
+		$processing = $this->createMock( PaymentProcessingService::class );
+		$processing->expects( $this->never() )->method( 'cancel' );
+
+		$this->run_unpaid_order_job( $transport, $processing );
+		$this->assertSame( OrderStatus::PENDING, $this->reload( $order )->get_status() );
+		$this->age_unpaid_order( $order );
+		$this->run_unpaid_order_job( $transport, $processing );
+
+		$this->assertSame( OrderStatus::ON_HOLD, $this->reload( $order )->get_status() );
+		$this->assertCount( 2, $this->request_paths( $transport ) );
+	}
+
+	/**
+	 * @testdox After a transport or server error, core's hold-stock job reads no other order in the run and keeps them all; an answer it cannot use, or a refused read, stops nothing: $_dataName.
+	 *
+	 * @dataProvider unpaid_order_read_failures
+	 *
+	 * @param string $case_name Case name.
+	 * @param mixed  $response  Transport response to every read.
+	 * @param int    $reads     Reads expected for the two orders.
+	 */
+	public function test_unpaid_order_read_failure_stops_the_run_only_for_a_transport_or_server_error( string $case_name, $response, int $reads ): void {
+		unset( $case_name );
+		$first               = $this->create_unpaid_order( 'requires_action' );
+		$second              = $this->create_unpaid_order( 'requires_action' );
+		$transport           = $this->create_transport();
+		$transport->response = $response;
+
+		$this->run_unpaid_order_job( $transport );
+
+		$this->assertCount( $reads, $this->request_paths( $transport ) );
+		$this->assertSame( OrderStatus::PENDING, $this->reload( $first )->get_status() );
+		$this->assertSame( OrderStatus::PENDING, $this->reload( $second )->get_status() );
+		$this->assertSame( 0, $this->count_notes_containing( $first, 'could not be checked' ) + $this->count_notes_containing( $second, 'could not be checked' ) );
+	}
+
+	/**
+	 * Read failures of the unpaid-order check and how many of two orders' reads the run makes.
+	 *
+	 * @return array<string,array{0:string,1:mixed,2:int}>
+	 */
+	public function unpaid_order_read_failures(): array {
+		return array(
+			'transport error'     => array( 'transport error', new \WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out' ), 1 ),
+			'server error'        => array( 'server error', self::platform_bad_gateway(), 1 ),
+			'answer of no status' => array( 'answer of no status', self::http_json( 200, array( 'id' => 'pi_unpaid' ) ), 2 ),
+			'refused read'        => array(
+				'refused read',
+				self::http_json(
+					404,
+					array(
+						'code'    => 'resource_missing',
+						'message' => 'No such payment_intent.',
+						'data'    => array( 'status' => 404 ),
+					)
+				),
+				2,
+			),
+		);
+	}
+
+	/**
+	 * @testdox Core's hold-stock job never cancels an unpaid order that, while its payment is read as awaiting action, $_dataName.
+	 *
+	 * @dataProvider unpaid_order_changes_during_the_read
+	 *
+	 * @param string $case_name Case name.
+	 * @param string $change    The change another request makes: `key`, `lock`, or the status it saves.
+	 * @param string $expected  Order status at the end.
+	 */
+	public function test_unpaid_order_changed_while_its_payment_is_read_is_kept( string $case_name, string $change, string $expected ): void {
+		unset( $case_name );
+		$order     = $this->create_unpaid_order( 'requires_action' );
+		$transport = $this->create_transport( self::http_json( 200, self::unpaid_intent( $order, 'requires_action' ) ) );
+		$order_id  = $order->get_id();
+		$changed   = false;
+		add_filter(
+			'wcpay_api_request_response',
+			function ( $response ) use ( &$changed, $order_id, $change ) {
+				if ( $changed ) {
+					return $response;
+				}
+				$changed = true;
+				$stored  = $this->reload( wc_get_order( $order_id ) );
+				if ( 'lock' === $change ) {
+					wc_get_container()->get( OrderPaymentLock::class )->claim( $stored, new WooPaymentsPersistenceVocabulary(), 'pi_other', 'payment operation' );
+				} elseif ( 'key' === $change ) {
+					$stored->update_meta_data( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, 'charge_key_new' );
+					$stored->save_meta_data();
+				} else {
+					$stored->set_status( $change );
+					$stored->save();
+				}
+
+				return $response;
+			}
+		);
+
+		$this->run_unpaid_order_job( $transport );
+
+		$order = $this->reload( $order );
+		$this->assertTrue( $changed );
+		$this->assertSame( $expected, $order->get_status() );
+		$this->assertSame( 0, $this->count_notes_containing( $order, 'Unpaid order cancelled' ), 'Core never cancels it.' );
+	}
+
+	/**
+	 * Changes another request makes to an unpaid order while its payment is read.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string}>
+	 */
+	public function unpaid_order_changes_during_the_read(): array {
+		return array(
+			'a checkout keeps a new charge key' => array( 'a checkout keeps a new charge key', 'key', OrderStatus::PENDING ),
+			'another operation claims its lock' => array( 'another operation claims its lock', 'lock', OrderStatus::PENDING ),
+			'a payment moves it to Processing'  => array( 'a payment moves it to Processing', OrderStatus::PROCESSING, OrderStatus::PROCESSING ),
+			'the merchant puts it On hold'      => array( 'the merchant puts it On hold', OrderStatus::ON_HOLD, OrderStatus::ON_HOLD ),
+		);
+	}
+
+	/**
+	 * @testdox A merchant's own cancel after the unpaid-order check read the order reads it again and releases its authorization.
+	 *
+	 * The check's answer is taken only by the cancel of an order core's job cancelled.
+	 */
+	public function test_a_hand_cancel_after_the_unpaid_order_check_reads_again_and_releases_the_authorization(): void {
+		$order      = $this->create_unpaid_order( 'requires_action' );
+		$transport  = $this->create_transport(
+			self::http_json( 200, self::unpaid_intent( $order, 'requires_action' ) ),
+			self::http_json( 200, self::unpaid_intent( $order, 'requires_capture' ) )
+		);
+		$processing = $this->createMock( PaymentProcessingService::class );
+		$processing->expects( $this->once() )->method( 'cancel' )->willReturn( new PaymentOutcome( PaymentOutcome::STATUS_CANCELED, 'pi_unpaid' ) );
+		$this->sut = $this->create_controller( $processing, null, $this->create_unpaid_order_platform( $transport ) );
+		$this->sut->register();
+
+		try {
+			$this->assertTrue( $this->sut->handle_woocommerce_cancel_unpaid_order( true, $order ) );
+			$this->reload( $order )->update_status( OrderStatus::CANCELLED );
+		} finally {
+			wc_get_container()->reset_all_replacements();
+			wc_get_container()->reset_all_resolved();
+		}
+
+		$this->assertCount( 2, $this->request_paths( $transport ), 'The hand cancel reads the payment again.' );
+	}
+
+	/**
+	 * Create a Pending checkout order for a shipped product, paid through WooPayments, storing an intent, last changed three
+	 * hours ago.
+	 *
+	 * @param string $stored_status Intent status the order stores.
+	 * @param string $intent_id     Intent the order stores in the order's test mode; empty for none.
+	 * @return WC_Order
+	 */
+	private function create_unpaid_order( string $stored_status, string $intent_id = 'pi_unpaid' ): WC_Order {
+		$order = wc_create_order();
+		$order->add_product( \WC_Helper_Product::create_simple_product() );
+		$order->set_created_via( 'checkout' );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_currency( 'USD' );
+		$order->set_total( '10.99' );
+		$order->set_status( OrderStatus::PENDING );
+		if ( '' !== $intent_id ) {
+			$order->update_meta_data( '_intent_id', $intent_id );
+			$order->update_meta_data( '_intention_status', $stored_status );
+			$order->update_meta_data( '_wcpay_mode', 'test' );
+		}
+		$order->save();
+		$this->age_unpaid_order( $order );
+
+		return $order;
+	}
+
+	/**
+	 * Date an order's last change three hours back, past core's hold time, and its creation when given.
+	 *
+	 * @param WC_Order $order       Order.
+	 * @param int|null $created_ago Seconds since the order's creation, or null to leave it.
+	 */
+	private function age_unpaid_order( WC_Order $order, ?int $created_ago = null ): void {
+		global $wpdb;
+		$modified = gmdate( 'Y-m-d H:i:s', time() - 3 * HOUR_IN_SECONDS );
+		$created  = null === $created_ago ? null : gmdate( 'Y-m-d H:i:s', time() - $created_ago );
+		if ( OrderUtil::custom_orders_table_usage_is_enabled() ) {
+			$wpdb->update(
+				OrdersTableDataStore::get_orders_table_name(),
+				array_filter(
+					array(
+						'date_updated_gmt' => $modified,
+						'date_created_gmt' => $created,
+					)
+				),
+				array( 'id' => $order->get_id() )
+			);
+		} else {
+			$dates = array(
+				'post_modified'     => get_date_from_gmt( $modified ),
+				'post_modified_gmt' => $modified,
+			);
+			if ( null !== $created ) {
+				$dates['post_date']     = get_date_from_gmt( $created );
+				$dates['post_date_gmt'] = $created;
+			}
+			$wpdb->update( $wpdb->posts, $dates, array( 'ID' => $order->get_id() ) );
+		}
+		$this->reload( $order );
+	}
+
+	/**
+	 * Read an order again past the order caches.
+	 *
+	 * @param WC_Order $order Order.
+	 * @return WC_Order
+	 */
+	private function reload( WC_Order $order ): WC_Order {
+		clean_post_cache( $order->get_id() );
+		wc_get_container()->get( OrderCache::class )->remove( $order->get_id() );
+		$reloaded = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+
+		return $reloaded;
+	}
+
+	/**
+	 * Run core's hold-stock job once, as one request: stock management on, a 60-minute hold, a new controller hooked, and
+	 * the platform client over the given transport, which every service the job resolves uses too.
+	 *
+	 * @param FakeHttpClient                $transport  Platform transport.
+	 * @param PaymentProcessingService|null $processing Processing service the Cancelled listener uses; a mock by default.
+	 * @param array<string,object>          $services   Container services to replace for the run.
+	 */
+	private function run_unpaid_order_job( FakeHttpClient $transport, ?PaymentProcessingService $processing = null, array $services = array() ): void {
+		$manage_stock = get_option( 'woocommerce_manage_stock' );
+		$hold_minutes = get_option( 'woocommerce_hold_stock_minutes' );
+		update_option( 'woocommerce_manage_stock', 'yes' );
+		update_option( 'woocommerce_hold_stock_minutes', '60' );
+		$controller = $this->create_controller( $processing, null, $this->create_unpaid_order_platform( $transport ) );
+		foreach ( $services as $class => $service ) {
+			wc_get_container()->replace( $class, $service );
+		}
+		$controller->register();
+
+		try {
+			wc_cancel_unpaid_orders();
+		} finally {
+			remove_filter( 'woocommerce_cancel_unpaid_order', array( $controller, 'handle_woocommerce_cancel_unpaid_order' ), PHP_INT_MAX );
+			remove_action( 'woocommerce_order_status_cancelled', array( $controller, 'handle_woocommerce_order_status_cancelled' ) );
+			as_unschedule_all_actions( 'woocommerce_cancel_unpaid_orders' );
+			update_option( 'woocommerce_manage_stock', $manage_stock );
+			update_option( 'woocommerce_hold_stock_minutes', $hold_minutes );
+			wc_get_container()->reset_all_replacements();
+			wc_get_container()->reset_all_resolved();
+		}
+	}
+
+	/**
+	 * Create the platform client over a fake transport and put it in the container, with a warm account cache so the
+	 * transport sees only the requests the code under test makes.
+	 *
+	 * @param FakeHttpClient $transport Platform transport.
+	 * @return Client
+	 */
+	private function create_unpaid_order_platform( FakeHttpClient $transport ): Client {
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'               => array(
+					'account_id'        => 'acct_unpaid',
+					'country'           => 'US',
+					'is_live'           => true,
+					'payments_enabled'  => true,
+					'details_submitted' => true,
+					'fraud_services'    => array( 'stripe' => array() ),
+				),
+				'fetched'            => time(),
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			)
+		);
+		$client = new Client();
+		$client->init( $transport, wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( TransportLog::class ) );
+		wc_get_container()->replace( Client::class, $client );
+		wc_get_container()->reset_all_resolved();
+
+		return $client;
+	}
+
+	/**
+	 * An intent of the order, with one charge when its status holds money.
+	 *
+	 * @param WC_Order            $order  Order its metadata names.
+	 * @param string              $status Intent status.
+	 * @param int                 $amount Amount in cents.
+	 * @param array<string,mixed> $charge Charge fields replacing the defaults.
+	 * @return array<string,mixed>
+	 */
+	private static function unpaid_intent( WC_Order $order, string $status, int $amount = 1099, array $charge = array() ): array {
+		$charges = in_array( $status, array( 'succeeded', 'requires_capture' ), true )
+			? array(
+				array_merge(
+					array(
+						'id'              => 'ch_unpaid',
+						'object'          => 'charge',
+						'payment_method'  => 'pm_unpaid',
+						'status'          => 'succeeded',
+						'captured'        => 'succeeded' === $status,
+						'amount'          => $amount,
+						'amount_refunded' => 0,
+						'refunded'        => false,
+						'disputed'        => false,
+					),
+					$charge
+				),
+			)
+			: array();
+
+		return array(
+			'id'                => 'pi_unpaid',
+			'object'            => 'payment_intent',
+			'status'            => $status,
+			'amount'            => $amount,
+			'amount_capturable' => 'requires_capture' === $status ? $amount : 0,
+			'currency'          => 'usd',
+			'customer'          => 'cus_unpaid',
+			'payment_method'    => 'pm_unpaid',
+			'metadata'          => array( 'order_id' => (string) $order->get_id() ),
+			'charges'           => array( 'data' => $charges ),
 		);
 	}
 }
