@@ -46,6 +46,13 @@ class OrderPaymentLock {
 	private TransientRowLock $row_lock;
 
 	/**
+	 * Claims this request took and has not released, by token, with whether a money request's result is still unsaved.
+	 *
+	 * @var array<string,array{order:WC_Order,vocabulary:ProviderPersistenceVocabularyInterface,money_request_unsaved:bool}>
+	 */
+	private array $held_claims = array();
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -67,7 +74,8 @@ class OrderPaymentLock {
 	 * logs it, and other code of the provider may compare it. A holder record names the operation, for the refusal log,
 	 * and carries a token unique to this claim. Releasing needs that token, so an operation that ran past the lock TTL
 	 * cannot release a lock a later claim took over, even one with the same lock value. A claim that takes over an expired
-	 * lock logs one warning naming the former holder, whose request never released it.
+	 * lock logs one warning naming the former holder, whose request never released it; one this request never releases is
+	 * released when it ends (release_held_claims()).
 	 *
 	 * @since 11.2.0
 	 *
@@ -104,6 +112,7 @@ class OrderPaymentLock {
 			if ( false !== $former_holder ) {
 				$this->log_takeover( $order, $operation, null, $former_holder );
 			}
+			$this->hold_until_shutdown( $token, $order, $persistence_vocabulary );
 
 			return $token;
 		}
@@ -114,7 +123,59 @@ class OrderPaymentLock {
 			$this->log_takeover( $order, $operation, $taken_over['value'], null === $taken_over['holder'] ? null : maybe_unserialize( $taken_over['holder'] ) );
 		}
 
-		return $claimed ? $token : null;
+		if ( ! $claimed ) {
+			return null;
+		}
+		$this->hold_until_shutdown( $token, $order, $persistence_vocabulary );
+
+		return $token;
+	}
+
+	/**
+	 * Mark whether a held claim has sent a money-moving request whose result is not saved yet, so release_held_claims()
+	 * keeps its lock. A token this request does not hold is ignored.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param string $lock_token Token the claim returned.
+	 * @param bool   $unsaved    True once the request is sent, false once its result is saved.
+	 */
+	public function mark_money_request_unsaved( string $lock_token, bool $unsaved ): void {
+		if ( isset( $this->held_claims[ $lock_token ] ) ) {
+			$this->held_claims[ $lock_token ]['money_request_unsaved'] = $unsaved;
+		}
+	}
+
+	/**
+	 * Release, when the request ends, every claim it took and did not release: an exit, a fatal error or a timeout skips
+	 * the caller's `finally`. A claim that sent a money-moving request and has not saved its result keeps its lock to its
+	 * expiry, since nothing else reliably stops a repeat from moving the money twice.
+	 *
+	 * @internal
+	 */
+	public function release_held_claims(): void {
+		foreach ( $this->held_claims as $lock_token => $claim ) {
+			if ( ! $claim['money_request_unsaved'] ) {
+				$this->release( $claim['order'], $claim['vocabulary'], (string) $lock_token );
+			}
+		}
+	}
+
+	/**
+	 * Keep a claim for release_held_claims(), hooked at the last `shutdown` priority: before WordPress closes a persistent
+	 * object cache, and after any earlier `shutdown` callback that claims.
+	 *
+	 * @param string                                 $lock_token             Token the claim returned.
+	 * @param WC_Order                               $order                  Order the claim locks.
+	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
+	 */
+	private function hold_until_shutdown( string $lock_token, WC_Order $order, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): void {
+		$this->held_claims[ $lock_token ] = array(
+			'order'                 => $order,
+			'vocabulary'            => $persistence_vocabulary,
+			'money_request_unsaved' => false,
+		);
+		add_action( 'shutdown', array( $this, 'release_held_claims' ), PHP_INT_MAX );
 	}
 
 	/**
@@ -225,6 +286,7 @@ class OrderPaymentLock {
 	public function release( WC_Order $order, ProviderPersistenceVocabularyInterface $persistence_vocabulary, string $lock_token ): void {
 		global $wpdb;
 
+		unset( $this->held_claims[ $lock_token ] );
 		$lock_key   = $persistence_vocabulary->get_order_lock_key( $order );
 		$holder_key = $this->get_lock_holder_key( $order, $persistence_vocabulary );
 

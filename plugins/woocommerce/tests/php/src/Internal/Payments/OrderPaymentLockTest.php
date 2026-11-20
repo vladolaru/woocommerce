@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use WC_Unit_Test_Case;
@@ -632,6 +633,190 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 		$this->assertSame( $level, $logger->lines[0][0] );
 		$this->assertMatchesRegularExpression( '/^order payment lock refused: order ' . $order->get_id() . ', refused refund, held by (checkout for \d+s|an unknown operation for an unknown time)$/', $logger->lines[0][1] );
 		$this->assertSame( $retry_queued, $logger->contexts[0]['retry_queued'] );
+	}
+
+	/**
+	 * @testdox A claim the request never releases is released at shutdown, at the last priority, with its holder record (object cache: $object_cache).
+	 *
+	 * @testWith [false]
+	 *           [true]
+	 *
+	 * @param bool $object_cache Whether transients live in the object cache.
+	 */
+	public function test_claim_never_released_is_released_at_shutdown( bool $object_cache ): void {
+		$this->in_storage_mode(
+			$object_cache,
+			function ( \WC_Order $order ): void {
+				$sut = $this->create_lock();
+
+				$this->assertNotNull( $sut->claim( $order, $this->persistence_vocabulary, 'pi_dying', 'checkout' ) );
+				$this->assertSame( PHP_INT_MAX, has_action( 'shutdown', array( $sut, 'release_held_claims' ) ) );
+
+				$sut->release_held_claims();
+
+				$this->assertFalse( $this->get_order_payment_lock_value( $order, $this->persistence_vocabulary ), 'The lock is released.' );
+				$this->assertFalse( $this->read_holder_record( $order ), 'Its holder record goes with it.' );
+			}
+		);
+	}
+
+	/**
+	 * @testdox A request that takes no claim, or whose claim is refused, adds nothing to shutdown.
+	 */
+	public function test_no_claim_and_a_refused_claim_add_nothing_to_shutdown(): void {
+		$order  = wc_create_order();
+		$sut    = $this->create_lock();
+		$holder = $this->create_lock();
+
+		$this->assertFalse( has_action( 'shutdown', array( $sut, 'release_held_claims' ) ) );
+		$token = $holder->claim( $order, $this->persistence_vocabulary, 'pi_holder', 'checkout' );
+		$this->assertNull( $sut->claim( $order, $this->persistence_vocabulary, 'pi_refused', 'refund' ) );
+		$this->assertFalse( has_action( 'shutdown', array( $sut, 'release_held_claims' ) ), 'A refused claim adds nothing.' );
+		$holder->release( $order, $this->persistence_vocabulary, (string) $token );
+	}
+
+	/**
+	 * @testdox Releasing at shutdown leaves a lock the request released and another request then claimed, on that order or another.
+	 */
+	public function test_shutdown_release_leaves_a_released_claim_alone(): void {
+		$order       = wc_create_order();
+		$other_order = wc_create_order();
+		$sut         = $this->create_lock();
+		$later       = $this->create_lock();
+		$released    = $sut->claim( $order, $this->persistence_vocabulary, 'pi_released', 'refund' );
+		$this->assertNotNull( $sut->claim( $other_order, $this->persistence_vocabulary, 'pi_kept', 'checkout' ) );
+		$sut->release( $order, $this->persistence_vocabulary, (string) $released );
+		$this->assertNotNull( $later->claim( $order, $this->persistence_vocabulary, 'pi_later', 'capture' ) );
+
+		$sut->release_held_claims();
+
+		$this->assertSame( 'pi_later', $this->get_order_payment_lock_value( $order, $this->persistence_vocabulary ), 'The later claim keeps its lock.' );
+		$this->assertFalse( $this->get_order_payment_lock_value( $other_order, $this->persistence_vocabulary ), 'Only the claim never released is released.' );
+		$this->clear_order_payment_lock( $order, $this->persistence_vocabulary );
+	}
+
+	/**
+	 * @testdox Releasing at shutdown leaves a lock another request took over after this one's expired (object cache: $object_cache).
+	 *
+	 * @testWith [false]
+	 *           [true]
+	 *
+	 * @param bool $object_cache Whether transients live in the object cache.
+	 */
+	public function test_shutdown_release_leaves_a_takeover_alone( bool $object_cache ): void {
+		$this->in_storage_mode(
+			$object_cache,
+			function ( \WC_Order $order ) use ( $object_cache ): void {
+				$sut      = $this->create_lock();
+				$taker    = $this->create_lock();
+				$lock_key = $this->persistence_vocabulary->get_order_lock_key( $order );
+				$this->assertNotNull( $sut->claim( $order, $this->persistence_vocabulary, 'pi_same', 'checkout' ) );
+				if ( $object_cache ) {
+					wp_cache_delete( $lock_key, 'transient' );
+				} else {
+					$this->update_lock_row( '_transient_timeout_' . $lock_key, (string) ( time() - 1 ) );
+				}
+				$this->assertNotNull( $taker->claim( $order, $this->persistence_vocabulary, 'pi_same', 'payment status update' ) );
+
+				$sut->release_held_claims();
+
+				$this->assertSame( 'pi_same', $this->get_order_payment_lock_value( $order, $this->persistence_vocabulary ), 'The taker keeps its lock.' );
+				$this->assertSame( 'payment status update', $this->read_holder_record( $order )['operation'] ?? null, 'The taker keeps its holder record.' );
+			}
+		);
+	}
+
+	/**
+	 * @testdox A claim first taken by a shutdown callback at priority 10 is released in the same shutdown.
+	 */
+	public function test_claim_taken_during_shutdown_is_released_in_the_same_shutdown(): void {
+		$order = wc_create_order();
+		$sut   = $this->create_lock();
+		$token = null;
+		remove_all_actions( 'shutdown' );
+		add_action(
+			'shutdown',
+			function () use ( $sut, $order, &$token ): void {
+				$token = $sut->claim( $order, $this->persistence_vocabulary, 'pi_cleanup', 'earlier attempt cleanup' );
+			}
+		);
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Runs WordPress's end of the request.
+		do_action( 'shutdown' );
+
+		$this->assertNotNull( $token, 'The shutdown callback must have claimed.' );
+		$this->assertFalse( $this->get_order_payment_lock_value( $order, $this->persistence_vocabulary ) );
+	}
+
+	/**
+	 * @testdox A claim whose money request was sent and whose result is not saved keeps its lock at shutdown, and is released once the result is saved.
+	 */
+	public function test_claim_with_an_unsaved_money_request_keeps_its_lock_at_shutdown(): void {
+		$order = wc_create_order();
+		$sut   = $this->create_lock();
+		$token = (string) $sut->claim( $order, $this->persistence_vocabulary, 'pi_charging', 'checkout' );
+
+		$sut->mark_money_request_unsaved( $token, true );
+		$sut->release_held_claims();
+
+		$this->assertSame( 'pi_charging', $this->get_order_payment_lock_value( $order, $this->persistence_vocabulary ), 'The lock is kept.' );
+
+		$sut->mark_money_request_unsaved( $token, false );
+		$sut->release_held_claims();
+
+		$this->assertFalse( $this->get_order_payment_lock_value( $order, $this->persistence_vocabulary ), 'Once saved, the lock is released.' );
+	}
+
+	/**
+	 * Build an order payment lock of its own, so its held claims and shutdown callback belong to the test.
+	 *
+	 * @return OrderPaymentLock
+	 */
+	private function create_lock(): OrderPaymentLock {
+		$lock = new OrderPaymentLock();
+		$lock->init( new TransientRowLock() );
+
+		return $lock;
+	}
+
+	/**
+	 * Run a test body on a new order with transients in the database or in the object cache.
+	 *
+	 * @param bool     $object_cache Whether transients live in the object cache.
+	 * @param callable $body         Test body, given the order.
+	 */
+	private function in_storage_mode( bool $object_cache, callable $body ): void {
+		if ( ! $object_cache ) {
+			$this->skip_when_transients_live_in_object_cache();
+		}
+		$order    = wc_create_order();
+		$lock_key = $this->persistence_vocabulary->get_order_lock_key( $order );
+		$was_ext  = wp_using_ext_object_cache( $object_cache ? true : wp_using_ext_object_cache() );
+		try {
+			$body( $order );
+		} finally {
+			if ( $object_cache ) {
+				wp_cache_delete( $lock_key, 'transient' );
+				wp_cache_delete( $lock_key . '_holder', 'transient' );
+			}
+			wp_using_ext_object_cache( (bool) $was_ext );
+		}
+	}
+
+	/**
+	 * Read the order payment lock's holder record as stored.
+	 *
+	 * @param \WC_Order $order Order.
+	 * @return mixed The record, or false when there is none.
+	 */
+	private function read_holder_record( \WC_Order $order ) {
+		$holder_key = $this->persistence_vocabulary->get_order_lock_key( $order ) . '_holder';
+		if ( wp_using_ext_object_cache() ) {
+			return wp_cache_get( $holder_key, 'transient' );
+		}
+		$stored = $this->read_lock_row( '_transient_' . $holder_key );
+
+		return null === $stored ? false : maybe_unserialize( $stored );
 	}
 
 	/**

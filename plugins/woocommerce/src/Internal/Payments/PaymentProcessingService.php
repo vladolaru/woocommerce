@@ -108,6 +108,7 @@ class PaymentProcessingService {
 				return $changed_order_outcome;
 			}
 
+			$this->order_payment_lock->mark_money_request_unsaved( $lock_token, true );
 			$provider_outcome = 0.0 >= (float) $order->get_total() && ! $this->should_call_provider_for_zero_total_checkout( $context, $provider )
 				? new PaymentOutcome( PaymentOutcome::STATUS_NO_EXTERNAL_PAYMENT )
 				: $this->charge_provider( $context, $provider, $idempotency_key );
@@ -115,6 +116,7 @@ class PaymentProcessingService {
 
 			try {
 				$outcome = $this->apply_provider_operation_effects( $context, $outcome, $provider, self::OPERATION_CHARGE );
+				$this->order_payment_lock->mark_money_request_unsaved( $lock_token, false );
 				$this->apply_checkout_outcome( $order, $outcome, $provider );
 				$this->apply_provider_post_lifecycle_effects( $context, $outcome, $provider, self::OPERATION_CHARGE );
 			} catch ( Throwable $apply_exception ) {
@@ -410,6 +412,7 @@ class PaymentProcessingService {
 
 			// Always set, so an ID the caller's context already carried never reaches the provider.
 			$context = $context->with_payment_data( array( PaymentOperationContext::PAYMENT_DATA_REFUND_ID => $own_row_known ? $wc_refund_id : 0 ) );
+			$this->order_payment_lock->mark_money_request_unsaved( $lock_token, true );
 			try {
 				$provider_outcome = $provider->refund( $context, $idempotency_key );
 			} catch ( Throwable $exception ) {
@@ -423,6 +426,7 @@ class PaymentProcessingService {
 				if ( $outcome->is_successful() ) {
 					$this->apply_refund_outcome( $order, $outcome, $wc_refund_id, $persistence_vocabulary );
 				}
+				$this->order_payment_lock->mark_money_request_unsaved( $lock_token, false );
 			} catch ( Throwable $apply_exception ) {
 				if ( ! $this->is_reconcilable_provider_outcome( $provider_outcome ) ) {
 					throw $apply_exception;

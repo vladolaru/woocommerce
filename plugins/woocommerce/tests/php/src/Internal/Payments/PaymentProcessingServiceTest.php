@@ -161,6 +161,150 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A checkout that dies after its charge request keeps the order payment lock at shutdown until the charge's effects are saved, and not after.
+	 */
+	public function test_checkout_keeps_its_lock_at_shutdown_only_while_the_charge_is_unsaved(): void {
+		$order = $this->create_woopayments_order( '10.00' );
+		$lock  = new OrderPaymentLock();
+		$lock->init( new \Automattic\WooCommerce\Internal\Payments\TransientRowLock() );
+		$sut = new PaymentProcessingService();
+		$sut->init( $lock, wc_get_container()->get( OrderPaymentLifecycleService::class ), wc_get_container()->get( OrderPaymentNotes::class ) );
+		$held = array();
+		$dies = function ( string $point ) use ( &$held, $lock, $order ): void {
+			$lock->release_held_claims();
+			$held[ $point ] = false !== $this->get_order_payment_lock_value( $order, $this->persistence_vocabulary );
+		};
+		// phpcs:disable Squiz.Commenting, Squiz.Classes.ClassFileName.NoMatch
+		$provider = new class( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_dies', '', 'pm_test', 'cus_test', array( 'meta' => array( '_charge_id' => 'ch_dies' ) ) ), $dies ) extends RecordingProvider implements ProviderOperationEffectApplierInterface {
+			/** @var callable */
+			private $dies;
+
+			public function __construct( PaymentOutcome $outcome, callable $dies ) {
+				parent::__construct( $outcome );
+				$this->dies = $dies;
+			}
+
+			public function charge( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
+				$outcome = parent::charge( $context, $idempotency_key );
+				( $this->dies )( 'after the platform answered' );
+				return $outcome;
+			}
+
+			public function apply_operation_effects( PaymentOperationContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
+				( $this->dies )( 'while the effects are saved' );
+				return $outcome;
+			}
+		};
+		// phpcs:enable Squiz.Commenting, Squiz.Classes.ClassFileName.NoMatch
+		add_action(
+			'woocommerce_pre_payment_complete',
+			static function () use ( $dies ): void {
+				$dies( 'in a status hook after the save' );
+			}
+		);
+
+		$sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_test' ), $provider );
+
+		$this->assertSame(
+			array(
+				'after the platform answered'     => true,
+				'while the effects are saved'     => true,
+				'in a status hook after the save' => false,
+			),
+			$held
+		);
+	}
+
+	/**
+	 * @testdox A refund that dies after its refund request keeps the order payment lock at shutdown; once the refund row is linked, it releases it.
+	 */
+	public function test_refund_keeps_its_lock_at_shutdown_only_while_the_refund_is_unsaved(): void {
+		$order = $this->create_woopayments_order( '10.00' );
+		$this->create_local_refund( $order, 2.50, 'Adjustment' );
+		$held = array();
+		// phpcs:disable Squiz.Commenting, Squiz.Classes.ClassFileName.NoMatch
+		$lock = new class() extends OrderPaymentLock {
+			/** @var bool */
+			public bool $finally_runs = true;
+
+			public function release( WC_Order $order, ProviderPersistenceVocabularyInterface $persistence_vocabulary, string $lock_token ): void {
+				if ( ! $this->finally_runs ) {
+					// The request dies before its finally: only shutdown releases.
+					$this->finally_runs = true;
+					$this->release_held_claims();
+					return;
+				}
+				parent::release( $order, $persistence_vocabulary, $lock_token );
+			}
+		};
+		$lock->init( new \Automattic\WooCommerce\Internal\Payments\TransientRowLock() );
+		$sut = new PaymentProcessingService();
+		$sut->init( $lock, wc_get_container()->get( OrderPaymentLifecycleService::class ), wc_get_container()->get( OrderPaymentNotes::class ) );
+		$dies     = function () use ( &$held, $lock, $order ): void {
+			$lock->release_held_claims();
+			$held['after the platform answered'] = false !== $this->get_order_payment_lock_value( $order, $this->persistence_vocabulary );
+			$lock->finally_runs                  = false;
+		};
+		$provider = new class( $this->successful_refund_outcome( 're_dies' ), $dies ) extends RecordingProvider {
+			/** @var callable */
+			private $dies;
+
+			public function __construct( PaymentOutcome $outcome, callable $dies ) {
+				parent::__construct( $outcome );
+				$this->dies = $dies;
+			}
+
+			public function refund( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
+				$outcome = parent::refund( $context, $idempotency_key );
+				( $this->dies )();
+				return $outcome;
+			}
+		};
+		// phpcs:enable Squiz.Commenting, Squiz.Classes.ClassFileName.NoMatch
+
+		$this->assertTrue( $sut->process_refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 2.50, 'Adjustment' ), $provider ) );
+
+		$this->assertSame( array( 'after the platform answered' => true ), $held );
+		$this->assertFalse( $this->get_order_payment_lock_value( $order, $this->persistence_vocabulary ), 'A death after the refund row was linked leaves no lock.' );
+	}
+
+	/**
+	 * @testdox A capture that dies after its capture request leaves no order payment lock at shutdown: the platform refuses a second capture.
+	 */
+	public function test_capture_marks_nothing_so_its_lock_is_released_at_shutdown(): void {
+		$order = $this->create_woopayments_order( '10.00' );
+		$lock  = new OrderPaymentLock();
+		$lock->init( new \Automattic\WooCommerce\Internal\Payments\TransientRowLock() );
+		$sut = new PaymentProcessingService();
+		$sut->init( $lock, wc_get_container()->get( OrderPaymentLifecycleService::class ), wc_get_container()->get( OrderPaymentNotes::class ) );
+		$held = null;
+		// phpcs:disable Squiz.Commenting, Squiz.Classes.ClassFileName.NoMatch
+		$provider = new class( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_capture' ), function () use ( &$held, $lock, $order ): void {
+			$lock->release_held_claims();
+			$held = false !== $this->get_order_payment_lock_value( $order, $this->persistence_vocabulary );
+		} ) extends RecordingProvider {
+			/** @var callable */
+			private $dies;
+
+			public function __construct( PaymentOutcome $outcome, callable $dies ) {
+				parent::__construct( $outcome );
+				$this->dies = $dies;
+			}
+
+			public function capture( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
+				$outcome = parent::capture( $context, $idempotency_key );
+				( $this->dies )();
+				return $outcome;
+			}
+		};
+		// phpcs:enable Squiz.Commenting, Squiz.Classes.ClassFileName.NoMatch
+
+		$sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 10.0 ), $provider );
+
+		$this->assertFalse( $held, 'A capture marks no money request, so shutdown releases its lock.' );
+	}
+
+	/**
 	 * @testdox Should let core's cart-clearing hook empty a matching cart once the shopper's browser loads a completed checkout's redirect URL.
 	 *
 	 * WooPayments client 11.1.0 `class-wc-payment-gateway-wcpay.php:2229-2231` empties the cart
