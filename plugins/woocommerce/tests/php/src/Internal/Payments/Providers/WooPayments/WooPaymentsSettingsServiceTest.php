@@ -2379,6 +2379,45 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * A USD rate far from the real one rounds the High purchase price limit of a JPY store to `0|jpy`, which the platform
+	 * applies to every order.
+	 *
+	 * @testdox A save without the fraud settings sends no rebuilt ruleset the limits check refuses, logs it, and still saves.
+	 */
+	public function test_update_settings_skips_a_rebuilt_fraud_ruleset_the_limits_check_refuses(): void {
+		$this->set_connected_account_data();
+		update_option( 'woocommerce_currency', 'JPY' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'JPY', 'USD' ) );
+		update_option( 'wcpay_multi_currency_store_currency', 'JPY' );
+		update_option( 'wcpay_multi_currency_exchange_rate_usd', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_usd', '3000' );
+		update_option( 'current_protection_level', 'high' );
+		$cached = $this->get_high_fraud_ruleset_fixture();
+		set_transient( 'wcpay_fraud_protection_settings', $cached, DAY_IN_SECONDS );
+		$logger = RecordingWcLogger::install();
+
+		try {
+			$result = $this->sut->update_settings( array( 'is_saved_cards_enabled' => false ) );
+
+			$this->assertIsArray( $result );
+			$this->assertFalse( $result['is_saved_cards_enabled'], 'The save it follows is stored.' );
+			$this->assertSame( 0, $this->api_client->fraud_ruleset_saves, 'A refused rebuild is not sent.' );
+			$this->assertSame( $cached, get_transient( 'wcpay_fraud_protection_settings' ) );
+			$this->assertSame( 'high', get_option( 'current_protection_level' ) );
+			$message = 'WooPayments fraud ruleset refresh skipped: a rebuilt limit would apply to every order or to none.';
+			$this->assertSame( array( 'protection_level' => 'high' ), array_intersect_key( $this->get_logged_context( $logger, $message ), array( 'protection_level' => true ) ) );
+			$this->assertContains( array( 'warning', $message ), array_map( static fn( array $line ): array => array( $line[0], $line[1] ), $logger->lines ) );
+		} finally {
+			wc_get_container()->reset_all_resolved();
+			// Through delete_option(), so the shared Multi-Currency state sees the change.
+			delete_option( 'wcpay_multi_currency_enabled_currencies' );
+			delete_option( 'wcpay_multi_currency_exchange_rate_usd' );
+			delete_option( 'wcpay_multi_currency_manual_rate_usd' );
+			delete_option( 'wcpay_multi_currency_store_currency' );
+		}
+	}
+
+	/**
 	 * @testdox A save that carries the fraud settings sends only the requested ruleset.
 	 */
 	public function test_update_settings_with_the_fraud_settings_sends_no_second_ruleset(): void {
