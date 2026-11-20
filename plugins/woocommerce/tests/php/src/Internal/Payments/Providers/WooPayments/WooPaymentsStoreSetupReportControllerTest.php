@@ -526,6 +526,28 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should store the platform's answer to the locale update as the cached account.
+	 */
+	public function test_site_language_change_caches_the_account_update_answer(): void {
+		$answer     = array(
+			'account_id' => 'acct_native_test',
+			'is_live'    => false,
+			'locale'     => 'de_DE',
+		);
+		$api_client = $this->create_api_client( array( 'update_account' ) );
+		$api_client->method( 'update_account' )->willReturn( $answer );
+		$service = $this->create_service( new RecordingActionSchedulerService(), $api_client, $this->create_account_service( array( 'account_id' => 'acct_native_test' ) ) );
+
+		try {
+			$service->handle_site_language_update( 'WPLANG', '', 'de_DE' );
+
+			$this->assertSame( $answer, get_option( 'wcpay_account_data' )['data'] );
+		} finally {
+			delete_option( 'wcpay_account_data' );
+		}
+	}
+
+	/**
 	 * @testdox Should re-send the account's business URL once only when the store goes live: $_dataName.
 	 * @dataProvider provider_store_launch
 	 *

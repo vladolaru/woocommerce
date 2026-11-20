@@ -1604,6 +1604,105 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should store the account update's answer as the cached account and answer the save from it, where a fetch would answer the account from before the update.
+	 */
+	public function test_update_settings_caches_the_account_update_answer(): void {
+		$this->set_connected_account_fields(
+			array(
+				'statement_descriptor'    => 'OLD STORE',
+				'business_profile'        => array( 'support_email' => 'old@example.test' ),
+				'capability_requirements' => array( 'card_payments' => array( 'individual.verification.document' ) ),
+			)
+		);
+		$stale_account = get_option( 'wcpay_account_data' )['data'];
+		$api_client    = $this->createMock( Client::class );
+		$api_client->method( 'is_available' )->willReturn( true );
+		$api_client->method( 'get_account' )->willReturn( $stale_account );
+		wc_get_container()->replace( Client::class, $api_client );
+		// The update's answer is the whole account, without the capability requirements only the account read adds.
+		$answer = $stale_account;
+		unset( $answer['capability_requirements'] );
+		$answer['statement_descriptor']              = 'NEW STORE';
+		$answer['business_profile']['support_email'] = 'new@example.test';
+		$this->api_client->update_account_answer     = $answer;
+
+		$result = $this->sut->update_settings(
+			array(
+				'account_statement_descriptor'   => 'NEW STORE',
+				'account_business_support_email' => 'new@example.test',
+			)
+		);
+
+		$this->assertIsArray( $result );
+		$this->assertSame( 'NEW STORE', $result['account_statement_descriptor'] );
+		$this->assertSame( 'new@example.test', $result['account_business_support_email'] );
+		$this->assertSame( $answer, get_option( 'wcpay_account_data' )['data'] );
+	}
+
+	/**
+	 * @testdox Should fetch the account during the save when the account update's answer is not an account: $_dataName.
+	 * @dataProvider provide_account_update_answers_that_are_not_an_account
+	 *
+	 * @param array<string,mixed> $answer The platform's answer to the account update.
+	 */
+	public function test_update_settings_fetches_the_account_when_the_update_answer_is_not_an_account( array $answer ): void {
+		$this->set_connected_account_fields( array( 'statement_descriptor' => 'OLD STORE' ) );
+		$fetched_account = array_replace( get_option( 'wcpay_account_data' )['data'], array( 'statement_descriptor' => 'NEW STORE' ) );
+		$api_client      = $this->createMock( Client::class );
+		$api_client->method( 'is_available' )->willReturn( true );
+		$api_client->expects( $this->once() )->method( 'get_account' )->willReturn( $fetched_account );
+		wc_get_container()->replace( Client::class, $api_client );
+		$this->api_client->update_account_answer = $answer;
+		$this->assertFalse( $this->account_service->is_test_mode_onboarding_enabled(), 'An account without is_live is valid only in test-mode onboarding.' );
+		// Reads that cannot refresh, as in AJAX and cron, show whether the save itself fetched the account.
+		add_filter( 'wp_doing_ajax', '__return_true' );
+
+		try {
+			$result = $this->sut->update_settings( array( 'account_statement_descriptor' => 'NEW STORE' ) );
+		} finally {
+			remove_filter( 'wp_doing_ajax', '__return_true' );
+		}
+
+		$this->assertIsArray( $result );
+		$this->assertSame( 'NEW STORE', $result['account_statement_descriptor'] );
+		$this->assertSame( $fetched_account, get_option( 'wcpay_account_data' )['data'] );
+	}
+
+	/**
+	 * Account update answers that are not an account.
+	 *
+	 * @return array<string,array{array<string,mixed>}>
+	 */
+	public function provide_account_update_answers_that_are_not_an_account(): array {
+		return array(
+			'an empty answer'                             => array( array() ),
+			'a test account outside test-mode onboarding' => array(
+				array(
+					'account_id' => 'acct_native_test',
+					'is_live'    => false,
+				),
+			),
+		);
+	}
+
+	/**
+	 * @testdox Should leave the cached account alone and fetch nothing when the account update fails.
+	 */
+	public function test_update_settings_writes_no_account_when_the_account_update_fails(): void {
+		$this->set_connected_account_fields( array( 'statement_descriptor' => 'OLD STORE' ) );
+		$api_client = $this->createMock( Client::class );
+		$api_client->method( 'is_available' )->willReturn( true );
+		$api_client->expects( $this->never() )->method( 'get_account' );
+		wc_get_container()->replace( Client::class, $api_client );
+		$this->api_client->update_account_exception = new ApiException( 'Refused.', 'wcpay_test_refused', 400 );
+
+		$result = $this->sut->update_settings( array( 'account_statement_descriptor' => 'NEW STORE' ) );
+
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertSame( 'OLD STORE', get_option( 'wcpay_account_data' )['data']['statement_descriptor'] );
+	}
+
+	/**
 	 * @testdox Should surface the platform-rejected field as an inline error envelope for inline-capable settings.
 	 */
 	public function test_update_settings_surfaces_platform_param_for_inline_error_fields(): void {
@@ -3182,11 +3281,16 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			$params                                   = $this->sut->get_settings();
 			$params['account_business_support_email'] = 'support@example.test';
 			$params['is_debug_log_enabled']           = true;
+			// The platform answers the update with the whole account; the account fetches of this class fail.
+			$answer                                      = get_option( 'wcpay_account_data' )['data'];
+			$answer['business_profile']['support_email'] = 'support@example.test';
+			$this->api_client->update_account_answer     = $answer;
 
 			$response = $this->post_settings( $params );
 
 			$this->assertSame( 200, $response->get_status(), (string) wp_json_encode( $response->get_data() ) );
 			$this->assertSame( array( 'business_support_email' => 'support@example.test' ), $this->api_client->last_account_settings );
+			$this->assertSame( 'support@example.test', $response->get_data()['account_business_support_email'] );
 			$stored = get_option( 'woocommerce_woocommerce_payments_settings' );
 			$this->assertIsArray( $stored );
 			$this->assertSame( 'yes', $stored['enable_logging'] );

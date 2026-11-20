@@ -54,6 +54,13 @@ class RecordingSettingsApiClient extends Client {
 	public ?ApiException $update_account_exception = null;
 
 	/**
+	 * The platform's answer to an account update; an empty answer when unset.
+	 *
+	 * @var array<string,mixed>|null
+	 */
+	public ?array $update_account_answer = null;
+
+	/**
 	 * Exception a capability request throws, when set.
 	 *
 	 * @var ApiException|null
@@ -95,7 +102,7 @@ class RecordingSettingsApiClient extends Client {
 			throw $this->update_account_exception;
 		}
 
-		return $account_settings;
+		return $this->update_account_answer ?? array();
 	}
 
 	/**

@@ -339,6 +339,21 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Store the platform's answer to an account update as the cached account, as client 11.3.0 does
+	 * (`includes/class-wc-payments-account.php:2613-2617`). An answer that is not an account fetches the account instead.
+	 *
+	 * @param array<string,mixed> $account_data The platform's answer to an account update.
+	 */
+	public function cache_account_update_answer( array $account_data ): void {
+		if ( array() === $account_data || ! $this->is_valid_cached_account( $account_data ) ) {
+			$this->refresh_account_data();
+			return;
+		}
+
+		$this->write_account_cache( $account_data, false );
+	}
+
+	/**
 	 * Persist partial account data that the next read must replace with the full account.
 	 *
 	 * An onboarding answer carries only part of the account. Storing it marked as never fetched makes the next read fetch

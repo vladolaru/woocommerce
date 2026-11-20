@@ -895,8 +895,7 @@ class WooPaymentsSettingsService {
 
 		try {
 			if ( ! empty( $account_settings ) ) {
-				$this->api_client->update_account( $account_settings );
-				$this->account_service->refresh_account_data();
+				$this->account_service->cache_account_update_answer( $this->api_client->update_account( $account_settings ) );
 			}
 		} catch ( ApiException $e ) {
 			return $this->account_update_exception_to_wp_error( $e );

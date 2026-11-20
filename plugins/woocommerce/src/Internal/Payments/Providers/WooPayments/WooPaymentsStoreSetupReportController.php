@@ -222,8 +222,7 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 		}
 
 		try {
-			$this->api_client->update_account( array( 'locale' => is_string( $new_value ) && '' !== $new_value ? $new_value : 'en_US' ) );
-			$this->account_service->refresh_account_data();
+			$this->account_service->cache_account_update_answer( $this->api_client->update_account( array( 'locale' => is_string( $new_value ) && '' !== $new_value ? $new_value : 'en_US' ) ) );
 		} catch ( ApiException $exception ) {
 			$this->log_exception( 'Failed to propagate the site language to the WooPayments account locale.', $exception );
 		}
