@@ -264,7 +264,13 @@ export const WooPaymentsDocumentsPage = () => {
 				}
 
 				const nextAccountState = getDocumentsAccountState( response );
-				setAccountState( nextAccountState );
+				// Keep VAT details saved in this visit, as client 11.3.0 does (`documents/list/index.tsx:172-175`).
+				setAccountState( ( current ) => ( {
+					...nextAccountState,
+					hasSubmittedVatData:
+						nextAccountState.hasSubmittedVatData ||
+						!! current?.hasSubmittedVatData,
+				} ) );
 
 				if ( ! nextAccountState.enabled ) {
 					setDocuments( [] );

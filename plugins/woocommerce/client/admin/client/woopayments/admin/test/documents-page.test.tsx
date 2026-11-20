@@ -526,6 +526,73 @@ describe( 'WooPaymentsDocumentsPage', () => {
 		);
 	} );
 
+	// Client 11.3.0 `documents/list/index.tsx:172-175`: the submitted flag holds for the rest of the visit.
+	it( 'does not ask for VAT details again after a filter change once they were submitted', async () => {
+		mockGetDocumentsAccount.mockResolvedValue( {
+			...enabledAccount,
+			documents: {
+				enabled: true,
+				has_submitted_vat_data: false,
+				country: 'DE',
+			},
+		} );
+		const documentUrl =
+			'https://site.test/wp-json/wc/v3/payments/documents/vat_invoice_123?_wpnonce=rest-nonce';
+
+		renderDocumentsPage( [ '/woopayments/documents?filter=advanced' ] );
+
+		await userEvent.click(
+			await screen.findByRole( 'button', {
+				name: 'Download Tax Invoice vat_invoice_123',
+			} )
+		);
+		await act( async () => {
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Continue' } )
+			);
+		} );
+		fireEvent.change( await screen.findByLabelText( 'Business name' ), {
+			target: { value: 'Ada Bakery' },
+		} );
+		fireEvent.change( screen.getByLabelText( 'Address' ), {
+			target: { value: '1 Market Street' },
+		} );
+		await act( async () => {
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Confirm' } )
+			);
+		} );
+		await waitFor( () =>
+			expect( openSpy ).toHaveBeenCalledWith( documentUrl, '_blank' )
+		);
+
+		chooseFilter( 'Documents match', 'Any filter' );
+
+		await waitFor( () =>
+			expect( mockGetDocumentsSummary ).toHaveBeenLastCalledWith(
+				expect.objectContaining( { match: 'any' } )
+			)
+		);
+		await waitFor( () =>
+			expect(
+				screen.getByTestId( 'documents-dataviews' )
+			).toHaveAttribute( 'aria-busy', 'false' )
+		);
+		expect( mockGetDocumentsAccount ).toHaveBeenCalledTimes( 2 );
+
+		await userEvent.click(
+			screen.getByRole( 'button', {
+				name: 'Download Tax Invoice vat_invoice_123',
+			} )
+		);
+
+		expect(
+			screen.queryByRole( 'dialog', { name: 'Set your tax details' } )
+		).not.toBeInTheDocument();
+		expect( openSpy ).toHaveBeenCalledTimes( 2 );
+		expect( openSpy ).toHaveBeenLastCalledWith( documentUrl, '_blank' );
+	} );
+
 	it( 'does not retry an interrupted download after the VAT modal is closed during save', async () => {
 		let resolveSave: ( value: unknown ) => void = () => {};
 		mockSaveVat.mockReturnValue(
