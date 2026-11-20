@@ -112,6 +112,13 @@ export const receiveSettings = (
 				{ ...state.data, ...( action.payload ?? {} ) }
 			);
 
+		// A failed save's fresh read becomes the saved copy and the edits stay; without a read, nothing counts as saved.
+		case ACTION_TYPES.SET_SAVED_SETTINGS:
+			return withEditedData(
+				{ ...state, savedData: action.data ?? {} },
+				state.data
+			);
+
 		case ACTION_TYPES.SET_IS_SAVING_SETTINGS:
 			return {
 				...state,

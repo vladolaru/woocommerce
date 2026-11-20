@@ -321,6 +321,18 @@ export function* saveSettings(): Generator<
 					: undefined
 			);
 		}
+
+		// The server saves in steps, so a failed save may be stored in part: read the saved copy again, keeping the edits
+		// on screen. If that read fails too, nothing counts as saved, and the next save sends every setting.
+		let savedNow: SettingsValues | undefined;
+		try {
+			savedNow = yield apiFetch( { path: `${ NAMESPACE }/settings` } );
+		} catch {
+			// The snapshot is dropped below.
+		}
+		if ( isVisitOpen() ) {
+			yield { type: ACTION_TYPES.SET_SAVED_SETTINGS, data: savedNow };
+		}
 	} finally {
 		if ( isVisitOpen() ) {
 			yield updateIsSavingSettings( false, error );
