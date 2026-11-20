@@ -1619,7 +1619,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$stale_account = get_option( 'wcpay_account_data' )['data'];
 		$api_client    = $this->createMock( Client::class );
 		$api_client->method( 'is_available' )->willReturn( true );
-		$api_client->method( 'get_account' )->willReturn( $stale_account );
+		$api_client->expects( $this->never() )->method( 'get_account' );
 		wc_get_container()->replace( Client::class, $api_client );
 		// The update's answer is the whole account, without the capability requirements only the account read adds.
 		$answer = $stale_account;
@@ -1745,6 +1745,14 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		return array(
 			'a saved descriptor clears it'      => array( array( 'account_statement_descriptor' => 'NEW STORE' ), false, true ),
 			'a support email save keeps it'     => array( array( 'account_business_support_email' => 'new@example.test' ), false, false ),
+			'an unchanged descriptor sent with a support email keeps it' => array(
+				array(
+					'account_statement_descriptor'   => 'OLD STORE',
+					'account_business_support_email' => 'new@example.test',
+				),
+				false,
+				false,
+			),
 			'a failed descriptor save keeps it' => array( array( 'account_statement_descriptor' => 'NEW STORE' ), true, false ),
 		);
 	}
