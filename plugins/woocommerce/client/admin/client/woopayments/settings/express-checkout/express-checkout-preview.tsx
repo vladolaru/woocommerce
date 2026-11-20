@@ -273,6 +273,7 @@ const AppleGooglePayPreview = ( {
 	theme: string;
 } ) => {
 	const containerRef = useRef< HTMLDivElement | null >( null );
+	const stripeRef = useRef< StripeInstance | null >( null );
 	const [ hasPreviewError, setHasPreviewError ] = useState( false );
 
 	useEffect( () => {
@@ -298,12 +299,14 @@ const AppleGooglePayPreview = ( {
 			}
 
 			try {
-				const stripe = stripeFactory( publishableKey, {
+				// One Stripe instance for the page: appearance changes only remount the element.
+				stripeRef.current ??= stripeFactory( publishableKey, {
 					locale: stripeConfig.locale || 'auto',
 					...( stripeConfig.accountId
 						? { stripeAccount: stripeConfig.accountId }
 						: {} ),
 				} );
+				const stripe = stripeRef.current;
 				const elements = stripe.elements( {
 					mode: 'payment',
 					amount: 1000,

@@ -1127,6 +1127,38 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 		);
 	} );
 
+	// Client 11.3.0 `settings/express-checkout-settings/general-payment-request-button-settings.js:125-131` makes the
+	// Stripe instance once for the page; appearance changes only remount the button element.
+	it( 'keeps one Stripe instance while the merchant changes the button appearance', async () => {
+		setWindowProtocol( 'https:' );
+		installStripeMock();
+
+		const { rerender } = render(
+			<WooPaymentsExpressCheckoutSettings methodId="payment_request" />
+		);
+		await waitFor( () =>
+			expect( mockExpressCheckoutMount ).toHaveBeenCalledTimes( 1 )
+		);
+
+		mockUsePaymentRequestButtonTheme.mockReturnValue( [ 'light', noop ] );
+		rerender(
+			<WooPaymentsExpressCheckoutSettings methodId="payment_request" />
+		);
+		await waitFor( () =>
+			expect( mockExpressCheckoutMount ).toHaveBeenCalledTimes( 2 )
+		);
+
+		mockUsePaymentRequestButtonBorderRadius.mockReturnValue( [ 12, noop ] );
+		rerender(
+			<WooPaymentsExpressCheckoutSettings methodId="payment_request" />
+		);
+		await waitFor( () =>
+			expect( mockExpressCheckoutMount ).toHaveBeenCalledTimes( 3 )
+		);
+
+		expect( mockStripe ).toHaveBeenCalledTimes( 1 );
+	} );
+
 	it( 'loads Stripe.js before mounting the live preview when Stripe is not already available', async () => {
 		setWindowProtocol( 'https:' );
 		installStripeMock();
