@@ -132,11 +132,8 @@ const PayoutCell = ( {
 	</ClickableCell>
 );
 
-const getSummaryCount = ( summary: PayoutsSummary ) => {
-	const count = summary.count;
-
-	return typeof count === 'number' ? count : undefined;
-};
+const getSummaryCount = ( summary: PayoutsSummary ) =>
+	typeof summary.count === 'number' ? summary.count : undefined;
 
 const getSummaryTotal = ( summary: PayoutsSummary ) =>
 	typeof summary.total === 'number' ? summary.total : undefined;

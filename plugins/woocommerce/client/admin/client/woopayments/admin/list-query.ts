@@ -44,6 +44,9 @@ export const getFirstString = ( value: unknown ): string | undefined => {
 	return typeof value === 'string' && value ? value : undefined;
 };
 
+const isEmptyQueryValue = ( value: unknown ) =>
+	value === undefined || value === null || value === '';
+
 /**
  * A DataViews filter value as query text: a list of non-empty strings, one string, or undefined when it is empty.
  *
@@ -58,11 +61,31 @@ export const getFilterQueryValue = ( value: unknown ) => {
 		return values.length ? values : undefined;
 	}
 
-	if ( value === undefined || value === null || value === '' ) {
+	if ( isEmptyQueryValue( value ) ) {
 		return undefined;
 	}
 
 	return String( value );
+};
+
+const appendParam = (
+	params: URLSearchParams,
+	key: string,
+	value: unknown,
+	getItemKey: ( listKey: string ) => string
+): void => {
+	if ( isEmptyQueryValue( value ) ) {
+		return;
+	}
+
+	if ( Array.isArray( value ) ) {
+		value.forEach( ( item ) =>
+			appendParam( params, getItemKey( key ), item, getItemKey )
+		);
+		return;
+	}
+
+	params.append( key, String( value ) );
 };
 
 /**
@@ -77,20 +100,7 @@ export const appendArrayParam = (
 	params: URLSearchParams,
 	key: string,
 	value: unknown
-) => {
-	if ( value === undefined || value === null || value === '' ) {
-		return;
-	}
-
-	if ( Array.isArray( value ) ) {
-		value.forEach( ( item ) =>
-			appendArrayParam( params, `${ key }[]`, item )
-		);
-		return;
-	}
-
-	params.append( key, String( value ) );
-};
+) => appendParam( params, key, value, ( listKey ) => `${ listKey }[]` );
 
 /**
  * Append a query value: a list value as one entry per item under the same key, as the money-movement endpoints read
@@ -104,15 +114,4 @@ export const appendRepeatedParam = (
 	params: URLSearchParams,
 	key: string,
 	value: unknown
-) => {
-	if ( value === undefined || value === null || value === '' ) {
-		return;
-	}
-
-	if ( Array.isArray( value ) ) {
-		value.forEach( ( item ) => appendRepeatedParam( params, key, item ) );
-		return;
-	}
-
-	params.append( key, String( value ) );
-};
+) => appendParam( params, key, value, ( listKey ) => listKey );

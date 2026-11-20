@@ -13,7 +13,6 @@ import { useCallback, useEffect, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { speak } from '@wordpress/a11y';
 import { OrderStatus, SummaryListPlaceholder } from '@woocommerce/components';
-import { dispatch } from '@wordpress/data';
 import { copy } from '@wordpress/icons';
 import clsx from 'clsx';
 import NoticeOutlineIcon from 'gridicons/dist/notice-outline';
@@ -34,6 +33,7 @@ import {
 	formatExplicitCurrency,
 	formatSiteDateTime,
 	getErrorMessage,
+	getNotices,
 } from './money-movement/utils';
 import { LiveStatusMessage } from './money-movement/table';
 import { WooPaymentsTransactionsList } from './money-movement/transactions-list';
@@ -352,11 +352,7 @@ export const WooPaymentsPayoutDetailsPage = () => {
 						)
 					);
 					// Client 11.1.0 data/deposits/resolvers.js:44-51.
-					(
-						dispatch( 'core/notices' ) as unknown as {
-							createErrorNotice: ( message: string ) => void;
-						}
-					 ).createErrorNotice(
+					getNotices().createErrorNotice(
 						__( 'Error retrieving payout.', 'woocommerce' )
 					);
 				}

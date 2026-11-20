@@ -36,12 +36,8 @@ const resourceLabels: Record< WooPaymentsTestModeNoticePage, string > = {
 
 // Client 11.2.0 components/test-mode-notice/index.tsx:34-41.
 const pluralNounToUse: Record< WooPaymentsTestModeNoticePage, string > = {
-	documents: __( 'documents', 'woocommerce' ),
-	deposits: __( 'payouts', 'woocommerce' ),
-	disputes: __( 'disputes', 'woocommerce' ),
-	loans: __( 'loans', 'woocommerce' ),
-	payments: __( 'transactions', 'woocommerce' ),
-	transactions: __( 'transactions', 'woocommerce' ),
+	...resourceLabels,
+	payments: resourceLabels.transactions,
 };
 
 // Client index.tsx:163-236: dev mode first, then the details view, then the list sentence.
