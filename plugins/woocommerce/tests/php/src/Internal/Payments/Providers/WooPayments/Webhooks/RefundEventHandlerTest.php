@@ -840,6 +840,91 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A charge.refunded on a charge no order holds, found by its metadata on $_dataName, is recorded with the note "$expected" and no refund row.
+	 *
+	 * @dataProvider provider_record_only_refund_wording
+	 *
+	 * @param callable $create_order Creates the order the charge's metadata names.
+	 * @param string   $expected     The note, as the merchant reads it.
+	 */
+	public function test_record_only_refund_note_says_how_to_record_a_refund_made_before_the_payment( callable $create_order, string $expected ): void {
+		$order                    = $create_order( $this );
+		$status                   = $order->get_status();
+		$charge                   = $this->get_successful_refund_charge();
+		$charge['id']             = 'ch_unheld';
+		$charge['payment_intent'] = 'pi_unheld';
+		$charge['metadata']       = array(
+			'order_id'  => (string) $order->get_id(),
+			'order_key' => $order->get_order_key(),
+		);
+
+		$this->sut->process( 'charge.refunded', $charge );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertCount( 0, $order->get_refunds() );
+		$this->assertSame( $status, $order->get_status() );
+		$notes = $this->get_notes_containing( $order, 're_123' );
+		$this->assertCount( 1, $notes );
+		$this->assertSame( $expected, html_entity_decode( wp_strip_all_tags( $notes[0]->content ), ENT_QUOTES ) );
+	}
+
+	/**
+	 * Orders a charge.refunded is recorded on, with the note each gets.
+	 *
+	 * @return array<string,array{0:callable,1:string}>
+	 */
+	public function provider_record_only_refund_wording(): array {
+		$unpaid = static function ( string $payment_method, string $intent_id ): callable {
+			return static function () use ( $payment_method, $intent_id ): WC_Order {
+				$order = wc_create_order();
+				$order->set_payment_method( $payment_method );
+				$order->set_currency( 'USD' );
+				$order->set_total( '10.00' );
+				if ( '' !== $intent_id ) {
+					$order->update_meta_data( '_intent_id', $intent_id );
+				}
+				$order->save();
+				return $order;
+			};
+		};
+		$before = 'A refund of $4.00 (re_123) was made on WooPayments charge ch_unheld before this order recorded a payment. If charge ch_unheld is later recorded as this order\'s payment and the refund succeeded, add a manual refund of $4.00.';
+		$today  = 'A refund of $4.00 (re_123) was made on WooPayments charge ch_unheld, which does not pay this order. No refund was added to the order.';
+
+		return array(
+			'an unpaid WooPayments order storing the charge\'s intent' => array( $unpaid( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_unheld' ), $before ),
+			'an unpaid WooPayments order storing no intent' => array( $unpaid( WooPaymentsPersistenceVocabulary::GATEWAY_ID, '' ), $before ),
+			'an unpaid order paying with another gateway' => array( $unpaid( 'cod', '' ), $today ),
+			'a paid WooPayments order, a second charge'   => array( static fn( self $test ): WC_Order => $test->create_refundable_order(), $today ),
+		);
+	}
+
+	/**
+	 * @testdox An order that already holds the other-charge note of a refund made before its payment gets no second note when the refund is delivered again.
+	 */
+	public function test_redelivered_refund_made_before_the_payment_keeps_the_one_note(): void {
+		$order = wc_create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_currency( 'USD' );
+		$order->set_total( '10.00' );
+		$order->update_meta_data( '_intent_id', 'pi_unheld' );
+		$order->save();
+		// The note an earlier delivery recorded, under the note's identity.
+		wc_get_container()->get( WooPaymentsOrderNoteService::class )->add_note_once( $order, 'A refund of $4.00 (<code>re_123</code>) was made on WooPayments charge <code>ch_unheld</code>, which does not pay this order. No refund was added to the order.', 'other_charge|charge.refunded|re_123|succeeded' );
+		$charge                   = $this->get_successful_refund_charge();
+		$charge['id']             = 'ch_unheld';
+		$charge['payment_intent'] = 'pi_unheld';
+		$charge['metadata']       = array(
+			'order_id'  => (string) $order->get_id(),
+			'order_key' => $order->get_order_key(),
+		);
+
+		$this->sut->process( 'charge.refunded', $charge );
+		$this->sut->process( 'charge.refunded', $charge );
+
+		$this->assertCount( 1, $this->get_notes_containing( wc_get_order( $order->get_id() ), 're_123' ) );
+	}
+
+	/**
 	 * @testdox A charge.refunded event whose charge metadata names a deleted order is answered as handled with one info line, and nothing else is logged or written.
 	 *
 	 * The charge is the platform's recorded delivery (Fixtures/platform-charge-dispute-events.json, card_charge_refunded_in_full),

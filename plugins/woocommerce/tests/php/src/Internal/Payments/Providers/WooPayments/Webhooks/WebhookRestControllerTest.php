@@ -303,6 +303,47 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A charge.refunded push on the charge an unpaid WooPayments order is paying with, made before the order recorded it, is recorded once with a note that says how to add the refund.
+	 *
+	 * The event is the platform's recorded delivery (Fixtures/platform-charge-dispute-events.json, card_charge_refunded_in_full)
+	 * with its metadata naming the order, which stores the charge's payment intent and not the charge.
+	 */
+	public function test_refund_made_before_the_payment_is_recorded_with_a_note_that_says_how_to_add_it(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$event = RecordedPlatformEvents::body( 'platform-charge-dispute-events.json', 'card_charge_refunded_in_full' );
+		$order = wc_create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_currency( 'USD' );
+		$order->set_total( '10.99' );
+		$order->update_meta_data( '_intent_id', $event['data']['object']['payment_intent'] );
+		$order->save();
+		$event['data']['object']['metadata'] = array_merge(
+			$event['data']['object']['metadata'],
+			array(
+				'order_id'  => (string) $order->get_id(),
+				'order_key' => $order->get_order_key(),
+			)
+		);
+		$logger                              = new RecordingWcLogger();
+		$controller                          = $this->create_controller_with_ingestor( wc_get_container()->get( EventIngestor::class ), $logger );
+
+		$first = $controller->handle_webhook( $this->create_post_request( $event ) );
+
+		$this->assertSame( 200, $first->get_status() );
+		$this->assertCount( 1, array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] && 0 === strpos( $line[1], 'other charge recorded:' ) ) );
+		$this->assertSame( 200, $controller->handle_webhook( $this->create_post_request( $event ) )->get_status(), 'A redelivery is answered as handled.' );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertCount( 0, $order->get_refunds() );
+		$this->assertSame( OrderStatus::PENDING, $order->get_status() );
+		$notes = self::order_notes_containing( $order, 're_3URpY0BzWlxcwgpP1T8e7HhY' );
+		$this->assertCount( 1, $notes, 'One note, however often the refund is delivered.' );
+		$this->assertSame(
+			'A refund of $10.99 (re_3URpY0BzWlxcwgpP1T8e7HhY) was made on WooPayments charge ch_3URpY0BzWlxcwgpP1SUxzwXd before this order recorded a payment. If charge ch_3URpY0BzWlxcwgpP1SUxzwXd is later recorded as this order\'s payment and the refund succeeded, add a manual refund of $10.99.',
+			html_entity_decode( wp_strip_all_tags( $notes[0]->content ), ENT_QUOTES )
+		);
+	}
+
+	/**
 	 * @testdox A payment_intent.succeeded push the order payment lock refuses for a live holder is queued for a retry and logged as two notices, no warning or error.
 	 */
 	public function test_lock_refused_push_with_a_retry_queued_is_logged_below_warning(): void {

@@ -193,7 +193,9 @@ class RefundEventHandler {
 			// saved it before this claim is decided like any order found by its charge.
 			$record_only = $record_only && $charge_id !== (string) $order->get_meta( '_charge_id', true );
 			if ( $record_only || ! $this->is_own_payment( $order, $charge, $charge_id ) ) {
-				$this->record_other_charge_refund( $order, 'charge.refunded', $charge, $charge_id, $refund_id, $refund_status, $refunded_amount, $currency );
+				// On an unpaid order the charge would pay, the refund may be of this order's own payment, recorded later.
+				$pre_payment = $record_only && ! $this->event_order_resolver->is_paid_for_ownership( $order ) && $this->is_own_payment( $order, $charge, $charge_id );
+				$this->record_other_charge_refund( $order, 'charge.refunded', $charge, $charge_id, $refund_id, $refund_status, $refunded_amount, $currency, $pre_payment );
 				return;
 			}
 
@@ -602,8 +604,9 @@ class RefundEventHandler {
 	 * @param string              $refund_status Provider refund status.
 	 * @param float|null          $amount        Refunded amount, for a refund made on the charge.
 	 * @param string              $currency      Refund currency, for a refund made on the charge.
+	 * @param bool                $pre_payment   Whether the refund was made before the unpaid order recorded the charge as its payment.
 	 */
-	private function record_other_charge_refund( WC_Order $order, string $event_type, array $event_object, string $charge_id, string $refund_id, string $refund_status, ?float $amount = null, string $currency = '' ): void {
+	private function record_other_charge_refund( WC_Order $order, string $event_type, array $event_object, string $charge_id, string $refund_id, string $refund_status, ?float $amount = null, string $currency = '', bool $pre_payment = false ): void {
 		$facts = array(
 			'object_id' => $refund_id,
 			'status'    => $refund_status,
@@ -614,6 +617,9 @@ class RefundEventHandler {
 		if ( null !== $amount ) {
 			$facts['amount']   = $amount;
 			$facts['currency'] = $currency;
+		}
+		if ( $pre_payment ) {
+			$facts['wording'] = 'before_payment';
 		}
 
 		$this->other_charge_recorder->record( $order, $event_type, $facts );
