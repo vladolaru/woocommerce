@@ -292,6 +292,7 @@ class WebhookReliabilityService implements RegisterHooksInterface {
 	 * that refused its first attempt too, is retried just after that holder's lock expires rather than ten minutes later.
 	 * A younger holder is a live one, and keeps the ten minutes. The seconds saved are added to the last retry, so the
 	 * event is dropped when it would have been.
+	 * A holder whose lock expired over 10 seconds ago also keeps the ten minutes: its record cannot be what refused.
 	 *
 	 * @param string              $event_id        Event ID.
 	 * @param array<string,mixed> $event           Event payload.
@@ -320,8 +321,9 @@ class WebhookReliabilityService implements RegisterHooksInterface {
 
 		$due         = time() + self::RETRY_DELAYS_SECONDS[ $attempts ] + ( 2 === $attempts ? $brought_forward : 0 );
 		$claimed_at  = $exception instanceof OrderPaymentLockRefusedException ? $exception->get_holder_claimed_at() : null;
-		$is_held_up  = 1 === $attempts && null !== $claimed_at && time() - $claimed_at >= MINUTE_IN_SECONDS && in_array( $event['type'] ?? '', array( 'payment_intent.succeeded', 'payment_intent.amount_capturable_updated' ), true );
-		$holder_free = $is_held_up ? max( time() + 1, $claimed_at + WooPaymentsPersistenceVocabulary::LOCK_TTL_SECONDS + self::LOCK_EXPIRY_RETRY_MARGIN_SECONDS ) : $due;
+		$lock_free   = (int) $claimed_at + WooPaymentsPersistenceVocabulary::LOCK_TTL_SECONDS + self::LOCK_EXPIRY_RETRY_MARGIN_SECONDS;
+		$is_held_up  = 1 === $attempts && null !== $claimed_at && time() - $claimed_at >= MINUTE_IN_SECONDS && time() < $lock_free && in_array( $event['type'] ?? '', array( 'payment_intent.succeeded', 'payment_intent.amount_capturable_updated' ), true );
+		$holder_free = $is_held_up ? $lock_free : $due;
 		if ( $holder_free < $due ) {
 			$event[ self::RETRY_BROUGHT_FORWARD_EVENT_KEY ] = $due - $holder_free;
 		}

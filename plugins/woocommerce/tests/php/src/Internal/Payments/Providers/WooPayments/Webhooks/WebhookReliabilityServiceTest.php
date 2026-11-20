@@ -563,6 +563,8 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 			'success, live holder at the one-minute retry' => array( 'payment_intent.succeeded', 1, 20, false, 10 * MINUTE_IN_SECONDS ),
 			'success, holder a minute and a half old'      => array( 'payment_intent.succeeded', 1, 90, true, 0 ),
 			'authorization, holder a minute and a half old' => array( 'payment_intent.amount_capturable_updated', 1, 90, true, 0 ),
+			'success, holder past its lock expiry and margin' => array( 'payment_intent.succeeded', 1, 330, false, 10 * MINUTE_IN_SECONDS ),
+			'success, holder inside the margin after its expiry' => array( 'payment_intent.succeeded', 1, 305, true, 0 ),
 			'success, first job, old holder'               => array( 'payment_intent.succeeded', 0, 200, false, MINUTE_IN_SECONDS ),
 			'success, first job, holder near its expiry'   => array( 'payment_intent.succeeded', 0, 280, false, MINUTE_IN_SECONDS ),
 			'success, holder record not describing the lock' => array( 'payment_intent.succeeded', 1, null, false, 10 * MINUTE_IN_SECONDS ),
