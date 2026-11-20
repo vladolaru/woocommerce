@@ -73,9 +73,10 @@ class OrderPaymentLock {
 	 * The lock value names what the claim processes, or the provider's sentinel when it names nothing; the runtime only
 	 * logs it, and other code of the provider may compare it. A holder record names the operation, for the refusal log,
 	 * and carries a token unique to this claim. Releasing needs that token, so an operation that ran past the lock TTL
-	 * cannot release a lock a later claim took over, even one with the same lock value. A claim that takes over an expired
-	 * lock logs one warning naming the former holder, whose request never released it; one this request never releases is
-	 * released when it ends (release_held_claims()).
+	 * cannot release a lock a later claim took over, even one with the same lock value: on the object cache, only where
+	 * the drop-in honours a fresh read (wp_cache_get()'s `$force`), and as best effort where it does not. A claim that
+	 * takes over an expired lock logs one warning naming the former holder, whose request never released it; one this
+	 * request never releases is released when it ends (release_held_claims()).
 	 *
 	 * @since 11.2.0
 	 *
@@ -107,7 +108,7 @@ class OrderPaymentLock {
 
 			// Read once the lock is won: a release deletes the holder record first, so a record left here belongs to a holder
 			// that never released or whose lock the cache lost. It is kept for a day for that.
-			$former_holder = wp_cache_get( $holder_key, 'transient' );
+			$former_holder = wp_cache_get( $holder_key, 'transient', true );
 			wp_cache_set( $holder_key, $holder, 'transient', DAY_IN_SECONDS );
 			if ( false !== $former_holder ) {
 				$this->log_takeover( $order, $operation, null, $former_holder );
@@ -150,8 +151,7 @@ class OrderPaymentLock {
 	 * Release, when the request ends, every claim it took and did not release: an exit, a fatal error or a timeout skips
 	 * the caller's `finally`. A claim that sent a money-moving request and has not saved its result keeps its lock to its
 	 * expiry, since nothing else reliably stops a repeat from moving the money twice.
-	 * Under WP-CLI, a fatal error or a timeout never reaches `shutdown`, so its claim stays to its expiry, as before; a
-	 * payment success it held up is retried just after that expiry (WebhookReliabilityService).
+	 * Under WP-CLI, a fatal error or a timeout never reaches `shutdown`, so its claim stays to its expiry, as before.
 	 *
 	 * @internal
 	 */
@@ -294,12 +294,13 @@ class OrderPaymentLock {
 
 		if ( $this->lock_lives_in_object_cache() ) {
 			// The object cache API has no compare-and-delete, so these checks and deletes are not atomic.
-			$holder = wp_cache_get( $holder_key, 'transient' );
-			if ( ! $this->is_holder_of_claim( $holder, $lock_token ) || wp_cache_get( $lock_key, 'transient' ) !== $holder['lock_value'] ) {
+			// Both reads skip this request's own copy, which still shows this claim after the cache lost its lock.
+			$holder = wp_cache_get( $holder_key, 'transient', true );
+			if ( ! $this->is_holder_of_claim( $holder, $lock_token ) || wp_cache_get( $lock_key, 'transient', true ) !== $holder['lock_value'] ) {
 				return;
 			}
 
-			// The record goes first, so a claim that wins the lock once it is gone finds no holder to report.
+			// The record goes first, so a winning claim finds no holder; a death between the two leaves the lock to its expiry, unnamed.
 			wp_cache_delete( $holder_key, 'transient' );
 			wp_cache_delete( $lock_key, 'transient' );
 

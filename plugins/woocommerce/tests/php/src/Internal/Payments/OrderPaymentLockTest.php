@@ -668,6 +668,96 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox With transients in an object cache that keeps a copy per request, a release whose lock the cache lost leaves a later claim's lock and record alone.
+	 */
+	public function test_object_cache_release_on_a_stale_copy_leaves_a_later_claim_alone(): void {
+		$order  = wc_create_order();
+		$lost   = $this->create_lock();
+		$later  = $this->create_lock();
+		$logger = RecordingWcLogger::install();
+
+		$this->with_request_copy_cache(
+			function ( RequestCopyObjectCache $cache ) use ( $order, $lost, $later, $logger ): void {
+				$lock_key   = $this->persistence_vocabulary->get_order_lock_key( $order );
+				$lost_token = (string) $cache->in_request( 'L', fn() => $lost->claim( $order, $this->persistence_vocabulary, null, 'checkout' ) );
+				$cache->delete_on_server( $lock_key );
+				$later_token = (string) $cache->in_request( 'W', fn() => $later->claim( $order, $this->persistence_vocabulary, null, 'payment status update' ) );
+				$this->assertNotSame( '', $later_token, 'The later claim must win the lost lock.' );
+
+				$cache->in_request( 'L', fn() => $lost->release( $order, $this->persistence_vocabulary, $lost_token ) );
+
+				$this->assertSame( $this->persistence_vocabulary->get_lock_sentinel(), $cache->server_value( $lock_key ), 'The later claim keeps its lock.' );
+				$this->assertSame( $later_token, $cache->server_value( $lock_key . '_holder' )['token'] ?? null, 'The later claim keeps its holder record.' );
+				$lines = $this->get_takeover_lines( $logger );
+				$this->assertCount( 1, $lines );
+				$this->assertSame( 'checkout', $lines[0]['context']['former_operation'] );
+
+				$cache->in_request( 'W', fn() => $later->release( $order, $this->persistence_vocabulary, $later_token ) );
+
+				$this->assertFalse( $cache->server_value( $lock_key ), 'The later claim releases its own lock.' );
+			}
+		);
+	}
+
+	/**
+	 * @testdox With transients in an object cache that keeps a copy per request, a claim logs no takeover of a holder this request read and that has since released.
+	 */
+	public function test_object_cache_claim_reads_a_released_holder_fresh(): void {
+		$order    = wc_create_order();
+		$holder   = $this->create_lock();
+		$sut      = $this->create_lock();
+		$lock_key = $this->persistence_vocabulary->get_order_lock_key( $order );
+		$logger   = RecordingWcLogger::install();
+
+		$this->with_request_copy_cache(
+			function ( RequestCopyObjectCache $cache ) use ( $order, $holder, $sut, $lock_key, $logger ): void {
+				$holder_token = (string) $cache->in_request( 'H', fn() => $holder->claim( $order, $this->persistence_vocabulary, 'pi_paid', 'checkout' ) );
+				$cache->in_request(
+					'R',
+					function () use ( $order, $sut ): void {
+						$this->assertNull( $sut->claim( $order, $this->persistence_vocabulary, 'pi_paid', 'payment status update' ) );
+						$sut->log_refusal( $order, $this->persistence_vocabulary, 'payment status update', null, array(), true );
+					}
+				);
+				$cache->in_request( 'H', fn() => $holder->release( $order, $this->persistence_vocabulary, $holder_token ) );
+				$this->assertFalse( $cache->server_value( $lock_key ), 'The holder released its lock.' );
+				$this->assertFalse( $cache->server_value( $lock_key . '_holder' ), 'The holder released its record.' );
+
+				$token = $cache->in_request( 'R', fn() => $sut->claim( $order, $this->persistence_vocabulary, 'pi_paid', 'payment status update' ) );
+
+				$this->assertNotNull( $token );
+				$this->assertSame( array(), $this->get_takeover_lines( $logger ), 'A lock its holder released is not taken over.' );
+				$this->assertSame( $token, $cache->server_value( $lock_key . '_holder' )['token'] ?? null, 'The holder record is the new claim\'s.' );
+			}
+		);
+	}
+
+	/**
+	 * @testdox With transients in an object cache that keeps a copy per request, a release whose lock the cache lost, running as a later claim adds a lock with another value, keeps that lock.
+	 */
+	public function test_object_cache_release_during_a_claims_add_keeps_a_different_lock(): void {
+		$order = wc_create_order();
+		$lost  = $this->create_lock();
+		$later = $this->create_lock();
+
+		$this->with_request_copy_cache(
+			function ( RequestCopyObjectCache $cache ) use ( $order, $lost, $later ): void {
+				$lock_key   = $this->persistence_vocabulary->get_order_lock_key( $order );
+				$lost_token = (string) $cache->in_request( 'L', fn() => $lost->claim( $order, $this->persistence_vocabulary, 'idem_L', 'checkout' ) );
+				$cache->delete_on_server( $lock_key );
+				$cache->after_add = array( $lock_key, fn() => $cache->in_request( 'L', fn() => $lost->release( $order, $this->persistence_vocabulary, $lost_token ) ) );
+
+				$later_token = $cache->in_request( 'W', fn() => $later->claim( $order, $this->persistence_vocabulary, 'pi_W', 'payment status update' ) );
+
+				$this->assertNull( $cache->after_add, 'The release must have run.' );
+				$this->assertNotNull( $later_token );
+				$this->assertSame( 'pi_W', $cache->server_value( $lock_key ), 'The later claim keeps its lock.' );
+				$this->assertSame( $later_token, $cache->server_value( $lock_key . '_holder' )['token'] ?? null, 'The later claim keeps its holder record.' );
+			}
+		);
+	}
+
+	/**
 	 * @testdox A refusal with a retry queued ($retry_queued) by a holder $holder_age seconds old is logged at $level, with the same message.
 	 *
 	 * @testWith [true, 5, "notice"]
@@ -909,6 +999,27 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 		} finally {
 			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restores the cache replaced above.
 			$wp_object_cache = $was_cache;
+			wp_using_ext_object_cache( (bool) $was_ext );
+		}
+	}
+
+	/**
+	 * Run a test body with transients in an object cache that keeps a copy per request apart from its server.
+	 *
+	 * @param callable $body Test body, given the cache.
+	 */
+	private function with_request_copy_cache( callable $body ): void {
+		$was_ext   = wp_using_ext_object_cache( true );
+		$was_cache = $GLOBALS['wp_object_cache'];
+		$cache     = new RequestCopyObjectCache();
+		// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restored below.
+		$GLOBALS['wp_object_cache'] = $cache;
+
+		try {
+			$body( $cache );
+		} finally {
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restores the cache replaced above.
+			$GLOBALS['wp_object_cache'] = $was_cache;
 			wp_using_ext_object_cache( (bool) $was_ext );
 		}
 	}
