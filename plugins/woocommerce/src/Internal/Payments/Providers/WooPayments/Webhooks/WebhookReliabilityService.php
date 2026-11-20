@@ -18,8 +18,8 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
  * Fetches the WooPayments webhook events the platform could not deliver, and processes and retries failed events
- * through Action Scheduler, keeping each event in an option row until its job ends it. A daily sweep queues again an event
- * whose job was lost.
+ * through Action Scheduler, keeping each event in an option row until its job ends it. A daily sweep queues again a retried
+ * event whose job was lost.
  *
  * @since 11.0.0
  * @internal
@@ -241,7 +241,7 @@ class WebhookReliabilityService implements RegisterHooksInterface {
 	 * the job again, at most three more times after 1 minute, 10 minutes and 1 hour, then the event is removed with an
 	 * error line; other types get this one attempt. The failure is re-thrown so Action Scheduler records it, since
 	 * Action Scheduler does not retry a failed action by itself. A retry that finds no stored copy logs an error and completes.
-	 * An event whose job is lost is queued again by sweep_queued_events().
+	 * An event of a retried type whose job is lost is queued again by sweep_queued_events(); any other is dropped there.
 	 *
 	 * @param string $event_id Event ID.
 	 * @throws \Throwable When the ingestor fails other than by refusing the event; the event is kept for the next attempt unless none is left.
@@ -288,16 +288,16 @@ class WebhookReliabilityService implements RegisterHooksInterface {
 
 	/**
 	 * Queue again each event last stored over a day ago with no pending or running job, counting that as a retry, so a job
-	 * that keeps dying is not queued again for ever; drop with an error line one whose retries are used up or whose row
-	 * cannot be read. A row's age counts from its last write: each retry stores the event again, so a row goes a day after
-	 * its last attempt, not its first. The sweep runs again while queued events remain.
+	 * that keeps dying is not queued again for ever; drop with an error line one whose retries are used up, whose type the
+	 * store tries only once, or whose row cannot be read. A row's age counts from its last write: each retry stores the
+	 * event again, so a row goes a day after its last attempt, not its first. The sweep runs again while queued events remain.
 	 *
 	 * @internal
 	 */
 	public function sweep_queued_events(): void {
 		global $wpdb;
 		$rows  = $wpdb->get_results( $wpdb->prepare( "SELECT option_name, option_value FROM {$wpdb->options} WHERE option_name LIKE %s LIMIT 100", $wpdb->esc_like( self::QUEUED_EVENT_OPTION_PREFIX ) . '%' ) );
-		$again = 100 === count( $rows );
+		$again = 100 === count( $rows ) || '' !== $wpdb->last_error;
 		foreach ( $rows as $row ) {
 			$value     = maybe_unserialize( $row->option_value );
 			$event     = is_array( $value ) && is_array( $value['event'] ?? null ) ? $value['event'] : array();
@@ -315,7 +315,7 @@ class WebhookReliabilityService implements RegisterHooksInterface {
 			}
 			$attempts = (int) ( $event[ self::RETRY_ATTEMPTS_EVENT_KEY ] ?? 0 );
 			$type     = is_string( $event['type'] ?? null ) ? $event['type'] : 'unknown type';
-			if ( $attempts >= count( self::RETRY_DELAYS_SECONDS ) ) {
+			if ( $attempts >= count( self::RETRY_DELAYS_SECONDS ) || ! $this->event_ingestor->is_retried_lock_refusal( $event ) ) {
 				$this->delete_failed_event( $event_id );
 				wc_get_logger()->error(
 					sprintf( 'WooPayments webhook event %1$s (%2$s) was dropped after %3$d retries: no job will process it again.', $event_id, $type, $attempts ),
@@ -327,7 +327,15 @@ class WebhookReliabilityService implements RegisterHooksInterface {
 				continue;
 			}
 			$event[ self::RETRY_ATTEMPTS_EVENT_KEY ] = $attempts + 1;
-			$this->store_failed_event( $event_id, $event );
+			$value['event']                          = $event;
+			$value['stored_at']                      = time();
+			// Written only over the bytes read, so a row a job has ended or stored again since then is left to that job.
+			if ( 1 !== $wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s AND option_value = %s", maybe_serialize( $value ), $row->option_name, $row->option_value ) ) ) {
+				$again = true;
+				continue;
+			}
+			wp_cache_delete( $row->option_name, 'options' );
+			set_transient( $this->get_failed_event_transient_name( $event_id ), $event, self::FAILED_EVENT_TRANSIENT_TTL_SECONDS );
 			$this->scheduler->schedule_job( self::WEBHOOK_PROCESS_EVENT_ACTION, array( 'event_id' => $event_id ) );
 			wc_get_logger()->warning(
 				sprintf( 'WooPayments webhook event %1$s (%2$s) had no job left to process it; it is queued again (retry %3$d of %4$d).', $event_id, $type, $attempts + 1, count( self::RETRY_DELAYS_SECONDS ) ),

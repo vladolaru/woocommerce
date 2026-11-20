@@ -1343,6 +1343,7 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		);
 		$service   = $this->create_service( $scheduler, new StaticFailedEventsApiClient(), new ThrowingEventIngestor( new \RuntimeException( 'transient boom' ) ) );
 		$store->set_event( 'evt_refund', $event );
+		$store->set_transient_event( 'evt_refund', $event );
 
 		try {
 			$service->process_event( 'evt_refund' );
@@ -1530,19 +1531,26 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 * @testdox The sweep drops, with one error line and no job, a queued event whose $scenario.
 	 * @testWith ["retries are used up"]
 	 *           ["row cannot be read"]
+	 *           ["type is tried only once"]
 	 *
 	 * @param string $scenario Which drop.
 	 */
 	public function test_sweep_drops_a_queued_event_whose_attempts_are_used_up_or_that_cannot_be_read( string $scenario ): void {
 		global $wpdb;
-		$store   = new QueuedEventRows();
-		$service = $this->create_service( wc_get_container()->get( WooPaymentsActionSchedulerService::class ), new StaticFailedEventsApiClient(), new RecordingEventIngestor() );
-		$used_up = 'retries are used up' === $scenario;
-		if ( $used_up ) {
-			$event = array(
+		$store    = new QueuedEventRows();
+		$service  = $this->create_service( wc_get_container()->get( WooPaymentsActionSchedulerService::class ), new StaticFailedEventsApiClient(), new RecordingEventIngestor() );
+		$messages = array(
+			'retries are used up'     => 'evt_sweep_drop (charge.refunded) was dropped after 3 retries: no job will process it again.',
+			'row cannot be read'      => QueuedEventRows::row_name( 'evt_sweep_drop' ) . ' could not be read and was dropped',
+			// A type the store runs once, which reaches a row only through the missed-event fetch.
+			'type is tried only once' => 'evt_sweep_drop (invoice.payment_failed) was dropped after 0 retries: no job will process it again.',
+		);
+		if ( 'row cannot be read' !== $scenario ) {
+			$used_up = 'retries are used up' === $scenario;
+			$event   = array(
 				'id'   => 'evt_sweep_drop',
-				'type' => 'charge.refunded',
-				WebhookReliabilityService::RETRY_ATTEMPTS_EVENT_KEY => count( WebhookReliabilityService::RETRY_DELAYS_SECONDS ),
+				'type' => $used_up ? 'charge.refunded' : 'invoice.payment_failed',
+				WebhookReliabilityService::RETRY_ATTEMPTS_EVENT_KEY => $used_up ? count( WebhookReliabilityService::RETRY_DELAYS_SECONDS ) : 0,
 			);
 			$store->set_event( 'evt_sweep_drop', $event, time() - 2 * DAY_IN_SECONDS );
 			$store->set_transient_event( 'evt_sweep_drop', $event );
@@ -1564,10 +1572,71 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		$this->assertNull( $store->get_transient_event( 'evt_sweep_drop' ) );
 		$errors = $logger->get_errors();
 		$this->assertCount( 1, $errors );
-		$this->assertStringContainsString( $used_up ? 'evt_sweep_drop (charge.refunded) was dropped after 3 retries: no job will process it again.' : QueuedEventRows::row_name( 'evt_sweep_drop' ) . ' could not be read and was dropped', $errors[0][1] );
+		$this->assertStringContainsString( $messages[ $scenario ], $errors[0][1] );
 		$this->assertSame( 'woopayments', $errors[0][2] );
 		$this->assertSame( 0, $this->count_pending_reliability_actions( WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION ) );
 		$this->assertSame( 0, $this->count_pending_reliability_actions( WebhookReliabilityService::QUEUED_EVENTS_SWEEP_ACTION ), 'With no queued event left, no sweep is scheduled.' );
+	}
+
+	/**
+	 * @testdox The sweep schedules no job for a queued event when $scenario, and does not bring back a row it did not write.
+	 * @testWith ["its row is deleted just before the write"]
+	 *           ["its write fails"]
+	 *           ["its scan fails"]
+	 *
+	 * @param string $scenario What happens around the sweep's read or write.
+	 */
+	public function test_sweep_schedules_no_job_when_its_write_or_its_scan_does_not_land( string $scenario ): void {
+		global $wpdb;
+		$store   = new QueuedEventRows();
+		$service = $this->create_service( wc_get_container()->get( WooPaymentsActionSchedulerService::class ), new StaticFailedEventsApiClient(), new RecordingEventIngestor() );
+		$event   = array(
+			'id'   => 'evt_sweep_race',
+			'type' => 'payment_intent.succeeded',
+			WebhookReliabilityService::RETRY_ATTEMPTS_EVENT_KEY => 1,
+		);
+		$store->set_event( 'evt_sweep_race', $event, time() - 2 * DAY_IN_SECONDS );
+		$store->set_transient_event( 'evt_sweep_race', $event );
+		$row      = $store->get_row( 'evt_sweep_race' );
+		$deleted  = 'its row is deleted just before the write' === $scenario;
+		$hit      = false;
+		$filter   = function ( $query ) use ( &$filter, &$hit, $scenario, $deleted, $store ) {
+			$sql   = ltrim( (string) $query );
+			$scan  = 'its scan fails' === $scenario && 0 === strpos( $sql, 'SELECT option_name, option_value FROM' ) && false !== strpos( $sql, ' LIKE ' );
+			$write = 'its scan fails' !== $scenario && false !== strpos( $sql, QueuedEventRows::row_name( 'evt_sweep_race' ) ) && ( 0 === strpos( $sql, 'UPDATE' ) || 0 === strpos( $sql, 'INSERT' ) );
+			if ( ! $scan && ! $write ) {
+				return $query;
+			}
+			$hit = true;
+			remove_filter( 'query', $filter );
+			if ( $deleted ) {
+				// A job applied the event and ended it between the sweep's read and its write.
+				$store->delete_event( 'evt_sweep_race' );
+				delete_transient( QueuedEventRows::name( 'evt_sweep_race' ) );
+				return $query;
+			}
+			return $scan ? 'SELECT a FROM a_table_that_does_not_exist' : 'UPDATE a_table_that_does_not_exist SET a = 1';
+		};
+		$logger   = RecordingWcLogger::install();
+		$suppress = $wpdb->suppress_errors( true );
+		add_filter( 'query', $filter );
+		try {
+			$service->sweep_queued_events();
+		} finally {
+			remove_filter( 'query', $filter );
+			$wpdb->suppress_errors( $suppress );
+		}
+
+		$this->assertTrue( $hit, 'The query must have been reached (' . $scenario . ').' );
+		$this->assertSame( 0, $this->count_pending_reliability_actions( WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION ) );
+		$this->assertSame( array(), array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] ) ) );
+		if ( $deleted ) {
+			$this->assertNull( $store->get_row( 'evt_sweep_race' ), 'The row a job ended stays gone.' );
+			$this->assertNull( $store->get_transient_event( 'evt_sweep_race' ), 'Its extension-name copy stays gone too.' );
+			return;
+		}
+		$this->assertSame( $row, $store->get_row( 'evt_sweep_race' ), 'The row is kept as it was.' );
+		$this->assertSame( 1, $this->count_pending_reliability_actions( WebhookReliabilityService::QUEUED_EVENTS_SWEEP_ACTION ), 'The sweep runs again, so the event is not left without one.' );
 	}
 
 	/**
@@ -1588,6 +1657,8 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 
 		for ( $sweep = 1; $sweep <= 4; $sweep++ ) {
 			$service->sweep_queued_events();
+			$this->assertSame( $sweep <= 3 ? 1 : 0, $this->count_pending_reliability_actions( WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION, array( 'event_id' => 'evt_sweep_dies' ) ), "Sweep $sweep: a job is pending for each queue again." );
+			$this->assertSame( $sweep <= 3 ? 1 : 0, $this->count_pending_reliability_actions( WebhookReliabilityService::QUEUED_EVENTS_SWEEP_ACTION ), "Sweep $sweep: the sweep runs again while the event is queued." );
 			// The hard death: the job the sweep scheduled never runs process_event().
 			$this->unschedule_reliability_actions();
 			$event = $store->get_event( 'evt_sweep_dies' );
