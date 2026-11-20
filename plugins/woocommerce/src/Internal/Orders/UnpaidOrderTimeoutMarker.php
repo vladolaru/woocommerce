@@ -47,6 +47,20 @@ class UnpaidOrderTimeoutMarker implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Whether the unpaid order timer is cancelling the order right now, inside its own cancel_unpaid_order() call.
+	 *
+	 * Unlike is_marked(), it cannot read a marker left from an earlier timeout, so a cancel by anyone else answers false.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param WC_Order $order The order.
+	 * @return bool
+	 */
+	public static function is_cancelling( WC_Order $order ): bool {
+		return self::$timer_order_id === $order->get_id();
+	}
+
+	/**
 	 * Cancel an order on behalf of the unpaid order timer.
 	 *
 	 * The marker is saved together with the status, before any status hook runs.
