@@ -305,9 +305,9 @@ class PaymentIntentEventHandler {
 		$lock_value = $this->get_object_id( $event_object );
 		$lock_token = $this->order_payment_lock->claim( $order, $this->persistence_vocabulary, $lock_value, 'payment status update' );
 		if ( null === $lock_token ) {
-			$this->log_payment_event_refusal( $order, $event_type, $lock_value );
+			$holder_claimed_at = $this->log_payment_event_refusal( $order, $event_type, $lock_value );
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is built in the exception from an order ID and a fixed operation name, not HTML output.
-			throw new OrderPaymentLockRefusedException( $order->get_id(), 'payment status update' );
+			throw new OrderPaymentLockRefusedException( $order->get_id(), 'payment status update', $holder_claimed_at );
 		}
 
 		try {
@@ -457,14 +457,14 @@ class PaymentIntentEventHandler {
 	 * @param WC_Order $order      Order the event resolved to.
 	 * @param string   $event_type Event type.
 	 * @param string   $lock_value Lock value the event claimed with.
+	 * @return int|null When the lock's holder claimed it, or null when unknown.
 	 */
-	private function log_payment_event_refusal( WC_Order $order, string $event_type, string $lock_value ): void {
+	private function log_payment_event_refusal( WC_Order $order, string $event_type, string $lock_value ): ?int {
 		if ( 'payment_intent.succeeded' === $event_type ) {
-			$this->order_payment_lock->log_refusal( $order, $this->persistence_vocabulary, 'payment status update' );
-			return;
+			return $this->order_payment_lock->log_refusal( $order, $this->persistence_vocabulary, 'payment status update' );
 		}
 
-		$this->order_payment_lock->log_refusal(
+		return $this->order_payment_lock->log_refusal(
 			$order,
 			$this->persistence_vocabulary,
 			'payment status update',

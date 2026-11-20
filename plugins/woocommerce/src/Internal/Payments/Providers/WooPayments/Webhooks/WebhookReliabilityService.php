@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiExcept
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -58,6 +59,23 @@ class WebhookReliabilityService implements RegisterHooksInterface {
 	 * @var int[]
 	 */
 	const RETRY_DELAYS_SECONDS = array( MINUTE_IN_SECONDS, 10 * MINUTE_IN_SECONDS, HOUR_IN_SECONDS );
+
+	/**
+	 * Key on the stored event that keeps the seconds a held-up success's second retry was brought forward, so its last
+	 * retry runs when it would have without that.
+	 *
+	 * @var string
+	 */
+	private const RETRY_BROUGHT_FORWARD_EVENT_KEY = '_wcpay_retry_brought_forward';
+
+	/**
+	 * Seconds after the refusing holder's lock expires that a held-up success is retried. A retry before the expiry is
+	 * refused and costs an attempt, with the next one an hour away; 10 seconds covers the takeover's strict comparison,
+	 * the second between the holder's claim time and its expiry row, the cache's rounding, and clocks of other web nodes.
+	 *
+	 * @var int
+	 */
+	private const LOCK_EXPIRY_RETRY_MARGIN_SECONDS = 10;
 
 	/**
 	 * Option key for the last failed-webhook fetch timestamp.
@@ -217,8 +235,9 @@ class WebhookReliabilityService implements RegisterHooksInterface {
 			return;
 		}
 
-		$attempts = isset( $event[ self::RETRY_ATTEMPTS_EVENT_KEY ] ) ? (int) $event[ self::RETRY_ATTEMPTS_EVENT_KEY ] : 0;
-		unset( $event[ self::RETRY_ATTEMPTS_EVENT_KEY ] );
+		$attempts        = isset( $event[ self::RETRY_ATTEMPTS_EVENT_KEY ] ) ? (int) $event[ self::RETRY_ATTEMPTS_EVENT_KEY ] : 0;
+		$brought_forward = (int) ( $event[ self::RETRY_BROUGHT_FORWARD_EVENT_KEY ] ?? 0 );
+		unset( $event[ self::RETRY_ATTEMPTS_EVENT_KEY ], $event[ self::RETRY_BROUGHT_FORWARD_EVENT_KEY ] );
 
 		try {
 			$this->event_ingestor->process( $event );
@@ -233,7 +252,7 @@ class WebhookReliabilityService implements RegisterHooksInterface {
 			return;
 		} catch ( \Throwable $exception ) {
 			if ( $this->is_retried_failure( $event, $exception ) ) {
-				$this->schedule_retry_or_give_up( $event_id, $event, $attempts, $exception );
+				$this->schedule_retry_or_give_up( $event_id, $event, $attempts, $exception, $brought_forward );
 			}
 			throw $exception;
 		}
@@ -247,7 +266,8 @@ class WebhookReliabilityService implements RegisterHooksInterface {
 	 * Retried event types are, after any passing failure, and the types safe to apply late are when the order payment
 	 * lock refused them (EventIngestor::is_retried_lock_refusal()). The retries run 1, 11 and 71 minutes after
 	 * the processing job's first attempt, so the last two run after a lock left by a request that died has expired
-	 * (WooPaymentsPersistenceVocabulary::LOCK_TTL_SECONDS, five minutes).
+	 * (WooPaymentsPersistenceVocabulary::LOCK_TTL_SECONDS, five minutes). A payment success the same holder refuses
+	 * again at the one-minute retry runs just after that holder's lock expires instead (schedule_retry_or_give_up()).
 	 *
 	 * @param array<string,mixed> $event   Event payload.
 	 * @param \Throwable|null     $failure Failure of the delivery, when known.
@@ -269,12 +289,18 @@ class WebhookReliabilityService implements RegisterHooksInterface {
 	 * listed event as fetched and the failed-event store is a one-day transient nothing else reads, so the note and the
 	 * error line naming the event are the trail.
 	 *
-	 * @param string              $event_id  Event ID.
-	 * @param array<string,mixed> $event     Event payload.
-	 * @param int                 $attempts  Retries already scheduled.
-	 * @param \Throwable          $exception Failure of this attempt.
+	 * A payment success or authorization refused at its one-minute retry by a holder at least a minute old, so the one
+	 * that refused its first attempt too, is retried just after that holder's lock expires rather than ten minutes later.
+	 * A younger holder is a live one, and keeps the ten minutes. The seconds saved are added to the last retry, so the
+	 * event is dropped when it would have been.
+	 *
+	 * @param string              $event_id        Event ID.
+	 * @param array<string,mixed> $event           Event payload.
+	 * @param int                 $attempts        Retries already scheduled.
+	 * @param \Throwable          $exception       Failure of this attempt.
+	 * @param int                 $brought_forward Seconds an earlier retry of this event was brought forward.
 	 */
-	private function schedule_retry_or_give_up( string $event_id, array $event, int $attempts, \Throwable $exception ): void {
+	private function schedule_retry_or_give_up( string $event_id, array $event, int $attempts, \Throwable $exception, int $brought_forward ): void {
 		if ( $attempts >= count( self::RETRY_DELAYS_SECONDS ) ) {
 			$this->delete_failed_event( $event_id );
 			// The note goes first: it contains its own failures.
@@ -293,12 +319,20 @@ class WebhookReliabilityService implements RegisterHooksInterface {
 			return;
 		}
 
+		$due         = time() + self::RETRY_DELAYS_SECONDS[ $attempts ] + ( 2 === $attempts ? $brought_forward : 0 );
+		$claimed_at  = $exception instanceof OrderPaymentLockRefusedException ? $exception->get_holder_claimed_at() : null;
+		$is_held_up  = 1 === $attempts && null !== $claimed_at && time() - $claimed_at >= MINUTE_IN_SECONDS && in_array( $event['type'] ?? '', array( 'payment_intent.succeeded', 'payment_intent.amount_capturable_updated' ), true );
+		$holder_free = $is_held_up ? max( time() + 1, $claimed_at + WooPaymentsPersistenceVocabulary::LOCK_TTL_SECONDS + self::LOCK_EXPIRY_RETRY_MARGIN_SECONDS ) : $due;
+		if ( $holder_free < $due ) {
+			$event[ self::RETRY_BROUGHT_FORWARD_EVENT_KEY ] = $due - $holder_free;
+		}
+
 		$event[ self::RETRY_ATTEMPTS_EVENT_KEY ] = $attempts + 1;
 		$this->store_failed_event( $event_id, $event );
 		$this->scheduler->schedule_job(
 			self::WEBHOOK_PROCESS_EVENT_ACTION,
 			array( 'event_id' => $event_id ),
-			time() + self::RETRY_DELAYS_SECONDS[ $attempts ]
+			min( $due, $holder_free )
 		);
 	}
 

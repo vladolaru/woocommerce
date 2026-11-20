@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\W
 
 use ActionScheduler;
 use ActionScheduler_Store;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
@@ -509,6 +510,249 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		);
 		$this->assertCount( 1, $charge_notes, 'The payment is recorded once.' );
 		$this->assertNull( $store->get_event( 'evt_lock_ttl' ) );
+		$this->assertSame( array(), $scheduler->scheduled_jobs );
+	}
+
+	/**
+	 * @testdox A $event_type the order payment lock refuses at attempt $attempts, held $holder_age seconds, is retried at the holder's expiry ($at_expiry) or after $delay seconds.
+	 * @dataProvider held_up_retry_cases
+	 *
+	 * @param string   $event_type Event type.
+	 * @param int      $attempts   Retries already scheduled before this attempt.
+	 * @param int|null $holder_age Age of the refusing holder, in seconds; null when its record does not describe the lock.
+	 * @param bool     $at_expiry  Whether the next attempt is due just after the holder's lock expires.
+	 * @param int      $delay      Otherwise, the delay of the next attempt, in seconds.
+	 */
+	public function test_lock_refused_retry_runs_at_the_holder_expiry_only_for_a_held_up_success( string $event_type, int $attempts, ?int $holder_age, bool $at_expiry, int $delay ): void {
+		$store      = new FailedEventTransients();
+		$scheduler  = new RecordingActionSchedulerService();
+		$before     = time();
+		$claimed_at = null === $holder_age ? null : $before - $holder_age;
+		$event      = array(
+			'id'   => 'evt_process',
+			'type' => $event_type,
+		);
+		$service    = $this->create_service( $scheduler, new StaticFailedEventsApiClient(), new ThrowingEventIngestor( new OrderPaymentLockRefusedException( 1, 'payment status update', $claimed_at ) ) );
+		$store->set_event( 'evt_process', $event + ( $attempts > 0 ? array( WebhookReliabilityService::RETRY_ATTEMPTS_EVENT_KEY => $attempts ) : array() ) );
+
+		try {
+			$service->process_event( 'evt_process' );
+			$this->fail( 'The refusal must reach Action Scheduler.' );
+		} catch ( OrderPaymentLockRefusedException $exception ) {
+			unset( $exception );
+		}
+
+		$this->assertCount( 1, $scheduler->scheduled_jobs );
+		$due    = $scheduler->scheduled_jobs[0]['timestamp'];
+		$stored = $store->get_event( 'evt_process' );
+		$this->assertSame( $attempts + 1, $stored[ WebhookReliabilityService::RETRY_ATTEMPTS_EVENT_KEY ] ?? null );
+		if ( $at_expiry ) {
+			$this->assertSame( $claimed_at + WooPaymentsPersistenceVocabulary::LOCK_TTL_SECONDS + 10, $due, 'Due 10 seconds after the holder\'s lock expires.' );
+			$this->assertGreaterThanOrEqual( $before + 10 * MINUTE_IN_SECONDS - $due, $stored['_wcpay_retry_brought_forward'] ?? null, 'The seconds brought forward are kept for the last retry.' );
+			$this->assertLessThanOrEqual( time() + 10 * MINUTE_IN_SECONDS - $due, $stored['_wcpay_retry_brought_forward'] ?? null );
+			return;
+		}
+		$this->assertGreaterThanOrEqual( $before + $delay, $due );
+		$this->assertLessThanOrEqual( time() + $delay, $due );
+		$this->assertArrayNotHasKey( '_wcpay_retry_brought_forward', $stored );
+	}
+
+	/** @return array<string,array{string,int,?int,bool,int}> */
+	public static function held_up_retry_cases(): array {
+		return array(
+			'success, live holder at the one-minute retry' => array( 'payment_intent.succeeded', 1, 20, false, 10 * MINUTE_IN_SECONDS ),
+			'success, holder a minute and a half old'      => array( 'payment_intent.succeeded', 1, 90, true, 0 ),
+			'authorization, holder a minute and a half old' => array( 'payment_intent.amount_capturable_updated', 1, 90, true, 0 ),
+			'success, first job, old holder'               => array( 'payment_intent.succeeded', 0, 200, false, MINUTE_IN_SECONDS ),
+			'success, first job, holder near its expiry'   => array( 'payment_intent.succeeded', 0, 280, false, MINUTE_IN_SECONDS ),
+			'success, holder record not describing the lock' => array( 'payment_intent.succeeded', 1, null, false, 10 * MINUTE_IN_SECONDS ),
+			'refund, holder a minute and a half old'       => array( 'charge.refunded', 1, 90, false, 10 * MINUTE_IN_SECONDS ),
+			'dispute, holder a minute and a half old'      => array( 'charge.dispute.created', 1, 90, false, 10 * MINUTE_IN_SECONDS ),
+			'failed payment, holder a minute and a half old' => array( 'payment_intent.payment_failed', 1, 90, false, 10 * MINUTE_IN_SECONDS ),
+		);
+	}
+
+	/**
+	 * @testdox The last retry of a success brought forward to its holder's expiry is due when it would have been without that.
+	 */
+	public function test_last_retry_of_a_held_up_success_adds_the_seconds_brought_forward(): void {
+		$store     = new FailedEventTransients();
+		$scheduler = new RecordingActionSchedulerService();
+		$event     = array(
+			'id'   => 'evt_process',
+			'type' => 'payment_intent.succeeded',
+		);
+		$service   = $this->create_service( $scheduler, new StaticFailedEventsApiClient(), new ThrowingEventIngestor( new OrderPaymentLockRefusedException( 1, 'payment status update', time() - 90 ) ) );
+		$store->set_event(
+			'evt_process',
+			$event + array(
+				WebhookReliabilityService::RETRY_ATTEMPTS_EVENT_KEY => 2,
+				'_wcpay_retry_brought_forward' => 380,
+			)
+		);
+
+		$before = time();
+		try {
+			$service->process_event( 'evt_process' );
+			$this->fail( 'The refusal must reach Action Scheduler.' );
+		} catch ( OrderPaymentLockRefusedException $exception ) {
+			unset( $exception );
+		}
+
+		$this->assertCount( 1, $scheduler->scheduled_jobs );
+		$this->assertGreaterThanOrEqual( $before + HOUR_IN_SECONDS + 380, $scheduler->scheduled_jobs[0]['timestamp'] );
+		$this->assertLessThanOrEqual( time() + HOUR_IN_SECONDS + 380, $scheduler->scheduled_jobs[0]['timestamp'] );
+		$this->assertSame( $event + array( WebhookReliabilityService::RETRY_ATTEMPTS_EVENT_KEY => 3 ), $store->get_event( 'evt_process' ) );
+	}
+
+	/**
+	 * @testdox A success retried at its holder's expiry reaches the ingestor as delivered, without the retry count or the seconds brought forward.
+	 */
+	public function test_success_retried_at_the_holder_expiry_reaches_the_ingestor_as_delivered(): void {
+		$store    = new FailedEventTransients();
+		$event    = array(
+			'id'   => 'evt_retried',
+			'type' => 'payment_intent.succeeded',
+		);
+		$ingestor = new class( new OrderPaymentLockRefusedException( 1, 'payment status update', time() - 90 ) ) extends EventIngestor {
+			/**
+			 * Events the ingestor received.
+			 *
+			 * @var array<int,array<string,mixed>>
+			 */
+			public array $processed_events = array();
+
+			/**
+			 * Refusal of the first event, then none.
+			 *
+			 * @var \Throwable|null
+			 */
+			private ?\Throwable $refusal;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param \Throwable $refusal Refusal of the first event.
+			 */
+			public function __construct( \Throwable $refusal ) {
+				$this->refusal = $refusal;
+			}
+
+			/**
+			 * Record the event, refusing the first.
+			 *
+			 * @param array<string,mixed> $event Event payload.
+			 * @throws \Throwable The refusal, for the first event.
+			 */
+			public function process( array $event ): void {
+				$this->processed_events[] = $event;
+				$refusal                  = $this->refusal;
+				$this->refusal            = null;
+				if ( null !== $refusal ) {
+					throw $refusal;
+				}
+			}
+		};
+		$service  = $this->create_service( new RecordingActionSchedulerService(), new StaticFailedEventsApiClient(), $ingestor );
+		$store->set_event( 'evt_retried', $event + array( WebhookReliabilityService::RETRY_ATTEMPTS_EVENT_KEY => 1 ) );
+		try {
+			$service->process_event( 'evt_retried' );
+			$this->fail( 'The one-minute retry is refused.' );
+		} catch ( OrderPaymentLockRefusedException $exception ) {
+			unset( $exception );
+		}
+		$this->assertArrayHasKey( '_wcpay_retry_brought_forward', $store->get_event( 'evt_retried' ) );
+
+		$service->process_event( 'evt_retried' );
+
+		$this->assertSame( array( $event, $event ), $ingestor->processed_events );
+		$this->assertNull( $store->get_event( 'evt_retried' ) );
+	}
+
+	/**
+	 * @testdox A payment_intent.succeeded held up by a dead checkout's lock is retried at the lock's expiry, after its one-minute retry is refused, then marks the order paid once.
+	 */
+	public function test_lock_refused_succeeded_event_of_a_dead_holder_is_retried_at_its_expiry_and_then_applies(): void {
+		$order = wc_create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_total( '10.00' );
+		$order->save();
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		// A checkout that died after the platform captured holds the lock; its claim was 90 seconds ago.
+		$this->assertNotNull( wc_get_container()->get( OrderPaymentLock::class )->claim( $order, $vocabulary, 'pi_dead_holder', 'checkout' ) );
+		$claimed_at = time() - 90;
+		$this->set_order_payment_lock_claim_time( $order, $vocabulary, $claimed_at );
+		$event     = array(
+			'id'   => 'evt_dead_holder',
+			'type' => 'payment_intent.succeeded',
+			'data' => array(
+				'object' => array(
+					'id'             => 'pi_dead_holder',
+					'status'         => 'succeeded',
+					'currency'       => 'usd',
+					'amount'         => 1000,
+					'payment_method' => 'pm_dead_holder',
+					'metadata'       => array(
+						'order_id'  => (string) $order->get_id(),
+						'order_key' => $order->get_order_key(),
+					),
+					'charges'        => array(
+						'data' => array(
+							array(
+								'id'             => 'ch_dead_holder',
+								'payment_method' => 'pm_dead_holder',
+							),
+						),
+					),
+				),
+			),
+		);
+		$ingestor  = wc_get_container()->get( EventIngestor::class );
+		$store     = new FailedEventTransients();
+		$scheduler = new RecordingActionSchedulerService();
+		$service   = $this->create_service( $scheduler, new StaticFailedEventsApiClient(), $ingestor );
+
+		try {
+			try {
+				$ingestor->process( $event );
+				$this->fail( 'A delivery refused by the lock must fail instead of being acknowledged.' );
+			} catch ( OrderPaymentLockRefusedException $refusal ) {
+				$this->assertSame( $claimed_at, $refusal->get_holder_claimed_at(), 'The refusal carries when the holder claimed the lock.' );
+				$service->retry_failed_event( $event, $refusal );
+			}
+
+			$due = array();
+			foreach ( array( 'first job', 'one-minute retry' ) as $attempt ) {
+				$scheduler->scheduled_jobs = array();
+				$before                    = time();
+				try {
+					$service->process_event( 'evt_dead_holder' );
+					$this->fail( "The $attempt must be refused while the holder's lock lives." );
+				} catch ( OrderPaymentLockRefusedException $exception ) {
+					unset( $exception );
+				}
+				$this->assertCount( 1, $scheduler->scheduled_jobs );
+				$due[] = $scheduler->scheduled_jobs[0]['timestamp'] - $before;
+			}
+			$this->assertContains( $due[0], array( MINUTE_IN_SECONDS, MINUTE_IN_SECONDS + 1 ), 'The first job of a refused success is retried a minute later.' );
+			$this->assertSame( $claimed_at + WooPaymentsPersistenceVocabulary::LOCK_TTL_SECONDS + 10, $scheduler->scheduled_jobs[0]['timestamp'], 'The refused one-minute retry is retried just after the holder\'s lock expires.' );
+		} finally {
+			// The holder's lock has expired by the time that retry is due.
+			$this->clear_order_payment_lock( $order, $vocabulary );
+		}
+
+		$scheduler->scheduled_jobs = array();
+		$service->process_event( 'evt_dead_holder' );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertFalse( $order->needs_payment(), 'The retry after the lock expired must record the payment.' );
+		$this->assertSame( 'pi_dead_holder', $order->get_transaction_id() );
+		$charge_notes = array_filter(
+			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+			static fn( $note ): bool => false !== strpos( $note->content, 'successfully charged' )
+		);
+		$this->assertCount( 1, $charge_notes, 'The payment is recorded once.' );
+		$this->assertNull( $store->get_event( 'evt_dead_holder' ) );
 		$this->assertSame( array(), $scheduler->scheduled_jobs );
 	}
 
@@ -1040,6 +1284,29 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 				}
 			}
 		}
+	}
+
+	/**
+	 * Set when the order payment lock's holder claimed it, as a holder whose request died that long ago left it.
+	 *
+	 * @param \WC_Order                        $order      Order whose lock a claim holds.
+	 * @param WooPaymentsPersistenceVocabulary $vocabulary Persistence vocabulary.
+	 * @param int                              $claimed_at Claim time to record.
+	 */
+	private function set_order_payment_lock_claim_time( \WC_Order $order, WooPaymentsPersistenceVocabulary $vocabulary, int $claimed_at ): void {
+		global $wpdb;
+
+		$holder_key = $vocabulary->get_order_lock_key( $order ) . '_holder';
+		if ( wp_using_ext_object_cache() ) {
+			$holder               = wp_cache_get( $holder_key, 'transient' );
+			$holder['claimed_at'] = $claimed_at;
+			wp_cache_set( $holder_key, $holder, 'transient', DAY_IN_SECONDS );
+			return;
+		}
+
+		$holder               = maybe_unserialize( $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", '_transient_' . $holder_key ) ) );
+		$holder['claimed_at'] = $claimed_at;
+		$wpdb->update( $wpdb->options, array( 'option_value' => maybe_serialize( $holder ) ), array( 'option_name' => '_transient_' . $holder_key ) );
 	}
 
 	/**

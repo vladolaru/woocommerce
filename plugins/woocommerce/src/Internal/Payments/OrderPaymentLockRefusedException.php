@@ -31,14 +31,23 @@ final class OrderPaymentLockRefusedException extends RuntimeException {
 	private int $order_id;
 
 	/**
+	 * When the holder of the refusing lock claimed it, as a Unix time, or null when unknown.
+	 *
+	 * @var int|null
+	 */
+	private ?int $holder_claimed_at;
+
+	/**
 	 * Constructor.
 	 *
-	 * @param int    $order_id  ID of the order whose lock refused the operation.
-	 * @param string $operation Refused operation, such as 'refund webhook'.
+	 * @param int      $order_id          ID of the order whose lock refused the operation.
+	 * @param string   $operation         Refused operation, such as 'refund webhook'.
+	 * @param int|null $holder_claimed_at When the lock's holder claimed it, as a Unix time, or null when unknown.
 	 */
-	public function __construct( int $order_id, string $operation ) {
+	public function __construct( int $order_id, string $operation, ?int $holder_claimed_at = null ) {
 		parent::__construct( sprintf( 'The order payment lock of order %1$d is held, so the %2$s was refused.', $order_id, $operation ) );
-		$this->order_id = $order_id;
+		$this->order_id          = $order_id;
+		$this->holder_claimed_at = $holder_claimed_at;
 	}
 
 	/**
@@ -48,5 +57,16 @@ final class OrderPaymentLockRefusedException extends RuntimeException {
 	 */
 	public function get_order_id(): int {
 		return $this->order_id;
+	}
+
+	/**
+	 * Get when the holder of the refusing lock claimed it.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return int|null A Unix time, or null when the lock's holder record does not describe it.
+	 */
+	public function get_holder_claimed_at(): ?int {
+		return $this->holder_claimed_at;
 	}
 }

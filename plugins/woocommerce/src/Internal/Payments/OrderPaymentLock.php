@@ -164,17 +164,20 @@ class OrderPaymentLock {
 	 * @param string                                 $refused_operation   Operation the lock refused, such as 'refund'.
 	 * @param string|null                            $source              Log source, when the caller logs to its own file.
 	 * @param array<string,mixed>                    $extra_context       Caller-specific context added to the line.
+	 * @return int|null When the live holder claimed the lock, or null when its holder record does not describe the lock.
 	 */
-	public function log_refusal( WC_Order $order, ProviderPersistenceVocabularyInterface $persistence_vocabulary, string $refused_operation, ?string $source = null, array $extra_context = array() ): void {
+	public function log_refusal( WC_Order $order, ProviderPersistenceVocabularyInterface $persistence_vocabulary, string $refused_operation, ?string $source = null, array $extra_context = array() ): ?int {
 		$lock_value       = $this->read_lock_transient( $persistence_vocabulary->get_order_lock_key( $order ) );
 		$holder           = $this->read_lock_transient( $this->get_lock_holder_key( $order, $persistence_vocabulary ) );
 		$holder_operation = null;
 		$lock_age_seconds = null;
+		$claimed_at       = null;
 
 		// A holder record only describes the live lock when both carry the same lock value.
 		if ( is_array( $holder ) && false !== $lock_value && isset( $holder['operation'], $holder['lock_value'], $holder['claimed_at'] ) && (string) $lock_value === $holder['lock_value'] ) {
 			$holder_operation = (string) $holder['operation'];
-			$lock_age_seconds = max( 0, time() - (int) $holder['claimed_at'] );
+			$claimed_at       = (int) $holder['claimed_at'];
+			$lock_age_seconds = max( 0, time() - $claimed_at );
 		}
 
 		wc_get_logger()->warning(
@@ -198,6 +201,8 @@ class OrderPaymentLock {
 				)
 			)
 		);
+
+		return $claimed_at;
 	}
 
 	/**
