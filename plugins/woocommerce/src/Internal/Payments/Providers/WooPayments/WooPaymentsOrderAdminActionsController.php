@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
@@ -96,19 +97,18 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	private WooPaymentsLogger $logger;
 
 	/**
-	 * The answer of the last unpaid-order read, kept so the Cancelled listener does not read the order's payment again:
-	 * the order, the intent read, and the intent, or null when the payment could not be read.
-	 *
-	 * @var array{order_id:int,intent_id:string,intent:array<string,mixed>|null}|null
-	 */
-	private ?array $unpaid_order_read = null;
-
-	/**
-	 * Whether an unpaid-order read met a transport or server error in this request, so no other order in the run is read.
+	 * Whether the unpaid-order reads stopped for the rest of core's hold-stock run, so no other order in it is read.
 	 *
 	 * @var bool
 	 */
 	private bool $unpaid_order_reads_stopped = false;
+
+	/**
+	 * Unpaid-order reads refused in a row in this run, by a refusal that hits the whole store.
+	 *
+	 * @var int
+	 */
+	private int $unpaid_order_failures_in_a_row = 0;
 
 	/**
 	 * Initialize the controller.
@@ -146,6 +146,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 		add_action( 'woocommerce_order_status_cancelled', array( $this, 'handle_woocommerce_order_status_cancelled' ), 10, 3 );
 		add_action( self::RETRY_STATUS_CHANGE_OPERATION_ACTION, array( $this, 'handle_retry_status_change_operation' ), 10, 4 );
 		add_filter( 'woocommerce_cancel_unpaid_order', array( $this, 'handle_woocommerce_cancel_unpaid_order' ), PHP_INT_MAX, 2 );
+		add_action( 'woocommerce_cancel_unpaid_orders', array( $this, 'handle_woocommerce_cancel_unpaid_orders' ), 9 );
 		if ( is_admin() ) {
 			add_filter( 'woocommerce_gateway_title', array( $this, 'handle_woocommerce_gateway_title' ), 10, 2 );
 		}
@@ -270,6 +271,9 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	/**
 	 * Handle an order transition to cancelled.
 	 *
+	 * On core's hold-stock cancel of a WooPayments order, which the unpaid-order check judged, nothing is read, released
+	 * or stored: that cancel never releases an authorization.
+	 *
 	 * @internal
 	 *
 	 * @param mixed $order_id          Order ID.
@@ -278,23 +282,38 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 */
 	public function handle_woocommerce_order_status_cancelled( $order_id, $order = null, $status_transition = array() ): void {
 		unset( $status_transition );
-		$order  = $this->resolve_status_order( absint( $order_id ), $order instanceof WC_Order ? $order : null );
-		$target = $order instanceof WC_Order ? $this->get_status_change_target( $order, PaymentProcessingService::OPERATION_CANCEL ) : null;
+		$order = $this->resolve_status_order( absint( $order_id ), $order instanceof WC_Order ? $order : null );
+		if ( ! $order instanceof WC_Order || ( UnpaidOrderTimeoutMarker::is_cancelling( $order ) && WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) ) ) {
+			return;
+		}
 
-		if ( $order instanceof WC_Order && null !== $target ) {
+		$target = $this->get_status_change_target( $order, PaymentProcessingService::OPERATION_CANCEL );
+		if ( null !== $target ) {
 			$this->run_operation( $order, PaymentProcessingService::OPERATION_CANCEL, true, 0, $target );
 		}
+	}
+
+	/**
+	 * Start the unpaid-order reads afresh at the start of each run of core's hold-stock job, which runs at priority 10.
+	 *
+	 * @internal
+	 */
+	public function handle_woocommerce_cancel_unpaid_orders(): void {
+		$this->unpaid_order_reads_stopped     = false;
+		$this->unpaid_order_failures_in_a_row = 0;
 	}
 
 	/**
 	 * Keep an unpaid WooPayments order that core's hold-stock job would cancel while its payment may have been taken.
 	 *
 	 * An order with a paid date, or whose order payment lock is held, is kept with no read. An order storing an intent
-	 * not canceled has it read, and one keeping only a charge key has the key's charge looked up: money that is the
+	 * not canceled has it read. An order keeping a charge key, the record of a later attempt whose outcome is unknown,
+	 * has the key's charge looked up when that read found no money of its own or nothing was read. Money that is the
 	 * order's own, or a voucher of its own still payable, is applied as the attached-intent check applies it, so an
 	 * authorization or a voucher goes On hold, while a disputed payment gets its note and the order is kept. With no
 	 * money, the order is cancelled only if, read again, it is unchanged and its lock is free. An unreadable payment
-	 * keeps the order to the next run, until a day after its creation: then core cancels it, with a note.
+	 * keeps the order until a day after core could first cancel it. Then, read again unchanged with its lock free, an
+	 * order whose record shows a payment stays Pending with a note, once, and any other is cancelled with a note, once.
 	 *
 	 * @internal
 	 *
@@ -303,7 +322,6 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 * @return mixed The answer as it came, or false to keep the order.
 	 */
 	public function handle_woocommerce_cancel_unpaid_order( $should_cancel, $order = null ) {
-		$this->unpaid_order_read = null;
 		if ( ! $should_cancel || ! $order instanceof WC_Order || ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) ) {
 			return $should_cancel;
 		}
@@ -316,32 +334,86 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 			return false;
 		}
 
-		$state    = self::get_unpaid_payment_state( $order );
-		$key_only = '' === $state['intent_id'] && '' !== $state['charge_key'];
-		if ( ! $key_only && ( 0 !== strpos( $state['intent_id'], 'pi_' ) || 'canceled' === $state['intent_status'] ) ) {
+		$state        = self::get_unpaid_payment_state( $order );
+		$reads_intent = 0 === strpos( $state['intent_id'], 'pi_' ) && 'canceled' !== $state['intent_status'];
+		if ( ! $reads_intent && '' === $state['charge_key'] ) {
 			return $should_cancel;
 		}
 
-		$intent = $key_only ? $this->find_unpaid_order_charge( $order ) : $this->read_unpaid_order_intent( $order, $state['intent_id'] );
+		$intent_id = $state['intent_id'];
+		$intent    = $reads_intent ? $this->read_unpaid_order_intent( $order, $intent_id ) : array();
+		if ( null !== $intent && '' !== $state['charge_key'] && ! self::is_unpaid_order_money( $intent, $order ) ) {
+			$intent    = $this->find_unpaid_order_charge( $order );
+			$intent_id = (string) ( $intent['id'] ?? '' );
+		}
 		if ( null === $intent ) {
-			$created = $order->get_date_created();
-			if ( null !== $created && time() < $created->getTimestamp() + DAY_IN_SECONDS ) {
+			if ( self::is_within_unpaid_order_window( $order ) || ! $this->is_unpaid_order_unchanged_and_free( $order, $state, $vocabulary ) ) {
 				return false;
 			}
-			$order->add_order_note( __( 'The payment for this order could not be checked for a day, so the order is cancelled as unpaid. Before treating it as unpaid, check whether WooPayments received a payment for it.', 'woocommerce' ) );
+			$payment_id   = '' !== $state['intent_id'] ? $state['intent_id'] : $state['charge_key'];
+			$note_service = wc_get_container()->get( WooPaymentsOrderNoteService::class );
+			if ( WooPaymentsIntentCodec::holds_money( $state['intent_status'] ) ) {
+				$note_service->add_note_once( $order, __( 'This order was not cancelled as unpaid because its record shows a payment that could not be checked with WooPayments. Check the payment in WooPayments before you cancel or fulfill this order.', 'woocommerce' ), 'unpaid_order_kept_with_payment|' . $payment_id );
+
+				return false;
+			}
+			$note_service->add_note_once( $order, __( 'The payment for this order could not be checked for a day, so the order is cancelled as unpaid. Before treating it as unpaid, check whether WooPayments received a payment for it.', 'woocommerce' ), 'unpaid_order_cancelled_unchecked|' . $payment_id );
 
 			return $should_cancel;
 		}
 
-		if ( WooPaymentsIntentCodec::intent_belongs_to_order( $intent, $order ) && self::holds_or_may_take_money( $intent ) ) {
-			$this->apply_unpaid_order_payment( $order, $key_only ? (string) ( $intent['id'] ?? '' ) : $state['intent_id'], $intent );
+		if ( self::is_unpaid_order_money( $intent, $order ) ) {
+			$this->apply_unpaid_order_payment( $order, $intent_id, $intent );
 
 			return false;
 		}
 
-		$fresh_order = $this->lifecycle_service->get_fresh_order_from_data_store( $order );
+		return $this->is_unpaid_order_unchanged_and_free( $order, $state, $vocabulary ) ? $should_cancel : false;
+	}
 
-		return self::get_unpaid_payment_state( $fresh_order ) === $state && ! $this->order_payment_lock->is_held( $fresh_order, $vocabulary ) ? $should_cancel : false;
+	/**
+	 * Tell whether an intent read or found for an unpaid order is the order's own and holds or may still take money.
+	 *
+	 * @param array<string,mixed> $intent The intent, or an empty array for none.
+	 * @param WC_Order            $order  Unpaid order.
+	 * @return bool
+	 */
+	private static function is_unpaid_order_money( array $intent, WC_Order $order ): bool {
+		return WooPaymentsIntentCodec::intent_belongs_to_order( $intent, $order ) && self::holds_or_may_take_money( $intent );
+	}
+
+	/**
+	 * Tell whether an unpaid order is still within a day after core's hold-stock job could first cancel it: its last change,
+	 * or its creation when it has none, plus the hold-stock minutes core's job reads, plus a day.
+	 *
+	 * @param WC_Order $order Unpaid order.
+	 * @return bool
+	 */
+	private static function is_within_unpaid_order_window( WC_Order $order ): bool {
+		$changed = $order->get_date_modified() ?? $order->get_date_created();
+
+		return null !== $changed && time() < $changed->getTimestamp() + absint( get_option( 'woocommerce_hold_stock_minutes', '60' ) ) * MINUTE_IN_SECONDS + DAY_IN_SECONDS;
+	}
+
+	/**
+	 * Tell whether an unpaid order, read again from its data store, still has the payment values it had before its payment
+	 * was read and its order payment lock is free. A re-read that throws, as for a deleted order, is logged and answers no.
+	 *
+	 * @param WC_Order                                                                                        $order      Unpaid order.
+	 * @param array{status:string,intent_id:string,intent_status:string,charge_key:string,date_paid:int|null} $state      Its values before the read.
+	 * @param ProviderPersistenceVocabularyInterface                                                          $vocabulary Persistence vocabulary.
+	 * @return bool
+	 */
+	private function is_unpaid_order_unchanged_and_free( WC_Order $order, array $state, ProviderPersistenceVocabularyInterface $vocabulary ): bool {
+		try {
+			$fresh_order = $this->lifecycle_service->get_fresh_order_from_data_store( $order );
+		} catch ( Throwable $exception ) {
+			$this->logger->log_throwable( sprintf( 'Unpaid order #%d could not be read again before its cancel.', $order->get_id() ), $exception, array( 'order_id' => $order->get_id() ) );
+
+			return false;
+		}
+
+		return self::get_unpaid_payment_state( $fresh_order ) === $state && ! $this->order_payment_lock->is_held( $fresh_order, $vocabulary );
 	}
 
 	/**
@@ -375,44 +447,65 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Read the intent an unpaid order stores, in the order's own mode, and keep the answer for the Cancelled listener.
-	 *
-	 * A transport or server error stops the reads for the rest of the request, which is the job's run, so one outage costs
-	 * one failed read. A refused read and an answer with no status leave the payment unread and the other orders readable.
+	 * Read the intent an unpaid order stores, in the order's own mode, unless the reads stopped for the run.
 	 *
 	 * @param WC_Order $order     Unpaid order.
 	 * @param string   $intent_id Intent the order stores.
 	 * @return array<string,mixed>|null The intent, or null when it could not be read.
 	 */
 	private function read_unpaid_order_intent( WC_Order $order, string $intent_id ): ?array {
-		$intent = null;
-		if ( ! $this->unpaid_order_reads_stopped ) {
-			try {
-				$answer = $this->api_client->get_payment_intention_for_mode( $intent_id, WooPaymentsOrderMode::TEST === (string) $order->get_meta( '_wcpay_mode', true ) );
-				$intent = isset( $answer['status'] ) && is_string( $answer['status'] ) && '' !== $answer['status'] ? $answer : null;
-			} catch ( Throwable $exception ) {
-				$this->unpaid_order_reads_stopped = ! $exception instanceof ApiException || $exception->has_ambiguous_outcome();
-				$this->logger->log_throwable( sprintf( 'The intent of unpaid order #%d could not be read before its cancel.', $order->get_id() ), $exception, array( 'order_id' => $order->get_id() ) );
-			}
+		if ( $this->unpaid_order_reads_stopped ) {
+			return null;
 		}
 
-		$this->unpaid_order_read = array(
-			'order_id'  => $order->get_id(),
-			'intent_id' => $intent_id,
-			'intent'    => $intent,
-		);
+		try {
+			$answer = $this->api_client->get_payment_intention_for_mode( $intent_id, WooPaymentsOrderMode::TEST === (string) $order->get_meta( '_wcpay_mode', true ) );
+		} catch ( Throwable $exception ) {
+			$this->logger->log_throwable( sprintf( 'The intent of unpaid order #%d could not be read before its cancel.', $order->get_id() ), $exception, array( 'order_id' => $order->get_id() ) );
+			$this->note_unpaid_read_outcome( $exception );
+
+			return null;
+		}
+
+		$intent = isset( $answer['status'] ) && is_string( $answer['status'] ) && '' !== $answer['status'] ? $answer : null;
+		$this->note_unpaid_read_outcome( null, null !== $intent );
 
 		return $intent;
 	}
 
 	/**
-	 * Look up what the charge sent under an unpaid order's kept key did, for an order that stores no intent, with the
+	 * Count an unpaid-order read toward stopping the reads for the run, by the kind of its answer.
+	 *
+	 * A transport error or a gateway timeout stops them at once. A refusal that hits the whole store (not authorized,
+	 * forbidden, too many requests), another server error, a PHP failure and an answer with no status count. Any other
+	 * answer, a not-found or a bad request about one intent included, starts the count again.
+	 *
+	 * @param Throwable|null $failure The read's failure, or null when it answered.
+	 * @param bool           $usable  Whether the answer could be used, when it answered.
+	 */
+	private function note_unpaid_read_outcome( ?Throwable $failure, bool $usable = true ): void {
+		$code      = $failure instanceof ApiException ? $failure->get_http_code() : 0;
+		$transport = $failure instanceof ApiException ? (string) ( $failure->get_error_data()['transport_error_code'] ?? '' ) : '';
+		if ( 504 === $code || in_array( $transport, array( 'http_request_failed', 'http_request_not_executed' ), true ) ) {
+			$this->unpaid_order_reads_stopped = true;
+			return;
+		}
+
+		$refused                              = null === $failure ? ! $usable : ( ! $failure instanceof ApiException || 500 <= $code || in_array( $code, array( 401, 403, 429 ), true ) );
+		$this->unpaid_order_failures_in_a_row = $refused ? $this->unpaid_order_failures_in_a_row + 1 : 0;
+		// Three in a row from different orders is the store being refused; one or two can be single orders' bad luck.
+		$this->unpaid_order_reads_stopped = 3 <= $this->unpaid_order_failures_in_a_row;
+	}
+
+	/**
+	 * Look up what the charge sent under an unpaid order's kept key did, when no stored intent shows money, with the
 	 * lookup a refused retry of its checkout uses: the account's intents created within an hour of when the key was kept
 	 * (the order's creation for a key kept before that time was saved), a window that does not move between runs.
 	 *
 	 * Only an intent whose metadata names the order by ID and key can pay it. A key kept in another mode than the store's
-	 * cannot be looked up, since the list is read in the store's mode. A transport or server error stops the reads for the
-	 * rest of the run, as for a read intent.
+	 * cannot be looked up, since the list is read in the store's mode. The lookup tells only whether it failed (a transport
+	 * error or a server error, which stops the reads for the run at once) or could not check (any refusal, which never
+	 * counts toward stopping them, so a store-wide refusal of the list costs one list read per such order and run).
 	 *
 	 * @param WC_Order $order Unpaid order.
 	 * @return array<string,mixed>|null The order's own intent that holds money, an empty array when the lookup found none,
@@ -437,7 +530,11 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 			);
 		}
 
-		$this->unpaid_order_reads_stopped = WooPaymentsChargeAmbiguityService::LOOKUP_FAILED === $lookup['status'];
+		if ( WooPaymentsChargeAmbiguityService::LOOKUP_FAILED === $lookup['status'] ) {
+			$this->unpaid_order_reads_stopped = true;
+		} elseif ( WooPaymentsChargeAmbiguityService::LOOKUP_DONE === $lookup['status'] ) {
+			$this->note_unpaid_read_outcome( null );
+		}
 		if ( WooPaymentsChargeAmbiguityService::LOOKUP_DONE !== $lookup['status'] ) {
 			return null;
 		}
@@ -462,7 +559,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 				wc_get_container()->get( WooPaymentsIntentConfirmationService::class )->apply_attached_payment_intent( $order, $intent );
 			}
 		} catch ( Throwable $exception ) {
-			$this->logger->log_throwable( sprintf( 'The payment found on unpaid order #%d could not be applied.', $order->get_id() ), $exception, array( 'order_id' => $order->get_id() ) );
+			$this->logger->log_throwable_always( sprintf( 'The payment found on unpaid order #%d could not be applied.', $order->get_id() ), $exception, array( 'order_id' => $order->get_id() ) );
 		}
 	}
 
@@ -527,9 +624,6 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 * A capture is never sent for an order whose payment method is not a WooPayments one, since it would take money a
 	 * second time. A cancel takes none, so it releases such an order's WooPayments authorization, as the client does.
 	 *
-	 * The cancel of an order core's hold-stock job cancelled takes the answer the unpaid-order check just read for the same
-	 * order and intent instead of reading again, a failed read included. Any other call only discards that answer.
-	 *
 	 * @param WC_Order $order         Order whose status changed.
 	 * @param string   $operation     Capture or cancel.
 	 * @param bool     $read_required Whether the platform is read whatever the stored status, for the retry of an
@@ -537,8 +631,6 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 * @return string|null An empty string for the stored authorization, the read intent's ID, or null for nothing to do.
 	 */
 	private function get_status_change_target( WC_Order $order, string $operation, bool $read_required = false ): ?string {
-		$kept_read               = $this->unpaid_order_read;
-		$this->unpaid_order_read = null;
 		if ( PaymentProcessingService::OPERATION_CAPTURE === $operation && ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) ) {
 			return null;
 		}
@@ -555,14 +647,10 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 			return null;
 		}
 
-		$takes_kept_read = null !== $kept_read && ! $read_required && PaymentProcessingService::OPERATION_CANCEL === $operation && $order->get_id() === $kept_read['order_id'] && $intent_id === $kept_read['intent_id'] && UnpaidOrderTimeoutMarker::is_marked( $order );
 		try {
-			$intent = $takes_kept_read ? $kept_read['intent'] : $this->api_client->get_payment_intention( $intent_id );
+			$intent = $this->api_client->get_payment_intention( $intent_id );
 		} catch ( Throwable $exception ) {
 			$this->logger->log_throwable( sprintf( 'The intent of order #%d could not be read on its status change.', $order->get_id() ), $exception, array( 'order_id' => $order->get_id() ) );
-			$intent = null;
-		}
-		if ( null === $intent ) {
 			self::add_operation_failure_note( $order, $operation );
 			return null;
 		}

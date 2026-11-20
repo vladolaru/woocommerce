@@ -459,7 +459,9 @@ class WooPaymentsIntentConfirmationService {
 	 *
 	 * Unlike a confirmation, it saves no token and applies no display details, and it writes fee meta only for a payment
 	 * that completes a stored authorization as a capture. An intent that carries no payment method or customer falls back
-	 * to the ones stored on the order.
+	 * to the ones stored on the order. Nothing is applied when the order read under the lock changed since the apply was
+	 * asked to pay with another gateway, or stores an intent other than this one and the one it stored then: a newer
+	 * attempt's.
 	 *
 	 * @since 11.2.0
 	 *
@@ -467,16 +469,35 @@ class WooPaymentsIntentConfirmationService {
 	 * @param array<string,mixed> $intent PaymentIntent response.
 	 */
 	public function apply_attached_payment_intent( WC_Order $order, array $intent ): void {
+		$known_method     = (string) $order->get_payment_method();
+		$known_intent_ids = array( (string) ( $intent['id'] ?? '' ), (string) $order->get_meta( '_intent_id', true ), '' );
 		// The event is built again, and the hold decided, on the order read under the order payment lock it is applied under.
 		list( $event ) = $this->build_attached_lifecycle_event( $order, $intent );
 		wc_get_container()->get( WooPaymentsCompositionDataSettler::class )->run_settled(
 			fn(): string => $this->fee_details_note_controller->apply_and_schedule_fee_details_with_lock(
 				$order,
 				$event,
-				fn( WC_Order $stored_order ): array => $this->build_attached_lifecycle_event( $stored_order, $intent ),
+				fn( WC_Order $stored_order ): array => self::is_still_attached_to( $stored_order, $known_method, $known_intent_ids )
+					? $this->build_attached_lifecycle_event( $stored_order, $intent )
+					: array( null, null ),
 				$intent
 			)
 		);
+	}
+
+	/**
+	 * Tell whether the order read under the lock still pays with the gateway it had, or a WooPayments one, and stores no
+	 * intent other than the known ones.
+	 *
+	 * @param WC_Order $stored_order     Order read under the lock.
+	 * @param string   $known_method     Payment method the order had when the apply was asked.
+	 * @param string[] $known_intent_ids The applied intent, the intent the order stored then, and none.
+	 * @return bool
+	 */
+	private static function is_still_attached_to( WC_Order $stored_order, string $known_method, array $known_intent_ids ): bool {
+		$method = (string) $stored_order->get_payment_method();
+
+		return ( $known_method === $method || WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( $method ) ) && in_array( (string) $stored_order->get_meta( '_intent_id', true ), $known_intent_ids, true );
 	}
 
 	/**
