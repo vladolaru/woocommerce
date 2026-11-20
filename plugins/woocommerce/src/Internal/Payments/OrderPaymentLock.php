@@ -73,10 +73,9 @@ class OrderPaymentLock {
 	 * The lock value names what the claim processes, or the provider's sentinel when it names nothing; the runtime only
 	 * logs it, and other code of the provider may compare it. A holder record names the operation, for the refusal log,
 	 * and carries a token unique to this claim. Releasing needs that token, so an operation that ran past the lock TTL
-	 * cannot release a lock a later claim took over, even one with the same lock value: on the object cache, only where
-	 * the drop-in honours a fresh read (wp_cache_get()'s `$force`), and as best effort where it does not. A claim that
-	 * takes over an expired lock logs one warning naming the former holder, whose request never released it; one this
-	 * request never releases is released when it ends (release_held_claims()).
+	 * cannot release a lock a later claim took over, even one with the same lock value. A claim that takes over an
+	 * expired lock logs one warning naming the former holder, whose request never released it; one this request never
+	 * releases is released when it ends (release_held_claims()).
 	 *
 	 * @since 11.2.0
 	 *
@@ -100,23 +99,6 @@ class OrderPaymentLock {
 			'token'      => $token,
 			'claimed_at' => time(),
 		);
-
-		if ( $this->lock_lives_in_object_cache() ) {
-			if ( ! wp_cache_add( $lock_key, $value, 'transient', $ttl ) ) {
-				return null;
-			}
-
-			// Read once the lock is won: a release deletes the holder record first, so a record left here belongs to a holder
-			// that never released or whose lock the cache lost. It is kept for a day for that.
-			$former_holder = wp_cache_get( $holder_key, 'transient', true );
-			wp_cache_set( $holder_key, $holder, 'transient', DAY_IN_SECONDS );
-			if ( false !== $former_holder ) {
-				$this->log_takeover( $order, $operation, null, $former_holder );
-			}
-			$this->hold_until_shutdown( $token, $order, $persistence_vocabulary );
-
-			return $token;
-		}
 
 		$taken_over = null;
 		$claimed    = $this->row_lock->claim( $lock_key, maybe_serialize( $value ), $ttl, $holder_key, maybe_serialize( $holder ), $taken_over );
@@ -183,14 +165,14 @@ class OrderPaymentLock {
 	/**
 	 * Log a warning when a claim takes over an expired lock, naming the former holder's operation and its age.
 	 *
-	 * @param WC_Order    $order         Order whose lock was taken over.
-	 * @param string      $operation     Operation of the claim that took the lock over.
-	 * @param string|null $former_value  Former lock value as stored, or null on the object cache, where it is gone.
-	 * @param mixed       $former_holder Former holder record.
+	 * @param WC_Order $order         Order whose lock was taken over.
+	 * @param string   $operation     Operation of the claim that took the lock over.
+	 * @param string   $former_value  Former lock value as stored.
+	 * @param mixed    $former_holder Former holder record.
 	 */
-	private function log_takeover( WC_Order $order, string $operation, ?string $former_value, $former_holder ): void {
-		// On the database the record describes the former lock only when both carry the same lock value, as in log_refusal().
-		$describes        = is_array( $former_holder ) && isset( $former_holder['operation'], $former_holder['lock_value'], $former_holder['claimed_at'] ) && ( null === $former_value || (string) maybe_unserialize( $former_value ) === $former_holder['lock_value'] );
+	private function log_takeover( WC_Order $order, string $operation, string $former_value, $former_holder ): void {
+		// The record describes the former lock only when both carry the same lock value, as in log_refusal().
+		$describes        = is_array( $former_holder ) && isset( $former_holder['operation'], $former_holder['lock_value'], $former_holder['claimed_at'] ) && (string) maybe_unserialize( $former_value ) === $former_holder['lock_value'];
 		$former_operation = $describes ? (string) $former_holder['operation'] : null;
 		$former_age       = $describes ? max( 0, time() - (int) $former_holder['claimed_at'] ) : null;
 
@@ -209,7 +191,7 @@ class OrderPaymentLock {
 				'operation'          => $operation,
 				'former_operation'   => $former_operation,
 				'former_age_seconds' => $former_age,
-				'former_lock_value'  => $former_value ?? ( $describes ? (string) $former_holder['lock_value'] : null ),
+				'former_lock_value'  => $former_value,
 			)
 		);
 	}
@@ -292,21 +274,6 @@ class OrderPaymentLock {
 		$lock_key   = $persistence_vocabulary->get_order_lock_key( $order );
 		$holder_key = $this->get_lock_holder_key( $order, $persistence_vocabulary );
 
-		if ( $this->lock_lives_in_object_cache() ) {
-			// The object cache API has no compare-and-delete, so these checks and deletes are not atomic.
-			// Both reads skip this request's own copy, which still shows this claim after the cache lost its lock.
-			$holder = wp_cache_get( $holder_key, 'transient', true );
-			if ( ! $this->is_holder_of_claim( $holder, $lock_token ) || wp_cache_get( $lock_key, 'transient', true ) !== $holder['lock_value'] ) {
-				return;
-			}
-
-			// The record goes first, so a winning claim finds no holder; a death between the two leaves the lock to its expiry, unnamed.
-			wp_cache_delete( $holder_key, 'transient' );
-			wp_cache_delete( $lock_key, 'transient' );
-
-			return;
-		}
-
 		// The holder row is read as stored, expired or not: the delete below matches it exactly, so it removes a lock this
 		// claim still holds and never one a later claim took over.
 		$stored_holder = $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", '_transient_' . $holder_key ) );
@@ -336,17 +303,6 @@ class OrderPaymentLock {
 	}
 
 	/**
-	 * Tell whether transients, and so the order payment lock, are stored in the object cache.
-	 *
-	 * Mirrors the storage choice set_transient() makes.
-	 *
-	 * @return bool
-	 */
-	private function lock_lives_in_object_cache(): bool {
-		return wp_using_ext_object_cache() || wp_installing();
-	}
-
-	/**
 	 * Read a lock transient without the expired-row deletion get_transient() does.
 	 *
 	 * WordPress get_transient() deletes an expired transient by name, so a reader could delete rows a
@@ -356,10 +312,6 @@ class OrderPaymentLock {
 	 * @return mixed Stored value, or false when missing or expired.
 	 */
 	private function read_lock_transient( string $key ) {
-		if ( $this->lock_lives_in_object_cache() ) {
-			return get_transient( $key );
-		}
-
 		$stored = $this->row_lock->read( $key );
 
 		return null === $stored ? false : maybe_unserialize( $stored );

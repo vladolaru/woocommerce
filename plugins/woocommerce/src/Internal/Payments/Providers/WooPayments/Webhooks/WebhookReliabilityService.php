@@ -79,7 +79,7 @@ class WebhookReliabilityService implements RegisterHooksInterface {
 	/**
 	 * Seconds after the refusing holder's lock expires that a held-up success is retried. A retry before the expiry is
 	 * refused and costs an attempt, with the next one an hour away; 10 seconds covers the takeover's strict comparison,
-	 * the second between the holder's claim time and its expiry row, the cache's rounding, and clocks of other web nodes.
+	 * the second between the holder's claim time and its expiry row, and clocks of other web nodes.
 	 *
 	 * @var int
 	 */

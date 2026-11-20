@@ -31,8 +31,8 @@ class TransientRowLock {
 	 * cleanup or an unconditional unlock, can leave a former holder's record in place until a new claim's holder write
 	 * replaces it.
 	 *
-	 * The rows are always in the options table, so the caller decides whether the lock belongs there or in the object
-	 * cache. A holder record keeps the release token apart from a lock value other readers expect.
+	 * The rows are always in the options table, written and read with SQL around WordPress's option caches, on every
+	 * store. A holder record keeps the release token apart from a lock value other readers expect.
 	 *
 	 * @since 11.2.0
 	 *
@@ -385,9 +385,9 @@ class TransientRowLock {
 		$notoptions = wp_cache_get( 'notoptions', 'options' );
 		$alloptions = wp_cache_get( 'alloptions', 'options' );
 
-		foreach ( $option_names as $option_name ) {
-			wp_cache_delete( $option_name, 'options' );
+		wp_cache_delete_multiple( $option_names, 'options' );
 
+		foreach ( $option_names as $option_name ) {
 			if ( is_array( $notoptions ) && isset( $notoptions[ $option_name ] ) ) {
 				unset( $notoptions[ $option_name ] );
 				wp_cache_set( 'notoptions', $notoptions, 'options' );

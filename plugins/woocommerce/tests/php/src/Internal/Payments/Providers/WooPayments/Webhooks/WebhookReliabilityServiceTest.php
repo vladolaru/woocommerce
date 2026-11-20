@@ -420,7 +420,7 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 			wp_cache_flush();
 			$service->process_event( 'evt_process' );
 		} finally {
-			wp_using_ext_object_cache( $was_ext );
+			wp_using_ext_object_cache( (bool) $was_ext );
 		}
 
 		$this->assertSame( array( $event ), $ingestor->processed_events );
@@ -1772,14 +1772,7 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	private function set_order_payment_lock_claim_time( \WC_Order $order, WooPaymentsPersistenceVocabulary $vocabulary, int $claimed_at ): void {
 		global $wpdb;
 
-		$holder_key = $vocabulary->get_order_lock_key( $order ) . '_holder';
-		if ( wp_using_ext_object_cache() ) {
-			$holder               = wp_cache_get( $holder_key, 'transient' );
-			$holder['claimed_at'] = $claimed_at;
-			wp_cache_set( $holder_key, $holder, 'transient', DAY_IN_SECONDS );
-			return;
-		}
-
+		$holder_key           = $vocabulary->get_order_lock_key( $order ) . '_holder';
 		$holder               = maybe_unserialize( $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", '_transient_' . $holder_key ) ) );
 		$holder['claimed_at'] = $claimed_at;
 		$wpdb->update( $wpdb->options, array( 'option_value' => maybe_serialize( $holder ) ), array( 'option_name' => '_transient_' . $holder_key ) );

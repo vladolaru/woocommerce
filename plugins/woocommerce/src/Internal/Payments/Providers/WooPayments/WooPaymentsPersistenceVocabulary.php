@@ -59,8 +59,9 @@ class WooPaymentsPersistenceVocabulary implements ProviderPersistenceVocabularyI
 	/**
 	 * WooPayments-compatible order processing lock transient prefix.
 	 *
-	 * The built-in WooPayments and the WooPayments extension share this order lock on stores that switch, so the key,
-	 * the sentinel and the lifetime are the extension's.
+	 * The built-in WooPayments and the WooPayments extension use this key, sentinel and lifetime, so on stores without a
+	 * persistent object cache they share the lock's rows; on object-cache stores the extension keeps its lock in the
+	 * cache and the built-in in rows.
 	 *
 	 * @var string
 	 */

@@ -65,7 +65,6 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	 * @testdox A claim should take over an expired lock and keep the new lock for the full TTL.
 	 */
 	public function test_claim_takes_over_an_expired_lock(): void {
-		$this->skip_when_transients_live_in_object_cache();
 		$order    = wc_create_order();
 		$lock_key = $this->persistence_vocabulary->get_order_lock_key( $order );
 		$this->insert_lock_rows( $lock_key, 'stale_key', time() - 10 );
@@ -81,7 +80,6 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	 * @testdox Only one of two overlapping takeovers of an expired lock should win.
 	 */
 	public function test_only_one_overlapping_takeover_of_an_expired_lock_wins(): void {
-		$this->skip_when_transients_live_in_object_cache();
 		$order    = wc_create_order();
 		$lock_key = $this->persistence_vocabulary->get_order_lock_key( $order );
 		$this->insert_lock_rows( $lock_key, 'stale_key', time() - 10 );
@@ -141,7 +139,6 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	 * @testdox A former holder should not release a lock that a later claim with the same reference took over after it expired.
 	 */
 	public function test_release_by_a_former_holder_keeps_a_same_reference_takeover(): void {
-		$this->skip_when_transients_live_in_object_cache();
 		$order    = wc_create_order();
 		$lock_key = $this->persistence_vocabulary->get_order_lock_key( $order );
 
@@ -169,7 +166,6 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	 * @testdox A former holder releasing between a takeover and the taker's holder record write should keep the takeover.
 	 */
 	public function test_release_by_a_former_holder_during_a_takeover_keeps_the_takeover(): void {
-		$this->skip_when_transients_live_in_object_cache();
 		$order    = wc_create_order();
 		$lock_key = $this->persistence_vocabulary->get_order_lock_key( $order );
 
@@ -199,7 +195,6 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	 * @testdox A former holder whose lock is taken over between its holder check and its delete should keep the takeover.
 	 */
 	public function test_release_keeps_a_takeover_made_after_its_holder_check(): void {
-		$this->skip_when_transients_live_in_object_cache();
 		$order    = wc_create_order();
 		$lock_key = $this->persistence_vocabulary->get_order_lock_key( $order );
 
@@ -224,38 +219,6 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox With transients in the object cache, a former holder should not release a lock a same-reference claim made after it expired.
-	 */
-	public function test_object_cache_release_by_a_former_holder_keeps_a_same_reference_claim(): void {
-		$order    = wc_create_order();
-		$lock_key = $this->persistence_vocabulary->get_order_lock_key( $order );
-		$was_ext  = wp_using_ext_object_cache( true );
-
-		try {
-			$first_token = $this->sut->claim( $order, $this->persistence_vocabulary, 'capture_key', 'capture' );
-			$this->assertNotNull( $first_token );
-			// The cache drops the expired lock and a second claim with the same lock value (for example, a second lifecycle
-			// event for the same payment reference) claims it.
-			wp_cache_delete( $lock_key, 'transient' );
-			$second_token = $this->sut->claim( $order, $this->persistence_vocabulary, 'capture_key', 'capture' );
-			$this->assertNotNull( $second_token );
-
-			$this->sut->release( $order, $this->persistence_vocabulary, $first_token );
-
-			$this->assertSame( 'capture_key', wp_cache_get( $lock_key, 'transient' ), 'A former holder must not release the current holder lock.' );
-			$this->assertNull( $this->sut->claim( $order, $this->persistence_vocabulary, 'refund_key', 'refund' ), 'A third operation must not start while the second holds the lock.' );
-
-			$this->sut->release( $order, $this->persistence_vocabulary, $second_token );
-
-			$this->assertFalse( wp_cache_get( $lock_key, 'transient' ), 'The current holder must still release its lock.' );
-		} finally {
-			wp_cache_delete( $lock_key, 'transient' );
-			wp_cache_delete( $lock_key . '_holder', 'transient' );
-			wp_using_ext_object_cache( (bool) $was_ext );
-		}
-	}
-
-	/**
 	 * @testdox A claim should win when only an unexpired expiry row is left behind, and replace that expiry ($_dataName).
 	 *
 	 * @dataProvider leftover_expiry_cases
@@ -263,7 +226,6 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	 * @param bool $equal_to_own Whether the leftover expiry equals the one the claim writes, so the claim's update writes no row.
 	 */
 	public function test_claim_wins_over_a_leftover_expiry_row_without_a_value_row( bool $equal_to_own ): void {
-		$this->skip_when_transients_live_in_object_cache();
 		$order    = wc_create_order();
 		$lock_key = $this->persistence_vocabulary->get_order_lock_key( $order );
 		// A release that stopped between deleting the value row and the expiry row leaves the expiry alone.
@@ -298,7 +260,6 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	 * @param string $claim_value Lock value this claim inserts.
 	 */
 	public function test_claim_loses_to_a_takeover_before_it_replaces_an_expired_leftover_expiry( string $rival_value, string $claim_value ): void {
-		$this->skip_when_transients_live_in_object_cache();
 		$order    = wc_create_order();
 		$lock_key = $this->persistence_vocabulary->get_order_lock_key( $order );
 		$this->insert_lock_row( '_transient_timeout_' . $lock_key, (string) ( time() - 10 ) );
@@ -331,7 +292,6 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	 * @testdox A claim should win, with an expiry, when the holder releases the lock between the claim's expiry read and its value insert.
 	 */
 	public function test_claim_wins_when_the_holder_releases_between_its_expiry_read_and_value_insert(): void {
-		$this->skip_when_transients_live_in_object_cache();
 		$order        = wc_create_order();
 		$lock_key     = $this->persistence_vocabulary->get_order_lock_key( $order );
 		$holder_token = $this->sut->claim( $order, $this->persistence_vocabulary, 'holder_key', 'payment operation' );
@@ -360,7 +320,6 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	 * @testdox A claim should keep a lock whose expiry a refused rival filled in after the holder released the lock.
 	 */
 	public function test_claim_keeps_the_lock_when_a_refused_rival_fills_in_its_expiry(): void {
-		$this->skip_when_transients_live_in_object_cache();
 		$order        = wc_create_order();
 		$lock_key     = $this->persistence_vocabulary->get_order_lock_key( $order );
 		$holder_token = $this->sut->claim( $order, $this->persistence_vocabulary, 'holder_key', 'payment operation' );
@@ -393,7 +352,6 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	 * @testdox A claim should refuse a leftover value row without an expiry row and give that row an expiry.
 	 */
 	public function test_claim_refuses_a_leftover_value_row_without_an_expiry_row(): void {
-		$this->skip_when_transients_live_in_object_cache();
 		$order    = wc_create_order();
 		$lock_key = $this->persistence_vocabulary->get_order_lock_key( $order );
 		// A claim that stopped between writing its value row and its expiry row leaves the value alone.
@@ -413,7 +371,6 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	 * @testdox Reading an expired lock for a refusal log should not delete the rows of a takeover that ran meanwhile.
 	 */
 	public function test_refusal_log_read_of_an_expired_lock_keeps_a_concurrent_takeover(): void {
-		$this->skip_when_transients_live_in_object_cache();
 		$order    = wc_create_order();
 		$lock_key = $this->persistence_vocabulary->get_order_lock_key( $order );
 		$this->insert_lock_rows( $lock_key, 'stale_key', time() - 10 );
@@ -447,7 +404,6 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	 * @testdox A claim that takes over an expired lock logs one warning naming the former holder's operation and age.
 	 */
 	public function test_takeover_of_an_expired_lock_logs_the_former_holder(): void {
-		$this->skip_when_transients_live_in_object_cache();
 		$order    = wc_create_order();
 		$lock_key = $this->persistence_vocabulary->get_order_lock_key( $order );
 		$this->insert_lock_rows( $lock_key, 'pi_dead', time() - 12 );
@@ -479,7 +435,6 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	 * @testdox A claim that takes over an expired lock whose holder record names another lock value logs the former holder as unknown.
 	 */
 	public function test_takeover_with_a_holder_record_of_another_lock_logs_an_unknown_holder(): void {
-		$this->skip_when_transients_live_in_object_cache();
 		$order    = wc_create_order();
 		$lock_key = $this->persistence_vocabulary->get_order_lock_key( $order );
 		$this->insert_lock_rows( $lock_key, 'pi_dead', time() - 12 );
@@ -520,7 +475,6 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	 * @testdox Of two overlapping takeovers of an expired lock, only the winner logs a takeover line.
 	 */
 	public function test_only_the_winning_takeover_logs_a_line(): void {
-		$this->skip_when_transients_live_in_object_cache();
 		$order    = wc_create_order();
 		$lock_key = $this->persistence_vocabulary->get_order_lock_key( $order );
 		$this->insert_lock_rows( $lock_key, 'pi_dead', time() - 12 );
@@ -549,212 +503,66 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox With transients in the object cache, a claim made after the cache dropped an expired lock logs the former holder, whose record is kept for a day.
+	 * @testdox Nothing a cache does frees or blocks a held lock: $cache_event.
+	 *
+	 * @testWith ["cache flushed while held"]
+	 *           ["cache that loses every write"]
+	 *           ["while WordPress is installing"]
+	 *
+	 * @param string $cache_event What the persistent object cache does while the lock is held.
 	 */
-	public function test_object_cache_claim_after_the_lock_expired_logs_the_former_holder(): void {
-		global $wp_object_cache;
+	public function test_nothing_a_cache_does_frees_or_blocks_a_held_lock( string $cache_event ): void {
+		global $wp_object_cache, $wpdb;
 
-		$order     = wc_create_order();
-		$lock_key  = $this->persistence_vocabulary->get_order_lock_key( $order );
-		$was_ext   = wp_using_ext_object_cache( true );
-		$was_cache = $wp_object_cache;
-		// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Records the expiry of each write; restored below.
-		$wp_object_cache = new class() extends \WP_Object_Cache {
-			/**
-			 * Expiry of each write, by key.
-			 *
-			 * @var array<string,int>
-			 */
-			public array $expiries = array();
+		$order      = wc_create_order();
+		$lock_key   = $this->persistence_vocabulary->get_order_lock_key( $order );
+		$row_names  = array( '_transient_' . $lock_key, '_transient_timeout_' . $lock_key, '_transient_' . $lock_key . '_holder', '_transient_timeout_' . $lock_key . '_holder' );
+		$was_cache  = $wp_object_cache;
+		$was_ext    = wp_using_ext_object_cache( true );
+		$was_instal = wp_installing( 'while WordPress is installing' === $cache_event );
+		if ( 'cache that loses every write' === $cache_event ) {
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restored in finally.
+			$wp_object_cache = new class() extends \WP_Object_Cache {
+				// phpcs:ignore Squiz.Commenting.FunctionComment.Missing -- Accepts every write and keeps none.
+				public function set( $key, $data, $group = 'default', $expire = 0 ) {
+					return true;
+				}
+			};
+		}
 
-			/**
-			 * Record the expiry, then store.
-			 *
-			 * @param int|string $key    Key.
-			 * @param mixed      $data   Data.
-			 * @param string     $group  Group.
-			 * @param int        $expire Expiry.
-			 * @return bool
-			 */
-			public function set( $key, $data, $group = 'default', $expire = 0 ) {
-				$this->expiries[ (string) $key ] = (int) $expire;
-				return parent::set( $key, $data, $group, $expire );
-			}
-		};
-
-		$logger = RecordingWcLogger::install();
 		try {
-			$this->assertNotNull( $this->sut->claim( $order, $this->persistence_vocabulary, 'pi_dead', 'checkout' ) );
-			$this->assertSame( DAY_IN_SECONDS, $wp_object_cache->expiries[ $lock_key . '_holder' ] ?? null, 'The holder record outlives its lock.' );
-			$this->assertSame( array(), $this->get_takeover_lines( $logger ) );
-			// The cache drops the expired lock and keeps the holder record.
-			wp_cache_delete( $lock_key, 'transient' );
+			$token = $this->sut->claim( $order, $this->persistence_vocabulary, 'pi_held', 'checkout' );
+			$this->assertNotNull( $token );
+			$autoloads = $wpdb->get_col( $wpdb->prepare( "SELECT autoload FROM {$wpdb->options} WHERE option_name IN (%s, %s, %s, %s)", $row_names[0], $row_names[1], $row_names[2], $row_names[3] ) );
+			$this->assertSame( array( 'off', 'off', 'off', 'off' ), $autoloads, 'The claim writes the four rows, none autoloaded.' );
+			$this->assertFalse( wp_cache_get( $lock_key, 'transient' ), 'Nothing of the lock is in the cache.' );
+			$this->assertFalse( wp_cache_get( $lock_key . '_holder', 'transient' ), 'Nothing of the holder is in the cache.' );
 
-			$this->assertNotNull( $this->sut->claim( $order, $this->persistence_vocabulary, 'pi_dead', 'payment status update' ) );
+			wp_cache_flush();
+			$logger = RecordingWcLogger::install();
 
-			$lines = $this->get_takeover_lines( $logger );
-			$this->assertCount( 1, $lines );
-			$this->assertSame( sprintf( 'order payment lock taken over: order %d, by payment status update, from checkout claimed %ds ago', $order->get_id(), $lines[0]['context']['former_age_seconds'] ), $lines[0]['message'] );
-			$this->assertSame( 'checkout', $lines[0]['context']['former_operation'] );
-			$this->assertLessThanOrEqual( 1, $lines[0]['context']['former_age_seconds'] );
-			$this->assertSame( 'pi_dead', $lines[0]['context']['former_lock_value'] );
+			$this->assertNull( $this->sut->claim( $order, $this->persistence_vocabulary, 'pi_second', 'refund' ), 'The held lock still refuses a second claim.' );
+			$this->sut->log_refusal( $order, $this->persistence_vocabulary, 'refund' );
+			$this->assertMatchesRegularExpression( '/held by checkout for \d+s$/', $logger->lines[0][1] ?? '', 'The refusal names the holder and its age.' );
+
+			$this->sut->release( $order, $this->persistence_vocabulary, $token );
+			foreach ( $row_names as $row_name ) {
+				$this->assertNull( $this->read_lock_row( $row_name ), "The release removes {$row_name}." );
+			}
+
+			// The same request claims, releases and claims again.
+			$again = $this->sut->claim( $order, $this->persistence_vocabulary, 'pi_again', 'checkout' );
+			$this->assertNotNull( $again );
+			$this->sut->release( $order, $this->persistence_vocabulary, (string) $again );
+			$third = $this->sut->claim( $order, $this->persistence_vocabulary, 'pi_third', 'checkout' );
+			$this->assertNotNull( $third, 'A request can claim the lock it released.' );
+			$this->sut->release( $order, $this->persistence_vocabulary, (string) $third );
 		} finally {
-			wp_cache_delete( $lock_key, 'transient' );
-			wp_cache_delete( $lock_key . '_holder', 'transient' );
 			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restores the cache replaced above.
 			$wp_object_cache = $was_cache;
+			wp_installing( $was_instal );
 			wp_using_ext_object_cache( (bool) $was_ext );
 		}
-	}
-
-	/**
-	 * @testdox With transients in the object cache, a claim that wins the lock as its holder releases it logs no takeover and keeps its own holder record.
-	 */
-	public function test_object_cache_claim_racing_a_release_logs_no_takeover(): void {
-		$order  = wc_create_order();
-		$holder = $this->create_lock();
-		$sut    = $this->create_lock();
-		$logger = RecordingWcLogger::install();
-
-		$this->with_racing_object_cache(
-			$order,
-			function ( $cache, string $lock_key ) use ( $order, $holder, $sut, $logger ): void {
-				$holder_token = (string) $holder->claim( $order, $this->persistence_vocabulary, 'pi_paid', 'checkout' );
-				// The holder releases right before this claim's add reaches the cache.
-				$cache->before_add = array( $lock_key, fn() => $holder->release( $order, $this->persistence_vocabulary, $holder_token ) );
-
-				$this->assertNotNull( $sut->claim( $order, $this->persistence_vocabulary, 'pi_paid', 'payment status update' ) );
-
-				$this->assertNull( $cache->before_add, 'The release must have run.' );
-				$this->assertSame( array(), $this->get_takeover_lines( $logger ), 'A lock its holder released is not taken over.' );
-				$this->assertSame( 'payment status update', $this->read_holder_record( $order )['operation'] ?? null, 'The holder record is the new claim\'s.' );
-			}
-		);
-	}
-
-	/**
-	 * @testdox With transients in the object cache, a claim made as a release deletes the lock logs no takeover, keeps its holder record and can release its lock.
-	 */
-	public function test_object_cache_claim_between_the_release_deletes_keeps_its_record(): void {
-		$order  = wc_create_order();
-		$holder = $this->create_lock();
-		$sut    = $this->create_lock();
-		$logger = RecordingWcLogger::install();
-
-		$this->with_racing_object_cache(
-			$order,
-			function ( $cache, string $lock_key ) use ( $order, $holder, $sut, $logger ): void {
-				$holder_token = (string) $holder->claim( $order, $this->persistence_vocabulary, 'pi_paid', 'checkout' );
-				$token        = null;
-				// Another request claims right after the release deletes the lock.
-				$cache->after_delete = array(
-					$lock_key,
-					function () use ( &$token, $order, $sut ): void {
-						$token = $sut->claim( $order, $this->persistence_vocabulary, 'pi_paid', 'payment status update' );
-					},
-				);
-
-				$holder->release( $order, $this->persistence_vocabulary, $holder_token );
-
-				$this->assertNotNull( $token, 'The claim must have run and won.' );
-				$this->assertSame( array(), $this->get_takeover_lines( $logger ), 'A lock its holder released is not taken over.' );
-				$this->assertSame( 'payment status update', $this->read_holder_record( $order )['operation'] ?? null, 'The release leaves the new claim\'s holder record.' );
-
-				$sut->release( $order, $this->persistence_vocabulary, (string) $token );
-
-				$this->assertFalse( wp_cache_get( $lock_key, 'transient' ), 'The new claim releases its own lock.' );
-			}
-		);
-	}
-
-	/**
-	 * @testdox With transients in an object cache that keeps a copy per request, a release whose lock the cache lost leaves a later claim's lock and record alone.
-	 */
-	public function test_object_cache_release_on_a_stale_copy_leaves_a_later_claim_alone(): void {
-		$order  = wc_create_order();
-		$lost   = $this->create_lock();
-		$later  = $this->create_lock();
-		$logger = RecordingWcLogger::install();
-
-		$this->with_request_copy_cache(
-			function ( RequestCopyObjectCache $cache ) use ( $order, $lost, $later, $logger ): void {
-				$lock_key   = $this->persistence_vocabulary->get_order_lock_key( $order );
-				$lost_token = (string) $cache->in_request( 'L', fn() => $lost->claim( $order, $this->persistence_vocabulary, null, 'checkout' ) );
-				$cache->delete_on_server( $lock_key );
-				$later_token = (string) $cache->in_request( 'W', fn() => $later->claim( $order, $this->persistence_vocabulary, null, 'payment status update' ) );
-				$this->assertNotSame( '', $later_token, 'The later claim must win the lost lock.' );
-
-				$cache->in_request( 'L', fn() => $lost->release( $order, $this->persistence_vocabulary, $lost_token ) );
-
-				$this->assertSame( $this->persistence_vocabulary->get_lock_sentinel(), $cache->server_value( $lock_key ), 'The later claim keeps its lock.' );
-				$this->assertSame( $later_token, $cache->server_value( $lock_key . '_holder' )['token'] ?? null, 'The later claim keeps its holder record.' );
-				$lines = $this->get_takeover_lines( $logger );
-				$this->assertCount( 1, $lines );
-				$this->assertSame( 'checkout', $lines[0]['context']['former_operation'] );
-
-				$cache->in_request( 'W', fn() => $later->release( $order, $this->persistence_vocabulary, $later_token ) );
-
-				$this->assertFalse( $cache->server_value( $lock_key ), 'The later claim releases its own lock.' );
-			}
-		);
-	}
-
-	/**
-	 * @testdox With transients in an object cache that keeps a copy per request, a claim logs no takeover of a holder this request read and that has since released.
-	 */
-	public function test_object_cache_claim_reads_a_released_holder_fresh(): void {
-		$order    = wc_create_order();
-		$holder   = $this->create_lock();
-		$sut      = $this->create_lock();
-		$lock_key = $this->persistence_vocabulary->get_order_lock_key( $order );
-		$logger   = RecordingWcLogger::install();
-
-		$this->with_request_copy_cache(
-			function ( RequestCopyObjectCache $cache ) use ( $order, $holder, $sut, $lock_key, $logger ): void {
-				$holder_token = (string) $cache->in_request( 'H', fn() => $holder->claim( $order, $this->persistence_vocabulary, 'pi_paid', 'checkout' ) );
-				$cache->in_request(
-					'R',
-					function () use ( $order, $sut ): void {
-						$this->assertNull( $sut->claim( $order, $this->persistence_vocabulary, 'pi_paid', 'payment status update' ) );
-						$sut->log_refusal( $order, $this->persistence_vocabulary, 'payment status update', null, array(), true );
-					}
-				);
-				$cache->in_request( 'H', fn() => $holder->release( $order, $this->persistence_vocabulary, $holder_token ) );
-				$this->assertFalse( $cache->server_value( $lock_key ), 'The holder released its lock.' );
-				$this->assertFalse( $cache->server_value( $lock_key . '_holder' ), 'The holder released its record.' );
-
-				$token = $cache->in_request( 'R', fn() => $sut->claim( $order, $this->persistence_vocabulary, 'pi_paid', 'payment status update' ) );
-
-				$this->assertNotNull( $token );
-				$this->assertSame( array(), $this->get_takeover_lines( $logger ), 'A lock its holder released is not taken over.' );
-				$this->assertSame( $token, $cache->server_value( $lock_key . '_holder' )['token'] ?? null, 'The holder record is the new claim\'s.' );
-			}
-		);
-	}
-
-	/**
-	 * @testdox With transients in an object cache that keeps a copy per request, a release whose lock the cache lost, running as a later claim adds a lock with another value, keeps that lock.
-	 */
-	public function test_object_cache_release_during_a_claims_add_keeps_a_different_lock(): void {
-		$order = wc_create_order();
-		$lost  = $this->create_lock();
-		$later = $this->create_lock();
-
-		$this->with_request_copy_cache(
-			function ( RequestCopyObjectCache $cache ) use ( $order, $lost, $later ): void {
-				$lock_key   = $this->persistence_vocabulary->get_order_lock_key( $order );
-				$lost_token = (string) $cache->in_request( 'L', fn() => $lost->claim( $order, $this->persistence_vocabulary, 'idem_L', 'checkout' ) );
-				$cache->delete_on_server( $lock_key );
-				$cache->after_add = array( $lock_key, fn() => $cache->in_request( 'L', fn() => $lost->release( $order, $this->persistence_vocabulary, $lost_token ) ) );
-
-				$later_token = $cache->in_request( 'W', fn() => $later->claim( $order, $this->persistence_vocabulary, 'pi_W', 'payment status update' ) );
-
-				$this->assertNull( $cache->after_add, 'The release must have run.' );
-				$this->assertNotNull( $later_token );
-				$this->assertSame( 'pi_W', $cache->server_value( $lock_key ), 'The later claim keeps its lock.' );
-				$this->assertSame( $later_token, $cache->server_value( $lock_key . '_holder' )['token'] ?? null, 'The later claim keeps its holder record.' );
-			}
-		);
 	}
 
 	/**
@@ -770,7 +578,6 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	 * @param string   $level        Expected level.
 	 */
 	public function test_refusal_is_a_notice_only_with_a_retry_queued_and_a_holder_under_a_minute( bool $retry_queued, ?int $holder_age, string $level ): void {
-		$this->skip_when_transients_live_in_object_cache();
 		$order    = wc_create_order();
 		$lock_key = $this->persistence_vocabulary->get_order_lock_key( $order );
 		$this->insert_lock_rows( $lock_key, 'pi_live', time() + 200 );
@@ -786,28 +593,19 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A claim the request never releases is released at shutdown, at the last priority, with its holder record (object cache: $object_cache).
-	 *
-	 * @testWith [false]
-	 *           [true]
-	 *
-	 * @param bool $object_cache Whether transients live in the object cache.
+	 * @testdox A claim the request never releases is released at shutdown, at the last priority, with its holder record.
 	 */
-	public function test_claim_never_released_is_released_at_shutdown( bool $object_cache ): void {
-		$this->in_storage_mode(
-			$object_cache,
-			function ( \WC_Order $order ): void {
-				$sut = $this->create_lock();
+	public function test_claim_never_released_is_released_at_shutdown(): void {
+		$order = wc_create_order();
+		$sut   = $this->create_lock();
 
-				$this->assertNotNull( $sut->claim( $order, $this->persistence_vocabulary, 'pi_dying', 'checkout' ) );
-				$this->assertSame( PHP_INT_MAX, has_action( 'shutdown', array( $sut, 'release_held_claims' ) ) );
+		$this->assertNotNull( $sut->claim( $order, $this->persistence_vocabulary, 'pi_dying', 'checkout' ) );
+		$this->assertSame( PHP_INT_MAX, has_action( 'shutdown', array( $sut, 'release_held_claims' ) ) );
 
-				$sut->release_held_claims();
+		$sut->release_held_claims();
 
-				$this->assertFalse( $this->get_order_payment_lock_value( $order, $this->persistence_vocabulary ), 'The lock is released.' );
-				$this->assertFalse( $this->read_holder_record( $order ), 'Its holder record goes with it.' );
-			}
-		);
+		$this->assertFalse( $this->get_order_payment_lock_value( $order, $this->persistence_vocabulary ), 'The lock is released.' );
+		$this->assertFalse( $this->read_holder_record( $order ), 'Its holder record goes with it.' );
 	}
 
 	/**
@@ -846,34 +644,21 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Releasing at shutdown leaves a lock another request took over after this one's expired (object cache: $object_cache).
-	 *
-	 * @testWith [false]
-	 *           [true]
-	 *
-	 * @param bool $object_cache Whether transients live in the object cache.
+	 * @testdox Releasing at shutdown leaves a lock another request took over after this one's expired.
 	 */
-	public function test_shutdown_release_leaves_a_takeover_alone( bool $object_cache ): void {
-		$this->in_storage_mode(
-			$object_cache,
-			function ( \WC_Order $order ) use ( $object_cache ): void {
-				$sut      = $this->create_lock();
-				$taker    = $this->create_lock();
-				$lock_key = $this->persistence_vocabulary->get_order_lock_key( $order );
-				$this->assertNotNull( $sut->claim( $order, $this->persistence_vocabulary, 'pi_same', 'checkout' ) );
-				if ( $object_cache ) {
-					wp_cache_delete( $lock_key, 'transient' );
-				} else {
-					$this->update_lock_row( '_transient_timeout_' . $lock_key, (string) ( time() - 1 ) );
-				}
-				$this->assertNotNull( $taker->claim( $order, $this->persistence_vocabulary, 'pi_same', 'payment status update' ) );
+	public function test_shutdown_release_leaves_a_takeover_alone(): void {
+		$order    = wc_create_order();
+		$sut      = $this->create_lock();
+		$taker    = $this->create_lock();
+		$lock_key = $this->persistence_vocabulary->get_order_lock_key( $order );
+		$this->assertNotNull( $sut->claim( $order, $this->persistence_vocabulary, 'pi_same', 'checkout' ) );
+		$this->update_lock_row( '_transient_timeout_' . $lock_key, (string) ( time() - 1 ) );
+		$this->assertNotNull( $taker->claim( $order, $this->persistence_vocabulary, 'pi_same', 'payment status update' ) );
 
-				$sut->release_held_claims();
+		$sut->release_held_claims();
 
-				$this->assertSame( 'pi_same', $this->get_order_payment_lock_value( $order, $this->persistence_vocabulary ), 'The taker keeps its lock.' );
-				$this->assertSame( 'payment status update', $this->read_holder_record( $order )['operation'] ?? null, 'The taker keeps its holder record.' );
-			}
-		);
+		$this->assertSame( 'pi_same', $this->get_order_payment_lock_value( $order, $this->persistence_vocabulary ), 'The taker keeps its lock.' );
+		$this->assertSame( 'payment status update', $this->read_holder_record( $order )['operation'] ?? null, 'The taker keeps its holder record.' );
 	}
 
 	/**
@@ -930,125 +715,6 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Run a test body with transients in an object cache that runs another request's step once, right before the add
-	 * of the key in its `before_add` or right after the delete of the key in its `after_delete`.
-	 *
-	 * @param \WC_Order $order Order whose lock the body works on.
-	 * @param callable  $body  Test body, given the cache and the order's lock key.
-	 */
-	private function with_racing_object_cache( \WC_Order $order, callable $body ): void {
-		global $wp_object_cache;
-
-		$was_ext   = wp_using_ext_object_cache( true );
-		$was_cache = $wp_object_cache;
-		// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restored below.
-		$wp_object_cache = new class() extends \WP_Object_Cache {
-			/**
-			 * Key and step to run once before that key's add.
-			 *
-			 * @var array{0:string,1:callable}|null
-			 */
-			public ?array $before_add = null;
-
-			/**
-			 * Key and step to run once after that key's delete.
-			 *
-			 * @var array{0:string,1:callable}|null
-			 */
-			public ?array $after_delete = null;
-
-			/**
-			 * Run the armed step, then add.
-			 *
-			 * @param int|string $key    Key.
-			 * @param mixed      $data   Data.
-			 * @param string     $group  Group.
-			 * @param int        $expire Expiry.
-			 * @return bool
-			 */
-			public function add( $key, $data, $group = 'default', $expire = 0 ) {
-				if ( null !== $this->before_add && (string) $key === $this->before_add[0] ) {
-					$step             = $this->before_add[1];
-					$this->before_add = null;
-					$step();
-				}
-				return parent::add( $key, $data, $group, $expire );
-			}
-
-			/**
-			 * Delete, then run the armed step.
-			 *
-			 * @param int|string $key        Key.
-			 * @param string     $group      Group.
-			 * @param bool       $deprecated Unused.
-			 * @return bool
-			 */
-			public function delete( $key, $group = 'default', $deprecated = false ) {
-				$deleted = parent::delete( $key, $group, $deprecated );
-				if ( null !== $this->after_delete && (string) $key === $this->after_delete[0] ) {
-					$step               = $this->after_delete[1];
-					$this->after_delete = null;
-					$step();
-				}
-				return $deleted;
-			}
-		};
-
-		try {
-			$body( $wp_object_cache, $this->persistence_vocabulary->get_order_lock_key( $order ) );
-		} finally {
-			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restores the cache replaced above.
-			$wp_object_cache = $was_cache;
-			wp_using_ext_object_cache( (bool) $was_ext );
-		}
-	}
-
-	/**
-	 * Run a test body with transients in an object cache that keeps a copy per request apart from its server.
-	 *
-	 * @param callable $body Test body, given the cache.
-	 */
-	private function with_request_copy_cache( callable $body ): void {
-		$was_ext   = wp_using_ext_object_cache( true );
-		$was_cache = $GLOBALS['wp_object_cache'];
-		$cache     = new RequestCopyObjectCache();
-		// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restored below.
-		$GLOBALS['wp_object_cache'] = $cache;
-
-		try {
-			$body( $cache );
-		} finally {
-			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restores the cache replaced above.
-			$GLOBALS['wp_object_cache'] = $was_cache;
-			wp_using_ext_object_cache( (bool) $was_ext );
-		}
-	}
-
-	/**
-	 * Run a test body on a new order with transients in the database or in the object cache.
-	 *
-	 * @param bool     $object_cache Whether transients live in the object cache.
-	 * @param callable $body         Test body, given the order.
-	 */
-	private function in_storage_mode( bool $object_cache, callable $body ): void {
-		if ( ! $object_cache ) {
-			$this->skip_when_transients_live_in_object_cache();
-		}
-		$order    = wc_create_order();
-		$lock_key = $this->persistence_vocabulary->get_order_lock_key( $order );
-		$was_ext  = wp_using_ext_object_cache( $object_cache ? true : wp_using_ext_object_cache() );
-		try {
-			$body( $order );
-		} finally {
-			if ( $object_cache ) {
-				wp_cache_delete( $lock_key, 'transient' );
-				wp_cache_delete( $lock_key . '_holder', 'transient' );
-			}
-			wp_using_ext_object_cache( (bool) $was_ext );
-		}
-	}
-
-	/**
 	 * Read the order payment lock's holder record as stored.
 	 *
 	 * @param \WC_Order $order Order.
@@ -1056,10 +722,7 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	 */
 	private function read_holder_record( \WC_Order $order ) {
 		$holder_key = $this->persistence_vocabulary->get_order_lock_key( $order ) . '_holder';
-		if ( wp_using_ext_object_cache() ) {
-			return wp_cache_get( $holder_key, 'transient' );
-		}
-		$stored = $this->read_lock_row( '_transient_' . $holder_key );
+		$stored     = $this->read_lock_row( '_transient_' . $holder_key );
 
 		return null === $stored ? false : maybe_unserialize( $stored );
 	}
@@ -1105,15 +768,6 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 				)
 			)
 		);
-	}
-
-	/**
-	 * Skip a test that drives the database lock path when transients live in a persistent object cache.
-	 */
-	private function skip_when_transients_live_in_object_cache(): void {
-		if ( wp_using_ext_object_cache() ) {
-			$this->markTestSkipped( 'The database lock path only runs without a persistent object cache.' );
-		}
 	}
 
 	/**
