@@ -219,6 +219,44 @@ class TransientRowLockTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A fresh claim should be refused when its value row is deleted by name and another claim of the same value fills the gap before its expiry write.
+	 */
+	public function test_fresh_claim_whose_value_row_was_replaced_before_its_expiry_write_is_refused(): void {
+		$holder_key = self::KEY . '_holder';
+
+		// Right after the first claim inserts its value row, the row is deleted by name and a second claim of the same value runs whole.
+		$replaced    = false;
+		$second      = false;
+		$seen_insert = false;
+		$replace     = function ( $query ) use ( &$replace, &$replaced, &$second, &$seen_insert, $holder_key ) {
+			if ( ! $seen_insert ) {
+				$seen_insert = 0 === strpos( ltrim( $query ), 'INSERT IGNORE' ) && false !== strpos( $query, "'_transient_" . self::KEY . "'" );
+				return $query;
+			}
+			remove_filter( 'query', $replace );
+			$replaced = true;
+			$this->delete_row( '_transient_' . self::KEY );
+			$second = $this->sut->claim( self::KEY, 'same_value', 300, $holder_key, 'second_holder' );
+			return $query;
+		};
+		add_filter( 'query', $replace );
+		$first = $this->sut->claim( self::KEY, 'same_value', 300, $holder_key, 'first_holder' );
+		remove_filter( 'query', $replace );
+
+		$this->assertTrue( $replaced, 'The value row must have been replaced.' );
+		$this->assertTrue( $second, 'The second claim holds the lock.' );
+		$this->assertFalse( $first, 'The first claim must not hold a row another claim inserted.' );
+		$this->assertSame( 'second_holder', $this->sut->read_holder( $holder_key )['record'] ?? null, 'The holder record is the second claim\'s.' );
+
+		$this->sut->release( self::KEY, 'same_value', $holder_key, $this->sut->read_holder( $holder_key )['stored'] ?? '' );
+
+		$this->assertNull( $this->read_row( '_transient_' . self::KEY ), 'The second claim releases its lock.' );
+		$this->assertNull( $this->read_row( '_transient_timeout_' . self::KEY ) );
+		$this->assertNull( $this->read_row( '_transient_' . $holder_key ) );
+		$this->assertNull( $this->read_row( '_transient_timeout_' . $holder_key ) );
+	}
+
+	/**
 	 * @testdox The holder read should return the caller's record, the stored row and its expiry, expired or not, and nothing for a row it did not write.
 	 */
 	public function test_holder_read_returns_the_record_its_expiry_and_the_stored_row_expired_or_not(): void {

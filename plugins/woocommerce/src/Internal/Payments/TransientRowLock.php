@@ -71,7 +71,7 @@ class TransientRowLock {
 		// Read before the expiry insert, which overwrites the insert ID.
 		$lock_row = 1 === $inserted ? (int) $wpdb->insert_id : 0;
 		if ( 1 === $inserted ) {
-			$claimed = $this->write_claimed_lock_expiry( $value_option, $timeout_option, $value, $leftover_timeout, $expiration );
+			$claimed = $this->write_claimed_lock_expiry( $value_option, $timeout_option, $value, $lock_row, $leftover_timeout, $expiration );
 		} else {
 			$claimed = $this->take_over_expired_lock_rows( $value_option, $timeout_option, $value, $expiration, $holder, $taken_over, $lock_row );
 		}
@@ -235,11 +235,12 @@ class TransientRowLock {
 	 * @param string      $value_option     Lock value option name.
 	 * @param string      $timeout_option   Lock expiry option name.
 	 * @param string      $stored_value     Lock value this request inserted, as stored.
+	 * @param int         $lock_row         ID of the value row this request inserted.
 	 * @param string|null $leftover_timeout Expiry row value read before the value row was inserted, if any.
 	 * @param string      $expiration       New lock expiry timestamp.
 	 * @return bool True when this request holds the lock.
 	 */
-	private function write_claimed_lock_expiry( string $value_option, string $timeout_option, string $stored_value, ?string $leftover_timeout, string $expiration ): bool {
+	private function write_claimed_lock_expiry( string $value_option, string $timeout_option, string $stored_value, int $lock_row, ?string $leftover_timeout, string $expiration ): bool {
 		global $wpdb;
 
 		if ( null === $leftover_timeout ) {
@@ -263,7 +264,7 @@ class TransientRowLock {
 		// was replaced by a takeover.
 		$rows = $this->select_lock_rows( $value_option, $timeout_option );
 
-		if ( ! isset( $rows[ $value_option ] ) || $rows[ $value_option ]->option_value !== $stored_value ) {
+		if ( ! isset( $rows[ $value_option ] ) || $rows[ $value_option ]->option_value !== $stored_value || (int) $rows[ $value_option ]->option_id !== $lock_row ) {
 			return false;
 		}
 
