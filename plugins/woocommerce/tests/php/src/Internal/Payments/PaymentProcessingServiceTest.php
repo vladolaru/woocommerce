@@ -3422,7 +3422,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A submission whose earlier request took nothing is refused without a charge and leaves the order pending, and the next submission charges the new card once.
 	 *
 	 * The order is pending again before the resubmit, as a Store API checkout leaves it, so a refusal that changed the
-	 * status would show. The second submission's lookup fails, the third finds no intent and is refused, and the fourth,
+	 * status would show. The second submission's lookup fails, the third finds no intent on the customer's list or the
+	 * account's and is refused, and the fourth,
 	 * with a new payment method and no kept key, charges once. The first submission's own failure is the staging, so the
 	 * Failed status notes are counted from the second submission on.
 	 */
@@ -3458,6 +3459,14 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				)
 			),
 			$idempotency_error,
+			$this->json_transport_response(
+				200,
+				array(
+					'object'   => 'list',
+					'data'     => array(),
+					'has_more' => false,
+				)
+			),
 			$this->json_transport_response(
 				200,
 				array(

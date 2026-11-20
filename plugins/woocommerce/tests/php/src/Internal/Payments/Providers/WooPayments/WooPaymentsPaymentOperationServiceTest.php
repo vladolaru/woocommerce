@@ -805,16 +805,15 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox When the unresolved key was sent with more than one customer, the lookup reads the account's intents from the first failure, so the earlier payment pays the order and the new card is not charged.
+	 * @testdox When the unresolved key was sent with more than one customer, the lookup reads the account's intents from the order's creation, so the earlier payment pays the order and the new card is not charged.
 	 *
 	 * A customer missing at Stripe is recreated when a charge is refused for it (send_charge_request()), so a resubmit
 	 * under the kept key can go out with a new customer and fail ambiguously again. The earlier request's
 	 * intent belongs to the first customer, so the new customer's complete list proves nothing about it (review 45 F1).
-	 * The first failure is recorded well before the lookup, so the window must start from the record, not the clock
-	 * (review 47 F1). The second request may be the one Stripe ran under the key, so the window ends after its failure
-	 * (review 47 F2).
+	 * The key was kept with no kept time, as before that time was saved, so the window starts at the order's creation,
+	 * before every request under the key, and ends after the lookup.
 	 */
-	public function test_unresolved_key_sent_with_two_customers_looks_up_the_account_list_from_the_first_failure(): void {
+	public function test_unresolved_key_sent_with_two_customers_looks_up_the_account_list_from_the_order_creation(): void {
 		$order     = $this->create_woopayments_order();
 		$failed_at = time() - 1000;
 		$order->update_meta_data( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, 'key_first' );
@@ -851,9 +850,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pi_earlier', $outcome->get_provider_payment_id(), 'The earlier payment pays the order.' );
 		$this->assertSame( 'cus_a', $outcome->get_customer_id() );
 		$this->assertSame(
-			array( 'POST intentions key_first', 'POST intentions key_first', self::account_list_trail( $failed_at, $last_failed_at ) ),
-			self::request_trail( $http_client ),
-			'The account list runs from the first recorded failure to the latest, and the new card is not charged.'
+			array( 'POST intentions key_first', 'POST intentions key_first', 'account list' ),
+			self::with_account_lists_checked( self::request_trail( $http_client ), $order->get_date_created()->getTimestamp(), $before ),
+			'The account list runs from the order creation to the lookup, and the new card is not charged.'
 		);
 	}
 
@@ -903,6 +902,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_b' );
 		$provider = $this->create_provider_over_fake_transport( $http_client, $this->create_account_service( false ), $customer_service );
+		$since    = time();
 
 		$outcome = wc_get_container()->get( PaymentProcessingService::class )->process_checkout_outcome(
 			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_new' ),
@@ -912,8 +912,8 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pi_earlier', $outcome->get_provider_payment_id(), 'The earlier payment pays the order.' );
 		$this->assertSame( 'cus_b', wc_get_order( $order->get_id() )->get_meta( '_stripe_customer_id', true ) );
 		$this->assertSame(
-			array( 'POST intentions key_first', self::account_list_trail( $failed_at, $last_failed_at ) ),
-			self::request_trail( $http_client ),
+			array( 'POST intentions key_first', 'account list' ),
+			self::with_account_lists_checked( self::request_trail( $http_client ), $order->get_date_created()->getTimestamp(), $since ),
 			'Only the refused kept key and the account list reach the platform; the new card is not charged.'
 		);
 	}
@@ -1447,38 +1447,43 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * The list is read-after-write consistent for a finished create (https://docs.stripe.com/search, Step 0 check 2) and
 	 * every money call the earlier request could make creates an intent carrying the order's id and key (Step 0 check 3),
-	 * so a successful lookup without such an intent holding money proves the earlier request took nothing. Stripe sends the
+	 * so the account's list since the key was kept, read after the customer's finds no payment, proves the earlier request
+	 * took nothing when it holds no such intent with money. Stripe sends the
 	 * 400 `idempotency_error` only once it holds a finished result for the key (https://docs.stripe.com/api/idempotent_requests;
 	 * Step 0 check 1), so the lookup comes before anything else is sent. Nothing is sent after it: the refused request already
 	 * sent this attempt's payment method, so the answer queued after the lookup is the bait a second send would take.
 	 *
 	 * @dataProvider provide_earlier_requests_without_money
 	 *
-	 * @param array<int,array<string,mixed>> $intents       Intents listed for the customer, built from the order.
+	 * @param array<int,array<string,mixed>> $intents       Intents listed for the customer and the account, built from the order.
 	 * @param bool                           $adds_note     Whether the merchant gets the "did not go through" note.
 	 */
 	public function test_no_earlier_payment_refuses_without_charging( array $intents, bool $adds_note ): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
 		add_filter( 'wcpay_dev_mode', '__return_false' );
 		$order                  = $this->create_woopayments_order();
+		$listed                 = self::intent_list( array_map( static fn( array $intent ): array => self::order_intent( $order, ...$intent ), $intents ) );
 		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::platform_bad_gateway(),
 			self::stripe_idempotency_error( 'key_first' ),
-			self::intent_list( array_map( static fn( array $intent ): array => self::order_intent( $order, ...$intent ), $intents ) ),
+			$listed,
+			$listed,
 			self::succeeded_charge( 'pi_resent', 'pm_new' ),
 		);
 		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_sent' );
 		$this->charge_attempt( $sut, $order, 'pm_first', 'key_first' );
-		$logger = RecordingWcLogger::install();
+		$logger  = RecordingWcLogger::install();
+		$kept_at = self::kept_at( $order );
+		$since   = time();
 
 		$outcome = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_new', 'key_second' );
 		$fresh   = wc_get_order( $order->get_id() );
 		$trail   = self::request_trail( $http_client );
 
 		$this->assertSame(
-			array( 'POST intentions key_first', 'POST intentions key_first', 'GET intentions?test_mode=0&customer=cus_sent&limit=100' ),
-			$trail
+			array( 'POST intentions key_first', 'POST intentions key_first', 'GET intentions?test_mode=0&customer=cus_sent&limit=100', 'account list' ),
+			self::with_account_lists_checked( $trail, $kept_at, $since )
 		);
 		$this->assertSame( 0, self::posts_after_lookup( $trail ), 'Nothing is sent after the key is retired.' );
 		$this->assertCount( 1, $http_client->responses, 'The bait is still queued.' );
@@ -1494,29 +1499,33 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox After a refusal because the customer's list shows the earlier request took nothing, the next attempt charges once under its own fresh key, with no second lookup.
+	 * @testdox After a refusal because the account's list shows the earlier request took nothing, the next attempt charges once under its own fresh key, with no second lookup.
 	 */
 	public function test_no_earlier_payment_lets_the_next_attempt_charge_once(): void {
 		$order                  = $this->create_woopayments_order();
+		$listed                 = self::intent_list( array( self::order_intent( $order, 'pi_declined', 'requires_payment_method' ), self::order_intent( $order, 'pi_canceled', 'canceled' ) ) );
 		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::platform_bad_gateway(),
 			self::stripe_idempotency_error( 'key_first' ),
-			self::intent_list( array( self::order_intent( $order, 'pi_declined', 'requires_payment_method' ), self::order_intent( $order, 'pi_canceled', 'canceled' ) ) ),
+			$listed,
+			$listed,
 			self::succeeded_charge( 'pi_resent', 'pm_newer' ),
 		);
 		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_sent' );
 		$this->charge_attempt( $sut, $order, 'pm_first', 'key_first' );
+		$kept_at = self::kept_at( $order );
+		$since   = time();
 		$this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_new', 'key_second' );
 
 		$outcome = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_newer', 'key_third' );
 		$fresh   = wc_get_order( $order->get_id() );
 
 		$this->assertSame(
-			array( 'POST intentions key_first', 'POST intentions key_first', 'GET intentions?test_mode=0&customer=cus_sent&limit=100', 'POST intentions key_third' ),
-			self::request_trail( $http_client )
+			array( 'POST intentions key_first', 'POST intentions key_first', 'GET intentions?test_mode=0&customer=cus_sent&limit=100', 'account list', 'POST intentions key_third' ),
+			self::with_account_lists_checked( self::request_trail( $http_client ), $kept_at, $since )
 		);
-		$this->assertSame( 'pm_newer', json_decode( (string) $http_client->requests[3]['body'], true )['payment_method'] ?? null );
+		$this->assertSame( 'pm_newer', json_decode( (string) $http_client->requests[4]['body'], true )['payment_method'] ?? null );
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
 		$this->assertSame( 'pi_resent', $outcome->get_provider_payment_id() );
 		$this->assertSame( '', $fresh->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) );
@@ -1536,23 +1545,27 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order->add_payment_token( $saved_token );
 		$order->save();
 		wp_set_current_user( $user_id );
+		$listed                 = self::intent_list( array( self::order_intent( $order, 'pi_declined', 'requires_payment_method' ), self::order_intent( $order, 'pi_canceled', 'canceled' ) ) );
 		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::platform_bad_gateway(),
 			self::stripe_idempotency_error( 'key_first' ),
-			self::intent_list( array( self::order_intent( $order, 'pi_declined', 'requires_payment_method' ), self::order_intent( $order, 'pi_canceled', 'canceled' ) ) ),
+			$listed,
+			$listed,
 			self::succeeded_charge( 'pi_resent', 'pm_saved' ),
 		);
 		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_sent', null, $this->create_single_resolution_token_service( $saved_token, $user_id, 'pm_saved' ) );
 		$this->charge_attempt( $sut, $order, 'pm_first', 'key_first' );
+		$kept_at = self::kept_at( $order );
+		$since   = time();
 
 		$outcome = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), '', 'key_second', array(), array( 'payment_token' => (string) $saved_token->get_id() ) );
 		$fresh   = wc_get_order( $order->get_id() );
 		$trail   = self::request_trail( $http_client );
 
 		$this->assertSame(
-			array( 'POST intentions key_first', 'POST intentions key_first', 'GET intentions?test_mode=0&customer=cus_sent&limit=100' ),
-			$trail
+			array( 'POST intentions key_first', 'POST intentions key_first', 'GET intentions?test_mode=0&customer=cus_sent&limit=100', 'account list' ),
+			self::with_account_lists_checked( $trail, $kept_at, $since )
 		);
 		$this->assertSame( 'pm_saved', json_decode( (string) $http_client->requests[1]['body'], true )['payment_method'] ?? null, 'The refused request pays with the saved card.' );
 		$this->assertSame( 0, self::posts_after_lookup( $trail ), 'Nothing is sent after the key is retired.' );
@@ -1586,7 +1599,6 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			'no intent (others only)' => array(
 				array(
 					array( 'pi_other_order', 'succeeded', 1000, array( 'metadata' => array( 'order_id' => '987654' ) ) ),
-					array( 'pi_wrong_key', 'succeeded', 1000, array( 'metadata' => array( 'order_key' => 'wc_order_not_this_one' ) ) ),
 					array( 'pi_billing', 'succeeded', 1000, array( 'metadata' => array() ) ),
 				),
 				false,
@@ -1596,20 +1608,17 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A full page without the order's intent whose oldest intent is $_dataName proves no intent: $proves_none.
+	 * @testdox A full customer page without the order's intent whose oldest intent is $_dataName never proves no intent: the account's list settles it.
 	 *
-	 * The list is newest first, so a full page (`has_more`) that reaches back past the earlier request's window holds every
-	 * intent created since; the earlier request was sent at most one request timeout plus its transport retries before the
-	 * failure was recorded, and the window is 300 s (review 44 F6). A page that stops inside the window may have left the
-	 * earlier intent for the next page, so it proves nothing and the account's list around the failure settles it (review
-	 * 67 F3); a complete one without the order refuses the attempt without a charge.
+	 * The customer's list only finds a payment faster. Whatever its oldest intent's age, a full page (`has_more`) goes on
+	 * to the account's list from when the key was kept, and a complete one without the order refuses the attempt without
+	 * a charge.
 	 *
-	 * @dataProvider provide_full_pages_against_the_window
+	 * @dataProvider provide_full_customer_pages
 	 *
-	 * @param int  $oldest_age  Seconds between the page's oldest intent and the recorded failure.
-	 * @param bool $proves_none Whether the page proves the order has no intent, so the account list is not read.
+	 * @param int $oldest_age Seconds between the page's oldest intent and the recorded failure.
 	 */
-	public function test_full_page_proves_no_intent_only_when_it_reaches_back_past_the_window( int $oldest_age, bool $proves_none ): void {
+	public function test_full_customer_page_never_proves_no_intent( int $oldest_age ): void {
 		$order                  = $this->create_woopayments_order();
 		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( self::platform_bad_gateway() );
@@ -1634,21 +1643,18 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 				),
 				true
 			),
+			self::intent_list( array() ),
+			self::succeeded_charge( 'pi_new_card', 'pm_new' ),
 		);
-		if ( ! $proves_none ) {
-			$http_client->responses[] = self::intent_list( array() );
-		}
-		$http_client->responses[] = self::succeeded_charge( 'pi_new_card', 'pm_new' );
+		$kept_at                = self::kept_at( $order );
+		$since                  = time();
 
 		$outcome = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_new', 'key_second' );
 		$trail   = self::request_trail( $http_client );
 
 		$this->assertSame(
-			array_merge(
-				array( 'POST intentions key_first', 'POST intentions key_first', 'GET intentions?test_mode=0&customer=cus_sent&limit=100' ),
-				$proves_none ? array() : array( self::account_list_trail( $failed_at ) )
-			),
-			$trail
+			array( 'POST intentions key_first', 'POST intentions key_first', 'GET intentions?test_mode=0&customer=cus_sent&limit=100', 'account list' ),
+			self::with_account_lists_checked( $trail, $kept_at, $since )
 		);
 		$this->assertSame( 0, self::posts_after_lookup( $trail ), 'Nothing is sent after the key is retired.' );
 		$this->assertSame( 'wcpay_earlier_charge_not_paid', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
@@ -1656,15 +1662,15 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Ages of a full page's oldest intent against the 300 s window.
+	 * Ages of a full customer page's oldest intent, on both sides of the 300 s that once proved no intent.
 	 *
-	 * @return array<string,array{0:int,1:bool}>
+	 * @return array<string,array{0:int}>
 	 */
-	public function provide_full_pages_against_the_window(): array {
+	public function provide_full_customer_pages(): array {
 		return array(
-			'301 s before the failure (past the window)' => array( 301, true ),
-			'300 s before the failure (the window edge)' => array( 300, false ),
-			'1 s before the failure'                     => array( 1, false ),
+			'301 s before the failure' => array( 301 ),
+			'300 s before the failure' => array( 300 ),
+			'1 s before the failure'   => array( 1 ),
 		);
 	}
 
@@ -1685,30 +1691,31 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_earlier_intent_that_gave_its_money_back_does_not_pay_the_order( array $charge, bool $holds_money ): void {
 		$order                  = $this->create_woopayments_order();
-		$http_client            = new FakeHttpClient();
-		$http_client->responses = array(
-			self::platform_bad_gateway(),
-			self::stripe_idempotency_error( 'key_first' ),
-			self::intent_list(
-				array(
-					self::order_intent(
-						$order,
-						'pi_earlier',
-						'succeeded',
-						1000,
-						array( 'charges' => array( 'data' => array( array_merge( array( 'id' => 'ch_earlier' ), $charge ) ) ) )
-					),
-				)
-			),
-			self::succeeded_charge( 'pi_resent', 'pm_new' ),
+		$listed                 = self::intent_list(
+			array(
+				self::order_intent(
+					$order,
+					'pi_earlier',
+					'succeeded',
+					1000,
+					array( 'charges' => array( 'data' => array( array_merge( array( 'id' => 'ch_earlier' ), $charge ) ) ) )
+				),
+			)
 		);
-		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_sent' );
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array_merge(
+			array( self::platform_bad_gateway(), self::stripe_idempotency_error( 'key_first' ), $listed ),
+			// Without money on the customer's list, the account's list is read too.
+			$holds_money ? array() : array( $listed ),
+			array( self::succeeded_charge( 'pi_resent', 'pm_new' ) )
+		);
+		$sut = $this->create_timeout_operation_service( $http_client, 'cus_sent' );
 		$this->charge_attempt( $sut, $order, 'pm_first', 'key_first' );
 
 		$outcome = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_new', 'key_second' );
 
 		$this->assertSame( $holds_money ? 'pi_earlier' : '', $outcome->get_provider_payment_id() );
-		$this->assertCount( 3, $http_client->requests, 'The new card must not be charged.' );
+		$this->assertCount( $holds_money ? 3 : 4, $http_client->requests, 'The new card must not be charged.' );
 		$this->assertCount( 1, $http_client->responses, 'The bait is still queued.' );
 		$this->assertSame( 'pi_resent', json_decode( (string) $http_client->responses[0]['body'], true )['id'] ?? null );
 		if ( ! $holds_money ) {
@@ -1864,13 +1871,15 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			array(
 				self::stripe_idempotency_error( 'key_first' ),
 				self::intent_list( array() ),
+				self::intent_list( array() ),
 				self::succeeded_charge( 'pi_new_card', 'pm_new' ),
 			)
 		);
 		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_sent' );
 		$this->charge_attempt( $sut, $order, 'pm_first', 'key_first' );
-		$failed_at = (int) wc_get_order( $order->get_id() )->get_meta( WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META, true )['failed_at'];
-		$logger    = RecordingWcLogger::install();
+		$kept_at = self::kept_at( $order );
+		$since   = time();
+		$logger  = RecordingWcLogger::install();
 
 		$refused = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_new', 'key_second' );
 		$kept    = wc_get_order( $order->get_id() );
@@ -1893,13 +1902,14 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame(
 			array_merge(
 				array( 'POST intentions key_first', 'POST intentions key_first', 'GET intentions?test_mode=0&customer=cus_sent&limit=100' ),
-				2 === count( $lookup_responses ) ? array( self::account_list_trail( $failed_at ) ) : array(),
+				2 === count( $lookup_responses ) ? array( 'account list' ) : array(),
 				array(
 					'POST intentions key_first',
 					'GET intentions?test_mode=0&customer=cus_sent&limit=100',
+					'account list',
 				)
 			),
-			$trail
+			self::with_account_lists_checked( $trail, $kept_at, $since )
 		);
 		$this->assertSame( 0, self::posts_after_lookup( $trail ), 'Nothing is sent after the key is retired.' );
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $not_taken->get_status() );
@@ -1928,14 +1938,14 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox When the customer's intents cannot settle it ($_dataName), the account's intents since the failure do: the earlier payment pays the order.
+	 * @testdox When the customer's intents cannot settle it ($_dataName), the account's intents since the key was kept do: the earlier payment pays the order.
 	 *
 	 * A deleted customer keeps its PaymentIntents, so the account's list, filtered to intents created from 3600 s before
-	 * the recorded failure and matched on the order id and key, still shows the earlier request's intent (monitor ruling
+	 * the key was kept and matched on the order id and key, still shows the earlier request's intent (monitor ruling
 	 * B). The platform forwards `created` to Stripe's list unchanged (wpcom `wcpay/class-intentions-controller.php:198-210`).
 	 * An answer without a list falls back too, so a changed answer shape cannot refuse every attempt without the merchant
-	 * note (review 45 F5). So does a full customer page that stops inside the 300 s window: the customer's list has no time
-	 * bound and only gets newer, so a later attempt could never read further (review 67 F3).
+	 * note (review 45 F5). So does a full customer page: the customer's list has no time bound and only gets newer, so a
+	 * later attempt could never read further (review 67 F3).
 	 *
 	 * @dataProvider provide_customer_lists_that_fall_back
 	 *
@@ -1957,14 +1967,15 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		);
 		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_sent' );
 		$this->charge_attempt( $sut, $order, 'pm_first', 'key_first' );
-		$failed_at = (int) wc_get_order( $order->get_id() )->get_meta( WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META, true )['failed_at'];
+		$kept_at = self::kept_at( $order );
+		$since   = time();
 
 		$outcome = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_new', 'key_second' );
 		$fresh   = wc_get_order( $order->get_id() );
 
 		$this->assertSame(
-			array( 'POST intentions key_first', 'POST intentions key_first', 'GET intentions?test_mode=0&customer=cus_sent&limit=100', self::account_list_trail( $failed_at ) ),
-			self::request_trail( $http_client ),
+			array( 'POST intentions key_first', 'POST intentions key_first', 'GET intentions?test_mode=0&customer=cus_sent&limit=100', 'account list' ),
+			self::with_account_lists_checked( self::request_trail( $http_client ), $kept_at, $since ),
 			'The new card must not be charged.'
 		);
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
@@ -1978,7 +1989,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * Customer-list answers that send the lookup to the account's list.
 	 *
 	 * Each answer is built when the test runs: PHPUnit runs data providers when it builds the suite, minutes before a late
-	 * test in a whole-plugin run, so a `created` time stamped there can be older than the 300 s window when the test runs.
+	 * test in a whole-plugin run, so a `created` time stamped there is not the time the test runs.
 	 *
 	 * @return array<string,array{0:callable():array<string,mixed>}>
 	 */
@@ -2005,10 +2016,10 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A complete account list without the order's intent proves the earlier request took nothing: the key and record are retired and the attempt is refused without a charge.
 	 *
-	 * The account list holds every intent created since the window start, newest first, and `has_more` is false only when
-	 * no other intent is left in the window (recorded on a local WPCOM platform: `has_more` false once the window holds no
-	 * more intents, true while it does), so a complete page without the order's id and key proves no intent exists
-	 * (review 45 F3).
+	 * The account list holds every intent created since an hour before the key was kept, newest first, and `has_more` is
+	 * false only when no other intent is left in the window (recorded on a local WPCOM platform: `has_more` false once the
+	 * window holds no more intents, true while it does), so a complete page without the order's id and key proves no
+	 * intent exists (review 45 F3).
 	 */
 	public function test_complete_account_list_without_the_order_refuses_without_charging(): void {
 		$order                  = $this->create_woopayments_order();
@@ -2022,15 +2033,16 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		);
 		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_sent' );
 		$this->charge_attempt( $sut, $order, 'pm_first', 'key_first' );
-		$failed_at = (int) wc_get_order( $order->get_id() )->get_meta( WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META, true )['failed_at'];
+		$kept_at = self::kept_at( $order );
+		$since   = time();
 
 		$outcome = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_new', 'key_second' );
 		$fresh   = wc_get_order( $order->get_id() );
 		$trail   = self::request_trail( $http_client );
 
 		$this->assertSame(
-			array( 'POST intentions key_first', 'POST intentions key_first', 'GET intentions?test_mode=0&customer=cus_sent&limit=100', self::account_list_trail( $failed_at ) ),
-			$trail
+			array( 'POST intentions key_first', 'POST intentions key_first', 'GET intentions?test_mode=0&customer=cus_sent&limit=100', 'account list' ),
+			self::with_account_lists_checked( $trail, $kept_at, $since )
 		);
 		$this->assertSame( 0, self::posts_after_lookup( $trail ), 'Nothing is sent after the key is retired.' );
 		$this->assertCount( 1, $http_client->responses, 'The bait is still queued.' );
@@ -2043,6 +2055,568 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( '', $fresh->get_meta( WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META, true ) );
 		$this->assertSame( array(), self::note_texts_containing( $fresh, 'could not be checked' ) );
 		$this->assertSame( array(), self::note_texts_containing( $fresh, 'did not go through' ), 'The list holds only another order\'s intent.' );
+	}
+
+	/**
+	 * @testdox When the shopper's customer changed after the earlier request, the later customer's empty list does not clear: the account's list finds the earlier payment and pays the order.
+	 *
+	 * The first request under the kept key died with no record. A later attempt under the key, sent with another customer,
+	 * timed out and recorded only that customer. The earlier payment is on the first customer, so the later customer's
+	 * complete, empty list proves nothing about it (gate F1).
+	 */
+	public function test_later_customers_empty_list_reads_the_account_list_and_pays_the_order(): void {
+		$order                  = $this->create_order_with_kept_key();
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			self::stripe_api_error( 504 ),
+			self::stripe_idempotency_error( 'key_kept' ),
+			self::intent_list( array() ),
+			self::intent_list( array( self::order_intent( $order, 'pi_earlier', 'succeeded', 1000, array( 'customer' => 'cus_A' ) ) ) ),
+			self::succeeded_charge( 'pi_resent', 'pm_three' ),
+		);
+		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_B' );
+		$this->charge_attempt( $sut, $order, 'pm_two', 'key_second' );
+		$this->assertSame( array( 'cus_B' ), wc_get_order( $order->get_id() )->get_meta( WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META, true )['customers'] ?? null );
+		$since = time();
+
+		$outcome = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_three', 'key_third' );
+
+		$this->assertSame(
+			array( 'POST intentions key_kept', 'POST intentions key_kept', 'GET intentions?test_mode=0&customer=cus_B&limit=100', 'account list' ),
+			self::with_account_lists_checked( self::request_trail( $http_client ), $order->get_date_created()->getTimestamp(), $since ),
+			'No POST under a fresh key.'
+		);
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertSame( 'pi_earlier', $outcome->get_provider_payment_id() );
+		$this->assertContains( "The earlier payment attempt for this order went through, so WooPayments did not take payment from the customer's new payment method.", self::note_texts( $order ) );
+		$this->assertCount( 1, $http_client->responses, 'The bait is still queued.' );
+	}
+
+	/**
+	 * @testdox When a customer joins the record written for a kept key with no record, its complete list without the order's payment goes on to the account list, which finds the earlier payment.
+	 */
+	public function test_complete_list_of_a_customer_that_joined_the_record_reads_the_account_list(): void {
+		$attempt_one            = time();
+		$order                  = $this->create_order_with_kept_key( $attempt_one - 1800 );
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			self::stripe_idempotency_error( 'key_kept' ),
+			self::platform_bad_gateway(),
+			self::stripe_api_error( 504 ),
+			self::stripe_idempotency_error( 'key_kept' ),
+			self::intent_list(
+				array(
+					array(
+						'id'       => 'pi_other_order',
+						'status'   => 'succeeded',
+						'created'  => $attempt_one - 400,
+						'metadata' => array( 'order_id' => '987654' ),
+					),
+				)
+			),
+			self::intent_list( array( self::order_intent( $order, 'pi_earlier', 'succeeded' ) ) ),
+		);
+		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_A' );
+
+		$this->charge_attempt( $sut, $order, 'pm_new', 'key_second' );
+		$this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_new', 'key_third' );
+		$outcome = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_other', 'key_fourth' );
+
+		$this->assertSame(
+			array( 'POST intentions key_kept', 'account list', 'POST intentions key_kept', 'POST intentions key_kept', 'GET intentions?test_mode=0&customer=cus_A&limit=100', 'account list' ),
+			self::with_account_lists_checked( self::request_trail( $http_client ), $attempt_one - 1800, $attempt_one ),
+			'No POST under a fresh key.'
+		);
+		$this->assertSame( 'pi_earlier', $outcome->get_provider_payment_id() );
+	}
+
+	/**
+	 * @testdox A refused kept key whose record names a customer reads the account list from the order's creation, not from the record's failure, when the key was kept before its kept time was saved.
+	 */
+	public function test_record_with_a_customer_reads_the_account_list_from_the_order_creation(): void {
+		$created = time() - 3 * HOUR_IN_SECONDS;
+		$order   = $this->create_order_with_kept_key( $created );
+		$order->update_meta_data(
+			WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META,
+			array(
+				'order_id'       => $order->get_id(),
+				'customers'      => array( 'cus_A' ),
+				'failed_at'      => time() - 2 * HOUR_IN_SECONDS,
+				'last_failed_at' => time() - 2 * HOUR_IN_SECONDS,
+			)
+		);
+		$order->save_meta_data();
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			self::stripe_idempotency_error( 'key_kept' ),
+			self::stripe_no_such_customer(),
+			self::intent_list( array( self::order_intent( $order, 'pi_earlier', 'succeeded', 1000, array( 'created' => time() - 150 * MINUTE_IN_SECONDS ) ) ) ),
+		);
+		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_A' );
+		$since                  = time();
+
+		$outcome = $this->charge_attempt( $sut, $order, 'pm_new', 'key_attempt' );
+
+		$this->assertSame(
+			array( 'POST intentions key_kept', 'GET intentions?test_mode=0&customer=cus_A&limit=100', 'account list' ),
+			self::with_account_lists_checked( self::request_trail( $http_client ), $created, $since )
+		);
+		$this->assertSame( 'pi_earlier', $outcome->get_provider_payment_id() );
+	}
+
+	/**
+	 * @testdox While a record that names no customer exists, a refusal the platform made itself keeps the key and the record, so the next attempt looks up the earlier payment instead of charging under a fresh key.
+	 */
+	public function test_platform_refusal_keeps_the_key_while_a_record_names_no_customer(): void {
+		$order                  = $this->create_order_with_kept_key();
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			self::stripe_idempotency_error( 'key_kept' ),
+			self::platform_bad_gateway(),
+			self::http_json(
+				403,
+				array(
+					'code'    => 'wcpay_blocked_by_fraud_rule',
+					'message' => "There's a problem with this payment. Please try again or use a different payment method.",
+					'data'    => array( 'status' => 403 ),
+				)
+			),
+			self::stripe_idempotency_error( 'key_kept' ),
+			self::intent_list( array( self::order_intent( $order, 'pi_earlier', 'succeeded' ) ) ),
+		);
+		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_sent' );
+		$since                  = time();
+		$this->charge_attempt( $sut, $order, 'pm_new', 'key_second' );
+		$this->assertSame( array(), wc_get_order( $order->get_id() )->get_meta( WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META, true )['customers'] ?? null, 'The failed lookup leaves a record that names no customer.' );
+
+		$blocked = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_new', 'key_third' );
+		$kept    = wc_get_order( $order->get_id() );
+
+		$this->assertSame( 'wcpay_blocked_by_fraud_rule', $blocked->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
+		$this->assertSame( 'key_kept', $kept->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+		$this->assertIsArray( $kept->get_meta( WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META, true ) );
+
+		$paid = $this->charge_attempt( $sut, $kept, 'pm_other', 'key_fourth' );
+
+		$this->assertSame(
+			array( 'POST intentions key_kept', 'account list', 'POST intentions key_kept', 'POST intentions key_kept', 'account list' ),
+			self::with_account_lists_checked( self::request_trail( $http_client ), $order->get_date_created()->getTimestamp(), $since ),
+			'No POST under a fresh key.'
+		);
+		$this->assertSame( 'pi_earlier', $paid->get_provider_payment_id() );
+	}
+
+	/**
+	 * @testdox While a record that names no customer exists, a missing customer is not recreated: no charge under a recovery key, and the key and the record stay.
+	 */
+	public function test_missing_customer_is_not_recreated_while_a_record_names_no_customer(): void {
+		$order = $this->create_order_with_kept_key();
+		$order->update_meta_data(
+			WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META,
+			array(
+				'order_id'       => $order->get_id(),
+				'customers'      => array(),
+				'failed_at'      => time() - 60,
+				'last_failed_at' => time() - 60,
+			)
+		);
+		$order->save_meta_data();
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			self::http_json(
+				404,
+				array(
+					'code'    => 'resource_missing',
+					'message' => 'No such customer: &#039;cus_sent&#039;',
+					'data'    => array( 'status' => 404 ),
+				)
+			),
+			self::succeeded_charge( 'pi_recovered', 'pm_new' ),
+		);
+		$customer_service       = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order', 'replace_missing_customer_for_order' ) )->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_sent' );
+		$customer_service->expects( $this->never() )->method( 'replace_missing_customer_for_order' );
+		$sut = $this->create_timeout_operation_service( $http_client, 'cus_sent', $customer_service );
+
+		$outcome = $this->charge_attempt( $sut, $order, 'pm_new', 'key_attempt' );
+		$fresh   = wc_get_order( $order->get_id() );
+
+		$this->assertSame( array( 'POST intentions key_kept' ), self::request_trail( $http_client ), 'No POST under a recovery key.' );
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( 'key_kept', $fresh->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+		$this->assertSame( array(), $fresh->get_meta( WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META, true )['customers'] ?? null );
+	}
+
+	/**
+	 * @testdox A record that names an empty customer and one customer reads that customer's list first, and an earlier payment there pays the order.
+	 *
+	 * A request sent with no customer is recorded as an empty entry; it names no list to read, so the one customer named
+	 * is the record's only customer.
+	 */
+	public function test_record_with_an_empty_customer_and_one_customer_reads_that_customers_list(): void {
+		$order = $this->create_order_with_kept_key();
+		$order->update_meta_data(
+			WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META,
+			array(
+				'order_id'       => $order->get_id(),
+				'customers'      => array( '', 'cus_A' ),
+				'failed_at'      => time() - 60,
+				'last_failed_at' => time() - 60,
+			)
+		);
+		$order->save_meta_data();
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			self::stripe_idempotency_error( 'key_kept' ),
+			self::intent_list( array( self::order_intent( $order, 'pi_earlier', 'succeeded', 1000, array( 'customer' => '' ) ) ) ),
+		);
+		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_A' );
+
+		$outcome = $this->charge_attempt( $sut, $order, 'pm_new', 'key_attempt' );
+
+		$this->assertSame( array( 'POST intentions key_kept', 'GET intentions?test_mode=0&customer=cus_A&limit=100' ), self::request_trail( $http_client ) );
+		$this->assertSame( 'pi_earlier', $outcome->get_provider_payment_id() );
+	}
+
+	/**
+	 * @testdox An account page with more to read never clears, even when it holds a declined intent of the order: the attempt is refused, the key kept, and the merchant gets one note.
+	 */
+	public function test_account_page_with_more_to_read_never_clears_even_with_a_match(): void {
+		$order                  = $this->create_order_with_kept_key();
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			self::stripe_idempotency_error( 'key_kept' ),
+			self::intent_list( array( self::order_intent( $order, 'pi_declined', 'requires_payment_method' ) ), true ),
+			self::succeeded_charge( 'pi_resent', 'pm_new' ),
+		);
+		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_sent' );
+		$since                  = time();
+
+		$outcome = $this->charge_attempt( $sut, $order, 'pm_new', 'key_attempt' );
+		$fresh   = wc_get_order( $order->get_id() );
+		$trail   = self::request_trail( $http_client );
+
+		$this->assertSame( array( 'POST intentions key_kept', 'account list' ), self::with_account_lists_checked( $trail, $order->get_date_created()->getTimestamp(), $since ) );
+		$this->assertSame( 0, self::posts_after_lookup( $trail ) );
+		$this->assertSame( 'wcpay_charge_lookup_failed', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
+		$this->assertSame( 'key_kept', $fresh->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+		$this->assertIsArray( $fresh->get_meta( WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META, true ) );
+		$this->assertCount( 1, self::note_texts_containing( $fresh, 'could not be checked' ) );
+		$this->assertCount( 1, $http_client->responses, 'The bait is still queued.' );
+	}
+
+	/**
+	 * @testdox An intent that names the order loosely ($_dataName) and holds money stops the conclusion: the attempt is refused as unable to check, the key kept, one note, and the order is not paid from it.
+	 *
+	 * WooPay can pay an order before it calls the store, and the store accepts such a payment when it names the order by ID
+	 * alone or, paid on WooPay, by its number (WooPaymentsIntentCodec::intent_belongs_to_order()). It may be another
+	 * order's, so it never pays the order; while it holds money, no list proves the earlier request took none. An intent
+	 * with the order's ID under another order key is such a match too.
+	 *
+	 * @dataProvider provide_intents_naming_the_order_loosely
+	 *
+	 * @param callable $build_intent Builds the loose intent from the order.
+	 */
+	public function test_intent_naming_the_order_loosely_with_money_stops_the_conclusion( callable $build_intent ): void {
+		$order                  = $this->create_order_with_kept_key();
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			self::stripe_idempotency_error( 'key_kept' ),
+			self::intent_list( array( $build_intent( $order ), self::order_intent( $order, 'pi_declined', 'requires_payment_method' ) ) ),
+			self::succeeded_charge( 'pi_resent', 'pm_new' ),
+		);
+		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_sent' );
+
+		$outcome = $this->charge_attempt( $sut, $order, 'pm_new', 'key_attempt' );
+		$fresh   = wc_get_order( $order->get_id() );
+
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( 'wcpay_charge_lookup_failed', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
+		$this->assertSame( '', $outcome->get_provider_payment_id(), 'The order is never paid from a loose match.' );
+		$this->assertSame( 'key_kept', $fresh->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+		$this->assertCount( 1, self::note_texts_containing( $fresh, 'could not be checked' ) );
+		$this->assertCount( 2, $http_client->requests, 'The new card must not be charged.' );
+	}
+
+	/**
+	 * Intents that name the order loosely and hold money.
+	 *
+	 * @return array<string,array{0:callable(WC_Order):array<string,mixed>}>
+	 */
+	public function provide_intents_naming_the_order_loosely(): array {
+		return array(
+			'by its number, paid on WooPay'      => array(
+				static fn( WC_Order $order ): array => array(
+					'id'       => 'pi_loose',
+					'status'   => 'succeeded',
+					'metadata' => array(
+						'paid_on_woopay' => '1',
+						'order_number'   => (string) $order->get_id(),
+						'order_id'       => '987654',
+					),
+				),
+			),
+			'by its ID, without an order key'    => array(
+				static fn( WC_Order $order ): array => array(
+					'id'       => 'pi_loose',
+					'status'   => 'succeeded',
+					'metadata' => array( 'order_id' => (string) $order->get_id() ),
+				),
+			),
+			'by its ID, under another order key' => array(
+				static fn( WC_Order $order ): array => self::order_intent( $order, 'pi_wrong_key', 'succeeded', 1000, array( 'metadata' => array( 'order_key' => 'wc_order_not_this_one' ) ) ),
+			),
+		);
+	}
+
+	/**
+	 * @testdox A loosely named intent holding money does not block the order's own payment: the order is paid from its own intent.
+	 */
+	public function test_intent_naming_the_order_loosely_does_not_block_its_own_payment(): void {
+		$order                  = $this->create_order_with_kept_key();
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			self::stripe_idempotency_error( 'key_kept' ),
+			self::intent_list(
+				array(
+					array(
+						'id'       => 'pi_loose',
+						'status'   => 'succeeded',
+						'metadata' => array(
+							'paid_on_woopay' => '1',
+							'order_number'   => (string) $order->get_id(),
+							'order_id'       => '987654',
+						),
+					),
+					self::order_intent( $order, 'pi_earlier', 'succeeded' ),
+				)
+			),
+		);
+		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_sent' );
+
+		$outcome = $this->charge_attempt( $sut, $order, 'pm_new', 'key_attempt' );
+
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertSame( 'pi_earlier', $outcome->get_provider_payment_id() );
+	}
+
+	/**
+	 * @testdox The save that keeps a new charge key also saves when it was kept, before the request under it is sent.
+	 */
+	public function test_kept_time_is_saved_with_the_key_before_the_request_is_sent(): void {
+		$order                   = $this->create_woopayments_order();
+		$http_client             = new class() extends FakeHttpClient {
+			/**
+			 * Called with the HTTP method before a request is answered.
+			 *
+			 * @var callable|null
+			 */
+			public $on_request = null;
+
+			/**
+			 * Run the hook, then answer.
+			 *
+			 * @param string      $method         HTTP method.
+			 * @param string      $path           WPCOM path.
+			 * @param string[]    $headers        Request headers.
+			 * @param string|null $body           Request body.
+			 * @param int         $timeout        Request timeout.
+			 * @param bool        $use_user_token Whether to sign with the connection-owner user token.
+			 * @param bool        $blocking       Whether the request should block for the response.
+			 * @return mixed
+			 */
+			public function request( string $method, string $path, array $headers = array(), ?string $body = null, int $timeout = 70, bool $use_user_token = false, bool $blocking = true ) {
+				if ( is_callable( $this->on_request ) ) {
+					call_user_func( $this->on_request, $method );
+				}
+
+				return parent::request( $method, $path, $headers, $body, $timeout, $use_user_token, $blocking );
+			}
+		};
+		$seen                    = array();
+		$http_client->on_request = static function ( string $method ) use ( $order, &$seen ): void {
+			if ( 'POST' === $method ) {
+				$stored = wc_get_order( $order->get_id() );
+				$seen   = array( (string) $stored->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ), (int) $stored->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_KEPT_AT_META, true ), time() );
+			}
+		};
+		$http_client->responses  = array( self::platform_bad_gateway() );
+		$sut                     = $this->create_timeout_operation_service( $http_client, 'cus_sent' );
+		$before                  = time();
+
+		$this->charge_attempt( $sut, $order, 'pm_first', 'key_first' );
+
+		$this->assertSame( 'key_first', $seen[0] ?? null, 'The key is saved before the request.' );
+		$this->assertGreaterThanOrEqual( $before, $seen[1] ?? 0, 'The kept time is saved before the request.' );
+		$this->assertLessThanOrEqual( $seen[2] ?? 0, $seen[1] ?? PHP_INT_MAX );
+	}
+
+	/**
+	 * @testdox The kept time is not rewritten while the key is kept: an attempt under the kept key leaves it as it was.
+	 */
+	public function test_kept_time_is_not_rewritten_while_the_key_is_kept(): void {
+		$order   = $this->create_order_with_kept_key();
+		$kept_at = time() - HOUR_IN_SECONDS;
+		$order->update_meta_data( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_KEPT_AT_META, $kept_at );
+		$order->save_meta_data();
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array( self::stripe_api_error( 504 ) );
+		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_sent' );
+
+		$this->charge_attempt( $sut, $order, 'pm_new', 'key_attempt' );
+
+		$this->assertSame( array( 'POST intentions key_kept' ), self::request_trail( $http_client ) );
+		$this->assertSame( 'key_kept', wc_get_order( $order->get_id() )->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+		$this->assertSame( $kept_at, self::kept_at( $order ) );
+	}
+
+	/**
+	 * @testdox The customer recovery replaces the key without rewriting the kept time, so the window still covers the request it replaced.
+	 */
+	public function test_kept_time_is_not_rewritten_by_the_customer_recovery(): void {
+		$order   = $this->create_order_with_kept_key();
+		$kept_at = time() - HOUR_IN_SECONDS;
+		$order->update_meta_data( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_KEPT_AT_META, $kept_at );
+		$order->save_meta_data();
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			self::http_json(
+				404,
+				array(
+					'code'    => 'resource_missing',
+					'message' => 'No such customer: &#039;cus_missing&#039;',
+					'data'    => array( 'status' => 404 ),
+				)
+			),
+			self::stripe_api_error( 504 ),
+		);
+		$customer_service       = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order', 'replace_missing_customer_for_order' ) )->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_missing' );
+		$customer_service->method( 'replace_missing_customer_for_order' )->willReturn( 'cus_recreated' );
+		$sut = $this->create_timeout_operation_service( $http_client, 'cus_missing', $customer_service );
+
+		$this->charge_attempt( $sut, $order, 'pm_new', 'key_attempt' );
+
+		$this->assertSame( array( 'POST intentions key_kept', 'POST intentions key_kept:customer-recovery' ), self::request_trail( $http_client ) );
+		$this->assertSame( 'key_kept:customer-recovery', wc_get_order( $order->get_id() )->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+		$this->assertSame( $kept_at, self::kept_at( $order ) );
+	}
+
+	/**
+	 * @testdox A definitive decline retires the key, its record and its kept time together.
+	 */
+	public function test_kept_time_is_deleted_with_the_key(): void {
+		$order                  = $this->create_woopayments_order();
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array( self::stripe_card_declined() );
+		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_sent' );
+
+		$this->charge_attempt( $sut, $order, 'pm_first', 'key_first' );
+		$fresh = wc_get_order( $order->get_id() );
+
+		$this->assertSame( '', $fresh->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+		$this->assertSame( '', $fresh->get_meta( WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META, true ) );
+		$this->assertSame( '', $fresh->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_KEPT_AT_META, true ) );
+	}
+
+	/**
+	 * @testdox On an order created days ago, the account list reads from when the key was kept, not from the creation or the record's failure.
+	 */
+	public function test_account_list_reads_from_when_the_key_was_kept(): void {
+		$order   = $this->create_order_with_kept_key( time() - 3 * DAY_IN_SECONDS );
+		$kept_at = time() - 360;
+		$order->update_meta_data( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_KEPT_AT_META, $kept_at );
+		$order->update_meta_data(
+			WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META,
+			array(
+				'order_id'       => $order->get_id(),
+				'customers'      => array( 'cus_A' ),
+				'failed_at'      => time() - 60,
+				'last_failed_at' => time() - 60,
+			)
+		);
+		$order->save_meta_data();
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			self::stripe_idempotency_error( 'key_kept' ),
+			self::intent_list( array() ),
+			self::intent_list( array( self::order_intent( $order, 'pi_earlier', 'succeeded', 1000, array( 'created' => time() - 300 ) ) ) ),
+		);
+		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_A' );
+		$since                  = time();
+
+		$outcome = $this->charge_attempt( $sut, $order, 'pm_new', 'key_attempt' );
+
+		$this->assertSame(
+			array( 'POST intentions key_kept', 'GET intentions?test_mode=0&customer=cus_A&limit=100', 'account list' ),
+			self::with_account_lists_checked( self::request_trail( $http_client ), $kept_at, $since )
+		);
+		$this->assertSame( 'pi_earlier', $outcome->get_provider_payment_id() );
+	}
+
+	/**
+	 * @testdox A creation date moved after the key was kept does not move the window: the account list still reads from the kept time and finds the earlier payment.
+	 *
+	 * A merchant can change a pending order's creation date on the order screen, the REST API or an import.
+	 */
+	public function test_creation_moved_after_the_key_was_kept_does_not_move_the_window(): void {
+		$kept_at = time() - 3 * HOUR_IN_SECONDS;
+		$order   = $this->create_order_with_kept_key( $kept_at - 60 );
+		$order->update_meta_data( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_KEPT_AT_META, $kept_at );
+		$order->set_date_created( $kept_at + 2 * HOUR_IN_SECONDS );
+		$order->save();
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			self::stripe_idempotency_error( 'key_kept' ),
+			self::intent_list( array( self::order_intent( $order, 'pi_earlier', 'succeeded', 1000, array( 'created' => $kept_at + 1 ) ) ) ),
+		);
+		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_sent' );
+		$since                  = time();
+
+		$outcome = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_new', 'key_attempt' );
+
+		$this->assertSame( array( 'POST intentions key_kept', 'account list' ), self::with_account_lists_checked( self::request_trail( $http_client ), $kept_at, $since ) );
+		$this->assertSame( 'pi_earlier', $outcome->get_provider_payment_id() );
+	}
+
+	/**
+	 * @testdox A kept key with $_dataName reads the account list from the order's creation.
+	 *
+	 * @dataProvider provide_kept_times_that_fall_back
+	 *
+	 * @param string|null $kept_at Kept time stored on the order, or null for none.
+	 */
+	public function test_kept_key_without_a_usable_kept_time_reads_from_the_order_creation( ?string $kept_at ): void {
+		$order = $this->create_order_with_kept_key( time() - HOUR_IN_SECONDS );
+		if ( null !== $kept_at ) {
+			$order->update_meta_data( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_KEPT_AT_META, $kept_at );
+			$order->save_meta_data();
+		}
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			self::stripe_idempotency_error( 'key_kept' ),
+			self::intent_list( array( self::order_intent( $order, 'pi_earlier', 'succeeded' ) ) ),
+		);
+		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_sent' );
+		$since                  = time();
+
+		$outcome = $this->charge_attempt( $sut, $order, 'pm_new', 'key_attempt' );
+
+		$this->assertSame( array( 'POST intentions key_kept', 'account list' ), self::with_account_lists_checked( self::request_trail( $http_client ), $order->get_date_created()->getTimestamp(), $since ) );
+		$this->assertSame( 'pi_earlier', $outcome->get_provider_payment_id() );
+	}
+
+	/**
+	 * Kept times that give no window start.
+	 *
+	 * @return array<string,array{0:string|null}>
+	 */
+	public function provide_kept_times_that_fall_back(): array {
+		return array(
+			'no kept time (kept before the time was saved)' => array( null ),
+			'an empty kept time' => array( '' ),
+			'a zero kept time'   => array( '0' ),
+		);
 	}
 
 	/**
@@ -2538,18 +3112,28 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * The account-wide intents list request, as request_trail() prints it.
 	 *
-	 * The window starts 3600 s before the first recorded failure: the store's clock and Stripe's `created` may disagree,
-	 * and a wider window only turns a charge into "cannot check" (review 45 F2). It ends 3600 s after the latest recorded
-	 * failure, for the same clock difference, and because a later request under the key may be the one Stripe ran (review
-	 * 47 F2). The platform honours both ends ("created[lte] live check (2026-10-05)"). The customer list keeps its 300 s
-	 * window.
+	 * The window starts 3600 s before its start, when the key was kept (or the order's creation, for a key kept before that
+	 * time was saved): the store's clock and Stripe's `created` may disagree, and a wider window only turns a charge into
+	 * "cannot check" (review 45 F2). It ends 3600 s after the lookup, for the same clock difference. The platform honours
+	 * both ends ("created[lte] live check (2026-10-05)").
 	 *
-	 * @param int      $failed_at      Unix time of the first recorded ambiguous failure.
-	 * @param int|null $last_failed_at Unix time of the latest recorded ambiguous failure; the first when only one was.
+	 * @param int $start Unix time the window starts.
+	 * @param int $now   Unix time of the lookup.
 	 * @return string
 	 */
-	private static function account_list_trail( int $failed_at, ?int $last_failed_at = null ): string {
-		return 'GET intentions?test_mode=0&created%5Bgte%5D=' . ( $failed_at - 3600 ) . '&created%5Blte%5D=' . ( ( $last_failed_at ?? $failed_at ) + 3600 ) . '&limit=100';
+	private static function account_list_trail( int $start, int $now ): string {
+		return 'GET intentions?test_mode=0&created%5Bgte%5D=' . ( $start - 3600 ) . '&created%5Blte%5D=' . ( $now + 3600 ) . '&limit=100';
+	}
+
+	/**
+	 * Assert a request is the account's intents list read from an hour before a start to an hour after the attempt.
+	 *
+	 * @param string $request Request as request_trail() prints it.
+	 * @param int    $start   Unix time the window starts: when the key was kept, or the order's creation.
+	 * @param int    $since   Unix time before the attempt began.
+	 */
+	private static function assert_account_list_from( string $request, int $start, int $since ): void {
+		self::assertContains( $request, array_map( static fn( int $now ): string => self::account_list_trail( $start, $now ), range( $since, time() ) ), 'The account list runs from the window start minus the hour of clock allowance to an hour after the lookup.' );
 	}
 
 	/**
@@ -2560,8 +3144,39 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @param int      $since   Unix time before the attempt began.
 	 */
 	private static function assert_account_list_from_creation( string $request, WC_Order $order, int $since ): void {
-		$created = $order->get_date_created()->getTimestamp();
-		self::assertContains( $request, array_map( static fn( int $now ): string => self::account_list_trail( $created, $now ), range( $since, time() ) ), 'The account list runs from the order creation minus the hour of clock allowance.' );
+		self::assert_account_list_from( $request, $order->get_date_created()->getTimestamp(), $since );
+	}
+
+	/**
+	 * Replace each account intents list in a trail with "account list", after asserting it reads from the window start.
+	 *
+	 * @param string[] $trail Requests as request_trail() prints them.
+	 * @param int      $start Unix time the window starts.
+	 * @param int      $since Unix time before the attempt that read the first account list began.
+	 * @return string[]
+	 */
+	private static function with_account_lists_checked( array $trail, int $start, int $since ): array {
+		return array_map(
+			static function ( string $request ) use ( $start, $since ): string {
+				if ( 0 !== strpos( $request, 'GET intentions?test_mode=0&created' ) ) {
+					return $request;
+				}
+				self::assert_account_list_from( $request, $start, $since );
+
+				return 'account list';
+			},
+			$trail
+		);
+	}
+
+	/**
+	 * Get the Unix time the order's charge key was kept, read fresh; 0 when none was saved.
+	 *
+	 * @param WC_Order $order Order.
+	 * @return int
+	 */
+	private static function kept_at( WC_Order $order ): int {
+		return (int) wc_get_order( $order->get_id() )->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_KEPT_AT_META, true );
 	}
 
 	/**

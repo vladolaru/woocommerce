@@ -16,8 +16,8 @@ use WC_Order;
  *
  * After an ambiguous charge failure the order keeps its idempotency key, and a resubmit with another body under that key
  * is refused by Stripe with an idempotency error, which means the earlier request finished. Its money call is a single
- * create-and-confirm carrying the order's id and key in its metadata, so the customer's PaymentIntents (or the account's,
- * when the customer's cannot be listed) show whether it created an intent and whether that intent moved money.
+ * create-and-confirm carrying the order's id and key in its metadata, so the order's PaymentIntents show whether it
+ * created an intent and whether that intent moved money.
  * Client 11.1.0 has no equivalent: it sends a fresh key per request (`class-wc-payments-api-client.php:2690`) and
  * charges the resubmit.
  *
@@ -47,26 +47,15 @@ class WooPaymentsChargeAmbiguityService {
 	private const LIST_LIMIT = 100;
 
 	/**
-	 * Seconds before the recorded failure that a full page of the customer's intents must reach back to before it can
-	 * prove the order has no intent.
+	 * Seconds before the window's start from which the account's intents are listed.
 	 *
-	 * The earlier request was sent at most one request timeout plus its transport retries before the failure was recorded.
-	 */
-	private const LOOKBACK_SECONDS = 300;
-
-	/**
-	 * Seconds before the first recorded failure from which the account's intents are listed.
-	 *
-	 * Stripe filters `created` by its own clock and the failure time comes from the store's, so the window is wider than
+	 * Stripe filters `created` by its own clock and the window's start comes from the store's, so the window is wider than
 	 * the request timing alone needs. A wider window can only turn a charge into "cannot check", never the reverse.
 	 */
 	private const ACCOUNT_LOOKBACK_SECONDS = 3600;
 
 	/**
-	 * Seconds after the latest recorded failure up to which the account's intents are listed.
-	 *
-	 * The same clock difference applies after the failure, and the platform can still create the intent after the store
-	 * gave up waiting. A fixed end keeps the answer the same on every attempt instead of filling up with newer intents.
+	 * Seconds after the lookup up to which the account's intents are listed, for the same clock difference.
 	 */
 	private const ACCOUNT_LOOKAHEAD_SECONDS = 3600;
 
@@ -100,23 +89,20 @@ class WooPaymentsChargeAmbiguityService {
 	/**
 	 * List the PaymentIntents created for an order.
 	 *
-	 * Lists the customer the earlier requests were sent with. When they were sent with more than one customer, or Stripe
-	 * or the platform refuses the customer's list for good (a deleted customer, for example), answers without a list, or
-	 * answers with a full page that cannot be proven complete (the list has no time bound, so it only gets newer), lists
-	 * the account's intents created between shortly before the first failure and shortly after the latest one instead,
-	 * which match on the order whatever the customer. A transport failure or a server error leaves the lookup failed,
-	 * since a later attempt may read the list.
+	 * No money is concluded only from the account's intents created since the key was kept, every page read, with none
+	 * naming the order and holding money; the customer's list, read first when the earlier requests were sent with one
+	 * customer, only finds a payment faster. A transport failure or a server error leaves the lookup failed.
 	 *
 	 * @param WC_Order          $order          Order whose earlier charge is looked up.
 	 * @param array<int,string> $customer_ids   Customers the earlier charge requests under the key were sent with.
-	 * @param int               $failed_at      Unix time the first earlier charge failure was recorded.
-	 * @param int               $last_failed_at Unix time the latest earlier charge failure was recorded.
+	 * @param int               $since          Unix time before every request under the key.
+	 * @param int               $now            Unix time of this lookup, after every request under the key.
 	 * @return array{status:string,intents:array<int,array<string,mixed>>} One of the LOOKUP_* answers, with the order's
 	 *                                                                    intents, newest first, when it is LOOKUP_DONE.
 	 */
-	public function find_order_intents( WC_Order $order, array $customer_ids, int $failed_at, int $last_failed_at ): array {
+	public function find_order_intents( WC_Order $order, array $customer_ids, int $since, int $now ): array {
 		if ( 1 !== count( $customer_ids ) ) {
-			return $this->find_order_intents_created_around_failures( $order, $failed_at, $last_failed_at );
+			return $this->find_account_order_intents( $order, $since, $now );
 		}
 
 		try {
@@ -124,36 +110,30 @@ class WooPaymentsChargeAmbiguityService {
 		} catch ( ApiException $exception ) {
 			return $exception->has_ambiguous_outcome()
 				? self::lookup( self::LOOKUP_FAILED )
-				: $this->find_order_intents_created_around_failures( $order, $failed_at, $last_failed_at );
+				: $this->find_account_order_intents( $order, $since, $now );
 		}
 
-		$order_intents = $this->get_order_intents_from_list( $list, $order, $failed_at - self::LOOKBACK_SECONDS );
+		$order_intents = $this->get_order_intents_from_list( $list, $order );
 
-		return null === $order_intents ? $this->find_order_intents_created_around_failures( $order, $failed_at, $last_failed_at ) : self::lookup( self::LOOKUP_DONE, $order_intents );
+		return null === $order_intents || null === self::find_intent_with_money( $order_intents ) ? $this->find_account_order_intents( $order, $since, $now ) : self::lookup( self::LOOKUP_DONE, $order_intents );
 	}
 
 	/**
-	 * List the order's PaymentIntents among the account's intents created around the recorded failures.
-	 *
-	 * The window runs from shortly before the first failure to shortly after the latest one: the only request under the
-	 * key that Stripe can have run is one whose answer was lost, so its intent is inside. A definitive refusal, or a page
-	 * that cannot be proven complete, cannot change on a later attempt: every listed intent is inside the window, so a
-	 * full page can never reach back past its start.
+	 * List the order's PaymentIntents among the account's intents created from shortly before a time to shortly after now.
 	 *
 	 * @param WC_Order $order          Order whose earlier charge is looked up.
-	 * @param int      $failed_at      Unix time the first earlier charge failure was recorded.
-	 * @param int      $last_failed_at Unix time the latest earlier charge failure was recorded.
+	 * @param int      $since          Unix time the window starts.
+	 * @param int      $now            Unix time of this lookup.
 	 * @return array{status:string,intents:array<int,array<string,mixed>>}
 	 */
-	private function find_order_intents_created_around_failures( WC_Order $order, int $failed_at, int $last_failed_at ): array {
-		$created_since = $failed_at - self::ACCOUNT_LOOKBACK_SECONDS;
+	private function find_account_order_intents( WC_Order $order, int $since, int $now ): array {
 		try {
-			$list = $this->api_client->list_payment_intentions_created_between( $created_since, $last_failed_at + self::ACCOUNT_LOOKAHEAD_SECONDS, self::LIST_LIMIT );
+			$list = $this->api_client->list_payment_intentions_created_between( $since - self::ACCOUNT_LOOKBACK_SECONDS, $now + self::ACCOUNT_LOOKAHEAD_SECONDS, self::LIST_LIMIT );
 		} catch ( ApiException $exception ) {
 			return self::lookup( $exception->has_ambiguous_outcome() ? self::LOOKUP_FAILED : self::LOOKUP_CANNOT_CHECK );
 		}
 
-		$order_intents = $this->get_order_intents_from_list( $list, $order, $created_since );
+		$order_intents = $this->get_order_intents_from_list( $list, $order );
 
 		return null === $order_intents ? self::lookup( self::LOOKUP_CANNOT_CHECK ) : self::lookup( self::LOOKUP_DONE, $order_intents );
 	}
@@ -180,38 +160,32 @@ class WooPaymentsChargeAmbiguityService {
 	 *
 	 * @param array<string,mixed> $page         The list page.
 	 * @param WC_Order            $order        Order whose earlier charge is looked up.
-	 * @param int                 $window_start Unix time a full page must reach back past to prove the order has no intent.
 	 * @return array<int,array<string,mixed>>|null The order's intents, newest first, possibly none; null when the answer
-	 *                                             has no list or the page cannot be proven complete.
+	 *                                             has no list, or cannot rule out money (more pages, or a loose match).
 	 */
-	private function get_order_intents_from_list( array $page, WC_Order $order, int $window_start ): ?array {
+	private function get_order_intents_from_list( array $page, WC_Order $order ): ?array {
 		if ( ! isset( $page['data'] ) || ! is_array( $page['data'] ) ) {
 			return null;
 		}
 
 		$order_intents = array();
-		$oldest        = null;
+		$loose_money   = false;
 		foreach ( $page['data'] as $intent ) {
 			if ( ! is_array( $intent ) ) {
 				continue;
 			}
 
-			$oldest   = $intent;
 			$metadata = isset( $intent['metadata'] ) && is_array( $intent['metadata'] ) ? $intent['metadata'] : array();
 			if ( (string) $order->get_id() === (string) ( $metadata['order_id'] ?? '' ) && $order->get_order_key() === (string) ( $metadata['order_key'] ?? '' ) ) {
 				$order_intents[] = $intent;
+			} elseif ( WooPaymentsIntentCodec::intent_belongs_to_order( $intent, $order ) && null !== self::find_intent_with_money( array( $intent ) ) ) {
+				// Named by order ID alone, or by number on WooPay: it may be another order's, so it stops a clear but never pays.
+				$loose_money = true;
 			}
 		}
 
-		// A full page with no match that does not reach back before the earlier request may have left its intent for the next page.
-		if ( array() === $order_intents && ! empty( $page['has_more'] ) ) {
-			$oldest_created = is_array( $oldest ) && is_numeric( $oldest['created'] ?? null ) ? (int) $oldest['created'] : PHP_INT_MAX;
-			if ( $oldest_created >= $window_start ) {
-				return null;
-			}
-		}
-
-		return $order_intents;
+		// A page with more behind it may hold the payment on the next one, so it can find money but never clear it.
+		return ( ! empty( $page['has_more'] ) || $loose_money ) && null === self::find_intent_with_money( $order_intents ) ? null : $order_intents;
 	}
 
 	/**
