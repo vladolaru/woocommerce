@@ -1,8 +1,17 @@
 /**
+ * External dependencies
+ */
+import fs from 'fs';
+import path from 'path';
+
+/**
  * Internal dependencies
  */
 import {
+	DOCUMENT_EVIDENCE_FIELDS,
+	OPTIONAL_TEXT_EVIDENCE_FIELDS,
 	PRODUCT_TYPE_OPTIONS,
+	SHIPPING_EVIDENCE_FIELDS,
 	buildEvidencePayload,
 	getRecommendedDocumentFields,
 	needsShipping,
@@ -665,5 +674,63 @@ describe( 'WooPayments dispute evidence helpers', () => {
 		expect( firstLetter ).toContain( 'Thank you,\nWooCommerce Test Store' );
 		expect( firstLetter ).not.toContain( 'UPS' );
 		expect( firstLetter ).not.toContain( '1Z999' );
+	} );
+} );
+
+// The recommendation catalog is kept as copied from the extension, so its list of the evidence keys the form
+// collects is kept in step with the field lists by hand. This pins the two together.
+describe( 'dispute recommendation catalog evidence keys', () => {
+	// Excluded by the catalog even when the form sends them: present on every dispute, or pre-filled by the form.
+	const ALWAYS_PRESENT_KEYS = [
+		'customer_purchase_ip',
+		'customer_name',
+		'customer_email_address',
+		'billing_address',
+		'product_description',
+	];
+	// Omitted by the catalog because the form does not collect them yet.
+	const NOT_COLLECTED_KEYS = [
+		'service_date',
+		'refund_refusal_explanation',
+		'duplicate_charge_explanation',
+	];
+
+	const readCatalogEvidenceKeys = () => {
+		const source = fs.readFileSync(
+			path.join(
+				__dirname,
+				'../money-movement/dispute-recommendation-catalog.ts'
+			),
+			'utf8'
+		);
+		const list = source.match(
+			/const WIZARD_SUBMITTABLE_EVIDENCE_KEYS = \[([^\]]*)\];/
+		);
+
+		expect( list ).not.toBeNull();
+
+		return Array.from(
+			( list?.[ 1 ] ?? '' ).matchAll( /'([a-z_]+)'/g ),
+			( match ) => match[ 1 ]
+		);
+	};
+
+	it( 'lists every evidence key the form sends, less the stated exclusions', () => {
+		const formKeys = new Set< string >( [
+			...DOCUMENT_EVIDENCE_FIELDS,
+			...SHIPPING_EVIDENCE_FIELDS,
+			...OPTIONAL_TEXT_EVIDENCE_FIELDS,
+		] );
+		const catalogKeys = readCatalogEvidenceKeys();
+
+		expect( new Set( catalogKeys ).size ).toBe( catalogKeys.length );
+		expect(
+			NOT_COLLECTED_KEYS.filter( ( key ) => formKeys.has( key ) )
+		).toEqual( [] );
+		expect( [ ...catalogKeys ].sort() ).toEqual(
+			[ ...formKeys ]
+				.filter( ( key ) => ! ALWAYS_PRESENT_KEYS.includes( key ) )
+				.sort()
+		);
 	} );
 } );
