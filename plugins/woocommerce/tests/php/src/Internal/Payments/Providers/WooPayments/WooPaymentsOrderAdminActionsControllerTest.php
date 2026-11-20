@@ -2549,6 +2549,43 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A $operation refused on a status change with a retry left is logged as a notice; the order screen's action and the last retry are warnings.
+	 *
+	 * @dataProvider status_change_operation_data
+	 *
+	 * @param string $operation    Capture or cancel.
+	 * @param string $order_status Status the order changed to.
+	 */
+	public function test_lock_refusal_is_a_notice_only_when_the_status_change_retries_it( string $operation, string $order_status ): void {
+		$order        = $this->create_authorized_order();
+		$order_screen = $this->create_authorized_order();
+		$calls        = new \ArrayObject();
+		$this->register_controller_with_provider( $operation, $calls );
+		$logger = RecordingWcLogger::install();
+
+		$this->while_lock_is_held(
+			$order,
+			static function () use ( $order, $order_status ): void {
+				$order->update_status( $order_status );
+			}
+		);
+		$this->while_lock_is_held(
+			$order_screen,
+			static function () use ( $order_screen, $operation ): void {
+				// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Runs the order screen's action.
+				do_action( PaymentProcessingService::OPERATION_CAPTURE === $operation ? 'woocommerce_order_action_capture_charge' : 'woocommerce_order_action_cancel_authorization', $order_screen );
+			}
+		);
+		$this->run_retry_while_lock_is_held( $order, $operation, 3 );
+
+		$this->assertCount( 0, $calls );
+		$refusals = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'order payment lock refused: ' ) ) );
+		$this->assertSame( array( 'notice', 'warning', 'warning' ), array_column( $refusals, 0 ) );
+		$this->assertStringContainsString( sprintf( 'order %d, refused %s', $order->get_id(), $operation ), $refusals[0][1] );
+		$this->assertStringContainsString( sprintf( 'order %d, refused %s', $order_screen->get_id(), $operation ), $refusals[1][1] );
+	}
+
+	/**
 	 * @testdox A $operation retry with the lock free runs the operation once and the order gets its success note.
 	 *
 	 * @dataProvider status_change_operation_data

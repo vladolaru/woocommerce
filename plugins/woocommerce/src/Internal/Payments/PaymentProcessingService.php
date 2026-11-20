@@ -752,7 +752,7 @@ class PaymentProcessingService {
 
 		$lock_token = $this->order_payment_lock->claim( $order, $persistence_vocabulary, $idempotency_key, $operation );
 		if ( null === $lock_token ) {
-			$this->order_payment_lock->log_refusal( $order, $persistence_vocabulary, $operation );
+			$this->order_payment_lock->log_refusal( $order, $persistence_vocabulary, $operation, null, array(), ! empty( $context->get_payment_data()[ PaymentOperationContext::PAYMENT_DATA_RETRIED_ON_LOCK_REFUSAL ] ) );
 			return $this->get_operation_in_progress_outcome( true );
 		}
 

@@ -311,7 +311,7 @@ class StripeBillingEventHandler {
 		$order_payment_lock = wc_get_container()->get( OrderPaymentLock::class );
 		$lock_token         = $order_payment_lock->claim( $order, $vocabulary, '' !== $intent_id ? $intent_id : $wcpay_invoice_id, 'payment status update' );
 		if ( null === $lock_token ) {
-			$order_payment_lock->log_refusal( $order, $vocabulary, 'payment status update' );
+			$order_payment_lock->log_refusal( $order, $vocabulary, 'payment status update', null, array(), true );
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is built in the exception from an order ID and a fixed operation name, not HTML output.
 			throw new OrderPaymentLockRefusedException( $order->get_id(), 'payment status update' );
 		}

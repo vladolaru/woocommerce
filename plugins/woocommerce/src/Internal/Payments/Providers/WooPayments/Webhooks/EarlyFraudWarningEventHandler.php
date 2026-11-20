@@ -135,7 +135,7 @@ class EarlyFraudWarningEventHandler {
 
 		$lock_token = $this->order_payment_lock->claim( $order, $this->persistence_vocabulary, 'early_fraud_warning_' . $warning['id'], 'early fraud warning webhook' );
 		if ( null === $lock_token ) {
-			$this->order_payment_lock->log_refusal( $order, $this->persistence_vocabulary, 'early fraud warning webhook' );
+			$this->order_payment_lock->log_refusal( $order, $this->persistence_vocabulary, 'early fraud warning webhook', null, array(), true );
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is built in the exception from an order ID and a fixed operation name, not HTML output.
 			throw new OrderPaymentLockRefusedException( $order->get_id(), 'early fraud warning webhook' );
 		}

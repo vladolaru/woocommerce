@@ -670,6 +670,65 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A success refused at its last attempt logs the refusal as a notice, then the drop's error line and its order note.
+	 */
+	public function test_refusal_at_the_last_attempt_is_a_notice_followed_by_the_drop_error(): void {
+		$order = wc_create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_total( '10.00' );
+		$order->save();
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		$lock       = wc_get_container()->get( OrderPaymentLock::class );
+		$token      = $lock->claim( $order, $vocabulary, 'pi_last_holder', 'checkout' );
+		$this->assertNotNull( $token );
+		$event   = array(
+			'id'   => 'evt_last_attempt',
+			'type' => 'payment_intent.succeeded',
+			'data' => array(
+				'object' => array(
+					'id'             => 'pi_last_attempt',
+					'status'         => 'succeeded',
+					'currency'       => 'usd',
+					'amount'         => 1000,
+					'payment_method' => 'pm_last_attempt',
+					'metadata'       => array(
+						'order_id'  => (string) $order->get_id(),
+						'order_key' => $order->get_order_key(),
+					),
+				),
+			),
+		);
+		$store   = new FailedEventTransients();
+		$service = $this->create_service( new RecordingActionSchedulerService(), new StaticFailedEventsApiClient(), wc_get_container()->get( EventIngestor::class ) );
+		$store->set_event( 'evt_last_attempt', $event + array( WebhookReliabilityService::RETRY_ATTEMPTS_EVENT_KEY => 3 ) );
+		$logger = RecordingWcLogger::install();
+
+		try {
+			$service->process_event( 'evt_last_attempt' );
+			$this->fail( 'The last attempt is refused too.' );
+		} catch ( OrderPaymentLockRefusedException $exception ) {
+			unset( $exception );
+		} finally {
+			$lock->release( $order, $vocabulary, (string) $token );
+		}
+
+		$lines = array_values( array_filter( $logger->lines, static fn( array $line ): bool => in_array( $line[0], array( 'notice', 'warning', 'error' ), true ) ) );
+		$this->assertCount( 2, $lines );
+		$this->assertSame( 'notice', $lines[0][0] );
+		$this->assertStringStartsWith( sprintf( 'order payment lock refused: order %d, refused payment status update', $order->get_id() ), $lines[0][1] );
+		$this->assertSame( 'error', $lines[1][0] );
+		$this->assertStringContainsString( 'evt_last_attempt (payment_intent.succeeded) could not be processed after 3 retries and was dropped', $lines[1][1] );
+		$this->assertCount(
+			1,
+			array_filter(
+				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+				static fn( $note ): bool => false !== strpos( $note->content, 'event evt_last_attempt' )
+			)
+		);
+		$this->assertNull( $store->get_event( 'evt_last_attempt' ) );
+	}
+
+	/**
 	 * @testdox A payment_intent.succeeded held up by a dead checkout's lock is retried at the lock's expiry, after its one-minute retry is refused, then marks the order paid once.
 	 */
 	public function test_lock_refused_succeeded_event_of_a_dead_holder_is_retried_at_its_expiry_and_then_applies(): void {

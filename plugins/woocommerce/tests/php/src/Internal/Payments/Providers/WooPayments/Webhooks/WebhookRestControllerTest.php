@@ -303,6 +303,53 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A payment_intent.succeeded push the order payment lock refuses for a live holder is queued for a retry and logged as two notices, no warning or error.
+	 */
+	public function test_lock_refused_push_with_a_retry_queued_is_logged_below_warning(): void {
+		$order = wc_create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_total( '10.00' );
+		$order->save();
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		$lock       = wc_get_container()->get( OrderPaymentLock::class );
+		$token      = $lock->claim( $order, $vocabulary, 'pi_route_holder', 'checkout' );
+		$this->assertNotNull( $token );
+		$logger     = new RecordingWcLogger();
+		$controller = $this->create_controller_with_ingestor( wc_get_container()->get( EventIngestor::class ), $logger );
+		$event      = array(
+			'id'   => 'evt_route_locked',
+			'type' => 'payment_intent.succeeded',
+			'data' => array(
+				'object' => array(
+					'id'             => 'pi_route_locked',
+					'status'         => 'succeeded',
+					'currency'       => 'usd',
+					'amount'         => 1000,
+					'payment_method' => 'pm_route_locked',
+					'metadata'       => array(
+						'order_id'  => (string) $order->get_id(),
+						'order_key' => $order->get_order_key(),
+					),
+				),
+			),
+		);
+
+		try {
+			$response = $controller->handle_webhook( $this->create_post_request( $event ) );
+		} finally {
+			$lock->release( $order, $vocabulary, (string) $token );
+		}
+
+		$this->assertSame( 500, $response->get_status() );
+		$this->assertCount( 1, $this->scheduler->scheduled_jobs, 'One retry is queued.' );
+		$lines = array_values( array_filter( $logger->lines, static fn( array $line ): bool => in_array( $line[0], array( 'notice', 'warning', 'error' ), true ) ) );
+		$this->assertCount( 2, $lines );
+		$this->assertSame( 'notice', $lines[0][0] );
+		$this->assertStringStartsWith( sprintf( 'order payment lock refused: order %d, refused payment status update, held by checkout for ', $order->get_id() ), $lines[0][1] );
+		$this->assertSame( array( 'notice', 'Failed processing a WooPayments webhook event.', 'woopayments' ), $lines[1] );
+	}
+
+	/**
 	 * @testdox A $event_type push gets the $expected_status reply, is kept for a retry only when it fails for a passing reason ($kept) and logs "$expected_log".
 	 *
 	 * Through the webhook route with the real ingestor and handlers. Client 11.1.0 refuses a refund or dispute event with a

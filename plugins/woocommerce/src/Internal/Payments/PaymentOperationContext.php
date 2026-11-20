@@ -26,6 +26,14 @@ class PaymentOperationContext {
 	public const PAYMENT_DATA_REFUND_ID = 'wc_refund_id';
 
 	/**
+	 * Payment data key a caller sets on a capture or cancel whose refusal by the order payment lock it retries later, so
+	 * the refusal is logged as routine (OrderPaymentLock::log_refusal()).
+	 *
+	 * @since 11.4.0
+	 */
+	public const PAYMENT_DATA_RETRIED_ON_LOCK_REFUSAL = 'retried_on_lock_refusal';
+
+	/**
 	 * Order being acted on.
 	 *
 	 * @var WC_Order

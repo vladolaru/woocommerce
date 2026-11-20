@@ -461,7 +461,7 @@ class PaymentIntentEventHandler {
 	 */
 	private function log_payment_event_refusal( WC_Order $order, string $event_type, string $lock_value ): ?int {
 		if ( 'payment_intent.succeeded' === $event_type ) {
-			return $this->order_payment_lock->log_refusal( $order, $this->persistence_vocabulary, 'payment status update' );
+			return $this->order_payment_lock->log_refusal( $order, $this->persistence_vocabulary, 'payment status update', null, array(), true );
 		}
 
 		return $this->order_payment_lock->log_refusal(
@@ -476,7 +476,8 @@ class PaymentIntentEventHandler {
 					'payment_intent.amount_capturable_updated' => PaymentLifecycleEvent::STATUS_AUTHORIZED,
 				)[ $event_type ] ?? PaymentLifecycleEvent::STATUS_FAILED,
 				'reason'            => 'order_locked',
-			)
+			),
+			true
 		);
 	}
 

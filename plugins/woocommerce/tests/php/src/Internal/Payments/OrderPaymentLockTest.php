@@ -607,6 +607,34 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A refusal with a retry queued ($retry_queued) by a holder $holder_age seconds old is logged at $level, with the same message.
+	 *
+	 * @testWith [true, 5, "notice"]
+	 *           [true, 90, "warning"]
+	 *           [true, null, "warning"]
+	 *           [false, 5, "warning"]
+	 *
+	 * @param bool     $retry_queued Whether the refused work is retried later.
+	 * @param int|null $holder_age   Age of the holder; null for a holder record that names another lock value.
+	 * @param string   $level        Expected level.
+	 */
+	public function test_refusal_is_a_notice_only_with_a_retry_queued_and_a_holder_under_a_minute( bool $retry_queued, ?int $holder_age, string $level ): void {
+		$this->skip_when_transients_live_in_object_cache();
+		$order    = wc_create_order();
+		$lock_key = $this->persistence_vocabulary->get_order_lock_key( $order );
+		$this->insert_lock_rows( $lock_key, 'pi_live', time() + 200 );
+		$this->insert_holder_row( $lock_key, 'checkout', null === $holder_age ? 'pi_other' : 'pi_live', time() - ( $holder_age ?? 5 ) );
+		$logger = RecordingWcLogger::install();
+
+		$this->sut->log_refusal( $order, $this->persistence_vocabulary, 'refund', null, array(), $retry_queued );
+
+		$this->assertCount( 1, $logger->lines );
+		$this->assertSame( $level, $logger->lines[0][0] );
+		$this->assertMatchesRegularExpression( '/^order payment lock refused: order ' . $order->get_id() . ', refused refund, held by (checkout for \d+s|an unknown operation for an unknown time)$/', $logger->lines[0][1] );
+		$this->assertSame( $retry_queued, $logger->contexts[0]['retry_queued'] );
+	}
+
+	/**
 	 * Get the takeover lines a recording logger holds.
 	 *
 	 * @param RecordingWcLogger $logger Recording logger.

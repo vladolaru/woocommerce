@@ -454,7 +454,7 @@ class SubscriptionsController implements RegisterHooksInterface {
 		}
 
 		$intent_id = $outcome->get_provider_payment_id();
-		if ( ! $this->apply_authentication_failure( $renewal_order, $intent_id, $charge_id, false ) ) {
+		if ( ! $this->apply_authentication_failure( $renewal_order, $intent_id, $charge_id, false, 0 ) ) {
 			$this->schedule_authentication_failure_retry( $renewal_order, $intent_id, $charge_id, 0 );
 		}
 	}
@@ -481,7 +481,7 @@ class SubscriptionsController implements RegisterHooksInterface {
 
 		$intent_id = is_string( $intent_id ) ? $intent_id : '';
 		$charge_id = is_string( $charge_id ) ? $charge_id : '';
-		if ( ! $this->apply_authentication_failure( $renewal_order, $intent_id, $charge_id, true ) ) {
+		if ( ! $this->apply_authentication_failure( $renewal_order, $intent_id, $charge_id, true, absint( $retry ) ) ) {
 			$this->schedule_authentication_failure_retry( $renewal_order, $intent_id, $charge_id, absint( $retry ) );
 		}
 	}
@@ -498,14 +498,15 @@ class SubscriptionsController implements RegisterHooksInterface {
 	 * @param string   $charge_id     Its charge, or an empty string.
 	 * @param bool     $read          Whether to read the renewal again under the claim first: a reattempt does, the first
 	 *                                attempt applies the failure to the hook's object as it is.
+	 * @param int      $retry         Which retry this attempt is, 0 for the first, so a refusal says whether one follows.
 	 * @return bool False when the order payment lock refused the claim, and nothing was written.
 	 */
-	private function apply_authentication_failure( WC_Order $renewal_order, string $intent_id, string $charge_id, bool $read ): bool {
+	private function apply_authentication_failure( WC_Order $renewal_order, string $intent_id, string $charge_id, bool $read, int $retry ): bool {
 		$vocabulary         = new WooPaymentsPersistenceVocabulary();
 		$order_payment_lock = wc_get_container()->get( OrderPaymentLock::class );
 		$lock_token         = $order_payment_lock->claim( $renewal_order, $vocabulary, '' === $intent_id ? null : $intent_id, 'renewal authentication failure' );
 		if ( null === $lock_token ) {
-			$order_payment_lock->log_refusal( $renewal_order, $vocabulary, 'renewal authentication failure', WooPaymentsLogger::SOURCE );
+			$order_payment_lock->log_refusal( $renewal_order, $vocabulary, 'renewal authentication failure', WooPaymentsLogger::SOURCE, array(), isset( WebhookReliabilityService::RETRY_DELAYS_SECONDS[ $retry ] ) );
 
 			return false;
 		}

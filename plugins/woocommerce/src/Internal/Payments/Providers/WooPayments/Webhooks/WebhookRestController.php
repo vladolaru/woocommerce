@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks;
 
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use InvalidArgumentException;
@@ -116,9 +117,9 @@ class WebhookRestController implements RegisterHooksInterface {
 			$this->log_webhook_exception( $exception, $event_id, true );
 			return new WP_REST_Response( array( 'result' => 'bad_request' ), 400 );
 		} catch ( Throwable $exception ) {
-			$this->log_webhook_exception( $exception );
 			// The platform counts this reply as delivered, so the store retries the event itself.
-			$this->reliability_service->retry_failed_event( $payload, $exception );
+			$retried = $this->reliability_service->retry_failed_event( $payload, $exception );
+			$this->log_webhook_exception( $exception, '', false, $retried && $exception instanceof OrderPaymentLockRefusedException );
 			return new WP_REST_Response( array( 'result' => 'error' ), 500 );
 		}
 	}
@@ -128,14 +129,17 @@ class WebhookRestController implements RegisterHooksInterface {
 	 *
 	 * A refused event keeps its reason, as the pull path's line does ("Failed processing event {id}. Reason: {reason}"). Any other
 	 * failure's message is left out, since processing calls the platform and its errors carry the platform's text; the class,
-	 * code, trace and the platform's status and code are logged instead.
+	 * code, trace and the platform's status and code are logged instead. An order payment lock refusal that is retried is a
+	 * notice: the refusal's own line says whether its holder looks dead.
 	 *
 	 * @param Throwable $exception Webhook processing exception.
 	 * @param string    $event_id  Event ID, when known.
 	 * @param bool      $refused   Whether the ingestor refused the event (an InvalidArgumentException).
+	 * @param bool      $retried   Whether the order payment lock refused the event and a retry is queued.
 	 */
-	private function log_webhook_exception( Throwable $exception, string $event_id = '', bool $refused = false ): void {
-		wc_get_logger()->error(
+	private function log_webhook_exception( Throwable $exception, string $event_id = '', bool $refused = false, bool $retried = false ): void {
+		$level = $retried ? 'notice' : 'error';
+		wc_get_logger()->$level(
 			sprintf(
 				'' === $event_id ? 'Failed processing a WooPayments webhook event.%2$s' : 'Failed processing event %1$s.%2$s',
 				$event_id,

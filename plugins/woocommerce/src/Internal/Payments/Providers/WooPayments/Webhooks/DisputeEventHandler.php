@@ -856,7 +856,7 @@ class DisputeEventHandler {
 	private function claim_dispute_lock( WC_Order $order, string $dispute_id ): string {
 		$lock_token = $this->order_payment_lock->claim( $order, $this->persistence_vocabulary, 'dispute_webhook_' . $dispute_id, 'dispute webhook' );
 		if ( null === $lock_token ) {
-			$this->order_payment_lock->log_refusal( $order, $this->persistence_vocabulary, 'dispute webhook' );
+			$this->order_payment_lock->log_refusal( $order, $this->persistence_vocabulary, 'dispute webhook', null, array(), true );
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is built in the exception from an order ID and a fixed operation name, not HTML output.
 			throw new OrderPaymentLockRefusedException( $order->get_id(), 'dispute webhook' );
 		}

@@ -442,6 +442,8 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 		} elseif ( $on_status_change ) {
 			$provider_data[ WooPaymentsPaymentOperationService::PROVIDER_DATA_STORED_INTENT_ID ] = (string) $order->get_meta( '_intent_id', true );
 		}
+		// A refused status change is retried while a retry slot is left (schedule_retry()).
+		$retried = array( PaymentOperationContext::PAYMENT_DATA_RETRIED_ON_LOCK_REFUSAL => $on_status_change && isset( WebhookReliabilityService::RETRY_DELAYS_SECONDS[ $retry ] ) );
 		try {
 			$outcome = PaymentProcessingService::OPERATION_CAPTURE === $operation
 				? $this->processing_service->capture(
@@ -450,7 +452,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 						WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 						(float) $order->get_total(),
 						$on_status_change ? array_merge( $provider_data, array( WooPaymentsPaymentOperationService::PROVIDER_DATA_CAPTURE_ON_STATUS_CHANGE => true ) ) : $provider_data
-					),
+					)->with_payment_data( $retried ),
 					$this->provider
 				)
 				: $this->processing_service->cancel(
@@ -458,7 +460,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 						$order,
 						WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 						$on_status_change ? array_merge( $provider_data, array( WooPaymentsPaymentOperationService::PROVIDER_DATA_CANCEL_ON_STATUS_CHANGE => true ) ) : $provider_data
-					),
+					)->with_payment_data( $retried ),
 					$this->provider
 				);
 

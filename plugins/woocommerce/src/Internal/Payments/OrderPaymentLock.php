@@ -154,8 +154,9 @@ class OrderPaymentLock {
 	/**
 	 * Log a warning when the order payment lock refuses an operation.
 	 *
-	 * Writes one warning line with a fixed prefix, naming the order, the refused operation, the
-	 * operation holding the lock and the lock's age.
+	 * Writes one line with a fixed prefix, naming the order, the refused operation, the operation holding the lock and
+	 * the lock's age. It is a warning, unless the refused work will be retried and its holder is under a minute old, a
+	 * live one: that routine refusal is a notice, so a warning means that nothing retries the work or the holder may be dead.
 	 *
 	 * @since 11.2.0
 	 *
@@ -164,9 +165,10 @@ class OrderPaymentLock {
 	 * @param string                                 $refused_operation   Operation the lock refused, such as 'refund'.
 	 * @param string|null                            $source              Log source, when the caller logs to its own file.
 	 * @param array<string,mixed>                    $extra_context       Caller-specific context added to the line.
+	 * @param bool                                   $retry_queued        Whether the refused work is retried later.
 	 * @return int|null When the live holder claimed the lock, or null when its holder record does not describe the lock.
 	 */
-	public function log_refusal( WC_Order $order, ProviderPersistenceVocabularyInterface $persistence_vocabulary, string $refused_operation, ?string $source = null, array $extra_context = array() ): ?int {
+	public function log_refusal( WC_Order $order, ProviderPersistenceVocabularyInterface $persistence_vocabulary, string $refused_operation, ?string $source = null, array $extra_context = array(), bool $retry_queued = false ): ?int {
 		$lock_value       = $this->read_lock_transient( $persistence_vocabulary->get_order_lock_key( $order ) );
 		$holder           = $this->read_lock_transient( $this->get_lock_holder_key( $order, $persistence_vocabulary ) );
 		$holder_operation = null;
@@ -180,7 +182,8 @@ class OrderPaymentLock {
 			$lock_age_seconds = max( 0, time() - $claimed_at );
 		}
 
-		wc_get_logger()->warning(
+		$level = $retry_queued && null !== $lock_age_seconds && $lock_age_seconds < MINUTE_IN_SECONDS ? 'notice' : 'warning';
+		wc_get_logger()->$level(
 			sprintf(
 				'%1$s: order %2$d, refused %3$s, held by %4$s for %5$s',
 				self::LOCK_REFUSAL_LOG_PREFIX,
@@ -198,6 +201,7 @@ class OrderPaymentLock {
 					'holder_operation'  => $holder_operation,
 					'lock_age_seconds'  => $lock_age_seconds,
 					'lock_value'        => false === $lock_value ? null : (string) $lock_value,
+					'retry_queued'      => $retry_queued,
 				)
 			)
 		);

@@ -1441,6 +1441,32 @@ class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A renewal failure the order payment lock refuses is logged as a notice while a reattempt is left, and as a warning on the last one.
+	 */
+	public function test_refused_renewal_authentication_failure_is_a_notice_while_a_reattempt_is_left(): void {
+		list( $order, $outcome ) = $this->arrange_renewal_needing_authentication();
+		$vocabulary              = new WooPaymentsPersistenceVocabulary();
+		$lock                    = wc_get_container()->get( OrderPaymentLock::class );
+		$holder                  = null;
+		add_action(
+			'woocommerce_woocommerce_payments_payment_requires_action',
+			static function ( WC_Order $hook_order ) use ( $vocabulary, $lock, &$holder ): void {
+				$holder = $lock->claim( wc_get_order( $hook_order->get_id() ), $vocabulary, 'another_operation', 'payment operation' );
+			}
+		);
+		$sut    = $this->create_sut( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging( $outcome ) );
+		$logger = RecordingWcLogger::install();
+
+		$sut->scheduled_subscription_payment( 12.0, wc_get_order( $order->get_id() ) );
+		$sut->handle_retry_authentication_failure( $order->get_id(), 'pi_renewal_auth', '', 3 );
+		$lock->release( wc_get_order( $order->get_id() ), $vocabulary, (string) $holder );
+
+		$refusals = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'order payment lock refused: order ' . $order->get_id() . ', refused renewal authentication failure' ) ) );
+		$this->assertSame( array( 'notice', 'warning' ), array_column( $refusals, 0 ) );
+		$this->assertSame( 'pending', wc_get_order( $order->get_id() )->get_status(), 'Neither refused attempt writes the failure.' );
+	}
+
+	/**
 	 * Arrange a Pending renewal whose off-session charge needs the customer to authenticate.
 	 *
 	 * @param bool $with_error Whether the intent also carries a payment error.

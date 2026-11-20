@@ -703,7 +703,7 @@ class RefundEventHandler {
 	private function claim_refund_lock( WC_Order $order, string $refund_id ): string {
 		$lock_token = $this->order_payment_lock->claim( $order, $this->persistence_vocabulary, 'refund_webhook_' . $refund_id, 'refund webhook' );
 		if ( null === $lock_token ) {
-			$this->order_payment_lock->log_refusal( $order, $this->persistence_vocabulary, 'refund webhook' );
+			$this->order_payment_lock->log_refusal( $order, $this->persistence_vocabulary, 'refund webhook', null, array(), true );
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is built in the exception from an order ID and a fixed operation name, not HTML output.
 			throw new OrderPaymentLockRefusedException( $order->get_id(), 'refund webhook' );
 		}

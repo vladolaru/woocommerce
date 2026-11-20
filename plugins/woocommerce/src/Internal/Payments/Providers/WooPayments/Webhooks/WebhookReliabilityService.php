@@ -203,18 +203,17 @@ class WebhookReliabilityService implements RegisterHooksInterface {
 	 *
 	 * @param array<string,mixed> $event   Event payload.
 	 * @param \Throwable|null     $failure Failure of the delivery, when known.
+	 * @return bool Whether a job to process the event again was scheduled.
 	 */
-	public function retry_failed_event( array $event, ?\Throwable $failure = null ): void {
-		if ( empty( $event['id'] ) || ! is_string( $event['id'] ) ) {
-			return;
-		}
-
-		if ( ! $this->is_retried_failure( $event, $failure ) ) {
-			return;
+	public function retry_failed_event( array $event, ?\Throwable $failure = null ): bool {
+		if ( empty( $event['id'] ) || ! is_string( $event['id'] ) || ! $this->is_retried_failure( $event, $failure ) ) {
+			return false;
 		}
 
 		$this->store_failed_event( $event['id'], $event );
 		$this->scheduler->schedule_job( self::WEBHOOK_PROCESS_EVENT_ACTION, array( 'event_id' => $event['id'] ) );
+
+		return true;
 	}
 
 	/**
