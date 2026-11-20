@@ -701,7 +701,16 @@ export const FraudProtectionAdvancedSettingsPage = () => {
 	const [ protectionSettingsUI, setProtectionSettingsUI ] =
 		useState< ProtectionSettingsUI >( {} );
 
-	useEffect( () => {
+	// Client 11.3.0 `advanced-settings/index.tsx:146-157`: read the form again only when what it is read from changes, so
+	// a write of other settings, or a save response that echoes the same rules, keeps the merchant's edits on screen.
+	// Keyed on content: every settings write here brings a new record and the save response a new rules array.
+	const readKey = String(
+		JSON.stringify( [ advancedFraudProtectionSettings, environment ] )
+	);
+	const readKeyRef = useRef< string | null >( null );
+	const editCountRef = useRef( 0 );
+	if ( readKeyRef.current !== readKey ) {
+		readKeyRef.current = readKey;
 		const ruleset =
 			Array.isArray( advancedFraudProtectionSettings ) ||
 			typeof advancedFraudProtectionSettings === 'string'
@@ -709,7 +718,7 @@ export const FraudProtectionAdvancedSettingsPage = () => {
 				: [];
 
 		setProtectionSettingsUI( readRuleset( ruleset, environment ) );
-	}, [ advancedFraudProtectionSettings, environment ] );
+	}
 
 	useEffect( () => {
 		if ( ! validationError ) {
@@ -764,6 +773,7 @@ export const FraudProtectionAdvancedSettingsPage = () => {
 	const updateProtectionSettingsUI = (
 		nextSettings: ProtectionSettingsUI
 	) => {
+		editCountRef.current += 1;
 		setProtectionSettingsUI( nextSettings );
 		setIsDirty( true );
 	};
@@ -794,11 +804,13 @@ export const FraudProtectionAdvancedSettingsPage = () => {
 		}
 
 		const ruleset = writeRuleset( protectionSettingsUI, environment );
+		const editCountAtSave = editCountRef.current;
 
 		updateAdvancedFraudProtectionSettings( ruleset );
 		void Promise.resolve( saveSettings() ).then( ( didSave ) => {
 			if ( didSave !== false ) {
-				setIsDirty( false );
+				// An edit made while the save ran is still unsaved.
+				setIsDirty( editCountRef.current !== editCountAtSave );
 				recordEvent( 'wcpay_fraud_protection_advanced_settings_saved', {
 					settings: JSON.stringify( ruleset ),
 				} );
