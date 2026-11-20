@@ -182,13 +182,8 @@ const FeesReport = ( {
 	const searchUrlTimerRef = useRef< ReturnType< typeof setTimeout > | null >(
 		null
 	);
-	const [ rowsState, setRowsState ] = useState< AsyncState< ReportsFee[] > >(
-		{
-			isLoading: true,
-		}
-	);
-	const [ summaryState, setSummaryState ] = useState<
-		AsyncState< ReportsFeesSummary >
+	const [ feesState, setFeesState ] = useState<
+		AsyncState< { fees: ReportsFee[]; summary: ReportsFeesSummary } >
 	>( {
 		isLoading: true,
 	} );
@@ -203,10 +198,11 @@ const FeesReport = ( {
 		[ view ]
 	);
 	const serializedQuery = useMemo( () => JSON.stringify( query ), [ query ] );
-	const rows = rowsState.data ?? [];
-	const totalItems = summaryState.data?.count ?? rows.length;
-	const hasError = Boolean( rowsState.error || summaryState.error );
-	const isLoading = rowsState.isLoading || summaryState.isLoading;
+	const rows = feesState.data?.fees ?? [];
+	const loadedSummary = feesState.data?.summary;
+	const totalItems = loadedSummary?.count ?? rows.length;
+	const hasError = Boolean( feesState.error );
+	const isLoading = feesState.isLoading;
 	const hasFilters = Boolean( view.search || ( view.filters ?? [] ).length );
 	// The load's error event reads this ref, so the load runs again only when the request changes, not for a Date filter
 	// with no dates yet.
@@ -216,8 +212,7 @@ const FeesReport = ( {
 		1,
 		Math.ceil( totalItems / Number( view.perPage || 25 ) )
 	);
-	const isInitialLoading =
-		isLoading && ! rowsState.data && ! summaryState.data;
+	const isInitialLoading = isLoading && ! feesState.data;
 	// Client 11.2.0 `reports/fees/date-filter-values.ts:38-74`: only a complete applied range can match a preset. A Date
 	// filter just added, or with one bound set, filters nothing, so no preset shows pressed.
 	const activeDatePreset = useMemo( () => {
@@ -307,12 +302,7 @@ const FeesReport = ( {
 		const isCurrent = () =>
 			mountedRef.current && requestId === feesRequestIdRef.current;
 
-		setRowsState( ( previous ) => ( {
-			...previous,
-			error: undefined,
-			isLoading: true,
-		} ) );
-		setSummaryState( ( previous ) => ( {
+		setFeesState( ( previous ) => ( {
 			...previous,
 			error: undefined,
 			isLoading: true,
@@ -328,12 +318,8 @@ const FeesReport = ( {
 				return;
 			}
 
-			setRowsState( {
-				data: fees,
-				isLoading: false,
-			} );
-			setSummaryState( {
-				data: summary,
+			setFeesState( {
+				data: { fees, summary },
 				isLoading: false,
 			} );
 			recordEvent( 'wcpay_reports_fees_load_success', {
@@ -360,11 +346,7 @@ const FeesReport = ( {
 				return;
 			}
 
-			setRowsState( {
-				error: error as Error,
-				isLoading: false,
-			} );
-			setSummaryState( {
+			setFeesState( {
 				error: error as Error,
 				isLoading: false,
 			} );
@@ -407,7 +389,7 @@ const FeesReport = ( {
 			{
 				id: 'payment_method',
 				label: __( 'Method', 'woocommerce' ),
-				elements: ( summaryState.data?.sources || [] ).map(
+				elements: ( loadedSummary?.sources || [] ).map(
 					( source ) => ( {
 						value: source,
 						label: getTransactionSourceLabel( source ),
@@ -428,7 +410,7 @@ const FeesReport = ( {
 				id: 'type',
 				label: __( 'Type', 'woocommerce' ),
 				elements: (
-					summaryState.data?.types || [ 'charge', 'refund' ]
+					loadedSummary?.types || [ 'charge', 'refund' ]
 				).map( ( type ) => ( {
 					value: type,
 					label: getTransactionTypeLabel( type ),
@@ -537,7 +519,7 @@ const FeesReport = ( {
 					item.deposit_id || '',
 			},
 		],
-		[ summaryState.data?.sources, summaryState.data?.types ]
+		[ loadedSummary?.sources, loadedSummary?.types ]
 	);
 
 	const handleChangeView = ( nextView: View ) => {

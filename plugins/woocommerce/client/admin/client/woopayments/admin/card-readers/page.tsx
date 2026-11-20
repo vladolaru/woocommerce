@@ -28,8 +28,6 @@ export const WooPaymentsCardReadersPage = () => {
 		let isMounted = true;
 
 		const loadReaders = async () => {
-			setIsLoading( true );
-
 			try {
 				const nextReaders = await getWooPaymentsCardReaders( 10 );
 
@@ -65,15 +63,12 @@ export const WooPaymentsCardReadersPage = () => {
 
 	const hasLoadedReaders =
 		! isLoading && ! errorMessage && readers.length > 0;
-	const statusMessage =
-		( isLoading && __( 'Loading card readers…', 'woocommerce' ) ) ||
-		errorMessage ||
-		( ! isLoading &&
-			! errorMessage &&
-			readers.length === 0 &&
-			__( 'No card readers found.', 'woocommerce' ) ) ||
-		( hasLoadedReaders && __( 'Card readers loaded.', 'woocommerce' ) ) ||
-		'';
+	const statusMessage = isLoading
+		? __( 'Loading card readers…', 'woocommerce' )
+		: errorMessage ||
+			( readers.length === 0
+				? __( 'No card readers found.', 'woocommerce' )
+				: __( 'Card readers loaded.', 'woocommerce' ) );
 
 	return (
 		<div className="woocommerce-woopayments-card-readers">

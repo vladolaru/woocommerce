@@ -202,7 +202,6 @@ export const WooPaymentsVatModal = ( {
 	const vatNumberPrefix = getVatPrefix( accountCountry );
 	const detailsFieldsRef = useRef< HTMLDivElement | null >( null );
 	const isClosedRef = useRef( false );
-	const hasFocusedDetailsFieldsRef = useRef( false );
 	const [ hasValidVatNumber, setHasValidVatNumber ] = useState( false );
 	const [ vatNumber, setVatNumber ] = useState( '' );
 	const [ details, setDetails ] = useState< WooPaymentsVatDetails | null >(
@@ -217,21 +216,17 @@ export const WooPaymentsVatModal = ( {
 		};
 	}, [] );
 
+	const hasDetails = details !== null;
+
 	useEffect( () => {
-		if ( ! details ) {
-			hasFocusedDetailsFieldsRef.current = false;
+		if ( ! hasDetails ) {
 			return;
 		}
 
-		if ( hasFocusedDetailsFieldsRef.current ) {
-			return;
-		}
-
-		hasFocusedDetailsFieldsRef.current = true;
 		detailsFieldsRef.current
 			?.querySelector< HTMLInputElement >( 'input' )
 			?.focus();
-	}, [ details ] );
+	}, [ hasDetails ] );
 
 	const handleClose = () => {
 		isClosedRef.current = true;
@@ -268,16 +263,12 @@ export const WooPaymentsVatModal = ( {
 			const response =
 				await validateWooPaymentsVatNumber( normalizedVatNumber );
 
-			if ( response.valid === false ) {
-				if ( isClosedRef.current ) {
-					return;
-				}
-
-				setErrorMessage( getInvalidTaxIdMessage( taxIdLabel ) );
+			if ( isClosedRef.current ) {
 				return;
 			}
 
-			if ( isClosedRef.current ) {
+			if ( response.valid === false ) {
+				setErrorMessage( getInvalidTaxIdMessage( taxIdLabel ) );
 				return;
 			}
 

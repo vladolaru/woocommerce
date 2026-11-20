@@ -8,6 +8,7 @@ import {
 } from '../money-movement/query';
 import {
 	appendArrayParam,
+	getFilterQueryValue,
 	getFirstString,
 	isSortDirection,
 	normalizePositiveInteger,
@@ -58,19 +59,9 @@ const SORT_FIELD_BY_COLUMN_ID: Record< string, string > = {
 };
 
 const normalizeStringArray = ( value: unknown ): string[] | undefined => {
-	if ( Array.isArray( value ) ) {
-		const values = value
-			.map( ( item ) => String( item ) )
-			.filter( ( item ) => item !== '' );
+	const queryValue = getFilterQueryValue( value );
 
-		return values.length ? values : undefined;
-	}
-
-	if ( value === undefined || value === null || value === '' ) {
-		return undefined;
-	}
-
-	return [ String( value ) ];
+	return typeof queryValue === 'string' ? [ queryValue ] : queryValue;
 };
 
 // Client 11.1.0 `data/reports/resolvers.js:36-43`: every date goes through `formatDateValue()`, the start of the day

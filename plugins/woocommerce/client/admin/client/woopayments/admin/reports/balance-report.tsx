@@ -129,48 +129,30 @@ const getBalanceDateFilterFromSearch = (
 		...params.getAll( 'date_between' ),
 	].filter( isYmd );
 
-	if ( between.length >= 2 ) {
-		return normalizeBalanceDateFilter(
-			{
-				operator: 'between',
-				value: [ between[ 0 ], between[ 1 ] ],
-			},
-			now
-		);
-	}
-
 	const dateStart = params.get( 'date_start' )?.slice( 0, 10 );
 	const dateEnd = params.get( 'date_end' )?.slice( 0, 10 );
-	if ( isYmd( dateStart ) && isYmd( dateEnd ) ) {
-		return normalizeBalanceDateFilter(
-			{
-				operator: 'between',
-				value: [ dateStart, dateEnd ],
-			},
-			now
-		);
-	}
-
 	const dateBefore = params.get( 'date_before' );
-	if ( isYmd( dateBefore ) ) {
-		return normalizeBalanceDateFilter(
-			{
-				operator: 'before',
-				value: dateBefore,
-			},
-			now
-		);
+	const dateAfter = params.get( 'date_after' );
+	let requested: BalanceDateFilterValue | undefined;
+
+	if ( between.length >= 2 ) {
+		requested = {
+			operator: 'between',
+			value: [ between[ 0 ], between[ 1 ] ],
+		};
+	} else if ( isYmd( dateStart ) && isYmd( dateEnd ) ) {
+		requested = {
+			operator: 'between',
+			value: [ dateStart, dateEnd ],
+		};
+	} else if ( isYmd( dateBefore ) ) {
+		requested = { operator: 'before', value: dateBefore };
+	} else if ( isYmd( dateAfter ) ) {
+		requested = { operator: 'after', value: dateAfter };
 	}
 
-	const dateAfter = params.get( 'date_after' );
-	if ( isYmd( dateAfter ) ) {
-		return normalizeBalanceDateFilter(
-			{
-				operator: 'after',
-				value: dateAfter,
-			},
-			now
-		);
+	if ( requested ) {
+		return normalizeBalanceDateFilter( requested, now );
 	}
 
 	return getLastFullCalendarMonthDateFilter( now );
@@ -382,6 +364,8 @@ const getDisplayedBalanceAmount = ( row: BalanceRow ) =>
 		? -Math.abs( row.amount )
 		: row.amount;
 
+const getCsvTextCell = ( value: string ) => ( { value, display: value } );
+
 const getBalanceCsv = (
 	rows: BalanceRow[],
 	summary: ReportsBalanceSummary,
@@ -407,10 +391,10 @@ const getBalanceCsv = (
 			{ key: 'period_end', label: 'period_end' },
 		],
 		rows.map( ( row ) => [
-			{ value: identity.businessName, display: identity.businessName },
-			{ value: identity.accountId, display: identity.accountId },
-			{ value: row.id, display: row.id },
-			{ value: row.label, display: row.label },
+			getCsvTextCell( identity.businessName ),
+			getCsvTextCell( identity.accountId ),
+			getCsvTextCell( row.id ),
+			getCsvTextCell( row.label ),
 			{
 				value: getWooPaymentsAmountFromMinorUnits(
 					getDisplayedBalanceAmount( row ),
@@ -419,9 +403,9 @@ const getBalanceCsv = (
 				display: '',
 			},
 			{ value: row.count ?? '', display: String( row.count ?? '' ) },
-			{ value: currency.toLowerCase(), display: currency.toLowerCase() },
-			{ value: periodStart, display: periodStart },
-			{ value: periodEnd, display: periodEnd },
+			getCsvTextCell( currency.toLowerCase() ),
+			getCsvTextCell( periodStart ),
+			getCsvTextCell( periodEnd ),
 		] )
 	);
 };

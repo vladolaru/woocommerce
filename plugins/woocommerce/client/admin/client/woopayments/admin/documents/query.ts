@@ -58,7 +58,6 @@ const DOCUMENT_DATAVIEWS_FILTER_PARAMS = DOCUMENT_FILTER_PARAMS.filter(
 
 const FILTER_FIELD_ALIASES: Record< string, keyof WooPaymentsDocumentsQuery > =
 	{
-		date: 'date_between',
 		date_before: 'date_before',
 		date_after: 'date_after',
 		date_between: 'date_between',
@@ -83,10 +82,6 @@ const FILTER_PARAM_TO_FIELD: Partial<
 };
 
 const getSearchParams = ( locationOrSearch: string ) => {
-	if ( locationOrSearch.startsWith( '?' ) ) {
-		return new URLSearchParams( locationOrSearch.slice( 1 ) );
-	}
-
 	const queryIndex = locationOrSearch.indexOf( '?' );
 
 	return new URLSearchParams(

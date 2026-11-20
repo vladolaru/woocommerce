@@ -191,10 +191,15 @@ const getYearToDateFilter = ( now: Date ): BalanceDateFilterValue => ( {
 	],
 } );
 
+const REPORT_DATE_PRESETS = [
+	'last_month',
+	'last_year',
+	'month_to_date',
+	'year_to_date',
+] as const;
+
 const isReportDatePreset = ( value: string ): value is BalanceDatePreset =>
-	[ 'last_month', 'last_year', 'month_to_date', 'year_to_date' ].includes(
-		value
-	);
+	( REPORT_DATE_PRESETS as readonly string[] ).includes( value );
 
 const getDateFilterForPreset = (
 	preset: BalanceDatePreset,
@@ -349,40 +354,15 @@ const matchDatePreset = (
 		return 'custom';
 	}
 
-	const lastMonth = getLastFullCalendarMonthDateFilter( now );
+	for ( const preset of REPORT_DATE_PRESETS ) {
+		const presetFilter = getDateFilterForPreset( preset, now );
 
-	if (
-		value.value[ 0 ] === lastMonth.value[ 0 ] &&
-		value.value[ 1 ] === lastMonth.value[ 1 ]
-	) {
-		return 'last_month';
-	}
-
-	const lastYear = getLastFullCalendarYearDateFilter( now );
-
-	if (
-		value.value[ 0 ] === lastYear.value[ 0 ] &&
-		value.value[ 1 ] === lastYear.value[ 1 ]
-	) {
-		return 'last_year';
-	}
-
-	const monthToDate = getMonthToDateFilter( now );
-
-	if (
-		value.value[ 0 ] === monthToDate.value[ 0 ] &&
-		value.value[ 1 ] === monthToDate.value[ 1 ]
-	) {
-		return 'month_to_date';
-	}
-
-	const yearToDate = getYearToDateFilter( now );
-
-	if (
-		value.value[ 0 ] === yearToDate.value[ 0 ] &&
-		value.value[ 1 ] === yearToDate.value[ 1 ]
-	) {
-		return 'year_to_date';
+		if (
+			value.value[ 0 ] === presetFilter.value[ 0 ] &&
+			value.value[ 1 ] === presetFilter.value[ 1 ]
+		) {
+			return preset;
+		}
 	}
 
 	return 'custom';

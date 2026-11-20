@@ -75,13 +75,10 @@ const LoanStatusChip = ( { loan }: { loan: WooPaymentsCapitalLoan } ) => (
 	/>
 );
 
-const getLoanTransactionsUrl = ( loan: WooPaymentsCapitalLoan ) =>
-	getCapitalLoanTransactionsUrl( loan.stripe_loan_id );
-
 const LoanActionLink = ( { loan }: { loan: WooPaymentsCapitalLoan } ) => (
 	<a
 		className="woocommerce-woopayments-capital__loan-action"
-		href={ getLoanTransactionsUrl( loan ) }
+		href={ getCapitalLoanTransactionsUrl( loan.stripe_loan_id ) }
 		onClick={ handleSettingsPaymentsProviderRouteClick(
 			getCapitalLoanTransactionsRoute( loan.stripe_loan_id )
 		) }
@@ -166,8 +163,6 @@ export const WooPaymentsCapitalPage = () => {
 		let isMounted = true;
 
 		const loadCapitalData = async () => {
-			setIsLoading( true );
-
 			// Client 11.1.0 mounts the active loan card, and its summary request, only for an account with an active loan.
 			// Client 11.2.0 `capital/index.tsx:216-230`: the summary and the list load apart, so either can fail alone.
 			const [ summaryResult, loansResult ] = await Promise.allSettled( [
@@ -220,15 +215,12 @@ export const WooPaymentsCapitalPage = () => {
 	}, [] );
 
 	const hasLoans = ! isLoading && ! errorMessage && loans.length > 0;
-	const statusMessage =
-		( isLoading && __( 'Loading Capital Loans…', 'woocommerce' ) ) ||
-		errorMessage ||
-		( ! isLoading &&
-			! errorMessage &&
-			loans.length === 0 &&
-			__( 'No Capital loans found.', 'woocommerce' ) ) ||
-		( hasLoans && __( 'Capital Loans loaded.', 'woocommerce' ) ) ||
-		'';
+	const statusMessage = isLoading
+		? __( 'Loading Capital Loans…', 'woocommerce' )
+		: errorMessage ||
+			( loans.length === 0
+				? __( 'No Capital loans found.', 'woocommerce' )
+				: __( 'Capital Loans loaded.', 'woocommerce' ) );
 
 	return (
 		<div className="woocommerce-woopayments-capital">

@@ -35,7 +35,6 @@ import type {
 	WooPaymentsDocumentsAccountResponse,
 	WooPaymentsDocumentsDataView,
 	WooPaymentsDocumentsSummary,
-	WooPaymentsVatDetails,
 } from './types';
 import { WooPaymentsVatModal } from './vat-modal';
 import { encodePathSegment } from '../../path-segment';
@@ -426,7 +425,7 @@ export const WooPaymentsDocumentsPage = () => {
 		navigateTo( dataViewsViewToDocumentsQuery( nextView, query ) );
 	};
 
-	const handleVatCompleted = ( details: WooPaymentsVatDetails ) => {
+	const handleVatCompleted = () => {
 		setAccountState( ( current ) =>
 			current
 				? {
@@ -447,8 +446,6 @@ export const WooPaymentsDocumentsPage = () => {
 
 			return null;
 		} );
-
-		return details;
 	};
 
 	if ( isLoading && ! accountState ) {
@@ -459,28 +456,20 @@ export const WooPaymentsDocumentsPage = () => {
 		);
 	}
 
-	if ( errorMessage ) {
+	if ( errorMessage || ! accountState?.enabled ) {
 		return (
 			<div className="woocommerce-woopayments-documents">
 				<WooPaymentsTestModeNotice currentPage="documents" />
 				<h1>{ __( 'Documents', 'woocommerce' ) }</h1>
-				<Notice status="error" isDismissible={ false }>
-					{ errorMessage }
-				</Notice>
-			</div>
-		);
-	}
-
-	if ( ! accountState?.enabled ) {
-		return (
-			<div className="woocommerce-woopayments-documents">
-				<WooPaymentsTestModeNotice currentPage="documents" />
-				<h1>{ __( 'Documents', 'woocommerce' ) }</h1>
-				<Notice status="warning" isDismissible={ false }>
-					{ __(
-						'Documents are not available for this WooPayments account.',
-						'woocommerce'
-					) }
+				<Notice
+					status={ errorMessage ? 'error' : 'warning' }
+					isDismissible={ false }
+				>
+					{ errorMessage ||
+						__(
+							'Documents are not available for this WooPayments account.',
+							'woocommerce'
+						) }
 				</Notice>
 			</div>
 		);
