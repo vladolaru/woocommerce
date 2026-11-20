@@ -73,10 +73,9 @@ class WooPaymentsFraudRulesetService {
 	}
 
 	/**
-	 * Save the protection level and ruleset a settings request asks for, as
+	 * Save the protection level and ruleset a settings request asks for, without reading the current ones first, as
 	 * client 11.1.0 does on every settings save (`includes/admin/class-wc-rest-payments-settings-controller.php:1257-1306`);
 	 * the platform keeps an unchanged ruleset as it is. An advanced level sent with the "error" sentinel saves nothing.
-	 * A request that asks for none refreshes a Standard or High ruleset instead.
 	 *
 	 * The platform save comes first, so a rejected ruleset leaves the stored level, the cached ruleset and the account's cached AVS flag as they were.
 	 * A ruleset with a purchase price or item count limit that would apply to every order, or to none, is refused before
@@ -89,7 +88,6 @@ class WooPaymentsFraudRulesetService {
 	public function save_fraud_settings( array $params ): ?WP_Error {
 		$fraud_settings = $this->get_requested_fraud_settings( $params );
 		if ( null === $fraud_settings ) {
-			$this->refresh_built_ruleset();
 			return null;
 		}
 
@@ -122,40 +120,6 @@ class WooPaymentsFraudRulesetService {
 		$this->sync_cached_fraud_mitigation_settings_after_fraud_save( $fraud_settings );
 
 		return null;
-	}
-
-	/**
-	 * Re-send the Standard or High ruleset when a rebuild from the selling countries, the currency threshold and the review
-	 * setting differs from the cached one, or none is cached. It reads the stored level and the cache directly, so it makes
-	 * no platform read and leaves the level alone. A platform failure is logged: the save it follows was not about fraud.
-	 *
-	 * @return void
-	 */
-	private function refresh_built_ruleset(): void {
-		$level = get_option( 'current_protection_level', 'basic' );
-		if ( ! in_array( $level, array( 'standard', 'high' ), true ) || ! $this->account_service->has_account() ) {
-			return;
-		}
-
-		$ruleset = 'standard' === $level ? $this->get_standard_fraud_ruleset() : $this->get_high_fraud_ruleset();
-		$cached  = get_transient( 'wcpay_fraud_protection_settings' );
-		if ( is_array( $cached ) && self::normalize_fraud_ruleset( $cached ) === self::normalize_fraud_ruleset( $ruleset ) ) {
-			return;
-		}
-
-		try {
-			$this->api_client->save_fraud_ruleset( $ruleset );
-			set_transient( 'wcpay_fraud_protection_settings', $ruleset, DAY_IN_SECONDS );
-		} catch ( ApiException $e ) {
-			$this->logger->log_always(
-				'WooPayments fraud ruleset refresh after a settings save failed.',
-				'warning',
-				array(
-					'error_code'  => WooPaymentsLogger::get_loggable_error_code( $e->get_error_code() ),
-					'http_status' => $e->get_http_code(),
-				)
-			);
-		}
 	}
 
 	/**
@@ -718,7 +682,7 @@ class WooPaymentsFraudRulesetService {
 	 * Fetch the fraud ruleset from the platform when none is cached, or create the Basic ruleset there when the platform has none; runs once per request.
 	 *
 	 * The settings page, WooCommerce > Status, the selling-locations sync and the AVS check of a declined card payment read
-	 * the ruleset through it, so each can create the Basic ruleset on the platform; so can a settings save whose ruleset limits are refused, which compares them with the stored ruleset.
+	 * the ruleset through it, so each can create the Basic ruleset on the platform; the settings save does not read it first.
 	 * Client 11.1.0 also creates Basic through ruleset reads, including its Status page
 	 * (`includes/class-wc-payments-status.php:552-562`, `includes/class-wc-payment-gateway-wcpay.php:3108-3111,3792-3805`).
 	 *
