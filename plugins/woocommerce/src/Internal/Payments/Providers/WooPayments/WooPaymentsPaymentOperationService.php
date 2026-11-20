@@ -1163,7 +1163,7 @@ class WooPaymentsPaymentOperationService {
 			'',
 			array(
 				PaymentOutcome::DATA_ERROR_CODE            => 'wcpay_earlier_charge_not_paid',
-				WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY => __( 'Your payment did not go through and you were not charged. Please place your order again.', 'woocommerce' ),
+				WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY => __( 'Your payment did not go through. Please place your order again.', 'woocommerce' ),
 				PaymentOutcome::DATA_PRESERVE_ORDER_STATUS => true,
 			)
 		);

@@ -1032,7 +1032,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pi_resent', json_decode( (string) $http_client->responses[0]['body'], true )['id'] ?? null );
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$this->assertSame( 'wcpay_earlier_charge_not_paid', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
-		$this->assertSame( 'Your payment did not go through and you were not charged. Please place your order again.', $outcome->get_data()[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? null );
+		$this->assertSame( 'Your payment did not go through. Please place your order again.', $outcome->get_data()[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? null );
 		$this->assertTrue( $outcome->get_data()[ PaymentOutcome::DATA_PRESERVE_ORDER_STATUS ] ?? null );
 		$this->assertNull( $outcome->get_effect_plan() );
 		$this->assertSame( '', $fresh->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) );
@@ -1490,7 +1490,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pi_resent', json_decode( (string) $http_client->responses[0]['body'], true )['id'] ?? null );
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$this->assertSame( 'wcpay_earlier_charge_not_paid', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
-		$this->assertSame( 'Your payment did not go through and you were not charged. Please place your order again.', $outcome->get_data()[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? null );
+		$this->assertSame( 'Your payment did not go through. Please place your order again.', $outcome->get_data()[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? null );
 		$this->assertTrue( $outcome->get_data()[ PaymentOutcome::DATA_PRESERVE_ORDER_STATUS ] ?? null );
 		$this->assertSame( '', $fresh->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) );
 		$this->assertSame( '', $fresh->get_meta( WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META, true ) );
@@ -1573,7 +1573,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pi_resent', json_decode( (string) $http_client->responses[0]['body'], true )['id'] ?? null );
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$this->assertSame( 'wcpay_earlier_charge_not_paid', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
-		$this->assertSame( 'Your payment did not go through and you were not charged. Please place your order again.', $outcome->get_data()[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? null );
+		$this->assertSame( 'Your payment did not go through. Please place your order again.', $outcome->get_data()[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? null );
 		$this->assertTrue( $outcome->get_data()[ PaymentOutcome::DATA_PRESERVE_ORDER_STATUS ] ?? null );
 		$this->assertSame( '', $fresh->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) );
 		$this->assertSame( '', $fresh->get_meta( WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META, true ) );
@@ -2049,7 +2049,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pi_resent', json_decode( (string) $http_client->responses[0]['body'], true )['id'] ?? null );
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$this->assertSame( 'wcpay_earlier_charge_not_paid', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
-		$this->assertSame( 'Your payment did not go through and you were not charged. Please place your order again.', $outcome->get_data()[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? null );
+		$this->assertSame( 'Your payment did not go through. Please place your order again.', $outcome->get_data()[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? null );
 		$this->assertTrue( $outcome->get_data()[ PaymentOutcome::DATA_PRESERVE_ORDER_STATUS ] ?? null );
 		$this->assertSame( '', $fresh->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) );
 		$this->assertSame( '', $fresh->get_meta( WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META, true ) );
@@ -2440,7 +2440,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A card intent of the order waiting on authentication still clears: the key and record are retired and the shopper is told they were not charged.
+	 * @testdox A card intent of the order waiting on authentication still clears: the key and record are retired and the shopper is asked to place the order again.
 	 *
 	 * Only an offline method stops the clear. A lost answer leaves the shopper no way to finish a card's authentication.
 	 */
@@ -2461,7 +2461,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A Multibanco voucher that can no longer be paid ($_dataName) clears: the key and record are retired and the shopper is told they were not charged.
+	 * @testdox A Multibanco voucher that can no longer be paid ($_dataName) clears: the key and record are retired and the shopper is asked to place the order again.
 	 *
 	 * Stripe moves an unpaid voucher out of requires_action when it expires (https://docs.stripe.com/payments/multibanco),
 	 * and a cancelled one to canceled.
@@ -3560,7 +3560,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Assert that an earlier intent of the order on the account's list clears: the attempt is refused without a charge,
-	 * the key and record retired, the shopper told they were not charged, and the merchant gets the "did not go through" note.
+	 * the key and record retired, the shopper asked to place the order again, and the merchant gets the "did not go through" note.
 	 *
 	 * @param callable $build_intent Builds the order's earlier intent from the order.
 	 */
@@ -3583,7 +3583,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 0, self::posts_after_lookup( $trail ) );
 		$this->assertCount( 1, $http_client->responses, 'The bait is still queued.' );
 		$this->assertSame( 'wcpay_earlier_charge_not_paid', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
-		$this->assertSame( 'Your payment did not go through and you were not charged. Please place your order again.', $outcome->get_data()[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? null );
+		$this->assertSame( 'Your payment did not go through. Please place your order again.', $outcome->get_data()[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? null );
 		$this->assertSame( '', $fresh->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) );
 		$this->assertSame( '', $fresh->get_meta( WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META, true ) );
 		$this->assertSame( array( 'An earlier payment attempt for this order did not go through.' ), self::note_texts_containing( $fresh, 'An earlier payment attempt' ) );
