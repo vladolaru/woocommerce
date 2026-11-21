@@ -48,8 +48,8 @@ class StripeBillingInvoiceService {
 	/** Action Scheduler hook for recording a subscription's first payment. */
 	public const FIRST_INVOICE_ACTION = 'woocommerce_woopayments_retry_stripe_billing_first_invoice';
 
-	/** A checkout pay refusal needs a subscription read before any further pay attempt. */
-	private const CHECK_SUBSCRIPTION = 5;
+	/** Allow Stripe thirty minutes beyond its 23-hour first-invoice window. */
+	private const VERDICT_DELAY = 23 * HOUR_IN_SECONDS + 30 * MINUTE_IN_SECONDS;
 
 	/**
 	 * Prevent a second subscription lookup after the inline handler visits an order.
@@ -295,7 +295,7 @@ class StripeBillingInvoiceService {
 	 * @param mixed $retry           Attempt number.
 	 */
 	public function handle_first_invoice_job( $order_id, $subscription_id, $invoice_id, $retry ): void {
-		if ( SubscriptionMethodPolicy::is_duplicate_site() || ! function_exists( 'wcs_get_subscription' ) ) {
+		if ( ! $this->module->is_stripe_billing_enabled() || ! function_exists( 'wcs_get_subscription' ) || SubscriptionMethodPolicy::is_duplicate_site() || $this->module->is_migrating() ) {
 			return;
 		}
 		$order        = wc_get_order( absint( $order_id ) );
@@ -303,7 +303,7 @@ class StripeBillingInvoiceService {
 		if ( ! $order instanceof WC_Order || ! $subscription instanceof WC_Order || $invoice_id !== $this->get_subscription_invoice_id( $subscription ) || ! $this->holds_captured_money( $order ) ) {
 			return;
 		}
-		$this->record_first_invoice_payment( $order, $subscription, absint( $retry ) );
+		$this->record_first_invoice_payment( $order, $subscription, is_array( $retry ) ? $retry : absint( $retry ) );
 	}
 
 	/**
@@ -324,42 +324,86 @@ class StripeBillingInvoiceService {
 	/**
 	 * Keep an invoice refusal from interrupting the other subscriptions on the same order.
 	 *
-	 * @param WC_Order $order        Paying order.
-	 * @param WC_Order $subscription Stripe-billed subscription.
-	 * @param int|null $retry        Job attempt number, or null for the inline payment.
+	 * @param WC_Order       $order        Paying order.
+	 * @param WC_Order       $subscription Stripe-billed subscription.
+	 * @param int|array|null $retry        Pay attempt, verdict arguments, or null at checkout.
 	 */
-	private function record_first_invoice_payment( WC_Order $order, WC_Order $subscription, ?int $retry = null ): void {
+	private function record_first_invoice_payment( WC_Order $order, WC_Order $subscription, $retry = null ): void {
 		$invoice_id = $this->get_subscription_invoice_id( $subscription );
 		if ( ! $invoice_id || $this->is_ended( $subscription ) || ! $this->get_subscription_service()->is_wcpay_subscription( $subscription ) ) {
 			return;
 		}
 
-		$attempt    = self::CHECK_SUBSCRIPTION === $retry ? 2 : ( $retry ?? 0 ) + 1;
-		$read_first = self::CHECK_SUBSCRIPTION === $retry || ( null !== $retry && time() >= $this->get_window_start( $order, $subscription ) + 23 * HOUR_IN_SECONDS );
-		if ( ! $read_first ) {
-			$outcome = $this->try_first_invoice_payment( $order, $subscription, $invoice_id, $attempt );
-			if ( 'paid' === $outcome ) {
-				return;
-			}
-			$last = $this->get_window_start( $order, $subscription ) + 22 * HOUR_IN_SECONDS;
-			if ( 'retry' === $outcome && $attempt <= 4 && time() < $last ) {
-				$delays = WebhookReliabilityService::RETRY_DELAYS_SECONDS;
-				$due    = isset( $delays[ $attempt - 1 ] ) ? time() + $delays[ $attempt - 1 ] : $last;
-				$this->schedule_attempt( $order->get_id(), $subscription->get_id(), $invoice_id, $due >= $last ? 4 : $attempt, min( $last, $due ) );
-				return;
-			}
-			if ( null === $retry ) {
-				$next = 'retry' === $outcome ? 4 : self::CHECK_SUBSCRIPTION;
-				$this->schedule_attempt( $order->get_id(), $subscription->get_id(), $invoice_id, $next, time() );
-				return;
-			}
+		$order_id        = $order->get_id();
+		$subscription_id = $subscription->get_id();
+		if ( is_array( $retry ) ) {
+			$this->check_first_invoice( $order, $subscription, $invoice_id, ! empty( $retry['final'] ), absint( $retry['read'] ?? 0 ) );
+			return;
 		}
 
+		$attempt = ( $retry ?? 0 ) + 1;
+		// Jobs queued by the previous check-only handler must wait for the same verdict.
+		$outcome = 5 === $retry ? 'check' : $this->try_first_invoice_payment( $order, $subscription, $invoice_id, $attempt );
+		if ( 'paid' === $outcome && ! $retry ) {
+			return;
+		}
+		$args   = compact( 'order_id', 'subscription_id', 'invoice_id' );
+		$delays = WebhookReliabilityService::RETRY_DELAYS_SECONDS;
+		foreach ( array( false, true ) as $final ) {
+			foreach ( range( 0, count( $delays ) ) as $read ) {
+				$job     = $args + array( 'retry' => compact( 'final', 'read' ) );
+				$pending = as_has_scheduled_action( self::FIRST_INVOICE_ACTION, $job, WooPaymentsActionSchedulerService::GROUP_ID );
+				if ( $pending ) {
+					if ( 'paid' === $outcome ) {
+						as_unschedule_action( self::FIRST_INVOICE_ACTION, $job, WooPaymentsActionSchedulerService::GROUP_ID );
+					}
+					break 2;
+				}
+			}
+		}
+		if ( 'paid' === $outcome ) {
+			return;
+		}
+		$start = $this->get_window_start( $order, $subscription );
+		if ( ! $pending ) {
+			$this->schedule_attempt(
+				$order_id,
+				$subscription_id,
+				$invoice_id,
+				array(
+					'final' => false,
+					'read'  => 0,
+				),
+				max( time(), $start + self::VERDICT_DELAY )
+			);
+		}
+		$last = $start + 22 * HOUR_IN_SECONDS;
+		if ( 'retry' === $outcome && $attempt <= 4 && time() < $last ) {
+			$due = isset( $delays[ $attempt - 1 ] ) ? time() + $delays[ $attempt - 1 ] : $last;
+			$this->schedule_attempt( $order_id, $subscription_id, $invoice_id, $due >= $last ? 4 : $attempt, min( $last, $due ) );
+		}
+	}
+
+	/**
+	 * Read Stripe after its expiry window. Only this job may write the stopped-billing note.
+	 *
+	 * @param WC_Order $order Paying order.
+	 * @param WC_Order $subscription Bound subscription.
+	 * @param string   $invoice_id First invoice.
+	 * @param bool     $last_verdict Whether Stripe already reported incomplete at the first verdict.
+	 * @param int      $read Read retry number.
+	 */
+	private function check_first_invoice( WC_Order $order, WC_Order $subscription, string $invoice_id, bool $last_verdict, int $read ): void {
 		$subscription_id = $subscription->get_id();
 		try {
 			$stripe = $this->api->get_subscription( $this->get_subscription_service()->get_wcpay_subscription_id( $subscription ) );
 		} catch ( Throwable $exception ) {
-			$this->logger->log_throwable_always( 'Could not check the first invoice payment.', $exception, compact( 'subscription_id' ) );
+			if ( $exception instanceof ApiException && ! ApiException::leaves_the_answer_unknown( $exception ) && ( '' !== $exception->get_error_type() || isset( $exception->get_error_data()['status'] ) ) ) {
+				$this->logger->log_throwable_always( 'Could not check the first invoice payment.', $exception, compact( 'subscription_id' ) );
+				return;
+			}
+		}
+		if ( ! $this->module->is_stripe_billing_enabled() || $this->module->is_migrating() ) {
 			return;
 		}
 		$status = $stripe['status'] ?? '';
@@ -370,10 +414,32 @@ class StripeBillingInvoiceService {
 				$note = sprintf( __( "WooPayments could not tell Stripe that this subscription's first payment was received, so Stripe stopped billing it and it will not renew. The customer's first payment is not affected. To keep billing this customer, ask them to subscribe again, then cancel this subscription. Stripe subscription ID: %s.", 'woocommerce' ), esc_html( $this->get_subscription_service()->get_wcpay_subscription_id( $current ) ) );
 				wc_get_container()->get( WooPaymentsOrderNoteService::class )->add_note_once( $current, $note, 'stripe_billing_first_invoice_unrecorded:' . $invoice_id );
 			}
-		} elseif ( 'incomplete' === $status ) {
-			$this->try_first_invoice_payment( $order, $subscription, $invoice_id, $read_first ? $attempt : $attempt + 1 );
-		} elseif ( is_string( $status ) && '' !== $status ) {
+		} elseif ( 'incomplete' === $status && ! $last_verdict ) {
+			if ( 'paid' !== $this->try_first_invoice_payment( $order, $subscription, $invoice_id, 6 ) ) {
+				$this->schedule_attempt(
+					$order->get_id(),
+					$subscription_id,
+					$invoice_id,
+					array(
+						'final' => true,
+						'read'  => 0,
+					),
+					time() + DAY_IN_SECONDS
+				);
+			}
+		} elseif ( is_string( $status ) && '' !== $status && 'incomplete' !== $status ) {
 			$this->adopt_order_payment_method( $subscription, $order );
+		} elseif ( 'incomplete' !== $status && isset( WebhookReliabilityService::RETRY_DELAYS_SECONDS[ $read ] ) ) {
+			$this->schedule_attempt(
+				$order->get_id(),
+				$subscription_id,
+				$invoice_id,
+				array(
+					'final' => $last_verdict,
+					'read'  => $read + 1,
+				),
+				time() + WebhookReliabilityService::RETRY_DELAYS_SECONDS[ $read ]
+			);
 		} else {
 			$this->logger->log_always( 'Could not verify the first invoice payment from the subscription status.', 'warning', compact( 'subscription_id' ) );
 		}
@@ -438,13 +504,13 @@ class StripeBillingInvoiceService {
 	/**
 	 * A remade subscription must never receive a job queued for its previous invoice.
 	 *
-	 * @param int    $order_id        Paying order ID.
-	 * @param int    $subscription_id Subscription ID.
-	 * @param string $invoice_id      Stripe invoice ID.
-	 * @param int    $retry           Attempt number.
-	 * @param int    $due             Timestamp.
+	 * @param int       $order_id        Paying order ID.
+	 * @param int       $subscription_id Subscription ID.
+	 * @param string    $invoice_id      Stripe invoice ID.
+	 * @param int|array $retry        Pay attempt or verdict arguments.
+	 * @param int       $due             Timestamp.
 	 */
-	private function schedule_attempt( int $order_id, int $subscription_id, string $invoice_id, int $retry, int $due ): void {
+	private function schedule_attempt( int $order_id, int $subscription_id, string $invoice_id, $retry, int $due ): void {
 		try {
 			$this->scheduler->schedule_job( self::FIRST_INVOICE_ACTION, compact( 'order_id', 'subscription_id', 'invoice_id', 'retry' ), $due );
 		} catch ( Throwable $exception ) {

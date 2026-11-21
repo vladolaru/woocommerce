@@ -214,6 +214,23 @@ class WooPaymentsFeeDetailsJobSchedulingTest extends WC_Unit_Test_Case {
 			'group'  => 'woocommerce_payments',
 		);
 		$jobs  = array_values( as_get_scheduled_actions( $query ) );
+		if ( 'D3' === $row ) {
+			$this->assertCount( 2, $jobs );
+			$verdict = array_pop( $jobs );
+			$this->assertSame(
+				array(
+					'order_id'        => $order->get_id(),
+					'subscription_id' => $subscription->get_id(),
+					'invoice_id'      => 'in_first',
+					'retry'           => array(
+						'final' => false,
+						'read'  => 0,
+					),
+				),
+				$verdict->get_args()
+			);
+			$this->assertEqualsWithDelta( $start + 23 * HOUR_IN_SECONDS + 30 * MINUTE_IN_SECONDS, $verdict->get_schedule()->get_date()->getTimestamp(), 5 );
+		}
 		$this->assertCount( null === $retry ? 0 : 1, $jobs );
 		if ( null !== $retry ) {
 			$args = array(

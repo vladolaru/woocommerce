@@ -74,6 +74,12 @@ class StripeBillingModule implements RegisterHooksInterface {
 	 */
 	public function handle_plugins_loaded(): void {
 		if ( ! SubscriptionMethodPolicy::is_woocommerce_subscriptions_active() ) {
+			add_action(
+				StripeBillingInvoiceService::FIRST_INVOICE_ACTION,
+				static function (): void {
+					// Complete previously queued jobs when Subscriptions has been deactivated.
+				}
+			);
 			return;
 		}
 
@@ -312,7 +318,7 @@ class StripeBillingModule implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Queue the first invoice when this site owns existing Stripe subscriptions.
+	 * Queue the first invoice while Stripe Billing is on.
 	 *
 	 * @param WC_Order $order Paying order.
 	 */

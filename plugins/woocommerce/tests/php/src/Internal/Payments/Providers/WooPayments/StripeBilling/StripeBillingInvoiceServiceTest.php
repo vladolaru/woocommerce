@@ -83,6 +83,12 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 	/** @var bool Current store payment mode. */
 	private bool $test_mode = true;
 
+	/** @var bool Whether a migration is in progress. */
+	private bool $migrating = false;
+
+	/** @var StripeBillingApi The platform client used by the service. */
+	private StripeBillingApi $api;
+
 	/**
 	 * Subscriptions controller stand-in that records the payment method copied to a subscription.
 	 *
@@ -113,13 +119,15 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 		$api_client->init( $this->http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
 		$api = new StripeBillingApi();
 		$api->init( $api_client );
-		$logger = new WooPaymentsLogger();
+		$this->api = $api;
+		$logger    = new WooPaymentsLogger();
 		$logger->init( $account_service );
 
 		$product_service = new StripeBillingProductService();
 		$product_service->init( $api, $account_service, $logger );
 
 		$module = $this->createMock( StripeBillingModule::class );
+		$module->method( 'is_migrating' )->willReturnCallback( fn() => $this->migrating );
 		$module->method( 'is_stripe_billing_enabled' )->willReturnCallback( fn() => $this->stripe_billing_enabled );
 
 		$this->subscriptions_controller = $this->getMockBuilder( SubscriptionsController::class )
@@ -322,13 +330,11 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 			$this->assertStringEndsWith( '/in_second/pay', $this->http_client->last_path );
 			$this->assertNotContains( self::FAILURE_NOTE, $this->get_order_note_texts( $second ) );
 		}
-		if ( 400 === $code ) {
-			$this->assert_invoice_schedule( $order, $subscription, 5, $start );
-		} elseif ( 'old inline' === $row ) {
-			$this->assert_invoice_schedule( $order, $subscription, 4, $start );
-		} else {
-			$this->assert_invoice_schedule( $order, $subscription, $retry ? 1 : null, $start + 60 );
+		$window = 'old inline' === $row ? $start - $age : $start;
+		if ( 200 !== $code ) {
+			$this->take_verdict( $order, $subscription, max( $start, $window + 23 * HOUR_IN_SECONDS + 30 * MINUTE_IN_SECONDS ) );
 		}
+		$this->assert_invoice_schedule( $order, $subscription, $retry && 'old inline' !== $row ? 1 : null, $start + 60 );
 	}
 
 	/**
@@ -343,7 +349,7 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 	 *           ["A5", "succeeded", "pi_first", 3, 7200, 503, 1, 72000]
 	 *           ["early-last", "succeeded", "pi_first", 2, 77400, 503, 1, 1800]
 	 *           ["A6", "succeeded", "pi_first", 1, 82800, 200, 1, null]
-	 *           ["A7", "succeeded", "pi_first", 4, 79200, 503, 3, null]
+	 *           ["A7", "succeeded", "pi_first", 4, 79200, 503, 1, null]
 	 *           ["A8", "succeeded", "pi_first", 1, 0, 200, 1, null]
 	 *           ["A9", "succeeded", "pi_first", 1, 0, 400, 1, null]
 	 *           ["paid zero", "", "", 0, 0, 200, 1, null]
@@ -378,26 +384,18 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 			$refund      = wc_create_refund( $refund_args );
 			$this->assertInstanceOf( \WC_Order_Refund::class, $refund );
 		}
-		if ( 'A6' !== $row ) {
-			$this->queue_invoice_answer( $code, 'Invoice is already paid.' );
-		}
-		if ( in_array( $row, array( 'A6', 'A7' ), true ) ) {
-			$this->http_client->responses[] = $this->make_response( 200, array( 'status' => 'incomplete_expired' ) );
-		}
+		$this->queue_invoice_answer( $code, 'Invoice is already paid.' );
 		$this->subscriptions_controller->expects( 'A8' === $row ? $this->once() : $this->never() )->method( 'update_failing_payment_method' );
 
 		$this->sut->handle_first_invoice_job( $order->get_id(), $subscription->get_id(), 'B1' === $row ? 'in_old' : self::MAIN_INVOICE_ID, $retry );
-		if ( 'A7' === $row ) {
-			$this->http_client->responses[] = $this->make_response( 200, array( 'status' => 'incomplete_expired' ) );
-			$subscription->set_date_created( $now - 23 * HOUR_IN_SECONDS );
-			$subscription->save();
-			$order->set_date_created( $now - 23 * HOUR_IN_SECONDS );
-			$order->save();
-			$this->sut->handle_first_invoice_job( $order->get_id(), $subscription->get_id(), self::MAIN_INVOICE_ID, $retry );
-		}
-
 		$this->assertSame( $requests, $this->http_client->request_count );
-		$this->assertSame( in_array( $row, array( 'A6', 'A7' ), true ) ? 1 : 0, count( array_keys( $this->get_order_note_texts( $subscription ), self::FAILURE_NOTE, true ) ) );
+		if ( $requests ) {
+			$this->assertSame( array( 'POST' ), array_column( $this->get_requests(), 0 ) );
+		}
+		if ( 503 === $code ) {
+			$this->take_verdict( $order, $subscription, $now - $age + 23 * HOUR_IN_SECONDS + 30 * MINUTE_IN_SECONDS );
+		}
+		$this->assertNotContains( self::FAILURE_NOTE, $this->get_order_note_texts( $subscription ) );
 		if ( 'A8' === $row ) {
 			$this->assertFalse( wc_get_order( $subscription->get_id() )->is_manual() );
 		}
@@ -448,19 +446,13 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 		$this->http_client->responses[] = $this->make_response( 'read failed' === $state ? 403 : 200, $answer );
 		$this->queue_recorded_responses( 'charge_invoice' );
 		$warnings = array();
-		add_filter(
-			'woocommerce_logger_log_message',
-			static function ( $message, $level, $context, $handler ) use ( &$warnings, $subscription ) {
-				if ( $subscription->get_id() === ( $context['subscription_id'] ?? null ) ) {
-					$warnings[ spl_object_id( $handler ) ][] = $message;
-				}
-				return $message;
-			},
-			10,
-			4
-		);
+		$this->watch_verdict_warnings( $subscription, $warnings );
 
-		$this->sut->handle_first_invoice_job( $order->get_id(), $subscription->get_id(), self::MAIN_INVOICE_ID, 1 );
+		$verdict = array(
+			'final' => false,
+			'read'  => 3,
+		);
+		$this->sut->handle_first_invoice_job( $order->get_id(), $subscription->get_id(), self::MAIN_INVOICE_ID, $verdict );
 
 		if ( in_array( $state, array( 'active', 'trialing', 'past_due', 'paused' ), true ) ) {
 			$this->assertFalse( wc_get_order( $subscription->get_id() )->is_manual() );
@@ -479,6 +471,11 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 			$this->assertCount( $logs, $messages );
 		}
 		$this->assert_invoice_schedule( $order, $subscription, null, 0 );
+		if ( 'incomplete_expired' === $state ) {
+			$this->http_client->responses = array( $this->make_response( 200, $answer ) );
+			$this->sut->handle_first_invoice_job( $order->get_id(), $subscription->get_id(), self::MAIN_INVOICE_ID, $verdict );
+			$this->assertSame( 1, count( array_keys( $this->get_order_note_texts( $subscription ), self::FAILURE_NOTE, true ) ) );
+		}
 	}
 
 	/**
@@ -497,13 +494,22 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 		$subscription = $this->create_stripe_billed_subscription( $order, 'parent' );
 		$subscription->set_date_created( $order->get_date_created() );
 		$subscription->save();
-		$this->queue_invoice_answer( 503, 'Unavailable.' );
+		$this->queue_invoice_answer( 400, 'Refused.' );
+		$this->sut->maybe_record_invoice_payment( $order->get_id() );
+		$args                           = $this->take_verdict( $order, $subscription, time() + 90 * MINUTE_IN_SECONDS );
 		$this->http_client->responses[] = $this->make_response( 200, array( 'status' => 'incomplete' ) );
 		$this->queue_invoice_answer( $code, 'Unable to pay this invoice.' );
-
-		$this->sut->handle_first_invoice_job( $order->get_id(), $subscription->get_id(), self::MAIN_INVOICE_ID, 4 );
-
-		$this->assertSame( array( 'POST', 'GET', 'POST' ), array_column( $this->get_requests(), 0 ) );
+		$this->sut->handle_first_invoice_job( ...$args );
+		$args     = $this->take_verdict( $order, $subscription, time() + DAY_IN_SECONDS, true );
+		$warnings = array();
+		$this->watch_verdict_warnings( $subscription, $warnings );
+		$this->http_client->responses[] = $this->make_response( 200, array( 'status' => 'incomplete' ) );
+		$this->sut->handle_first_invoice_job( ...$args );
+		$this->assertNotEmpty( $warnings );
+		foreach ( $warnings as $messages ) {
+			$this->assertCount( 1, $messages );
+		}
+		$this->assertSame( array( 'POST', 'GET', 'POST', 'GET' ), array_column( $this->get_requests(), 0 ) );
 		$this->assertNotContains( self::FAILURE_NOTE, $this->get_order_note_texts( $subscription ) );
 		$this->assert_invoice_schedule( $order, $subscription, null, 0 );
 	}
@@ -530,12 +536,14 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 			$this->assertSame( array( 'POST' ), array_column( $this->get_requests(), 0 ) );
 			$this->assertFalse( $this->get_requests()[0][2]['test_mode'] );
 			$this->assertNotContains( self::FAILURE_NOTE, $this->get_order_note_texts( $subscription ) );
-			$this->assert_invoice_schedule( $order, $subscription, 5, time() );
-			$args = $this->take_pending_invoice_job();
+			$args = $this->take_verdict( $order, $subscription, time() + 23 * HOUR_IN_SECONDS + 30 * MINUTE_IN_SECONDS );
 			$this->sut->handle_first_invoice_job( ...$args );
 		} else {
 			$this->http_client->responses[] = $this->make_response( 200, array( 'status' => 'active' ) );
 			$this->sut->handle_first_invoice_job( $order->get_id(), $subscription->get_id(), self::MAIN_INVOICE_ID, 1 );
+			$this->assertSame( array( 'POST' ), array_column( $this->get_requests(), 0 ) );
+			$args = $this->take_verdict( $order, $subscription, time() + 23 * HOUR_IN_SECONDS + 30 * MINUTE_IN_SECONDS );
+			$this->sut->handle_first_invoice_job( ...$args );
 		}
 
 		$requests = $this->get_requests();
@@ -558,8 +566,7 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 		$this->queue_invoice_answer( 503, 'Lost pay response.' );
 		$this->sut->maybe_record_invoice_payment( $order->get_id() );
 
-		$this->assert_invoice_schedule( $order, $subscription, 1, time() + 60 );
-		$args = $this->take_pending_invoice_job();
+		$args = $this->take_pay_retry( $order, $subscription );
 
 		$warnings = array();
 		add_filter(
@@ -586,20 +593,268 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Remove the pending job before directly invoking its callback with the scheduled arguments.
-	 *
-	 * @return array Job arguments.
+	 * @testdox An expired first invoice gets its note when the due verdict runs from the queue.
 	 */
-	private function take_pending_invoice_job(): array {
-		$jobs = as_get_scheduled_actions(
-			array(
-				'hook'   => self::FIRST_INVOICE_HOOK,
-				'status' => 'pending',
-				'group'  => 'woocommerce_payments',
-			)
+	public function test_first_invoice_verdict_runs_from_the_queue(): void {
+		$order = \WC_Helper_Order::create_order();
+		$order->set_date_created( time() - DAY_IN_SECONDS );
+		$order->update_meta_data( '_intention_status', 'succeeded' );
+		$order->update_meta_data( '_intent_id', 'pi_verdict' );
+		$order->save();
+		$subscription = $this->create_stripe_billed_subscription( $order, 'parent' );
+		$subscription->set_date_created( $order->get_date_created() );
+		$subscription->save();
+		$this->queue_invoice_answer( 400, 'This invoice is void.' );
+		$this->sut->maybe_record_invoice_payment( $order->get_id() );
+		$this->assertSame( array( 'POST' ), array_column( $this->get_requests(), 0 ) );
+		$this->assertNotContains( self::FAILURE_NOTE, $this->get_order_note_texts( $subscription ) );
+		$args = array(
+			'order_id'        => $order->get_id(),
+			'subscription_id' => $subscription->get_id(),
+			'invoice_id'      => self::MAIN_INVOICE_ID,
+			'retry'           => array(
+				'final' => false,
+				'read'  => 0,
+			),
 		);
-		$this->assertCount( 1, $jobs );
-		$args = reset( $jobs )->get_args();
+		$this->assertTrue( as_has_scheduled_action( self::FIRST_INVOICE_HOOK, $args, 'woocommerce_payments' ) );
+		$this->http_client->responses[] = $this->make_response( 200, array( 'status' => 'incomplete_expired' ) );
+		add_action( self::FIRST_INVOICE_HOOK, array( $this->sut, 'handle_first_invoice_job' ), 10, 4 );
+		$due = as_get_scheduled_actions(
+			array(
+				'hook'         => self::FIRST_INVOICE_HOOK,
+				'group'        => 'woocommerce_payments',
+				'status'       => 'pending',
+				'date'         => as_get_datetime_object(),
+				'date_compare' => '<=',
+			),
+			'ids'
+		);
+		$this->assertCount( 1, $due );
+		\ActionScheduler_QueueRunner::instance()->process_action( $due[0], 'first invoice' );
+		$this->assertSame( 'complete', \ActionScheduler::store()->get_status( $due[0] ) );
+		$this->assertSame( array( 'POST', 'GET' ), array_column( $this->get_requests(), 0 ) );
+		$this->assertSame( 1, count( array_keys( $this->get_order_note_texts( $subscription ), self::FAILURE_NOTE, true ) ) );
+		$this->assert_invoice_schedule( $order, $subscription, null, 0 );
+	}
+
+	/**
+	 * @testdox A late pay retry leaves the original verdict due at checkout plus 23 hours 30 minutes.
+	 */
+	public function test_late_first_invoice_retry_preserves_the_verdict(): void {
+		$order = \WC_Helper_Order::create_order();
+		$order->update_meta_data( '_intention_status', 'succeeded' );
+		$order->update_meta_data( '_intent_id', 'pi_late' );
+		$order->save();
+		$subscription = $this->create_stripe_billed_subscription( $order, 'parent' );
+		$now          = time();
+		$this->queue_invoice_answer( 503, 'Unavailable.' );
+		$this->sut->handle_first_invoice_job( $order->get_id(), $subscription->get_id(), self::MAIN_INVOICE_ID, 0 );
+		$pay = $this->take_pay_retry( $order, $subscription );
+		$order->set_date_created( $now - DAY_IN_SECONDS );
+		$order->save();
+		$subscription->set_date_created( $order->get_date_created() );
+		$subscription->save();
+		$this->queue_invoice_answer( 503, 'Unavailable.' );
+		$this->sut->handle_first_invoice_job( ...$pay );
+		$this->assertSame( array( 'POST', 'POST' ), array_column( $this->get_requests(), 0 ) );
+		$this->take_verdict( $order, $subscription, $now + 23 * HOUR_IN_SECONDS + 30 * MINUTE_IN_SECONDS );
+		$this->assert_invoice_schedule( $order, $subscription, null, 0 );
+	}
+
+	/**
+	 * @testdox A transient or unusable verdict retries at the shared intervals, then logs once or adopts the paid subscription.
+	 * @testWith [false, false]
+	 *           [false, true]
+	 *           [true, false]
+	 *
+	 * @param bool $last_verdict Last verdict after an incomplete response.
+	 * @param bool $recover Whether the last read succeeds.
+	 */
+	public function test_first_invoice_verdict_read_cadence( bool $last_verdict, bool $recover ): void {
+		$order = \WC_Helper_Order::create_order();
+		$order->update_meta_data( '_intention_status', 'succeeded' );
+		$order->update_meta_data( '_intent_id', 'pi_read' );
+		$order->save();
+		$subscription = $this->create_stripe_billed_subscription( $order, 'parent', array( '_requires_manual_renewal' => 'true' ) );
+		$logs         = array();
+		$this->watch_verdict_warnings( $subscription, $logs );
+		$args = array(
+			$order->get_id(),
+			$subscription->get_id(),
+			self::MAIN_INVOICE_ID,
+			array(
+				'final' => $last_verdict,
+				'read'  => 0,
+			),
+		);
+		foreach ( array( 60, 600, 3600 ) as $read => $delay ) {
+			$this->http_client->responses[] = $this->make_response( 1 === $read ? 200 : 503, array() );
+			$this->sut->handle_first_invoice_job( ...$args );
+			$this->assertSame( array(), $logs );
+			$args = $this->take_verdict( $order, $subscription, time() + $delay, $last_verdict, $read + 1 );
+		}
+		$this->http_client->responses[] = $this->make_response( $recover ? 200 : 503, array( 'status' => 'active' ) );
+		$this->sut->handle_first_invoice_job( ...$args );
+		$this->assertSame( $recover, empty( $logs ) );
+		foreach ( $logs as $messages ) {
+			$this->assertCount( 1, $messages );
+		}
+		$this->assertSame( ! $recover, wc_get_order( $subscription->get_id() )->is_manual() );
+		$this->assertSame( array( 'GET', 'GET', 'GET', 'GET' ), array_column( $this->get_requests(), 0 ) );
+		$this->assertNotContains( self::FAILURE_NOTE, $this->get_order_note_texts( $subscription ) );
+		$this->assert_invoice_schedule( $order, $subscription, null, 0 );
+	}
+
+	/**
+	 * @testdox A job superseded before it runs ends quietly. A migration starting during the read also suppresses the note.
+	 * @testWith ["toggle", false]
+	 *           ["migration", false]
+	 *           ["migration", true]
+	 *           ["migration during read", true]
+	 *           ["replaced invoice", true]
+	 *           ["ended", true]
+	 *           ["toggle", true]
+	 *
+	 * @param string $reason Why the first invoice no longer belongs to this job.
+	 * @param bool   $verdict Whether this job reads the verdict.
+	 */
+	public function test_superseded_first_invoice_job( string $reason, bool $verdict ): void {
+		$order = \WC_Helper_Order::create_order();
+		$order->update_meta_data( '_intention_status', 'succeeded' );
+		$order->update_meta_data( '_intent_id', 'pi_superseded' );
+		$order->save();
+		$subscription = $this->create_stripe_billed_subscription( $order, 'parent' );
+		if ( 'ended' === $reason ) {
+			$subscription->update_status( 'pending-cancel' );
+		} elseif ( 'replaced invoice' === $reason ) {
+			$this->sut->set_subscription_invoice_id( $subscription, 'in_replacement' );
+		} elseif ( 'migration during read' === $reason ) {
+			add_filter(
+				'wcpay_api_request_params',
+				function ( $params ) {
+					$this->migrating = true;
+					return $params;
+				}
+			);
+		}
+		$this->stripe_billing_enabled   = 'toggle' !== $reason;
+		$this->migrating                = 'migration' === $reason;
+		$this->http_client->responses[] = $this->make_response( 200, array( 'status' => 'incomplete_expired' ) );
+		$this->sut->handle_first_invoice_job(
+			$order->get_id(),
+			$subscription->get_id(),
+			self::MAIN_INVOICE_ID,
+			$verdict ? array(
+				'final' => false,
+				'read'  => 0,
+			) : 1
+		);
+		$this->assertSame( 'migration during read' === $reason ? array( 'GET' ) : array(), array_column( $this->get_requests(), 0 ) );
+		$this->assertNotContains( self::FAILURE_NOTE, $this->get_order_note_texts( $subscription ) );
+		$this->assert_invoice_schedule( $order, $subscription, null, 0 );
+	}
+
+	/**
+	 * @testdox A successful checkout adds zero queries to the existing invoice payment path.
+	 */
+	public function test_first_invoice_success_adds_zero_queries(): void {
+		global $wpdb;
+		$order        = \WC_Helper_Order::create_order();
+		$subscription = $this->create_stripe_billed_subscription( $order, 'parent' );
+		$this->queue_recorded_responses( 'charge_invoice' );
+		$this->sut->maybe_record_invoice_payment( $order->get_id() );
+
+		$this->queue_recorded_responses( 'charge_invoice' );
+		$before = $wpdb->num_queries;
+		$paying = wc_get_order( $order->get_id() );
+		$this->sut->get_order_invoice_id( $paying );
+		$related = wcs_get_subscriptions_for_order( $paying, array( 'order_type' => array( 'parent', 'renewal' ) ) );
+		$sub     = reset( $related );
+		$this->assertTrue( wc_get_container()->get( StripeBillingSubscriptionService::class )->is_wcpay_subscription( $sub ) );
+		$this->api->charge_invoice( $this->sut->get_subscription_invoice_id( $sub ), array( 'paid_out_of_band' => 'true' ) );
+		$baseline = $wpdb->num_queries - $before;
+
+		$this->queue_recorded_responses( 'charge_invoice' );
+		$before = $wpdb->num_queries;
+		$this->sut->maybe_record_invoice_payment( $order->get_id() );
+		$this->assertSame( 0, $wpdb->num_queries - $before - $baseline );
+		$this->assertSame( array( 'POST', 'POST', 'POST' ), array_column( $this->get_requests(), 0 ) );
+		$this->assert_invoice_schedule( $order, $subscription, null, 0 );
+	}
+
+	/**
+	 * Collect application warnings once per log handler.
+	 *
+	 * @param WC_Order $subscription Subscription.
+	 * @param array    $warnings Captured messages.
+	 */
+	private function watch_verdict_warnings( WC_Order $subscription, array &$warnings ): void {
+		add_filter(
+			'woocommerce_logger_log_message',
+			static function ( $message, $level, $context, $handler ) use ( &$warnings, $subscription ) {
+				if ( $subscription->get_id() === ( $context['subscription_id'] ?? null ) ) {
+					$warnings[ spl_object_id( $handler ) ][] = $message;
+				}
+				return $message;
+			},
+			10,
+			4
+		);
+	}
+
+	/**
+	 * Take the scheduled pay retry, leaving its verdict pending until payment succeeds.
+	 *
+	 * @param WC_Order $order Paying order.
+	 * @param WC_Order $subscription Subscription.
+	 * @return array Scheduled arguments.
+	 */
+	private function take_pay_retry( WC_Order $order, WC_Order $subscription ): array {
+		return $this->take_job( $order, $subscription, 1, time() + 60 );
+	}
+
+	/**
+	 * Take the specified verdict without changing the other jobs for this invoice.
+	 *
+	 * @param WC_Order $order Paying order.
+	 * @param WC_Order $subscription Subscription.
+	 * @param int      $due Due time.
+	 * @param bool     $last_verdict Last verdict after Stripe still reported incomplete.
+	 * @param int      $read Read retry number.
+	 * @return array Scheduled arguments.
+	 */
+	private function take_verdict( WC_Order $order, WC_Order $subscription, int $due, bool $last_verdict = false, int $read = 0 ): array {
+		return $this->take_job(
+			$order,
+			$subscription,
+			array(
+				'final' => $last_verdict,
+				'read'  => $read,
+			),
+			$due
+		);
+	}
+
+	/**
+	 * Remove a pending job for execution and check the due time recorded by Action Scheduler.
+	 *
+	 * @param WC_Order  $order Paying order.
+	 * @param WC_Order  $subscription Subscription.
+	 * @param int|array $retry Pay retry or verdict arguments.
+	 * @param int       $due Due time.
+	 * @return array Scheduled arguments.
+	 */
+	private function take_job( WC_Order $order, WC_Order $subscription, $retry, int $due ): array {
+		$args = array(
+			'order_id'        => $order->get_id(),
+			'subscription_id' => $subscription->get_id(),
+			'invoice_id'      => self::MAIN_INVOICE_ID,
+			'retry'           => $retry,
+		);
+		$when = as_next_scheduled_action( self::FIRST_INVOICE_HOOK, $args, 'woocommerce_payments' );
+		$this->assertIsInt( $when );
+		$this->assertEqualsWithDelta( $due, $when, 5 );
 		as_unschedule_action( self::FIRST_INVOICE_HOOK, $args, 'woocommerce_payments' );
 		return array_values( $args );
 	}

@@ -137,6 +137,9 @@ class StripeBillingModuleTest extends WC_Unit_Test_Case {
 		wc_get_container()->replace( StripeBillingInvoiceService::class, $invoices );
 		try {
 			$this->register_module()->schedule_first_invoice_job_now( wc_create_order() );
+			$id = as_schedule_single_action( time(), StripeBillingInvoiceService::FIRST_INVOICE_ACTION, array( 123, 456, 'in_old', 1 ), 'woocommerce_payments' );
+			\ActionScheduler_QueueRunner::instance()->process_action( $id );
+			$this->assertSame( 'complete', \ActionScheduler::store()->get_status( $id ) );
 			$this->assertFalse( as_has_scheduled_action( 'woocommerce_woopayments_retry_stripe_billing_first_invoice' ) );
 		} finally {
 			$this->reset_container_replacements();
