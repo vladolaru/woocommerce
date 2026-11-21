@@ -191,43 +191,24 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Fetch the account for the setup tier recheck, which may only raise the tier, and tell whether the platform answered.
+	 * Refetch the account and tell whether the platform answered.
 	 *
-	 * An account the platform finds is written as a normal read writes it, so the tier follows the account and the gateway
-	 * setting; it counts as answered only once the stored tier is no longer available. An answer of no account writes
-	 * nothing and counts as answered. A failed read writes nothing.
+	 * An answer rewrites the account cache and the setup tier from it. A read that errored, or one with no platform
+	 * connection, leaves both as they were.
 	 *
 	 * @since 11.4.0
 	 *
 	 * @return bool
 	 */
-	public function read_account_to_raise_setup_tier(): bool {
-		$setup_tier = $this->setup_tier;
-		if ( null === $setup_tier || ! $this->is_connection_state_known() || ! $this->is_platform_connected() ) {
+	public function try_refresh_account_data(): bool {
+		if ( ! $this->is_connection_state_known() || ! $this->is_platform_connected() ) {
 			return false;
 		}
 
-		$data = $this->fetch_account_data();
-		if ( ! is_array( $data ) ) {
-			return false;
-		}
-		if ( array() === $data ) {
-			return true;
-		}
+		$this->refresh_account_data();
+		$cache_contents = $this->get_account_cache();
 
-		// Onboarding may have turned the gateway on while the request was out; read its setting past this request's cache.
-		$this->legacy_proxy->call_function( 'wp_cache_delete', 'alloptions', 'options' );
-		$this->write_account_cache( $data, false );
-		/**
-		 * Fires after the WooPayments account data is fetched from the platform.
-		 *
-		 * @since 11.0.0
-		 *
-		 * @param array<string,mixed> $account_data Refreshed WooPayments account data.
-		 */
-		do_action( 'woocommerce_payments_account_refreshed', $data );
-
-		return WooPaymentsSetupTier::AVAILABLE !== $setup_tier->get_stored_tier();
+		return is_array( $cache_contents ) && false === ( $cache_contents['errored'] ?? true );
 	}
 
 	/**
@@ -419,49 +400,22 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get what an account delete changes before it calls the platform: the account cache row and the stored setup tier.
+	 * Put the setup tier back for the account a failed delete left in place, after the overwrite lowered it.
+	 *
+	 * Derives the tier as an account write does, from the account data and the gateway's enabled setting, and keeps the
+	 * account cache as it is.
 	 *
 	 * @since 11.4.0
 	 *
-	 * @return array{cache: array<string,mixed>|false, tier: ?string}
-	 */
-	public function get_account_state(): array {
-		return array(
-			'cache' => $this->get_account_cache(),
-			'tier'  => null === $this->setup_tier ? null : $this->setup_tier->get_stored_tier(),
-		);
-	}
-
-	/**
-	 * Put back the account cache row and the setup tier after the platform did not delete the account.
-	 *
-	 * The row comes back marked as never fetched, so the next read outside cron and AJAX refetches it while every reader
-	 * serves the account meanwhile. A row that does not read back is deleted. The tier goes back as it was read, and the
-	 * reads the overwrite started stop.
-	 *
-	 * @since 11.4.0
-	 *
-	 * @param array{cache: array<string,mixed>|false, tier: ?string} $state The state get_account_state() read before the delete.
+	 * @param array<string,mixed> $account_before The account data the cache held before the overwrite.
 	 * @return void
 	 */
-	public function restore_account_state( array $state ): void {
-		$cache_contents = $state['cache'];
-		if ( is_array( $cache_contents ) ) {
-			$cache_contents['fetched'] = 0;
-			$this->database_cache->write( WooPaymentsDatabaseCache::ACCOUNT_KEY, $cache_contents );
-		}
-		if ( ! is_array( $cache_contents ) || ! $this->is_persisted_account_cache( $cache_contents ) ) {
-			$this->clear_cache();
-		}
-
-		if ( null === $this->setup_tier || null === $state['tier'] ) {
+	public function restore_setup_tier( array $account_before ): void {
+		if ( null === $this->runtime_arbiter ) {
 			return;
 		}
 
-		$this->setup_tier->write_tier( $state['tier'] );
-		if ( in_array( $state['tier'], array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true ) ) {
-			WooPaymentsSetupTierRecheck::stop();
-		}
+		$this->sync_setup_tier( $account_before, $this->runtime_arbiter->is_extension_owner() );
 	}
 
 	/**
@@ -620,7 +574,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		if ( $extension_owns_payments || array() === $account_data ) {
 			if ( ! $extension_owns_payments && in_array( $this->setup_tier->get_stored_tier(), array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true ) ) {
 				// A tier that drops should be confirmed by a later read, even if nothing else reads the account.
-				WooPaymentsSetupTierRecheck::start();
+				WooPaymentsSetupTierRecheck::schedule_first_read();
 			}
 			$this->setup_tier->write_tier( WooPaymentsSetupTier::AVAILABLE );
 			return;

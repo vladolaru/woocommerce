@@ -8,23 +8,20 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\OnboardingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTierRecheck;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 use WP_Error;
 
 /**
- * Pins that an account delete the platform refuses, or that fails, puts back the account cache row and the setup tier.
+ * Pins that an account delete the platform refuses, or that fails, leaves the setup tier as it was.
  *
  * The delete empties the account cache first, which lowers the stored tier to available, so nothing reads the account
- * while the platform deletes it. When the platform does not delete the account, the row comes back marked as never
- * fetched and the tier comes back as it was read; a store taking payments keeps its gateway, its webhook route and its
- * renewals. The NOX onboarding profile, which the reset route deletes whatever the answer, is not put back by this change.
+ * while the platform deletes it. When the platform does not delete the account the tier goes back; a store taking payments
+ * keeps its gateway, its webhook route and its renewals.
  */
 class AccountResetSetupTierTest extends WC_Unit_Test_Case {
 
@@ -102,7 +99,7 @@ class AccountResetSetupTierTest extends WC_Unit_Test_Case {
 	 *
 	 * The two prior tiers are each row's control: a restore that wrote a constant would pass one and fail the other.
 	 *
-	 * @return array<string,array{string,\Closure,string,bool}>
+	 * @return array<string,array{string,\Closure,string}>
 	 */
 	public static function provide_failed_deletes(): array {
 		$failures = array(
@@ -120,98 +117,35 @@ class AccountResetSetupTierTest extends WC_Unit_Test_Case {
 
 		$rows = array();
 		foreach ( $failures as $label => $failure ) {
-			$rows[ $label . ', prior active' ]                        = array( 'yes', $failure, WooPaymentsSetupTier::ACTIVE, false );
-			$rows[ $label . ', prior connected after errored reads' ] = array( 'no', $failure, WooPaymentsSetupTier::CONNECTED, true );
+			$rows[ $label . ', prior active' ]    = array( 'yes', $failure, WooPaymentsSetupTier::ACTIVE );
+			$rows[ $label . ', prior connected' ] = array( 'no', $failure, WooPaymentsSetupTier::CONNECTED );
 		}
 
 		return $rows;
 	}
 
 	/**
-	 * @testdox Invariant 5: a reset the platform fails puts back the setup tier and the account cache row, marked as never fetched, and stops the reads the drop started: $_dataName.
+	 * @testdox A reset the platform fails leaves the setup tier as it was and the account cache emptied for the next read: $_dataName.
 	 * @dataProvider provide_failed_deletes
 	 *
 	 * @param string   $gateway_enabled The gateway's enabled setting.
 	 * @param \Closure $failure         Builds the exception the platform call throws.
 	 * @param string   $prior_tier      The tier the store holds before the reset.
-	 * @param bool     $errored_row     Whether the row before the reset holds two errored reads.
 	 */
-	public function test_a_reset_the_platform_fails_puts_back_the_tier_and_the_account_row( string $gateway_enabled, \Closure $failure, string $prior_tier, bool $errored_row ): void {
-		$row_before = $this->store_has_account( $gateway_enabled, $prior_tier, $errored_row );
+	public function test_a_reset_the_platform_fails_leaves_the_setup_tier_as_it_was( string $gateway_enabled, \Closure $failure, string $prior_tier ): void {
+		$this->store_has_account( $gateway_enabled, $prior_tier );
 		$this->client->expects( $this->once() )->method( 'delete_account' )->willThrowException( $failure() );
 
 		$result = $this->sut->reset_onboarding();
 
 		$this->assertInstanceOf( WP_Error::class, $result, 'The platform error is still answered.' );
 		$this->assert_tier_is( $prior_tier );
-		$this->assert_row_put_back( $row_before );
+		$this->assertFalse( get_option( self::ACCOUNT_CACHE_OPTION ), 'The next read fetches the account.' );
 		$this->assertSame( $gateway_enabled, get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION )['enabled'], 'The gateway setting is unchanged.' );
 	}
 
 	/**
-	 * @testdox Invariant 5: the tier goes back as it was read, not as the account and the gateway setting would give it.
-	 */
-	public function test_a_failed_reset_puts_back_the_tier_it_read(): void {
-		$this->store_has_account( 'no', WooPaymentsSetupTier::CONNECTED );
-		$this->tier->write_tier( WooPaymentsSetupTier::ACTIVE );
-		$this->client->method( 'delete_account' )->willThrowException( new ApiException( 'Refused.', 'bad_request', 400 ) );
-
-		$this->sut->reset_onboarding();
-
-		$this->assert_tier_is( WooPaymentsSetupTier::ACTIVE );
-	}
-
-	/**
-	 * @testdox Invariant 5: when the restored row does not read back, it is deleted, so the next read fetches the account.
-	 */
-	public function test_a_restored_row_that_does_not_read_back_is_deleted(): void {
-		$this->store_has_account( 'yes', WooPaymentsSetupTier::ACTIVE );
-		$this->client->method( 'delete_account' )->willReturnCallback(
-			function () {
-				// From here on the account cache option keeps what it holds.
-				add_filter( 'pre_update_option_' . self::ACCOUNT_CACHE_OPTION, array( $this, 'keep_old_value' ), 10, 2 );
-				throw new ApiException( 'Refused.', 'bad_request', 400 );
-			}
-		);
-
-		try {
-			$this->sut->reset_onboarding();
-		} finally {
-			remove_filter( 'pre_update_option_' . self::ACCOUNT_CACHE_OPTION, array( $this, 'keep_old_value' ), 10 );
-		}
-
-		$this->assertFalse( get_option( self::ACCOUNT_CACHE_OPTION ) );
-		$this->assert_tier_is( WooPaymentsSetupTier::ACTIVE );
-	}
-
-	/**
-	 * Keep an option's old value, as a failed write does.
-	 *
-	 * @param mixed $value     New value.
-	 * @param mixed $old_value Old value.
-	 * @return mixed
-	 */
-	public function keep_old_value( $value, $old_value ) {
-		return $old_value;
-	}
-
-	/**
-	 * @testdox Invariant 5, Codex case: after a refused reset, a next account read that fails still serves the account, so the store can still take payments.
-	 */
-	public function test_after_a_refused_reset_a_failed_read_still_serves_the_account(): void {
-		$this->store_has_account( 'yes', WooPaymentsSetupTier::ACTIVE );
-		$this->client->method( 'delete_account' )->willThrowException( new ApiException( 'Refused.', 'bad_request', 400 ) );
-		$this->client->method( 'get_account' )->willThrowException( new ApiException( 'The platform is unavailable.', 'wcpay_platform_error', 503 ) );
-
-		$this->sut->reset_onboarding();
-
-		$this->assertSame( $this->account(), $this->account_service->get_cached_account_data(), 'The failed read serves the restored account.' );
-		$this->assertTrue( get_option( self::ACCOUNT_CACHE_OPTION )['errored'], 'The read did go to the platform.' );
-		$this->assertTrue( $this->account_service->can_process_payments(), 'The gateway keeps its account.' );
-	}
-
-	/**
-	 * @testdox F4 control: after a timeout the platform did carry out, the restored row is marked as never fetched, so the next foreground account read refetches it, finds no account and lowers the tier to available in that request.
+	 * @testdox F4 control: after a timeout the platform did carry out, the next account read finds no account and the tier falls to available at once.
 	 */
 	public function test_f4_after_a_timeout_the_platform_carried_out_the_next_read_lowers_the_tier(): void {
 		$this->store_has_account( 'yes', WooPaymentsSetupTier::ACTIVE );
@@ -228,7 +162,7 @@ class AccountResetSetupTierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox F5: a 200 answer without success puts back the setup tier and the account row, with $prior_tier.
+	 * @testdox F5: a 200 answer without success leaves the setup tier as it was, with $prior_tier.
 	 * @testWith ["yes", "active"]
 	 *           ["no", "connected"]
 	 *
@@ -239,13 +173,11 @@ class AccountResetSetupTierTest extends WC_Unit_Test_Case {
 		$this->store_has_account( $gateway_enabled, $prior_tier );
 		$this->client->expects( $this->once() )->method( 'delete_account' )->willReturn( array( 'result' => 'error' ) );
 
-		$row_before = get_option( self::ACCOUNT_CACHE_OPTION );
-
 		$result = $this->sut->reset_onboarding();
 
 		$this->assertFalse( $result['success'] );
 		$this->assert_tier_is( $prior_tier );
-		$this->assert_row_put_back( $row_before );
+		$this->assertFalse( get_option( self::ACCOUNT_CACHE_OPTION ) );
 		$this->assertSame( $gateway_enabled, get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION )['enabled'] );
 	}
 
@@ -267,7 +199,7 @@ class AccountResetSetupTierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox F6: a test-drive account whose delete the platform refuses keeps its tier and its account row, and the payment methods saved for the live account stay saved, with $prior_tier.
+	 * @testdox F6: a test-drive account whose delete the platform refuses keeps its tier, and the payment methods saved for the live account stay saved, with $prior_tier.
 	 * @testWith ["yes", "active"]
 	 *           ["no", "connected"]
 	 *
@@ -278,27 +210,23 @@ class AccountResetSetupTierTest extends WC_Unit_Test_Case {
 		$this->store_has_account( $gateway_enabled, $prior_tier );
 		$this->client->expects( $this->once() )->method( 'delete_account' )->with( true )->willThrowException( new ApiException( 'Refused.', 'bad_request', 400 ) );
 
-		$row_before = get_option( self::ACCOUNT_CACHE_OPTION );
-
 		$result = $this->sut->disable_test_account( true );
 
 		$this->assertInstanceOf( WP_Error::class, $result );
 		$this->assert_tier_is( $prior_tier );
-		$this->assert_row_put_back( $row_before );
+		$this->assertFalse( get_option( self::ACCOUNT_CACHE_OPTION ) );
 		$saved = get_transient( self::TEST_DRIVE_SETTINGS_TRANSIENT );
 		$this->assertIsArray( $saved, 'The restore leaves the methods saved before the call.' );
 		$this->assertSame( array( 'card' ), $saved['enabled_payment_methods'] );
 	}
 
 	/**
-	 * Put a connected account in the store, with the gateway on or off, check the tier it gives and get its cache row.
+	 * Put a connected account in the store, with the gateway on or off, and check the tier it gives.
 	 *
 	 * @param string $gateway_enabled The gateway's enabled setting.
 	 * @param string $expected_tier   The tier the account write must give: active or connected.
-	 * @param bool   $errored_row     Whether the row then holds two errored reads that kept the account.
-	 * @return array<string,mixed> The account cache row.
 	 */
-	private function store_has_account( string $gateway_enabled, string $expected_tier, bool $errored_row = false ): array {
+	private function store_has_account( string $gateway_enabled, string $expected_tier ): void {
 		update_option(
 			WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION,
 			array(
@@ -306,52 +234,15 @@ class AccountResetSetupTierTest extends WC_Unit_Test_Case {
 				'upe_enabled_payment_method_ids' => array( 'card' ),
 			)
 		);
-		$this->account_service->cache_account_data( $this->account() );
-		$this->assert_tier_is( $expected_tier );
-		if ( $errored_row ) {
-			wc_get_container()->get( WooPaymentsDatabaseCache::class )->write(
-				self::ACCOUNT_CACHE_OPTION,
-				array(
-					'data'               => $this->account(),
-					'fetched'            => time() - 600,
-					'errored'            => true,
-					'consecutive_errors' => 2,
-				)
-			);
-		}
-
-		return get_option( self::ACCOUNT_CACHE_OPTION );
-	}
-
-	/**
-	 * A connected live account, as the platform answers it.
-	 *
-	 * @return array<string,mixed>
-	 */
-	private function account(): array {
-		return array(
-			'account_id'           => 'acct_123',
-			'is_live'              => true,
-			'payments_enabled'     => true,
-			'details_submitted'    => true,
-			'live_publishable_key' => 'pk_live_123',
+		$this->account_service->cache_account_data(
+			array(
+				'account_id'        => 'acct_123',
+				'is_live'           => true,
+				'payments_enabled'  => true,
+				'details_submitted' => true,
+			)
 		);
-	}
-
-	/**
-	 * Assert the account cache row came back as it was, marked as never fetched, and the reads the drop started stopped.
-	 *
-	 * @param array<string,mixed> $row_before The row before the reset.
-	 */
-	private function assert_row_put_back( array $row_before ): void {
-		wp_cache_delete( self::ACCOUNT_CACHE_OPTION, 'options' );
-		$row = get_option( self::ACCOUNT_CACHE_OPTION );
-		$this->assertIsArray( $row, 'The account cache row is back.' );
-		$this->assertSame( $row_before['data'], $row['data'], 'Its account.' );
-		$this->assertSame( $row_before['errored'], $row['errored'], 'Its error state.' );
-		$this->assertSame( $row_before['consecutive_errors'], $row['consecutive_errors'], 'Its error count.' );
-		$this->assertSame( 0, $row['fetched'], 'Marked as never fetched.' );
-		$this->assertFalse( wp_next_scheduled( WooPaymentsSetupTierRecheck::ACTION ), 'No recheck is pending.' );
+		$this->assert_tier_is( $expected_tier );
 	}
 
 	/**
