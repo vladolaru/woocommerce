@@ -4,6 +4,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingApi;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
@@ -112,6 +114,9 @@ class WooPaymentsFeeDetailsJobSchedulingTest extends WC_Unit_Test_Case {
 	 *           ["Q3", "on-hold", "capture", 0, null]
 	 *           ["H1", "on-hold", "renewal", 1, null]
 	 *           ["H2", "on-hold", "cancel", 0, null]
+	 *           ["H1 unvisited", "cancelled", "callback", 0, null]
+	 *           ["H2 authorization", "pending", "authorize", 0, null]
+	 *           ["toggle off", "pending", "trigger", 0, null]
 	 *
 	 * @param string   $row      Sheet scenario.
 	 * @param string   $status   Initial status.
@@ -151,9 +156,13 @@ class WooPaymentsFeeDetailsJobSchedulingTest extends WC_Unit_Test_Case {
 		$subscription->update_meta_data( '_wcpay_subscription_id', 'sub_first' );
 		$subscription->update_meta_data( '_wcpay_billing_invoice_id', 'in_first' );
 		$subscription->save();
-		$relation = 'renewal' === $route ? 'renewal' : 'parent';
+		$relation = 'renewal' === $route || 'H1 unvisited' === $row ? 'renewal' : 'parent';
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ][]                                     = $subscription->get_id();
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ][ $order->get_id() ][ $relation ][] = $subscription->get_id();
+
+		if ( 'renewal' === $relation ) {
+			$GLOBALS['wcpay_test_renewal_order_ids'][] = $order->get_id();
+		}
 
 		$calls = 0;
 		$api   = $this->createMock( StripeBillingApi::class );
@@ -167,8 +176,9 @@ class WooPaymentsFeeDetailsJobSchedulingTest extends WC_Unit_Test_Case {
 			}
 		);
 		wc_get_container()->replace( StripeBillingApi::class, $api );
-		update_option( StripeBillingModule::TOGGLE_OPTION, '1' );
-		wc_get_container()->get( StripeBillingModule::class )->handle_plugins_loaded();
+		update_option( StripeBillingModule::TOGGLE_OPTION, 'toggle off' === $row ? '0' : '1' );
+		$module = wc_get_container()->get( StripeBillingModule::class );
+		$module->handle_plugins_loaded();
 
 		$start = time();
 		if ( 'checkout' === $route ) {
@@ -180,8 +190,17 @@ class WooPaymentsFeeDetailsJobSchedulingTest extends WC_Unit_Test_Case {
 			$this->assertSame( 200, $this->send_order_status_callback( $order )['status_code'] ?? null );
 		} elseif ( 'capture' === $route ) {
 			$this->run_queued_first_invoice_capture( $order, $row );
+		} elseif ( 'authorize' === $route ) {
+			$event = new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_AUTHORIZED, 'pi_first', array(), array(), 'Payment authorized.', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_AUTHORIZED );
+			wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class )->apply_and_schedule_fee_details( $order, $event );
+			$this->assertTrue( $this->reload( $order )->has_status( 'on-hold' ) );
+		} elseif ( 'trigger' === $route ) {
+			global $wpdb;
+			$this->assertTrue( $module->is_loaded() );
+			$before = $wpdb->num_queries;
+			$module->schedule_first_invoice_job_now( $order );
+			$this->assertSame( 0, $wpdb->num_queries - $before );
 		} elseif ( 'renewal' === $route ) {
-			$GLOBALS['wcpay_test_renewal_order_ids'][] = $order->get_id();
 			add_action( 'woocommerce_payment_complete', static fn( $id ) => do_action( 'woocommerce_renewal_order_payment_complete', $id ) );
 			$this->checkout( $order );
 		} else {

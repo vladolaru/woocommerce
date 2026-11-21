@@ -251,7 +251,7 @@ class StripeBillingInvoiceService {
 		$this->visited_orders[ get_current_blog_id() . ':' . $order->get_id() ] = true;
 		foreach ( wcs_get_subscriptions_for_order( $order, array( 'order_type' => array( 'parent', 'renewal' ) ) ) as $subscription ) {
 			if ( $subscription instanceof WC_Order ) {
-				$this->record_first_invoice_payment( $order, $subscription, 0 );
+				$this->record_first_invoice_payment( $order, $subscription );
 			}
 		}
 	}
@@ -323,54 +323,105 @@ class StripeBillingInvoiceService {
 	 *
 	 * @param WC_Order $order        Paying order.
 	 * @param WC_Order $subscription Stripe-billed subscription.
-	 * @param int      $retry        Attempt number.
+	 * @param int|null $retry        Job attempt number, or null for the inline payment.
 	 */
-	private function record_first_invoice_payment( WC_Order $order, WC_Order $subscription, int $retry ): void {
+	private function record_first_invoice_payment( WC_Order $order, WC_Order $subscription, ?int $retry = null ): void {
 		$invoice_id = $this->get_subscription_invoice_id( $subscription );
 		if ( ! $invoice_id || $this->is_ended( $subscription ) || ! $this->get_subscription_service()->is_wcpay_subscription( $subscription ) ) {
 			return;
 		}
-		$created = $order->get_date_created();
-		if ( ( ! $created || time() >= $created->getTimestamp() + 23 * HOUR_IN_SECONDS ) && time() >= $this->get_window_start( $order ) + 23 * HOUR_IN_SECONDS ) {
-			$this->logger->log_always( 'The time to record the first invoice payment has passed.', 'warning', array( 'subscription_id' => $subscription->get_id() ) );
-			$this->add_bound_note( $subscription, $invoice_id );
-			return;
+
+		$attempt = ( $retry ?? 0 ) + 1;
+		$late    = null !== $retry && time() >= $this->get_window_start( $order, $subscription ) + 23 * HOUR_IN_SECONDS;
+		if ( ! $late ) {
+			if ( $this->try_first_invoice_payment( $order, $subscription, $invoice_id, $attempt ) ) {
+				return;
+			}
+			$last = $this->get_window_start( $order, $subscription ) + 22 * HOUR_IN_SECONDS;
+			if ( $attempt <= 4 && time() < $last ) {
+				$delays = WebhookReliabilityService::RETRY_DELAYS_SECONDS;
+				$due    = isset( $delays[ $attempt - 1 ] ) ? time() + $delays[ $attempt - 1 ] : $last;
+				$this->schedule_attempt( $order->get_id(), $subscription->get_id(), $invoice_id, $due >= $last ? 4 : $attempt, min( $last, $due ) );
+				return;
+			}
+			if ( null === $retry ) {
+				// Keep the state read off checkout even when the order and subscription are already old.
+				$this->schedule_attempt( $order->get_id(), $subscription->get_id(), $invoice_id, 4, time() );
+				return;
+			}
 		}
 
+		$subscription_id = $subscription->get_id();
+		try {
+			$stripe = $this->api->get_subscription( $this->get_subscription_service()->get_wcpay_subscription_id( $subscription ) );
+		} catch ( Throwable $exception ) {
+			$this->logger->log_throwable_always( 'Could not check the first invoice payment.', $exception, compact( 'subscription_id' ) );
+			return;
+		}
+		$status = $stripe['status'] ?? '';
+		$latest = $stripe['latest_invoice'] ?? null;
+		if ( 'active' === $status || ( is_array( $latest ) && ( $latest['id'] ?? '' ) === $invoice_id && 'paid' === ( $latest['status'] ?? '' ) ) ) {
+			$this->adopt_order_payment_method( $subscription, $order );
+		} elseif ( in_array( $status, array( 'incomplete_expired', 'canceled' ), true ) ) {
+			$this->add_bound_note( $subscription, $invoice_id );
+		} elseif ( 'incomplete' === $status ) {
+			$this->try_first_invoice_payment( $order, $subscription, $invoice_id, $late ? $attempt : $attempt + 1 );
+		} else {
+			$this->logger->log_always( 'Could not verify the first invoice payment from the subscription status.', 'warning', compact( 'subscription_id' ) );
+		}
+	}
+
+	/**
+	 * Only a lasting platform answer about this invoice can end an attempt with a merchant note.
+	 *
+	 * @param WC_Order $order        Paying order.
+	 * @param WC_Order $subscription Stripe-billed subscription.
+	 * @param string   $invoice_id   Bound first invoice.
+	 * @param int      $attempt      One-based pay attempt for the log.
+	 * @return bool Whether the payment outcome is known.
+	 */
+	private function try_first_invoice_payment( WC_Order $order, WC_Order $subscription, string $invoice_id, int $attempt ): bool {
 		try {
 			$this->api->charge_invoice( $invoice_id, array( 'paid_out_of_band' => 'true' ) );
 		} catch ( Throwable $exception ) {
 			if ( $exception instanceof ApiException && WP_Http::BAD_REQUEST === $exception->get_http_code() && false !== stripos( $exception->getMessage(), 'invoice is already paid' ) ) {
 				$this->logger->log( sprintf( 'Invoice for subscription #%s has already been paid.', $subscription->get_id() ) );
 			} else {
-				$subscription_id = $subscription->get_id();
-				$attempt         = $retry + 1;
-				$this->logger->log_throwable_always( 'Could not record the first invoice payment.', $exception, compact( 'subscription_id', 'attempt' ) );
-				$passing = $exception instanceof ApiException && ( $exception->has_ambiguous_outcome() || 429 === $exception->get_http_code() );
-				$last    = $this->get_window_start( $order ) + 22 * HOUR_IN_SECONDS;
-				if ( $passing && $retry < 4 && time() < $last ) {
-					$delays = WebhookReliabilityService::RETRY_DELAYS_SECONDS;
-					$due    = isset( $delays[ $retry ] ) ? time() + $delays[ $retry ] : $last;
-					$this->schedule_attempt( $order->get_id(), $subscription->get_id(), $invoice_id, $due >= $last ? 4 : $retry + 1, min( $last, $due ) );
-				} else {
-					$this->add_bound_note( $subscription, $invoice_id );
+				$context = array(
+					'subscription_id' => $subscription->get_id(),
+					'attempt'         => $attempt,
+				);
+				$this->logger->log_throwable_always( 'Could not record the first invoice payment.', $exception, $context );
+				if ( ! $exception instanceof ApiException || ApiException::leaves_the_answer_unknown( $exception ) || $exception->has_ambiguous_outcome() ) {
+					return false;
 				}
-				return;
+				// Local failures can also carry an HTTP status, without a platform error envelope.
+				if ( $exception->get_http_code() < 400 || ( '' === $exception->get_error_type() && ! isset( $exception->get_error_data()['status'] ) ) ) {
+					return false;
+				}
+				$this->add_bound_note( $subscription, $invoice_id );
+				return true;
 			}
 		}
-		if ( is_callable( array( $subscription, 'is_manual' ) ) && $subscription->is_manual() ) {
-			$this->adopt_order_payment_method( $subscription, $order );
-		}
+		$this->adopt_order_payment_method( $subscription, $order );
+		return true;
 	}
 
 	/**
-	 * A manual renewal can be days old when its payment creates the Stripe subscription.
+	 * A resumed checkout creates a new subscription. A manual renewal creates its Stripe subscription when paid.
 	 *
-	 * @param WC_Order $order Paying order.
+	 * @param WC_Order $order        Paying order.
+	 * @param WC_Order $subscription Subscription created for this checkout.
 	 */
-	private function get_window_start( WC_Order $order ): int {
-		$date = function_exists( 'wcs_order_contains_renewal' ) && wcs_order_contains_renewal( $order ) ? $order->get_date_paid() : $order->get_date_created();
-		return $date ? $date->getTimestamp() : 0;
+	private function get_window_start( WC_Order $order, WC_Order $subscription ): int {
+		$created = $order->get_date_created();
+		$opened  = $subscription->get_date_created();
+		$start   = max( $created ? $created->getTimestamp() : time(), $opened ? $opened->getTimestamp() : time() );
+		if ( function_exists( 'wcs_order_contains_renewal' ) && wcs_order_contains_renewal( $order ) ) {
+			$paid = $order->get_date_paid();
+			return max( $start, $paid ? $paid->getTimestamp() : time() );
+		}
+		return $start;
 	}
 
 	/**
@@ -409,7 +460,7 @@ class StripeBillingInvoiceService {
 	 * @param WC_Order $order        Order whose payment method the subscription takes.
 	 */
 	private function adopt_order_payment_method( WC_Order $subscription, WC_Order $order ): void {
-		if ( ! is_callable( array( $subscription, 'set_requires_manual_renewal' ) ) ) {
+		if ( ! is_callable( array( $subscription, 'is_manual' ) ) || ! $subscription->is_manual() || ! is_callable( array( $subscription, 'set_requires_manual_renewal' ) ) ) {
 			return;
 		}
 

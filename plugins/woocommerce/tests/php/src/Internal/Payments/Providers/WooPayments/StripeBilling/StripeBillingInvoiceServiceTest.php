@@ -237,18 +237,33 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 	 *           ["A10", 503, true]
 	 *           ["N1", 400, false]
 	 *           ["E1", 200, false]
+	 *           ["resumed", 200, false]
+	 *           ["unauthorized", 401, true]
+	 *           ["forbidden", 403, true]
+	 *           ["resumed retry", 503, true]
+	 *           ["disconnected", 409, true]
+	 *           ["old inline", 503, true]
 	 *
 	 * @param string $row   Sheet scenario.
 	 * @param int    $code  Platform response, or zero for a transport error.
 	 * @param bool   $retry Whether one later attempt is due.
 	 */
 	public function test_first_invoice_at_payment( string $row, int $code, bool $retry ): void {
-		$order = \WC_Helper_Order::create_order();
-		$order->set_status( 'pending' );
-		$order->set_date_created( time() - ( 'A10' === $row ? 3 * DAY_IN_SECONDS : 0 ) );
+		$order   = \WC_Helper_Order::create_order();
+		$resumed = in_array( $row, array( 'resumed', 'resumed retry', 'old inline' ), true );
+		$renewal = 'A10' === $row;
+		$age     = $resumed ? 25 * HOUR_IN_SECONDS : 0;
+		$order->set_status( $resumed ? 'failed' : 'pending' );
+		$order->set_date_created( time() - ( $renewal ? 3 * DAY_IN_SECONDS : $age ) );
 		$order->save();
-		$renewal      = 'A10' === $row;
 		$subscription = $this->create_stripe_billed_subscription( $order, $renewal ? 'renewal' : 'parent' );
+		if ( 'old inline' === $row || $renewal ) {
+			$subscription->set_date_created( $order->get_date_created() );
+			$subscription->save();
+		}
+		if ( 'disconnected' === $row ) {
+			$this->http_client->connected = false;
+		}
 		if ( 'E1' === $row ) {
 			$subscription->update_status( 'pending-cancel' );
 		}
@@ -283,7 +298,7 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 		if ( $renewal ) {
 			do_action( 'woocommerce_renewal_order_payment_complete', $order->get_id() );
 		}
-		$this->assertSame( 'E1' === $row, empty( $logged ) );
+		$this->assertSame( 200 === $code, empty( $logged ) );
 		foreach ( $logged as $attempts ) {
 			$this->assertSame( array( 1 ), $attempts );
 		}
@@ -293,13 +308,22 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 		if ( 0 === $code ) {
 			$this->assertGreaterThan( 0, $this->http_client->request_count );
 		} else {
-			$this->assertSame( 'E1' === $row ? 0 : ( 'N1' === $row ? 2 : 1 ), $this->http_client->request_count );
+			$this->assertSame( in_array( $row, array( 'E1', 'disconnected' ), true ) ? 0 : ( 'N1' === $row ? 2 : 1 ), $this->http_client->request_count );
+		}
+		if ( $resumed ) {
+			$requests = $this->get_requests();
+			$this->assertSame( 'POST', $requests[0][0] );
+			$this->assertStringEndsWith( '/invoices/' . self::MAIN_INVOICE_ID . '/pay', $requests[0][1] );
 		}
 		if ( isset( $second ) ) {
 			$this->assertStringEndsWith( '/in_second/pay', $this->http_client->last_path );
 			$this->assertNotContains( self::FAILURE_NOTE, $this->get_order_note_texts( $second ) );
 		}
-		$this->assert_invoice_schedule( $order, $subscription, $retry ? 1 : null, $start + 60 );
+		if ( 'old inline' === $row ) {
+			$this->assert_invoice_schedule( $order, $subscription, 4, $start );
+		} else {
+			$this->assert_invoice_schedule( $order, $subscription, $retry ? 1 : null, $start + 60 );
+		}
 	}
 
 	/**
@@ -313,11 +337,12 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 	 *           ["A4-2", "succeeded", "pi_first", 2, 0, 503, 1, 3600]
 	 *           ["A5", "succeeded", "pi_first", 3, 7200, 503, 1, 72000]
 	 *           ["early-last", "succeeded", "pi_first", 2, 77400, 503, 1, 1800]
-	 *           ["A6", "succeeded", "pi_first", 1, 82800, 200, 0, null]
-	 *           ["A7", "succeeded", "pi_first", 4, 79200, 503, 1, null]
+	 *           ["A6", "succeeded", "pi_first", 1, 82800, 200, 1, null]
+	 *           ["A7", "succeeded", "pi_first", 4, 79200, 503, 3, null]
 	 *           ["A8", "succeeded", "pi_first", 1, 0, 200, 1, null]
 	 *           ["A9", "succeeded", "pi_first", 1, 0, 400, 1, null]
 	 *           ["paid zero", "", "", 0, 0, 200, 1, null]
+	 *           ["newer order", "succeeded", "pi_first", 3, 7200, 503, 1, 72000]
 	 *
 	 * @param string   $row      Sheet scenario.
 	 * @param string   $status   Stored intent status.
@@ -338,6 +363,8 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_intent_id', $intent );
 		$order->save();
 		$subscription = $this->create_stripe_billed_subscription( $order, 'parent', array( '_requires_manual_renewal' => 'A8' === $row ? 'true' : 'false' ) );
+		$subscription->set_date_created( $now - ( 'newer order' === $row ? DAY_IN_SECONDS : $age ) );
+		$subscription->save();
 		if ( 'M3' === $row ) {
 			$refund_args = array(
 				'order_id' => $order->get_id(),
@@ -346,11 +373,19 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 			$refund      = wc_create_refund( $refund_args );
 			$this->assertInstanceOf( \WC_Order_Refund::class, $refund );
 		}
-		$this->queue_invoice_answer( $code, 'Invoice is already paid.' );
+		if ( 'A6' !== $row ) {
+			$this->queue_invoice_answer( $code, 'Invoice is already paid.' );
+		}
+		if ( in_array( $row, array( 'A6', 'A7' ), true ) ) {
+			$this->http_client->responses[] = $this->make_response( 200, array( 'status' => 'incomplete_expired' ) );
+		}
 		$this->subscriptions_controller->expects( 'A8' === $row ? $this->once() : $this->never() )->method( 'update_failing_payment_method' );
 
 		$this->sut->handle_first_invoice_job( $order->get_id(), $subscription->get_id(), 'B1' === $row ? 'in_old' : self::MAIN_INVOICE_ID, $retry );
 		if ( 'A7' === $row ) {
+			$this->http_client->responses[] = $this->make_response( 200, array( 'status' => 'incomplete_expired' ) );
+			$subscription->set_date_created( $now - 23 * HOUR_IN_SECONDS );
+			$subscription->save();
 			$order->set_date_created( $now - 23 * HOUR_IN_SECONDS );
 			$order->save();
 			$this->sut->handle_first_invoice_job( $order->get_id(), $subscription->get_id(), self::MAIN_INVOICE_ID, $retry );
@@ -362,6 +397,94 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 			$this->assertFalse( wc_get_order( $subscription->get_id() )->is_manual() );
 		}
 		$this->assert_invoice_schedule( $order, $subscription, null === $delay ? null : ( 'early-last' === $row ? 4 : $retry + 1 ), $now + (int) $delay );
+	}
+
+	/**
+	 * @testdox A late job relies on Stripe's answer about the first invoice.
+	 * @testWith ["active", false, 0, 0, 0]
+	 *           ["incomplete_expired", false, 0, 1, 0]
+	 *           ["canceled", false, 0, 1, 0]
+	 *           ["incomplete", false, 1, 0, 0]
+	 *           ["incomplete", true, 0, 0, 0]
+	 *           ["read failed", false, 0, 0, 1]
+	 *
+	 * @param string $state Stripe subscription status or a failed request.
+	 * @param bool   $paid  Whether the subscription includes a paid first invoice.
+	 * @param int    $pays  Expected pay requests.
+	 * @param int    $notes Expected merchant notes.
+	 * @param int    $logs  Expected warnings about the failed state check.
+	 */
+	public function test_first_invoice_end_state( string $state, bool $paid, int $pays, int $notes, int $logs ): void {
+		$order = \WC_Helper_Order::create_order();
+		$order->set_date_created( time() - DAY_IN_SECONDS );
+		$order->update_meta_data( '_intention_status', 'succeeded' );
+		$order->update_meta_data( '_intent_id', 'pi_late' );
+		$order->save();
+		$subscription = $this->create_stripe_billed_subscription( $order, 'parent' );
+		$subscription->set_date_created( $order->get_date_created() );
+		$subscription->save();
+
+		$answer = array( 'status' => $state );
+		if ( $paid ) {
+			$answer['latest_invoice'] = array(
+				'id'     => self::MAIN_INVOICE_ID,
+				'status' => 'paid',
+			);
+		}
+		$this->http_client->responses[] = $this->make_response( 'read failed' === $state ? 403 : 200, $answer );
+		$this->queue_recorded_responses( 'charge_invoice' );
+		$warnings = array();
+		add_filter(
+			'woocommerce_logger_log_message',
+			static function ( $message, $level, $context, $handler ) use ( &$warnings, $subscription ) {
+				if ( $subscription->get_id() === ( $context['subscription_id'] ?? null ) ) {
+					$warnings[ spl_object_id( $handler ) ][] = $message;
+				}
+				return $message;
+			},
+			10,
+			4
+		);
+
+		$this->sut->handle_first_invoice_job( $order->get_id(), $subscription->get_id(), self::MAIN_INVOICE_ID, 1 );
+
+		$requests = $this->get_requests();
+		$this->assertCount( 1 + $pays, $requests );
+		$this->assertSame( 'GET', $requests[0][0] );
+		$this->assertStringContainsString( '/subscriptions/' . self::MAIN_SUBSCRIPTION_ID . '?', $requests[0][1] );
+		if ( $pays ) {
+			$this->assertSame( 'POST', $requests[1][0] );
+			$this->assertStringEndsWith( '/invoices/' . self::MAIN_INVOICE_ID . '/pay', $requests[1][1] );
+		}
+		$this->assertSame( $notes, count( array_keys( $this->get_order_note_texts( $subscription ), self::FAILURE_NOTE, true ) ) );
+		$this->assertSame( 0 === $logs, empty( $warnings ) );
+		foreach ( $warnings as $messages ) {
+			$this->assertCount( $logs, $messages );
+		}
+		$this->assert_invoice_schedule( $order, $subscription, null, 0 );
+	}
+
+	/**
+	 * @testdox After the last ambiguous pay, Stripe can still authorize one more attempt. Another unknown answer leaves no merchant note.
+	 */
+	public function test_last_first_invoice_attempt_still_open(): void {
+		$order = \WC_Helper_Order::create_order();
+		$order->set_date_created( time() - 22 * HOUR_IN_SECONDS );
+		$order->update_meta_data( '_intention_status', 'succeeded' );
+		$order->update_meta_data( '_intent_id', 'pi_last' );
+		$order->save();
+		$subscription = $this->create_stripe_billed_subscription( $order, 'parent' );
+		$subscription->set_date_created( $order->get_date_created() );
+		$subscription->save();
+		$this->queue_invoice_answer( 503, 'Unavailable.' );
+		$this->http_client->responses[] = $this->make_response( 200, array( 'status' => 'incomplete' ) );
+		$this->queue_invoice_answer( 401, 'Store authentication failed.' );
+
+		$this->sut->handle_first_invoice_job( $order->get_id(), $subscription->get_id(), self::MAIN_INVOICE_ID, 4 );
+
+		$this->assertSame( array( 'POST', 'GET', 'POST' ), array_column( $this->get_requests(), 0 ) );
+		$this->assertNotContains( self::FAILURE_NOTE, $this->get_order_note_texts( $subscription ) );
+		$this->assert_invoice_schedule( $order, $subscription, null, 0 );
 	}
 
 	/**

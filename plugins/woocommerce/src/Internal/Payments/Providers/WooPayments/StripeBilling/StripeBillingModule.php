@@ -317,7 +317,7 @@ class StripeBillingModule implements RegisterHooksInterface {
 	 * @param WC_Order $order Paying order.
 	 */
 	public function schedule_first_invoice_job_now( WC_Order $order ): void {
-		if ( $this->loaded && ! SubscriptionMethodPolicy::is_duplicate_site() ) {
+		if ( $this->is_stripe_billing_enabled() && ! SubscriptionMethodPolicy::is_duplicate_site() ) {
 			wc_get_container()->get( StripeBillingInvoiceService::class )->schedule_first_invoice_job_now( $order );
 		}
 	}
