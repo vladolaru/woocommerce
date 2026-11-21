@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { act, render, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { createElement, StrictMode } from '@wordpress/element';
 import { registerExpressPaymentMethod } from '@woocommerce/blocks-registry';
 import apiFetch from '@wordpress/api-fetch';
@@ -10,7 +10,11 @@ import { reload as navigate } from '@woocommerce/utils/navigation';
 /**
  * Internal dependencies
  */
-import { useSpokenMessage } from '../../../../../base/hooks/use-spoken-message';
+import {
+	DISMISS_LABEL,
+	SUMMARY,
+	renderNoticeList,
+} from '../../common/test/fixtures/notice-list';
 import {
 	ANSWER_SHAPES,
 	MONEY_STATUS_FIXTURE,
@@ -23,18 +27,32 @@ jest.mock( '@woocommerce/blocks-registry', () => ( {
 
 jest.mock( '@woocommerce/utils/navigation', () => ( { reload: jest.fn() } ) );
 
-// The notices the page shows, as the notices store keeps them: one per ID and context. A test dismisses one by emptying it.
+// The hooks the notices container and its banner use; the package entry pulls in every Blocks data store.
+jest.mock( '../../../../../base/hooks', () => ( {
+	usePrevious: jest.requireActual( '../../../../../base/hooks/use-previous' )
+		.usePrevious,
+	useSpokenMessage: jest.requireActual(
+		'../../../../../base/hooks/use-spoken-message'
+	).useSpokenMessage,
+} ) );
+
+// The notices the page shows, as the notices store keeps them: one per ID and context. A test removes one by emptying
+// the list. A notice made without isDismissible is dismissible (@wordpress/notices store/actions.ts createNotice,
+// `isDismissible = true`).
 let mockNotices = [];
 const mockInvalidateResolutionForStore = jest.fn();
-const mockCreateErrorNotice = jest.fn( ( content, { id, context } = {} ) => {
-	mockNotices = [
-		...mockNotices.filter(
-			( notice ) => notice.id !== id || notice.context !== context
-		),
-		{ id, content, context },
-	];
-} );
+const mockCreateErrorNotice = jest.fn(
+	( content, { id, context, isDismissible = true } = {} ) => {
+		mockNotices = [
+			...mockNotices.filter(
+				( notice ) => notice.id !== id || notice.context !== context
+			),
+			{ id, content, context, status: 'error', isDismissible },
+		];
+	}
+);
 jest.mock( '@wordpress/data', () => ( {
+	useDispatch: () => ( { removeNotice: () => {} } ),
 	dispatch: jest.fn( () => ( {
 		invalidateResolutionForStore: mockInvalidateResolutionForStore,
 		createErrorNotice: mockCreateErrorNotice,
@@ -3431,6 +3449,31 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			const PAYMENT_RECEIVED =
 				"Your payment was received, but we couldn't finish updating your order. Please don't pay again. If your order confirmation email doesn't arrive soon, contact us.";
 
+			// The express error call core hands the method as `setExpressPaymentError`: it makes a notice from the message
+			// under the express notice ID and context, with the store's default isDismissible
+			// (block-data/payment/thunks.ts __internalSetExpressPaymentError).
+			const EXPRESS_EMIT_RESPONSE = {
+				noticeContexts: {
+					EXPRESS_PAYMENTS: 'wc/checkout/express-payments',
+				},
+			};
+			const coreExpressError = jest.fn(
+				( message, id = 'wc-express-payment-error' ) => {
+					mockCreateErrorNotice( message, {
+						id,
+						context: 'wc/checkout/express-payments',
+					} );
+				}
+			);
+			const expressNotices = () =>
+				mockNotices.filter(
+					( notice ) =>
+						notice.context === 'wc/checkout/express-payments'
+				);
+			// The notices the express container shows for the page.
+			const renderExpressNotices = () =>
+				renderNoticeList( expressNotices() );
+
 			// An answer with no order page after a payment Stripe confirmed shows the sentence.
 			it.each( [
 				[ 'empty', { return_url: '' } ],
@@ -3577,30 +3620,24 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 						{
 							id: 'wc-express-payment-error',
 							context: 'wc/checkout/express-payments',
+							isDismissible: false,
 						}
 					);
 				} );
 
 				// The sentence is spoken once per refused click, counting what the notice banner speaks as it mounts. A
 				// notice still on the page keeps its text and ID, so its banner does not announce it again and the click
-				// speaks it; a notice the shopper dismissed is created anew, and the banner that mounts speaks it, so the
-				// click must not speak it a second time.
+				// speaks it; a notice removed since (the next Place order press clears every notice) is created anew, and
+				// the banner that mounts speaks it, so the click must not speak it a second time. The banners are the
+				// Blocks notices container's own.
 				describe( 'with the express notice', () => {
-					let banner;
+					let list;
 
-					// What the error notice banner does with its message: the notice banner calls this hook, with
-					// politeness "assertive" for an error.
-					const SpokenBanner = ( { children } ) => {
-						useSpokenMessage( children, 'assertive' );
-						return createElement( 'div', null, children );
-					};
-					const renderBanner = () =>
-						render(
-							createElement(
-								SpokenBanner,
-								null,
-								PAYMENT_RECEIVED
-							)
+					// The times the sentence was spoken: by the container's banner, which speaks the notice's markup,
+					// and by the click, which speaks the plain text.
+					const spokenSentences = () =>
+						mockSpeak.mock.calls.filter( ( [ text ] ) =>
+							text.includes( PAYMENT_RECEIVED )
 						);
 
 					beforeEach( async () => {
@@ -3608,38 +3645,32 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 							503,
 							'Service Unavailable'
 						);
-						await confirmGooglePay();
-						// The express error callback showed the notice, and its banner spoke it.
-						mockNotices = [
-							{
-								id: 'wc-express-payment-error',
-								content: PAYMENT_RECEIVED,
-								context: undefined,
-							},
-						];
-						banner = renderBanner();
+						await confirmGooglePay( {
+							setExpressPaymentError: coreExpressError,
+							emitResponse: EXPRESS_EMIT_RESPONSE,
+						} );
+						// The container shows the notice the confirmation made, and its banner speaks it.
+						list = renderExpressNotices();
 						mockSpeak.mockClear();
 					} );
 
 					it( 'speaks the sentence once on a refused click while the notice is still shown', () => {
 						clickGooglePay();
-						// The notice list shows the notice again with the same text.
-						banner.rerender(
-							createElement(
-								SpokenBanner,
-								null,
-								PAYMENT_RECEIVED
-							)
-						);
+						// The container shows the notice again with the same text.
+						list.update( expressNotices() );
 
-						expect( mockSpeak.mock.calls ).toEqual( [
-							[ PAYMENT_RECEIVED, 'assertive' ],
+						expect( spokenSentences() ).toHaveLength( 1 );
+						expect( mockSpeak.mock.calls[ 0 ] ).toEqual( [
+							PAYMENT_RECEIVED,
+							'assertive',
 						] );
 					} );
 
 					it( 'speaks the sentence on every refused click while the notice is still shown', () => {
 						clickGooglePay();
+						list.update( expressNotices() );
 						clickGooglePay();
+						list.update( expressNotices() );
 
 						expect( mockSpeak.mock.calls ).toEqual( [
 							[ PAYMENT_RECEIVED, 'assertive' ],
@@ -3647,19 +3678,191 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 						] );
 					} );
 
-					it( 'speaks the sentence once on a refused click after the shopper dismissed the notice', () => {
-						banner.unmount();
+					it( 'speaks the sentence once on a refused click after the notice was removed', () => {
+						list.unmount();
 						mockNotices = [];
+						mockCreateErrorNotice.mockClear();
 
 						clickGooglePay();
-						// The notice list mounts the new notice's banner.
-						renderBanner();
+						// The container mounts the new notice's banner.
+						renderExpressNotices();
 
 						expect( mockCreateErrorNotice ).toHaveBeenCalledTimes(
 							1
 						);
-						expect( mockSpeak.mock.calls ).toEqual( [
-							[ PAYMENT_RECEIVED, 'assertive' ],
+						expect( spokenSentences() ).toHaveLength( 1 );
+						expect( mockSpeak ).toHaveBeenCalledTimes( 1 );
+					} );
+
+					it( 'keeps the sentence on the page, with no heading and no close control, after a refused click', () => {
+						clickGooglePay();
+						list.update( expressNotices() );
+
+						expect( expressNotices() ).toHaveLength( 1 );
+						expect( screen.getAllByRole( 'alert' ) ).toHaveLength(
+							1
+						);
+						expect( screen.getByRole( 'alert' ) ).toHaveTextContent(
+							PAYMENT_RECEIVED
+						);
+						expect(
+							screen.queryByText( SUMMARY )
+						).not.toBeInTheDocument();
+						expect(
+							screen.queryByRole( 'button', {
+								name: DISMISS_LABEL,
+							} )
+						).not.toBeInTheDocument();
+					} );
+				} );
+
+				// The sentence after the first payment: core's express error call makes a dismissible notice from the
+				// message, and the script replaces it with one the shopper cannot dismiss, under the same ID and context.
+				describe( 'on the first show', () => {
+					const showFirstSentence = async () => {
+						answerOrderStatusUpdateWithText(
+							503,
+							'Service Unavailable'
+						);
+						await confirmGooglePay( {
+							setExpressPaymentError: coreExpressError,
+							emitResponse: EXPRESS_EMIT_RESPONSE,
+						} );
+					};
+
+					it( 'leaves exactly one notice, for the sentence, that the shopper cannot dismiss', async () => {
+						await showFirstSentence();
+
+						expect( expressNotices() ).toEqual( [
+							expect.objectContaining( {
+								id: 'wc-express-payment-error',
+								content: PAYMENT_RECEIVED,
+								status: 'error',
+								isDismissible: false,
+							} ),
+						] );
+						// Core's call first, then the replacement under the same ID and context.
+						expect( mockCreateErrorNotice.mock.calls ).toEqual( [
+							[
+								PAYMENT_RECEIVED,
+								{
+									id: 'wc-express-payment-error',
+									context: 'wc/checkout/express-payments',
+								},
+							],
+							[
+								PAYMENT_RECEIVED,
+								{
+									id: 'wc-express-payment-error',
+									context: 'wc/checkout/express-payments',
+									isDismissible: false,
+								},
+							],
+						] );
+					} );
+
+					it( 'shows the sentence with no summary heading and no close control', async () => {
+						await showFirstSentence();
+
+						renderExpressNotices();
+
+						expect( screen.getAllByRole( 'alert' ) ).toHaveLength(
+							1
+						);
+						expect( screen.getByRole( 'alert' ) ).toHaveTextContent(
+							PAYMENT_RECEIVED
+						);
+						expect(
+							screen.queryByText( SUMMARY )
+						).not.toBeInTheDocument();
+						expect(
+							screen.queryByRole( 'button', {
+								name: DISMISS_LABEL,
+							} )
+						).not.toBeInTheDocument();
+					} );
+
+					it( 'leaves another error notice on the same page with its heading and close control', async () => {
+						await showFirstSentence();
+						// A shipping error another express method made: core's call, with the default isDismissible.
+						coreExpressError(
+							'No shipping options are available.',
+							'shipping-error'
+						);
+
+						renderExpressNotices();
+
+						const alerts = screen.getAllByRole( 'alert' );
+						expect( alerts ).toHaveLength( 2 );
+						expect( screen.getAllByText( SUMMARY ) ).toHaveLength(
+							1
+						);
+						expect(
+							screen.getAllByRole( 'button', {
+								name: DISMISS_LABEL,
+							} )
+						).toHaveLength( 1 );
+						const shipping = alerts.find( ( alert ) =>
+							alert.textContent.includes(
+								'No shipping options are available.'
+							)
+						);
+						expect(
+							within( shipping ).getByText( SUMMARY )
+						).toBeVisible();
+						expect(
+							within( shipping ).getByRole( 'button', {
+								name: DISMISS_LABEL,
+							} )
+						).toBeVisible();
+						const sentence = alerts.find( ( alert ) =>
+							alert.textContent.includes( PAYMENT_RECEIVED )
+						);
+						expect( sentence ).not.toBe( shipping );
+						expect(
+							within( sentence ).queryByRole( 'button' )
+						).not.toBeInTheDocument();
+					} );
+
+					it( 'announces the sentence once, and the script itself says nothing', async () => {
+						await showFirstSentence();
+						expect( mockSpeak ).not.toHaveBeenCalled();
+
+						renderExpressNotices();
+
+						expect( mockSpeak ).toHaveBeenCalledTimes( 1 );
+						expect( mockSpeak.mock.calls[ 0 ][ 0 ] ).toContain(
+							PAYMENT_RECEIVED
+						);
+					} );
+
+					it( 'makes no notice of its own for any other message', async () => {
+						answerOrderStatusUpdateWithText(
+							403,
+							JSON.stringify( {
+								error: { message: 'Please refresh the page.' },
+							} )
+						);
+						await confirmGooglePay( {
+							setExpressPaymentError: coreExpressError,
+							emitResponse: EXPRESS_EMIT_RESPONSE,
+						} );
+
+						// Core's dismissible notice stays as it is.
+						expect( mockCreateErrorNotice.mock.calls ).toEqual( [
+							[
+								'Please refresh the page.',
+								{
+									id: 'wc-express-payment-error',
+									context: 'wc/checkout/express-payments',
+								},
+							],
+						] );
+						expect( expressNotices() ).toEqual( [
+							expect.objectContaining( {
+								content: 'Please refresh the page.',
+								isDismissible: true,
+							} ),
 						] );
 					} );
 				} );
@@ -4037,7 +4240,9 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 				it.each( cases )(
 					'%s: after %s',
 					async ( id, label, type, status, shape ) => {
-						const setExpressPaymentError = jest.fn();
+						const setExpressPaymentError = jest.fn( ( message ) =>
+							coreExpressError( message )
+						);
 						const paymentFailed = jest.fn();
 						const pageBefore = window.location.href;
 						if ( type === 'pi' ) {
@@ -4054,6 +4259,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 						await confirmGooglePay( {
 							setExpressPaymentError,
 							paymentFailed,
+							emitResponse: EXPRESS_EMIT_RESPONSE,
 						} );
 
 						// No text for FOLLOW.
@@ -4077,6 +4283,18 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 								: []
 						);
 						expect( window.location.href ).toBe( pageBefore );
+						// The page shows one notice with the text, and none for FOLLOW. The sentence's cannot be
+						// dismissed; the others are core's, dismissible.
+						const shown = text
+							? [
+									{
+										content: text,
+										isDismissible:
+											text !== PAYMENT_RECEIVED,
+									},
+								]
+							: [];
+						expect( expressNotices() ).toMatchObject( shown );
 					}
 				);
 			} );

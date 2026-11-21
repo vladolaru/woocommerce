@@ -536,16 +536,24 @@ const handleConfirmationResponse = async (
 
 		// No readable error and no order page: after a payment Stripe confirmed, the shopper must not pay again. With
 		// `retry: false` core ends the checkout instead of returning it to idle, so Place order stays disabled until a
-		// reload; the empty redirect replaces the confirmation hash core would otherwise navigate to.
+		// reload; the empty redirect replaces the confirmation hash core would otherwise navigate to. Core makes a
+		// dismissible notice from an error response's message and cannot be told otherwise (block-data/checkout/utils.ts
+		// runCheckoutSuccessObservers), so the sentence's notice is made here, one the shopper cannot dismiss, and the
+		// response carries no message: core makes no second notice and no other text in its place.
 		if ( ! answer ) {
-			return {
-				...getErrorResponse(
-					emitResponse,
-					__(
-						"Your payment was received, but we couldn't finish updating your order. Please don't pay again. If your order confirmation email doesn't arrive soon, contact us.",
-						'woocommerce'
-					)
+			dispatch( 'core/notices' ).createErrorNotice(
+				__(
+					"Your payment was received, but we couldn't finish updating your order. Please don't pay again. If your order confirmation email doesn't arrive soon, contact us.",
+					'woocommerce'
 				),
+				{
+					context: emitResponse.noticeContexts.PAYMENTS,
+					isDismissible: false,
+				}
+			);
+
+			return {
+				type: emitResponse.responseTypes.ERROR,
 				retry: false,
 				redirectUrl: '',
 			};

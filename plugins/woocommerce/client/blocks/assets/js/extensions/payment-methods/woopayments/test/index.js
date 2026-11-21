@@ -7,6 +7,7 @@ import {
 	render,
 	screen,
 	waitFor,
+	within,
 } from '@testing-library/react';
 // user-event resolves another @testing-library/dom than @testing-library/react configures, so its events are not
 // wrapped in act(); the tests wrap each interaction, as other Blocks tests do.
@@ -33,6 +34,11 @@ import {
 	MONEY_STATUS_FIXTURE,
 	ORDER_PAGE,
 } from '../common/test/fixtures/answer-shapes';
+import {
+	DISMISS_LABEL,
+	SUMMARY,
+	renderNoticeList,
+} from '../common/test/fixtures/notice-list';
 
 jest.mock( '@fingerprintjs/fingerprintjs', () => ( {
 	__esModule: true,
@@ -174,14 +180,30 @@ const mockValidationActions = {
 	clearValidationError: jest.fn(),
 };
 
-// The notices store (core/notices): the notices shown, by context, and the action that removes one.
+// The notices store (core/notices): the notices shown, by context, and the actions that remove one and create an error.
 let mockNotices = {};
 const mockNoticesActions = {
 	removeNotice: jest.fn(),
+	createErrorNotice: jest.fn(),
 };
+
+// The hooks the notices container and its banner use; the package entry pulls in every Blocks data store.
+jest.mock( '../../../../base/hooks', () => ( {
+	usePrevious: jest.requireActual( '../../../../base/hooks/use-previous' )
+		.usePrevious,
+	useSpokenMessage: jest.requireActual(
+		'../../../../base/hooks/use-spoken-message'
+	).useSpokenMessage,
+} ) );
+
+const mockSpeak = jest.fn();
+jest.mock( '@wordpress/a11y', () => ( {
+	speak: ( ...args ) => mockSpeak( ...args ),
+} ) );
 
 jest.mock( '@wordpress/data', () => ( {
 	useSelect: jest.fn(),
+	useDispatch: () => ( { removeNotice: () => {} } ),
 	select: jest.fn( () => ( {
 		getNotices: ( context ) => mockNotices[ context ] || [],
 	} ) ),
@@ -236,6 +258,30 @@ describe( 'wc-payment-method-woopayments', () => {
 		storeListeners.clear();
 		validationErrors = {};
 		mockNotices = {};
+		mockSpeak.mockClear();
+		// The store keeps one notice per ID and context; a notice made without isDismissible is dismissible
+		// (@wordpress/notices store/actions.ts createNotice, `isDismissible = true`).
+		let noticeCount = 0;
+		mockNoticesActions.createErrorNotice.mockImplementation(
+			(
+				content,
+				{ id, context = 'global', isDismissible = true } = {}
+			) => {
+				noticeCount++;
+				const noticeId = id || `notice-${ noticeCount }`;
+				mockNotices[ context ] = [
+					...( mockNotices[ context ] || [] ).filter(
+						( notice ) => notice.id !== noticeId
+					),
+					{
+						id: noticeId,
+						status: 'error',
+						content,
+						isDismissible,
+					},
+				];
+			}
+		);
 		mockNoticesActions.removeNotice.mockImplementation( ( id, context ) => {
 			mockNotices[ context ] = ( mockNotices[ context ] || [] ).filter(
 				( notice ) => notice.id !== id
@@ -3663,6 +3709,22 @@ describe( 'wc-payment-method-woopayments', () => {
 		return checkoutSuccessResult;
 	};
 
+	// The sentence's notice, as the store keeps it: one error notice in the payments context that the shopper cannot
+	// dismiss. Core makes a notice from an error response's message with isDismissible left at its default (true).
+	const SENTENCE_TEXT =
+		"Your payment was received, but we couldn't finish updating your order. Please don't pay again. If your order confirmation email doesn't arrive soon, contact us.";
+	const expectSentenceShown = () => {
+		expect( mockNotices.payments ).toHaveLength( 1 );
+		expect( mockNotices.payments[ 0 ] ).toMatchObject( {
+			status: 'error',
+			content: SENTENCE_TEXT,
+			isDismissible: false,
+		} );
+	};
+	const expectNoSentenceShown = () => {
+		expect( mockNotices.payments || [] ).toEqual( [] );
+	};
+
 	it( 'shows the server message when the order update fails after a successful next action', async () => {
 		// Next-action result shape read by client 11.1.0 client/checkout/api/index.js:220-245 (paymentIntent.id).
 		window.Stripe = jest.fn( () => ( {
@@ -3716,8 +3778,6 @@ describe( 'wc-payment-method-woopayments', () => {
 	// transport failure, JSON with neither) shows one sentence instead of the browser's parse error. A setup intent, or a
 	// payment that holds no money, keeps the generic sentence.
 	describe( 'an unreadable store answer after the confirmation', () => {
-		const PAYMENT_RECEIVED =
-			"Your payment was received, but we couldn't finish updating your order. Please don't pay again. If your order confirmation email doesn't arrive soon, contact us.";
 		const GENERIC = 'There was a problem confirming your payment.';
 
 		// A fetch Response whose json() parses the body as Response.json() does: a body that is not JSON rejects with
@@ -3743,9 +3803,11 @@ describe( 'wc-payment-method-woopayments', () => {
 		} );
 
 		// The sentence ends the checkout: with `retry: false` core completes it instead of returning it to idle, so Place
-		// order stays disabled, and the empty redirect replaces the confirmation hash core would navigate to.
+		// order stays disabled, and the empty redirect replaces the confirmation hash core would navigate to. The
+		// response carries no message: core makes a dismissible notice from a message, and the script makes this one
+		// itself (see expectSentenceShown), so core makes none.
 		const sentence = {
-			...notice( PAYMENT_RECEIVED ),
+			type: 'error',
 			retry: false,
 			redirectUrl: '',
 		};
@@ -3761,6 +3823,7 @@ describe( 'wc-payment-method-woopayments', () => {
 				await expect( runSavedTokenConfirmation() ).resolves.toEqual(
 					sentence
 				);
+				expectSentenceShown();
 			}
 		);
 
@@ -3781,6 +3844,7 @@ describe( 'wc-payment-method-woopayments', () => {
 			await expect( runSavedTokenConfirmation() ).resolves.toEqual(
 				sentence
 			);
+			expectSentenceShown();
 		} );
 
 		it.each( [
@@ -3795,6 +3859,7 @@ describe( 'wc-payment-method-woopayments', () => {
 			await expect( runSavedTokenConfirmation() ).resolves.toEqual(
 				sentence
 			);
+			expectSentenceShown();
 		} );
 
 		it( 'shows the sentence when the request never reaches the store', async () => {
@@ -3806,6 +3871,7 @@ describe( 'wc-payment-method-woopayments', () => {
 			await expect( runSavedTokenConfirmation() ).resolves.toEqual(
 				sentence
 			);
+			expectSentenceShown();
 		} );
 
 		it( 'shows the store message when the store refuses with one', async () => {
@@ -3828,6 +3894,7 @@ describe( 'wc-payment-method-woopayments', () => {
 					"We're not able to process this payment. Please refresh the page and try again."
 				)
 			);
+			expectNoSentenceShown();
 		} );
 
 		it( 'keeps the generic sentence after a setup intent', async () => {
@@ -3845,6 +3912,7 @@ describe( 'wc-payment-method-woopayments', () => {
 					'#wcpay-confirm-si:123:seti_123_secret_abc:nonce_123'
 				)
 			).resolves.toEqual( notice( GENERIC ) );
+			expectNoSentenceShown();
 		} );
 
 		it( 'keeps the generic sentence when the payment intent holds no money', async () => {
@@ -3856,15 +3924,13 @@ describe( 'wc-payment-method-woopayments', () => {
 			await expect( runSavedTokenConfirmation() ).resolves.toEqual(
 				notice( GENERIC )
 			);
+			expectNoSentenceShown();
 		} );
 	} );
 
 	// The decision table (common/test/fixtures/answer-shapes.js): every store answer, after a payment intent that holds
 	// money and after a setup intent, with the outcome all four checkout scripts share.
 	describe( 'the store answer after the confirmation, by the decision table', () => {
-		const PAYMENT_RECEIVED =
-			"Your payment was received, but we couldn't finish updating your order. Please don't pay again. If your order confirmation email doesn't arrive soon, contact us.";
-
 		const notice = ( message ) => ( {
 			type: 'error',
 			message,
@@ -3872,9 +3938,11 @@ describe( 'wc-payment-method-woopayments', () => {
 		} );
 
 		// The sentence ends the checkout: with `retry: false` core completes it instead of returning it to idle, so Place
-		// order stays disabled, and the empty redirect replaces the confirmation hash core would navigate to.
+		// order stays disabled, and the empty redirect replaces the confirmation hash core would navigate to. The
+		// response carries no message: core makes a dismissible notice from a message, and the script makes this one
+		// itself (see expectSentenceShown), so core makes none.
 		const sentence = {
-			...notice( PAYMENT_RECEIVED ),
+			type: 'error',
 			retry: false,
 			redirectUrl: '',
 		};
@@ -3945,8 +4013,143 @@ describe( 'wc-payment-method-woopayments', () => {
 							: '#wcpay-confirm-si:123:seti_123_secret_abc:nonce_123'
 					)
 				).resolves.toEqual( expected );
+				// The sentence is on the page after every answer that outcome names, and after no other.
+				if ( shape.expect[ type ] === 'SENTENCE' ) {
+					expectSentenceShown();
+				} else {
+					expectNoSentenceShown();
+				}
 			}
 		);
+	} );
+
+	// The owner's decision: after a payment Stripe confirmed, the sentence is an error notice the shopper cannot dismiss,
+	// so core's container adds no "Please fix the following error" heading and no close button. Core makes a notice
+	// from an error response's message with no way to say that (block-data/checkout/utils.ts runCheckoutSuccessObservers
+	// passes only the context), so the script makes the notice and the response carries no message.
+	describe( 'the sentence on the page after a confirmed payment', () => {
+		const confirmPaidWithNoOrderPage = () => {
+			window.Stripe = jest.fn( () => ( {
+				handleNextAction: jest.fn().mockResolvedValue( {
+					paymentIntent: { id: 'pi_123', status: 'succeeded' },
+				} ),
+			} ) );
+			window.fetch = jest.fn().mockResolvedValue( {
+				ok: false,
+				status: 503,
+				json: () => Promise.reject( new SyntaxError( 'Not JSON' ) ),
+			} );
+
+			return runSavedTokenConfirmation();
+		};
+
+		// What core does with an observer's error response: a notice from its message, in its message context, with
+		// nothing else set (block-data/checkout/utils.ts runCheckoutSuccessObservers). A response with no message
+		// makes no notice.
+		const applyCoreRule = ( response ) => {
+			if ( response.message && typeof response.message === 'string' ) {
+				mockNoticesActions.createErrorNotice(
+					response.message,
+					response.messageContext
+						? { context: response.messageContext }
+						: undefined
+				);
+			}
+
+			return response;
+		};
+
+		const confirmPaid = async () =>
+			applyCoreRule( await confirmPaidWithNoOrderPage() );
+
+		// What the Blocks notices container gets for the payments context.
+		const renderPaymentsNotices = () =>
+			renderNoticeList(
+				mockNotices.payments.map( ( notice ) => ( {
+					...notice,
+					context: 'payments',
+				} ) )
+			);
+
+		it( 'makes exactly one notice, and the response gives core no message to make another from', async () => {
+			const response = await confirmPaid();
+
+			expect( response ).toEqual( {
+				type: 'error',
+				retry: false,
+				redirectUrl: '',
+			} );
+			expect( response ).not.toHaveProperty( 'message' );
+			expect(
+				mockNoticesActions.createErrorNotice
+			).toHaveBeenCalledTimes( 1 );
+			expect( mockNoticesActions.createErrorNotice ).toHaveBeenCalledWith(
+				SENTENCE_TEXT,
+				{ context: 'payments', isDismissible: false }
+			);
+			expectSentenceShown();
+		} );
+
+		it( 'shows the sentence with no summary heading and no close control', async () => {
+			await confirmPaid();
+
+			renderPaymentsNotices();
+
+			expect( screen.getAllByRole( 'alert' ) ).toHaveLength( 1 );
+			expect( screen.getByRole( 'alert' ) ).toHaveTextContent(
+				SENTENCE_TEXT
+			);
+			expect( screen.queryByText( SUMMARY ) ).not.toBeInTheDocument();
+			expect(
+				screen.queryByRole( 'button', { name: DISMISS_LABEL } )
+			).not.toBeInTheDocument();
+		} );
+
+		it( 'leaves another error notice on the same page with its heading and close control', async () => {
+			await confirmPaid();
+			// What core makes from an observer's error response message: the context and the default isDismissible.
+			mockNoticesActions.createErrorNotice( 'Your card was declined.', {
+				context: 'payments',
+			} );
+
+			renderPaymentsNotices();
+
+			const alerts = screen.getAllByRole( 'alert' );
+			expect( alerts ).toHaveLength( 2 );
+			expect( screen.getAllByText( SUMMARY ) ).toHaveLength( 1 );
+			expect(
+				screen.getAllByRole( 'button', { name: DISMISS_LABEL } )
+			).toHaveLength( 1 );
+			const declined = alerts.find( ( alert ) =>
+				alert.textContent.includes( 'Your card was declined.' )
+			);
+			expect( within( declined ).getByText( SUMMARY ) ).toBeVisible();
+			expect(
+				within( declined ).getByRole( 'button', {
+					name: DISMISS_LABEL,
+				} )
+			).toBeVisible();
+			const sentenceAlert = alerts.find( ( alert ) =>
+				alert.textContent.includes( SENTENCE_TEXT )
+			);
+			expect( sentenceAlert ).not.toBe( declined );
+			expect(
+				within( sentenceAlert ).queryByRole( 'button' )
+			).not.toBeInTheDocument();
+		} );
+
+		it( 'announces the sentence once, and the script itself says nothing', async () => {
+			await confirmPaid();
+			expect( mockSpeak ).not.toHaveBeenCalled();
+
+			renderPaymentsNotices();
+
+			const announcements = mockSpeak.mock.calls.filter( ( [ text ] ) =>
+				text.includes( SENTENCE_TEXT )
+			);
+			expect( announcements ).toHaveLength( 1 );
+			expect( mockSpeak ).toHaveBeenCalledTimes( 1 );
+		} );
 	} );
 
 	it( 'shows the Stripe.js message when the next action rejects', async () => {

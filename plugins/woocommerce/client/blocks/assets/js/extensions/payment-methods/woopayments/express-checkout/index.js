@@ -939,18 +939,31 @@ const EXPRESS_PAYMENT_ERROR_NOTICE_ID = 'wc-express-payment-error';
 // Set once the page showed PAYMENT_RECEIVED_MESSAGE; until a reload, every wallet click is refused with it.
 let isPaymentReceivedShown = false;
 
+/**
+ * Show PAYMENT_RECEIVED_MESSAGE as an error notice the shopper cannot dismiss, so core adds no "Please fix the following
+ * error" heading and no close button. Core's express error call can only make a dismissible notice (block-data/payment/
+ * thunks.ts __internalSetExpressPaymentError), so this one replaces it under the same ID and context.
+ *
+ * @param {string} noticeContext The notice context of the express payments container.
+ */
+const showPaymentReceivedNotice = ( noticeContext ) => {
+	dispatch( 'core/notices' ).createErrorNotice( PAYMENT_RECEIVED_MESSAGE, {
+		id: EXPRESS_PAYMENT_ERROR_NOTICE_ID,
+		context: noticeContext,
+		isDismissible: false,
+	} );
+};
+
 // Show PAYMENT_RECEIVED_MESSAGE again for a refused wallet click. It is only a notice: the express error callback would
 // also put back the payment method chosen before the wallet's first click. It keeps the ID of the express error notice
 // it replaces. The sentence is spoken once: a notice still on the page keeps its text, so its banner does not announce
-// it again and it is spoken here; a notice the shopper dismissed is created anew, and its banner speaks it as it mounts.
+// it again and it is spoken here; a notice removed since (the next Place order press clears every notice) is created
+// anew, and its banner speaks it as it mounts.
 const showPaymentReceivedAgain = ( noticeContext ) => {
 	const isNoticeShown = select( 'core/notices' )
 		.getNotices( noticeContext )
 		.some( ( notice ) => notice.id === EXPRESS_PAYMENT_ERROR_NOTICE_ID );
-	dispatch( 'core/notices' ).createErrorNotice( PAYMENT_RECEIVED_MESSAGE, {
-		id: EXPRESS_PAYMENT_ERROR_NOTICE_ID,
-		context: noticeContext,
-	} );
+	showPaymentReceivedNotice( noticeContext );
 	if ( isNoticeShown ) {
 		speak( PAYMENT_RECEIVED_MESSAGE, 'assertive' );
 	}
@@ -1591,6 +1604,12 @@ const ExpressCheckoutElement = ( {
 				unlockPage();
 				refreshCartAfterWalletMutation();
 				setExpressPaymentError?.( message );
+				// Core made a dismissible notice from the message; the sentence's notice replaces it.
+				if ( message === PAYMENT_RECEIVED_MESSAGE ) {
+					showPaymentReceivedNotice(
+						expressNoticeContextRef.current
+					);
+				}
 				// Last, so a throw from it cannot cost the unlock, the cart refresh or the error.
 				event?.paymentFailed?.( {
 					reason: 'fail',
