@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSe
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
@@ -866,6 +867,147 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 			// order, the real status a checkout carries after a decline.
 			'requires payment method for current order' => array( 'requires_payment_method', true, 'failed' ),
 		);
+	}
+
+	/**
+	 * @testdox A failed read of the attached PaymentIntent on a Pending order storing $stored_status, after $failure, $expected.
+	 *
+	 * The stored record decides when the read fails. One that shows money taken, held or on its way refuses on any failure.
+	 * One that shows a started bank step refuses unless the platform answered about this payment: the shopper may have
+	 * finished the step, and the money is taken before the store hears of it. Any other record lets the checkout go on.
+	 * Client 11.3.0 goes on after any exception (class-duplicate-payment-prevention-service.php:101-110).
+	 *
+	 * @dataProvider provider_failed_reads_by_stored_status
+	 *
+	 * @param string $stored_status The order's stored `_intention_status`; empty for none.
+	 * @param string $failure       How the read fails, a key of failed_read().
+	 * @param string $expected      "refuses" or "goes on".
+	 */
+	public function test_a_failed_read_refuses_by_the_stored_record( string $stored_status, string $failure, string $expected ): void {
+		$order = $this->create_order( 'hash', 'pending' );
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		if ( '' !== $stored_status ) {
+			$order->update_meta_data( '_intention_status', $stored_status );
+		}
+		$order->save();
+		$api_client = $this->getMockBuilder( Client::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_payment_intention' ) )
+			->getMock();
+		$api_client->expects( $this->once() )->method( 'get_payment_intention' )->with( 'pi_existing' )->willThrowException( self::failed_read( $failure ) );
+
+		$result = $this->create_service( $this->create_session(), $api_client )
+			->check_payment_intent_attached_to_order_succeeded( $order, $this->create_gateway() );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( array( 'pending', '', $stored_status ), array( $order->get_status(), $order->get_transaction_id(), (string) $order->get_meta( '_intention_status', true ) ), 'The order is left as it is.' );
+		$this->assertSame( array(), wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'No note is written.' );
+		if ( 'goes on' === $expected ) {
+			$this->assertNull( $result );
+			return;
+		}
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertSame(
+			array( WooPaymentsDuplicatePaymentPreventionService::ERROR_CHECK_FAILED, "We're not able to process this payment. Please try again later." ),
+			array( $result->get_error_code(), $result->get_error_message() )
+		);
+	}
+
+	/**
+	 * Stored statuses, read failures and what the check does.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string}>
+	 */
+	public function provider_failed_reads_by_stored_status(): array {
+		return array(
+			'requires_action, a server error'            => array( 'requires_action', 'a server error', 'refuses' ),
+			'requires_confirmation, a server error'      => array( 'requires_confirmation', 'a server error', 'refuses' ),
+			'requires_capture, a server error'           => array( 'requires_capture', 'a server error', 'refuses' ),
+			'processing, a server error'                 => array( 'processing', 'a server error', 'refuses' ),
+			'requires_action, a plain exception'         => array( 'requires_action', 'a plain exception', 'refuses' ),
+			'requires_action, a transport failure'       => array( 'requires_action', 'a transport failure', 'refuses' ),
+			'requires_action, too many requests'         => array( 'requires_action', 'too many requests', 'refuses' ),
+			'requires_confirmation, a store refusal'     => array( 'requires_confirmation', 'a store refusal', 'refuses' ),
+			'requires_action, an unreadable answer'      => array( 'requires_action', 'an unreadable answer', 'refuses' ),
+			'requires_capture, a not-found'              => array( 'requires_capture', 'a not-found', 'refuses' ),
+			'processing, a not-found'                    => array( 'processing', 'a not-found', 'refuses' ),
+			'succeeded, a server error'                  => array( 'succeeded', 'a server error', 'refuses' ),
+			'succeeded, a not-found'                     => array( 'succeeded', 'a not-found', 'refuses' ),
+			'requires_action, a not-found'               => array( 'requires_action', 'a not-found', 'goes on' ),
+			'requires_confirmation, a bad request'       => array( 'requires_confirmation', 'a bad request', 'goes on' ),
+			'requires_payment_method, a server error'    => array( 'requires_payment_method', 'a server error', 'goes on' ),
+			'canceled, a server error'                   => array( 'canceled', 'a server error', 'goes on' ),
+			'no stored status, a server error'           => array( '', 'a server error', 'goes on' ),
+			'requires_payment_method, a plain exception' => array( 'requires_payment_method', 'a plain exception', 'goes on' ),
+		);
+	}
+
+	/**
+	 * Build a failure of the attached intent's read, shaped as Api\Client throws it.
+	 *
+	 * @param string $failure The kind of failure.
+	 * @return \Exception
+	 */
+	private static function failed_read( string $failure ): \Exception {
+		switch ( $failure ) {
+			case 'a plain exception':
+				return new \Exception( 'The platform did not answer.' );
+			case 'a transport failure':
+				return new ApiException( 'Http request failed. Reason: timed out', 'wcpay_http_request_failed', 500, '', '', array( 'transport_error_code' => 'http_request_failed' ) );
+			case 'too many requests':
+				return new ApiException( 'Too many requests.', 'rate_limit', 429 );
+			case 'a store refusal':
+				return new ApiException( 'Forbidden.', 'wcpay_forbidden', 403 );
+			case 'an unreadable answer':
+				return new ApiException( 'Unable to decode response from WooPayments.', 'wcpay_unparseable_or_null_body', 200 );
+			case 'a not-found':
+				return new ApiException( 'No such payment_intent.', 'resource_missing', 404, 'invalid_request_error' );
+			case 'a bad request':
+				return new ApiException( 'Invalid payment_intent.', 'invalid_request_error', 400, 'invalid_request_error' );
+			default:
+				return new ApiException( 'Internal server error.', 'api_error', 500 );
+		}
+	}
+
+	/**
+	 * @testdox A read that works on a Pending order storing requires_action $expected when the intent is $intent_status.
+	 *
+	 * The stored record decides only when the read fails: a bank step that never finished lets the new charge go ahead, and
+	 * a payment that succeeded is applied with no new charge.
+	 *
+	 * @testWith ["requires_action", "goes on"]
+	 *           ["succeeded", "answers as paid"]
+	 *
+	 * @param string $intent_status The status the read returns.
+	 * @param string $expected      What the check does.
+	 */
+	public function test_a_read_that_works_decides_over_a_started_record( string $intent_status, string $expected ): void {
+		$order = $this->create_order( 'hash', 'pending' );
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		$order->update_meta_data( '_intention_status', 'requires_action' );
+		$order->save();
+		$api_client = $this->getMockBuilder( Client::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_payment_intention' ) )
+			->getMock();
+		$api_client->expects( $this->once() )->method( 'get_payment_intention' )->with( 'pi_existing' )->willReturn( $this->create_intent_response( $order, $intent_status, 1200 ) );
+
+		$result = $this->create_service( $this->create_session(), $api_client )
+			->check_payment_intent_attached_to_order_succeeded( $order, $this->create_gateway() );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		if ( 'goes on' === $expected ) {
+			$this->assertNull( $result );
+			$this->assertSame( array( 'pending', '' ), array( $order->get_status(), $order->get_transaction_id() ) );
+			return;
+		}
+		$this->assertIsArray( $result );
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertStringContainsString( 'wcpay_previous_successful_intent=yes', $result['redirect'] );
+		$this->assertSame( 'pi_existing', $order->get_transaction_id() );
+		$this->assertContains( $order->get_status(), wc_get_is_paid_statuses() );
 	}
 
 	/**

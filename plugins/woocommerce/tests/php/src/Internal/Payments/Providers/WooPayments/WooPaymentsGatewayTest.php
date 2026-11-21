@@ -4472,6 +4472,136 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A checkout on $page over a Pending order storing $stored_status, whose stored intent read fails with a $http_code, $expected.
+	 *
+	 * After the shopper's bank step, the order still stores requires_action when the answer that would have completed it
+	 * was lost. A press whose read of that intent fails cannot tell whether the step finished, so it is refused with the
+	 * notice and nothing is charged; the order is left as it is. A not-found is the platform's answer about the payment, and
+	 * a record of a failed attempt is no payment, so those go on to charge. Client 11.3.0 charges again after any exception
+	 * (class-duplicate-payment-prevention-service.php:101-110).
+	 *
+	 * @testWith ["checkout", "requires_action", 500, "refuses"]
+	 *           ["pay page, logged in", "requires_action", 500, "refuses"]
+	 *           ["pay page, guest", "requires_action", 500, "refuses"]
+	 *           ["checkout", "requires_action", 404, "charges"]
+	 *           ["checkout", "requires_payment_method", 500, "charges"]
+	 *
+	 * @param string $page          The page submitted: "checkout", "pay page, logged in" or "pay page, guest".
+	 * @param string $stored_status The order's stored intent status.
+	 * @param int    $http_code     The HTTP status of the failed read.
+	 * @param string $expected      "refuses" or "charges".
+	 */
+	public function test_process_payment_over_a_started_record_whose_read_fails( string $page, string $stored_status, int $http_code, string $expected ): void {
+		$order = $this->create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->update_meta_data( '_intent_id', 'pi_started' );
+		$order->update_meta_data( '_intention_status', $stored_status );
+		$order->save();
+		if ( 'checkout' !== $page ) {
+			$_POST['woocommerce_pay'] = '1';
+		}
+		if ( 'pay page, logged in' === $page ) {
+			$customer_id = $this->factory()->user->create( array( 'role' => 'customer' ) );
+			$order->set_customer_id( $customer_id );
+			$order->save();
+			wp_set_current_user( $customer_id );
+		}
+		$notes_before = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$service      = new RecordingPaymentProcessingService();
+		$gateway      = $this->create_gateway_whose_duplicate_read_fails( $service, new ApiException( 'Read failed.', 404 === $http_code ? 'resource_missing' : 'api_error', $http_code ) );
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		if ( 'charges' === $expected ) {
+			$this->assertSame( 1, $service->checkout_attempt_count );
+			return;
+		}
+		$this->assertSame( 0, $service->checkout_attempt_count, 'Nothing is charged.' );
+		$this->assertSame( 'failure', $result['result'] ?? '' );
+		$this->assertSame( array( "We're not able to process this payment. Please try again later." ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+		$this->assertSame( array( OrderStatus::PENDING, 'pi_started', $stored_status ), array( $order->get_status(), $order->get_meta( '_intent_id', true ), $order->get_meta( '_intention_status', true ) ) );
+		$this->assertCount( $notes_before, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'No note is added.' );
+	}
+
+	/**
+	 * @testdox A subscription payment-method change over a stored requires_action intent whose read fails is refused and leaves the subscription as it is.
+	 *
+	 * The check runs for every caller of process_payment(), the payment-method change included.
+	 */
+	public function test_subscription_payment_method_change_over_a_started_record_whose_read_fails_is_refused(): void {
+		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
+		WooCommerceSubscriptionsDoubles::load_subscription_detector();
+		$subscription = $this->create_order();
+		$subscription->update_meta_data( '_intent_id', 'pi_started' );
+		$subscription->update_meta_data( '_intention_status', 'requires_action' );
+		$subscription->save();
+		$subscription_class = get_class(
+			new class() extends WC_Order {
+				/**
+				 * Get the order type a subscription reports.
+				 *
+				 * @return string
+				 */
+				public function get_type() {
+					return 'shop_subscription';
+				}
+			}
+		);
+		$subscription_id    = $subscription->get_id();
+		add_filter( 'woocommerce_order_class', static fn( $classname, $order_type, $order_id ) => $subscription_id === (int) $order_id ? $subscription_class : $classname, 10, 3 );
+		$GLOBALS['wcpay_test_subscription_ids'] = array( $subscription_id );
+		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
+		$_POST['woocommerce_change_payment']    = (string) $subscription_id;
+		$_GET['change_payment_method']          = (string) $subscription_id;
+
+		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
+
+		$service = new RecordingPaymentProcessingService();
+		$gateway = $this->create_gateway_whose_duplicate_read_fails( $service, new ApiException( 'Read failed.', 'api_error', 500 ) );
+
+		$result = $gateway->process_payment( $subscription_id );
+
+		$this->assertSame( 0, $service->checkout_attempt_count, 'Nothing is charged.' );
+		$this->assertSame( array( 'failure', '' ), array( $result['result'] ?? '', $result['redirect'] ?? '' ) );
+		$this->assertSame( array( "We're not able to process this payment. Please try again later." ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+		$this->assertSame( array( OrderStatus::PENDING, 'requires_action' ), array( wc_get_order( $subscription_id )->get_status(), wc_get_order( $subscription_id )->get_meta( '_intention_status', true ) ), 'The subscription keeps its status and record.' );
+	}
+
+	/**
+	 * Create a gateway over a recording payment service whose duplicate check's intent read throws.
+	 *
+	 * @param RecordingPaymentProcessingService $service The payment service, which counts charges.
+	 * @param \Throwable                        $failure What the intent read throws.
+	 * @return WooPaymentsGateway
+	 */
+	private function create_gateway_whose_duplicate_read_fails( RecordingPaymentProcessingService $service, \Throwable $failure ): WooPaymentsGateway {
+		$session    = $this->create_session();
+		$api_client = $this->getMockBuilder( Client::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_payment_intention' ) )
+			->getMock();
+		$api_client->method( 'get_payment_intention' )->with( 'pi_started' )->willThrowException( $failure );
+		$gateway = new WooPaymentsGateway();
+		$gateway->init(
+			$service,
+			new WooPaymentsProvider(),
+			null,
+			null,
+			null,
+			null,
+			null,
+			$this->create_fraud_prevention_service( false, $session ),
+			new WooPaymentsFailedTransactionRateLimiter( $session ),
+			$this->create_duplicate_payment_prevention_service( $session, $api_client )
+		);
+		$_POST['wcpay-payment-method'] = 'pm_card_visa';
+
+		return $gateway;
+	}
+
+	/**
 	 * Create a Pending WooPayments order once paid with `pi_existing`, whose stored intent status is still succeeded.
 	 *
 	 * @return WC_Order
