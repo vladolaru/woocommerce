@@ -379,22 +379,43 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Put the setup tier back for the account a failed delete left in place, after the overwrite lowered it.
-	 *
-	 * Derives the tier as an account write does, from the account data and the gateway's enabled setting, and keeps the
-	 * account cache as it is.
+	 * Get what an account delete changes before it calls the platform: the account cache row and the stored setup tier.
 	 *
 	 * @since 11.4.0
 	 *
-	 * @param array<string,mixed> $account_before The account data the cache held before the overwrite.
+	 * @return array{cache: array<string,mixed>|false, tier: ?string}
+	 */
+	public function get_account_state(): array {
+		return array(
+			'cache' => $this->get_account_cache(),
+			'tier'  => null === $this->setup_tier ? null : $this->setup_tier->get_stored_tier(),
+		);
+	}
+
+	/**
+	 * Put back the account cache row and the setup tier after the platform did not delete the account.
+	 *
+	 * The row comes back marked as never fetched, so the first reader outside cron and AJAX still fetches the account, and a
+	 * fetch that fails serves the restored account. A row that does not read back is deleted. The tier goes back as it was read.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param array{cache: array<string,mixed>|false, tier: ?string} $state The state get_account_state() read before the delete.
 	 * @return void
 	 */
-	public function restore_setup_tier( array $account_before ): void {
-		if ( null === $this->runtime_arbiter ) {
-			return;
+	public function restore_account_state( array $state ): void {
+		$cache_contents = $state['cache'];
+		if ( is_array( $cache_contents ) ) {
+			$cache_contents['fetched'] = 0;
+			$this->database_cache->write( WooPaymentsDatabaseCache::ACCOUNT_KEY, $cache_contents );
+		}
+		if ( ! is_array( $cache_contents ) || ! $this->is_persisted_account_cache( $cache_contents ) ) {
+			$this->clear_cache();
 		}
 
-		$this->sync_setup_tier( $account_before, $this->runtime_arbiter->is_extension_owner() );
+		if ( null !== $this->setup_tier && null !== $state['tier'] ) {
+			$this->setup_tier->write_tier( $state['tier'] );
+		}
 	}
 
 	/**
