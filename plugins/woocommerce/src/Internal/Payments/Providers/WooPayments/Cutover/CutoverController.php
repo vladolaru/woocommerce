@@ -739,7 +739,7 @@ class CutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Output the notice telling a store that the switch waits while a plugin charges renewals through the WooPayments extension.
+	 * Output the notice telling a store that the switch waits while a plugin that takes payments through the WooPayments extension is active.
 	 *
 	 * Its last sentence says what keeps payments running, as the bundled subscriptions notice does.
 	 *
@@ -750,8 +750,8 @@ class CutoverController implements RegisterHooksInterface {
 		$message = sprintf(
 			/* translators: %s: plugin name, or a list of plugin names. */
 			_n(
-				"WooPayments is now part of WooCommerce, but this store can't switch yet. %s charges renewals and scheduled payments through the WooPayments extension, so the switch waits while it is active.",
-				"WooPayments is now part of WooCommerce, but this store can't switch yet. %s charge renewals and scheduled payments through the WooPayments extension, so the switch waits while they are active.",
+				"WooPayments is now part of WooCommerce, but this store can't switch yet. %s can take payments through the WooPayments extension, so the switch waits while it is active.",
+				"WooPayments is now part of WooCommerce, but this store can't switch yet. %s can take payments through the WooPayments extension, so the switch waits while they are active.",
 				count( $plugin_names ),
 				'woocommerce'
 			),
@@ -775,7 +775,7 @@ class CutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * On a store the built-in WooPayments owns, name the active plugins whose renewals need the WooPayments extension, until
+	 * On a store the built-in WooPayments owns, name the active plugins whose payments need the WooPayments extension, until
 	 * dismissed for the same set of plugins. With none active, a dismissal no longer applies and is deleted, so the notice
 	 * shows again when one becomes active.
 	 *
@@ -796,10 +796,16 @@ class CutoverController implements RegisterHooksInterface {
 			return;
 		}
 
-		$message = sprintf(
+		$plugin_names = $this->renewal_plugins->get_active_plugin_names();
+		$message      = sprintf(
 			/* translators: %s: plugin name, or a list of plugin names. */
-			__( "Renewal and installment payments set up with %s need the WooPayments extension. WooPayments is built into WooCommerce on this store, so it can't charge them.", 'woocommerce' ),
-			wp_sprintf_l( '%l', $this->renewal_plugins->get_active_plugin_names() )
+			_n(
+				'Payments that %s takes through WooPayments need the WooPayments extension. WooPayments is built into WooCommerce on this store, so those payments are not taken.',
+				'Payments that %s take through WooPayments need the WooPayments extension. WooPayments is built into WooCommerce on this store, so those payments are not taken.',
+				count( $plugin_names ),
+				'woocommerce'
+			),
+			wp_sprintf_l( '%l', $plugin_names )
 		);
 		?>
 		<div class="notice notice-warning" style="position:relative;">

@@ -1016,7 +1016,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 
 		if ( null === $expected ) {
 			$this->assertStringContainsString( 'Start the switch', $notices );
-			$this->assertStringNotContainsString( 'renewals and scheduled payments', $notices );
+			$this->assertStringNotContainsString( 'can take payments through the WooPayments extension', $notices );
 			return;
 		}
 		$this->assertStringContainsString( esc_html( $expected ), $notices );
@@ -1028,11 +1028,11 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	 * @return array<string,array{string,string[],string|null}>
 	 */
 	public function provide_renewal_plugin_holdback_offers(): array {
-		$waits = "WooPayments is now part of WooCommerce, but this store can't switch yet. YITH WooCommerce Subscription Premium charges renewals and scheduled payments through the WooPayments extension, so the switch waits while it is active.";
+		$waits = "WooPayments is now part of WooCommerce, but this store can't switch yet. YITH WooCommerce Subscription Premium can take payments through the WooPayments extension, so the switch waits while it is active.";
 		return array(
 			'extension active, one plugin'       => array( 'extension active', array( 'YITH WooCommerce Subscription Premium' ), $waits . ' Until then nothing changes and WooPayments keeps running from the WooPayments extension.' ),
 			'waiting for the switch, one plugin' => array( 'waiting for the switch', array( 'YITH WooCommerce Subscription Premium' ), $waits . ' Until then, activate the WooPayments extension again to keep taking payments.' ),
-			'extension active, two plugins'      => array( 'extension active', array( 'YITH WooCommerce Subscription Premium', 'Ultimate Payment Plans' ), "WooPayments is now part of WooCommerce, but this store can't switch yet. YITH WooCommerce Subscription Premium and Ultimate Payment Plans charge renewals and scheduled payments through the WooPayments extension, so the switch waits while they are active." ),
+			'extension active, two plugins'      => array( 'extension active', array( 'YITH WooCommerce Subscription Premium', 'Ultimate Payment Plans' ), "WooPayments is now part of WooCommerce, but this store can't switch yet. YITH WooCommerce Subscription Premium and Ultimate Payment Plans can take payments through the WooPayments extension, so the switch waits while they are active." ),
 			'extension active, no such plugin'   => array( 'extension active', array(), null ),
 		);
 	}
@@ -1074,10 +1074,10 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertStringContainsString( self::IN_PROGRESS_SENTENCE, $notice );
 		if ( $shown ) {
-			$this->assertStringContainsString( esc_html( "WooPayments is now part of WooCommerce, but this store can't switch yet. Order Subscriptions for WooCommerce charges renewals and scheduled payments through the WooPayments extension, so the switch waits while it is active. Until then nothing changes and WooPayments keeps running from the WooPayments extension." ), $notice );
+			$this->assertStringContainsString( esc_html( "WooPayments is now part of WooCommerce, but this store can't switch yet. Order Subscriptions for WooCommerce can take payments through the WooPayments extension, so the switch waits while it is active. Until then nothing changes and WooPayments keeps running from the WooPayments extension." ), $notice );
 			$this->assertStringNotContainsString( 'Not now', $notice );
 		} else {
-			$this->assertStringNotContainsString( 'renewals and scheduled payments', $notice );
+			$this->assertStringNotContainsString( 'can take payments through the WooPayments extension', $notice );
 		}
 	}
 
@@ -1093,11 +1093,11 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * The listed plugins charge renewals or installments through the extension's own classes, which the built-in
+	 * The listed plugins take payments through the extension's own classes, which the built-in
 	 * WooPayments does not declare (Order Subscriptions 1.2.15 and Ultimate Payment Plans 4.5.0 build
 	 * WCPay\Payment_Information; YITH 4.26.3 class-ywsbs-wc-payments.php extends WC_Payment_Gateway_WCPay).
 	 *
-	 * @testdox On a store the built-in WooPayments owns, a warning names the active plugins whose renewals need the WooPayments extension ($_dataName).
+	 * @testdox On a store the built-in WooPayments owns, a warning names the active plugins whose payments need the WooPayments extension ($_dataName).
 	 * @dataProvider provide_built_in_store_renewal_plugins
 	 *
 	 * @param array<string,string> $plugins  Active renewal plugin names by plugin file.
@@ -1123,14 +1123,14 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 		return array(
 			'one plugin'  => array(
 				array( 'order-subscriptions/order-subscriptions.php' => 'Order Subscriptions for WooCommerce' ),
-				"Renewal and installment payments set up with Order Subscriptions for WooCommerce need the WooPayments extension. WooPayments is built into WooCommerce on this store, so it can't charge them.",
+				'Payments that Order Subscriptions for WooCommerce takes through WooPayments need the WooPayments extension. WooPayments is built into WooCommerce on this store, so those payments are not taken.',
 			),
 			'two plugins' => array(
 				array(
 					'yith-woocommerce-subscription-premium/init.php' => 'YITH WooCommerce Subscription Premium',
 					'ultimate-payment-plans/ultimate-payment-plans.php' => 'Ultimate Payment Plans',
 				),
-				"Renewal and installment payments set up with YITH WooCommerce Subscription Premium and Ultimate Payment Plans need the WooPayments extension. WooPayments is built into WooCommerce on this store, so it can't charge them.",
+				'Payments that YITH WooCommerce Subscription Premium and Ultimate Payment Plans take through WooPayments need the WooPayments extension. WooPayments is built into WooCommerce on this store, so those payments are not taken.',
 			),
 			'none active' => array( array(), null ),
 		);
@@ -1149,7 +1149,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 		$notices = $this->render_admin_notices( $this->create_cutover_controller( null, null, $this->create_renewal_plugins( array( 'order-subscriptions/order-subscriptions.php' => 'Order Subscriptions for WooCommerce' ) ) ) );
 
 		$this->assertStringNotContainsString( 'need the WooPayments extension', $notices );
-		$this->assertStringContainsString( 'Order Subscriptions for WooCommerce charges renewals and scheduled payments', $notices, 'The switch notice names the plugin.' );
+		$this->assertStringContainsString( 'Order Subscriptions for WooCommerce can take payments through the WooPayments extension', $notices, 'The switch notice names the plugin.' );
 	}
 
 	/**
@@ -1190,7 +1190,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 			$this->assertStringNotContainsString( 'need the WooPayments extension', $this->render_admin_notices( $controller ), 'The same plugins in another order.' );
 
 			unset( $renewal_plugins->plugins['order-subscriptions/order-subscriptions.php'] );
-			$this->assertStringContainsString( 'set up with Ultimate Payment Plans need the WooPayments extension', $this->render_admin_notices( $controller ), 'Shown again once a plugin is no longer active.' );
+			$this->assertStringContainsString( 'Payments that Ultimate Payment Plans takes through WooPayments need the WooPayments extension', $this->render_admin_notices( $controller ), 'Shown again once a plugin is no longer active.' );
 
 			$this->follow_dismiss_link( $controller, $this->render_admin_notices( $controller ), CutoverController::NOTICE_RENEWAL_PLUGINS );
 			unset( $_GET[ CutoverController::QUERY_ACTION ], $_GET[ CutoverController::NONCE_NAME ], $_GET[ CutoverController::QUERY_NOTICE ] );
@@ -1198,14 +1198,14 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 			$this->assertSame( array( 'ultimate-payment-plans/ultimate-payment-plans.php' ), get_option( 'woocommerce_woopayments_renewal_plugins_notice_dismissed' ), 'The dismissal is kept for the plugin.' );
 
 			$renewal_plugins->plugins['deposit-and-partial-payment-plan/deposit-and-partial-payment-plan.php'] = 'Deposit and Partial Payment Plan';
-			$this->assertStringContainsString( 'set up with Ultimate Payment Plans and Deposit and Partial Payment Plan need the WooPayments extension', $this->render_admin_notices( $controller ), 'Shown again once another plugin is active.' );
+			$this->assertStringContainsString( 'Payments that Ultimate Payment Plans and Deposit and Partial Payment Plan take through WooPayments need the WooPayments extension', $this->render_admin_notices( $controller ), 'Shown again once another plugin is active.' );
 
 			$renewal_plugins->plugins = array();
 			$this->assertStringNotContainsString( 'need the WooPayments extension', $this->render_admin_notices( $controller ), 'Nothing to warn about once none is active.' );
 			$this->assertFalse( get_option( 'woocommerce_woopayments_renewal_plugins_notice_dismissed' ), 'An admin page with no listed plugin active deletes the dismissal.' );
 
 			$renewal_plugins->plugins = array( 'ultimate-payment-plans/ultimate-payment-plans.php' => 'Ultimate Payment Plans' );
-			$this->assertStringContainsString( 'set up with Ultimate Payment Plans need the WooPayments extension', $this->render_admin_notices( $controller ), 'Shown again for the last dismissed plugin once the dismissal is deleted.' );
+			$this->assertStringContainsString( 'Payments that Ultimate Payment Plans takes through WooPayments need the WooPayments extension', $this->render_admin_notices( $controller ), 'Shown again for the last dismissed plugin once the dismissal is deleted.' );
 		} finally {
 			remove_filter( 'wp_redirect', '__return_empty_string' );
 		}
