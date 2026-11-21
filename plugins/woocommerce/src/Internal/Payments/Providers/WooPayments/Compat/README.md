@@ -1,10 +1,10 @@
 # WooPayments extension compatibility
 
-This folder holds what Woo extensions still expect from the WooPayments extension while the built-in WooPayments owns payments: its `WC_Payments` and `WC_Payments_Features` classes (their files live in `includes/legacy/woopayments-compat/`), its `WCPAY_VERSION_NUMBER` constant and two of its class names. It is removed in WooCommerce 12.0.0.
+This folder holds what Woo extensions still expect from the WooPayments extension while the built-in WooPayments owns payments with an account connected: its `WC_Payments` and `WC_Payments_Features` classes (their files live in `includes/legacy/woopayments-compat/`), its `WCPAY_VERSION_NUMBER` constant and two of its class names. It is removed in WooCommerce 12.0.0. Below the connected tier the loader declares nothing: until an account is connected the built-in WooPayments takes no card payment, so other plugins must not read WooPayments as present.
 
 ## What it holds
 
-- `WooPaymentsExtensionFacadeLoader` defines `WCPAY_VERSION_NUMBER` and declares the two facade classes on first use. It declares nothing in a recognized WooPayments activation request, and the extension's own classes win whenever it is active.
+- `WooPaymentsExtensionFacadeLoader` defines `WCPAY_VERSION_NUMBER` and declares the two facade classes on first use. It declares nothing below the connected tier (never set up, onboarding started, no account data after a switch, a disconnected account) or in a recognized WooPayments activation request, and the extension's own classes win whenever it is active.
 - `ClassAliases` declares two WooPayments extension class names as aliases of the classes that answer for them where those classes first reach a hook or WooCommerce Subscriptions: `WCPay\Constants\Payment_Type`, the third argument of `wcpay_metadata_from_order`, and `WC_Payments_Email_Failed_Authentication_Retry`, the retry email class WooCommerce Subscriptions instantiates by name. An autoloader that can load the extension's own class wins.
 - The facade classes live in `includes/legacy/woopayments-compat/`, outside every tree Composer scans (see the placement rule).
 - The extension's request and response classes (`WCPay\Core\Server\*`) and `WC_Payment_Gateway_WCPay` are not declared: the built-in WooPayments passes its own request objects to the request filters and keeps the `woocommerce_payments` gateway ID.
@@ -14,9 +14,14 @@ This folder holds what Woo extensions still expect from the WooPayments extensio
 
 | Symbol | Behavior | Known Woo-owned consumers |
 |---|---|---|
-| `WC_Payments` | Existence checks recognize the built-in WooPayments. `get_gateway()` returns the container's `WooPaymentsGateway`, whose `is_enabled()` answers like the extension gateway's for callers that ask it. `hide_gateways_on_settings_page()` does nothing, because there are no secondary gateway classes to hide. Both emit a deprecation notice. | WooCommerce Core Blueprint exporter, All Products for WooCommerce Subscriptions, AutomateWoo, WooCommerce PayPal Payments |
+| `WC_Payments` | Existence checks recognize the built-in WooPayments once an account is connected. `get_gateway()` returns the container's `WooPaymentsGateway`, whose `is_enabled()` answers like the extension gateway's for callers that ask it. `hide_gateways_on_settings_page()` does nothing, because there are no secondary gateway classes to hide. Both emit a deprecation notice. | WooCommerce Core Blueprint exporter, All Products for WooCommerce Subscriptions, AutomateWoo, WooCommerce PayPal Payments |
 | `WC_Payments_Features` | `is_wcpay_subscriptions_enabled()` returns `false` and emits a deprecation notice; the gateway's capabilities answer subscription support. | All Products for WooCommerce Subscriptions |
 | `WCPAY_VERSION_NUMBER` | Reports `WooPaymentsClientVersion::VERSION`, the extension version whose platform contract the built-in WooPayments implements. | All Products for WooCommerce Subscriptions |
+
+Two readers in WooCommerce itself, not Woo extensions, also read these items and need no new path below the connected tier:
+
+- The core onboarding task `WooCommercePayments` probes `class_exists( '\WC_Payments' )` only. It is in no default task list, and its completion check also needs a registered gateway.
+- `WooPaymentsExtensionRuntime::is_extension_version_less_than()` reads `WCPAY_VERSION_NUMBER` through `Constants::is_defined()` and answers `null` when it is absent. The Payments settings onboarding paths act only on `true === …`, so a store below the connected tier onboards as before. `is_loaded()` asks the extension owner first, so the facade never answers it.
 
 ## Activation safety
 

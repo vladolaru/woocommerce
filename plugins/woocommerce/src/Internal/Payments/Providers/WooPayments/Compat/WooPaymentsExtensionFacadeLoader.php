@@ -10,11 +10,13 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat;
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * While the built-in WooPayments owns payments, defines `WCPAY_VERSION_NUMBER` and declares the WooPayments extension's
- * `WC_Payments` and `WC_Payments_Features` classes on first use, except in a request that is activating the extension.
+ * While the built-in WooPayments owns payments with an account connected (the connected and active setup tiers), defines
+ * `WCPAY_VERSION_NUMBER` and declares the WooPayments extension's `WC_Payments` and `WC_Payments_Features` classes on first
+ * use, except in a request that is activating the extension. Below that tier the three are absent, as with the feature off.
  *
  * Removed in WooCommerce 12.0.0.
  *
@@ -39,14 +41,23 @@ class WooPaymentsExtensionFacadeLoader implements RegisterHooksInterface {
 	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
+	 * Setup tier.
+	 *
+	 * @var WooPaymentsSetupTier
+	 */
+	private WooPaymentsSetupTier $setup_tier;
+
+	/**
 	 * Initialize the loader.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter $arbiter Runtime owner arbiter.
+	 * @param WooPaymentsRuntimeArbiter $arbiter    Runtime owner arbiter.
+	 * @param WooPaymentsSetupTier      $setup_tier Setup tier.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter ): void {
-		$this->arbiter = $arbiter;
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsSetupTier $setup_tier ): void {
+		$this->arbiter    = $arbiter;
+		$this->setup_tier = $setup_tier;
 	}
 
 	/**
@@ -64,7 +75,10 @@ class WooPaymentsExtensionFacadeLoader implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Make the facades available when the built-in WooPayments owns payments.
+	 * Make the facades available when the built-in WooPayments owns payments and an account is connected.
+	 *
+	 * Below the connected tier other plugins see no WooPayments, as on a store with the feature off: until an account is
+	 * connected the built-in takes no card payment, so no plugin should hide its own card methods for it.
 	 *
 	 * The two classes are declared on first use through an autoloader, so a request that activates WooPayments without
 	 * anything asking for them first leaves the names to the extension's own declarations. Requests recognized as a
@@ -75,6 +89,10 @@ class WooPaymentsExtensionFacadeLoader implements RegisterHooksInterface {
 	 */
 	public function load(): void {
 		if ( ! $this->arbiter->is_builtin_owner() ) {
+			return;
+		}
+
+		if ( ! in_array( $this->setup_tier->get_effective_tier(), array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true ) ) {
 			return;
 		}
 
