@@ -749,13 +749,14 @@ class OnboardingService {
 	 * @throws ApiException When account deletion fails.
 	 */
 	private function delete_account( bool $test_mode ): array {
-		$account_before = $this->get_account_service()->get_stored_account_data();
+		$state_before = $this->get_account_service()->get_account_state();
 		$this->get_account_service()->overwrite_cache_with_no_account();
 
 		try {
 			$response = $this->get_api_client()->delete_account( $test_mode );
 		} catch ( ApiException $e ) {
-			$this->leave_account_as_it_was( $account_before );
+			// The platform did not delete the account, or the answer was lost: the next foreground read finds out which.
+			$this->get_account_service()->restore_account_state( $state_before );
 			throw $e;
 		}
 
@@ -769,7 +770,7 @@ class OnboardingService {
 			$this->proxy->call_function( 'delete_option', WooPaymentsService::NOX_ONBOARDING_LOCKED_KEY );
 			wc_get_container()->get( WooPaymentsTokenService::class )->clear_all_cached_payment_methods();
 		} else {
-			$this->leave_account_as_it_was( $account_before );
+			$this->get_account_service()->restore_account_state( $state_before );
 		}
 
 		return array_merge(
@@ -778,20 +779,6 @@ class OnboardingService {
 			),
 			$response
 		);
-	}
-
-	/**
-	 * Undo the emptied account cache after the platform did not delete the account.
-	 *
-	 * The next account read fetches the account, and the setup tier the emptied cache lowered goes back to what the account
-	 * and the gateway setting give, so a refused or failed delete leaves the store taking payments as it was. A delete
-	 * the platform did carry out is found by that next read.
-	 *
-	 * @param array<string,mixed> $account_before The account cache's data before the delete.
-	 */
-	private function leave_account_as_it_was( array $account_before ): void {
-		$this->get_account_service()->clear_cache();
-		$this->get_account_service()->restore_setup_tier( $account_before );
 	}
 
 	/**

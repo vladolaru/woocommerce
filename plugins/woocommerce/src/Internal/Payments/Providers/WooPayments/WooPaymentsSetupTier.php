@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil;
 
 /**
@@ -106,7 +107,8 @@ final class WooPaymentsSetupTier {
 	 * On a `disabled` or `available` tier, cron and WP-CLI requests also list the listener that notes a status-change
 	 * capture or cancel retry queued while the built-in WooPayments took payments, when the stored tier is not `disabled`:
 	 * it leaves `disabled` only through an account sync while the WooPayments feature was on, which every store that could
-	 * queue such a retry went through. On an `available` tier they also list the setup tier recheck while its event is pending.
+	 * queue such a retry went through. On an `available` tier, a real cron or WP-CLI request also lists the setup tier recheck
+	 * while one of its events is pending.
 	 *
 	 * @since 11.2.0
 	 *
@@ -130,7 +132,8 @@ final class WooPaymentsSetupTier {
 			&& self::DISABLED !== $this->get_stored_tier()
 		) {
 			$classes[] = WooPaymentsStatusChangeRetryListener::class;
-			if ( self::AVAILABLE === $tier && WooPaymentsSetupTierRecheck::is_pending() ) {
+			// Only a real cron or WP-CLI request can run the event; the cron list a front request builds on demand skips the lookup.
+			if ( self::AVAILABLE === $tier && ( wp_doing_cron() || Constants::is_true( 'WP_CLI' ) ) && WooPaymentsSetupTierRecheck::is_pending() ) {
 				$classes[] = WooPaymentsSetupTierRecheck::class;
 			}
 		}
