@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use WC_Order;
@@ -76,9 +77,17 @@ class StripeBillingModule implements RegisterHooksInterface {
 		if ( ! SubscriptionMethodPolicy::is_woocommerce_subscriptions_active() ) {
 			add_action(
 				StripeBillingInvoiceService::FIRST_INVOICE_ACTION,
-				static function (): void {
-					// Complete previously queued jobs when Subscriptions has been deactivated.
-				}
+				static function ( $order_id, $subscription_id ): void {
+					wc_get_logger()->info(
+						'First invoice job stopped because WooCommerce Subscriptions is inactive.',
+						array(
+							'source'          => WooPaymentsLogger::SOURCE,
+							'subscription_id' => absint( $subscription_id ),
+						)
+					);
+				},
+				10,
+				2
 			);
 			return;
 		}

@@ -295,7 +295,7 @@ class StripeBillingInvoiceService {
 	 * @param mixed $retry           Attempt number.
 	 */
 	public function handle_first_invoice_job( $order_id, $subscription_id, $invoice_id, $retry ): void {
-		if ( ! $this->module->is_stripe_billing_enabled() || ! function_exists( 'wcs_get_subscription' ) || SubscriptionMethodPolicy::is_duplicate_site() || $this->module->is_migrating() ) {
+		if ( ! $this->can_run_first_invoice_job( absint( $subscription_id ) ) || ! function_exists( 'wcs_get_subscription' ) || SubscriptionMethodPolicy::is_duplicate_site() ) {
 			return;
 		}
 		$order        = wc_get_order( absint( $order_id ) );
@@ -304,6 +304,28 @@ class StripeBillingInvoiceService {
 			return;
 		}
 		$this->record_first_invoice_payment( $order, $subscription, is_array( $retry ) ? $retry : absint( $retry ) );
+	}
+
+	/**
+	 * A migration takes over billing. A job stopped by the toggle alone needs a trace.
+	 *
+	 * @param int $subscription_id Store subscription ID.
+	 */
+	private function can_run_first_invoice_job( int $subscription_id ): bool {
+		if ( $this->module->is_migrating() ) {
+			return false;
+		}
+		if ( $this->module->is_stripe_billing_enabled() ) {
+			return true;
+		}
+		wc_get_logger()->info(
+			'First invoice job stopped because Stripe Billing is off.',
+			array(
+				'source'          => WooPaymentsLogger::SOURCE,
+				'subscription_id' => $subscription_id,
+			)
+		);
+		return false;
 	}
 
 	/**
@@ -403,7 +425,7 @@ class StripeBillingInvoiceService {
 				return;
 			}
 		}
-		if ( ! $this->module->is_stripe_billing_enabled() || $this->module->is_migrating() ) {
+		if ( ! $this->can_run_first_invoice_job( $subscription_id ) ) {
 			return;
 		}
 		$status = $stripe['status'] ?? '';

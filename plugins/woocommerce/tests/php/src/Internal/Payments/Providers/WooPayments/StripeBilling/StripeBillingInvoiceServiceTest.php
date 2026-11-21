@@ -555,18 +555,24 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A retry that finds the invoice paid warns once that the deferred trial end may still be missing.
+	 * @testdox An already-paid invoice warns about a missing trial end only on a retry after a lost answer.
+	 * @testWith [true]
+	 *           [false]
+	 *
+	 * @param bool $lost_answer Whether an earlier payment attempt lost its response.
 	 */
-	public function test_first_invoice_already_paid_after_lost_answer(): void {
+	public function test_first_invoice_already_paid_after_lost_answer( bool $lost_answer ): void {
 		$order = \WC_Helper_Order::create_order();
 		$order->update_meta_data( '_intention_status', 'succeeded' );
 		$order->update_meta_data( '_intent_id', 'pi_first' );
 		$order->save();
 		$subscription = $this->create_stripe_billed_subscription( $order, 'parent' );
-		$this->queue_invoice_answer( 503, 'Lost pay response.' );
-		$this->sut->maybe_record_invoice_payment( $order->get_id() );
-
-		$args = $this->take_pay_retry( $order, $subscription );
+		$args         = array( $order->get_id(), $subscription->get_id(), self::MAIN_INVOICE_ID, 0 );
+		if ( $lost_answer ) {
+			$this->queue_invoice_answer( 503, 'Lost pay response.' );
+			$this->sut->maybe_record_invoice_payment( $order->get_id() );
+			$args = $this->take_pay_retry( $order, $subscription );
+		}
 
 		$warnings = array();
 		add_filter(
@@ -583,9 +589,9 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 		$this->queue_invoice_answer( 400, 'Invoice is already paid.' );
 		$this->sut->handle_first_invoice_job( ...$args );
 		$this->assert_invoice_schedule( $order, $subscription, null, 0 );
-		$this->assertSame( array( 'POST', 'POST' ), array_column( $this->get_requests(), 0 ) );
+		$this->assertSame( $lost_answer ? array( 'POST', 'POST' ) : array( 'POST' ), array_column( $this->get_requests(), 0 ) );
 		$this->assertNotContains( self::FAILURE_NOTE, $this->get_order_note_texts( $subscription ) );
-		$this->assertNotEmpty( $warnings );
+		$this->assertSame( $lost_answer, ! empty( $warnings ) );
 		foreach ( $warnings as $messages ) {
 			$this->assertCount( 1, $messages );
 			$this->assertStringContainsString( 'trial end', $messages[0] );
@@ -707,7 +713,7 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A job superseded before it runs ends quietly. A migration starting during the read also suppresses the note.
+	 * @testdox A superseded job skips the note and logs when billing is off without a migration.
 	 * @testWith ["toggle", false]
 	 *           ["migration", false]
 	 *           ["migration", true]
@@ -715,6 +721,8 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 	 *           ["replaced invoice", true]
 	 *           ["ended", true]
 	 *           ["toggle", true]
+	 *           ["toggle during read", true]
+	 *           ["toggle and migration", true]
 	 *
 	 * @param string $reason Why the first invoice no longer belongs to this job.
 	 * @param bool   $verdict Whether this job reads the verdict.
@@ -729,18 +737,29 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 			$subscription->update_status( 'pending-cancel' );
 		} elseif ( 'replaced invoice' === $reason ) {
 			$this->sut->set_subscription_invoice_id( $subscription, 'in_replacement' );
-		} elseif ( 'migration during read' === $reason ) {
+		} elseif ( in_array( $reason, array( 'migration during read', 'toggle during read' ), true ) ) {
 			add_filter(
 				'wcpay_api_request_params',
-				function ( $params ) {
-					$this->migrating = true;
+				function ( $params ) use ( $reason ) {
+					$this->migrating              = 'migration during read' === $reason;
+					$this->stripe_billing_enabled = 'toggle during read' !== $reason;
 					return $params;
 				}
 			);
 		}
-		$this->stripe_billing_enabled   = 'toggle' !== $reason;
-		$this->migrating                = 'migration' === $reason;
+		$this->stripe_billing_enabled   = ! in_array( $reason, array( 'toggle', 'toggle and migration' ), true );
+		$this->migrating                = in_array( $reason, array( 'migration', 'toggle and migration' ), true );
 		$this->http_client->responses[] = $this->make_response( 200, array( 'status' => 'incomplete_expired' ) );
+		$logger                         = $this->createMock( \WC_Logger_Interface::class );
+		$expect_log                     = in_array( $reason, array( 'toggle', 'toggle during read' ), true );
+		$logger->expects( $expect_log ? $this->once() : $this->never() )->method( 'info' )->with(
+			'First invoice job stopped because Stripe Billing is off.',
+			array(
+				'source'          => 'woopayments',
+				'subscription_id' => $subscription->get_id(),
+			)
+		);
+		add_filter( 'woocommerce_logging_class', static fn() => $logger );
 		$this->sut->handle_first_invoice_job(
 			$order->get_id(),
 			$subscription->get_id(),
@@ -750,7 +769,7 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 				'read'  => 0,
 			) : 1
 		);
-		$this->assertSame( 'migration during read' === $reason ? array( 'GET' ) : array(), array_column( $this->get_requests(), 0 ) );
+		$this->assertSame( in_array( $reason, array( 'migration during read', 'toggle during read' ), true ) ? array( 'GET' ) : array(), array_column( $this->get_requests(), 0 ) );
 		$this->assertNotContains( self::FAILURE_NOTE, $this->get_order_note_texts( $subscription ) );
 		$this->assert_invoice_schedule( $order, $subscription, null, 0 );
 	}

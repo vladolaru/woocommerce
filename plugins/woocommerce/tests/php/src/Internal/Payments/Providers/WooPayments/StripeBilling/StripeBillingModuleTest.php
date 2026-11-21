@@ -137,6 +137,15 @@ class StripeBillingModuleTest extends WC_Unit_Test_Case {
 		wc_get_container()->replace( StripeBillingInvoiceService::class, $invoices );
 		try {
 			$this->register_module()->schedule_first_invoice_job_now( wc_create_order() );
+			$logger = $this->createMock( \WC_Logger_Interface::class );
+			$logger->expects( $this->once() )->method( 'info' )->with(
+				'First invoice job stopped because WooCommerce Subscriptions is inactive.',
+				array(
+					'source'          => 'woopayments',
+					'subscription_id' => 456,
+				)
+			);
+			add_filter( 'woocommerce_logging_class', static fn() => $logger );
 			$id = as_schedule_single_action( time(), StripeBillingInvoiceService::FIRST_INVOICE_ACTION, array( 123, 456, 'in_old', 1 ), 'woocommerce_payments' );
 			\ActionScheduler_QueueRunner::instance()->process_action( $id );
 			$this->assertSame( 'complete', \ActionScheduler::store()->get_status( $id ) );
