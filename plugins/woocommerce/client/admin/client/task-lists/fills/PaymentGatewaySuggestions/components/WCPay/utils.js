@@ -52,6 +52,22 @@ export function installActivateAndConnectWcpay(
 		} );
 }
 
+const WOOPAYMENTS_ONBOARDING_PATH =
+	'admin.php?page=wc-settings&tab=checkout&path=/woopayments/onboarding';
+
+export function getWooPaymentsOnboardingUrl( from = 'WCADMIN_PAYMENT_TASK' ) {
+	return `${ WOOPAYMENTS_ONBOARDING_PATH }&from=${ encodeURIComponent(
+		from
+	) }`;
+}
+
+/**
+ * Open the built-in WooPayments onboarding, offered while the WooPayments feature is on.
+ */
+export function openWooPaymentsOnboarding() {
+	window.location.href = getWooPaymentsOnboardingUrl();
+}
+
 export function isWCPaySupported( countryCode ) {
 	const supportedCountries = [
 		'US',

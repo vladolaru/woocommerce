@@ -1,0 +1,1954 @@
+<?php
+/**
+ * ReconciliationJob class file.
+ */
+
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover;
+
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountMilestonesController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteWordingSnapshot;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStoreSetupReportController;
+use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+
+defined( 'ABSPATH' ) || exit;
+
+/**
+ * Runs a site's cutover as a durable, resumable job.
+ *
+ * A claimed attempt checks the preflight, migrates the stored data and deactivates the WooPayments extension, and a later
+ * request verifies that the built-in WooPayments owns the site. The job also repairs a lost schedule and keeps the notice
+ * state the controller renders: what to offer, and what was shown or dismissed.
+ *
+ * @since 11.2.0
+ * @internal
+ */
+class ReconciliationJob implements RegisterHooksInterface {
+
+	/**
+	 * Autoloaded cache of whether the bundled subscriptions exclusion applies, keyed by the record's generation and revision
+	 * (or `none`) and kept for an hour.
+	 */
+	public const ADMIN_CLASSIFICATION_OPTION = 'woocommerce_woopayments_cutover_admin_classification';
+
+	/** Completion notice: the switch finished. */
+	public const NOTICE_SUCCESS = 'success';
+
+	/** Notice telling a store on the bundled subscriptions why it cannot switch yet. */
+	public const NOTICE_BUNDLED_EXCLUSION = 'bundled_exclusion';
+
+	/** Option holding the time until which the switch notice outside Payments settings stays hidden ("Not now"). */
+	public const START_NOTICE_SNOOZED_UNTIL_OPTION = 'woocommerce_woopayments_cutover_notice_snoozed_until';
+
+	/** Step of a generation queued for its next attempt. */
+	private const STEP_QUEUED = 'queued';
+
+	/** Step of an attempt a worker has claimed. */
+	private const STEP_RUNNING = 'running';
+
+	/** Step of a generation waiting for a retry. */
+	private const STEP_DEFERRED = 'deferred';
+
+	/** Step of a generation excluded from the cutover. */
+	private const STEP_EXCLUDED = 'excluded';
+
+	/** Step of a completed cutover. */
+	private const STEP_DONE = 'done';
+
+	/** Step of a generation that waits for the merchant's start. */
+	private const STEP_AWAITING_MERCHANT_START = 'awaiting_merchant_start';
+
+	/** Step of a finalized generation whose next attempt checks that the built-in WooPayments owns payments. */
+	private const STEP_VERIFY_BUILTIN_OWNERSHIP = 'verify_builtin_ownership';
+
+	/** Step of a claim recovered after its worker stopped. */
+	private const STEP_RECOVERED_STALE_RUNNING = 'recovered_stale_running';
+
+	/** Source of the merchant's start. */
+	public const SOURCE_MERCHANT = 'merchant';
+
+	/** Source of the start the mandatory switch makes for a store the WooPayments extension owns. */
+	public const SOURCE_MANDATORY = 'mandatory';
+
+	/** Source of a generation that replaces a finished or excluded one. */
+	private const SOURCE_SUPERSEDED = 'terminal_superseded';
+
+	/** Source of a generation opened by the WooPayments extension being activated again. */
+	private const SOURCE_ROLLBACK = 'rollback';
+
+	/** Source of a site excluded on its own. */
+	private const SOURCE_LOCAL_EXCLUSION = 'local_exclusion';
+
+	/** Condition code of a data migration that failed; the stored code keeps its first name. */
+	private const CODE_DATA_MIGRATION_FAILED = 'normalization_failed';
+
+	/** Condition code of an attempt that could not work out what to do: the resolver threw, or a stored plugin list could not be read. */
+	private const CODE_RECONCILIATION_RESOLVER_FAILED = 'reconciliation_resolver_failed';
+
+	/** Condition code of a finalize that waits because the WooPayments extension is active for every site. */
+	public const CODE_PLUGIN_ACTIVE_SITEWIDE = 'plugin_active_sitewide';
+
+	/** Time a claimed attempt may run before repair_schedule() recovers it as stale; fixed at claim, there is no heartbeat. */
+	public const RUNNING_TIMEOUT = 15 * MINUTE_IN_SECONDS;
+
+	/**
+	 * Retry delay in the first day after the merchant's start (FAST_RETRY_WINDOW), for a held switch no store manager is
+	 * looking at: an admin page brings the attempt forward sooner (ADMIN_PAGE_ATTEMPT_FLOOR) for a record before the
+	 * hand-over, and so do the events that clear a code (bring_deferred_attempt_forward()).
+	 *
+	 * Cost: 96 attempts a day, each running the preflight, two queue scans, three record writes and one queued action. It
+	 * buys a blocker that clears with nothing the switch hears, on a store nobody is looking at, continuing within 15 minutes.
+	 */
+	private const FAST_RETRY_DELAY = 15 * MINUTE_IN_SECONDS;
+
+	/**
+	 * Delay from the hand-over to the ownership check, and between checks that cannot read ownership in the first minute.
+	 *
+	 * The check needs a process that has not loaded the extension's code. Action Scheduler's async runner, which ran the
+	 * attempt that deactivated the extension, sleeps this long before it dispatches the next runner (the
+	 * `action_scheduler_async_request_sleep_seconds` filter, 5 s by default), and that runner is a request that started after
+	 * the hand-over. A shorter delay cannot be met sooner; a process that still has the code loaded reads nothing and retries.
+	 */
+	private const OWNERSHIP_CHECK_DELAY = 5;
+
+	/**
+	 * Time after the hand-over during which a check that cannot read ownership retries every OWNERSHIP_CHECK_DELAY.
+	 *
+	 * Here the process is normally the runner that deactivated the extension, still working through its batch within
+	 * Action Scheduler's 30 s limit for a web runner; the runner it dispatches next can read. One minute covers that limit,
+	 * at 12 retries at most.
+	 */
+	private const UNREADABLE_OWNERSHIP_FAST_WINDOW = MINUTE_IN_SECONDS;
+
+	/**
+	 * Time after the hand-over until which a check that cannot read ownership retries every UNREADABLE_OWNERSHIP_SLOW_DELAY;
+	 * later it takes the retry cadence.
+	 *
+	 * Action Scheduler's WP-Cron and async runs start no new batch past the 30 s limit
+	 * (ActionScheduler_QueueRunner::run() with get_time_limit()), so past the first minute the process is an action still
+	 * running past that limit, a command-line queue run (which has no such limit), a process that booted on a lagging
+	 * database read, or a worker that keeps the extension loaded. All but the last end or catch up within minutes. Not
+	 * shorter: a command-line run over a long queue often takes several minutes, and a switch waiting for it would then wait
+	 * the cadence instead of ending within a minute of it. Fifteen minutes is the time the job already gives a claimed
+	 * attempt before it treats its worker as gone (RUNNING_TIMEOUT); a process that still cannot read after that has a
+	 * lasting reason.
+	 */
+	private const UNREADABLE_OWNERSHIP_SLOW_WINDOW = 15 * MINUTE_IN_SECONDS;
+
+	/**
+	 * Retry delay for a check that cannot read ownership, from one to fifteen minutes after the hand-over.
+	 *
+	 * The causes left past the first minute (UNREADABLE_OWNERSHIP_SLOW_WINDOW) end in minutes, not seconds. Checking once a
+	 * minute ends the switch within a minute of their end, at 14 retries at most. Not shorter: each retry costs two record
+	 * writes, a delete of the shared autoloaded-options cache entry, an Action Scheduler action and a log line, and a 5 s
+	 * delay would spend twelve times that to end the switch at most 55 s sooner.
+	 */
+	private const UNREADABLE_OWNERSHIP_SLOW_DELAY = MINUTE_IN_SECONDS;
+
+	/** Informational outcome of a check that could not read ownership in its process. */
+	private const OUTCOME_OWNERSHIP_READING_UNAVAILABLE = 'ownership_reading_unavailable';
+
+	/**
+	 * Delay before a switch past the hand-over reads the stored plugin lists again, after a reading that still held the
+	 * extension (plugin_deactivation_failed, builtin_ownership_unverified): that next reading rolls the switch back if they
+	 * still do, so the two are kept apart for a lagging database replica to catch up.
+	 *
+	 * Fifteen minutes is the first-day retry cadence these two deferrals were written with; no shorter bound on replica lag
+	 * is known, and a sooner reading buys the merchant nothing, since payments follow the stored lists meanwhile. Explicit,
+	 * so the second reading never waits the daily cadence. A next process that cannot read the lists still takes the cadence
+	 * (get_unreadable_ownership_retry_delay()).
+	 */
+	private const SECOND_READING_DELAY = 15 * MINUTE_IN_SECONDS;
+
+	/**
+	 * Retry delay for a switch that waits only for queued WooPayments actions that are due now or within this delay, such as
+	 * the extension's affected-orders check, which it queues 10 s ahead from an admin page.
+	 *
+	 * Not zero: Action Scheduler claims due actions oldest due first, so a retry due now is claimed in the same run, ahead
+	 * of an action due seconds later, and would defer again at once. A minute puts the retry behind every action it waits
+	 * for. It is also the upper edge of the due times this delay applies to, so the two move together.
+	 */
+	private const QUEUED_ACTION_RETRY_DELAY = MINUTE_IN_SECONDS;
+
+	/**
+	 * How long past its due time a queued WooPayments action still counts as about to run, for QUEUED_ACTION_RETRY_DELAY.
+	 *
+	 * The same five minutes Action Scheduler gives a claimed action before it unclaims or fails it
+	 * (ActionScheduler_QueueCleaner::reset_timeouts() and mark_failures()), so a stuck running action leaves the queue
+	 * within it. A queue runner can also be filtered to claim the switch's action and never the one it waits for; that one
+	 * stays pending and overdue for good, so past this limit the switch goes back to the retry cadence, or to one attempt a
+	 * minute while a store manager browses (ADMIN_PAGE_ATTEMPT_FLOOR): for a queue that gets no new actions, about six short
+	 * retries at most. While fresh unhandled actions keep arriving and running, with none left overdue, each retry finds only
+	 * actions due inside the window, so the short retries go on until the arrivals pause.
+	 */
+	private const QUEUED_ACTION_OVERDUE_LIMIT = 5 * MINUTE_IN_SECONDS;
+
+	/**
+	 * Least time from a held switch's last record write to the attempt a store manager's admin page brings forward, so
+	 * browsing runs at most about one attempt a minute; a page inside it moves the attempt to its end.
+	 *
+	 * Stated from QUEUED_ACTION_RETRY_DELAY, one second above it, so the two cannot drift: is_waiting_for_queued_actions()
+	 * tells a cadence deferral from a short retry by a gap above that delay from the deferral to the next attempt, and every
+	 * record write since the deferral is at or after it, so a moved attempt keeps the "waiting for scheduled tasks" line.
+	 */
+	private const ADMIN_PAGE_ATTEMPT_FLOOR = self::QUEUED_ACTION_RETRY_DELAY + 1;
+
+	/**
+	 * Time after the merchant's start during which retries take FAST_RETRY_DELAY, and after which they take
+	 * SLOW_RETRY_DELAY; log_late_first_attempt() also warns about a first attempt this late.
+	 *
+	 * It bounds the frequent attempts of a held switch nobody is looking at to the first day's 96 retries; past it the switch
+	 * costs one attempt a day.
+	 */
+	private const FAST_RETRY_WINDOW = DAY_IN_SECONDS;
+
+	/**
+	 * Retry delay past FAST_RETRY_WINDOW, for a held switch no store manager is looking at.
+	 *
+	 * Cost: one attempt a day, with no end. It falls on a merchant who clears the blocker with nothing the switch hears and
+	 * opens no admin page: the switch continues up to a day later. For a record before the hand-over, a store manager's
+	 * admin page makes the attempt due by the floor's end (ADMIN_PAGE_ATTEMPT_FLOOR), and the next queue runner takes it.
+	 */
+	private const SLOW_RETRY_DELAY = DAY_IN_SECONDS;
+
+	/** Source used for cutover diagnostics. */
+	private const LOG_SOURCE = 'woopayments-cutover';
+
+	/**
+	 * Queued WooPayments actions the cutover carries over: their callbacks continue after the cutover.
+	 *
+	 * The Stripe Billing migration actions are among them: the built-in migrator takes them with the same arguments, so a
+	 * migration off Stripe Billing started by the WooPayments extension finishes after the cutover. The preflight's
+	 * BUILTIN_HANDLED_QUEUE_HOOKS lists every hook that does not block the cutover.
+	 */
+	private const ADOPTED_QUEUE_HOOKS = array(
+		WooPaymentsStoreSetupReportController::STORE_SETUP_SYNC_ACTION,
+		WooPaymentsAccountMilestonesController::POST_KYC_ACTIVATION_EMAIL_SEND_ACTION,
+		WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_HOOK,
+		WooPaymentsCanceledAuthorizationFeeRemediationService::DRY_RUN_ACTION_HOOK,
+		'wcpay_schedule_subscription_migrations',
+		'wcpay_migrate_subscription',
+		'wcpay_migrate_subscription_retry',
+	);
+
+	/**
+	 * Runtime owner arbiter.
+	 *
+	 * @var WooPaymentsRuntimeArbiter
+	 */
+	private WooPaymentsRuntimeArbiter $arbiter;
+
+	/**
+	 * Persisted state store.
+	 *
+	 * @var StateStore
+	 */
+	private StateStore $state_store;
+
+	/**
+	 * Action Scheduler adapter.
+	 *
+	 * @var CutoverActionScheduler
+	 */
+	private CutoverActionScheduler $scheduler;
+
+	/**
+	 * Cutover preflight service.
+	 *
+	 * @var PreflightService
+	 */
+	private PreflightService $preflight_service;
+
+	/**
+	 * Cutover data migration.
+	 *
+	 * @var DataMigration
+	 */
+	private DataMigration $data_migration;
+
+	/**
+	 * WooPayments account state.
+	 *
+	 * @var WooPaymentsAccountService
+	 */
+	private WooPaymentsAccountService $account_service;
+
+	/**
+	 * Request-local token shared by every job instance in the current PHP request.
+	 *
+	 * @var string|null
+	 */
+	private static ?string $request_token = null;
+
+	/**
+	 * Whether this job is changing plugin activation state in the current request.
+	 *
+	 * @var bool
+	 */
+	private bool $internal_plugin_lifecycle_change = false;
+
+	/**
+	 * Initialize the job.
+	 *
+	 * @internal
+	 *
+	 * @param WooPaymentsRuntimeArbiter $arbiter          Runtime owner arbiter.
+	 * @param StateStore                $state_store      Persisted state store.
+	 * @param CutoverActionScheduler    $scheduler        Action Scheduler adapter.
+	 * @param PreflightService          $preflight_service   Cutover preflight service.
+	 * @param DataMigration             $data_migration Cutover data migration.
+	 * @param WooPaymentsAccountService $account_service     WooPayments account state.
+	 */
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, StateStore $state_store, CutoverActionScheduler $scheduler, PreflightService $preflight_service, DataMigration $data_migration, WooPaymentsAccountService $account_service ): void {
+		$this->arbiter           = $arbiter;
+		$this->state_store       = $state_store;
+		$this->scheduler         = $scheduler;
+		$this->preflight_service = $preflight_service;
+		$this->data_migration    = $data_migration;
+		$this->account_service   = $account_service;
+		if ( null === self::$request_token ) {
+			self::$request_token = wp_generate_uuid4();
+		}
+	}
+
+	/**
+	 * Register the callback and repair durable state whose action disappeared.
+	 *
+	 * @since 11.2.0
+	 */
+	public function register(): void {
+		add_action( CutoverActionScheduler::ACTION_HOOK, array( $this, 'handle_reconcile' ), 10, 2 );
+		add_action( 'action_scheduler_init', array( $this, 'repair_schedule' ) );
+
+		if ( did_action( 'action_scheduler_init' ) ) {
+			$this->repair_schedule();
+		}
+	}
+
+	/**
+	 * Start one reconciliation generation.
+	 *
+	 * A merchant start also dispatches the async queue runner.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string $source Trigger source recorded for diagnostics.
+	 * @return bool True when durable work exists or was scheduled, and when the record is terminal and stays so (a completed
+	 *              switch, or an exclusion whose marker is still present).
+	 */
+	public function enqueue( string $source ): bool {
+		$accepted = $this->start_generation( $source );
+		if ( $accepted && self::SOURCE_MERCHANT === $source ) {
+			$this->scheduler->dispatch_async();
+		}
+
+		return $accepted;
+	}
+
+	/**
+	 * Tell lifecycle observers whether this job initiated the current activation change.
+	 *
+	 * @return bool
+	 */
+	public function is_internal_plugin_lifecycle_change(): bool {
+		return $this->internal_plugin_lifecycle_change;
+	}
+
+	/**
+	 * Run a callback that activates or deactivates plugins, marked as a change this job initiated.
+	 *
+	 * The plugin lifecycle observers ignore the changes made inside the callback, as they do the job's own deactivation of
+	 * the extension. The previous mark is restored when the callback returns or throws. Finalize and
+	 * PerSiteActivationController set the mark; the controller's activation guard and activation handler read it
+	 * through is_internal_plugin_lifecycle_change().
+	 *
+	 * @param callable $callback Callback that changes plugins.
+	 * @return mixed What the callback returns.
+	 */
+	public function run_while_changing_plugins( callable $callback ) {
+		$previous                               = $this->internal_plugin_lifecycle_change;
+		$this->internal_plugin_lifecycle_change = true;
+		try {
+			return $callback();
+		} finally {
+			$this->internal_plugin_lifecycle_change = $previous;
+		}
+	}
+
+	/**
+	 * Start one reconciliation generation on this site.
+	 *
+	 * Nothing starts while the WooPayments extension is active sitewide: a switch deactivates the extension on its own site
+	 * only, so a super admin first activates WooPayments per site.
+	 *
+	 * @param string $source Trigger source.
+	 * @return bool True when durable work exists or was scheduled, and when the record is terminal and stays so (a completed
+	 *              switch, or an exclusion whose marker is still present).
+	 */
+	private function start_generation( string $source ): bool {
+		if ( ! $this->arbiter->is_builtin_enabled() || $this->preflight_service->is_woopayments_network_active() ) {
+			return false;
+		}
+
+		$now = time();
+		return $this->with_write_lock(
+			$now,
+			function () use ( $source, $now ): bool {
+				$record = $this->state_store->get_record();
+				if ( is_array( $record ) ) {
+					if ( in_array( $record['state'], array( StateStore::STATE_PENDING, StateStore::STATE_DEFERRED ), true ) ) {
+						if ( self::STEP_AWAITING_MERCHANT_START === $record['current_step'] ) {
+							return $this->start_awaiting_generation( $record, $source, $now );
+						}
+						return $this->ensure_record_scheduled( $record, $now );
+					}
+					if ( $this->can_reopen_terminal_record( $record ) ) {
+						return $this->replace_terminal_with_pending( $record, $source, $now );
+					}
+
+					return true;
+				}
+
+				$record = $this->create_pending_record( $source, $now );
+				if ( ! $this->state_store->create_record( $record ) ) {
+					return false;
+				}
+
+				return $this->ensure_record_scheduled( $record, $now );
+			},
+			false
+		);
+	}
+
+	/**
+	 * Record an activation of the WooPayments extension as a rollback awaiting merchant confirmation.
+	 *
+	 * A completed switch is replaced by a new generation awaiting the merchant's start. An open one that is not awaiting it,
+	 * a claim running in another request included, is rolled back (roll_back_open_generation()); a running worker's
+	 * finalize fence then refuses to deactivate the extension.
+	 *
+	 * @return bool True when the rollback was already recorded or a new generation was opened.
+	 */
+	public function record_plugin_activation(): bool {
+		if ( ! $this->arbiter->is_builtin_enabled() ) {
+			return false;
+		}
+
+		$now = time();
+		return $this->with_write_lock(
+			$now,
+			function () use ( $now ): bool {
+				$record = $this->state_store->get_record();
+				if ( ! is_array( $record ) ) {
+					return false;
+				}
+				if ( $this->is_awaiting_start( $record ) ) {
+					return true;
+				}
+				if ( StateStore::STATE_DONE === $record['state'] ) {
+					return $this->replace_with_awaiting_start( $record, self::SOURCE_ROLLBACK, $now );
+				}
+				// An activation starts from an inactive extension, so an open generation here is one the merchant now reverses:
+				// its finalize deactivated the extension, or the merchant had deactivated it before starting.
+				if ( ! in_array( $record['state'], array( StateStore::STATE_PENDING, StateStore::STATE_DEFERRED, StateStore::STATE_RUNNING ), true ) ) {
+					return false;
+				}
+
+				return $this->roll_back_open_generation( $record, $now );
+			},
+			false
+		);
+	}
+
+	/**
+	 * Refresh the cutover record the admin notices render, and return it.
+	 *
+	 * Not read-only. It refreshes the cached bundled subscriptions classification (at most hourly per record revision), and
+	 * writes the record in three cases: an awaiting record on a store with the bundled subscriptions marker becomes excluded,
+	 * a reopenable terminal record is superseded by a new awaiting generation, and a store with no record that has the marker
+	 * gets an excluded one.
+	 *
+	 * @return array<string,mixed>|null Current durable record.
+	 */
+	public function refresh_notice_record(): ?array {
+		$record = $this->state_store->get_record();
+		if ( is_array( $record ) ) {
+			if ( $this->is_awaiting_start( $record ) && $this->refresh_has_bundled_subscriptions_marker( $record ) ) {
+				$this->exclude_awaiting_record( $record, PreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS );
+				return $this->state_store->get_record();
+			}
+			if ( $this->can_reopen_terminal_record( $record, true ) ) {
+				$now = time();
+				$this->with_write_lock(
+					$now,
+					function () use ( $record, $now ): void {
+						$current = $this->state_store->get_record();
+						if ( is_array( $current ) && $current === $record ) {
+							$this->replace_with_awaiting_start( $current, self::SOURCE_SUPERSEDED, $now );
+						}
+					}
+				);
+			}
+			return $this->state_store->get_record();
+		}
+		// Without the extension or a store waiting for its switch there is nothing to offer, so the preflight scan would run
+		// on every admin page for nothing.
+		if ( ! $this->arbiter->is_builtin_enabled() || ! ( $this->arbiter->is_extension_owner() || $this->arbiter->is_awaiting_switch() ) ) {
+			return $record;
+		}
+
+		if ( true !== $this->refresh_admin_classification( null ) ) {
+			return null;
+		}
+
+		$now = time();
+		// True means the exclusion was written; the record is read again once the lock is released.
+		$result = $this->with_write_lock(
+			$now,
+			function () use ( $now ) {
+				if ( is_array( $this->state_store->get_record() ) ) {
+					return $this->state_store->get_record();
+				}
+				$excluded                                   = $this->create_pending_record( self::SOURCE_LOCAL_EXCLUSION, $now );
+				$excluded['state']                          = StateStore::STATE_EXCLUDED;
+				$excluded['current_step']                   = self::STEP_EXCLUDED;
+				$excluded[ StateStore::BLOCKING_CODES_KEY ] = array( PreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS );
+				$excluded['next_attempt_at']                = null;
+				$excluded['step_log'][]                     = array(
+					'step'    => self::STEP_EXCLUDED,
+					'at'      => $now,
+					'context' => array( 'code' => PreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS ),
+				);
+
+				$this->state_store->create_record( $excluded );
+				return true;
+			}
+		);
+		return true === $result ? $this->state_store->get_record() : $result;
+	}
+
+	/**
+	 * Tell whether the stored record lets an extension-owned store start a cutover generation.
+	 *
+	 * For an awaiting or excluded record it refreshes the cached bundled subscriptions classification.
+	 *
+	 * @return bool
+	 */
+	public function can_offer_start(): bool {
+		$record = $this->state_store->get_record();
+		if ( ! is_array( $record ) ) {
+			return true;
+		}
+		if ( $this->is_awaiting_start( $record ) ) {
+			return ! $this->refresh_has_bundled_subscriptions_marker( $record );
+		}
+
+		return $this->can_reopen_terminal_record( $record, true );
+	}
+
+	/**
+	 * Tell whether a completed record still shows a completion notice, which stays until a manager dismisses it.
+	 *
+	 * @param array<string,mixed>|null $record Cutover record.
+	 * @param string                   $notice One of the NOTICE_* constants.
+	 * @return bool
+	 */
+	public function is_completion_notice_due( ?array $record, string $notice ): bool {
+		return is_array( $record )
+			&& StateStore::STATE_DONE === ( $record['state'] ?? null )
+			&& self::NOTICE_SUCCESS === $notice
+			&& is_array( $record['informational_outcomes'] ?? null )
+			&& ! in_array( array( 'code' => $notice . '_notice_dismissed' ), $record['informational_outcomes'], true );
+	}
+
+	/**
+	 * Record a manager's dismissal of a cutover notice (completion or bundled exclusion) on the durable record.
+	 *
+	 * @param string $notice One of the NOTICE_* constants.
+	 * @return bool True only for the request that recorded the dismissal.
+	 */
+	public function dismiss_notice( string $notice ): bool {
+		if ( self::NOTICE_BUNDLED_EXCLUSION === $notice ) {
+			return $this->consume_notice( fn( ?array $record ): bool => $this->is_bundled_exclusion_notice_due( $record ), $notice . '_notice_dismissed' );
+		}
+
+		return $this->consume_notice( fn( ?array $record ): bool => $this->is_completion_notice_due( $record, $notice ), $notice . '_notice_dismissed' );
+	}
+
+	/**
+	 * Tell whether a store excluded for the bundled WooPayments subscriptions still owes its notice.
+	 *
+	 * The dismissal is recorded on the record, so a reopened and excluded-again store, which gets a new generation, sees it again.
+	 *
+	 * @param array<string,mixed>|null $record Current record.
+	 * @return bool
+	 */
+	public function is_bundled_exclusion_notice_due( ?array $record ): bool {
+		return is_array( $record )
+			&& StateStore::STATE_EXCLUDED === ( $record['state'] ?? null )
+			&& in_array( PreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, (array) ( $record[ StateStore::BLOCKING_CODES_KEY ] ?? array() ), true )
+			&& is_array( $record['informational_outcomes'] ?? null )
+			&& ! in_array( array( 'code' => self::NOTICE_BUNDLED_EXCLUSION . '_notice_dismissed' ), $record['informational_outcomes'], true );
+	}
+
+	/**
+	 * Forget the cached admin classification, so the next admin page checks the bundled subscriptions rule again.
+	 */
+	public function forget_admin_classification(): void {
+		delete_option( self::ADMIN_CLASSIFICATION_OPTION );
+	}
+
+	/**
+	 * Record a dismissed notice on the current record.
+	 *
+	 * @param callable $is_due Tells whether a record still owes the notice.
+	 * @param string   $code   Informational outcome and step recorded once dismissed.
+	 * @return bool True only for the request that recorded it.
+	 */
+	private function consume_notice( callable $is_due, string $code ): bool {
+		// Checked before the write lock too: admin pages call this, and taking the write lock writes options.
+		if ( ! $is_due( $this->state_store->get_record() ) ) {
+			return false;
+		}
+		$now = time();
+		return $this->with_write_lock(
+			$now,
+			function () use ( $is_due, $now, $code ): bool {
+				$record = $this->state_store->get_record();
+				if ( ! is_array( $record ) || ! $is_due( $record ) ) {
+					return false;
+				}
+				$updated                           = $record;
+				$updated['revision']               = $record['revision'] + 1;
+				$updated['updated_at']             = $now;
+				$updated['informational_outcomes'] = $this->merge_information_outcomes( $record['informational_outcomes'], array( array( 'code' => $code ) ) );
+				$updated                           = $this->append_step( $updated, $code, $now );
+
+				return $this->state_store->compare_and_set_record( $record, $updated );
+			},
+			false
+		);
+	}
+
+	/**
+	 * Claim one current Action Scheduler callback.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param mixed $generation Scheduled generation.
+	 * @param mixed $attempt    Scheduled attempt.
+	 */
+	public function handle_reconcile( $generation, $attempt ): void {
+		$generation = $this->normalize_action_identity_value( $generation );
+		$attempt    = $this->normalize_action_identity_value( $attempt );
+		if ( null === $generation || null === $attempt ) {
+			return;
+		}
+
+		$this->handle_reconcile_attempt( $generation, $attempt );
+	}
+
+	/**
+	 * Claim one validated Action Scheduler callback.
+	 *
+	 * @param int $generation Scheduled generation.
+	 * @param int $attempt    Scheduled attempt.
+	 */
+	private function handle_reconcile_attempt( int $generation, int $attempt ): void {
+		if ( ! $this->arbiter->is_builtin_enabled() ) {
+			return;
+		}
+
+		$now        = time();
+		$claimed    = null;
+		$lists_hold = false;
+		$this->with_write_lock(
+			$now,
+			function ( string $token ) use ( $generation, $attempt, $now, &$claimed, &$lists_hold ): void {
+				// A long-lived process can hold the autoloaded record from when it booted.
+				$this->state_store->invalidate_record_cache();
+				$record = $this->state_store->get_record();
+				if (
+					! is_array( $record )
+					|| $generation !== $record['generation']
+					|| $attempt !== $record['attempt'] + 1
+					|| ! in_array( $record['state'], array( StateStore::STATE_PENDING, StateStore::STATE_DEFERRED ), true )
+				) {
+					return;
+				}
+				// Past the hand-over, who owns payments is read from the stored plugin lists, which no per-request filter
+				// changes. Lists without the extension are a reading only in a process that has not loaded its code: one that
+				// has, the finalizing request included, keeps running the extension and decides nothing. Neither does a list
+				// that could not be read.
+				if ( null !== ( $record['request_origin_token'] ?? null ) ) {
+					$stored_lists_hold = $this->preflight_service->is_woopayments_in_stored_lists();
+					if ( null === $stored_lists_hold ) {
+						$this->reschedule_unreadable_attempt( $record, $attempt, $now, 'WooPayments cutover: the stored plugin lists could not be read, so who owns payments is unknown; the next attempt is rescheduled.' );
+						return;
+					}
+					$lists_hold = $stored_lists_hold;
+					if ( ! $lists_hold && $this->arbiter->is_extension_code_loaded() ) {
+						$this->reschedule_unreadable_attempt( $record, $attempt, $now, 'WooPayments cutover: this process still runs the extension\'s code, so it cannot read who owns payments; the next attempt is rescheduled.' );
+						return;
+					}
+				}
+
+				$resume_step                                 = $record['current_step'];
+				$claimed                                     = $record;
+				$claimed['revision']                         = $record['revision'] + 1;
+				$claimed['state']                            = StateStore::STATE_RUNNING;
+				$claimed['attempt']                          = $attempt;
+				$claimed['action_id']                        = 0;
+				$claimed['current_step']                     = self::STEP_VERIFY_BUILTIN_OWNERSHIP === $resume_step ? $resume_step : self::STEP_RUNNING;
+				$claimed['updated_at']                       = $now;
+				$claimed['next_attempt_at']                  = null;
+				$claimed[ StateStore::CLAIM_TOKEN_KEY ]      = $token;
+				$claimed[ StateStore::CLAIM_EXPIRES_AT_KEY ] = $now + self::RUNNING_TIMEOUT;
+				$claimed                                     = $this->append_step( $claimed, self::STEP_RUNNING, $now );
+				if ( ! $this->state_store->compare_and_set_record( $record, $claimed ) ) {
+					$claimed = null;
+				}
+			}
+		);
+
+		if ( is_array( $claimed ) ) {
+			if ( self::STEP_VERIFY_BUILTIN_OWNERSHIP === $claimed['current_step'] ) {
+				$this->complete_verified_claim( $claimed, $lists_hold );
+			} else {
+				$this->reconcile_claim( $claimed, $lists_hold );
+			}
+		}
+	}
+
+	/**
+	 * Move an attempt that cannot read ownership to a later one, deciding nothing; call with the write lock held.
+	 *
+	 * One compare-and-set keeps the state, step, claim fields and updated_at, takes the attempt and raises the revision, and
+	 * sets the next attempt by the time since the hand-over; then the scheduling write records the next attempt's action and
+	 * moves updated_at.
+	 *
+	 * @param array<string,mixed> $record  Current record, carrying the hand-over token.
+	 * @param int                 $attempt The attempt this process was handed.
+	 * @param int                 $now     Current UTC timestamp.
+	 * @param string              $message Log line saying why ownership could not be read.
+	 */
+	private function reschedule_unreadable_attempt( array $record, int $attempt, int $now, string $message ): void {
+		$rescheduled                           = $record;
+		$rescheduled['revision']               = $record['revision'] + 1;
+		$rescheduled['attempt']                = $attempt;
+		$rescheduled['action_id']              = 0;
+		$rescheduled['next_attempt_at']        = $now + $this->get_unreadable_ownership_retry_delay( $record, $now );
+		$rescheduled['informational_outcomes'] = $this->merge_information_outcomes( $record['informational_outcomes'], array( array( 'code' => self::OUTCOME_OWNERSHIP_READING_UNAVAILABLE ) ) );
+		if ( ! $this->state_store->compare_and_set_record( $record, $rescheduled ) ) {
+			return;
+		}
+		$this->write_log_info(
+			$message,
+			array(
+				'source'          => self::LOG_SOURCE,
+				'generation'      => (int) $record['generation'],
+				'attempt'         => $attempt,
+				'next_attempt_at' => $rescheduled['next_attempt_at'],
+			)
+		);
+		$this->ensure_record_scheduled( $rescheduled, $now );
+	}
+
+	/**
+	 * Get the retry delay for an attempt that cannot read ownership, counted from the hand-over.
+	 *
+	 * A record whose hand-over time is missing, as after a deactivation that failed past the fence, takes the cadence.
+	 *
+	 * @param array<string,mixed> $record Current record.
+	 * @param int                 $now    Current UTC timestamp.
+	 * @return int Seconds.
+	 */
+	private function get_unreadable_ownership_retry_delay( array $record, int $now ): int {
+		$handed_over_at = $record[ StateStore::HANDED_OVER_AT_KEY ] ?? null;
+		if ( ! is_int( $handed_over_at ) ) {
+			return $this->get_retry_delay( $record, $now );
+		}
+		$since_hand_over = $now - $handed_over_at;
+		if ( $since_hand_over < self::UNREADABLE_OWNERSHIP_FAST_WINDOW ) {
+			return self::OWNERSHIP_CHECK_DELAY;
+		}
+		if ( $since_hand_over < self::UNREADABLE_OWNERSHIP_SLOW_WINDOW ) {
+			return self::UNREADABLE_OWNERSHIP_SLOW_DELAY;
+		}
+
+		return $this->get_retry_delay( $record, $now );
+	}
+
+	/**
+	 * Persist a deferred result and schedule its successor.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param array<string,mixed> $expected_claim Exact running revision owned by this worker.
+	 * @param array<int,string>   $codes          Remaining condition codes.
+	 * @param array<int,mixed>    $outcomes       Informational outcomes to retain.
+	 * @param int|null            $retry_delay    Seconds until the next attempt, or null for the retry cadence.
+	 * @return bool True when the next attempt is scheduled.
+	 */
+	public function defer( array $expected_claim, array $codes, array $outcomes = array(), ?int $retry_delay = null ): bool {
+		$now = time();
+		return $this->with_write_lock(
+			$now,
+			function () use ( $expected_claim, $now, $codes, $outcomes, $retry_delay ): bool {
+				$record = $this->state_store->get_record();
+				if (
+					! is_array( $record )
+					|| $record !== $expected_claim
+					|| StateStore::STATE_RUNNING !== $record['state']
+					|| $record[ StateStore::CLAIM_EXPIRES_AT_KEY ] <= $now
+				) {
+					return false;
+				}
+
+				$deferred                                     = $record;
+				$deferred['revision']                         = $record['revision'] + 1;
+				$deferred['state']                            = StateStore::STATE_DEFERRED;
+				$deferred['action_id']                        = 0;
+				$deferred['current_step']                     = self::STEP_DEFERRED;
+				$deferred['updated_at']                       = $now;
+				$deferred[ StateStore::BLOCKING_CODES_KEY ]   = $codes;
+				$deferred['informational_outcomes']           = $this->merge_information_outcomes( $record['informational_outcomes'], $outcomes );
+				$deferred['next_attempt_at']                  = $now + ( $retry_delay ?? $this->get_retry_delay( $record, $now ) );
+				$deferred[ StateStore::CLAIM_TOKEN_KEY ]      = null;
+				$deferred[ StateStore::CLAIM_EXPIRES_AT_KEY ] = null;
+				$deferred                                     = $this->append_step( $deferred, self::STEP_DEFERRED, $now, array( 'codes' => $deferred[ StateStore::BLOCKING_CODES_KEY ] ) );
+				if ( ! $this->state_store->compare_and_set_record( $record, $deferred ) ) {
+					return false;
+				}
+
+				return $this->ensure_record_scheduled( $deferred, $now );
+			},
+			false
+		);
+	}
+
+	/**
+	 * Bring a deferred switch's next attempt forward: with a code, to now after an event that clears it (a renewal plugin
+	 * deactivated, a per-site conversion finished), for a deferred record carrying it only; with none, on a store manager's
+	 * admin page, no sooner than ADMIN_PAGE_ATTEMPT_FLOOR after the last write (get_admin_page_attempt_target()). The
+	 * attempt re-runs every check, so the bound is one attempt per event, and the hand-over time is not touched.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param string|null $code The deferral code the event can clear, or null for an admin page.
+	 * @return bool True when the next attempt was moved and scheduled.
+	 */
+	public function bring_deferred_attempt_forward( ?string $code = null ): bool {
+		if ( null === $code ) {
+			return $this->bring_attempt_forward_for_admin_page();
+		}
+		if ( ! $this->is_deferred_for( $this->state_store->get_record(), $code ) || ! $this->arbiter->is_builtin_enabled() ) {
+			return false;
+		}
+		$now   = time();
+		$moved = $this->with_write_lock(
+			$now,
+			function () use ( $code, $now ): bool {
+				$record = $this->state_store->get_record();
+				if ( ! is_array( $record ) || ! $this->is_deferred_for( $record, $code ) ) {
+					return false;
+				}
+				if ( is_int( $record['next_attempt_at'] ) && $record['next_attempt_at'] <= $now ) {
+					return true;
+				}
+
+				return $this->move_next_attempt( $record, $now, $now );
+			},
+			false
+		);
+		// The event's request is not a queue runner: once it ends, after WordPress has written the plugin list, a fresh
+		// runner takes the attempt now due. A request switched into another site would dispatch for its own site.
+		if ( $moved && ! ( is_multisite() && ms_is_switched() ) ) {
+			add_action( 'shutdown', array( $this->scheduler, 'dispatch_async' ) );
+		}
+
+		return $moved;
+	}
+
+	/**
+	 * Bring a held switch's next attempt forward on a store manager's admin page.
+	 *
+	 * A page refused by the first eligibility checks, which read only the record the page already has, runs no query. A page
+	 * that passes them takes the write lock, and the compare-and-set on that record catches one another request has changed
+	 * since; when two requests race on the same record, the later one pays the lock and compare-and-set queries and moves nothing.
+	 *
+	 * @return bool True when the next attempt was moved and scheduled.
+	 */
+	private function bring_attempt_forward_for_admin_page(): bool {
+		$now    = time();
+		$record = $this->state_store->get_record();
+		if ( ! is_array( $record ) ) {
+			return false;
+		}
+		$target = $this->get_admin_page_attempt_target( $record, $now );
+		if ( null === $target || ! $this->arbiter->is_builtin_enabled() ) {
+			return false;
+		}
+		$moved = $this->with_write_lock(
+			$now,
+			fn(): bool => $this->move_next_attempt( $record, $target, $now ),
+			false
+		);
+		// An attempt due now needs a runner once the page ends; one due at the floor's end is left to the next runner.
+		if ( $moved && $target === $now && ! ( is_multisite() && ms_is_switched() ) ) {
+			add_action( 'shutdown', array( $this->scheduler, 'dispatch_async' ) );
+		}
+
+		return $moved;
+	}
+
+	/**
+	 * Get the time a store manager's admin page moves a held switch's next attempt to, or null to leave it. Only a deferred
+	 * record with no hand-over token moves: past the hand-over the switch keeps its own timing. The target is at least
+	 * ADMIN_PAGE_ATTEMPT_FLOOR after the record's last write, and the attempt only ever moves sooner.
+	 *
+	 * @param array<string,mixed> $record Cutover record.
+	 * @param int                 $now    Current UTC timestamp.
+	 * @return int|null
+	 */
+	private function get_admin_page_attempt_target( array $record, int $now ): ?int {
+		if (
+			StateStore::STATE_DEFERRED !== $record['state']
+			|| null !== ( $record['request_origin_token'] ?? null )
+			|| ! is_int( $record['next_attempt_at'] )
+		) {
+			return null;
+		}
+		$target = max( $now, $record['updated_at'] + self::ADMIN_PAGE_ATTEMPT_FLOOR );
+		if ( $record['next_attempt_at'] <= $target ) {
+			return null;
+		}
+
+		return $target;
+	}
+
+	/**
+	 * Move a deferred record's next attempt and schedule it; call with the write lock held.
+	 *
+	 * The old action is cancelled only after the compare-and-set, so a request that read a stale record changes nothing.
+	 *
+	 * @param array<string,mixed> $record          Current deferred record.
+	 * @param int                 $next_attempt_at When the next attempt is due.
+	 * @param int                 $now             Current UTC timestamp.
+	 * @return bool True when the next attempt was moved and scheduled.
+	 */
+	private function move_next_attempt( array $record, int $next_attempt_at, int $now ): bool {
+		$forward                    = $record;
+		$forward['revision']        = $record['revision'] + 1;
+		$forward['action_id']       = 0;
+		$forward['updated_at']      = $now;
+		$forward['next_attempt_at'] = $next_attempt_at;
+		if ( ! $this->state_store->compare_and_set_record( $record, $forward ) ) {
+			return false;
+		}
+		$this->scheduler->cancel( $record['generation'], $record['attempt'] + 1 );
+
+		return $this->ensure_record_scheduled( $forward, $now );
+	}
+
+	/**
+	 * Tell whether a switch waits for queued WooPayments actions past the short retry: it is deferred with the queued
+	 * action code, and its last deferral set the next attempt by the retry cadence, not by QUEUED_ACTION_RETRY_DELAY.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param array<string,mixed> $record Cutover record.
+	 * @return bool
+	 */
+	public function is_waiting_for_queued_actions( array $record ): bool {
+		if ( ! $this->is_deferred_for( $record, PreflightService::FAILURE_QUEUE_HOOKS_UNHANDLED ) || ! is_int( $record['next_attempt_at'] ?? null ) ) {
+			return false;
+		}
+		foreach ( array_reverse( (array) ( $record['step_log'] ?? array() ) ) as $entry ) {
+			if ( is_array( $entry ) && self::STEP_DEFERRED === ( $entry['step'] ?? null ) ) {
+				return is_int( $entry['at'] ?? null ) && $record['next_attempt_at'] - $entry['at'] > self::QUEUED_ACTION_RETRY_DELAY;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Tell whether a record is a deferred switch held back by a code.
+	 *
+	 * @param array<string,mixed>|null $record Cutover record.
+	 * @param string                   $code   Deferral code.
+	 * @return bool
+	 */
+	private function is_deferred_for( ?array $record, string $code ): bool {
+		return is_array( $record )
+			&& StateStore::STATE_DEFERRED === $record['state']
+			&& in_array( $code, (array) ( $record[ StateStore::BLOCKING_CODES_KEY ] ?? array() ), true );
+	}
+
+	/**
+	 * Get the retry delay for a deferral that waits only for queued WooPayments actions about to run.
+	 *
+	 * The short delay applies when the only code is the unhandled queued action one and every such action is due between
+	 * QUEUED_ACTION_OVERDUE_LIMIT ago and QUEUED_ACTION_RETRY_DELAY from now; a running action was due when it was claimed.
+	 * Each row stands for a hook and group, so both its earliest and its latest due time must be inside: an action left
+	 * overdue for good keeps its group's earliest due time old however many fresh ones arrive beside it. An action due
+	 * later, an unreadable queue or due time, or any other code keeps the retry cadence.
+	 *
+	 * @param array<int,string>                   $codes             The deferral's codes.
+	 * @param array<int,array<string,mixed>>|null $unhandled_actions The unhandled queued actions already read, or null to read them now.
+	 * @return int|null Seconds until the next attempt, or null for the retry cadence.
+	 */
+	private function get_queued_action_retry_delay( array $codes, ?array $unhandled_actions ): ?int {
+		if ( array( PreflightService::FAILURE_QUEUE_HOOKS_UNHANDLED ) !== $codes ) {
+			return null;
+		}
+		$now = time();
+		foreach ( $unhandled_actions ?? $this->preflight_service->get_unhandled_queue_actions() as $action ) {
+			$earliest_due_at = $action['earliest_due_at'] ?? null;
+			$latest_due_at   = $action['due_at'] ?? null;
+			if ( ! is_int( $earliest_due_at ) || ! is_int( $latest_due_at ) || $earliest_due_at < $now - self::QUEUED_ACTION_OVERDUE_LIMIT || $latest_due_at > $now + self::QUEUED_ACTION_RETRY_DELAY ) {
+				return null;
+			}
+		}
+
+		return self::QUEUED_ACTION_RETRY_DELAY;
+	}
+
+	/**
+	 * Disposition one claimed reconciliation attempt.
+	 *
+	 * Resolve, finalize, exclude, or defer a claimed attempt without leaving it running.
+	 *
+	 * @param array<string,mixed> $claimed    Exact running state owned by this worker.
+	 * @param bool                $lists_hold Whether the stored plugin lists held the extension when the claim read them; read
+	 *                                        only past the hand-over.
+	 */
+	private function reconcile_claim( array $claimed, bool $lists_hold ): void {
+		try {
+			// A merchant who turned the extension back on after this generation's finalize deactivated it chose the extension:
+			// the rollback, not the switch (that finalize left its request token on the record).
+			if ( null !== ( $claimed['request_origin_token'] ?? null ) && $lists_hold ) {
+				$this->roll_back_claim( $claimed );
+				return;
+			}
+			$this->log_late_first_attempt( $claimed );
+			// Past finalize the extension is already off and the built-in WooPayments owns payments, so an exclusion would
+			// protect nothing and leave the store with no owner: the bundled failure defers the claim instead.
+			$past_finalize = null !== ( $claimed['request_origin_token'] ?? null );
+			$this->preflight_service->invalidate_current_blog_memoization();
+			$failures = $this->preflight_service->get_failures();
+			// Past finalize the extension's classes never load again, so neither a listed plugin that takes payments through them
+			// nor their version has anything left to hold back.
+			if ( $past_finalize ) {
+				$failures = array_values( array_diff( $failures, array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE, PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED ) ) );
+			}
+			if ( ! $past_finalize && in_array( PreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $failures, true ) ) {
+				$this->exclude( $claimed, PreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS );
+				return;
+			}
+			// The switch never updates the extension. One too old to switch from before the hand-over, for example files
+			// replaced by older ones since the start, sends the switch back to the start notice, which asks for the update.
+			if ( in_array( PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED, $failures, true ) ) {
+				$this->roll_back_claim( $claimed );
+				return;
+			}
+
+			$outcomes = $this->get_adopted_queue_action_outcomes();
+
+			if ( array() !== $failures ) {
+				$this->defer( $claimed, $failures, $outcomes, $this->get_queued_action_retry_delay( $failures, null ) );
+				return;
+			}
+
+			$this->finalize_site_claim( $claimed, $outcomes );
+		} catch ( \Throwable $error ) {
+			$this->log_error( 'WooPayments cutover reconciliation resolver failed.', WooPaymentsLogger::get_failure_context( $error ) );
+			$this->defer( $claimed, array( self::CODE_RECONCILIATION_RESOLVER_FAILED ) );
+		}
+	}
+
+	/**
+	 * Migrate the data, deactivate the extension and schedule the ownership check for one site.
+	 *
+	 * A deactivation that cannot be confirmed defers, and the next attempt rolls back only if the lists still hold the
+	 * extension. The reading after the deactivation can lag on a database router that does not keep the request on the
+	 * primary; a second one 15 minutes later (SECOND_READING_DELAY) keeps a lagging read from rolling a switched store back
+	 * to no owner. Meanwhile an extension still listed keeps payments, and the token gives them to the built-in if it is not.
+	 *
+	 * @param array<string,mixed> $claimed  Exact running state owned by this worker.
+	 * @param array<int,mixed>    $outcomes Informational outcomes accumulated during reconciliation.
+	 */
+	private function finalize_site_claim( array $claimed, array $outcomes ): void {
+		// Deactivating an extension that is active sitewide would take it from every site, leaving the sites that still run it
+		// with no payments, so the switch waits until a super admin activates WooPayments per site. Finalize reads the stored
+		// lists: a plugin load manager can filter them in the queue request it runs in.
+		$network_active = $this->preflight_service->is_woopayments_stored_network_active();
+		// A network list that could not be read decides nothing. No token is stored yet, so the deferral leaves the extension
+		// with payments, and the next attempt runs the whole check again. It waits the usual cadence, or a store manager's
+		// admin page a minute on, not a shorter delay: a failed query is not known to clear in seconds, the extension keeps
+		// payments meanwhile, and nothing is lost by waiting.
+		if ( null === $network_active ) {
+			$this->log_unknown_stored_list( 'WooPayments cutover: the stored network plugin list could not be read before the switch, so the switch waits.', $claimed, self::CODE_RECONCILIATION_RESOLVER_FAILED );
+			$this->defer( $claimed, array( self::CODE_RECONCILIATION_RESOLVER_FAILED ), $outcomes );
+			return;
+		}
+		if ( $network_active ) {
+			$this->defer( $claimed, array( self::CODE_PLUGIN_ACTIVE_SITEWIDE ), $outcomes );
+			return;
+		}
+		$claimed = $this->migrate_data_for_claim( $claimed, $outcomes );
+		if ( null === $claimed ) {
+			return;
+		}
+		$this->capture_note_wordings();
+		// An extension action queued since the preflight ran, such as its affected-orders check from an admin page, would find
+		// no handler once the extension is off. Ask again before the fence: past it, a deferral would read as a rollback.
+		$unhandled_actions = $this->preflight_service->get_unhandled_queue_actions();
+		if ( array() !== $unhandled_actions ) {
+			$codes = array( PreflightService::FAILURE_QUEUE_HOOKS_UNHANDLED );
+			$this->defer( $claimed, $codes, $outcomes, $this->get_queued_action_retry_delay( $codes, $unhandled_actions ) );
+			return;
+		}
+		// The fence stores this request's token, which makes the built-in WooPayments the owner once the extension is inactive
+		// (WooPaymentsRuntimeArbiter), so a lost write deactivates nothing and the extension keeps payments.
+		$claimed = $this->fence_finalizing_claim( $claimed, self::$request_token );
+		if ( null === $claimed ) {
+			return;
+		}
+		$deactivated = false;
+		try {
+			// An extension the merchant already deactivated, or a retry whose earlier finalize did, has nothing to deactivate.
+			// A list that could not be read may still hold it, so the deactivation runs, reads it again and fails closed.
+			$site_active = $this->preflight_service->is_woopayments_stored_site_active();
+			if ( null === $site_active ) {
+				$this->log_unknown_stored_list( 'WooPayments cutover: the stored site plugin list could not be read before the deactivation, so the deactivation reads it again.', $claimed );
+			}
+			$deactivated = false === $site_active;
+			if ( ! $deactivated ) {
+				$deactivated = $this->run_while_changing_plugins( fn() => $this->preflight_service->deactivate_woopayments_plugin() );
+			}
+		} catch ( \Throwable $error ) {
+			$this->log_error( 'WooPayments cutover extension deactivation failed.', WooPaymentsLogger::get_failure_context( $error ) );
+			$deactivated = false;
+		}
+		if ( ! $deactivated ) {
+			// A hook that threw after WordPress wrote the active plugins still left the extension inactive. Only both lists read
+			// without it count: a list that could not be read may still hold it.
+			$in_stored_lists = $this->preflight_service->is_woopayments_in_stored_lists();
+			if ( null === $in_stored_lists ) {
+				$this->log_unknown_stored_list( 'WooPayments cutover: the stored plugin lists could not be read after the deactivation, so the switch waits.', $claimed, 'plugin_deactivation_failed' );
+			}
+			$deactivated = false === $in_stored_lists;
+		}
+		if ( ! $deactivated ) {
+			// The token stays, so the next attempt finds the extension active and rolls the switch back to it.
+			$this->defer( $claimed, array( 'plugin_deactivation_failed' ), $outcomes, self::SECOND_READING_DELAY );
+			return;
+		}
+		// The tier follows now; this write takes no lock. A rollback made since is unharmed: the effective tier reads
+		// available while the extension owns payments (WooPaymentsSetupTier::get_effective_tier()).
+		$this->account_service->sync_setup_tier_from_options( false );
+
+		$this->schedule_ownership_verification( $claimed, $outcomes );
+	}
+
+	/**
+	 * Fence a claim before finalize deactivates the extension, or before the ownership check moves the tier.
+	 *
+	 * The compare-and-set fails when the record changed since this worker claimed it (an extension activation rolled it
+	 * back, or repair_schedule() recovered the claim), or when another request holds the write lock, so a stale or blocked
+	 * worker finalizes nothing.
+	 *
+	 * @param array<string,mixed> $claimed        Exact running state owned by this worker.
+	 * @param string|null         $finalize_token Finalize's request token, stored with the fence before the deactivation.
+	 * @return array<string,mixed>|null The fenced claim, or null when the claim is no longer this worker's.
+	 */
+	private function fence_finalizing_claim( array $claimed, ?string $finalize_token = null ): ?array {
+		$now = time();
+		return $this->with_write_lock(
+			$now,
+			function () use ( $claimed, $now, $finalize_token ): ?array {
+				if ( $claimed[ StateStore::CLAIM_EXPIRES_AT_KEY ] <= $now ) {
+					return null;
+				}
+				$fenced               = $claimed;
+				$fenced['revision']   = $claimed['revision'] + 1;
+				$fenced['updated_at'] = $now;
+				if ( null !== $finalize_token ) {
+					$fenced['request_origin_token'] = $finalize_token;
+				}
+
+				return $this->state_store->compare_and_set_record( $claimed, $fenced ) ? $fenced : null;
+			},
+			null
+		);
+	}
+
+	/**
+	 * Roll back this worker's claim to a generation awaiting the merchant's start: the merchant chose the WooPayments
+	 * extension again, or it is now too old to switch from.
+	 *
+	 * @param array<string,mixed> $claimed Exact running state owned by this worker.
+	 */
+	private function roll_back_claim( array $claimed ): void {
+		$now = time();
+		$this->with_write_lock(
+			$now,
+			function () use ( $claimed, $now ): void {
+				$this->roll_back_open_generation( $claimed, $now );
+			}
+		);
+	}
+
+	/**
+	 * Replace an open generation with a rollback generation awaiting the merchant's start; call with the write lock held.
+	 *
+	 * The open generation loses its next attempt, so it never deactivates the extension or migrates data again, and the
+	 * tier is re-synced for the extension.
+	 *
+	 * @param array<string,mixed> $record Current open record.
+	 * @param int                 $now    Current UTC timestamp.
+	 * @return bool True when the rollback generation was stored.
+	 */
+	private function roll_back_open_generation( array $record, int $now ): bool {
+		if ( ! $this->replace_with_awaiting_start( $record, self::SOURCE_ROLLBACK, $now ) ) {
+			return false;
+		}
+		$this->scheduler->cancel( $record['generation'], $record['attempt'] + 1 );
+		$this->account_service->sync_setup_tier_from_options( true );
+
+		return true;
+	}
+
+	/**
+	 * Run the data migration for a claim about to finalize.
+	 *
+	 * It runs whatever the one-shot marker says: an earlier switch on this store, or this one before a retried attempt,
+	 * migrated once, and the extension may have written again since. A migration that throws, or that could not persist the
+	 * gateway settings, defers the claim.
+	 *
+	 * @param array<string,mixed> $claimed  Exact running state owned by this worker.
+	 * @param array<int,mixed>    $outcomes Informational outcomes accumulated during reconciliation.
+	 * @return array<string,mixed>|null The claim, or null after a deferred result.
+	 */
+	private function migrate_data_for_claim( array $claimed, array $outcomes ): ?array {
+		try {
+			$result = $this->data_migration->run_for_switch();
+		} catch ( \Throwable $error ) {
+			$this->log_error( 'WooPayments cutover data migration failed.', WooPaymentsLogger::get_failure_context( $error ) );
+			$this->defer( $claimed, array( self::CODE_DATA_MIGRATION_FAILED ), $outcomes );
+			return null;
+		}
+		if ( in_array( 'settings_persistence_failed', $result['changes'], true ) ) {
+			$this->defer( $claimed, array( self::CODE_DATA_MIGRATION_FAILED ), $outcomes );
+			return null;
+		}
+
+		return $claimed;
+	}
+
+	/**
+	 * Capture the extension's translated order-note wordings while its language packs are on the store. Best effort: a
+	 * failure is logged and the switch goes on.
+	 */
+	private function capture_note_wordings(): void {
+		try {
+			wc_get_container()->get( WooPaymentsOrderNoteWordingSnapshot::class )->capture();
+		} catch ( \Throwable $error ) {
+			// Switching locales runs other plugins' hooks.
+			$this->write_log_warning(
+				'WooPayments cutover: the order note wordings capture failed.',
+				array_merge( array( 'source' => self::LOG_SOURCE ), WooPaymentsLogger::get_failure_context( $error ) )
+			);
+		}
+	}
+
+	/**
+	 * Complete one verification claim once a request without the extension's code reads the stored plugin lists clear:
+	 * fence the claim, sync the setup tier and record the switch as done.
+	 *
+	 * Lists that hold the extension again defer the claim; the next attempt rolls the switch back if they still do. Two
+	 * readings 15 minutes apart (SECOND_READING_DELAY) keep one lagging read, from a database replica behind the
+	 * deactivation, from rolling a switched store back to no owner. Meanwhile an extension really back takes payments, as the
+	 * lists say, and the token keeps them with the built-in if the reading lagged.
+	 *
+	 * @param array<string,mixed> $claimed    Exact running state owned by this worker.
+	 * @param bool                $lists_hold Whether the stored plugin lists held the extension when the claim read them.
+	 */
+	private function complete_verified_claim( array $claimed, bool $lists_hold ): void {
+		if ( $lists_hold ) {
+			$this->defer( $claimed, array( 'builtin_ownership_unverified' ), array(), self::SECOND_READING_DELAY );
+			return;
+		}
+		$claimed = $this->fence_finalizing_claim( $claimed );
+		if ( null === $claimed ) {
+			return;
+		}
+		$this->account_service->sync_setup_tier_from_options( false );
+		// Resumes a capture that ran out of time before the deactivation.
+		$this->capture_note_wordings();
+		$now = time();
+		$this->with_write_lock(
+			$now,
+			function () use ( $claimed, $now ): void {
+				$record = $this->state_store->get_record();
+				if ( ! is_array( $record ) || $record !== $claimed || StateStore::STATE_RUNNING !== $record['state'] ) {
+					return;
+				}
+
+				$done                                     = $record;
+				$done['revision']                         = $record['revision'] + 1;
+				$done['state']                            = StateStore::STATE_DONE;
+				$done['action_id']                        = 0;
+				$done['current_step']                     = self::STEP_DONE;
+				$done['updated_at']                       = $now;
+				$done[ StateStore::BLOCKING_CODES_KEY ]   = array();
+				$done['next_attempt_at']                  = null;
+				$done[ StateStore::CLAIM_TOKEN_KEY ]      = null;
+				$done[ StateStore::CLAIM_EXPIRES_AT_KEY ] = null;
+				$done['request_origin_token']             = null;
+				unset( $done[ StateStore::HANDED_OVER_AT_KEY ] );
+				$done = $this->append_step( $done, self::STEP_DONE, $now );
+				if ( $this->state_store->compare_and_set_record( $record, $done ) ) {
+					delete_option( self::START_NOTICE_SNOOZED_UNTIL_OPTION );
+				}
+			}
+		);
+	}
+
+	/**
+	 * Tell whether a record is a generation waiting for the merchant's start.
+	 *
+	 * @param array<string,mixed> $record Cutover record.
+	 * @return bool
+	 */
+	public function is_awaiting_start( array $record ): bool {
+		return StateStore::STATE_PENDING === $record['state'] && self::STEP_AWAITING_MERCHANT_START === ( $record['current_step'] ?? null );
+	}
+
+	/**
+	 * Tell whether this site's record is a started switch that has not reached finalize's fence: pending past the merchant's
+	 * start, running or deferred, and carrying no request token.
+	 *
+	 * Finalize stores the token before it deactivates the extension, so no token means this switch has not deactivated it.
+	 * The data migration may have run. A start that meets a network-active extension defers before it migrates
+	 * (plugin_active_sitewide). The WooPayments feature is not checked. Read-only.
+	 *
+	 * @return bool
+	 */
+	public function has_started_switch_before_finalize(): bool {
+		$record = $this->state_store->get_record();
+
+		return is_array( $record )
+			&& in_array( $record['state'], array( StateStore::STATE_PENDING, StateStore::STATE_DEFERRED, StateStore::STATE_RUNNING ), true )
+			&& ! $this->is_awaiting_start( $record )
+			&& null === ( $record['request_origin_token'] ?? null );
+	}
+
+	/**
+	 * Persist a future ownership-verification attempt after the extension is deactivated.
+	 *
+	 * @param array<string,mixed> $claimed  Exact running state owned by this worker.
+	 * @param array<int,mixed>    $outcomes Informational outcomes accumulated during reconciliation.
+	 * @return bool True when the future verification action is scheduled.
+	 */
+	private function schedule_ownership_verification( array $claimed, array $outcomes ): bool {
+		$now = time();
+		return $this->with_write_lock(
+			$now,
+			function () use ( $claimed, $now, $outcomes ): bool {
+				$record = $this->state_store->get_record();
+				if ( ! is_array( $record ) || $record !== $claimed || StateStore::STATE_RUNNING !== $record['state'] ) {
+					return false;
+				}
+
+				$verification                                     = $record;
+				$verification['revision']                         = $record['revision'] + 1;
+				$verification['state']                            = StateStore::STATE_PENDING;
+				$verification['action_id']                        = 0;
+				$verification['current_step']                     = self::STEP_VERIFY_BUILTIN_OWNERSHIP;
+				$verification['updated_at']                       = $now;
+				$verification[ StateStore::BLOCKING_CODES_KEY ]   = array();
+				$verification['informational_outcomes']           = $this->merge_information_outcomes( $record['informational_outcomes'], $outcomes );
+				$verification['next_attempt_at']                  = $now + self::OWNERSHIP_CHECK_DELAY;
+				$verification[ StateStore::CLAIM_TOKEN_KEY ]      = null;
+				$verification[ StateStore::CLAIM_EXPIRES_AT_KEY ] = null;
+				$verification['request_origin_token']             = self::$request_token;
+				$verification[ StateStore::HANDED_OVER_AT_KEY ]   = $now;
+				$verification                                     = $this->append_step( $verification, self::STEP_VERIFY_BUILTIN_OWNERSHIP, $now );
+				if ( ! $this->state_store->compare_and_set_record( $record, $verification ) ) {
+					return false;
+				}
+
+				return $this->ensure_record_scheduled( $verification, $now );
+			},
+			false
+		);
+	}
+
+	/**
+	 * Persist a terminal exclusion for a claimed generation.
+	 *
+	 * @param array<string,mixed> $claimed Exact running state owned by this worker.
+	 * @param string              $code    Exclusion condition code.
+	 */
+	private function exclude( array $claimed, string $code ): void {
+		$now = time();
+		$this->with_write_lock(
+			$now,
+			function () use ( $claimed, $now, $code ): void {
+				$record = $this->state_store->get_record();
+				if ( ! is_array( $record ) || $record !== $claimed || StateStore::STATE_RUNNING !== $record['state'] ) {
+					return;
+				}
+
+				$excluded                                     = $record;
+				$excluded['revision']                         = $record['revision'] + 1;
+				$excluded['state']                            = StateStore::STATE_EXCLUDED;
+				$excluded['action_id']                        = 0;
+				$excluded['current_step']                     = self::STEP_EXCLUDED;
+				$excluded['updated_at']                       = $now;
+				$excluded[ StateStore::BLOCKING_CODES_KEY ]   = array( $code );
+				$excluded['next_attempt_at']                  = null;
+				$excluded[ StateStore::CLAIM_TOKEN_KEY ]      = null;
+				$excluded[ StateStore::CLAIM_EXPIRES_AT_KEY ] = null;
+				$excluded                                     = $this->append_step( $excluded, self::STEP_EXCLUDED, $now, array( 'code' => $code ) );
+				if ( $this->state_store->compare_and_set_record( $record, $excluded ) ) {
+					$this->scheduler->cancel( $record['generation'], $record['attempt'] + 1 );
+				}
+			}
+		);
+	}
+
+	/**
+	 * Record the queued WooPayments actions the cutover carries over; their callbacks run after the cutover.
+	 *
+	 * @return array<int,mixed> Informational operational-action outcomes.
+	 */
+	private function get_adopted_queue_action_outcomes(): array {
+		$outcomes = array();
+		foreach ( $this->preflight_service->get_queued_operational_actions() as $action ) {
+			if ( in_array( $action['hook'], self::ADOPTED_QUEUE_HOOKS, true ) ) {
+				$outcomes[] = array(
+					'code' => 'operational_action_adopted',
+					'hook' => $action['hook'],
+				);
+			}
+		}
+
+		return $outcomes;
+	}
+
+	/**
+	 * Run work while holding the cutover state store's write lock.
+	 *
+	 * Takes the lock, calls $work with the lock token and releases the lock afterwards, also when $work throws. While another
+	 * request holds the lock, returns $when_busy without calling $work. Every read, check, write and in-lock effect stays in $work.
+	 *
+	 * @param int      $now       Current UTC timestamp.
+	 * @param callable $work      Work to run with the lock held; receives the lock token.
+	 * @param mixed    $when_busy Result when another request holds the lock.
+	 * @return mixed The result of $work, or $when_busy.
+	 */
+	private function with_write_lock( int $now, callable $work, $when_busy = null ) {
+		$token = $this->state_store->acquire_write_lock( $now );
+		if ( null === $token ) {
+			return $when_busy;
+		}
+
+		try {
+			return $work( $token );
+		} finally {
+			$this->state_store->release_write_lock( $token );
+		}
+	}
+
+	/**
+	 * Log one cutover error with its stable source.
+	 *
+	 * @param string              $message Error message.
+	 * @param array<string,mixed> $context Additional diagnostic context.
+	 */
+	private function log_error( string $message, array $context = array() ): void {
+		$this->write_log_error( $message, array_merge( $context, array( 'source' => self::LOG_SOURCE ) ) );
+	}
+
+	/**
+	 * Log a stored plugin list that finalize could not read, with integers and codes only.
+	 *
+	 * @param string              $message What finalize does about it.
+	 * @param array<string,mixed> $claimed Exact running state owned by this worker.
+	 * @param string|null         $code    The deferral code finalize writes, when it defers.
+	 */
+	private function log_unknown_stored_list( string $message, array $claimed, ?string $code = null ): void {
+		$context = array(
+			'generation' => (int) $claimed['generation'],
+			'attempt'    => (int) $claimed['attempt'],
+		);
+		if ( null !== $code ) {
+			$context['code'] = $code;
+		}
+		$this->log_error( $message, $context );
+	}
+
+	/**
+	 * Warn when a switch's first attempt runs past the fast retry window, so day-late switches are visible in the logs.
+	 *
+	 * @param array<string,mixed> $claimed Exact running state owned by this worker.
+	 */
+	private function log_late_first_attempt( array $claimed ): void {
+		$delay_seconds = time() - (int) $claimed['started_at'];
+		if ( 1 !== $claimed['attempt'] || $delay_seconds < self::FAST_RETRY_WINDOW ) {
+			return;
+		}
+
+		$this->write_log_warning(
+			sprintf( 'WooPayments cutover: generation %1$d proceeds with its first attempt %2$ds after the merchant started it', (int) $claimed['generation'], $delay_seconds ),
+			array(
+				'source'        => self::LOG_SOURCE,
+				'generation'    => (int) $claimed['generation'],
+				'delay_seconds' => $delay_seconds,
+			)
+		);
+	}
+
+	/**
+	 * Write a cutover informational line to the WooCommerce logger.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param string              $message Message.
+	 * @param array<string,mixed> $context Context.
+	 */
+	protected function write_log_info( string $message, array $context ): void {
+		wc_get_logger()->info( $message, $context );
+	}
+
+	/**
+	 * Write a cutover warning to the WooCommerce logger.
+	 *
+	 * @param string              $message Warning message.
+	 * @param array<string,mixed> $context Warning context.
+	 */
+	protected function write_log_warning( string $message, array $context ): void {
+		wc_get_logger()->warning( $message, $context );
+	}
+
+	/**
+	 * Write a normalized cutover error to the WooCommerce logger.
+	 *
+	 * @param string              $message Error message.
+	 * @param array<string,mixed> $context Normalized error context.
+	 */
+	protected function write_log_error( string $message, array $context ): void {
+		wc_get_logger()->error( $message, $context );
+	}
+
+	/**
+	 * Repair missing actions and stale running records once Action Scheduler is initialized.
+	 *
+	 * @internal
+	 */
+	public function repair_schedule(): void {
+		if ( ! $this->arbiter->is_builtin_enabled() ) {
+			return;
+		}
+
+		$now    = time();
+		$record = $this->state_store->get_record();
+		if (
+			! is_array( $record )
+			|| $this->is_awaiting_start( $record )
+			|| (
+				! in_array( $record['state'], array( StateStore::STATE_PENDING, StateStore::STATE_DEFERRED ), true )
+				&& ( StateStore::STATE_RUNNING !== $record['state'] || $record[ StateStore::CLAIM_EXPIRES_AT_KEY ] > $now )
+			)
+		) {
+			return;
+		}
+
+		// This runs on every request, so a waiting attempt that is still scheduled is read without taking the write lock.
+		if ( StateStore::STATE_RUNNING !== $record['state'] && $this->is_recorded_attempt_scheduled( $record ) ) {
+			return;
+		}
+
+		$this->with_write_lock(
+			$now,
+			function () use ( $now ): void {
+				$record = $this->state_store->get_record();
+				if ( ! is_array( $record ) ) {
+					return;
+				}
+
+				if ( StateStore::STATE_RUNNING === $record['state'] ) {
+					if ( $record[ StateStore::CLAIM_EXPIRES_AT_KEY ] > $now ) {
+						return;
+					}
+
+					$recovered                                     = $record;
+					$recovered['revision']                         = $record['revision'] + 1;
+					$recovered['state']                            = StateStore::STATE_DEFERRED;
+					$recovered['action_id']                        = 0;
+					$recovered['current_step']                     = self::STEP_RECOVERED_STALE_RUNNING;
+					$recovered['updated_at']                       = $now;
+					$recovered['next_attempt_at']                  = $now;
+					$recovered[ StateStore::CLAIM_TOKEN_KEY ]      = null;
+					$recovered[ StateStore::CLAIM_EXPIRES_AT_KEY ] = null;
+					$recovered                                     = $this->append_step( $recovered, self::STEP_RECOVERED_STALE_RUNNING, $now );
+					if ( ! $this->state_store->compare_and_set_record( $record, $recovered ) ) {
+						return;
+					}
+					$record = $recovered;
+				}
+
+				if ( in_array( $record['state'], array( StateStore::STATE_PENDING, StateStore::STATE_DEFERRED ), true ) && self::STEP_AWAITING_MERCHANT_START !== $record['current_step'] ) {
+					$this->ensure_record_scheduled( $record, $now );
+				}
+			}
+		);
+	}
+
+	/**
+	 * Tell whether the record's next attempt is scheduled under the action id the record already holds.
+	 *
+	 * @param array<string,mixed> $record Current record.
+	 * @return bool
+	 */
+	private function is_recorded_attempt_scheduled( array $record ): bool {
+		return $record['action_id'] > 0 && $record['action_id'] === $this->scheduler->get_scheduled_action_id( $record['generation'], $record['attempt'] + 1 );
+	}
+
+	/**
+	 * Open a new generation after rollback or removal of a local exclusion marker.
+	 *
+	 * @param array<string,mixed> $record Current terminal record.
+	 * @param string              $source Trigger source.
+	 * @param int                 $now    Current UTC timestamp.
+	 * @return bool True when the new generation was stored and scheduled.
+	 */
+	private function replace_terminal_with_pending( array $record, string $source, int $now ): bool {
+		$replacement                           = $this->create_pending_record( $source, $now );
+		$replacement['generation']             = $record['generation'] + 1;
+		$replacement['revision']               = $record['revision'] + 1;
+		$replacement['informational_outcomes'] = array();
+		if ( ! $this->state_store->compare_and_set_record( $record, $replacement ) ) {
+			return false;
+		}
+
+		return $this->ensure_record_scheduled( $replacement, $now );
+	}
+
+	/**
+	 * Open a superseding generation without scheduling it before merchant confirmation.
+	 *
+	 * @param array<string,mixed> $record Current record it supersedes.
+	 * @param string              $source Supersession source.
+	 * @param int                 $now    Current UTC timestamp.
+	 * @return bool True when the awaiting generation was stored.
+	 */
+	private function replace_with_awaiting_start( array $record, string $source, int $now ): bool {
+		$replacement             = $this->to_awaiting_merchant_start( $source, $now, $record['generation'] + 1 );
+		$replacement['revision'] = $record['revision'] + 1;
+		if ( ! $this->state_store->compare_and_set_record( $record, $replacement ) ) {
+			return false;
+		}
+		// A rollback offers the switch again at once, on every admin page.
+		if ( self::SOURCE_ROLLBACK === $source ) {
+			delete_option( self::START_NOTICE_SNOOZED_UNTIL_OPTION );
+			as_unschedule_all_actions( WebhookReliabilityService::QUEUED_EVENTS_SWEEP_ACTION, array(), WooPaymentsActionSchedulerService::GROUP_ID );
+		}
+
+		return true;
+	}
+
+	/**
+	 * Schedule an awaiting generation only after an explicit merchant or mandatory start.
+	 *
+	 * @param array<string,mixed> $record Current awaiting record.
+	 * @param string              $source Start source.
+	 * @param int                 $now    Current UTC timestamp.
+	 * @return bool True when the generation was queued.
+	 */
+	private function start_awaiting_generation( array $record, string $source, int $now ): bool {
+		$queued                 = $record;
+		$queued['revision']     = $record['revision'] + 1;
+		$queued['current_step'] = self::STEP_QUEUED;
+		// The retry cadence counts from the merchant's start, not from when the offer was created.
+		$queued['started_at'] = $now;
+		$queued['updated_at'] = $now;
+		$queued               = $this->append_step( $queued, self::STEP_QUEUED, $now, array( 'source' => $source ) );
+		if ( ! $this->state_store->compare_and_set_record( $record, $queued ) ) {
+			return false;
+		}
+
+		return $this->ensure_record_scheduled( $queued, $now );
+	}
+
+	/**
+	 * Tell whether a terminal record is superseded by current local facts.
+	 *
+	 * @param array<string,mixed> $record           Current terminal record.
+	 * @param bool                $for_admin_notice Whether an admin notice asks, which may use the cached classification.
+	 * @return bool
+	 */
+	private function can_reopen_terminal_record( array $record, bool $for_admin_notice = false ): bool {
+		if ( StateStore::STATE_DONE === $record['state'] ) {
+			return $this->arbiter->is_extension_owner();
+		}
+		if ( StateStore::STATE_EXCLUDED !== $record['state'] ) {
+			return false;
+		}
+
+		if ( $for_admin_notice ) {
+			return false === $this->refresh_admin_classification( $record );
+		}
+
+		return ! in_array( PreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $this->preflight_service->get_failures(), true );
+	}
+
+	/**
+	 * Tell whether the record's site currently has the bundled subscriptions exclusion marker.
+	 *
+	 * Refreshes the cached admin classification when it is stale, which runs the preflight and writes an option.
+	 *
+	 * @param array<string,mixed> $record Current record.
+	 * @return bool
+	 */
+	private function refresh_has_bundled_subscriptions_marker( array $record ): bool {
+		return true === $this->refresh_admin_classification( $record );
+	}
+
+	/**
+	 * Refresh the cached bundled subscriptions classification for admin notices, reusing it for one record revision and an hour.
+	 *
+	 * Otherwise this runs the preflight and writes the cache option. The full preflight scans Action Scheduler and order meta,
+	 * so it must not run on every admin page. The worker re-checks before it acts.
+	 *
+	 * @param array<string,mixed>|null $record Current record, or null when none exists.
+	 * @return bool|null Whether the marker is present, or null when the preflight failed.
+	 */
+	private function refresh_admin_classification( ?array $record ): ?bool {
+		$key    = is_array( $record ) ? $record['generation'] . ':' . $record['revision'] : 'none';
+		$cached = get_option( self::ADMIN_CLASSIFICATION_OPTION, null );
+		if ( is_array( $cached ) && ( $cached['key'] ?? null ) === $key && is_bool( $cached['present'] ?? null ) && time() < (int) ( $cached['expires_at'] ?? 0 ) ) {
+			return $cached['present'];
+		}
+
+		try {
+			$present = in_array( PreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $this->preflight_service->get_failures(), true );
+		} catch ( \Throwable $error ) {
+			$this->log_error( 'WooPayments cutover could not classify the admin notice.', WooPaymentsLogger::get_failure_context( $error ) );
+			return null;
+		}
+		update_option(
+			self::ADMIN_CLASSIFICATION_OPTION,
+			array(
+				'key'        => $key,
+				'present'    => $present,
+				'expires_at' => time() + HOUR_IN_SECONDS,
+			),
+			true
+		);
+
+		return $present;
+	}
+
+	/**
+	 * Replace an unscheduled awaiting record with a local terminal exclusion.
+	 *
+	 * @param array<string,mixed> $record Current awaiting record.
+	 * @param string              $code   Exclusion code.
+	 */
+	private function exclude_awaiting_record( array $record, string $code ): void {
+		$now = time();
+		$this->with_write_lock(
+			$now,
+			function () use ( $record, $now, $code ): void {
+				$current = $this->state_store->get_record();
+				if ( ! is_array( $current ) || $current !== $record ) {
+					return;
+				}
+				$excluded                                     = $current;
+				$excluded['revision']                         = $current['revision'] + 1;
+				$excluded['state']                            = StateStore::STATE_EXCLUDED;
+				$excluded['current_step']                     = self::STEP_EXCLUDED;
+				$excluded['updated_at']                       = $now;
+				$excluded[ StateStore::BLOCKING_CODES_KEY ]   = array( $code );
+				$excluded['next_attempt_at']                  = null;
+				$excluded[ StateStore::CLAIM_TOKEN_KEY ]      = null;
+				$excluded[ StateStore::CLAIM_EXPIRES_AT_KEY ] = null;
+				$excluded                                     = $this->append_step( $excluded, self::STEP_EXCLUDED, $now, array( 'code' => $code ) );
+				$this->state_store->compare_and_set_record( $current, $excluded );
+			}
+		);
+	}
+
+	/**
+	 * Build a new pending record.
+	 *
+	 * @param string $source Trigger source.
+	 * @param int    $now    Current UTC timestamp.
+	 * @return array<string,mixed>
+	 */
+	private function create_pending_record( string $source, int $now ): array {
+		return array(
+			'schema_version'                 => StateStore::SCHEMA_VERSION,
+			'generation'                     => $this->state_store->get_next_generation(),
+			'revision'                       => 1,
+			'state'                          => StateStore::STATE_PENDING,
+			'started_at'                     => $now,
+			'updated_at'                     => $now,
+			'attempt'                        => 0,
+			'action_id'                      => 0,
+			'current_step'                   => self::STEP_QUEUED,
+			'step_log'                       => array(
+				array(
+					'step'    => self::STEP_QUEUED,
+					'at'      => $now,
+					'context' => array( 'source' => $source ),
+				),
+			),
+			StateStore::BLOCKING_CODES_KEY   => array(),
+			'informational_outcomes'         => array(),
+			'next_attempt_at'                => null,
+			StateStore::CLAIM_TOKEN_KEY      => null,
+			StateStore::CLAIM_EXPIRES_AT_KEY => null,
+			'request_origin_token'           => null,
+		);
+	}
+
+	/**
+	 * Build a generation record that waits for the merchant's start, with no attempt scheduled.
+	 *
+	 * The callers set its revision against the record it replaces, if any.
+	 *
+	 * @param string $source     Source recorded in its first step.
+	 * @param int    $now        Current UTC timestamp.
+	 * @param int    $generation Generation it opens.
+	 * @return array<string,mixed>
+	 */
+	private function to_awaiting_merchant_start( string $source, int $now, int $generation ): array {
+		$awaiting                 = $this->create_pending_record( $source, $now );
+		$awaiting['generation']   = $generation;
+		$awaiting['current_step'] = self::STEP_AWAITING_MERCHANT_START;
+		$awaiting['step_log']     = array(
+			array(
+				'step'    => self::STEP_AWAITING_MERCHANT_START,
+				'at'      => $now,
+				'context' => array( 'source' => $source ),
+			),
+		);
+
+		return $awaiting;
+	}
+
+	/**
+	 * Ensure the next monotonic attempt has exactly one action.
+	 *
+	 * @param array<string,mixed> $record Durable record.
+	 * @param int                 $now    Current UTC timestamp.
+	 * @return bool True when an action is scheduled.
+	 */
+	private function ensure_record_scheduled( array $record, int $now ): bool {
+		$attempt   = $record['attempt'] + 1;
+		$action_id = $this->scheduler->get_scheduled_action_id( $record['generation'], $attempt );
+
+		if ( 0 === $action_id ) {
+			$timestamp = is_int( $record['next_attempt_at'] ) ? max( $now, $record['next_attempt_at'] ) : $now;
+			$action_id = $this->scheduler->schedule( $timestamp, $record['generation'], $attempt );
+		}
+
+		if ( $action_id < 1 ) {
+			return false;
+		}
+
+		if ( $action_id !== $record['action_id'] ) {
+			$scheduled               = $record;
+			$scheduled['revision']   = $record['revision'] + 1;
+			$scheduled['action_id']  = $action_id;
+			$scheduled['updated_at'] = $now;
+			if ( ! $this->state_store->compare_and_set_record( $record, $scheduled ) ) {
+				$this->scheduler->cancel( $record['generation'], $attempt );
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * Append one bounded diagnostic step.
+	 *
+	 * @param array<string,mixed> $record  Durable record.
+	 * @param string              $step    Step name.
+	 * @param int                 $now     Current UTC timestamp.
+	 * @param array<string,mixed> $context Optional diagnostic context.
+	 * @return array<string,mixed>
+	 */
+	private function append_step( array $record, string $step, int $now, array $context = array() ): array {
+		$entry = array(
+			'step' => $step,
+			'at'   => $now,
+		);
+		if ( ! empty( $context ) ) {
+			$entry['context'] = $context;
+		}
+
+		$record['step_log'][] = $entry;
+		$record['step_log']   = array_slice( $record['step_log'], -StateStore::MAX_STEP_LOG_ENTRIES );
+
+		return $record;
+	}
+
+	/**
+	 * Merge informational outcomes without duplicating a persisted observation.
+	 *
+	 * @param array<int,mixed> $existing Existing informational outcomes.
+	 * @param array<int,mixed> $additional Outcomes to append.
+	 * @return array<int,mixed>
+	 */
+	private function merge_information_outcomes( array $existing, array $additional ): array {
+		foreach ( $additional as $outcome ) {
+			if ( ! in_array( $outcome, $existing, true ) ) {
+				$existing[] = $outcome;
+			}
+		}
+
+		return $existing;
+	}
+
+	/**
+	 * Normalize one Action Scheduler identity value from an untrusted hook.
+	 *
+	 * @param mixed $value Hook value.
+	 * @return int|null Positive integer, or null for malformed input.
+	 */
+	private function normalize_action_identity_value( $value ): ?int {
+		if ( ! is_int( $value ) && ! is_string( $value ) ) {
+			return null;
+		}
+
+		$normalized = filter_var( $value, FILTER_VALIDATE_INT, array( 'options' => array( 'min_range' => 1 ) ) );
+
+		return false === $normalized ? null : $normalized;
+	}
+
+	/**
+	 * Calculate retry delay from the original job start.
+	 *
+	 * @param array<string,mixed> $record Durable record.
+	 * @param int                 $now    Current UTC timestamp.
+	 * @return int
+	 */
+	private function get_retry_delay( array $record, int $now ): int {
+		return $now - $record['started_at'] < self::FAST_RETRY_WINDOW ? self::FAST_RETRY_DELAY : self::SLOW_RETRY_DELAY;
+	}
+}

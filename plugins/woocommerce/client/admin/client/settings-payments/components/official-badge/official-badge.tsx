@@ -23,6 +23,31 @@ interface OfficialBadgeProps {
 	 * The id of the official suggestion.
 	 */
 	suggestionId: string;
+
+	/**
+	 * The badge label. Defaults to "Official".
+	 */
+	label?: string;
+
+	/**
+	 * The alternative text of the badge image.
+	 */
+	imageAlt?: string;
+
+	/**
+	 * The popover sentence, with a `<learnMoreLink />` placeholder for the "Learn more" link.
+	 */
+	popoverText?: string;
+
+	/**
+	 * The "Learn more" link URL.
+	 */
+	learnMoreUrl?: string;
+
+	/**
+	 * A test id for the badge trigger. Omitted when not set.
+	 */
+	testId?: string;
 }
 
 /**
@@ -41,6 +66,14 @@ interface OfficialBadgeProps {
 export const OfficialBadge = ( {
 	variant,
 	suggestionId,
+	label = __( 'Official', 'woocommerce' ),
+	imageAlt = __( 'Official WooCommerce extension badge', 'woocommerce' ),
+	popoverText = __(
+		'This is an Official WooCommerce payment extension. <learnMoreLink />',
+		'woocommerce'
+	),
+	learnMoreUrl = 'https://woocommerce.com/learn-more-about-official-partner-badging/',
+	testId,
 }: OfficialBadgeProps ) => {
 	const [ isPopoverVisible, setPopoverVisible ] = useState( false );
 	const buttonRef = useRef< HTMLButtonElement >( null );
@@ -85,6 +118,7 @@ export const OfficialBadge = ( {
 		<Pill className={ `woocommerce-official-extension-badge` }>
 			<span
 				className="woocommerce-official-extension-badge__container"
+				data-testid={ testId }
 				tabIndex={ 0 }
 				role="button"
 				ref={ buttonRef }
@@ -93,14 +127,9 @@ export const OfficialBadge = ( {
 			>
 				<img
 					src={ WC_ASSET_URL + 'images/icons/official-extension.svg' }
-					alt={ __(
-						'Official WooCommerce extension badge',
-						'woocommerce'
-					) }
+					alt={ imageAlt }
 				/>
-				{ variant === 'expanded' && (
-					<span>{ __( 'Official', 'woocommerce' ) }</span>
-				) }
+				{ variant === 'expanded' && <span>{ label }</span> }
 				{ isPopoverVisible && (
 					<Popover
 						className="woocommerce-official-extension-badge-popover"
@@ -119,36 +148,30 @@ export const OfficialBadge = ( {
 							onKeyDown={ handleKeyDown }
 						>
 							<p>
-								{ createInterpolateElement(
-									__(
-										'This is an Official WooCommerce payment extension. <learnMoreLink />',
-										'woocommerce'
+								{ createInterpolateElement( popoverText, {
+									learnMoreLink: (
+										<Link
+											href={ learnMoreUrl }
+											rel="noopener noreferrer"
+											openInNewTab
+											onClick={ () => {
+												// Record the event when the user clicks on the learn more link.
+												recordPaymentsEvent(
+													'official_badge_learn_more_click',
+													{
+														suggestion_id:
+															suggestionId,
+													}
+												);
+											} }
+										>
+											{ __(
+												'Learn more',
+												'woocommerce'
+											) }
+										</Link>
 									),
-									{
-										learnMoreLink: (
-											<Link
-												href="https://woocommerce.com/learn-more-about-official-partner-badging/"
-												rel="noopener noreferrer"
-												openInNewTab
-												onClick={ () => {
-													// Record the event when the user clicks on the learn more link.
-													recordPaymentsEvent(
-														'official_badge_learn_more_click',
-														{
-															suggestion_id:
-																suggestionId,
-														}
-													);
-												} }
-											>
-												{ __(
-													'Learn more',
-													'woocommerce'
-												) }
-											</Link>
-										),
-									}
-								) }
+								} ) }
 							</p>
 						</div>
 					</Popover>

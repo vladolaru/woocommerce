@@ -1,0 +1,272 @@
+<?php
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
+
+use Automattic\WooCommerce\Admin\Notes\Note;
+use Automattic\WooCommerce\Admin\Notes\Notes;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProviderInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAdminNoteController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
+use WC_Unit_Test_Case;
+
+/**
+ * Tests for the MultiCurrencyAdminNoteController class.
+ */
+class MultiCurrencyAdminNoteControllerTest extends WC_Unit_Test_Case {
+
+	private const ADMIN_INIT = 'admin_init';
+
+	/**
+	 * Tear down test fixtures.
+	 */
+	public function tear_down(): void {
+		remove_all_filters( self::ADMIN_INIT );
+
+		parent::tear_down();
+	}
+
+	/**
+	 * @testdox Should register exactly the admin note hook the request allows, once: $_dataName.
+	 * @dataProvider provide_admin_note_hook_requests
+	 *
+	 * @param string                            $owner    Runtime owner.
+	 * @param bool                              $is_admin Whether this is an admin request.
+	 * @param array<string,array<string,int[]>> $expected Every hook the controller registers.
+	 */
+	public function test_registers_the_admin_note_hook_the_request_allows( string $owner, bool $is_admin, array $expected ): void {
+		$sut = $this->create_controller( $owner, $is_admin );
+
+		$sut->register();
+		$sut->register();
+
+		$this->assertSame( $expected, RegisteredHooks::of( $sut ) );
+	}
+
+	/**
+	 * Requests and the hook each registers: the note check on an admin request under core, nothing otherwise.
+	 *
+	 * @return array<string,array<int,mixed>>
+	 */
+	public function provide_admin_note_hook_requests(): array {
+		return array(
+			'core in admin'      => array(
+				MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
+				true,
+				array(
+					'admin_init' => array( 'handle_admin_init' => array( 10, 1 ) ),
+				),
+			),
+			'the extension owns' => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, true, array() ),
+			'outside admin'      => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, array() ),
+		);
+	}
+
+	/**
+	 * @testdox Should not save admin note when add-note blockers are present.
+	 *
+	 * @dataProvider add_note_blocker_provider
+	 *
+	 * @param bool $is_ajax            Whether the request is Ajax.
+	 * @param bool $provider_connected Whether the provider is connected.
+	 * @param bool $can_be_added       Whether the note can be added.
+	 */
+	public function test_does_not_save_admin_note_when_blockers_are_present(
+		bool $is_ajax,
+		bool $provider_connected,
+		bool $can_be_added
+	): void {
+		$saved_notes = array();
+		$sut         = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, $provider_connected );
+		if ( $is_ajax ) {
+			add_filter( 'wp_doing_ajax', '__return_true' );
+		}
+		if ( ! $can_be_added ) {
+			$this->store_availability_note();
+		}
+		$this->record_saved_notes( $saved_notes );
+
+		$sut->handle_admin_init();
+
+		$this->assertSame( array(), $saved_notes );
+	}
+
+	/**
+	 * @testdox Should save the multi-currency availability note, with its setup link on the Multi-currency settings tab, when eligible.
+	 */
+	public function test_saves_multi_currency_availability_note_when_eligible(): void {
+		$saved_notes = array();
+		$sut         = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
+		$this->record_saved_notes( $saved_notes );
+
+		$sut->handle_admin_init();
+
+		$this->assertCount( 1, $saved_notes );
+		$note    = $saved_notes[0];
+		$actions = $note->get_actions();
+		$this->assertSame(
+			array(
+				'name'         => 'wc-payments-notes-multi-currency-available',
+				'title'        => 'Sell worldwide in multiple currencies',
+				'content'      => 'Boost your international sales by allowing your customers to shop and pay in their local currency.',
+				'content_data' => array(),
+				'type'         => 'info',
+				'source'       => 'woocommerce-payments',
+				'actions'      => array(
+					array(
+						'name'          => 'wc-payments-notes-multi-currency-available',
+						'label'         => 'Set up now',
+						'query'         => admin_url( 'admin.php?page=wc-settings&tab=wcpay_multi_currency' ),
+						'status'        => 'unactioned',
+						'actioned_text' => '',
+					),
+				),
+			),
+			array(
+				'name'         => $note->get_name(),
+				'title'        => $note->get_title(),
+				'content'      => $note->get_content(),
+				'content_data' => (array) $note->get_content_data(),
+				'type'         => $note->get_type(),
+				'source'       => $note->get_source(),
+				'actions'      => array_map(
+					static fn( $action ): array => array(
+						'name'          => $action->name,
+						'label'         => $action->label,
+						'query'         => $action->query,
+						'status'        => $action->status,
+						'actioned_text' => $action->actioned_text,
+					),
+					$actions
+				),
+			)
+		);
+	}
+
+	/**
+	 * @testdox Should not look up the stored note when the provider is disconnected.
+	 */
+	public function test_does_not_look_up_stored_note_when_provider_is_disconnected(): void {
+		$lookups = 0;
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, false );
+		add_filter(
+			'query',
+			static function ( $query ) use ( &$lookups ) {
+				if ( is_string( $query ) && false !== strpos( $query, 'wc_admin_notes WHERE name =' ) ) {
+					++$lookups;
+				}
+
+				return $query;
+			}
+		);
+
+		$sut->handle_admin_init();
+
+		$this->assertSame( 0, $lookups );
+	}
+
+	/**
+	 * Data provider for add-note blockers.
+	 *
+	 * @return array<string,array{0: bool, 1: bool, 2: bool}>
+	 */
+	public function add_note_blocker_provider(): array {
+		return array(
+			'ajax request'          => array( true, true, true ),
+			'provider disconnected' => array( false, false, true ),
+			'note cannot be added'  => array( false, true, false ),
+		);
+	}
+
+	/**
+	 * Create an admin note controller.
+	 *
+	 * @param string $owner              Runtime owner.
+	 * @param bool   $is_admin           Whether the request is admin.
+	 * @param bool   $provider_connected Whether the provider account is connected.
+	 * @return MultiCurrencyAdminNoteController
+	 */
+	private function create_controller( string $owner, bool $is_admin, bool $provider_connected = true ): MultiCurrencyAdminNoteController {
+		$provider = $this->createMock( CurrencyRateProviderInterface::class );
+		$provider->method( 'is_connected' )->willReturn( $provider_connected );
+
+		if ( $is_admin ) {
+			set_current_screen( 'dashboard' );
+		}
+
+		$controller = new MultiCurrencyAdminNoteController();
+		$controller->init( $this->create_arbiter( $owner ), RateServices::with( $provider ) );
+
+		return $controller;
+	}
+
+	/**
+	 * Record each admin note the controller saves, as read back from the store.
+	 *
+	 * @param Note[] $saved_notes Saved notes, collected by reference.
+	 */
+	private function record_saved_notes( array &$saved_notes ): void {
+		add_action(
+			'woocommerce_note_created',
+			static function ( $note_id ) use ( &$saved_notes ): void {
+				$saved_notes[] = Notes::get_note( $note_id );
+			}
+		);
+	}
+
+	/**
+	 * Store the multi-currency availability note, as an earlier admin request would have.
+	 */
+	private function store_availability_note(): void {
+		$note = new Note();
+		$note->set_name( 'wc-payments-notes-multi-currency-available' );
+		$note->set_title( 'Sell worldwide in multiple currencies' );
+		$note->set_content( 'Boost your international sales by allowing your customers to shop and pay in their local currency.' );
+		$note->set_source( 'woocommerce-payments' );
+		$note->save();
+	}
+
+	/**
+	 * Create a static multi-currency runtime arbiter.
+	 *
+	 * @param string $owner Runtime owner.
+	 * @return MultiCurrencyRuntimeArbiter
+	 */
+	private function create_arbiter( string $owner ): MultiCurrencyRuntimeArbiter {
+		return new class( $owner ) extends MultiCurrencyRuntimeArbiter {
+			/**
+			 * Runtime owner.
+			 *
+			 * @var string
+			 */
+			private string $owner;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param string $owner Runtime owner.
+			 */
+			public function __construct( string $owner ) {
+				$this->owner = $owner;
+			}
+
+			/**
+			 * Get the multi-currency runtime owner for the current site.
+			 *
+			 * @return string
+			 */
+			public function get_runtime_owner(): string {
+				return $this->owner;
+			}
+
+			/**
+			 * Tell whether core multi-currency may register hooks.
+			 *
+			 * @return bool
+			 */
+			public function is_builtin_owner(): bool {
+				return MultiCurrencyRuntimeArbiter::OWNER_BUILTIN === $this->owner;
+			}
+		};
+	}
+}

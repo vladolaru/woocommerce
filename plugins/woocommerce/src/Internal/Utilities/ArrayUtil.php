@@ -123,4 +123,41 @@ class ArrayUtil {
 		// Reindex if the original array was a list.
 		return $is_list ? array_values( $filtered ) : $filtered;
 	}
+
+	/**
+	 * Check a filter's array result against the array the filter was given.
+	 *
+	 * Each key of the defaults takes the filtered value when it has the default's type, a string of digits counting as an
+	 * integer for an integer default, and keeps the default otherwise or when missing. Keys the defaults do not have are
+	 * returned as the filter gave them. A result that is not an array gives the defaults. Nested arrays are taken whole.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param mixed $filtered The filter's result.
+	 * @param array $defaults The array passed to the filter.
+	 * @return array
+	 */
+	public static function restore_typed_defaults( $filtered, array $defaults ): array {
+		if ( ! is_array( $filtered ) ) {
+			return $defaults;
+		}
+
+		$restored = $defaults;
+		foreach ( $defaults as $key => $default ) {
+			if ( ! array_key_exists( $key, $filtered ) ) {
+				continue;
+			}
+
+			$value = $filtered[ $key ];
+			if ( is_int( $default ) && is_string( $value ) && ctype_digit( $value ) ) {
+				$value = (int) $value;
+			}
+
+			if ( gettype( $value ) === gettype( $default ) ) {
+				$restored[ $key ] = $value;
+			}
+		}
+
+		return $restored + $filtered;
+	}
 }

@@ -1,0 +1,26 @@
+@import "../_tokens.scss";
+
+.woopayments-settings-setup-live-modal {
+	&__content {
+		display: flex;
+		flex-direction: column;
+		gap: $gap;
+
+		p,
+		ul {
+			margin: 0;
+		}
+
+		ul {
+			display: grid;
+			gap: $gap-small;
+			padding-inline-start: $woopayments-list-indent;
+		}
+	}
+
+	&__footer {
+		display: flex;
+		justify-content: flex-end;
+		margin-top: $gap-large;
+	}
+}

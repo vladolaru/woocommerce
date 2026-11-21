@@ -7,7 +7,10 @@ use Automattic\WooCommerce\Admin\Features\OnboardingTasks\Task;
 use Automattic\WooCommerce\Internal\Admin\Settings\Payments as SettingsPaymentsService;
 use Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\DefaultPaymentGateways;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
+use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
+use Automattic\WooCommerce\Internal\Admin\Settings\Utils as SettingsUtils;
 use Automattic\WooCommerce\Internal\Admin\Suggestions\PaymentsExtensionSuggestions;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use WC_Gateway_BACS;
 use WC_Gateway_Cheque;
 use WC_Gateway_COD;
@@ -188,12 +191,37 @@ class Payments extends Task {
 	}
 
 	/**
-	 * Check if the WooPayments plugin is active.
+	 * Check if WooPayments is active: the WooPayments extension is loaded and owns payments, or the built-in gateway is in use.
 	 *
 	 * @return bool
 	 */
 	private function is_woopayments_active(): bool {
-		return class_exists( '\WC_Payments' );
+		if ( wc_get_container()->get( WooPaymentsExtensionRuntime::class )->is_loaded() ) {
+			return true;
+		}
+
+		return $this->is_builtin_woopayments_in_use();
+	}
+
+	/**
+	 * Check if the merchant connected an account or started onboarding with the built-in WooPayments gateway.
+	 *
+	 * A store that never did either keeps the same task behavior as a store without WooPayments.
+	 *
+	 * @return bool
+	 */
+	private function is_builtin_woopayments_in_use(): bool {
+		// Only read the providers list when the gateway is registered, so stores without it skip building the list.
+		if ( ! isset( WC()->payment_gateways()->payment_gateways()[ WooPaymentsService::GATEWAY_ID ] ) ) {
+			return false;
+		}
+
+		$woopayments_provider = $this->get_woopayments_provider();
+		if ( ! $woopayments_provider || 'woocommerce' !== SettingsUtils::normalize_plugin_slug( (string) ( $woopayments_provider['plugin']['slug'] ?? '' ) ) ) {
+			return false;
+		}
+
+		return ! empty( $woopayments_provider['state']['account_connected'] ) || ! empty( $woopayments_provider['onboarding']['state']['started'] );
 	}
 
 	/**
@@ -308,8 +336,9 @@ class Payments extends Task {
 	 * @return bool Whether the country is supported by WooPayments.
 	 */
 	private function is_woopayments_supported_country( string $country_code ): bool {
-		if ( class_exists( '\WC_Payments_Utils' ) && is_callable( array( '\WC_Payments_Utils', 'supported_countries' ) ) ) {
-			$supported_countries = array_keys( \WC_Payments_Utils::supported_countries() );
+		$supported_countries = wc_get_container()->get( WooPaymentsExtensionRuntime::class )->get_supported_countries();
+		if ( is_array( $supported_countries ) ) {
+			$supported_countries = array_keys( $supported_countries );
 			return in_array( $country_code, $supported_countries, true );
 		}
 

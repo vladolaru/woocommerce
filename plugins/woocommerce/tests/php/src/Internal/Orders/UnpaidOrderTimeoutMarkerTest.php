@@ -148,4 +148,59 @@ class UnpaidOrderTimeoutMarkerTest extends WC_Unit_Test_Case {
 		$this->assertTrue( UnpaidOrderTimeoutMarker::is_marked( $this->reload( $order_a->get_id() ) ) );
 		$this->assertTrue( UnpaidOrderTimeoutMarker::is_marked( $this->reload( $order_b->get_id() ) ) );
 	}
+
+	/**
+	 * @testdox is_cancelling is true only for the order the timer is cancelling, and only while its cancel runs.
+	 */
+	public function test_is_cancelling_only_inside_the_timer_cancel_of_that_order(): void {
+		$order = WC_Helper_Order::create_order();
+		$other = WC_Helper_Order::create_order();
+		$seen  = array();
+
+		add_action(
+			'woocommerce_order_status_cancelled',
+			function ( $order_id ) use ( $order, $other, &$seen ) {
+				if ( $order_id === $order->get_id() ) {
+					$seen = array( UnpaidOrderTimeoutMarker::is_cancelling( $order ), UnpaidOrderTimeoutMarker::is_cancelling( $other ) );
+				}
+			},
+			5
+		);
+
+		$this->assertFalse( UnpaidOrderTimeoutMarker::is_cancelling( $order ), 'False before the cancel.' );
+		$this->sut->cancel_unpaid_order( $order, 'Timer note.' );
+
+		$this->assertSame( array( true, false ), $seen, 'True for the order being cancelled, false for another order.' );
+		$this->assertFalse( UnpaidOrderTimeoutMarker::is_cancelling( $order ), 'False once the cancel returned.' );
+	}
+
+	/**
+	 * @testdox is_cancelling follows a nested timer cancellation and is true again for the outer order once the inner one returns.
+	 */
+	public function test_is_cancelling_follows_a_nested_timer_cancellation(): void {
+		$order_a = WC_Helper_Order::create_order();
+		$order_b = WC_Helper_Order::create_order();
+		$sut     = $this->sut;
+		$seen    = array();
+
+		add_action(
+			'woocommerce_order_status_cancelled',
+			function ( $order_id ) use ( $order_a, $order_b, $sut, &$seen ) {
+				if ( $order_id === $order_b->get_id() ) {
+					$seen['inner'] = array( UnpaidOrderTimeoutMarker::is_cancelling( $order_b ), UnpaidOrderTimeoutMarker::is_cancelling( $order_a ) );
+				}
+				if ( $order_id === $order_a->get_id() ) {
+					$sut->cancel_unpaid_order( $order_b, 'Nested.' );
+					$seen['outer'] = UnpaidOrderTimeoutMarker::is_cancelling( $order_a );
+				}
+			},
+			5
+		);
+
+		$sut->cancel_unpaid_order( $order_a, 'Outer.' );
+
+		$this->assertSame( array( true, false ), $seen['inner'] ?? null, 'Inside the inner cancel, only the inner order.' );
+		$this->assertTrue( $seen['outer'] ?? false, 'The outer order again once the inner cancel returned.' );
+		$this->assertFalse( UnpaidOrderTimeoutMarker::is_cancelling( $order_a ) );
+	}
 }

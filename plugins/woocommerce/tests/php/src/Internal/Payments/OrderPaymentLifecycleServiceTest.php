@@ -1,0 +1,2233 @@
+<?php
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Tests\Internal\Payments;
+
+use Automattic\WooCommerce\Enums\OrderStatus;
+use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
+use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
+use Automattic\WooCommerce\RestApi\UnitTests\LoggerSpyTrait;
+use Automattic\WooCommerce\Utilities\OrderUtil;
+use WC_Order;
+use WC_Unit_Test_Case;
+
+/**
+ * Tests for the OrderPaymentLifecycleService class.
+ */
+class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
+
+	use LoggerSpyTrait;
+	use OrderPaymentLockTestTrait;
+
+	/**
+	 * The System Under Test.
+	 *
+	 * @var OrderPaymentLifecycleService
+	 */
+	private $sut;
+
+	/**
+	 * Order payment lock.
+	 *
+	 * @var OrderPaymentLock
+	 */
+	private $order_payment_lock;
+
+	/**
+	 * WooPayments persistence vocabulary.
+	 *
+	 * @var WooPaymentsPersistenceVocabulary
+	 */
+	private WooPaymentsPersistenceVocabulary $persistence_vocabulary;
+
+	/**
+	 * Set up test fixtures.
+	 */
+	public function setUp(): void {
+		parent::setUp();
+		$this->sut                    = wc_get_container()->get( OrderPaymentLifecycleService::class );
+		$this->order_payment_lock     = wc_get_container()->get( OrderPaymentLock::class );
+		$this->persistence_vocabulary = new WooPaymentsPersistenceVocabulary();
+	}
+
+	/**
+	 * @testdox A $event_status event moves the order to its status, writes its meta and note, and leaves no lock and no lock warning ($_dataName).
+	 * @dataProvider status_event_provider
+	 *
+	 * @param string               $event_status      Lifecycle event status.
+	 * @param string               $payment_reference Payment reference.
+	 * @param array<string,string> $meta_to_update    Meta the event writes.
+	 * @param string[]             $meta_to_delete    Meta keys the event deletes; the order carries them before the event.
+	 * @param string|null          $note              Lifecycle note, or null for none.
+	 * @param string               $expected_status   Order status after the event.
+	 * @param string               $expected_txn_id   Transaction ID after the event.
+	 */
+	public function test_event_moves_the_order_to_its_status_and_writes_its_meta( string $event_status, string $payment_reference, array $meta_to_update, array $meta_to_delete, ?string $note, string $expected_status, string $expected_txn_id ): void {
+		$order = $this->create_woopayments_order();
+		foreach ( $meta_to_delete as $key ) {
+			$order->update_meta_data( $key, 'stale ' . $key );
+		}
+		$order->save();
+
+		$this->apply_event( $order, new PaymentLifecycleEvent( $event_status, $payment_reference, $meta_to_update, $meta_to_delete, $note ) );
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( $expected_status, $order->get_status() );
+		$this->assertSame( $expected_txn_id, $order->get_transaction_id() );
+		foreach ( $meta_to_update as $key => $value ) {
+			$this->assertSame( $value, $order->get_meta( $key, true ), "The event must write {$key}." );
+		}
+		foreach ( $meta_to_delete as $key ) {
+			$this->assertSame( '', $order->get_meta( $key, true ), "The event must delete {$key}." );
+		}
+		if ( null !== $note ) {
+			$this->assertOrderHasNote( $order, $note );
+		}
+		$this->assertFalse( $this->is_order_payment_lock_held_for( $order, $this->persistence_vocabulary, $payment_reference ), 'The event must release the order payment lock.' );
+		$warnings = array_filter(
+			$this->captured_logs,
+			static fn( $log ) => 'warning' === $log['level'] && str_contains( $log['message'], 'order payment lock refused' )
+		);
+		$this->assertCount( 0, $warnings, 'An event applied with an available lock must not log a lock-contention warning.' );
+	}
+
+	/**
+	 * Every lifecycle status, with the order state its event leaves.
+	 *
+	 * @return array<string,array{string,string,array<string,string>,string[],?string,string,string}>
+	 */
+	public static function status_event_provider(): array {
+		return array(
+			'completed'              => array(
+				PaymentLifecycleEvent::STATUS_COMPLETED,
+				'pi_123',
+				array(
+					'_intent_id'        => 'pi_123',
+					'_charge_id'        => 'ch_123',
+					'_intention_status' => 'succeeded',
+				),
+				array(),
+				'Payment complete.',
+				'completed',
+				'pi_123',
+			),
+			'authorized'             => array( PaymentLifecycleEvent::STATUS_AUTHORIZED, 'pi_auth', array( '_intention_status' => 'requires_capture' ), array(), 'Payment authorized.', 'on-hold', 'pi_auth' ),
+			'failed'                 => array( PaymentLifecycleEvent::STATUS_FAILED, 'pi_failed', array( '_intention_status' => 'requires_payment_method' ), array(), 'Payment failed.', 'failed', '' ),
+			'canceled'               => array( PaymentLifecycleEvent::STATUS_CANCELED, 'pi_canceled', array( '_intention_status' => 'canceled' ), array( '_wcpay_transaction_fee', '_wcpay_net' ), 'Payment canceled.', 'cancelled', '' ),
+			'capture expired'        => array( PaymentLifecycleEvent::STATUS_CAPTURE_EXPIRED, 'ch_expired', array( '_charge_id' => 'ch_expired' ), array(), 'Payment authorization expired.', 'failed', '' ),
+			'started'                => array( PaymentLifecycleEvent::STATUS_STARTED, 'pi_started', array( '_intent_id' => 'pi_started' ), array(), 'Payment started.', 'pending', 'pi_started' ),
+			'started without a note' => array( PaymentLifecycleEvent::STATUS_STARTED, 'pi_started', array( '_intent_id' => 'pi_started' ), array(), null, 'pending', 'pi_started' ),
+		);
+	}
+
+	/**
+	 * @testdox Order meta is normalised the same way through a lifecycle event and through the meta-only write: $_dataName.
+	 *
+	 * Scalars become strings, structured values are JSON-encoded, and a meta key to delete is matched as a string.
+	 *
+	 * @testWith ["lifecycle event"]
+	 *           ["meta only"]
+	 *
+	 * @param string $path Which write runs.
+	 */
+	public function test_event_and_meta_only_write_normalise_meta_alike( string $path ): void {
+		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '42', 'stale' );
+		$order->save();
+		$meta_to_update = array(
+			'_method_count'    => 3,
+			'_method_reusable' => true,
+			'_method_details'  => array(
+				'brand' => 'visa',
+				'last4' => '4242',
+			),
+		);
+
+		if ( 'meta only' === $path ) {
+			$this->sut->apply_meta_under_lock( $order, $meta_to_update, array( 42 ) );
+		} else {
+			$this->apply_event_under_lock( $order, new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_STARTED, null, $meta_to_update, array( 42 ) ) );
+		}
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( '3', $order->get_meta( '_method_count', true ) );
+		$this->assertSame( '1', $order->get_meta( '_method_reusable', true ) );
+		$this->assertSame( '{"brand":"visa","last4":"4242"}', $order->get_meta( '_method_details', true ) );
+		$this->assertSame( '', $order->get_meta( '42', true ), 'The key to delete is matched as a string.' );
+	}
+
+	/**
+	 * @testdox A normal completed event preserves unsaved changes owned by its caller.
+	 */
+	public function test_under_lock_completed_event_preserves_caller_owned_unsaved_changes(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_customer_note( 'Checkout note saved with payment completion.' );
+		$order->update_meta_data( '_caller_owned_unsaved_meta', 'preserve this value' );
+
+		$this->assertNotNull( $this->order_payment_lock->claim( $order, $this->persistence_vocabulary, 'pi_caller_changes', 'payment operation' ) );
+		try {
+			$this->sut->apply_under_lock( $order, $this->completed_event( 'pi_caller_changes' ), $this->persistence_vocabulary );
+		} finally {
+			$this->clear_order_payment_lock( $order, $this->persistence_vocabulary );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'completed', $order->get_status() );
+		$this->assertSame( 'Checkout note saved with payment completion.', $order->get_customer_note() );
+		$this->assertSame( 'preserve this value', $order->get_meta( '_caller_owned_unsaved_meta', true ) );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Payment complete.' ) );
+	}
+
+	/**
+	 * @testdox Completed events received after a dispute under the $dispute_key key keep the order on hold.
+	 * @testWith ["_wcpay_open_dispute_ids"]
+	 *           ["_provider_open_dispute_ids"]
+	 *
+	 * @param string $dispute_key Open dispute IDs meta key of the provider's vocabulary.
+	 */
+	public function test_success_after_dispute_created_keeps_on_hold( string $dispute_key ): void {
+		$order      = $this->create_woopayments_order();
+		$vocabulary = $this->vocabulary_with_dispute_key( $order, $dispute_key );
+		$order->update_meta_data( $dispute_key, array( 'dp_1' ) );
+		$order->update_meta_data( '_intention_status', 'requires_payment_method' );
+		$order->update_status( 'on-hold' );
+		$order->save();
+
+		$this->sut->apply( $order, $this->completed_event( 'pi_1' ), $vocabulary );
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'on-hold', $order->get_status(), 'A late success event must preserve the dispute hold.' );
+		$this->assertSame( array( 'dp_1' ), $order->get_meta( $dispute_key, true ), 'The open dispute record must remain unchanged.' );
+		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ), 'A skipped success event must not update lifecycle metadata.' );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment complete.' ), 'A skipped success event must not add a completion note.' );
+		$this->assertLogged(
+			'debug',
+			'an open dispute',
+			array(
+				'source'     => 'order-payments',
+				'order_id'   => $order->get_id(),
+				'event_type' => PaymentLifecycleEvent::STATUS_COMPLETED,
+				'reason'     => 'open_dispute',
+			)
+		);
+	}
+
+	/**
+	 * @testdox A completed event applied under its own claim decides on the stale caller's object read in place ($caller_state): the dispute persisted under $dispute_key skips it, and the caller's save keeps the dispute and the hold.
+	 * @testWith ["_wcpay_open_dispute_ids", "sets processing"]
+	 *           ["_provider_open_dispute_ids", "sets processing"]
+	 *           ["_wcpay_open_dispute_ids", "still pending"]
+	 *           ["_wcpay_open_dispute_ids", "already on hold"]
+	 *
+	 * @param string $dispute_key  Open dispute IDs meta key of the provider's vocabulary.
+	 * @param string $caller_state What the caller's object holds: a status change of its own to processing, the pending
+	 *                             status it loaded, or the on-hold status of an authorization, which matches the stored
+	 *                             order so only its dispute IDs differ.
+	 */
+	public function test_claimed_success_skip_reads_a_stale_caller_in_place_and_keeps_a_dispute( string $dispute_key, string $caller_state ): void {
+		$stale_order = $this->create_woopayments_order();
+		if ( 'already on hold' === $caller_state ) {
+			$stale_order->update_status( 'on-hold' );
+		}
+		$vocabulary  = $this->vocabulary_with_dispute_key( $stale_order, $dispute_key );
+		$fresh_order = wc_get_order( $stale_order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $fresh_order );
+		$fresh_order->update_meta_data( $dispute_key, array( 'dp_persisted_winner' ) );
+		$fresh_order->update_meta_data( '_intention_status', 'requires_payment_method' );
+		$fresh_order->update_status( 'on-hold' );
+
+		if ( 'sets processing' === $caller_state ) {
+			$stale_order->set_status( 'processing' );
+		}
+		// A dispute-closed handler that clears an ID on its copy and then applies a completion.
+		$stale_order->update_meta_data( $dispute_key, array() );
+		$this->sut->apply( $stale_order, $this->completed_event( 'pi_stale_save' ), $vocabulary );
+		$on_hold_transitions_before = did_action( 'woocommerce_order_status_pending_to_on-hold' );
+		$status_changed_before      = did_action( 'woocommerce_order_status_changed' );
+		$stale_order->save();
+
+		$order = wc_get_order( $stale_order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'on-hold', $order->get_status(), 'A stale caller must not restore its pre-dispute status.' );
+		$this->assertSame( array( 'dp_persisted_winner' ), $order->get_meta( $dispute_key, true ), 'A stale caller must not erase persisted open disputes.' );
+		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ), 'A skipped success event must not update lifecycle metadata.' );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment complete.' ), 'A skipped success event must not add a completion note.' );
+		if ( 'sets processing' !== $caller_state ) {
+			// A caller's own status change keeps its transition through the re-read, so only the other callers are counted.
+			$this->assertSame( $on_hold_transitions_before, did_action( 'woocommerce_order_status_pending_to_on-hold' ), 'The stale caller save must not fire the pending to on-hold transition again.' );
+			$this->assertSame( $status_changed_before, did_action( 'woocommerce_order_status_changed' ), 'The stale caller save must not fire a status change.' );
+		}
+	}
+
+	/**
+	 * @testdox A completed event skipped because another request already completed the order does not repeat the status change when its stale caller saves.
+	 */
+	public function test_under_lock_success_note_skip_does_not_repeat_the_status_change_when_a_stale_caller_saves(): void {
+		// The skip leaves the caller's order object as client 11.1.0 includes/class-wc-payments-order-service.php:2863-2879 does: its replay guard reads a clone.
+		$stale_order = $this->create_woopayments_order();
+		$stale_order->add_product( \WC_Helper_Product::create_simple_product(), 1 );
+		$stale_order->save();
+		$order_id = $stale_order->get_id();
+
+		$webhook_order = wc_get_order( $order_id );
+		$this->assertInstanceOf( WC_Order::class, $webhook_order );
+		$this->sut->apply( $webhook_order, $this->completed_event( 'pi_stale_success' ), $this->persistence_vocabulary );
+		$webhook_order->set_date_paid( time() - HOUR_IN_SECONDS );
+		$webhook_order->save();
+		$persisted_date_paid = $webhook_order->get_date_paid();
+		$this->assertNotNull( $persisted_date_paid );
+		$this->assertSame( 'wc-processing', $this->get_persisted_order_status( $order_id ) );
+
+		$status_change_note         = sprintf( 'Order status changed from %1$s to %2$s.', wc_get_order_status_name( 'pending' ), wc_get_order_status_name( 'processing' ) );
+		$status_change_notes_before = $this->countOrderNotesMatching( $stale_order, $status_change_note );
+
+		$this->assertNotNull( $this->order_payment_lock->claim( $stale_order, $this->persistence_vocabulary, 'pi_stale_success', 'payment operation' ) );
+		try {
+			$this->sut->apply_under_lock( $stale_order, $this->completed_event( 'pi_stale_success' ), $this->persistence_vocabulary );
+			$pending_to_processing_before = did_action( 'woocommerce_order_status_pending_to_processing' );
+			$status_changed_before        = did_action( 'woocommerce_order_status_changed' );
+			$stale_order->save();
+		} finally {
+			$this->clear_order_payment_lock( $stale_order, $this->persistence_vocabulary );
+		}
+
+		$this->assertSame( $pending_to_processing_before, did_action( 'woocommerce_order_status_pending_to_processing' ), 'The stale caller save must not fire the pending to processing transition again.' );
+		$this->assertSame( $status_changed_before, did_action( 'woocommerce_order_status_changed' ), 'The stale caller save must not fire a status change.' );
+		$this->assertSame( $status_change_notes_before, $this->countOrderNotesMatching( $stale_order, $status_change_note ), 'The stale caller save must not add a second status change note.' );
+		$this->assertSame( 'wc-processing', $this->get_persisted_order_status( $order_id ), 'The stale caller save must keep the persisted status.' );
+
+		$order = wc_get_order( $order_id );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertNotNull( $order->get_date_paid() );
+		$this->assertSame( $persisted_date_paid->getTimestamp(), $order->get_date_paid()->getTimestamp(), 'The stale caller save must not move the paid date.' );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Payment complete.' ) );
+	}
+
+	/**
+	 * @testdox A completed event skipped because its note is already on the order keeps a matching caller's unsaved changes for its save.
+	 */
+	public function test_under_lock_success_note_skip_keeps_a_matching_caller_unsaved_changes(): void {
+		$order = $this->create_woopayments_order();
+		$this->sut->apply( $order, $this->completed_event( 'pi_matching_caller' ), $this->persistence_vocabulary );
+		$order_id = $order->get_id();
+
+		$caller = wc_get_order( $order_id );
+		$this->assertInstanceOf( WC_Order::class, $caller );
+		$this->assertTrue( $caller->is_paid() );
+		$this->assertSame( $this->get_persisted_order_status( $order_id ), 'wc-' . $caller->get_status(), 'The caller must match the persisted status.' );
+		$caller->set_customer_note( 'Leave the parcel at the door.' );
+		$caller->update_meta_data( '_caller_unsaved_meta', 'kept' );
+
+		$this->assertNotNull( $this->order_payment_lock->claim( $caller, $this->persistence_vocabulary, 'pi_matching_caller', 'payment operation' ) );
+		try {
+			$this->sut->apply_under_lock( $caller, $this->completed_event( 'pi_matching_caller' ), $this->persistence_vocabulary );
+			$caller->save();
+		} finally {
+			$this->clear_order_payment_lock( $caller, $this->persistence_vocabulary );
+		}
+
+		$persisted = wc_get_order( $order_id );
+		$this->assertInstanceOf( WC_Order::class, $persisted );
+		$this->assertSame( 'Leave the parcel at the door.', $persisted->get_customer_note(), 'The caller save must persist its customer note.' );
+		$this->assertSame( 'kept', $persisted->get_meta( '_caller_unsaved_meta', true ), 'The caller save must persist its meta value.' );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $persisted, 'Payment complete.' ), 'The skipped event must not add a second success note.' );
+	}
+
+	/**
+	 * @testdox A completed event sees a dispute hold that another request persisted after this request cached the order.
+	 */
+	public function test_success_sees_a_dispute_persisted_by_another_request_after_the_order_was_cached(): void {
+		UncachedOrderWriter::enable_hpos_data_caching();
+		$stale_order = $this->read_order_into_request_caches( $this->create_woopayments_order() );
+
+		UncachedOrderWriter::write( $stale_order->get_id(), array( 'status' => 'on-hold' ), array( '_wcpay_open_dispute_ids' => maybe_serialize( array( 'dp_other_request' ) ) ) );
+
+		$this->sut->apply( $stale_order, $this->completed_event( 'pi_other_request' ), $this->persistence_vocabulary );
+
+		$this->assertSame( 'wc-on-hold', $this->get_persisted_order_status( $stale_order->get_id() ), 'A success event must not move an order out of a dispute hold persisted by another request.' );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $stale_order, 'Payment complete.' ), 'A skipped success event must not add a completion note.' );
+		$this->assertLogged(
+			'debug',
+			'an open dispute',
+			array(
+				'order_id' => $stale_order->get_id(),
+				'reason'   => 'open_dispute',
+			)
+		);
+	}
+
+	/**
+	 * @testdox A late failure event sees a paid status that another request persisted after this request cached the order.
+	 */
+	public function test_late_failure_sees_a_paid_status_persisted_by_another_request_after_the_order_was_cached(): void {
+		UncachedOrderWriter::enable_hpos_data_caching();
+		$stale_order = $this->read_order_into_request_caches( $this->create_woopayments_order() );
+
+		UncachedOrderWriter::write( $stale_order->get_id(), array( 'status' => 'processing' ) );
+
+		$this->sut->apply(
+			$stale_order,
+			new PaymentLifecycleEvent(
+				PaymentLifecycleEvent::STATUS_FAILED,
+				'pi_failed_after_paid',
+				array( '_intention_status' => 'requires_payment_method' ),
+				array(),
+				'Late payment failure.',
+				'late_payment_failure'
+			),
+			$this->persistence_vocabulary
+		);
+
+		$this->assertSame( 'wc-processing', $this->get_persisted_order_status( $stale_order->get_id() ), 'A late failure event must not downgrade an order another request already marked paid.' );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $stale_order, 'Late payment failure.' ), 'A skipped late failure event must not add a note.' );
+	}
+
+	/**
+	 * @testdox A held completed event puts the order on hold with its transaction ID, meta and note, completes nothing, and a redelivery changes nothing.
+	 */
+	public function test_held_completed_event_puts_the_order_on_hold_and_a_redelivery_changes_nothing(): void {
+		$order        = $this->create_woopayments_order();
+		$completions  = 0;
+		$count_paying = static function () use ( &$completions ): void {
+			++$completions;
+		};
+		add_action( 'woocommerce_payment_complete', $count_paying );
+		$event = $this->held_event( 'pi_held' );
+
+		$this->apply_event( $order, $event );
+		$order = wc_get_order( $order->get_id() );
+		$order->update_meta_data( '_wcpay_transaction_fee', '2.34' );
+		$order->save();
+		$this->apply_event( $order, $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'on-hold', $order->get_status() );
+		$this->assertSame( 'pi_held', $order->get_transaction_id() );
+		$this->assertNull( $order->get_date_paid() );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( '2.34', $order->get_meta( '_wcpay_transaction_fee', true ), 'A redelivery writes no meta.' );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Payment held.' ) );
+		$this->assertSame( 0, $completions );
+	}
+
+	/**
+	 * @testdox A held completed event leaves a paid order as it is when $paid_where.
+	 *
+	 * @testWith ["the caller's order is paid"]
+	 *           ["only the stored order is paid"]
+	 *
+	 * @param string $paid_where Which copy of the order is paid.
+	 */
+	public function test_held_completed_event_leaves_a_paid_order( string $paid_where ): void {
+		if ( "the caller's order is paid" === $paid_where ) {
+			$order = $this->create_woopayments_order();
+			$order->set_status( 'processing' );
+			$order->save();
+		} else {
+			UncachedOrderWriter::enable_hpos_data_caching();
+			$order = $this->read_order_into_request_caches( $this->create_woopayments_order() );
+			UncachedOrderWriter::write( $order->get_id(), array( 'status' => 'processing' ) );
+		}
+
+		$this->apply_event( $order, $this->held_event( 'pi_held' ) );
+
+		$this->assertSame( 'wc-processing', $this->get_persisted_order_status( $order->get_id() ) );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment held.' ) );
+		$this->assertFalse( $this->is_order_meta_persisted( $order->get_id(), '_intention_status' ) );
+	}
+
+	/**
+	 * @testdox An authorized event on $_dataName is applied: $applies.
+	 *
+	 * Client 11.3.0's on-hold writers return before any write when their note is already on the order, and its authorization
+	 * writer also when the order is already on hold (class-wc-payments-order-service.php:2146-2151, :2171-2175, :2251-2256).
+	 *
+	 * @dataProvider authorized_event_order_states
+	 *
+	 * @param string      $status        Order status before the event.
+	 * @param string|null $note_type     The event's note type.
+	 * @param bool        $note_on_order Whether the order already has the event's note.
+	 * @param bool        $applies       Whether the event changes the order.
+	 */
+	public function test_authorized_event_is_applied_only_without_its_note_or_hold( string $status, ?string $note_type, bool $note_on_order, bool $applies ): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( $status );
+		$order->update_meta_data( '_intention_status', 'canceled' );
+		$order->save();
+		if ( $note_on_order ) {
+			$order->add_order_note( 'Payment authorized.' );
+		}
+
+		$this->apply_event( $order, new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_AUTHORIZED, 'pi_auth', array( '_intention_status' => 'requires_capture' ), array(), 'Payment authorized.', $note_type ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( $applies ? 'on-hold' : $status, $order->get_status() );
+		$this->assertSame( $applies ? 'requires_capture' : 'canceled', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( $applies ? 'pi_auth' : '', $order->get_transaction_id() );
+		$this->assertSame( $applies || $note_on_order ? 1 : 0, $this->countOrderNotesMatching( $order, 'Payment authorized.' ) );
+	}
+
+	/**
+	 * @testdox An authorized event sees an on-hold status another request persisted after this request cached the order.
+	 */
+	public function test_authorized_event_sees_an_on_hold_status_persisted_by_another_request_after_the_order_was_cached(): void {
+		UncachedOrderWriter::enable_hpos_data_caching();
+		$stale_order = $this->read_order_into_request_caches( $this->create_woopayments_order() );
+
+		UncachedOrderWriter::write( $stale_order->get_id(), array( 'status' => 'on-hold' ) );
+
+		$this->sut->apply(
+			$stale_order,
+			new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_AUTHORIZED, 'pi_auth', array( '_intention_status' => 'requires_capture' ), array(), 'Payment authorized.', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_AUTHORIZED ),
+			$this->persistence_vocabulary
+		);
+
+		$this->assertSame( 0, $this->countOrderNotesMatching( $stale_order, 'Payment authorized.' ), 'An authorization on an order already on hold adds no note.' );
+		$this->assertFalse( $this->is_order_meta_persisted( $stale_order->get_id(), '_intention_status' ) );
+	}
+
+	/**
+	 * Order states an authorized event meets, and whether it is applied.
+	 *
+	 * @return array<string,array{string,string|null,bool,bool}>
+	 */
+	public static function authorized_event_order_states(): array {
+		return array(
+			'a failed order with the authorization note' => array( 'failed', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_AUTHORIZED, true, false ),
+			'a failed order with a note of no type'      => array( 'failed', null, true, false ),
+			'an order on hold, an authorization note'    => array( 'on-hold', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_AUTHORIZED, false, false ),
+			'an order on hold, a note of no type'        => array( 'on-hold', null, false, true ),
+			'a pending order, an authorization note'     => array( 'pending', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_AUTHORIZED, false, true ),
+		);
+	}
+
+	/**
+	 * @testdox Replayed completed events preserve the state established after their first application.
+	 */
+	public function test_success_is_applied_once_then_ignored(): void {
+		$order = $this->create_woopayments_order();
+		$event = $this->completed_event( 'pi_1' );
+
+		$this->sut->apply( $order, $event, $this->persistence_vocabulary );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'completed', $order->get_status() );
+		$this->assertSame( '1.23', $order->get_meta( '_wcpay_transaction_fee', true ) );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Payment complete.' ) );
+
+		$order->update_meta_data( '_wcpay_transaction_fee', '2.34' );
+		$order->update_status( 'on-hold' );
+		$order->save();
+
+		$this->sut->apply( $order, $event, $this->persistence_vocabulary );
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'on-hold', $order->get_status(), 'A replayed success event must not re-complete the order.' );
+		$this->assertSame( 'pi_1', $order->get_transaction_id(), 'A replayed success event must not change the transaction reference.' );
+		$this->assertSame( '2.34', $order->get_meta( '_wcpay_transaction_fee', true ), 'A replayed success event must not overwrite lifecycle metadata.' );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Payment complete.' ), 'A replayed success event must not add another completion note.' );
+		$this->assertLogged(
+			'debug',
+			'the payment note is already on the order',
+			array(
+				'source'     => 'order-payments',
+				'order_id'   => $order->get_id(),
+				'event_type' => PaymentLifecycleEvent::STATUS_COMPLETED,
+				'reason'     => 'success_note_exists',
+			)
+		);
+	}
+
+	/**
+	 * @testdox A payment success replay with an existing equivalent note backfills its stable identity before lifecycle mutation.
+	 */
+	public function test_payment_success_replay_with_an_existing_equivalent_note_backfills_identity(): void {
+		$order         = $this->create_woopayments_order();
+		$note          = 'Core payment success note.';
+		$existing_note = 'Plugin payment success note.';
+		$order->add_order_note( $existing_note );
+		$order->update_meta_data( '_intention_status', 'requires_payment_method' );
+		$order->update_status( 'on-hold' );
+		$order->save();
+
+		$event = new PaymentLifecycleEvent(
+			PaymentLifecycleEvent::STATUS_COMPLETED,
+			'pi_legacy_existing',
+			array(
+				'_intent_id'        => 'pi_legacy_existing',
+				'_intention_status' => 'succeeded',
+			),
+			array(),
+			$note,
+			PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS,
+			array( $existing_note )
+		);
+
+		$this->sut->apply( $order, $event, $this->persistence_vocabulary );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'on-hold', $order->get_status(), 'An existing equivalent note must prevent a completed event from changing status.' );
+		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ), 'An existing equivalent note must prevent lifecycle metadata mutation.' );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, $existing_note ), 'A replay must not duplicate the existing equivalent note.' );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, $note ), 'A replay must not add the Core note.' );
+
+		$notes = array_values(
+			array_filter(
+				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+				static fn( $order_note ): bool => $existing_note === (string) $order_note->content
+			)
+		);
+		$this->assertCount( 1, $notes );
+		$this->assertSame( hash( 'sha256', 'payment_lifecycle:pi_legacy_existing|completed|payment_success' ), get_comment_meta( $notes[0]->id, '_wc_woopayments_note_identity', true ), 'Canonical persisted-note detection must backfill the stable identity.' );
+	}
+
+	/**
+	 * @testdox A completed event whose applied alternative's note is on the order changes nothing: $_dataName.
+	 *
+	 * Client 11.3.0's success writer returns before any write when the capture note of the same intent is on the order
+	 * (class-wc-payments-order-service.php:2040-2046); the alternative carries that other note for any provider.
+	 *
+	 * @dataProvider applied_alternative_note_states
+	 *
+	 * @param string $alternative_note How the order carries the alternative's note.
+	 * @param bool   $applies          Whether the event completes the order.
+	 */
+	public function test_completed_event_counts_an_applied_alternative_note_as_applied( string $alternative_note, bool $applies ): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( 'failed' );
+		$order->save();
+		$event = $this->event_with_an_applied_alternative( 'pi_alternative' );
+		if ( 'identity' === $alternative_note ) {
+			wc_get_container()->get( OrderPaymentNotes::class )->add( $order, 'An earlier wording of the capture.', $event->get_applied_alternatives()[0]->get_note_identity(), $this->persistence_vocabulary );
+		} elseif ( 'text' === $alternative_note ) {
+			$order->add_order_note( 'Captured pi_alternative.' );
+		} elseif ( 'other text' === $alternative_note ) {
+			$order->add_order_note( 'Erfasst pi_alternative.' );
+		}
+		$completions = did_action( 'woocommerce_pre_payment_complete' );
+
+		$this->apply_event( $order, $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( $applies ? 'completed' : 'failed', $order->get_status() );
+		$this->assertSame( $applies ? 'succeeded' : '', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( $applies ? 1 : 0, $this->countOrderNotesMatching( $order, 'Paid by pi_alternative.' ) );
+		$this->assertSame( $applies ? 1 : 0, did_action( 'woocommerce_pre_payment_complete' ) - $completions );
+		if ( ! $applies ) {
+			$this->assertLogged(
+				'debug',
+				'a note that counts as this payment already applied is on the order',
+				array(
+					'source'     => 'order-payments',
+					'order_id'   => $order->get_id(),
+					'event_type' => PaymentLifecycleEvent::STATUS_COMPLETED,
+					'reason'     => 'applied_note_exists',
+				)
+			);
+		}
+	}
+
+	/** @return array<string,array{0:string,1:bool}> */
+	public function applied_alternative_note_states(): array {
+		return array(
+			'the alternative note, found by its identity' => array( 'identity', false ),
+			'the alternative note, found by its text'     => array( 'text', false ),
+			'the alternative note, found by another text' => array( 'other text', false ),
+			'no note of the alternative'                  => array( 'none', true ),
+		);
+	}
+
+	/**
+	 * @testdox An applied alternative's note found by its text gets the alternative's own identity, not the event's.
+	 */
+	public function test_applied_alternative_note_found_by_its_text_gets_its_own_identity(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( 'failed' );
+		$order->save();
+		$note_id = (int) $order->add_order_note( 'Captured pi_alternative.' );
+		$event   = $this->event_with_an_applied_alternative( 'pi_alternative' );
+
+		$this->apply_event( $order, $event );
+
+		$identities = get_comment_meta( $note_id, $this->persistence_vocabulary->get_note_identity_meta_key(), false );
+		$this->assertSame( array( hash( 'sha256', $event->get_applied_alternatives()[0]->get_note_identity() ) ), $identities );
+		$this->assertNotContains( hash( 'sha256', $event->get_note_identity() ), $identities );
+	}
+
+	/**
+	 * @testdox A completed event that leaves a paid order changes an order in a paid status only when it is not flagged: $label.
+	 *
+	 * Client 11.3.0 updates an order from an intent's status only while it is not paid (class-wc-payments-order-service.php:475,
+	 * :3398-3410); its capture writer has no such check (:529-532).
+	 *
+	 * @testWith ["flagged, processing", true, "processing", false]
+	 *           ["flagged, a paid status a plugin adds", true, "shipped", false]
+	 *           ["flagged, failed", true, "failed", true]
+	 *           ["not flagged, processing", false, "processing", true]
+	 *
+	 * @param string $label            Row label.
+	 * @param bool   $leave_paid_order Whether the event leaves a paid order as it is.
+	 * @param string $status           Order status before the event.
+	 * @param bool   $applies          Whether the event is applied.
+	 */
+	public function test_completed_event_flagged_to_leave_a_paid_order( string $label, bool $leave_paid_order, string $status, bool $applies ): void {
+		unset( $label );
+		add_filter( 'wc_order_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'wc-shipped' => 'Shipped' ) ) );
+		add_filter( 'woocommerce_order_is_paid_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'shipped' ) ) );
+		$order = $this->create_woopayments_order();
+		$order->set_status( $status );
+		$order->save();
+		$completions = did_action( 'woocommerce_pre_payment_complete' );
+
+		$this->apply_event(
+			$order,
+			new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, 'pi_paid', array( '_intention_status' => 'succeeded' ), array(), 'Paid by pi_paid.', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS, array(), false, false, array(), $leave_paid_order )
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( $applies ? 1 : 0, did_action( 'woocommerce_pre_payment_complete' ) - $completions );
+		$this->assertSame( $applies ? 'succeeded' : '', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( $applies ? 1 : 0, $this->countOrderNotesMatching( $order, 'Paid by pi_paid.' ) );
+		if ( ! $applies ) {
+			$this->assertSame( $status, $order->get_status() );
+		}
+	}
+
+	/**
+	 * @testdox A completed event that leaves a paid order leaves it when only the caller's order is still paid, the stored one changed in flight.
+	 *
+	 * Client 11.3.0's paid check reads the caller's order and a fresh copy, and either being paid skips the update
+	 * (class-wc-payments-order-service.php:3398-3410).
+	 */
+	public function test_completed_event_flagged_to_leave_a_paid_order_reads_the_callers_order_too(): void {
+		UncachedOrderWriter::enable_hpos_data_caching();
+		$order = $this->create_woopayments_order();
+		$order->set_status( 'processing' );
+		$order->save();
+		$order = $this->read_order_into_request_caches( $order );
+		UncachedOrderWriter::write( $order->get_id(), array( 'status' => 'failed' ) );
+		$completions = did_action( 'woocommerce_pre_payment_complete' );
+
+		$this->apply_event(
+			$order,
+			new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, 'pi_paid', array( '_intention_status' => 'succeeded' ), array(), 'Paid by pi_paid.', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS, array(), false, false, array(), true )
+		);
+
+		$this->assertSame( 0, did_action( 'woocommerce_pre_payment_complete' ) - $completions );
+		$this->assertSame( 'wc-failed', $this->get_persisted_order_status( $order->get_id() ) );
+		$this->assertFalse( $this->is_order_meta_persisted( $order->get_id(), '_intention_status' ) );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Paid by pi_paid.' ) );
+	}
+
+	/**
+	 * @testdox A completed event that leaves the order status untouched writes its meta and note, neither completes the payment nor holds the order, and records its payment as the transaction ID: $_dataName.
+	 *
+	 * Client 11.3.0's status-change capture records a capture on an order whose status the merchant just set, and does
+	 * not complete the payment (class-wc-payments-order-service.php:2381-2429); it writes no transaction ID. The built-in
+	 * one records the captured payment as the transaction ID: it fills an empty one, leaves an equal one, and replaces a
+	 * different one with one warning naming both. Core's PayPal Standard also writes the transaction ID on its status-change
+	 * capture (includes/gateways/paypal/class-wc-gateway-paypal.php:774). The event is applied under the caller's lock, as the
+	 * status-change capture applies it, so the lifecycle does not read the order again. In production the provider has
+	 * re-read the order before the capture, so a typed value reaches it already saved; the typed-value row sets one on the
+	 * object to pin the same replacement at this layer.
+	 *
+	 * @dataProvider completions_that_leave_the_order_status
+	 *
+	 * @param string      $status            Order status before the event.
+	 * @param bool        $hold              Whether the event also asks to hold the order.
+	 * @param string      $stored_txn        Transaction ID the order stores.
+	 * @param string      $unsaved_txn       Transaction ID set on the order object and not saved, or '' for none.
+	 * @param string|null $payment_reference The event's payment reference.
+	 * @param string      $expected_txn      Transaction ID stored after the event.
+	 * @param string|null $replaced          Transaction ID the warning names as replaced, or null when no warning.
+	 */
+	public function test_completed_event_that_leaves_the_order_status_records_its_payment( string $status, bool $hold, string $stored_txn, string $unsaved_txn, ?string $payment_reference, string $expected_txn, ?string $replaced ): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( $status );
+		$order->set_transaction_id( $stored_txn );
+		$order->save();
+		if ( '' !== $unsaved_txn ) {
+			$order->set_transaction_id( $unsaved_txn );
+		}
+		$completions = did_action( 'woocommerce_pre_payment_complete' );
+
+		$this->apply_event_under_lock(
+			$order,
+			new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, $payment_reference, array( '_intention_status' => 'succeeded' ), array(), 'Captured pi_recorded.', PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS, array(), true, $hold )
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 0, did_action( 'woocommerce_pre_payment_complete' ) - $completions, 'The payment is not completed.' );
+		$this->assertSame( $status, $order->get_status() );
+		$this->assertSame( $expected_txn, $order->get_transaction_id() );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Captured pi_recorded.' ) );
+		$lines = $this->replacement_lines();
+		if ( null === $replaced ) {
+			$this->assertCount( 0, $lines, 'Nothing different was replaced, so no line is written.' );
+			return;
+		}
+		$this->assertCount( 1, $lines, 'One line names the replaced transaction ID.' );
+		$this->assertSame( 'warning', $lines[0]['level'] );
+		$this->assertSame( sprintf( 'Order #%1$d recorded a captured payment that keeps its status; its transaction ID %2$s was replaced with %3$s.', $order->get_id(), $replaced, $expected_txn ), $lines[0]['message'] );
+		$this->assertSame(
+			array(
+				'source'                  => 'order-payments',
+				'order_id'                => $order->get_id(),
+				'payment_reference'       => $expected_txn,
+				'replaced_transaction_id' => $replaced,
+				'reason'                  => 'completion_replaced_a_different_transaction_id',
+			),
+			$lines[0]['context']
+		);
+	}
+
+	/**
+	 * Completed events that keep the order status, by the transaction ID the order holds.
+	 *
+	 * @return array<string,array{string,bool,string,string,string|null,string,string|null}>
+	 */
+	public static function completions_that_leave_the_order_status(): array {
+		return array(
+			'on hold, no transaction ID'                 => array( 'on-hold', false, '', '', 'pi_recorded', 'pi_recorded', null ),
+			'completed, no transaction ID'               => array( 'completed', false, '', '', 'pi_recorded', 'pi_recorded', null ),
+			'pending, with a hold, no transaction ID'    => array( 'pending', true, '', '', 'pi_recorded', 'pi_recorded', null ),
+			'another attempt\'s transaction ID'          => array( 'on-hold', false, 'pi_earlier', '', 'pi_recorded', 'pi_recorded', 'pi_earlier' ),
+			'the same transaction ID'                    => array( 'on-hold', false, 'pi_recorded', '', 'pi_recorded', 'pi_recorded', null ),
+			'no payment reference'                       => array( 'on-hold', false, 'pi_earlier', '', null, 'pi_earlier', null ),
+			'a typed transaction ID on the order object' => array( 'on-hold', false, '', 'manual-ref-123', 'pi_recorded', 'pi_recorded', 'manual-ref-123' ),
+		);
+	}
+
+	/**
+	 * @testdox An event that keeps the order status and is skipped, or fails, leaves no transaction ID on the order object or in the store: $label.
+	 *
+	 * A skipped event writes nothing, so a later save of the same object writes no transaction ID either; a failed event
+	 * that keeps the order status records no payment.
+	 *
+	 * @testWith ["its capture note is on the order", "completed", "success_note_exists"]
+	 *           ["an open dispute", "completed", "open_dispute"]
+	 *           ["a failure that keeps the status", "failed", ""]
+	 *
+	 * @param string $label        Row label.
+	 * @param string $event_status Lifecycle event status.
+	 * @param string $skip_reason  Reason the skip is logged with, or '' when the event is applied.
+	 */
+	public function test_event_that_leaves_the_order_status_and_records_no_payment_writes_no_transaction_id( string $label, string $event_status, string $skip_reason ): void {
+		unset( $label );
+		$order = $this->create_woopayments_order();
+		$order->set_status( 'on-hold' );
+		if ( 'success_note_exists' === $skip_reason ) {
+			$order->add_order_note( 'Captured pi_recorded.' );
+		}
+		if ( 'open_dispute' === $skip_reason ) {
+			$order->update_meta_data( $this->persistence_vocabulary->get_open_dispute_ids_meta_key(), array( 'dp_1' ) );
+		}
+		$order->save();
+
+		$event = PaymentLifecycleEvent::STATUS_FAILED === $event_status
+			? new PaymentLifecycleEvent( $event_status, 'pi_blocked', array( '_intention_status' => 'canceled' ), array(), 'Blocked pi_blocked.', 'payment_blocked', array(), true )
+			: new PaymentLifecycleEvent( $event_status, 'pi_recorded', array( '_intention_status' => 'succeeded' ), array(), 'Captured pi_recorded.', PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS, array(), true );
+
+		$this->apply_event_under_lock( $order, $event );
+
+		if ( '' !== $skip_reason ) {
+			$this->assertLogged( 'debug', 'event skipped', array( 'reason' => $skip_reason ) );
+		}
+		$this->assertArrayNotHasKey( 'transaction_id', $order->get_changes(), 'The event leaves no transaction ID change on the object.' );
+		$this->assertSame( '', wc_get_order( $order->get_id() )->get_transaction_id() );
+		$order->save();
+		$this->assertSame( '', wc_get_order( $order->get_id() )->get_transaction_id(), 'A later save of the same object writes none.' );
+		$this->assertSame( 'on-hold', wc_get_order( $order->get_id() )->get_status() );
+	}
+
+	/**
+	 * @testdox An authorized event that leaves a paid order holds an order only when it is not flagged or the order is not paid: $label.
+	 *
+	 * Client 11.3.0 updates an order from an intent's status, an authorization included, only while it is not paid
+	 * (class-wc-payments-order-service.php:475, :3398-3410), and puts an unpaid one on hold (:2146-2161).
+	 *
+	 * @testWith ["flagged, processing", true, "processing", false]
+	 *           ["flagged, a paid status a plugin adds", true, "shipped", false]
+	 *           ["flagged, pending", true, "pending", true]
+	 *           ["not flagged, processing", false, "processing", true]
+	 *
+	 * @param string $label            Row label.
+	 * @param bool   $leave_paid_order Whether the event leaves a paid order as it is.
+	 * @param string $status           Order status before the event.
+	 * @param bool   $holds            Whether the event puts the order on hold.
+	 */
+	public function test_authorized_event_flagged_to_leave_a_paid_order( string $label, bool $leave_paid_order, string $status, bool $holds ): void {
+		unset( $label );
+		add_filter( 'wc_order_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'wc-shipped' => 'Shipped' ) ) );
+		add_filter( 'woocommerce_order_is_paid_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'shipped' ) ) );
+		$order = $this->create_woopayments_order();
+		$order->set_status( $status );
+		$order->save();
+
+		$this->apply_event( $order, $this->authorized_event_leaving_paid_orders( $leave_paid_order ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( $holds ? 'on-hold' : $status, $order->get_status() );
+		$this->assertSame( $holds ? 'requires_capture' : '', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( $holds ? 1 : 0, $this->countOrderNotesMatching( $order, 'Authorized pi_auth.' ) );
+	}
+
+	/**
+	 * @testdox An authorized event that leaves a paid order leaves it when only the caller's order is still paid, the stored one changed in flight.
+	 *
+	 * Client 11.3.0's paid check reads the caller's order and a fresh copy (class-wc-payments-order-service.php:3398-3410).
+	 */
+	public function test_authorized_event_flagged_to_leave_a_paid_order_reads_the_callers_order_too(): void {
+		UncachedOrderWriter::enable_hpos_data_caching();
+		$order = $this->create_woopayments_order();
+		$order->set_status( 'processing' );
+		$order->save();
+		$order = $this->read_order_into_request_caches( $order );
+		UncachedOrderWriter::write( $order->get_id(), array( 'status' => 'failed' ) );
+
+		$this->apply_event( $order, $this->authorized_event_leaving_paid_orders( true ) );
+
+		$this->assertSame( 'wc-failed', $this->get_persisted_order_status( $order->get_id() ) );
+		$this->assertFalse( $this->is_order_meta_persisted( $order->get_id(), '_intention_status' ) );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Authorized pi_auth.' ) );
+	}
+
+	/**
+	 * Build an authorized event, flagged or not to leave a paid order as it is.
+	 *
+	 * @param bool $leave_paid_order Whether the event leaves a paid order as it is.
+	 * @return PaymentLifecycleEvent
+	 */
+	private function authorized_event_leaving_paid_orders( bool $leave_paid_order ): PaymentLifecycleEvent {
+		return new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_AUTHORIZED, 'pi_auth', array( '_intention_status' => 'requires_capture' ), array(), 'Authorized pi_auth.', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_AUTHORIZED, array(), false, false, array(), $leave_paid_order );
+	}
+
+	/**
+	 * Build a completed event whose payment counts as applied once its capture note is on the order.
+	 *
+	 * @param string $payment_reference Payment reference.
+	 * @return PaymentLifecycleEvent
+	 */
+	private function event_with_an_applied_alternative( string $payment_reference ): PaymentLifecycleEvent {
+		return new PaymentLifecycleEvent(
+			PaymentLifecycleEvent::STATUS_COMPLETED,
+			$payment_reference,
+			array( '_intention_status' => 'succeeded' ),
+			array(),
+			'Paid by ' . $payment_reference . '.',
+			PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS,
+			array(),
+			false,
+			false,
+			array(
+				new PaymentLifecycleEvent(
+					PaymentLifecycleEvent::STATUS_COMPLETED,
+					$payment_reference,
+					array(),
+					array(),
+					'Captured ' . $payment_reference . '.',
+					PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS,
+					array( 'Erfasst ' . $payment_reference . '.' )
+				),
+			)
+		);
+	}
+
+	/**
+	 * @testdox Completed events update paid orders without adding duplicate generic completion notes.
+	 */
+	public function test_completed_event_updates_paid_order_without_generic_completion_note(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_transaction_id( 'pi_123' );
+		$order->set_status( 'processing' );
+		$order->save();
+		$this->assertSame( 'processing', $order->get_status() );
+
+		$this->apply_event_under_lock(
+			$order,
+			new PaymentLifecycleEvent(
+				PaymentLifecycleEvent::STATUS_COMPLETED,
+				'pi_123',
+				array(
+					'_intent_id'             => 'pi_123',
+					'_wcpay_transaction_fee' => '1.23',
+				),
+				array(),
+				'Payment complete.',
+				'payment_complete'
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'processing', $order->get_status() );
+		$this->assertSame( 'pi_123', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( '1.23', $order->get_meta( '_wcpay_transaction_fee', true ) );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment complete.' ) );
+	}
+
+	/**
+	 * @testdox Late failure events do not downgrade paid processing orders.
+	 * @dataProvider paid_order_late_failure_event_provider
+	 *
+	 * @param string $event_status      Lifecycle event status.
+	 * @param string $payment_reference Payment reference.
+	 * @param string $late_intent_status Late provider intent status.
+	 * @param string $note              Lifecycle note.
+	 * @param string $note_type         Lifecycle note type.
+	 * @param bool   $preserve_status   Whether the event keeps the order status, as a fraud block does.
+	 */
+	public function test_late_failure_event_does_not_downgrade_paid_processing_order( string $event_status, string $payment_reference, string $late_intent_status, string $note, string $note_type, bool $preserve_status ): void {
+		$order = $this->create_woopayments_order();
+		$order->set_transaction_id( 'pi_paid' );
+		$order->set_status( 'processing' );
+		$order->update_meta_data( '_intention_status', 'succeeded' );
+		$order->update_meta_data( '_wcpay_transaction_fee', '1.23' );
+		$order->update_meta_data( '_wcpay_net', '8.77' );
+		$order->save();
+
+		$this->apply_event(
+			$order,
+			new PaymentLifecycleEvent(
+				$event_status,
+				$payment_reference,
+				array( '_intention_status' => $late_intent_status ),
+				array( '_wcpay_transaction_fee', '_wcpay_net' ),
+				$note,
+				$note_type,
+				array(),
+				$preserve_status
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+
+		// A status-preserving event leaves the status alone either way, so its meta and note assertions carry the case.
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'processing', $order->get_status(), "{$event_status} must not downgrade a paid order." );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ), "{$event_status} must not overwrite successful lifecycle metadata." );
+		$this->assertSame( '1.23', $order->get_meta( '_wcpay_transaction_fee', true ), "{$event_status} must not delete payment fee metadata." );
+		$this->assertSame( '8.77', $order->get_meta( '_wcpay_net', true ), "{$event_status} must not delete payment net metadata." );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, $note ), "{$event_status} must not add a late lifecycle note." );
+	}
+
+	/**
+	 * @testdox A late $event_status event on a paid order delivered twice leaves $expected_notes note naming the amount and $expected_warnings warnings.
+	 *
+	 * A released or expired authorization is noted once and warned about on every delivery; a failed attempt moved no
+	 * money on the paid order, so it stays skipped silently, as in client 11.1.0.
+	 *
+	 * @testWith ["failed", "pi_failed_late", "", 0, 0]
+	 *           ["canceled", "pi_canceled_late", "was canceled, so that amount was released", 1, 2]
+	 *           ["capture_expired", "ch_expired_late", "expired before it was captured, so that amount was never collected", 1, 2]
+	 *
+	 * @param string $event_status      Lifecycle event status.
+	 * @param string $payment_reference Payment reference.
+	 * @param string $note_text         Text the note carries, or '' when none is expected.
+	 * @param int    $expected_notes    Number of authorization notes after both deliveries.
+	 * @param int    $expected_warnings Number of order-payments warnings after both deliveries.
+	 */
+	public function test_late_release_on_a_paid_order_is_noted_once_and_warned_each_time( string $event_status, string $payment_reference, string $note_text, int $expected_notes, int $expected_warnings ): void {
+		$order = $this->create_woopayments_order();
+		$order->set_transaction_id( 'pi_paid' );
+		$order->set_status( 'processing' );
+		$order->save();
+		$event = new PaymentLifecycleEvent( $event_status, $payment_reference, array( '_intention_status' => 'canceled' ), array(), 'Late payment event.', 'late_payment_event' );
+
+		$this->apply_event( $order, $event );
+		$this->apply_event( wc_get_order( $order->get_id() ), $event );
+
+		$notes = array_values(
+			array_filter(
+				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+				static fn( $note ): bool => false !== strpos( (string) $note->content, 'payment authorization of' )
+			)
+		);
+		$this->assertCount( $expected_notes, $notes, 'An authorization is noted once, however often its event arrives.' );
+		if ( 0 < $expected_notes ) {
+			$this->assertStringContainsString( $note_text, $notes[0]->content );
+			$this->assertStringContainsString( '10.00', $notes[0]->content, 'The note names the authorized amount.' );
+		}
+		$warnings = array_values( array_filter( $this->captured_logs, static fn( array $log ): bool => 'warning' === $log['level'] && 'order-payments' === ( $log['context']['source'] ?? '' ) ) );
+		$this->assertCount( $expected_warnings, $warnings, 'Every delivery of a released or expired authorization is warned about.' );
+		foreach ( $warnings as $warning ) {
+			$this->assertSame( $payment_reference, $warning['context']['payment_reference'] );
+			$this->assertSame( '10.00', $warning['context']['amount'] );
+		}
+		$this->assertSame( 0, $this->countOrderNotesMatching( wc_get_order( $order->get_id() ), 'Late payment event.' ), 'The skipped event adds no lifecycle note.' );
+	}
+
+	/**
+	 * Data provider for late failure events received after payment.
+	 *
+	 * @return array<string,array{string,string,string,string,string,bool}>
+	 */
+	public static function paid_order_late_failure_event_provider(): array {
+		return array(
+			'failed'                   => array( PaymentLifecycleEvent::STATUS_FAILED, 'pi_failed_late', 'requires_payment_method', 'Late payment failure.', 'late_payment_failure', false ),
+			'canceled'                 => array( PaymentLifecycleEvent::STATUS_CANCELED, 'pi_canceled_late', 'canceled', 'Late payment cancellation.', 'late_payment_cancellation', false ),
+			'capture expired'          => array( PaymentLifecycleEvent::STATUS_CAPTURE_EXPIRED, 'ch_expired_late', 'canceled', 'Late payment authorization expiry.', 'late_capture_expiry', false ),
+			'failed, status preserved' => array( PaymentLifecycleEvent::STATUS_FAILED, 'pi_blocked_late', 'canceled', 'A payment was blocked by risk filters.', 'payment_blocked', true ),
+		);
+	}
+
+	/**
+	 * @testdox Event meta is in the database before the order save that applies a $event_status event: $expected.
+	 * @dataProvider meta_saved_before_order_save_provider
+	 *
+	 * @param string $event_status Lifecycle event status.
+	 * @param bool   $expected     Whether the meta is persisted before the order save.
+	 */
+	public function test_event_meta_is_saved_before_the_order_save_for_every_status_but_started( string $event_status, bool $expected ): void {
+		$order          = $this->create_woopayments_order();
+		$order_id       = $order->get_id();
+		$meta_persisted = null;
+		$observer       = function ( $saved_order ) use ( $order_id, &$meta_persisted ): void {
+			if ( null === $meta_persisted && $saved_order instanceof WC_Order && $saved_order->get_id() === $order_id ) {
+				$meta_persisted = $this->is_order_meta_persisted( $order_id, '_lifecycle_probe' );
+			}
+		};
+		add_action( 'woocommerce_before_order_object_save', $observer );
+
+		try {
+			$this->apply_event_under_lock( $order, new PaymentLifecycleEvent( $event_status, 'pi_probe', array( '_lifecycle_probe' => 'saved' ) ) );
+		} finally {
+			remove_action( 'woocommerce_before_order_object_save', $observer );
+		}
+
+		$this->assertSame( $expected, $meta_persisted );
+		$this->assertTrue( $this->is_order_meta_persisted( $order_id, '_lifecycle_probe' ), 'Every event saves its meta by the end.' );
+	}
+
+	/**
+	 * Every lifecycle status and whether its meta is saved before the order save.
+	 *
+	 * @return array<string,array{0:string,1:bool}>
+	 */
+	public static function meta_saved_before_order_save_provider(): array {
+		return array(
+			'completed'       => array( PaymentLifecycleEvent::STATUS_COMPLETED, true ),
+			'authorized'      => array( PaymentLifecycleEvent::STATUS_AUTHORIZED, true ),
+			'failed'          => array( PaymentLifecycleEvent::STATUS_FAILED, true ),
+			'canceled'        => array( PaymentLifecycleEvent::STATUS_CANCELED, true ),
+			'capture expired' => array( PaymentLifecycleEvent::STATUS_CAPTURE_EXPIRED, true ),
+			'started'         => array( PaymentLifecycleEvent::STATUS_STARTED, false ),
+		);
+	}
+
+	/**
+	 * @testdox Lifecycle events lock the order with the supplied provider persistence vocabulary.
+	 */
+	public function test_apply_uses_provider_vocabulary_for_locks(): void {
+		$order      = $this->create_woopayments_order();
+		$vocabulary = $this->createMock( ProviderPersistenceVocabularyInterface::class );
+		$vocabulary->method( 'get_order_lock_key' )->willReturn( 'provider_lifecycle_lock_' . $order->get_id() );
+		$vocabulary->method( 'get_lock_sentinel' )->willReturn( 'provider-lock' );
+		$vocabulary->method( 'get_lock_ttl_seconds' )->willReturn( 60 );
+		$lock_token = $this->order_payment_lock->claim( $order, $this->persistence_vocabulary, 'woopayments_operation', 'payment operation' );
+		$this->assertNotNull( $lock_token );
+
+		$this->apply_event(
+			$order,
+			new PaymentLifecycleEvent(
+				PaymentLifecycleEvent::STATUS_STARTED,
+				'provider_payment_123',
+				array(),
+				array(),
+				'Provider payment started.'
+			),
+			$vocabulary
+		);
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Provider payment started.' ), 'A lock held under another provider key must not block the event.' );
+		$this->assertFalse( get_transient( 'provider_lifecycle_lock_' . $order->get_id() ), 'The provider lock must be released after the event.' );
+		$this->order_payment_lock->release( $order, $this->persistence_vocabulary, $lock_token );
+	}
+
+	/**
+	 * @testdox Lifecycle note identities use stable note type instead of rendered note content.
+	 */
+	public function test_lifecycle_note_identity_uses_note_type_instead_of_rendered_note_content(): void {
+		$order = $this->create_woopayments_order();
+
+		$this->apply_event_under_lock(
+			$order,
+			new PaymentLifecycleEvent(
+				PaymentLifecycleEvent::STATUS_STARTED,
+				'pi_started',
+				array( '_intent_id' => 'pi_started' ),
+				array(),
+				'Payment started.',
+				'payment_started'
+			)
+		);
+
+		$order             = wc_get_order( $order->get_id() );
+		$expected_identity = hash( 'sha256', 'payment_lifecycle:pi_started|started|payment_started' );
+		$notes             = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertCount( 1, $notes );
+		$this->assertSame( $expected_identity, get_comment_meta( $notes[0]->id, '_wc_woopayments_note_identity', true ) );
+
+		$this->apply_event_under_lock(
+			$order,
+			new PaymentLifecycleEvent(
+				PaymentLifecycleEvent::STATUS_STARTED,
+				'pi_started',
+				array( '_intent_id' => 'pi_started' ),
+				array(),
+				'Zahlung gestartet.',
+				'payment_started'
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Payment started.' ) );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Zahlung gestartet.' ) );
+	}
+
+	/**
+	 * @testdox An existing equivalent lifecycle note gets the unified identity backfilled instead of a second note.
+	 */
+	public function test_equivalent_lifecycle_note_backfills_unified_identity(): void {
+		$order          = $this->create_woopayments_order();
+		$legacy_note_id = $order->add_order_note( 'Payment started.' );
+
+		$this->apply_event_under_lock(
+			$order,
+			new PaymentLifecycleEvent(
+				PaymentLifecycleEvent::STATUS_STARTED,
+				'pi_legacy',
+				array( '_intent_id' => 'pi_legacy' ),
+				array(),
+				'Zahlung gestartet.',
+				'payment_started',
+				array( 'Payment started.' )
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Payment started.' ) );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Zahlung gestartet.' ) );
+		$this->assertSame(
+			hash( 'sha256', 'payment_lifecycle:pi_legacy|started|payment_started' ),
+			get_comment_meta( $legacy_note_id, '_wc_woopayments_note_identity', true )
+		);
+	}
+
+	/**
+	 * @testdox A locked order is not mutated or unlocked by an event for $event_reference while the lock holds $held_reference.
+	 * @testWith ["pi_locked", "pi_locked"]
+	 *           ["native_charge_operation", "pi_webhook"]
+	 *
+	 * @param string $held_reference  Payment reference of the operation that claimed the lock.
+	 * @param string $event_reference Payment reference of the event.
+	 */
+	public function test_locked_order_is_not_mutated_or_unlocked( string $held_reference, string $event_reference ): void {
+		$order = $this->create_woopayments_order();
+		$this->assertNotNull( $this->order_payment_lock->claim( $order, $this->persistence_vocabulary, $held_reference, 'payment operation' ) );
+
+		$this->apply_event(
+			$order,
+			new PaymentLifecycleEvent(
+				PaymentLifecycleEvent::STATUS_COMPLETED,
+				$event_reference,
+				array( '_intent_id' => $event_reference ),
+				array(),
+				'Payment complete.'
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'pending', $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment complete.' ) );
+		$this->assertTrue( $this->is_order_payment_lock_held_for( $order, $this->persistence_vocabulary, $held_reference ), 'A refused event must leave the holder its lock.' );
+		$this->clear_order_payment_lock( $order, $this->persistence_vocabulary );
+	}
+
+	/**
+	 * @testdox Applying an event should release the order payment lock when reading or applying it under the lock throws.
+	 */
+	public function test_apply_releases_the_lock_when_applying_the_outcome_throws(): void {
+		$order = $this->create_woopayments_order();
+		$sut   = new class() extends OrderPaymentLifecycleService {
+			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double always throws.
+			/**
+			 * Fail every read under the lock.
+			 *
+			 * @param WC_Order $order Order object.
+			 * @throws \RuntimeException Always.
+			 */
+			public function reread_order_from_data_store( WC_Order $order ): void {
+				unset( $order );
+				throw new \RuntimeException( 'Simulated lifecycle failure.' );
+			}
+			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
+		};
+		$sut->init( $this->order_payment_lock, wc_get_container()->get( OrderPaymentNotes::class ) );
+
+		$thrown = null;
+		try {
+			$sut->apply( $order, $this->completed_event( 'pi_apply_throws' ), $this->persistence_vocabulary );
+		} catch ( \RuntimeException $exception ) {
+			$thrown = $exception;
+		}
+
+		$this->assertInstanceOf( \RuntimeException::class, $thrown, 'The application failure must reach the caller.' );
+		$this->assertFalse( get_transient( $this->persistence_vocabulary->get_order_lock_key( $order ) ), 'A throwing application must release the order payment lock.' );
+		$lock_token = $this->order_payment_lock->claim( $order, $this->persistence_vocabulary, 'next_operation', 'payment operation' );
+		$this->assertNotNull( $lock_token, 'The next operation must be able to claim the lock.' );
+		$this->order_payment_lock->release( $order, $this->persistence_vocabulary, $lock_token );
+	}
+
+	/**
+	 * @testdox A lifecycle event skipped because the order is lock-contested is logged as a warning with full context.
+	 */
+	public function test_skipped_locked_event_is_logged_with_context(): void {
+		$order = $this->create_woopayments_order();
+		$this->assertNotNull( $this->order_payment_lock->claim( $order, $this->persistence_vocabulary, 'native_charge_operation', 'payment operation' ) );
+
+		$this->apply_event(
+			$order,
+			new PaymentLifecycleEvent(
+				PaymentLifecycleEvent::STATUS_COMPLETED,
+				'pi_webhook',
+				array( '_intent_id' => 'pi_webhook' ),
+				array(),
+				'Payment complete.'
+			)
+		);
+
+		$this->assertLogged(
+			'warning',
+			'order payment lock refused: order ',
+			array(
+				'source'            => 'order-payments',
+				'order_id'          => $order->get_id(),
+				'payment_reference' => 'pi_webhook',
+				'event_type'        => PaymentLifecycleEvent::STATUS_COMPLETED,
+				'reason'            => 'order_locked',
+				'refused_operation' => 'payment status update',
+			)
+		);
+
+		$this->clear_order_payment_lock( $order, $this->persistence_vocabulary );
+	}
+
+	/**
+	 * @testdox The result tells whether the event first added its note: added on the first delivery, not added on a replay, when the order has the note by its text or when the event has no note, and refused under a held lock.
+	 */
+	public function test_apply_reports_whether_it_first_added_the_note(): void {
+		$order = $this->create_woopayments_order();
+		$this->assertSame( OrderPaymentLifecycleService::RESULT_NOTE_ADDED, $this->sut->apply( $order, $this->paid_event( 'pi_result' ), $this->persistence_vocabulary ) );
+		$this->assertSame( OrderPaymentLifecycleService::RESULT_NOTE_NOT_ADDED, $this->sut->apply( $order, $this->paid_event( 'pi_result' ), $this->persistence_vocabulary ), 'A replay finds the note it added.' );
+
+		$text_order = $this->create_woopayments_order();
+		$text_order->add_order_note( 'Paid by pi_text.' );
+		$this->assertSame( OrderPaymentLifecycleService::RESULT_NOTE_NOT_ADDED, $this->sut->apply( $text_order, $this->paid_event( 'pi_text' ), $this->persistence_vocabulary ), 'A note found by its text is not added again.' );
+
+		$no_note_order = $this->create_woopayments_order();
+		$this->assertSame( OrderPaymentLifecycleService::RESULT_NOTE_NOT_ADDED, $this->sut->apply_under_lock( $no_note_order, new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_STARTED, 'pi_no_note' ), $this->persistence_vocabulary ) );
+
+		$locked_order = $this->create_woopayments_order();
+		$this->hold_order_payment_lock( $locked_order, $this->persistence_vocabulary, 'native_charge_operation' );
+		try {
+			$this->assertSame( OrderPaymentLifecycleService::RESULT_REFUSED, $this->sut->apply( $locked_order, $this->paid_event( 'pi_locked_result' ), $this->persistence_vocabulary ) );
+		} finally {
+			$this->clear_order_payment_lock( $locked_order, $this->persistence_vocabulary );
+		}
+	}
+
+	/**
+	 * @testdox An event without a payment reference applies without the order payment lock, even while another operation holds it.
+	 */
+	public function test_event_without_a_payment_reference_applies_without_the_lock(): void {
+		$order = $this->create_woopayments_order();
+		$this->assertNotNull( $this->order_payment_lock->claim( $order, $this->persistence_vocabulary, 'native_charge_operation', 'payment operation' ) );
+
+		try {
+			$result = $this->sut->apply( $order, new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_STARTED, null, array(), array(), 'Payment started.' ), $this->persistence_vocabulary );
+
+			$this->assertSame( OrderPaymentLifecycleService::RESULT_NOTE_ADDED, $result );
+			$this->assertTrue( $this->is_order_payment_lock_held_for( $order, $this->persistence_vocabulary, 'native_charge_operation' ), 'The holder keeps its lock.' );
+		} finally {
+			$this->clear_order_payment_lock( $order, $this->persistence_vocabulary );
+		}
+
+		$this->assertSame( 1, $this->countOrderNotesMatching( wc_get_order( $order->get_id() ), 'Payment started.' ) );
+	}
+
+	/**
+	 * @testdox A builder that finds nothing to apply leaves the order unsaved and unchanged, and the lock is released.
+	 */
+	public function test_rebuilt_event_null_writes_nothing(): void {
+		$order   = $this->create_woopayments_order();
+		$updates = did_action( 'woocommerce_update_order' );
+
+		$result = $this->sut->apply_rebuilt_under_claim(
+			$order,
+			$this->completed_event( 'pi_nothing_to_apply' ),
+			$this->persistence_vocabulary,
+			static function ( WC_Order $read_order ): ?PaymentLifecycleEvent {
+				unset( $read_order );
+
+				return null;
+			}
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderPaymentLifecycleService::RESULT_NOTE_NOT_ADDED, $result );
+		$this->assertSame( $updates, did_action( 'woocommerce_update_order' ), 'The order is not saved.' );
+		$this->assertSame( 'pending', $order->get_status() );
+		$this->assertSame( '', $order->get_transaction_id() );
+		$this->assertSame( '', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment complete.' ) );
+		$this->assertFalse( $this->is_order_payment_lock_held_for( $order, $this->persistence_vocabulary, 'pi_nothing_to_apply' ) );
+	}
+
+	/**
+	 * @testdox An event that leaves a paid order, applied under its own claim, counts the paid status of the caller's copy noted before the read, or of the order as stored: $_dataName.
+	 *
+	 * Client 11.3.0 counts the caller's copy or a fresh read (class-wc-payments-order-service.php:3403-3416).
+	 *
+	 * @testWith ["the caller's copy is paid, the stored order is not", "processing", "pending"]
+	 *           ["the stored order is paid, the caller's copy is not", "pending", "processing"]
+	 *
+	 * @param string $label         Case.
+	 * @param string $caller_status Status of the caller's copy, not saved.
+	 * @param string $stored_status Status of the stored order.
+	 */
+	public function test_claimed_event_counts_the_caller_copy_noted_before_the_read( string $label, string $caller_status, string $stored_status ): void {
+		unset( $label );
+		$order  = $this->create_woopayments_order();
+		$stored = wc_get_order( $order->get_id() );
+		$stored->set_status( $stored_status );
+		$stored->save();
+		$order->set_status( $caller_status );
+		$event = new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, 'pi_caller_copy', array( '_intent_id' => 'pi_caller_copy' ), array(), 'Payment complete.', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_COMPLETE, array(), false, false, array(), true );
+
+		$this->sut->apply( $order, $event, $this->persistence_vocabulary );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( $stored_status, $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment complete.' ) );
+	}
+
+	/**
+	 * @testdox A completed event that leaves a paid order reads the paid status through has_paid_status() at each site of the paid rule: $_dataName.
+	 *
+	 * The service's has_paid_status() answers true for one order object only, an On hold order the status itself does not
+	 * count as paid, so the event is skipped only when the site under test asks the method. The webhook's stand-in for an
+	 * empty transaction ID asks the same method, so the lifecycle's skip and that check cannot drift apart.
+	 *
+	 * @dataProvider paid_status_sites
+	 *
+	 * @param string   $entry_point  Service method that applies the event.
+	 * @param callable $answers_paid Gets the order asked about, the order passed and whether the asked order was read again in place, and answers whether it is paid.
+	 */
+	public function test_completed_event_leaving_a_paid_order_reads_the_paid_status_method( string $entry_point, callable $answers_paid ): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( OrderStatus::ON_HOLD );
+		$order->save();
+		$sut = new class( $order, $answers_paid ) extends OrderPaymentLifecycleService {
+			/**
+			 * Order passed to the service.
+			 *
+			 * @var WC_Order
+			 */
+			private WC_Order $passed;
+
+			/**
+			 * Answers whether an order is paid.
+			 *
+			 * @var callable
+			 */
+			private $answers_paid;
+
+			/**
+			 * Object IDs of the orders read again in place.
+			 *
+			 * @var array<int,bool>
+			 */
+			private array $read_again = array();
+
+			/**
+			 * Constructor.
+			 *
+			 * @param WC_Order $passed       Order passed to the service.
+			 * @param callable $answers_paid Answers whether an order is paid.
+			 */
+			public function __construct( WC_Order $passed, callable $answers_paid ) {
+				$this->passed       = $passed;
+				$this->answers_paid = $answers_paid;
+			}
+
+			/**
+			 * Note the order as read again, then read it.
+			 *
+			 * @param WC_Order $order Order object.
+			 */
+			public function reread_order_from_data_store( WC_Order $order ): void {
+				$this->read_again[ spl_object_id( $order ) ] = true;
+				parent::reread_order_from_data_store( $order );
+			}
+
+			/**
+			 * Answer for the order the row names.
+			 *
+			 * @param WC_Order $order Order object.
+			 * @return bool
+			 */
+			public function has_paid_status( WC_Order $order ): bool {
+				return ( $this->answers_paid )( $order, $this->passed, isset( $this->read_again[ spl_object_id( $order ) ] ) );
+			}
+		};
+		$sut->init( $this->order_payment_lock, wc_get_container()->get( OrderPaymentNotes::class ) );
+		$event = new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, 'pi_paid_status', array( '_intention_status' => 'succeeded' ), array(), 'Paid by pi_paid_status.', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS, array(), false, false, array(), true );
+
+		$sut->{$entry_point}( $order, $event, $this->persistence_vocabulary );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( OrderStatus::ON_HOLD, $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Paid by pi_paid_status.' ) );
+		$skips = array_filter( $this->captured_logs, static fn( array $log ): bool => 'debug' === $log['level'] && 'order_paid' === ( $log['context']['reason'] ?? '' ) );
+		$this->assertCount( 1, $skips, 'The event is skipped as one on a paid order.' );
+	}
+
+	/**
+	 * The three sites of the paid rule, each with the one order object has_paid_status() counts as paid.
+	 *
+	 * @return array<string,array{string,callable}>
+	 */
+	public function paid_status_sites(): array {
+		return array(
+			"apply(): the caller's copy, before it is read again" => array( 'apply', static fn( WC_Order $asked, WC_Order $passed, bool $was_read_again ): bool => $asked === $passed && ! $was_read_again ),
+			'apply_under_lock(): the order passed' => array( 'apply_under_lock', static fn( WC_Order $asked, WC_Order $passed ): bool => $asked === $passed ),
+			'apply_under_lock(): the fresh copy the paid rule reads' => array( 'apply_under_lock', static fn( WC_Order $asked, WC_Order $passed ): bool => $asked !== $passed ),
+		);
+	}
+
+	/**
+	 * @testdox A $status event whose own note is already on the order changes nothing: no status, meta, transaction ID or second note.
+	 *
+	 * Client 11.3.0's completed and authorized writers return once their note is on the order
+	 * (class-wc-payments-order-service.php:2033-2038, :2148-2151).
+	 *
+	 * @testWith ["completed"]
+	 *           ["authorized"]
+	 *
+	 * @param string $status Lifecycle event status.
+	 */
+	public function test_event_whose_own_note_is_on_the_order_changes_nothing( string $status ): void {
+		$order = $this->create_woopayments_order();
+		$order->add_order_note( 'Own note of pi_own_note.' );
+		$order->set_status( 'cancelled' );
+		$order->save();
+		$event = new PaymentLifecycleEvent( $status, 'pi_own_note', array( '_intent_id' => 'pi_own_note' ), array(), 'Own note of pi_own_note.' );
+
+		$this->apply_event_under_lock( $order, $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'cancelled', $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( '', $order->get_transaction_id() );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Own note of pi_own_note.' ) );
+	}
+
+	/**
+	 * @testdox A failed event whose note is already on the order still fails it and writes its meta: the provider decides on a failure's note.
+	 *
+	 * Client 11.3.0's failure writers differ: the checkout and terminal declines fail the order whatever notes it has
+	 * (class-wc-payment-gateway-wcpay.php:1605-1613, class-wc-payments-order-service.php:961-968).
+	 */
+	public function test_failed_event_whose_note_is_on_the_order_still_applies(): void {
+		$order = $this->create_woopayments_order();
+		$order->add_order_note( 'Declined by pi_retry.' );
+		$event = new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_FAILED, 'pi_retry', array( '_intent_id' => 'pi_retry' ), array(), 'Declined by pi_retry.' );
+
+		$this->apply_event_under_lock( $order, $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'failed', $order->get_status() );
+		$this->assertSame( 'pi_retry', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Declined by pi_retry.' ) );
+	}
+
+	/**
+	 * @testdox A rebuilt event is built on the caller's order read in place under the claim for its payment reference, applied under it, and the lock released.
+	 */
+	public function test_rebuilt_event_is_built_from_the_order_read_under_the_claim_and_applied(): void {
+		$order  = $this->create_woopayments_order();
+		$stored = wc_get_order( $order->get_id() );
+		$stored->update_meta_data( '_stored_marker', 'stored' );
+		$stored->save();
+		$seen = array();
+
+		$result = $this->sut->apply_rebuilt_under_claim(
+			$order,
+			$this->completed_event( 'pi_rebuilt' ),
+			$this->persistence_vocabulary,
+			function ( WC_Order $read_order ) use ( $order, &$seen ): PaymentLifecycleEvent {
+				$seen = array(
+					'caller_object' => $read_order === $order,
+					'marker'        => $read_order->get_meta( '_stored_marker', true ),
+					'locked'        => $this->is_order_payment_lock_held_for( $order, $this->persistence_vocabulary, 'pi_rebuilt' ),
+				);
+
+				return new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, 'pi_rebuilt', array( '_intent_id' => 'pi_rebuilt' ), array(), 'Rebuilt payment complete.' );
+			}
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderPaymentLifecycleService::RESULT_NOTE_ADDED, $result );
+		$this->assertSame(
+			array(
+				'caller_object' => true,
+				'marker'        => 'stored',
+				'locked'        => true,
+			),
+			$seen
+		);
+		$this->assertTrue( $order->is_paid() );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Rebuilt payment complete.' ) );
+		$this->assertSame( '', $order->get_meta( '_wcpay_transaction_fee', true ), 'The event passed is not applied.' );
+		$this->assertFalse( $this->is_order_payment_lock_held_for( $order, $this->persistence_vocabulary, 'pi_rebuilt' ) );
+	}
+
+	/**
+	 * @testdox A rebuilt event refused by a held lock is refused and logged as apply() refuses it, and nothing is built or written.
+	 */
+	public function test_rebuilt_event_refused_by_a_held_lock_builds_and_writes_nothing(): void {
+		$order  = $this->create_woopayments_order();
+		$builds = 0;
+		$this->assertNotNull( $this->order_payment_lock->claim( $order, $this->persistence_vocabulary, 'native_charge_operation', 'payment operation' ) );
+
+		try {
+			$result = $this->sut->apply_rebuilt_under_claim(
+				$order,
+				$this->completed_event( 'pi_webhook' ),
+				$this->persistence_vocabulary,
+				static function () use ( &$builds ): PaymentLifecycleEvent {
+					++$builds;
+
+					return new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, 'pi_webhook' );
+				}
+			);
+			$this->assertTrue( $this->is_order_payment_lock_held_for( $order, $this->persistence_vocabulary, 'native_charge_operation' ), 'The holder keeps its lock.' );
+		} finally {
+			$this->clear_order_payment_lock( $order, $this->persistence_vocabulary );
+		}
+
+		$this->assertSame( OrderPaymentLifecycleService::RESULT_REFUSED, $result );
+		$this->assertSame( 0, $builds );
+		$this->assertFalse( wc_get_order( $order->get_id() )->is_paid() );
+		$this->assertLogged(
+			'warning',
+			'order payment lock refused: order ',
+			array(
+				'source'            => 'order-payments',
+				'order_id'          => $order->get_id(),
+				'payment_reference' => 'pi_webhook',
+				'event_type'        => PaymentLifecycleEvent::STATUS_COMPLETED,
+				'reason'            => 'order_locked',
+				'refused_operation' => 'payment status update',
+			)
+		);
+	}
+
+	/**
+	 * @testdox An event without a payment reference is rebuilt and applied without the order payment lock, even while another operation holds it.
+	 */
+	public function test_rebuilt_event_without_a_payment_reference_takes_no_claim(): void {
+		$order = $this->create_woopayments_order();
+		$this->assertNotNull( $this->order_payment_lock->claim( $order, $this->persistence_vocabulary, 'native_charge_operation', 'payment operation' ) );
+
+		try {
+			$result = $this->sut->apply_rebuilt_under_claim(
+				$order,
+				new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_STARTED, null ),
+				$this->persistence_vocabulary,
+				static fn( WC_Order $read_order ): PaymentLifecycleEvent => new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_STARTED, null, array(), array(), 'Payment started for ' . $read_order->get_total() . '.' )
+			);
+
+			$this->assertSame( OrderPaymentLifecycleService::RESULT_NOTE_ADDED, $result );
+			$this->assertTrue( $this->is_order_payment_lock_held_for( $order, $this->persistence_vocabulary, 'native_charge_operation' ), 'The holder keeps its lock.' );
+		} finally {
+			$this->clear_order_payment_lock( $order, $this->persistence_vocabulary );
+		}
+
+		$this->assertSame( 1, $this->countOrderNotesMatching( wc_get_order( $order->get_id() ), 'Payment started for 10.00.' ) );
+	}
+
+	/**
+	 * @testdox A rebuilt failed event is checked for a paid order on the same read the builder got under the claim, not on a later one.
+	 */
+	public function test_rebuilt_failed_event_is_checked_on_the_read_the_builder_got(): void {
+		$order    = $this->create_woopayments_order();
+		$order_id = $order->get_id();
+
+		$result = $this->sut->apply_rebuilt_under_claim(
+			$order,
+			new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_FAILED, 'pi_one_read' ),
+			$this->persistence_vocabulary,
+			static function ( WC_Order $read_order ) use ( $order_id ): PaymentLifecycleEvent {
+				$stored = wc_get_order( $order_id );
+				$stored->set_status( 'processing' );
+				$stored->save();
+
+				return new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_FAILED, 'pi_one_read', array(), array(), 'Payment failed while ' . $read_order->get_status() . '.' );
+			}
+		);
+
+		$this->assertSame( OrderPaymentLifecycleService::RESULT_NOTE_ADDED, $result );
+		$this->assertSame( 1, $this->countOrderNotesMatching( wc_get_order( $order_id ), 'Payment failed while pending.' ) );
+	}
+
+	/**
+	 * @testdox A rebuilt event for another payment reference is refused, nothing is written, and the lock is released.
+	 */
+	public function test_rebuilt_event_for_another_payment_reference_is_refused(): void {
+		$order  = $this->create_woopayments_order();
+		$thrown = null;
+
+		try {
+			$this->sut->apply_rebuilt_under_claim(
+				$order,
+				$this->completed_event( 'pi_claimed' ),
+				$this->persistence_vocabulary,
+				static fn(): PaymentLifecycleEvent => new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, 'pi_other', array(), array(), 'Other payment complete.' )
+			);
+		} catch ( \InvalidArgumentException $exception ) {
+			$thrown = $exception;
+		}
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( \InvalidArgumentException::class, $thrown );
+		$this->assertFalse( $order->is_paid() );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Other payment complete.' ) );
+		$this->assertFalse( $this->is_order_payment_lock_held_for( $order, $this->persistence_vocabulary, 'pi_claimed' ) );
+	}
+
+	/**
+	 * @testdox A completed event skipped on an order in a paid status adds its paid-order note once, logs it, and leaves the order and the result as a skip.
+	 *
+	 * The order is paid with another method, so the log line's payment method shows the case the note is for. A second
+	 * delivery finds the note by its identity, adds nothing and logs no second line.
+	 */
+	public function test_paid_order_note_is_added_once_at_the_paid_skip(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_payment_method( 'bacs' );
+		$order->set_status( OrderStatus::PROCESSING );
+		$order->save();
+		$event = $this->event_with_paid_order_note( 'pi_paid_twice' );
+
+		$first  = $this->sut->apply( $order, $event, $this->persistence_vocabulary );
+		$second = $this->sut->apply( $order, $event, $this->persistence_vocabulary );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( array( OrderPaymentLifecycleService::RESULT_NOTE_NOT_ADDED, OrderPaymentLifecycleService::RESULT_NOTE_NOT_ADDED ), array( $first, $second ) );
+		$this->assertSame( OrderStatus::PROCESSING, $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_intention_status', true ), 'The skipped event writes none of its meta.' );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Payment pi_paid_twice reached an order already paid.' ) );
+		$this->assertGreaterThan( 0, wc_get_container()->get( OrderPaymentNotes::class )->find_by_identity( $order, 'paid_order_payment|pi_paid_twice', $this->persistence_vocabulary ) );
+		$skips = array_values( array_filter( $this->captured_logs, static fn( array $log ): bool => 'debug' === $log['level'] && 'order_paid' === ( $log['context']['reason'] ?? '' ) ) );
+		$this->assertCount( 2, $skips );
+		$this->assertTrue( $skips[0]['context']['paid_order_note_added'] ?? false, 'The first skip says it added the note.' );
+		$this->assertArrayNotHasKey( 'paid_order_note_added', $skips[1]['context'] );
+		$recorded = $this->paid_order_log_lines( 'paid_order_payment_recorded' );
+		$this->assertCount( 1, $recorded );
+		$this->assertSame( 'warning', $recorded[0]['level'] );
+		$this->assertSame( 'order-payments', $recorded[0]['context']['source'] ?? null );
+		$this->assertSame( $order->get_id(), $recorded[0]['context']['order_id'] ?? null );
+		$this->assertSame( 'pi_paid_twice', $recorded[0]['context']['payment_reference'] ?? null );
+		$this->assertSame( 'bacs', $recorded[0]['context']['payment_method'] ?? null );
+	}
+
+	/**
+	 * @testdox A paid skip that comes only from $_dataName adds no paid-order note: the object the event is decided on is On hold.
+	 *
+	 * @dataProvider paid_skips_not_from_the_decided_object
+	 *
+	 * @param string $entry_point Service method that applies the event: apply() reads the order again in place, apply_under_lock() does not.
+	 * @param string $passed      Status of the object passed, not saved.
+	 * @param string $stored      Status stored.
+	 */
+	public function test_paid_order_note_needs_the_decided_object_in_a_paid_status( string $entry_point, string $passed, string $stored ): void {
+		$order        = $this->create_woopayments_order();
+		$stored_order = wc_get_order( $order->get_id() );
+		$stored_order->set_status( $stored );
+		$stored_order->save();
+		$order->set_status( $passed );
+
+		$this->sut->{$entry_point}( $order, $this->event_with_paid_order_note( 'pi_hold' ), $this->persistence_vocabulary );
+
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment pi_hold reached an order already paid.' ) );
+		$this->assertCount( 1, array_filter( $this->captured_logs, static fn( array $log ): bool => 'order_paid' === ( $log['context']['reason'] ?? '' ) ), 'The event is still skipped as paid.' );
+		$this->assertCount( 0, $this->paid_order_log_lines( 'paid_order_payment_recorded' ) );
+	}
+
+	/**
+	 * Paid skips that do not come from the object the event is decided on.
+	 *
+	 * @return array<string,array{string,string,string}>
+	 */
+	public function paid_skips_not_from_the_decided_object(): array {
+		return array(
+			"the caller's copy, Processing, read again as On hold" => array( 'apply', OrderStatus::PROCESSING, OrderStatus::ON_HOLD ),
+			'the fresh read, Processing, of an On hold object'      => array( 'apply_under_lock', OrderStatus::ON_HOLD, OrderStatus::PROCESSING ),
+		);
+	}
+
+	/**
+	 * @testdox A paid order that already has the payment's $_dataName note gets no paid-order note.
+	 *
+	 * @dataProvider own_notes_of_the_payment
+	 *
+	 * @param int  $own_note_index Which own-note event's note is on the order.
+	 * @param bool $by_identity    Whether the note carries its identity, or is found by its text.
+	 */
+	public function test_paid_order_note_is_not_added_beside_one_of_the_payments_own_notes( int $own_note_index, bool $by_identity ): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( OrderStatus::PROCESSING );
+		$order->save();
+		$event    = $this->event_with_paid_order_note( 'pi_own' );
+		$own_note = $event->get_paid_order_note()['own_note_events'][ $own_note_index ];
+		wc_get_container()->get( OrderPaymentNotes::class )->add( $order, (string) $own_note->get_note(), $by_identity ? $own_note->get_note_identity() : '', $this->persistence_vocabulary );
+
+		$this->sut->apply( $order, $event, $this->persistence_vocabulary );
+
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment pi_own reached an order already paid.' ) );
+		$this->assertCount( 0, $this->paid_order_log_lines( 'paid_order_payment_recorded' ) );
+	}
+
+	/**
+	 * The payment's own notes, each alone on the order.
+	 *
+	 * @return array<string,array{int,bool}>
+	 */
+	public function own_notes_of_the_payment(): array {
+		return array(
+			'success'              => array( 0, true ),
+			'success, by its text' => array( 0, false ),
+			'capture'              => array( 1, true ),
+			'held'                 => array( 2, true ),
+			'authorized'           => array( 3, true ),
+		);
+	}
+
+	/**
+	 * @testdox A paid skip of $_dataName adds no paid-order note and logs only the skip, as before.
+	 *
+	 * @dataProvider events_that_carry_no_paid_order_note
+	 *
+	 * @param string $status          Lifecycle status of the event.
+	 * @param bool   $paid_order_note Whether the event carries a paid-order note.
+	 */
+	public function test_paid_skip_without_a_paid_order_note_on_a_completed_event_adds_none( string $status, bool $paid_order_note ): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( OrderStatus::PROCESSING );
+		$order->save();
+		$notes_before = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+
+		$this->sut->apply( $order, $this->event_with_paid_order_note( 'pi_none', $paid_order_note, $status ), $this->persistence_vocabulary );
+
+		$this->assertCount( $notes_before, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$skips = array_values( array_filter( $this->captured_logs, static fn( array $log ): bool => 'order_paid' === ( $log['context']['reason'] ?? '' ) ) );
+		$this->assertCount( 1, $skips );
+		$this->assertArrayNotHasKey( 'paid_order_note_added', $skips[0]['context'] );
+		$this->assertCount( 0, $this->paid_order_log_lines( 'paid_order_payment_recorded' ) );
+	}
+
+	/**
+	 * Events skipped on a paid order that carry no paid-order note for the lifecycle to add.
+	 *
+	 * @return array<string,array{string,bool}>
+	 */
+	public function events_that_carry_no_paid_order_note(): array {
+		return array(
+			'a completed event without one'    => array( PaymentLifecycleEvent::STATUS_COMPLETED, false ),
+			'an authorized event carrying one' => array( PaymentLifecycleEvent::STATUS_AUTHORIZED, true ),
+		);
+	}
+
+	/**
+	 * @testdox A completed event skipped on a paid order for an open dispute adds no paid-order note: the dispute skip comes before the paid check.
+	 */
+	public function test_paid_order_note_is_not_added_at_an_open_dispute_skip(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( OrderStatus::PROCESSING );
+		$order->update_meta_data( $this->persistence_vocabulary->get_open_dispute_ids_meta_key(), array( 'dp_1' ) );
+		$order->save();
+
+		$this->sut->apply( $order, $this->event_with_paid_order_note( 'pi_disputed' ), $this->persistence_vocabulary );
+
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment pi_disputed reached an order already paid.' ) );
+		$this->assertCount( 1, $this->paid_order_log_lines( 'open_dispute' ) );
+		$this->assertCount( 0, $this->paid_order_log_lines( 'paid_order_payment_recorded' ) );
+	}
+
+	/**
+	 * @testdox A paid-order note that is not saved is logged with the order and the payment, the event ends as a skip, and a later delivery adds the note.
+	 */
+	public function test_paid_order_note_not_saved_is_logged_and_added_by_a_later_delivery(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( OrderStatus::PROCESSING );
+		$order->save();
+		$notes = new class() extends OrderPaymentNotes {
+			/**
+			 * Adds still to refuse.
+			 *
+			 * @var int
+			 */
+			public int $refusals = 1;
+
+			/**
+			 * Refuse the first add, as a failed comment insert does, then add.
+			 *
+			 * @param WC_Order                               $order      Order object.
+			 * @param string                                 $note       Note text.
+			 * @param string                                 $identity   Note identity.
+			 * @param ProviderPersistenceVocabularyInterface $vocabulary Provider persistence vocabulary.
+			 * @return int
+			 */
+			public function add( WC_Order $order, string $note, string $identity, ProviderPersistenceVocabularyInterface $vocabulary ): int {
+				if ( 0 < $this->refusals ) {
+					--$this->refusals;
+					return 0;
+				}
+
+				return parent::add( $order, $note, $identity, $vocabulary );
+			}
+		};
+		$sut   = new OrderPaymentLifecycleService();
+		$sut->init( $this->order_payment_lock, $notes );
+		$event = $this->event_with_paid_order_note( 'pi_unsaved' );
+
+		$first = $sut->apply( $order, $event, $this->persistence_vocabulary );
+
+		$this->assertSame( OrderPaymentLifecycleService::RESULT_NOTE_NOT_ADDED, $first );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment pi_unsaved reached an order already paid.' ) );
+		$this->assertSame( OrderStatus::PROCESSING, wc_get_order( $order->get_id() )->get_status() );
+		$not_saved = $this->paid_order_log_lines( 'paid_order_note_not_saved' );
+		$this->assertCount( 1, $not_saved );
+		$this->assertSame( 'warning', $not_saved[0]['level'] );
+		$this->assertSame( $order->get_id(), $not_saved[0]['context']['order_id'] );
+		$this->assertSame( 'pi_unsaved', $not_saved[0]['context']['payment_reference'] );
+		$this->assertCount( 0, $this->paid_order_log_lines( 'paid_order_payment_recorded' ) );
+		$this->assertArrayNotHasKey( 'paid_order_note_added', $this->paid_order_log_lines( 'order_paid' )[0]['context'], 'The skip does not count a note that was not saved.' );
+		$this->assertFalse( $this->is_order_payment_lock_held_for( $order, $this->persistence_vocabulary, 'pi_unsaved' ) );
+
+		$sut->apply( $order, $event, $this->persistence_vocabulary );
+
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Payment pi_unsaved reached an order already paid.' ) );
+		$this->assertCount( 1, $this->paid_order_log_lines( 'paid_order_payment_recorded' ) );
+	}
+
+	/**
+	 * Build a completed event that leaves a paid order as it is, with or without a paid-order note.
+	 *
+	 * Its own note is a plain completion note, so none of the payment's own notes is the event's: each reaches the paid
+	 * skip and only the paid-order note's own-note events can stop the note.
+	 *
+	 * @param string $payment_reference Payment reference.
+	 * @param bool   $paid_order_note   Whether the event carries a paid-order note.
+	 * @param string $status            Lifecycle status.
+	 * @return PaymentLifecycleEvent
+	 */
+	private function event_with_paid_order_note( string $payment_reference, bool $paid_order_note = true, string $status = PaymentLifecycleEvent::STATUS_COMPLETED ): PaymentLifecycleEvent {
+		return new PaymentLifecycleEvent(
+			$status,
+			$payment_reference,
+			array( '_intention_status' => 'succeeded' ),
+			array(),
+			'Payment reported for ' . $payment_reference . '.',
+			PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_COMPLETE,
+			array(),
+			false,
+			false,
+			array(),
+			true,
+			false,
+			$paid_order_note
+				? array(
+					'note'            => 'Payment ' . $payment_reference . ' reached an order already paid.',
+					'identity'        => 'paid_order_payment|' . $payment_reference,
+					'own_note_events' => array(
+						new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, $payment_reference, array(), array(), 'Paid by ' . $payment_reference . '.', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS ),
+						new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, $payment_reference, array(), array(), 'Captured ' . $payment_reference . '.', PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS ),
+						new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, $payment_reference, array(), array(), 'Held ' . $payment_reference . '.', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_HELD ),
+						new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_AUTHORIZED, $payment_reference, array(), array(), 'Authorized ' . $payment_reference . '.', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_AUTHORIZED ),
+					),
+				)
+				: null
+		);
+	}
+
+	/**
+	 * The captured log lines with a reason.
+	 *
+	 * @param string $reason Log reason.
+	 * @return array<int,array{level:string,message:string,context:array}>
+	 */
+	private function paid_order_log_lines( string $reason ): array {
+		return array_values( array_filter( $this->captured_logs, static fn( array $log ): bool => ( $log['context']['reason'] ?? '' ) === $reason ) );
+	}
+
+	/**
+	 * Apply a lifecycle event with the WooPayments vocabulary unless a test supplies another one.
+	 *
+	 * @param WC_Order                                    $order               Order object.
+	 * @param PaymentLifecycleEvent                       $event               Lifecycle event.
+	 * @param ProviderPersistenceVocabularyInterface|null $persistence_vocabulary Optional provider vocabulary.
+	 */
+	private function apply_event( WC_Order $order, PaymentLifecycleEvent $event, ?ProviderPersistenceVocabularyInterface $persistence_vocabulary = null ): void {
+		$this->sut->apply( $order, $event, $persistence_vocabulary ?? $this->persistence_vocabulary );
+	}
+
+	/**
+	 * The captured warnings that name a transaction ID a completion replaced.
+	 *
+	 * @return array<int,array{level:string,message:string,context:array}>
+	 */
+	private function replacement_lines(): array {
+		return array_values( array_filter( $this->captured_logs, static fn( array $log ): bool => 'completion_replaced_a_different_transaction_id' === ( $log['context']['reason'] ?? '' ) ) );
+	}
+
+	/**
+	 * Get the WooPayments vocabulary, or a provider vocabulary of its own that keeps open dispute IDs under another key.
+	 *
+	 * @param WC_Order $order       Order the provider vocabulary locks.
+	 * @param string   $dispute_key Open dispute IDs meta key.
+	 * @return ProviderPersistenceVocabularyInterface
+	 */
+	private function vocabulary_with_dispute_key( WC_Order $order, string $dispute_key ): ProviderPersistenceVocabularyInterface {
+		if ( $this->persistence_vocabulary->get_open_dispute_ids_meta_key() === $dispute_key ) {
+			return $this->persistence_vocabulary;
+		}
+
+		$vocabulary = $this->createMock( ProviderPersistenceVocabularyInterface::class );
+		$vocabulary->method( 'get_order_lock_key' )->willReturn( 'provider_lifecycle_lock_' . $order->get_id() );
+		$vocabulary->method( 'get_lock_sentinel' )->willReturn( 'provider-lock' );
+		$vocabulary->method( 'get_lock_ttl_seconds' )->willReturn( 60 );
+		$vocabulary->method( 'get_open_dispute_ids_meta_key' )->willReturn( $dispute_key );
+
+		return $vocabulary;
+	}
+
+	/**
+	 * Apply a lifecycle event under the caller's lock with the WooPayments vocabulary.
+	 *
+	 * @param WC_Order              $order Order object.
+	 * @param PaymentLifecycleEvent $event Lifecycle event.
+	 */
+	private function apply_event_under_lock( WC_Order $order, PaymentLifecycleEvent $event ): void {
+		$this->sut->apply_under_lock( $order, $event, $this->persistence_vocabulary );
+	}
+
+	/**
+	 * Create a completed lifecycle event with mutable payment metadata.
+	 *
+	 * @param string $payment_reference Provider payment reference.
+	 * @return PaymentLifecycleEvent
+	 */
+	private function completed_event( string $payment_reference ): PaymentLifecycleEvent {
+		return new PaymentLifecycleEvent(
+			PaymentLifecycleEvent::STATUS_COMPLETED,
+			$payment_reference,
+			array(
+				'_intent_id'             => $payment_reference,
+				'_intention_status'      => 'succeeded',
+				'_wcpay_transaction_fee' => '1.23',
+			),
+			array(),
+			'Payment complete.',
+			PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_COMPLETE
+		);
+	}
+
+	/**
+	 * Create a completed lifecycle event that holds the order.
+	 *
+	 * @param string $payment_reference Provider payment reference.
+	 * @return PaymentLifecycleEvent
+	 */
+	private function held_event( string $payment_reference ): PaymentLifecycleEvent {
+		return new PaymentLifecycleEvent(
+			PaymentLifecycleEvent::STATUS_COMPLETED,
+			$payment_reference,
+			array(
+				'_intention_status'      => 'succeeded',
+				'_wcpay_transaction_fee' => '1.23',
+			),
+			array(),
+			'Payment held.',
+			PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_HELD,
+			array(),
+			false,
+			true
+		);
+	}
+
+	/**
+	 * Build a completed event whose success note names its payment.
+	 *
+	 * @param string $payment_reference Payment reference.
+	 * @return PaymentLifecycleEvent
+	 */
+	private function paid_event( string $payment_reference ): PaymentLifecycleEvent {
+		return new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, $payment_reference, array(), array(), 'Paid by ' . $payment_reference . '.', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS );
+	}
+
+	/**
+	 * Create a WooPayments order for lifecycle tests.
+	 *
+	 * @return WC_Order
+	 */
+	private function create_woopayments_order(): WC_Order {
+		$order = wc_create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_total( '10.00' );
+		$order->save();
+
+		return $order;
+	}
+
+	/**
+	 * Read an order through its data store, so this request caches its row and meta.
+	 *
+	 * @param WC_Order $order Order object.
+	 * @return WC_Order The order instance a caller of this request holds.
+	 */
+	private function read_order_into_request_caches( WC_Order $order ): WC_Order {
+		$cached_order = clone $order;
+		/**
+		 * Order data store.
+		 *
+		 * @var \WC_Object_Data_Store_Interface $data_store
+		 */
+		$data_store = $cached_order->get_data_store();
+		$data_store->read( $cached_order );
+		/**
+		 * Order read through its data store.
+		 *
+		 * @var WC_Order $cached_order
+		 */
+
+		return $cached_order;
+	}
+
+	/**
+	 * Read an order status straight from the database, bypassing every cache.
+	 *
+	 * @param int $order_id Order ID.
+	 * @return string Stored status, with its wc- prefix.
+	 */
+	private function get_persisted_order_status( int $order_id ): string {
+		global $wpdb;
+
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- The assertion must see the database, not a cache.
+		if ( OrderUtil::custom_orders_table_usage_is_enabled() ) {
+			$orders_table = OrdersTableDataStore::get_orders_table_name();
+			return (string) $wpdb->get_var( $wpdb->prepare( "SELECT status FROM {$orders_table} WHERE id = %d", $order_id ) );
+		}
+
+		return (string) $wpdb->get_var( $wpdb->prepare( "SELECT post_status FROM {$wpdb->posts} WHERE ID = %d", $order_id ) );
+		// phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	}
+
+	/**
+	 * Tell whether an order meta key is stored in the database, bypassing every cache.
+	 *
+	 * @param int    $order_id Order ID.
+	 * @param string $meta_key Meta key.
+	 * @return bool
+	 */
+	private function is_order_meta_persisted( int $order_id, string $meta_key ): bool {
+		global $wpdb;
+
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- The assertion must see the database, not a cache.
+		if ( OrderUtil::custom_orders_table_usage_is_enabled() ) {
+			$meta_table = OrdersTableDataStore::get_meta_table_name();
+			return null !== $wpdb->get_var( $wpdb->prepare( "SELECT meta_value FROM {$meta_table} WHERE order_id = %d AND meta_key = %s", $order_id, $meta_key ) );
+		}
+
+		return null !== $wpdb->get_var( $wpdb->prepare( "SELECT meta_value FROM {$wpdb->postmeta} WHERE post_id = %d AND meta_key = %s", $order_id, $meta_key ) );
+		// phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.SlowDBQuery.slow_db_query_meta_key
+	}
+
+	/**
+	 * Assert that an order has a note with the expected exact content.
+	 *
+	 * @param WC_Order $order    Order object.
+	 * @param string   $expected Expected note content.
+	 */
+	private function assertOrderHasNote( WC_Order $order, string $expected ): void {
+		$this->assertGreaterThan( 0, $this->countOrderNotesMatching( $order, $expected ), "Missing order note: {$expected}" );
+	}
+
+	/**
+	 * Count order notes with exact content.
+	 *
+	 * @param WC_Order $order    Order object.
+	 * @param string   $expected Expected note content.
+	 * @return int
+	 */
+	private function countOrderNotesMatching( WC_Order $order, string $expected ): int {
+		$count = 0;
+		$notes = wc_get_order_notes(
+			array(
+				'order_id' => $order->get_id(),
+				'type'     => 'any',
+			)
+		);
+
+		foreach ( $notes as $note ) {
+			if ( $expected === $note->content ) {
+				++$count;
+			}
+		}
+
+		return $count;
+	}
+}

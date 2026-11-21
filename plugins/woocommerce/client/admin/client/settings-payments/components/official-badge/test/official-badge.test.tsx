@@ -17,6 +17,29 @@ jest.mock( '~/settings-payments/utils', () => ( {
 } ) );
 
 describe( 'OfficialBadge component', () => {
+	it( 'renders the official label, alt text, sentence and link when given no copy', async () => {
+		render(
+			<OfficialBadge variant="expanded" suggestionId="test_gateway" />
+		);
+		const trigger = screen.getByRole( 'button', {
+			name: 'Official WooCommerce extension badge Official',
+		} );
+		expect( trigger ).not.toHaveAttribute( 'data-testid' );
+
+		fireEvent.click( trigger );
+		const link = await screen.findByRole( 'link', { name: /Learn more/ } );
+
+		expect(
+			screen.getByText(
+				/This is an Official WooCommerce payment extension\./
+			)
+		).toContainElement( link );
+		expect( link ).toHaveAttribute(
+			'href',
+			'https://woocommerce.com/learn-more-about-official-partner-badging/'
+		);
+	} );
+
 	it.each( [
 		[ 'Enter', 'Enter' ],
 		[ 'Space', ' ' ],

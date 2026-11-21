@@ -1,0 +1,4 @@
+Significance: minor
+Type: add
+
+Add built-in WooPayments as a payment provider, with a one-click switch for stores using the WooPayments extension.

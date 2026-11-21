@@ -4913,6 +4913,21 @@ function wc_add_aria_label_to_pagination_numbers( $html, $args ) {
 }
 add_filter( 'paginate_links_output', 'wc_add_aria_label_to_pagination_numbers', 10, 2 );
 
+if ( ! function_exists( 'wc_get_currency_switcher_markup' ) ) {
+	/**
+	 * Get the currency switcher widget markup.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param array $instance Widget instance settings.
+	 * @param array $args     Widget arguments.
+	 * @return string Currency switcher widget markup.
+	 */
+	function wc_get_currency_switcher_markup( array $instance = array(), array $args = array() ): string {
+		return wc_get_container()->get( \Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySwitcherWidgetController::class )->get_switcher_widget_markup( $instance, $args );
+	}
+}
+
 /**
  * Get the quantity input args.
  *

@@ -4,6 +4,8 @@ declare( strict_types = 1 );
 use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Caches\ProductCountCache;
 use Automattic\WooCommerce\Enums\ProductStatus;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\StateStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\RestApi\UnitTests\LoggerSpyTrait;
 
 /**
@@ -377,6 +379,175 @@ class WC_Install_Test extends \WC_Unit_Test_Case {
 		remove_filter( 'wp_count_posts', $supply_post_count );
 		remove_filter( 'pre_option_woocommerce_coming_soon', $supply_coming_soon );
 		remove_filter( 'pre_option_woocommerce_task_list_completed_lists', $supply_completed_lists );
+	}
+
+	/**
+	 * @testdox A fresh install holds the WooPayments feature off, autoloaded, and writes no other built-in WooPayments switch ($_dataName).
+	 * @dataProvider provide_fresh_install_account_caches
+	 *
+	 * @param array|null $account_cache A WooPayments account cache left from an earlier install, or null for none.
+	 */
+	public function test_create_options_writes_the_woopayments_feature_off_on_fresh_installs( ?array $account_cache ): void {
+		$version        = false;
+		$supply_version = function () use ( &$version ) {
+			return $version;
+		};
+		$options        = array( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'woocommerce_woopayments_builtin_enabled', 'woocommerce_woopayments_builtin_kill_switch' );
+		foreach ( $options as $option ) {
+			delete_option( $option );
+		}
+		if ( null !== $account_cache ) {
+			update_option( 'wcpay_account_data', $account_cache );
+		}
+		add_filter( 'option_woocommerce_version', $supply_version );
+
+		try {
+			$this->invoke_create_options();
+
+			$this->assertSame( 'no', get_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION ) );
+			$this->assertArrayHasKey( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, wp_load_alloptions( true ) );
+			$this->assertFalse( get_option( 'woocommerce_woopayments_builtin_enabled', false ) );
+			$this->assertFalse( get_option( 'woocommerce_woopayments_builtin_kill_switch', false ) );
+		} finally {
+			remove_filter( 'option_woocommerce_version', $supply_version );
+			delete_option( 'wcpay_account_data' );
+			foreach ( $options as $option ) {
+				delete_option( $option );
+			}
+		}
+	}
+
+	/**
+	 * Account caches a fresh install can find: none, or one an earlier WooPayments install left behind.
+	 *
+	 * @return array<string,array{0:array|null}>
+	 */
+	public function provide_fresh_install_account_caches(): array {
+		return array(
+			'no account cache'       => array( null ),
+			// A minimal leftover cache in WooPayments 11.1.0's shape: includes/class-database-cache.php:379 writes the
+			// `data` envelope, and includes/class-wc-payments-account.php:171 and :759 read `account_id` and `is_live`.
+			// The real cache also carries fetch metadata, which no reader here needs.
+			'leftover account cache' => array(
+				array(
+					'data' => array(
+						'account_id' => 'acct_leftover',
+						'is_live'    => false,
+					),
+				),
+			),
+		);
+	}
+
+	/**
+	 * @testdox create_options seeds the built-in WooPayments setup tier as autoloaded, so no request queries a missing option.
+	 */
+	public function test_create_options_seeds_autoloaded_woopayments_runtime_options(): void {
+		delete_option( 'woocommerce_woopayments_setup_tier' );
+
+		try {
+			$this->invoke_create_options();
+
+			$this->assertArrayHasKey( 'woocommerce_woopayments_setup_tier', wp_load_alloptions( true ) );
+			$this->assertSame( 'disabled', get_option( 'woocommerce_woopayments_setup_tier' ) );
+		} finally {
+			delete_option( 'woocommerce_woopayments_setup_tier' );
+		}
+	}
+
+	/**
+	 * @testdox create_options seeds the autoloaded absent cutover record, so admin and cron requests read it without a query.
+	 */
+	public function test_create_options_seeds_the_absent_cutover_record(): void {
+		global $wpdb;
+		delete_option( StateStore::OPTION_NAME );
+
+		try {
+			$this->invoke_create_options();
+			wp_load_alloptions( true );
+
+			$queries = $wpdb->num_queries;
+			$this->assertNull( ( new StateStore() )->get_record() );
+			$this->assertSame( 0, $wpdb->num_queries - $queries, 'Reading the missing cutover record must not query the options table.' );
+			$this->assertSame( 'none', get_option( StateStore::OPTION_NAME ) );
+		} finally {
+			delete_option( StateStore::OPTION_NAME );
+		}
+	}
+
+	/**
+	 * @testdox create_options keeps an existing built-in WooPayments setup tier and cutover record.
+	 */
+	public function test_create_options_keeps_existing_woopayments_runtime_options(): void {
+		update_option( 'woocommerce_woopayments_setup_tier', 'active', true );
+		update_option( StateStore::OPTION_NAME, array( 'state' => 'done' ), true );
+
+		try {
+			$this->invoke_create_options();
+
+			$this->assertSame( 'active', get_option( 'woocommerce_woopayments_setup_tier' ) );
+			$this->assertSame( array( 'state' => 'done' ), get_option( StateStore::OPTION_NAME ) );
+		} finally {
+			delete_option( 'woocommerce_woopayments_setup_tier' );
+			delete_option( StateStore::OPTION_NAME );
+		}
+	}
+
+	/**
+	 * @testdox create_options keeps built-in WooPayments values another request wrote after this request read them as missing.
+	 *
+	 * On the upgrade request the cutover job reads the missing record at init priority 1, before install runs
+	 * create_options(). A start click or plugin deactivation can write the first record in between.
+	 */
+	public function test_create_options_keeps_woopayments_values_written_after_a_missed_read(): void {
+		global $wpdb;
+		$written = array(
+			'woocommerce_woopayments_setup_tier' => 'active',
+			StateStore::OPTION_NAME              => maybe_serialize(
+				array(
+					'state'      => 'pending',
+					'generation' => 1,
+				)
+			),
+		);
+
+		try {
+			foreach ( $written as $name => $value ) {
+				delete_option( $name );
+				$this->assertFalse( get_option( $name ), "{$name} should start missing, which primes the notoptions cache." );
+				// Another request writes the value; this request's caches still say it is missing.
+				$wpdb->insert(
+					$wpdb->options,
+					array(
+						'option_name'  => $name,
+						'option_value' => $value,
+						'autoload'     => 'on',
+					)
+				);
+			}
+
+			$this->invoke_create_options();
+
+			foreach ( $written as $name => $value ) {
+				$stored = $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", $name ) );
+				$this->assertSame( $value, $stored, "The install seed must not replace the stored {$name}." );
+				$this->assertSame( maybe_unserialize( $value ), get_option( $name ), "The same request must read the stored {$name}." );
+			}
+		} finally {
+			foreach ( array_keys( $written ) as $name ) {
+				delete_option( $name );
+			}
+		}
+	}
+
+	/**
+	 * Invoke the install-only create_options seam.
+	 */
+	private function invoke_create_options(): void {
+		$create_options = function (): void {
+			static::create_options();
+		};
+		$create_options->call( new WC_Install() );
 	}
 
 	/**

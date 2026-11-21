@@ -1,0 +1,194 @@
+<?php
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
+
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTrackingInfoService;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
+use WC_Unit_Test_Case;
+
+/**
+ * Tests for the platform tracking info cache.
+ *
+ * Expectations come from plugin 11.1.0 `WC_Payments_Account::get_tracking_info()` and `Database_Cache`
+ * (`get_or_add()`, `should_refresh_cache()`, `write_to_cache()`, the `TRACKING_INFO_KEY` TTL and the error ladder).
+ */
+class WooPaymentsTrackingInfoServiceTest extends WC_Unit_Test_Case {
+
+	private const OPTION = 'wcpay_tracking_info_cache';
+
+	/**
+	 * The System Under Test.
+	 *
+	 * @var WooPaymentsTrackingInfoService
+	 */
+	private WooPaymentsTrackingInfoService $sut;
+
+	/**
+	 * Recording API client.
+	 *
+	 * @var Client
+	 */
+	private Client $api_client;
+
+	/**
+	 * Set up test fixtures.
+	 */
+	public function setUp(): void {
+		parent::setUp();
+
+		$this->api_client = new class() extends Client {
+
+			/** @var bool */
+			public bool $available = true;
+
+			/** @var int */
+			public int $calls = 0;
+
+			/** @var array<string,mixed> */
+			public array $response = array( 'hosting_provider' => 'fixture-host-3' );
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return $this->available;
+			}
+
+			/**
+			 * Return the configured tracking info.
+			 *
+			 * @return array<string,mixed>
+			 */
+			public function get_tracking_info(): array {
+				++$this->calls;
+
+				return $this->response;
+			}
+		};
+
+		$database_cache = new WooPaymentsDatabaseCache();
+		$database_cache->init( new LegacyProxy() );
+		$this->sut = new WooPaymentsTrackingInfoService();
+		$this->sut->init( $this->api_client, $database_cache );
+		delete_option( self::OPTION );
+	}
+
+	/**
+	 * Tear down test fixtures.
+	 */
+	public function tearDown(): void {
+		delete_option( self::OPTION );
+
+		parent::tearDown();
+	}
+
+	/**
+	 * The cache-only read answers what is stored and never fetches; like the full read it answers nothing before the site is connected.
+	 *
+	 * @testdox Should answer the cached tracking info without fetching: $label.
+	 * @testWith ["connected, fresh entry", true, "fresh", true]
+	 *           ["connected, expired entry", true, "expired", true]
+	 *           ["connected, failed fetch", true, "errored", false]
+	 *           ["connected, nothing cached", true, "none", false]
+	 *           ["not connected, fresh entry", false, "fresh", false]
+	 *
+	 * @param string $label     Case label.
+	 * @param bool   $connected Whether the site is connected.
+	 * @param string $entry     The stored entry: fresh, expired, errored or none.
+	 * @param bool   $expected  Whether the stored info is answered.
+	 */
+	public function test_cached_read_never_fetches( string $label, bool $connected, string $entry, bool $expected ): void {
+		unset( $label );
+		$this->api_client->available = $connected;
+		if ( 'none' !== $entry ) {
+			$this->seed( array( 'hosting_provider' => 'cached-host' ), 'expired' === $entry ? time() - 2 * MONTH_IN_SECONDS : time(), 'errored' === $entry, 'errored' === $entry ? 1 : 0 );
+		}
+
+		$this->assertSame( $expected ? array( 'hosting_provider' => 'cached-host' ) : null, $this->sut->get_cached_tracking_info() );
+		$this->assertSame( 0, $this->api_client->calls );
+	}
+
+	/**
+	 * @testdox Before the site is connected there is no tracking info and no platform request.
+	 */
+	public function test_returns_null_when_not_connected(): void {
+		$this->api_client->available = false;
+		$this->seed( array( 'hosting_provider' => 'cached-host' ), time(), false );
+
+		$this->assertNull( $this->sut->get_tracking_info() );
+		$this->assertSame( 0, $this->api_client->calls );
+	}
+
+	/**
+	 * @testdox A missing cache is fetched from the platform and stored in the WooPayments extension's cache shape.
+	 */
+	public function test_fetches_and_stores_missing_cache(): void {
+		$this->assertSame( array( 'hosting_provider' => 'fixture-host-3' ), $this->sut->get_tracking_info() );
+		$this->assertSame( 1, $this->api_client->calls );
+
+		$stored = get_option( self::OPTION );
+		$this->assertSame( array( 'hosting_provider' => 'fixture-host-3' ), $stored['data'] );
+		$this->assertFalse( $stored['errored'] );
+		$this->assertSame( 0, $stored['consecutive_errors'] );
+		$this->assertEqualsWithDelta( time(), $stored['fetched'], 5 );
+		$this->assertTrue( $this->is_autoload_off() );
+	}
+
+	/**
+	 * @testdox The tracking info is fetched once per request even when storing it fails (the WooPayments extension `class-database-cache.php:101-109,340-353`).
+	 */
+	public function test_fetches_once_per_request_when_the_write_fails(): void {
+		add_filter(
+			'pre_update_option_' . self::OPTION,
+			static function ( $value, $old_value ) {
+				unset( $value );
+				return $old_value;
+			},
+			10,
+			2
+		);
+
+		$this->assertSame( array( 'hosting_provider' => 'fixture-host-3' ), $this->sut->get_tracking_info() );
+		$this->assertSame( array( 'hosting_provider' => 'fixture-host-3' ), $this->sut->get_tracking_info() );
+		$this->assertSame( 1, $this->api_client->calls );
+	}
+
+	/**
+	 * Seed the cache option.
+	 *
+	 * @param array<string,mixed>|null $data               Cached data.
+	 * @param int                      $fetched            Fetch timestamp.
+	 * @param bool                     $errored            Whether the write errored.
+	 * @param int                      $consecutive_errors Consecutive error count.
+	 */
+	private function seed( ?array $data, int $fetched, bool $errored, int $consecutive_errors = 0 ): void {
+		update_option(
+			self::OPTION,
+			array(
+				'data'               => $data,
+				'fetched'            => $fetched,
+				'errored'            => $errored,
+				'consecutive_errors' => $consecutive_errors,
+			),
+			false
+		);
+	}
+
+	/**
+	 * Tell whether the cache option is stored without autoload, like the plugin's cache.
+	 *
+	 * @return bool
+	 */
+	private function is_autoload_off(): bool {
+		global $wpdb;
+
+		$autoload = $wpdb->get_var( $wpdb->prepare( "SELECT autoload FROM {$wpdb->options} WHERE option_name = %s", self::OPTION ) );
+
+		return in_array( $autoload, array( 'no', 'off' ), true );
+	}
+}

@@ -1,0 +1,69 @@
+@import "../../_tokens.scss";
+
+.woopayments-fraud-protection {
+	h3 {
+		margin: 0 0 $gap-smaller;
+		font-size: $woopayments-font-size-subheading;
+		line-height: $font-line-height-small;
+		font-weight: 600;
+	}
+}
+
+.woopayments-fraud-protection-levels {
+	margin: 0;
+	padding: 0;
+	border: 0;
+}
+
+.woopayments-fraud-protection-levels__option {
+	padding: $gap 0;
+
+	& + & {
+		border-top: 1px solid $studio-gray-5;
+	}
+}
+
+.woopayments-fraud-protection-levels__option--advanced {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: $gap;
+}
+
+.woopayments-fraud-protection-levels__advanced-content {
+	flex: 1;
+	min-width: 0;
+}
+
+.woopayments-fraud-protection-levels__header {
+	display: flex;
+	align-items: center;
+	gap: $gap-smaller;
+
+	input[type="radio"] {
+		margin: 0;
+	}
+
+	.components-button.has-icon {
+		min-width: $button-size-small;
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- no token at 20px; $button-size-small is 24px.
+		height: 20px;
+		padding: 0;
+	}
+}
+
+.woopayments-fraud-protection-levels__copy {
+	margin-block: $gap-smallest 0;
+	margin-inline: $gap-large 0;
+	color: $gray-700;
+}
+
+.woopayments-fraud-protection-modal__body {
+	display: grid;
+	gap: $gap;
+
+	p,
+	ul {
+		margin: 0;
+	}
+}

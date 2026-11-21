@@ -76,6 +76,10 @@ declare global {
 }
 
 describe( 'Payment recommendations', () => {
+	beforeEach( () => {
+		window.wcAdminFeatures = {};
+	} );
+
 	it( 'should render nothing with no paymentGatewaySuggestions and country not defined', () => {
 		( useSelect as jest.Mock ).mockReturnValue( {
 			installedPaymentGateways: {},
@@ -131,32 +135,6 @@ describe( 'Payment recommendations', () => {
 			'settings_payments_recommendations_pageview',
 			{
 				test_displayed: true,
-				woocommerce_payments_displayed: false,
-			}
-		);
-	} );
-
-	it( 'should set woocommerce-payments-displayed prop to true if pre install wc pay promotion gateway is displayed', () => {
-		( isWCPaySupported as jest.Mock ).mockReturnValue( true );
-		( useSelect as jest.Mock ).mockReturnValue( {
-			installedPaymentGateways: {},
-			paymentGatewaySuggestions: [
-				{ title: 'test', id: 'test', plugins: [ 'test' ] },
-			],
-		} );
-		const { container } = render(
-			<div>
-				<div data-gateway_id="pre_install_woocommerce_payments_promotion"></div>
-				<PaymentRecommendations />
-			</div>
-		);
-
-		expect( container.firstChild ).not.toBeNull();
-		expect( recordEvent ).toHaveBeenCalledWith(
-			'settings_payments_recommendations_pageview',
-			{
-				test_displayed: true,
-				woocommerce_payments_displayed: false,
 			}
 		);
 	} );

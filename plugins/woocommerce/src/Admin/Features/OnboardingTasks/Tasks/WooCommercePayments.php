@@ -7,7 +7,6 @@ use Automattic\WooCommerce\Admin\Features\OnboardingTasks\Task;
 use Automattic\WooCommerce\Admin\PluginsHelper;
 use Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\Init as Suggestions;
 use Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\DefaultPaymentGateways;
-use Automattic\WooCommerce\Internal\Admin\WcPayWelcomePage;
 use WC_Gateway_BACS;
 use WC_Gateway_Cheque;
 use WC_Gateway_COD;
@@ -307,12 +306,6 @@ class WooCommercePayments extends Task {
 					),
 					admin_url( 'admin.php' )
 				);
-			}
-
-			// Check if there is an active WooPayments incentive via the welcome page.
-			if ( WcPayWelcomePage::instance()->has_incentive() ) {
-				// Point to the WooPayments welcome page.
-				return add_query_arg( 'from', 'WCADMIN_PAYMENT_TASK', admin_url( 'admin.php?page=wc-admin&path=/wc-pay-welcome-page' ) );
 			}
 
 			// WooPayments is not active.

@@ -24,7 +24,9 @@ export const Action = ( {
 	markConfigured = () => {},
 	onSetUp = () => {},
 	onSetupCallback,
-	setupButtonText = __( 'Get started', 'woocommerce' ),
+	setupButtonText = /** @type {string} */ (
+		__( 'Get started', 'woocommerce' )
+	),
 	externalLink = null,
 } ) => {
 	const [ isBusy, setIsBusy ] = useState( false );

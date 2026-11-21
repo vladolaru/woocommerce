@@ -9,7 +9,8 @@
 	"testPathIgnorePatterns": [
 		"<rootDir>/build/",
 		"<rootDir>/node_modules/",
-		"<rootDir>/tests/"
+		"<rootDir>/tests/",
+		"<rootDir>/frontend/test/msw-setup.js"
 	],
 	"roots": [ "<rootDir>" ],
 	"transform": {

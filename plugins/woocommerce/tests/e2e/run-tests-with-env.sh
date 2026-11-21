@@ -59,7 +59,10 @@ if [ "$skipEnvSetup" == "True" ]; then
 	echo "Skipping environment setup"
 else
 	echo "Executing environment setup script(s)"
-	"$SCRIPT_PATH/envs/$envName/env-setup.sh"
+	# The Playwright arguments describe exactly what will run, so pass them
+	# through: an environment's setup script may condition readiness on the
+	# collected test set. No other env-setup script reads arguments.
+	"$SCRIPT_PATH/envs/$envName/env-setup.sh" "$@"
 fi
 
 echo

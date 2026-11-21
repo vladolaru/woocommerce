@@ -54,6 +54,11 @@
       "count": 1
     }
   },
+  "assets/js/blocks/multi-currency-switcher/block.js": {
+    "@wordpress/use-recommended-components": {
+      "count": 1
+    }
+  },
   "assets/js/blocks/order-confirmation/create-account/edit.tsx": {
     "@wordpress/use-recommended-components": {
       "count": 1

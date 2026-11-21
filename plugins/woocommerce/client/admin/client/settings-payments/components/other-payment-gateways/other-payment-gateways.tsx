@@ -18,8 +18,12 @@ import {
  */
 import { GridItemPlaceholder } from '~/settings-payments/components/grid-item-placeholder';
 import { OfficialBadge } from '../official-badge';
+import { BuiltinBadge } from '../builtin-badge';
 import { IncentiveStatusBadge } from '~/settings-payments/components/incentive-status-badge';
-import { recordPaymentsEvent } from '~/settings-payments/utils';
+import {
+	isBuiltinWooPaymentsSuggestion,
+	recordPaymentsEvent,
+} from '~/settings-payments/utils';
 
 interface OtherPaymentGatewaysProps {
 	/**
@@ -313,6 +317,18 @@ export const OtherPaymentGateways = ( {
 												);
 									}
 
+									// The WooPayments built into WooCommerce installs nothing; it opens its onboarding.
+									if (
+										isBuiltinWooPaymentsSuggestion(
+											extension
+										)
+									) {
+										ctaLabel = __< string >(
+											'Set up',
+											'woocommerce'
+										);
+									}
+
 									return (
 										<div
 											className="other-payment-gateways__content__grid-item"
@@ -337,13 +353,23 @@ export const OtherPaymentGateways = ( {
 															}
 														/>
 													) }
-													{ /* All payment extension suggestions are official. */ }
-													<OfficialBadge
-														variant="expanded"
-														suggestionId={
-															extension.id
-														}
-													/>
+													{ /* All payment extension suggestions are official, except the one built into WooCommerce. */ }
+													{ isBuiltinWooPaymentsSuggestion(
+														extension
+													) ? (
+														<BuiltinBadge
+															suggestionId={
+																extension.id
+															}
+														/>
+													) : (
+														<OfficialBadge
+															variant="expanded"
+															suggestionId={
+																extension.id
+															}
+														/>
+													) }
 												</span>
 												<span className="other-payment-gateways__content__grid-item__content__description">
 													{ decodeEntities(
