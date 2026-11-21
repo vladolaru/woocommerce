@@ -29,6 +29,7 @@ Code outside this folder names only `StripeBillingModule`, and only in these sea
 | S6 | `WooPaymentsStoreSetupReportController.php` | reports whether Stripe Billing is enabled |
 | S7 | `WooPaymentsSettingsService.php`, `MerchantRestController.php` | the Stripe Billing settings fields, the toggle write, and the bundled subscriptions flag, its eligibility and its turn-off |
 | S8 | `Cutover/BundledSubscriptionsGuard.php` | cutover rules for stores with Stripe Billing data |
+| S9 | `WooPaymentsFeeDetailsNoteController.php` | asks the module to schedule the first-invoice job when the payment's success or capture note is added |
 
 The Stripe Billing fee context on payment intents is not a seam: the module sets `payment_context` through the existing `wcpay_metadata_from_order` filter.
 
@@ -38,4 +39,4 @@ Code inside this folder may use provider services from the container, the paymen
 
 ## Extraction
 
-To move Stripe Billing out of WooCommerce: delete this folder, revert the eight seams, remove the module root from the provider's bootstrap matrix, and delete `StripeBillingPlacementTest`.
+To move Stripe Billing out of WooCommerce: delete this folder, revert the nine seams, remove the module root from the provider's bootstrap matrix, and delete `StripeBillingPlacementTest`.

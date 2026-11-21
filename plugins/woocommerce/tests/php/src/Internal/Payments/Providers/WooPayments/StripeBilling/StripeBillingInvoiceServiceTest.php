@@ -93,6 +93,7 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 		WooCommerceSubscriptionsDoubles::load();
+		WooCommerceSubscriptionsDoubles::load_renewal_detector();
 
 		$this->http_client          = new FakeHttpClient();
 		$this->http_client->blog_id = self::RECORDED_BLOG_ID;
@@ -139,6 +140,7 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 		try {
 			$this->reset_container_replacements();
 			unset(
+				$GLOBALS['wcpay_test_renewal_order_ids'],
 				$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ],
 				$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ],
 				$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_PRODUCT_IDS ]
@@ -223,39 +225,192 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 0, $this->http_client->request_count );
 	}
 
+	private const FIRST_INVOICE_HOOK = 'woocommerce_woopayments_retry_stripe_billing_first_invoice';
+	private const FAILURE_NOTE       = "WooPayments could not tell Stripe that this subscription's first payment was received, so Stripe stopped billing it and it will not renew. The customer's first payment is not affected. To keep billing this customer, ask them to subscribe again, then cancel this subscription. Stripe subscription ID: " . self::MAIN_SUBSCRIPTION_ID . '.';
+
 	/**
-	 * @testdox An invoice the platform reports as already paid is tolerated; any other refusal is passed on (client maybe_record_invoice_payment).
-	 * @testWith [400, "Invoice is already paid.", false]
-	 *           [500, "Invoice is already paid.", true]
-	 *           [400, "You cannot combine currencies on a single customer. This customer has an active subscription, subscription schedule, discount, quote, or invoice item with currency usd.", true]
+	 * @testdox An inline invoice failure leaves the order paid and records only the appropriate retry or subscription note.
+	 * @testWith ["F1", 400, false]
+	 *           ["A1", 503, true]
+	 *           ["A1-transport", 0, true]
+	 *           ["A2", 429, true]
+	 *           ["A10", 503, true]
+	 *           ["N1", 400, false]
+	 *           ["E1", 200, false]
 	 *
-	 * @param int    $http_status HTTP status of the refusal.
-	 * @param string $message     Platform message.
-	 * @param bool   $expect_failure Whether the refusal is passed on.
+	 * @param string $row   Sheet scenario.
+	 * @param int    $code  Platform response, or zero for a transport error.
+	 * @param bool   $retry Whether one later attempt is due.
 	 */
-	public function test_tolerates_only_an_invoice_already_paid( int $http_status, string $message, bool $expect_failure ): void {
-		// The platform's flattened Stripe error shape, as recorded in `error_combine_currencies`.
-		$this->http_client->responses[] = $this->make_response(
-			$http_status,
-			array(
-				'code'    => 'invalid_request_error',
-				'message' => $message,
-				'data'    => array( 'status' => $http_status ),
-			)
-		);
-
+	public function test_first_invoice_at_payment( string $row, int $code, bool $retry ): void {
 		$order = \WC_Helper_Order::create_order();
-		$this->create_stripe_billed_subscription( $order, 'parent' );
-
-		$failure = null;
-		try {
-			$this->sut->maybe_record_invoice_payment( $order->get_id() );
-		} catch ( \RuntimeException $exception ) {
-			$failure = $exception;
+		$order->set_status( 'pending' );
+		$order->set_date_created( time() - ( 'A10' === $row ? 3 * DAY_IN_SECONDS : 0 ) );
+		$order->save();
+		$renewal      = 'A10' === $row;
+		$subscription = $this->create_stripe_billed_subscription( $order, $renewal ? 'renewal' : 'parent' );
+		if ( 'E1' === $row ) {
+			$subscription->update_status( 'pending-cancel' );
+		}
+		if ( 'N1' === $row ) {
+			$second = $this->create_stripe_billed_subscription( $order, 'parent', array( '_wcpay_billing_invoice_id' => 'in_second' ) );
+		}
+		if ( $renewal ) {
+			$GLOBALS['wcpay_test_renewal_order_ids'][] = $order->get_id();
+			add_action( 'woocommerce_renewal_order_payment_complete', array( $this->sut, 'maybe_record_invoice_payment' ), 11 );
+		} else {
+			add_action( 'woocommerce_order_payment_status_changed', array( $this->sut, 'maybe_record_invoice_payment' ) );
 		}
 
-		$this->assertSame( $expect_failure, null !== $failure );
-		$this->assertSame( 1, $this->http_client->request_count );
+		$this->queue_invoice_answer( $code, 'This invoice is void.' );
+		if ( 'N1' === $row ) {
+			$this->queue_recorded_responses( 'charge_invoice' );
+		}
+		$logged = array();
+		add_filter(
+			'woocommerce_logger_log_message',
+			static function ( $message, $level, $context, $handler ) use ( &$logged, $subscription ) {
+				if ( $subscription->get_id() === ( $context['subscription_id'] ?? null ) && isset( $context['attempt'] ) ) {
+					$logged[ spl_object_id( $handler ) ][] = $context['attempt'];
+				}
+				return $message;
+			},
+			10,
+			4
+		);
+		$start = time();
+		$order->payment_complete();
+		if ( $renewal ) {
+			do_action( 'woocommerce_renewal_order_payment_complete', $order->get_id() );
+		}
+		$this->assertSame( 'E1' === $row, empty( $logged ) );
+		foreach ( $logged as $attempts ) {
+			$this->assertSame( array( 1 ), $attempts );
+		}
+		$this->assertTrue( $order->is_paid() );
+		$this->assertSame( array(), preg_grep( '/Error during status transition/', $this->get_order_note_texts( $order ) ) );
+		$this->assertSame( 400 === $code ? 1 : 0, count( array_keys( $this->get_order_note_texts( $subscription ), self::FAILURE_NOTE, true ) ) );
+		if ( 0 === $code ) {
+			$this->assertGreaterThan( 0, $this->http_client->request_count );
+		} else {
+			$this->assertSame( 'E1' === $row ? 0 : ( 'N1' === $row ? 2 : 1 ), $this->http_client->request_count );
+		}
+		if ( isset( $second ) ) {
+			$this->assertStringEndsWith( '/in_second/pay', $this->http_client->last_path );
+			$this->assertNotContains( self::FAILURE_NOTE, $this->get_order_note_texts( $second ) );
+		}
+		$this->assert_invoice_schedule( $order, $subscription, $retry ? 1 : null, $start + 60 );
+	}
+
+	/**
+	 * @testdox A delayed first-invoice job uses the paying order's money, its bound invoice and its remaining time.
+	 * @testWith ["M1", "requires_capture", "pi_first", 0, 0, 200, 0, null]
+	 *           ["M2", "succeeded", "pi_first", 0, 0, 200, 1, null]
+	 *           ["M3", "succeeded", "pi_first", 0, 0, 200, 0, null]
+	 *           ["M4", "succeeded", "seti_first", 0, 0, 200, 0, null]
+	 *           ["B1", "succeeded", "pi_first", 0, 0, 200, 0, null]
+	 *           ["A4-1", "succeeded", "pi_first", 1, 0, 503, 1, 600]
+	 *           ["A4-2", "succeeded", "pi_first", 2, 0, 503, 1, 3600]
+	 *           ["A5", "succeeded", "pi_first", 3, 7200, 503, 1, 72000]
+	 *           ["early-last", "succeeded", "pi_first", 2, 77400, 503, 1, 1800]
+	 *           ["A6", "succeeded", "pi_first", 1, 82800, 200, 0, null]
+	 *           ["A7", "succeeded", "pi_first", 4, 79200, 503, 1, null]
+	 *           ["A8", "succeeded", "pi_first", 1, 0, 200, 1, null]
+	 *           ["A9", "succeeded", "pi_first", 1, 0, 400, 1, null]
+	 *           ["paid zero", "", "", 0, 0, 200, 1, null]
+	 *
+	 * @param string   $row      Sheet scenario.
+	 * @param string   $status   Stored intent status.
+	 * @param string   $intent   Stored intent ID.
+	 * @param int      $retry    Attempt number.
+	 * @param int      $age      Order age in seconds.
+	 * @param int      $code     HTTP response.
+	 * @param int      $requests Expected invoice requests.
+	 * @param int|null $delay    Expected time to next job, or null.
+	 */
+	public function test_first_invoice_job( string $row, string $status, string $intent, int $retry, int $age, int $code, int $requests, ?int $delay ): void {
+		$now   = time();
+		$order = \WC_Helper_Order::create_order();
+		$order->set_date_created( $now - $age );
+		$order->set_status( 'completed' );
+		$order->set_total( 'paid zero' === $row ? '0' : '10' );
+		$order->update_meta_data( '_intention_status', $status );
+		$order->update_meta_data( '_intent_id', $intent );
+		$order->save();
+		$subscription = $this->create_stripe_billed_subscription( $order, 'parent', array( '_requires_manual_renewal' => 'A8' === $row ? 'true' : 'false' ) );
+		if ( 'M3' === $row ) {
+			$refund_args = array(
+				'order_id' => $order->get_id(),
+				'amount'   => 10,
+			);
+			$refund      = wc_create_refund( $refund_args );
+			$this->assertInstanceOf( \WC_Order_Refund::class, $refund );
+		}
+		$this->queue_invoice_answer( $code, 'Invoice is already paid.' );
+		$this->subscriptions_controller->expects( 'A8' === $row ? $this->once() : $this->never() )->method( 'update_failing_payment_method' );
+
+		$this->sut->handle_first_invoice_job( $order->get_id(), $subscription->get_id(), 'B1' === $row ? 'in_old' : self::MAIN_INVOICE_ID, $retry );
+		if ( 'A7' === $row ) {
+			$order->set_date_created( $now - 23 * HOUR_IN_SECONDS );
+			$order->save();
+			$this->sut->handle_first_invoice_job( $order->get_id(), $subscription->get_id(), self::MAIN_INVOICE_ID, $retry );
+		}
+
+		$this->assertSame( $requests, $this->http_client->request_count );
+		$this->assertSame( in_array( $row, array( 'A6', 'A7' ), true ) ? 1 : 0, count( array_keys( $this->get_order_note_texts( $subscription ), self::FAILURE_NOTE, true ) ) );
+		if ( 'A8' === $row ) {
+			$this->assertFalse( wc_get_order( $subscription->get_id() )->is_manual() );
+		}
+		$this->assert_invoice_schedule( $order, $subscription, null === $delay ? null : ( 'early-last' === $row ? 4 : $retry + 1 ), $now + (int) $delay );
+	}
+
+	/**
+	 * Queue a platform answer for invoice payment.
+	 *
+	 * @param int    $code    Status, or zero for a transport failure on every attempt.
+	 * @param string $message Error text.
+	 */
+	private function queue_invoice_answer( int $code, string $message ): void {
+		if ( 0 === $code ) {
+			$this->http_client->response = new \WP_Error( 'http_request_failed', 'Transport unavailable.' );
+		} elseif ( 200 === $code ) {
+			$this->queue_recorded_responses( 'charge_invoice' );
+		} else {
+			$error                          = array(
+				'code'    => 'invalid_request_error',
+				'message' => $message,
+				'data'    => array( 'status' => $code ),
+			);
+			$this->http_client->responses[] = $this->make_response( $code, $error );
+		}
+	}
+
+	/**
+	 * Check every pending first-invoice job and its due time.
+	 *
+	 * @param WC_Order $order        Paying order.
+	 * @param WC_Order $subscription Subscription.
+	 * @param int|null $retry        Expected attempt, or none.
+	 * @param int      $due          Expected timestamp.
+	 */
+	private function assert_invoice_schedule( WC_Order $order, WC_Order $subscription, ?int $retry, int $due ): void {
+		$query   = array(
+			'hook'   => self::FIRST_INVOICE_HOOK,
+			'status' => 'pending',
+			'group'  => 'woocommerce_payments',
+		);
+		$actions = array_values( as_get_scheduled_actions( $query ) );
+		$this->assertCount( null === $retry ? 0 : 1, $actions );
+		if ( null !== $retry ) {
+			$expected = array(
+				'order_id'        => $order->get_id(),
+				'subscription_id' => $subscription->get_id(),
+				'invoice_id'      => self::MAIN_INVOICE_ID,
+				'retry'           => $retry,
+			);
+			$this->assertSame( $expected, $actions[0]->get_args() );
+			$this->assertEqualsWithDelta( $due, $actions[0]->get_schedule()->get_date()->getTimestamp(), 5 );
+		}
 	}
 
 	/**

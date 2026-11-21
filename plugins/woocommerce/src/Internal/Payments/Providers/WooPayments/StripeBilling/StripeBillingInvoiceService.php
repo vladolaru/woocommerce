@@ -14,6 +14,11 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
+use Throwable;
 use WC_Order;
 use WP_Http;
 
@@ -39,6 +44,23 @@ class StripeBillingInvoiceService {
 	 * Order and subscription meta holding the invoice ID.
 	 */
 	public const ORDER_INVOICE_ID_KEY = '_wcpay_billing_invoice_id';
+
+	/** Action Scheduler hook for recording a subscription's first payment. */
+	public const FIRST_INVOICE_ACTION = 'woocommerce_woopayments_retry_stripe_billing_first_invoice';
+
+	/**
+	 * Prevent a second subscription lookup after the inline handler visits an order.
+	 *
+	 * @var array<string,bool>
+	 */
+	private array $visited_orders = array();
+
+	/**
+	 * Keeps one pending attempt per invoice and retry number.
+	 *
+	 * @var WooPaymentsActionSchedulerService
+	 */
+	private WooPaymentsActionSchedulerService $scheduler;
 
 	/**
 	 * Stripe Billing platform calls.
@@ -73,16 +95,18 @@ class StripeBillingInvoiceService {
 	 *
 	 * @internal
 	 *
-	 * @param StripeBillingApi    $api        Stripe Billing platform calls.
-	 * @param Client              $api_client Platform API client.
-	 * @param StripeBillingModule $module     Module root.
-	 * @param WooPaymentsLogger   $logger     Module logger.
+	 * @param StripeBillingApi                       $api        Stripe Billing platform calls.
+	 * @param Client                                 $api_client Platform API client.
+	 * @param StripeBillingModule                    $module     Module root.
+	 * @param WooPaymentsLogger                      $logger     Module logger.
+	 * @param WooPaymentsActionSchedulerService|null $scheduler  First-invoice jobs.
 	 */
-	final public function init( StripeBillingApi $api, Client $api_client, StripeBillingModule $module, WooPaymentsLogger $logger ): void {
+	final public function init( StripeBillingApi $api, Client $api_client, StripeBillingModule $module, WooPaymentsLogger $logger, ?WooPaymentsActionSchedulerService $scheduler = null ): void {
 		$this->api        = $api;
 		$this->api_client = $api_client;
 		$this->module     = $module;
 		$this->logger     = $logger;
+		$this->scheduler  = $scheduler ?? wc_get_container()->get( WooPaymentsActionSchedulerService::class );
 	}
 
 	/**
@@ -213,7 +237,6 @@ class StripeBillingInvoiceService {
 	 * @internal
 	 *
 	 * @param mixed $order_id Order ID.
-	 * @throws ApiException When the platform refuses to mark the invoice paid for another reason than it being paid already.
 	 */
 	public function maybe_record_invoice_payment( $order_id ): void {
 		if ( ! function_exists( 'wcs_get_subscriptions_for_order' ) ) {
@@ -225,30 +248,158 @@ class StripeBillingInvoiceService {
 			return;
 		}
 
+		$this->visited_orders[ get_current_blog_id() . ':' . $order->get_id() ] = true;
 		foreach ( wcs_get_subscriptions_for_order( $order, array( 'order_type' => array( 'parent', 'renewal' ) ) ) as $subscription ) {
-			if ( ! $subscription instanceof WC_Order ) {
-				continue;
-			}
-
-			$invoice_id = $this->get_subscription_invoice_id( $subscription );
-			if ( ! $invoice_id || ! $this->get_subscription_service()->is_wcpay_subscription( $subscription ) ) {
-				continue;
-			}
-
-			try {
-				$this->api->charge_invoice( $invoice_id, array( 'paid_out_of_band' => 'true' ) );
-			} catch ( ApiException $exception ) {
-				if ( WP_Http::BAD_REQUEST !== $exception->get_http_code() || false === stripos( $exception->getMessage(), 'invoice is already paid' ) ) {
-					throw $exception;
-				}
-
-				$this->logger->log( sprintf( 'Invoice for subscription #%s has already been paid.', $subscription->get_id() ) );
-			}
-
-			if ( is_callable( array( $subscription, 'is_manual' ) ) && $subscription->is_manual() ) {
-				$this->adopt_order_payment_method( $subscription, $order );
+			if ( $subscription instanceof WC_Order ) {
+				$this->record_first_invoice_payment( $order, $subscription, 0 );
 			}
 		}
+	}
+
+	/**
+	 * Renewals use their own payment-complete hook.
+	 *
+	 * @param WC_Order $order Paying order.
+	 */
+	public function schedule_first_invoice_job_now( WC_Order $order ): void {
+		if ( isset( $this->visited_orders[ get_current_blog_id() . ':' . $order->get_id() ] ) || ! function_exists( 'wcs_get_subscriptions_for_order' ) ) {
+			return;
+		}
+		foreach ( wcs_get_subscriptions_for_order( $order, array( 'order_type' => 'parent' ) ) as $subscription ) {
+			if ( $subscription instanceof WC_Order && $this->get_subscription_invoice_id( $subscription ) && ! $this->is_ended( $subscription ) && $this->get_subscription_service()->is_wcpay_subscription( $subscription ) ) {
+				$this->schedule_attempt( $order->get_id(), $subscription->get_id(), $this->get_subscription_invoice_id( $subscription ), 0, time() );
+			}
+		}
+	}
+
+	/**
+	 * A cancelled or pending-cancel subscription is skipped. While its first invoice is open, its Stripe subscription is either still incomplete,
+	 * where marking the invoice paid would make Stripe bill the next period for a customer who cancelled, or already canceled, which Stripe cannot revive.
+	 *
+	 * @param WC_Order $subscription Subscription.
+	 */
+	private function is_ended( WC_Order $subscription ): bool {
+		return ! function_exists( 'wcs_get_subscription_ended_statuses' ) || $subscription->has_status( wcs_get_subscription_ended_statuses() );
+	}
+
+	/**
+	 * Record an outstanding invoice only while this order holds the payment and the subscription still holds this invoice.
+	 *
+	 * @internal
+	 * @param mixed $order_id        Paying order ID.
+	 * @param mixed $subscription_id Subscription ID.
+	 * @param mixed $invoice_id      Original Stripe invoice ID.
+	 * @param mixed $retry           Attempt number.
+	 */
+	public function handle_first_invoice_job( $order_id, $subscription_id, $invoice_id, $retry ): void {
+		if ( SubscriptionMethodPolicy::is_duplicate_site() || ! function_exists( 'wcs_get_subscription' ) ) {
+			return;
+		}
+		$order        = wc_get_order( absint( $order_id ) );
+		$subscription = wcs_get_subscription( absint( $subscription_id ) );
+		if ( ! $order instanceof WC_Order || ! $subscription instanceof WC_Order || $invoice_id !== $this->get_subscription_invoice_id( $subscription ) || ! $this->holds_captured_money( $order ) ) {
+			return;
+		}
+		$this->record_first_invoice_payment( $order, $subscription, absint( $retry ) );
+	}
+
+	/**
+	 * A setup intent can succeed without collecting money.
+	 *
+	 * @param WC_Order $order Paying order.
+	 */
+	private function holds_captured_money( WC_Order $order ): bool {
+		$total = (float) $order->get_total();
+		if ( 0.0 === $total ) {
+			return $order->is_paid();
+		}
+		return 'succeeded' === $order->get_meta( '_intention_status', true )
+			&& 0 === strpos( (string) $order->get_meta( '_intent_id', true ), 'pi_' )
+			&& (float) $order->get_total_refunded() < $total;
+	}
+
+	/**
+	 * Keep an invoice refusal from interrupting the other subscriptions on the same order.
+	 *
+	 * @param WC_Order $order        Paying order.
+	 * @param WC_Order $subscription Stripe-billed subscription.
+	 * @param int      $retry        Attempt number.
+	 */
+	private function record_first_invoice_payment( WC_Order $order, WC_Order $subscription, int $retry ): void {
+		$invoice_id = $this->get_subscription_invoice_id( $subscription );
+		if ( ! $invoice_id || $this->is_ended( $subscription ) || ! $this->get_subscription_service()->is_wcpay_subscription( $subscription ) ) {
+			return;
+		}
+		$created = $order->get_date_created();
+		if ( ( ! $created || time() >= $created->getTimestamp() + 23 * HOUR_IN_SECONDS ) && time() >= $this->get_window_start( $order ) + 23 * HOUR_IN_SECONDS ) {
+			$this->logger->log_always( 'The time to record the first invoice payment has passed.', 'warning', array( 'subscription_id' => $subscription->get_id() ) );
+			$this->add_bound_note( $subscription, $invoice_id );
+			return;
+		}
+
+		try {
+			$this->api->charge_invoice( $invoice_id, array( 'paid_out_of_band' => 'true' ) );
+		} catch ( Throwable $exception ) {
+			if ( $exception instanceof ApiException && WP_Http::BAD_REQUEST === $exception->get_http_code() && false !== stripos( $exception->getMessage(), 'invoice is already paid' ) ) {
+				$this->logger->log( sprintf( 'Invoice for subscription #%s has already been paid.', $subscription->get_id() ) );
+			} else {
+				$subscription_id = $subscription->get_id();
+				$attempt         = $retry + 1;
+				$this->logger->log_throwable_always( 'Could not record the first invoice payment.', $exception, compact( 'subscription_id', 'attempt' ) );
+				$passing = $exception instanceof ApiException && ( $exception->has_ambiguous_outcome() || 429 === $exception->get_http_code() );
+				$last    = $this->get_window_start( $order ) + 22 * HOUR_IN_SECONDS;
+				if ( $passing && $retry < 4 && time() < $last ) {
+					$delays = WebhookReliabilityService::RETRY_DELAYS_SECONDS;
+					$due    = isset( $delays[ $retry ] ) ? time() + $delays[ $retry ] : $last;
+					$this->schedule_attempt( $order->get_id(), $subscription->get_id(), $invoice_id, $due >= $last ? 4 : $retry + 1, min( $last, $due ) );
+				} else {
+					$this->add_bound_note( $subscription, $invoice_id );
+				}
+				return;
+			}
+		}
+		if ( is_callable( array( $subscription, 'is_manual' ) ) && $subscription->is_manual() ) {
+			$this->adopt_order_payment_method( $subscription, $order );
+		}
+	}
+
+	/**
+	 * A manual renewal can be days old when its payment creates the Stripe subscription.
+	 *
+	 * @param WC_Order $order Paying order.
+	 */
+	private function get_window_start( WC_Order $order ): int {
+		$date = function_exists( 'wcs_order_contains_renewal' ) && wcs_order_contains_renewal( $order ) ? $order->get_date_paid() : $order->get_date_created();
+		return $date ? $date->getTimestamp() : 0;
+	}
+
+	/**
+	 * A remade subscription must never receive a job queued for its previous invoice.
+	 *
+	 * @param int    $order_id        Paying order ID.
+	 * @param int    $subscription_id Subscription ID.
+	 * @param string $invoice_id      Stripe invoice ID.
+	 * @param int    $retry           Attempt number.
+	 * @param int    $due             Timestamp.
+	 */
+	private function schedule_attempt( int $order_id, int $subscription_id, string $invoice_id, int $retry, int $due ): void {
+		try {
+			$this->scheduler->schedule_job( self::FIRST_INVOICE_ACTION, compact( 'order_id', 'subscription_id', 'invoice_id', 'retry' ), $due );
+		} catch ( Throwable $exception ) {
+			$this->logger->log_throwable_always( 'Could not schedule the first invoice payment.', $exception );
+		}
+	}
+
+	/**
+	 * Inline and delayed failures share the invoice’s note identity.
+	 *
+	 * @param WC_Order $subscription Subscription.
+	 * @param string   $invoice_id   Stripe invoice ID.
+	 */
+	private function add_bound_note( WC_Order $subscription, string $invoice_id ): void {
+		/* translators: %s: Stripe subscription ID. */
+		$note = sprintf( __( "WooPayments could not tell Stripe that this subscription's first payment was received, so Stripe stopped billing it and it will not renew. The customer's first payment is not affected. To keep billing this customer, ask them to subscribe again, then cancel this subscription. Stripe subscription ID: %s.", 'woocommerce' ), esc_html( $this->get_subscription_service()->get_wcpay_subscription_id( $subscription ) ) );
+		wc_get_container()->get( WooPaymentsOrderNoteService::class )->add_note_once( $subscription, $note, 'stripe_billing_first_invoice_unrecorded:' . $invoice_id );
 	}
 
 	/**

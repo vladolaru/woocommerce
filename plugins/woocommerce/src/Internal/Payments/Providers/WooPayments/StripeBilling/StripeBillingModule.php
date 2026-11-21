@@ -312,6 +312,17 @@ class StripeBillingModule implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Queue the first invoice when this site owns existing Stripe subscriptions.
+	 *
+	 * @param WC_Order $order Paying order.
+	 */
+	public function schedule_first_invoice_job_now( WC_Order $order ): void {
+		if ( $this->loaded && ! SubscriptionMethodPolicy::is_duplicate_site() ) {
+			wc_get_container()->get( StripeBillingInvoiceService::class )->schedule_first_invoice_job_now( $order );
+		}
+	}
+
+	/**
 	 * Handle one Stripe Billing invoice event: `invoice.upcoming`, `invoice.paid` or `invoice.payment_failed`.
 	 *
 	 * @param array<string,mixed> $event Event payload.
@@ -341,6 +352,7 @@ class StripeBillingModule implements RegisterHooksInterface {
 		$this->attach( 'woocommerce_admin_order_data_after_billing_address', StripeBillingSubscriptionService::class, 'show_wcpay_subscription_id' );
 		$this->attach( 'admin_notices', StripeBillingPluginsScreenNotice::class, 'maybe_show_notice' );
 		$this->attach( 'woocommerce_subscription_payment_method_updated_from_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID, StripeBillingSubscriptionService::class, 'maybe_cancel_subscription', 10, 2 );
+		$this->attach( StripeBillingInvoiceService::FIRST_INVOICE_ACTION, StripeBillingInvoiceService::class, 'handle_first_invoice_job', 10, 4 );
 		$this->attach( StripeBillingSubscriptionService::RETRY_CANCEL_ACTION, StripeBillingSubscriptionService::class, 'handle_retry_cancel_subscription', 10, 2 );
 		add_action( 'woocommerce_after_subscription_object_save', array( $this, 'handle_woocommerce_after_subscription_object_save' ) );
 		// Client 11.1.0 sets this context before the filter runs (src/Internal/Service/OrderService.php:121, :133), so it

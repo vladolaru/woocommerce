@@ -3,6 +3,12 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingApi;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
@@ -76,6 +82,7 @@ class WooPaymentsFeeDetailsJobSchedulingTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		global $wp;
+		unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ], $GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ], $GLOBALS['wcpay_test_renewal_order_ids'] );
 		unset( $wp->query_vars['order-received'] );
 		set_query_var( 'order-received', '' );
 		$_GET = $this->original_get;
@@ -89,6 +96,153 @@ class WooPaymentsFeeDetailsJobSchedulingTest extends WC_Unit_Test_Case {
 		$this->reset_container_replacements();
 		$this->reset_container_resolutions();
 		parent::tearDown();
+	}
+
+	private const FIRST_INVOICE_HOOK = 'woocommerce_woopayments_retry_stripe_billing_first_invoice';
+
+	/**
+	 * @testdox The first-invoice job follows applied money, including a capture that ran after the order status changed.
+	 * @testWith ["D1", "pending", "checkout", 1, null]
+	 *           ["D2", "on-hold", "checkout", 1, null]
+	 *           ["D3", "pending", "checkout", 1, 1]
+	 *           ["C1", "cancelled", "callback", 0, 0]
+	 *           ["E2", "cancelled", "callback", 0, null]
+	 *           ["Q1", "on-hold", "capture", 0, null]
+	 *           ["Q2", "on-hold", "capture", 0, 0]
+	 *           ["Q3", "on-hold", "capture", 0, null]
+	 *           ["H1", "on-hold", "renewal", 1, null]
+	 *           ["H2", "on-hold", "cancel", 0, null]
+	 *
+	 * @param string   $row      Sheet scenario.
+	 * @param string   $status   Initial status.
+	 * @param string   $route    How payment is applied.
+	 * @param int      $inline   Expected inline invoice payments.
+	 * @param int|null $retry    Expected scheduled attempt, if any.
+	 */
+	public function test_first_invoice_scheduling( string $row, string $status, string $route, int $inline, ?int $retry ): void {
+		WooCommerceSubscriptionsDoubles::load();
+		WooCommerceSubscriptionsDoubles::load_renewal_detector();
+		$this->register_legacy_proxy_function_mocks( array( 'class_exists' => static fn( $name, ...$args ) => 'WC_Subscriptions' === $name || class_exists( $name, ...$args ) ) );
+		$order = $this->create_order();
+		$order->set_status( $status );
+		if ( in_array( $route, array( 'callback', 'capture' ), true ) ) {
+			$order->update_meta_data( '_intent_id', 'pi_first' );
+		}
+		if ( 'callback' === $route ) {
+			WooCommerceSubscriptionsDoubles::load_order_detector();
+			$customer_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+			wp_set_current_user( $customer_id );
+			$order->set_customer_id( $customer_id );
+			$token = \WC_Helper_Payment_Token::create_cc_token( $customer_id );
+			$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+			$token->set_token( 'pm_card' );
+			$token->save();
+		}
+		if ( 'capture' === $route ) {
+			$order->set_transaction_id( 'pi_first' );
+			$order->update_meta_data( '_intention_status', 'requires_capture' );
+			$order->update_meta_data( '_charge_id', 'ch_first' );
+		}
+		$order->save();
+		$this->intent = $this->succeeded_intent( $order, 'pi_first', 'ch_first' );
+		$subscription = new SubscriptionDouble();
+		$subscription->set_payment_method( 'woocommerce_payments' );
+		$subscription->set_status( 'E2' === $row ? 'cancelled' : 'active' );
+		$subscription->update_meta_data( '_wcpay_subscription_id', 'sub_first' );
+		$subscription->update_meta_data( '_wcpay_billing_invoice_id', 'in_first' );
+		$subscription->save();
+		$relation = 'renewal' === $route ? 'renewal' : 'parent';
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ][]                                     = $subscription->get_id();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ][ $order->get_id() ][ $relation ][] = $subscription->get_id();
+
+		$calls = 0;
+		$api   = $this->createMock( StripeBillingApi::class );
+		$api->method( 'charge_invoice' )->with( 'in_first', array( 'paid_out_of_band' => 'true' ) )->willReturnCallback(
+			static function () use ( &$calls, $row ) {
+				++$calls;
+				if ( 'D3' === $row ) {
+					throw new ApiException( 'Unavailable', 'unavailable', 503 );
+				}
+				return array();
+			}
+		);
+		wc_get_container()->replace( StripeBillingApi::class, $api );
+		update_option( StripeBillingModule::TOGGLE_OPTION, '1' );
+		wc_get_container()->get( StripeBillingModule::class )->handle_plugins_loaded();
+
+		$start = time();
+		if ( 'checkout' === $route ) {
+			if ( 'D2' === $row ) {
+				add_filter( 'woocommerce_valid_order_statuses_for_payment', static fn( $statuses ) => array_merge( $statuses, array( 'on-hold' ) ) );
+			}
+			$this->checkout( $order );
+		} elseif ( 'callback' === $route ) {
+			$this->assertSame( 200, $this->send_order_status_callback( $order )['status_code'] ?? null );
+		} elseif ( 'capture' === $route ) {
+			$this->run_queued_first_invoice_capture( $order, $row );
+		} elseif ( 'renewal' === $route ) {
+			$GLOBALS['wcpay_test_renewal_order_ids'][] = $order->get_id();
+			add_action( 'woocommerce_payment_complete', static fn( $id ) => do_action( 'woocommerce_renewal_order_payment_complete', $id ) );
+			$this->checkout( $order );
+		} else {
+			$order->update_status( 'cancelled' );
+		}
+
+		$this->assertSame( $inline, $calls );
+		$query = array(
+			'hook'   => self::FIRST_INVOICE_HOOK,
+			'status' => 'pending',
+			'group'  => 'woocommerce_payments',
+		);
+		$jobs  = array_values( as_get_scheduled_actions( $query ) );
+		$this->assertCount( null === $retry ? 0 : 1, $jobs );
+		if ( null !== $retry ) {
+			$args = array(
+				'order_id'        => $order->get_id(),
+				'subscription_id' => $subscription->get_id(),
+				'invoice_id'      => 'in_first',
+				'retry'           => $retry,
+			);
+			$this->assertSame( $args, $jobs[0]->get_args() );
+			$this->assertEqualsWithDelta( $start + 60 * $retry, $jobs[0]->get_schedule()->get_date()->getTimestamp(), 5 );
+			if ( 0 === $retry ) {
+				do_action_ref_array( self::FIRST_INVOICE_HOOK, array_values( $args ) );
+				$this->assertSame( 1, $calls );
+			}
+		}
+	}
+
+	/**
+	 * Hold the payment lock across the merchant's status change, then release it for the queued capture.
+	 *
+	 * @param WC_Order $order Authorized order.
+	 * @param string   $row   Whether to run the retry and what the platform returns.
+	 */
+	private function run_queued_first_invoice_capture( WC_Order $order, string $row ): void {
+		$controller = wc_get_container()->get( WooPaymentsOrderAdminActionsController::class );
+		$controller->register();
+		$lock       = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		$token      = $lock->claim( $order, $vocabulary, 'evt_other', 'payment status update' );
+		$this->assertNotNull( $token );
+		try {
+			$order->update_status( 'completed' );
+		} finally {
+			$lock->release( $order, $vocabulary, $token );
+		}
+		$query = array(
+			'hook'   => WooPaymentsOrderAdminActionsController::RETRY_STATUS_CHANGE_OPERATION_ACTION,
+			'status' => 'pending',
+		);
+		$jobs  = array_values( as_get_scheduled_actions( $query ) );
+		$this->assertCount( 1, $jobs );
+		$this->assertFalse( as_has_scheduled_action( self::FIRST_INVOICE_HOOK ) );
+		if ( 'Q1' !== $row ) {
+			if ( 'Q3' === $row ) {
+				$this->intent['status'] = 'failed';
+			}
+			do_action_ref_array( WooPaymentsOrderAdminActionsController::RETRY_STATUS_CHANGE_OPERATION_ACTION, array_values( $jobs[0]->get_args() ) );
+		}
 	}
 
 	/**

@@ -626,7 +626,7 @@ class StripeBillingSubscriptionService {
 	/**
 	 * Cancel a subscription's Stripe subscription from the cancel job while it holds the Stripe ID and still wants the cancel.
 	 *
-	 * A canceled Stripe subscription, or one Stripe does not have in live mode, counts as cancelled, and a subscription off
+	 * A canceled or expired incomplete Stripe subscription, or one Stripe does not have in live mode, counts as cancelled, and a subscription off
 	 * WooPayments then moves its ID to `_cancelled_wcpay_subscription_id`. So does one back on WooPayments after a failed
 	 * attempt, when its Stripe subscription reads canceled.
 	 *
@@ -660,7 +660,7 @@ class StripeBillingSubscriptionService {
 		}
 
 		$wcpay_subscription = $this->get_wcpay_subscription( $subscription );
-		$outcome            = 'canceled' === ( $wcpay_subscription['status'] ?? '' ) ? self::CANCEL_CONFIRMED : $this->cancel_stripe_subscription( $subscription, absint( $retry ) );
+		$outcome            = in_array( $wcpay_subscription['status'] ?? '', array( 'canceled', 'incomplete_expired' ), true ) ? self::CANCEL_CONFIRMED : $this->cancel_stripe_subscription( $subscription, absint( $retry ) );
 		if ( self::CANCEL_FAILED !== $outcome && WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $subscription->get_payment_method() ) {
 			$this->move_wcpay_subscription_id_to_cancelled( $subscription, $wcpay_subscription_id, self::CANCEL_CONFIRMED === $outcome );
 		}

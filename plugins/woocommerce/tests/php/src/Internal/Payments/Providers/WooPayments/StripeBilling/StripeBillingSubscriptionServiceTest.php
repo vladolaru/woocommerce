@@ -1350,6 +1350,24 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A cancel retry for an expired incomplete Stripe subscription ends after the status read.
+	 */
+	public function test_expired_first_invoice_cancel(): void {
+		$subscription = $this->create_subscription( array( '_wcpay_subscription_id' => self::MAIN_SUBSCRIPTION_ID ) );
+		$subscription->update_status( 'cancelled' );
+		$notes                               = wc_get_order_notes( array( 'order_id' => $subscription->get_id() ) );
+		$entry                               = $this->get_entry( 'get_subscription' );
+		$entry['response']['body']['status'] = 'incomplete_expired';
+		$this->queue_entry( $entry );
+
+		$this->sut->handle_retry_cancel_subscription( $subscription->get_id(), 1 );
+
+		$this->assertSame( array( 'GET' ), array_column( $this->get_requests(), 0 ) );
+		$this->assertCount( count( $notes ), wc_get_order_notes( array( 'order_id' => $subscription->get_id() ) ) );
+		$this->assertNull( $this->get_retry_cancel_delay( $subscription, 2 ) );
+	}
+
+	/**
 	 * @testdox Saving a Stripe-billed subscription with the payment method $_dataName asks the cancel job for its first attempt, due now, and sends nothing to the platform.
 	 *
 	 * The edit screen, the REST writers and code all end in set_payment_method() and save(); none fires the updated-from hook.

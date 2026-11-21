@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingInvoiceService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
@@ -125,6 +126,37 @@ class StripeBillingModuleTest extends WC_Unit_Test_Case {
 
 		update_option( StripeBillingModule::TOGGLE_OPTION, '0' );
 		$this->assertFalse( $sut->is_stripe_billing_enabled(), 'Turning the toggle off must stop new Stripe Billing subscriptions in the same request.' );
+	}
+
+	/**
+	 * @testdox An unloaded module does not resolve the invoice service at payment completion.
+	 */
+	public function test_first_invoice_without_subscriptions(): void {
+		$invoices = $this->createMock( StripeBillingInvoiceService::class );
+		$invoices->expects( $this->never() )->method( 'schedule_first_invoice_job_now' );
+		wc_get_container()->replace( StripeBillingInvoiceService::class, $invoices );
+		try {
+			$this->register_module()->schedule_first_invoice_job_now( wc_create_order() );
+			$this->assertFalse( as_has_scheduled_action( 'woocommerce_woopayments_retry_stripe_billing_first_invoice' ) );
+		} finally {
+			$this->reset_container_replacements();
+		}
+	}
+
+	/**
+	 * @testdox Existing invoices keep their job with the toggle off, on the original site only.
+	 * @testWith [false]
+	 *           [true]
+	 *
+	 * @param bool $duplicate Whether the site is a copy.
+	 */
+	public function test_first_invoice_maintenance_hook( bool $duplicate ): void {
+		$this->load_subscriptions();
+		WooCommerceSubscriptionsDoubles::load();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::DUPLICATE_SITE ] = $duplicate;
+		update_option( StripeBillingModule::TOGGLE_OPTION, '0' );
+		$this->register_module();
+		$this->assertSame( ! $duplicate, has_action( 'woocommerce_woopayments_retry_stripe_billing_first_invoice' ) );
 	}
 
 	/**

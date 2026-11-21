@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Throwable;
 use WC_Order;
 
@@ -334,6 +335,7 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 		$event = $this->get_outcome_event( $outcome );
 		if ( null !== $event && $this->has_note( $order, $event ) ) {
 			$this->schedule( $order, (string) $event->get_payment_reference() );
+			$this->schedule_first_invoice_job_now( $order );
 		}
 	}
 
@@ -366,10 +368,24 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 	private function schedule_when_event_added_note( WC_Order $order, PaymentLifecycleEvent $event, string $result, ?array $hold ): void {
 		if ( OrderPaymentLifecycleService::RESULT_NOTE_ADDED === $result && $this->is_success_or_capture_event( $event ) ) {
 			$this->schedule( $order, (string) $event->get_payment_reference() );
+			$this->schedule_first_invoice_job_now( $order );
 		}
 
 		if ( null !== $hold && OrderPaymentLifecycleService::RESULT_NOTE_ADDED === $result && $event->should_hold_order() ) {
 			wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->log_hold( $hold );
+		}
+	}
+
+	/**
+	 * Keep Stripe Billing scheduling failures out of the completed payment.
+	 *
+	 * @param WC_Order $order Paying order.
+	 */
+	private function schedule_first_invoice_job_now( WC_Order $order ): void {
+		try {
+			wc_get_container()->get( StripeBillingModule::class )->schedule_first_invoice_job_now( $order );
+		} catch ( Throwable $exception ) {
+			$this->logger->log_throwable_always( 'Could not schedule the first invoice payment.', $exception );
 		}
 	}
 
