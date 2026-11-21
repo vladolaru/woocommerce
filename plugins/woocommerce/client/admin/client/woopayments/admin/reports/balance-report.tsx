@@ -435,10 +435,38 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 		/^[a-z]{3}$/i.test( configuredCurrency )
 			? configuredCurrency
 			: 'usd';
-	const dateFilter = useMemo(
+	const urlDateFilter = useMemo(
 		() => getBalanceDateFilterFromSearch( location.search, now ),
 		[ location.search, now ]
 	);
+	// Client 11.3.0 `reports/balance/use-balance-date-filter.ts:189-193,217-221,246-250`: the merchant's own pick stays as
+	// made while the calendar is open, since the URL reads one day twice as "on" and would end the range selection on its
+	// first click. Once the URL has carried that pick, a different URL (back, forward, a link) takes over again.
+	const [ localDateFilter, setLocalDateFilter ] = useState< {
+		value: BalanceDateFilterValue;
+		urlValue: BalanceDateFilterValue;
+	} >();
+	const localDateFilterLandedRef = useRef( false );
+	const urlMatchesLocalDateFilter =
+		localDateFilter !== undefined &&
+		JSON.stringify( localDateFilter.urlValue ) ===
+			JSON.stringify( urlDateFilter );
+	const dateFilter =
+		localDateFilter &&
+		( urlMatchesLocalDateFilter || ! localDateFilterLandedRef.current )
+			? localDateFilter.value
+			: urlDateFilter;
+	useEffect( () => {
+		if ( ! localDateFilter ) {
+			return;
+		}
+
+		if ( urlMatchesLocalDateFilter ) {
+			localDateFilterLandedRef.current = true;
+		} else if ( localDateFilterLandedRef.current ) {
+			setLocalDateFilter( undefined );
+		}
+	}, [ localDateFilter, urlMatchesLocalDateFilter ] );
 	const query = useMemo(
 		() => getBalanceQuery( now, currency, dateFilter ),
 		[ currency, dateFilter, now ]
@@ -691,6 +719,11 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 		} );
 
 		const search = serializeBalanceDateFilterToSearch( nextDateFilter );
+		localDateFilterLandedRef.current = false;
+		setLocalDateFilter( {
+			value: normalizeBalanceDateFilter( nextDateFilter, now ),
+			urlValue: getBalanceDateFilterFromSearch( search, now ),
+		} );
 		navigateReportsRoute( location.search, navigate, search );
 	};
 

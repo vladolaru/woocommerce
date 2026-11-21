@@ -203,6 +203,32 @@ const mockDataViews = jest.fn(
 							Apply April date filter
 						</button>
 					) }
+				{ /* The calendar's first click on a day emits that day as both ends of the range. */ }
+				{ fields.some(
+					( field ) => field.id === 'date' && field.filterBy
+				) &&
+					onChangeView && (
+						<button
+							type="button"
+							onClick={ () =>
+								onChangeView( {
+									...view,
+									filters: [
+										{
+											field: 'date',
+											operator: 'between',
+											value: [
+												'2026-05-10',
+												'2026-05-10',
+											],
+										},
+									],
+								} )
+							}
+						>
+							Pick May 10 as the first calendar click
+						</button>
+					) }
 				{ /* DataViews adds a date filter with no value until the merchant picks dates. */ }
 				{ fields.some(
 					( field ) => field.id === 'date' && field.filterBy
@@ -247,6 +273,16 @@ const mockDataViews = jest.fn(
 						}
 					>
 						Apply detailed fees view
+					</button>
+				) }
+				{ search && onChangeView && (
+					<button
+						type="button"
+						onClick={ () =>
+							onChangeView( { ...view, perPage: 10 } )
+						}
+					>
+						Apply 10 rows per page
 					</button>
 				) }
 				{ search && searchLabel && (
@@ -1342,6 +1378,39 @@ describe( 'WooPaymentsReportsPage', () => {
 		] );
 	} );
 
+	// Client 11.3.0 `reports/balance/use-balance-date-filter.ts:246-250`: only a URL read collapses one day to "on"; the
+	// merchant's own pick stays "between" so the calendar can take the end day.
+	it( 'keeps "between" active when the first calendar click gives the same day for both ends', async () => {
+		renderReportsPage();
+
+		await screen.findByRole( 'heading', { name: 'Balance summary' } );
+		await userEvent.click(
+			screen.getByRole( 'button', {
+				name: 'Pick May 10 as the first calendar click',
+			} )
+		);
+
+		await waitFor( () =>
+			expect( screen.getByTestId( 'location' ) ).toHaveTextContent(
+				'date_between%5B%5D=2026-05-10&date_between%5B%5D=2026-05-10'
+			)
+		);
+		await waitFor( () =>
+			expect( mockGetBalanceSummary ).toHaveBeenLastCalledWith( {
+				date_start: '2026-05-10T00:00:00.000Z',
+				date_end: '2026-05-10T23:59:59.999Z',
+				currency: 'usd',
+			} )
+		);
+		expect( mockDataViews.mock.lastCall?.[ 0 ].view?.filters ).toEqual( [
+			{
+				field: 'date',
+				operator: 'between',
+				value: [ '2026-05-10', '2026-05-10' ],
+			},
+		] );
+	} );
+
 	it( 'reads a Balance range of two days as the "between" filter', async () => {
 		renderReportsPage( [
 			'/woopayments/reports?date_between%5B%5D=2026-05-10&date_between%5B%5D=2026-05-11',
@@ -1732,17 +1801,94 @@ describe( 'WooPaymentsReportsPage', () => {
 		renderReportsPage( [ '/woopayments/reports?report_tab=fees' ] );
 
 		await screen.findByRole( 'searchbox', { name: 'Search fees' } );
-		await userEvent.click(
-			screen.getByRole( 'button', { name: 'Apply detailed fees view' } )
-		);
+		jest.useFakeTimers();
+		try {
+			fireEvent.click(
+				screen.getByRole( 'button', {
+					name: 'Apply detailed fees view',
+				} )
+			);
 
-		expect( mockUpdateUserPreferences ).toHaveBeenCalledTimes( 1 );
-		expect( mockUpdateUserPreferences ).toHaveBeenCalledWith( {
-			wc_payments_reports_fees_view: {
-				fields: [ 'type', 'fees' ],
-				perPage: 50,
-			},
+			// Client 11.3.0 `reports/fees/use-fees-user-prefs.ts:19,88-93`: the write comes after 750 ms, not at once.
+			expect( mockUpdateUserPreferences ).not.toHaveBeenCalled();
+			await act( () => jest.advanceTimersByTimeAsync( 750 ) );
+
+			expect( mockUpdateUserPreferences ).toHaveBeenCalledTimes( 1 );
+			expect( mockUpdateUserPreferences ).toHaveBeenCalledWith( {
+				wc_payments_reports_fees_view: {
+					fields: [ 'type', 'fees' ],
+					perPage: 50,
+				},
+			} );
+		} finally {
+			jest.useRealTimers();
+		}
+	} );
+
+	it( 'does not save the Fees rows per page before the saved view has loaded', async () => {
+		// No key yet: the current user's preferences have not arrived.
+		renderReportsPage( [ '/woopayments/reports?report_tab=fees' ] );
+
+		await screen.findByRole( 'searchbox', { name: 'Search fees' } );
+		jest.useFakeTimers();
+		try {
+			fireEvent.click(
+				screen.getByRole( 'button', {
+					name: 'Apply detailed fees view',
+				} )
+			);
+			await act( () => jest.advanceTimersByTimeAsync( 2000 ) );
+
+			expect( mockUpdateUserPreferences ).not.toHaveBeenCalled();
+		} finally {
+			jest.useRealTimers();
+		}
+	} );
+
+	it( 'writes the saved Fees view once for a burst of rows per page changes', async () => {
+		setMockUserPreferences( {
+			wc_payments_reports_fees_view: { perPage: 25 },
 		} );
+		renderReportsPage( [ '/woopayments/reports?report_tab=fees' ] );
+
+		await screen.findByRole( 'searchbox', { name: 'Search fees' } );
+		jest.useFakeTimers();
+		try {
+			fireEvent.click(
+				screen.getByRole( 'button', {
+					name: 'Apply detailed fees view',
+				} )
+			);
+			await act( () => jest.advanceTimersByTimeAsync( 400 ) );
+			fireEvent.click(
+				screen.getByRole( 'button', { name: 'Apply 10 rows per page' } )
+			);
+			await act( () => jest.advanceTimersByTimeAsync( 749 ) );
+			expect( mockUpdateUserPreferences ).not.toHaveBeenCalled();
+			await act( () => jest.advanceTimersByTimeAsync( 1 ) );
+
+			expect( mockUpdateUserPreferences ).toHaveBeenCalledTimes( 1 );
+			expect( mockUpdateUserPreferences ).toHaveBeenCalledWith( {
+				wc_payments_reports_fees_view: { perPage: 10 },
+			} );
+		} finally {
+			jest.useRealTimers();
+		}
+	} );
+
+	it( 'opens Fees with 25 rows when the saved rows per page is outside 1 to 100', async () => {
+		setMockUserPreferences( {
+			wc_payments_reports_fees_view: { perPage: 101 },
+		} );
+
+		renderReportsPage( [ '/woopayments/reports?report_tab=fees' ] );
+
+		await waitFor( () =>
+			expect( mockGetFees ).toHaveBeenCalledWith(
+				expect.objectContaining( { per_page: 25 } )
+			)
+		);
+		expect( mockGetFees ).toHaveBeenCalledTimes( 1 );
 	} );
 
 	it( 'does not write the saved Fees view when the rows per page stay the same', async () => {

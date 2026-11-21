@@ -121,6 +121,12 @@ const FEES_SEARCH_URL_DEBOUNCE_MS = 500;
 // Client 11.3.0 `reports/fees/view.ts:5`: the user meta that keeps the merchant's Fees view; only its rows per page is read.
 const FEES_VIEW_PREFERENCE_KEY = 'wc_payments_reports_fees_view';
 
+// Client 11.3.0 `reports/fees/use-fees-user-prefs.ts:19,88-93`: a burst of view changes becomes one write of the final rows per page.
+const FEES_VIEW_PREFERENCE_WRITE_DELAY_MS = 750;
+
+// The Fees report endpoint's `per_page` range (`WooPaymentsReportsRestController.php`).
+const FEES_MAX_PER_PAGE = 100;
+
 // The Fees params in a location search, normalized so equal views compare equal.
 const getFeesUrlKey = ( search: string, defaultPerPage?: number ) =>
 	serializeReportsFeesViewToSearch(
@@ -169,11 +175,18 @@ const FeesReport = ( {
 	const location = useLocation();
 	const navigate = useNavigate();
 	const { updateUserPreferences, ...preferences } = useUserPreferences();
-	// The stored value is '' until the first save.
+	// Client 11.3.0 `reports/fees/use-fees-user-prefs.ts:53,78-80`: the key is in the preferences once the user has loaded,
+	// and its value is '' until the first save.
+	const hasLoadedSavedView = FEES_VIEW_PREFERENCE_KEY in preferences;
 	const savedView = ( ( preferences as Record< string, unknown > )[
 		FEES_VIEW_PREFERENCE_KEY
 	] || {} ) as { perPage?: unknown };
-	const savedPerPage = normalizePositiveInteger( savedView.perPage, 25 );
+	// A stored size the report endpoint would refuse opens with 25 instead.
+	const storedPerPage = normalizePositiveInteger( savedView.perPage, 25 );
+	const savedPerPage = storedPerPage > FEES_MAX_PER_PAGE ? 25 : storedPerPage;
+	const savePerPageTimerRef = useRef< ReturnType<
+		typeof setTimeout
+	> | null >( null );
 	// Client 11.1.0 `reports/fees/use-fees-url-sync.ts:167-195`: sort, paging, search and filters come from the URL.
 	const [ view, setView ] = useState< View >( () => ( {
 		type: 'table',
@@ -251,6 +264,9 @@ const FeesReport = ( {
 			if ( searchUrlTimerRef.current ) {
 				clearTimeout( searchUrlTimerRef.current );
 			}
+			if ( savePerPageTimerRef.current ) {
+				clearTimeout( savePerPageTimerRef.current );
+			}
 		},
 		[]
 	);
@@ -292,14 +308,21 @@ const FeesReport = ( {
 		setView( nextView );
 
 		// Client 11.3.0 `reports/fees/use-fees-user-prefs.ts:68-96`: the rows per page the merchant picks are kept for the
-		// next visit, beside the rest of the saved view.
-		if ( nextView.perPage !== view.perPage ) {
-			void updateUserPreferences( {
-				[ FEES_VIEW_PREFERENCE_KEY ]: {
-					...savedView,
-					perPage: nextView.perPage,
-				},
-			} );
+		// next visit, beside the rest of the saved view. Nothing is written before the saved view has loaded, which would
+		// replace it, and a burst of changes is written once.
+		if ( hasLoadedSavedView && nextView.perPage !== view.perPage ) {
+			if ( savePerPageTimerRef.current ) {
+				clearTimeout( savePerPageTimerRef.current );
+			}
+			savePerPageTimerRef.current = setTimeout( () => {
+				savePerPageTimerRef.current = null;
+				void updateUserPreferences( {
+					[ FEES_VIEW_PREFERENCE_KEY ]: {
+						...savedView,
+						perPage: nextView.perPage,
+					},
+				} );
+			}, FEES_VIEW_PREFERENCE_WRITE_DELAY_MS );
 		}
 
 		if ( searchUrlTimerRef.current ) {
