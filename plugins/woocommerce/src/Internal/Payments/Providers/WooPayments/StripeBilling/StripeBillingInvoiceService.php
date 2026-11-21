@@ -478,6 +478,7 @@ class StripeBillingInvoiceService {
 	 */
 	private function try_first_invoice_payment( WC_Order $order, WC_Order $subscription, string $invoice_id, int $attempt ): string {
 		try {
+			// At a parent checkout this call runs under the order payment lock: a stated exception to the lock's rule.
 			$this->api->charge_invoice( $invoice_id, array( 'paid_out_of_band' => 'true' ) );
 		} catch ( Throwable $exception ) {
 			if ( $exception instanceof ApiException && WP_Http::BAD_REQUEST === $exception->get_http_code() && false !== stripos( $exception->getMessage(), 'invoice is already paid' ) ) {

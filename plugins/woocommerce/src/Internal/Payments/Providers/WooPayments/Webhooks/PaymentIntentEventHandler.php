@@ -556,6 +556,7 @@ class PaymentIntentEventHandler {
 		// The order keeps the payment method and title its checkout, redirect return or in-person capture wrote: client 11.1.0's
 		// webhook never sets them (includes/class-wc-payments-webhook-processing-service.php process_webhook_payment_intent_succeeded()).
 		$this->write_succeeded_payment_intent_record( $order, $payment_intent, self::RECORD_BEFORE_DECIDING, $stored_intent_id, $reports_intent_status );
+		// A stated exception to the order payment lock's rule: the token repair and the settle may read the platform under the claim.
 		$this->repair_recurring_order_token( $order, $payment_intent );
 		$this->composition_data_settler->run_settled(
 			function () use ( $order, $payment_intent, $hold_note_candidates, $reports_intent_status, $stored_intent_id ): void {

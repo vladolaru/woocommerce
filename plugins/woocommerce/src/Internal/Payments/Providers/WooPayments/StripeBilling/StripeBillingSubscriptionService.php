@@ -780,6 +780,7 @@ class StripeBillingSubscriptionService {
 
 		$wcpay_payment_method_id = $token->get_token();
 		if ( $this->get_wcpay_subscription_id( $subscription ) && $wcpay_payment_method_id ) {
+			// At a parent checkout this call runs under the order payment lock: a stated exception to the lock's rule.
 			$this->update_subscription( $subscription, array( 'default_payment_method' => $wcpay_payment_method_id ) );
 		}
 	}

@@ -12,6 +12,10 @@ use WC_Order;
 /**
  * Holds the order payment lock, and logs lock refusals.
  *
+ * Its rule: every money start on an order claims it, and no platform call is made while it is held except the money
+ * request. A provider that keeps another call under the claim, or a money start that claims nothing, says so in a
+ * comment at that call, naming it a stated exception to this rule.
+ *
  * @since 11.0.0
  * @internal
  */
