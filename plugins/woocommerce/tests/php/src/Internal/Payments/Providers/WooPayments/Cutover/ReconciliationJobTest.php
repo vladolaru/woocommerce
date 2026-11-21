@@ -28,7 +28,11 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\Recon
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\StateStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingInvoiceService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingSubscriptionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderAdminActionsController;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
@@ -4846,6 +4850,107 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			as_unschedule_all_actions( WebhookReliabilityService::QUEUED_EVENTS_SWEEP_ACTION );
 			as_unschedule_all_actions( WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION );
 		}
+	}
+
+	/**
+	 * @testdox A rollback unschedules a pending retry job of the hook $hook, which carries arguments.
+	 *
+	 * @dataProvider unscheduled_retry_job_provider
+	 *
+	 * @param string              $hook The retry job's hook.
+	 * @param array<string,mixed> $args The arguments the built-in schedules it with.
+	 */
+	public function test_rollback_unschedules_a_pending_built_in_retry_job( string $hook, array $args ): void {
+		$sut = $this->arrange_a_finished_switch();
+		$this->assertIsInt( as_schedule_single_action( time() + HOUR_IN_SECONDS, $hook, $args, WooPaymentsActionSchedulerService::GROUP_ID ) );
+
+		try {
+			$this->assertTrue( $sut->record_plugin_activation() );
+
+			$this->assertFalse( as_has_scheduled_action( $hook ), 'No retry job is left to fail on a store the built-in no longer owns.' );
+		} finally {
+			as_unschedule_all_actions( $hook );
+		}
+	}
+
+	/**
+	 * Retry jobs that have no callback on the extension's store.
+	 *
+	 * @return array<string,array{string,array<string,mixed>}>
+	 */
+	public function unscheduled_retry_job_provider(): array {
+		return array(
+			'Stripe Billing first-invoice job'     => array(
+				StripeBillingInvoiceService::FIRST_INVOICE_ACTION,
+				array(
+					'order_id'        => 101,
+					'subscription_id' => 102,
+					'invoice_id'      => 'in_rollback',
+					'retry'           => 1,
+				),
+			),
+			'Stripe Billing cancel retry'          => array(
+				StripeBillingSubscriptionService::RETRY_CANCEL_ACTION,
+				array(
+					'subscription_id' => 102,
+					'retry'           => 1,
+				),
+			),
+			'renewal authentication failure retry' => array(
+				SubscriptionsController::RETRY_AUTHENTICATION_FAILURE_ACTION,
+				array(
+					'order_id'  => 103,
+					'intent_id' => 'pi_rollback',
+					'charge_id' => 'ch_rollback',
+					'retry'     => 1,
+				),
+			),
+		);
+	}
+
+	/**
+	 * @testdox A rollback leaves a pending status-change retry queued, because the extension's store writes its failure note.
+	 */
+	public function test_rollback_leaves_a_pending_status_change_retry_queued(): void {
+		$sut  = $this->arrange_a_finished_switch();
+		$hook = WooPaymentsOrderAdminActionsController::RETRY_STATUS_CHANGE_OPERATION_ACTION;
+		$args = array(
+			'order_id'  => 104,
+			'operation' => 'capture',
+			'retry'     => 1,
+		);
+		$this->assertIsInt( as_schedule_single_action( time() + HOUR_IN_SECONDS, $hook, $args, WooPaymentsActionSchedulerService::GROUP_ID ) );
+
+		try {
+			$this->assertTrue( $sut->record_plugin_activation() );
+
+			$this->assertTrue( as_has_scheduled_action( $hook, $args, WooPaymentsActionSchedulerService::GROUP_ID ) );
+		} finally {
+			as_unschedule_all_actions( $hook );
+		}
+	}
+
+	/**
+	 * Start the switch and finish it, so that the next plugin activation is a return to the extension.
+	 *
+	 * @return ReconciliationJob
+	 */
+	private function arrange_a_finished_switch(): ReconciliationJob {
+		$sut   = $this->create_job( true, $this->create_preflight_with_failures( array() ), null, true );
+		$store = $this->state_store;
+		$this->assertTrue( $sut->enqueue( 'merchant' ) );
+		$pending = $store->get_record();
+		$this->assertIsArray( $pending );
+		$this->scheduler->cancel( $pending['generation'], 1 );
+		$done                    = $pending;
+		$done['revision']        = $pending['revision'] + 1;
+		$done['state']           = StateStore::STATE_DONE;
+		$done['action_id']       = 0;
+		$done['current_step']    = 'done';
+		$done['next_attempt_at'] = null;
+		$this->assertTrue( $store->compare_and_set_record( $pending, $done ) );
+
+		return $sut;
 	}
 
 	/**

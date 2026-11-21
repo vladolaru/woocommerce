@@ -7,12 +7,14 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountMilestonesController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsApplePayDomainService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudOrderTrackingService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderAdminActionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStoreSetupReportController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
@@ -83,6 +85,11 @@ class PreflightService {
 		WebhookReliabilityService::WEBHOOK_FETCH_EVENTS_ACTION,
 		WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION,
 		WebhookReliabilityService::QUEUED_EVENTS_SWEEP_ACTION,
+		// Named by string: code outside the Stripe Billing folder does not reference its classes (StripeBilling/README.md).
+		'woocommerce_woopayments_retry_stripe_billing_first_invoice',
+		'woocommerce_woopayments_retry_stripe_billing_cancel',
+		WooPaymentsOrderAdminActionsController::RETRY_STATUS_CHANGE_OPERATION_ACTION,
+		SubscriptionsController::RETRY_AUTHENTICATION_FAILURE_ACTION,
 		// Stripe Billing migration off Stripe, continued by the built-in WooPayments' migrator after the switch.
 		'wcpay_schedule_subscription_migrations',
 		'wcpay_migrate_subscription',
