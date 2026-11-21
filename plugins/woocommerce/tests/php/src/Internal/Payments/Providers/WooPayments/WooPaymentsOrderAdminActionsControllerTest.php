@@ -2033,6 +2033,51 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A change to Cancelled on an order Check payments took over writes the cancelled note naming WooPayments and Check payments.
+	 *
+	 * Client 11.3.0 writes "Payment authorization was successfully cancelled" there (class-wc-payments-order-service.php:2862),
+	 * which does not say whose authorization it was, and the other gateway may show a payment intent too.
+	 */
+	public function test_cancelled_note_names_the_woopayments_authorization_on_an_order_another_payment_method_took_over(): void {
+		$order = $this->create_taken_over_order( 'cheque', self::RECORDED_INTENT, 'requires_capture', OrderStatus::CANCELLED );
+		$order->set_payment_method_title( 'Check payments' );
+		$order->save();
+		$transport = $this->create_operation_transport( PaymentProcessingService::OPERATION_CANCEL );
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $this->create_platform( null, null, new \ArrayObject() ) );
+		$this->sut->register();
+
+		$this->fire_order_hook( 'woocommerce_order_status_cancelled', $order );
+
+		$this->assertSame( array( $this->operation_path( PaymentProcessingService::OPERATION_CANCEL ) ), $this->request_paths( $transport ) );
+		$this->assertSame( 1, $this->count_notes( $order, 'The earlier WooPayments payment authorization was successfully <strong>cancelled</strong> (' . $this->recorded_intent_link() . '). The order&#039;s payment by Check payments was not changed.' ) );
+		$this->assertSame( 0, $this->count_notes( $order, 'Payment authorization was successfully <strong>cancelled</strong> (' . $this->recorded_intent_link() . ').' ) );
+		$this->assertSame( 1, $this->count_notes_containing( $order, 'was successfully <strong>cancelled</strong>' ) );
+	}
+
+	/**
+	 * @testdox A change to Cancelled does not repeat the cancelled note the extension already wrote on an order another payment method took over.
+	 *
+	 * The extension's request can die between its note and its save (class-wc-payments-order-service.php:2351, :2359), which
+	 * leaves the order storing the authorization with the note on it and no note identity. The old wording stays an
+	 * equivalent of the new one, so the note is found by its text.
+	 */
+	public function test_cancelled_does_not_repeat_the_extensions_cancelled_note_on_an_order_another_payment_method_took_over(): void {
+		$order = $this->create_taken_over_order( 'cheque', self::RECORDED_INTENT, 'requires_capture', OrderStatus::CANCELLED );
+		$order->set_payment_method_title( 'Check payments' );
+		$order->save();
+		$order->add_order_note( 'Payment authorization was successfully <strong>cancelled</strong> (' . $this->recorded_intent_link() . ').' );
+		$transport = $this->create_operation_transport( PaymentProcessingService::OPERATION_CANCEL );
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $this->create_platform( null, null, new \ArrayObject() ) );
+		$this->sut->register();
+
+		$this->fire_order_hook( 'woocommerce_order_status_cancelled', $order );
+
+		$this->assertSame( array( $this->operation_path( PaymentProcessingService::OPERATION_CANCEL ) ), $this->request_paths( $transport ) );
+		$this->assertSame( 1, $this->count_notes_containing( $order, 'was successfully <strong>cancelled</strong>' ) );
+		$this->assertSame( 1, $this->count_notes( $order, 'Payment authorization was successfully <strong>cancelled</strong> (' . $this->recorded_intent_link() . ').' ) );
+	}
+
+	/**
 	 * @testdox A change to Completed on an order another payment method took over sends nothing, not even a read: $_dataName.
 	 *
 	 * The order's other payment method may have been paid, so a capture of the kept authorization would take the money a
@@ -3002,6 +3047,15 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	 */
 	private function count_notes( WC_Order $order, string $content ): int {
 		return count( array_filter( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), static fn( $note ): bool => $content === $note->content ) );
+	}
+
+	/**
+	 * The recorded authorization's intent as a cancelled note links it: its transaction page, in the note's own markup.
+	 *
+	 * @return string
+	 */
+	private function recorded_intent_link(): string {
+		return '<a href="' . admin_url( 'admin.php?page=wc-admin&path=%2Fpayments%2Ftransactions%2Fdetails&id=' . self::RECORDED_INTENT ) . '" target="_blank" rel="noopener noreferrer">' . self::RECORDED_INTENT . '</a>';
 	}
 
 	/**

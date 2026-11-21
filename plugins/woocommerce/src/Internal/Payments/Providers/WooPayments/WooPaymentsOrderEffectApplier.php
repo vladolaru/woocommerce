@@ -977,6 +977,7 @@ class WooPaymentsOrderEffectApplier {
 	/**
 	 * Compose authorization cancellation metadata cleanup and note, and, when the plan writes fraud meta, the canceled
 	 * intent's fraud outcome as blocked after review (WooPaymentsOrderEffects::cancelled_authorization_fraud_meta()).
+	 * On an order paid another way, the note names that payment method's title.
 	 *
 	 * @param WC_Order            $order             Order whose authorization is being canceled.
 	 * @param PaymentOutcome      $outcome           Provider cancellation outcome.
@@ -1009,7 +1010,9 @@ class WooPaymentsOrderEffectApplier {
 		$charge          = WooPaymentsIntentCodec::latest_charge( $result );
 		$intent_id       = '' !== $outcome->get_provider_payment_id() ? $outcome->get_provider_payment_id() : (string) ( $result['id'] ?? '' );
 		$charge_id       = isset( $charge['id'] ) ? (string) $charge['id'] : (string) $order->get_meta( '_charge_id', true );
-		$note_candidates = $this->note_service->format_capture_cancelled_note_candidates( $intent_id, $charge_id );
+		$payment_title   = $order->get_payment_method_title();
+		$other_title     = ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) && is_string( $payment_title ) ? trim( $payment_title ) : '';
+		$note_candidates = $this->note_service->format_capture_cancelled_note_candidates( $intent_id, $charge_id, $other_title );
 		$effect_data     = array(
 			PaymentOutcome::DATA_META_TO_DELETE   => array( '_wcpay_transaction_fee', '_wcpay_net' ),
 			PaymentOutcome::DATA_NOTE             => $note_candidates[0],

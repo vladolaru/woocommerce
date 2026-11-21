@@ -244,14 +244,18 @@ class WooPaymentsOrderNoteService {
 	/**
 	 * Build the authorization-cancellation note in each wording that counts as the same note.
 	 *
-	 * @param string $intent_id Payment intent ID.
-	 * @param string $charge_id Charge ID.
+	 * When the order's payment method is another gateway's, its title is named in the first wording; today's wording stays an equivalent.
+	 *
+	 * @param string $intent_id                   Payment intent ID.
+	 * @param string $charge_id                   Charge ID.
+	 * @param string $other_payment_method_title Title of the other gateway's payment method, or '' for the usual wording.
 	 * @return string[] The note's wordings, WooCommerce's first.
 	 *
 	 * @since 11.0.0
 	 */
-	public function format_capture_cancelled_note_candidates( string $intent_id, string $charge_id ): array {
+	public function format_capture_cancelled_note_candidates( string $intent_id, string $charge_id, string $other_payment_method_title = '' ): array {
 		return $this->unique_note_candidates(
+			$this->format_capture_cancelled_note_for_domain( $intent_id, $charge_id, 'woocommerce', $other_payment_method_title ),
 			$this->format_capture_cancelled_note_for_domain( $intent_id, $charge_id, 'woocommerce' ),
 			...$this->extension_wordings( fn(): string => $this->format_capture_cancelled_note_for_domain( $intent_id, $charge_id, 'woocommerce-payments' ) )
 		);
@@ -1172,17 +1176,21 @@ class WooPaymentsOrderNoteService {
 	/**
 	 * Build an authorization-cancellation rendering from one known catalog.
 	 *
-	 * @param string $intent_id Payment intent ID.
-	 * @param string $charge_id Charge ID.
-	 * @param string $text_domain Translation catalog to render.
+	 * @param string $intent_id                   Payment intent ID.
+	 * @param string $charge_id                   Charge ID.
+	 * @param string $text_domain                 Translation catalog to render.
+	 * @param string $other_payment_method_title Title of the other gateway's payment method, for the woocommerce catalog only.
 	 * @return string
 	 */
-	private function format_capture_cancelled_note_for_domain( string $intent_id, string $charge_id, string $text_domain ): string {
+	private function format_capture_cancelled_note_for_domain( string $intent_id, string $charge_id, string $text_domain, string $other_payment_method_title = '' ): string {
 		$transaction_id  = '' !== $intent_id ? $intent_id : $charge_id;
 		$transaction_url = $this->transaction_url( $intent_id, $charge_id );
 		if ( 'woocommerce-payments' === $text_domain ) {
 			/* translators: %1$s: transaction ID, %2$s: transaction URL. */
 			$note_format = __( 'Payment authorization was successfully <strong>cancelled</strong> (<a>%1$s</a>).', 'woocommerce-payments' );
+		} elseif ( '' !== $other_payment_method_title ) {
+			/* translators: %1$s: transaction ID, %2$s: transaction URL, %3$s: the order's payment method title, for example Check payments. */
+			$note_format = __( 'The earlier WooPayments payment authorization was successfully <strong>cancelled</strong> (<a>%1$s</a>). The order\'s payment by %3$s was not changed.', 'woocommerce' );
 		} else {
 			/* translators: %1$s: transaction ID, %2$s: transaction URL. */
 			$note_format = __( 'Payment authorization was successfully <strong>cancelled</strong> (<a>%1$s</a>).', 'woocommerce' );
@@ -1197,7 +1205,8 @@ class WooPaymentsOrderNoteService {
 				)
 			),
 			$transaction_id,
-			$transaction_url
+			$transaction_url,
+			esc_html( $other_payment_method_title )
 		);
 	}
 

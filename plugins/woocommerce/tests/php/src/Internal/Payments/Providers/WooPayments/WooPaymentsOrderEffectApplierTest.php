@@ -2292,6 +2292,70 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Cancellation effects keep the client's cancelled note when the order's payment method is $_dataName.
+	 *
+	 * Client 11.3.0 class-wc-payments-order-service.php:2855-2869. Only an order paid another way, with a title to name,
+	 * gets another wording.
+	 *
+	 * @dataProvider provide_orders_keeping_the_clients_cancelled_note
+	 *
+	 * @param string $payment_method       Order payment method.
+	 * @param string $payment_method_title Order payment method title.
+	 */
+	public function test_cancel_effects_keep_the_clients_note_unless_another_payment_method_has_a_title( string $payment_method, string $payment_method_title ): void {
+		$order = $this->create_woopayments_order();
+		$order->set_payment_method( $payment_method );
+		$order->set_payment_method_title( $payment_method_title );
+		$order->save();
+		$note = 'Payment authorization was successfully <strong>cancelled</strong> (' . $this->cancelled_intent_link( 'pi_cancel_unchanged' ) . ').';
+
+		$data = $this->compose_cancel_data( $order, 'pi_cancel_unchanged' );
+
+		$this->assertSame( $note, $data[ PaymentOutcome::DATA_NOTE ] );
+		$this->assertSame( array( $note ), $data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] );
+	}
+
+	/**
+	 * Orders whose cancelled note stays the client's.
+	 *
+	 * @return array<string,array{string,string}>
+	 */
+	public function provide_orders_keeping_the_clients_cancelled_note(): array {
+		return array(
+			'the WooPayments card gateway'       => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'Credit card / debit card' ),
+			'a WooPayments split gateway'        => array( 'woocommerce_payments_bancontact', 'Bancontact' ),
+			'another gateway with no title'      => array( 'cheque', '' ),
+			'another gateway with a blank title' => array( 'cheque', '  ' ),
+		);
+	}
+
+	/**
+	 * @testdox Cancellation effects name WooPayments and the other payment method's title, escaped, when another payment method took the order over.
+	 */
+	public function test_cancel_effects_name_the_other_payment_method_title_escaped(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_payment_method( 'cheque' );
+		$order->set_payment_method_title( 'Cash & <b>carry</b>' );
+		$order->save();
+		$link = $this->cancelled_intent_link( 'pi_cancel_title' );
+
+		$data = $this->compose_cancel_data( $order, 'pi_cancel_title' );
+
+		$this->assertSame(
+			'The earlier WooPayments payment authorization was successfully <strong>cancelled</strong> (' . $link . '). The order&#039;s payment by Cash &amp; &lt;b&gt;carry&lt;/b&gt; was not changed.',
+			$data[ PaymentOutcome::DATA_NOTE ]
+		);
+		$this->assertSame(
+			array(
+				$data[ PaymentOutcome::DATA_NOTE ],
+				'Payment authorization was successfully <strong>cancelled</strong> (' . $link . ').',
+			),
+			$data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ],
+			'The client\'s wording stays an equivalent, after the new one.'
+		);
+	}
+
+	/**
 	 * @testdox Unsuccessful or mismatched cancellation effects preserve fee data and omit success effects.
 	 *
 	 * @dataProvider provide_unsuccessful_cancel_effects
@@ -2564,6 +2628,36 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$token_service->init( $details_service, wc_get_container()->get( Client::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( PaymentMethodRegistry::class ) );
 
 		return $token_service;
+	}
+
+	/**
+	 * Compose the effect data of a completed cancel of an intent on an order.
+	 *
+	 * @param WC_Order $order     Order.
+	 * @param string   $intent_id Canceled intent ID.
+	 * @return array<string,mixed>
+	 */
+	private function compose_cancel_data( WC_Order $order, string $intent_id ): array {
+		return $this->create_applier()->apply(
+			PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ),
+			new PaymentOutcome( PaymentOutcome::STATUS_CANCELED, $intent_id ),
+			WooPaymentsOrderEffectPlan::for_cancel(
+				array(
+					'id'     => $intent_id,
+					'status' => 'canceled',
+				)
+			)
+		)->get_data();
+	}
+
+	/**
+	 * An intent as a cancelled note links it: its transaction page, in the note's own markup.
+	 *
+	 * @param string $intent_id Intent ID.
+	 * @return string
+	 */
+	private function cancelled_intent_link( string $intent_id ): string {
+		return '<a href="' . admin_url( 'admin.php?page=wc-admin&path=%2Fpayments%2Ftransactions%2Fdetails&id=' . $intent_id ) . '" target="_blank" rel="noopener noreferrer">' . $intent_id . '</a>';
 	}
 
 	/**
