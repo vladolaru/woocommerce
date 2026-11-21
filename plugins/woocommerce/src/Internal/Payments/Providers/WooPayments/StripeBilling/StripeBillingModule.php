@@ -380,6 +380,7 @@ class StripeBillingModule implements RegisterHooksInterface {
 		$this->attach( 'save_post_product', StripeBillingProductService::class, 'maybe_schedule_product_create_or_update', 12 );
 		$this->attach( 'woocommerce_save_product_variation', StripeBillingProductService::class, 'maybe_schedule_product_create_or_update', 30 );
 		$this->attach( 'woocommerce_order_payment_status_changed', StripeBillingInvoiceService::class, 'maybe_record_invoice_payment' );
+		$this->attach( 'woocommerce_order_status_changed', StripeBillingInvoiceService::class, 'maybe_record_invoice_payment_after_hold', PHP_INT_MAX, 3 );
 		$this->attach( 'woocommerce_renewal_order_payment_complete', StripeBillingInvoiceService::class, 'maybe_record_invoice_payment', 11 );
 
 		$this->attach( 'woocommerce_checkout_subscription_created', StripeBillingSubscriptionService::class, 'create_subscription' );
