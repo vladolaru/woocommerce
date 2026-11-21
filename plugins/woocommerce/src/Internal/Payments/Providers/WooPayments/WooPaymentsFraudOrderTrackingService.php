@@ -129,7 +129,7 @@ class WooPaymentsFraudOrderTrackingService implements RegisterHooksInterface {
 			return;
 		}
 
-		$save_meta         = false;
+		$writes            = array();
 		$token_ids         = $order->get_payment_tokens();
 		$token_id          = end( $token_ids );
 		$token             = $token_id ? WC_Payment_Tokens::get( $token_id ) : null;
@@ -142,26 +142,31 @@ class WooPaymentsFraudOrderTrackingService implements RegisterHooksInterface {
 				if ( '' === $parent_payment_method_id ) {
 					return;
 				}
-				$order->update_meta_data( '_payment_method_id', $parent_payment_method_id );
-				$save_meta = true;
+				$writes['_payment_method_id'] = $parent_payment_method_id;
 			}
 		} elseif ( $payment_method_id !== $token->get_token() ) {
-			$order->update_meta_data( '_payment_method_id', $token->get_token() );
-			$save_meta = true;
+			$writes['_payment_method_id'] = $token->get_token();
 		}
 
 		if ( '' === $this->get_order_meta_string( $order, '_stripe_customer_id' ) ) {
 			$parent             = $order->get_parent_id() ? wc_get_order( $order->get_parent_id() ) : false;
 			$parent_customer_id = $parent instanceof WC_Order ? $this->get_order_meta_string( $parent, '_stripe_customer_id' ) : '';
 			if ( '' !== $parent_customer_id ) {
-				$order->update_meta_data( '_stripe_customer_id', $parent_customer_id );
-				$save_meta = true;
+				$writes['_stripe_customer_id'] = $parent_customer_id;
 			}
 		}
 
-		if ( $save_meta ) {
-			$order->save_meta_data();
+		if ( array() === $writes ) {
+			return;
 		}
+
+		// The order object can be older than the stored meta: another request may have added these keys since it was loaded,
+		// and an update on the old copy would add a second row. Read the stored rows again so the write lands on them.
+		$order->read_meta_data( true );
+		foreach ( $writes as $key => $value ) {
+			$order->update_meta_data( $key, $value );
+		}
+		$order->save_meta_data();
 	}
 
 	/**
