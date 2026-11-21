@@ -2550,6 +2550,49 @@ describe( 'WooPaymentsSettingsPage', () => {
 		expect( amazonPayCheckbox ).toHaveFocus();
 	} );
 
+	it( 'shows only the availability notice on an Amazon Pay row that would also show the duplicate notice', () => {
+		mockUseGetPaymentMethodStatuses.mockReturnValue( {
+			card_payments: { status: 'active', requirements: [] },
+			link_payments: { status: 'active', requirements: [] },
+			amazon_pay_payments: {
+				status: 'inactive',
+				requirements: [ 'business_profile.url' ],
+			},
+		} );
+		mockUseGetDuplicatedPaymentMethodIds.mockReturnValue( {
+			amazon_pay: [
+				'stripe_amazon_pay',
+				'woocommerce_payments_amazon_pay',
+			],
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const expressCheckoutsSection =
+			getSettingsSectionByName( 'Express checkouts' );
+		const amazonPayRow = within( expressCheckoutsSection )
+			.getByRole( 'checkbox', { name: 'Amazon Pay' } )
+			.closest( 'li' ) as HTMLElement;
+
+		expect(
+			within( amazonPayRow ).getByText(
+				'More information is needed to finish setting up this payment method.'
+			)
+		).toBeInTheDocument();
+		expect(
+			within( amazonPayRow ).queryByText( ( _content, element ) =>
+				Boolean(
+					element?.textContent?.includes(
+						'This payment method is enabled by other extensions.'
+					)
+				)
+			)
+		).not.toBeInTheDocument();
+		expect(
+			amazonPayRow.querySelectorAll( '.components-notice' )
+		).toHaveLength( 1 );
+	} );
+
 	it( 'shows the manual-capture conflict banner and disables incompatible methods', () => {
 		mockUseManualCapture.mockReturnValue( [ true, noop ] );
 		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [

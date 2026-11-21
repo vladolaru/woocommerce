@@ -347,7 +347,8 @@ const ExpressCheckoutSettingsSection = () => {
 			],
 			notice: amazonPayAvailability.notice || '',
 			noticeStatus: amazonPayAvailability.noticeStatus,
-			// Amazon Pay also shows the duplicate-method notice (client 11.1.0's amazon-pay-item.tsx shows none).
+			// Amazon Pay also shows the duplicate-method notice when it has no availability notice (client 11.1.0's
+			// amazon-pay-item.tsx shows none).
 			duplicatePaymentMethodId: 'amazon_pay',
 		} );
 	}
@@ -435,6 +436,7 @@ const ExpressCheckoutSettingsSection = () => {
 								</Notice>
 							) }
 							{ row.duplicatePaymentMethodId &&
+								! row.notice &&
 								( duplicatedPaymentMethodIds[
 									row.duplicatePaymentMethodId
 								]?.length ?? 0 ) > 0 && (
