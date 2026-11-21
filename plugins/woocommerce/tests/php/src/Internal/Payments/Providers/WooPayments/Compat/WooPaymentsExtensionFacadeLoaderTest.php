@@ -167,6 +167,54 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The loader reads the setup tier only on a store the built-in WooPayments owns: $_dataName.
+	 * @dataProvider tier_read_provider
+	 *
+	 * @param bool $builtin_owns     Whether the built-in WooPayments owns payments.
+	 * @param bool $feature_on       Whether the WooPayments feature is on.
+	 * @param bool $expect_tier_read Whether the loader must read the setup tier.
+	 */
+	public function test_the_setup_tier_is_read_only_on_a_store_the_builtin_owns( bool $builtin_owns, bool $feature_on, bool $expect_tier_read ): void {
+		$this->set_request( array() );
+		$version_defined = defined( 'WCPAY_VERSION_NUMBER' );
+
+		// The real setup tier asks the arbiter whether the feature is on as its first step, so that call counts tier reads.
+		$tier_reads = 0;
+		$this->register_extension_facades(
+			$builtin_owns,
+			WooPaymentsSetupTier::AVAILABLE,
+			$feature_on,
+			false,
+			function ( $arbiter ) use ( &$tier_reads ): void {
+				$arbiter->expects( $this->any() )->method( 'is_builtin_enabled' )->willReturnCallback(
+					function () use ( &$tier_reads ): bool {
+						// The stub registered first decides the answer; this one only counts.
+						++$tier_reads;
+						return true;
+					}
+				);
+			}
+		);
+
+		$this->assertSame( $expect_tier_read ? 1 : 0, $tier_reads, 'The loader must read the setup tier once on a store the built-in owns and not at all on any other store, which does the work it did before.' );
+		$this->assert_loader_stood_aside( $version_defined, 'on a store the built-in does not own or below the connected tier.' );
+	}
+
+	/**
+	 * The owner decision and the feature state, with the tier read each must make.
+	 *
+	 * @return array<string,array{0:bool,1:bool,2:bool}>
+	 */
+	public function tier_read_provider(): array {
+		return array(
+			// Owner, feature on, tier read expected.
+			'the built-in owns payments'            => array( true, true, true ),
+			'another runtime owns payments'         => array( false, true, false ),
+			'feature off, the extension runs alone' => array( false, false, false ),
+		);
+	}
+
+	/**
 	 * @testdox The facades and the version constant exist only on the connected and active tiers: $_dataName.
 	 * @dataProvider setup_tier_provider
 	 * @runInSeparateProcess
@@ -533,12 +581,13 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	 * The setup tier is the real class on a mocked arbiter, with the stored tier written to its option (connected by
 	 * default, so rows about other decisions reach them).
 	 *
-	 * @param bool        $builtin_owns  Whether the native runtime owns payments.
-	 * @param string|null $stored_tier   The stored setup tier, or null to leave the option unwritten.
-	 * @param bool        $feature_on    Whether the WooPayments feature is on.
-	 * @param bool        $extension_ran Whether the WooPayments extension ran on this store.
+	 * @param bool          $builtin_owns  Whether the native runtime owns payments.
+	 * @param string|null   $stored_tier   The stored setup tier, or null to leave the option unwritten.
+	 * @param bool          $feature_on    Whether the WooPayments feature is on.
+	 * @param bool          $extension_ran Whether the WooPayments extension ran on this store.
+	 * @param callable|null $arbiter_spy   Called with the arbiter mock before the loader runs, to record or forbid calls.
 	 */
-	private function register_extension_facades( bool $builtin_owns = true, ?string $stored_tier = WooPaymentsSetupTier::CONNECTED, bool $feature_on = true, bool $extension_ran = false ): void {
+	private function register_extension_facades( bool $builtin_owns = true, ?string $stored_tier = WooPaymentsSetupTier::CONNECTED, bool $feature_on = true, bool $extension_ran = false, ?callable $arbiter_spy = null ): void {
 		// A process whose bootstrap found native payments enabled already registered the production loader for an ordinary
 		// request; the request under test replaces it, as it would be the only loader in that request. tearDown() puts
 		// it back.
@@ -551,6 +600,9 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 		$arbiter->method( 'is_builtin_enabled' )->willReturn( $feature_on );
 		$arbiter->method( 'get_runtime_owner' )->willReturn( $builtin_owns ? WooPaymentsRuntimeArbiter::OWNER_BUILTIN : WooPaymentsRuntimeArbiter::OWNER_NONE );
 		$arbiter->method( 'has_run_woopayments_extension' )->willReturn( $extension_ran );
+		if ( null !== $arbiter_spy ) {
+			$arbiter_spy( $arbiter );
+		}
 
 		if ( null === $stored_tier ) {
 			delete_option( WooPaymentsSetupTier::OPTION_NAME );

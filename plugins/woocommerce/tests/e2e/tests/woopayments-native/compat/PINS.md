@@ -12,7 +12,7 @@ These pins were last derived from the extension repositories on 2026-09-10. The 
 | WooCommerce Bookings | `2.0.9` | `3.5.3` | `3.10.0` | Native express methods stay unavailable for bookable products and carts |
 | WooCommerce Deposits | `2.2.9` | `2.2.9` | `2.4.7` | The product-page express payload drops its line items (and keeps its total) while the cart holds a deposit, and keeps them when the deposit is declined; a fixed deposit added through the cart is converted to the shopper's currency once, on the cart line and in the cart total |
 | WooCommerce Square | `4.7.4` | `4.7.4` | `5.5.0` | Native express methods stay unavailable for Square gift-card products and carts |
-| WooCommerce PayPal Payments | `2.9.6` | `2.9.6` | `4.1.3` | PayPal does not offer Apple Pay or Google Pay alongside native WooPayments |
+| WooCommerce PayPal Payments | `2.9.6` | `2.9.6` | `4.1.3` | With no platform account the built-in WooPayments declares no `WC_Payments`, so PayPal keeps its card step; with an account connected it declares the surface and PayPal does not offer Apple Pay or Google Pay alongside native WooPayments |
 
 Bookings `2.0.9` is the historical dependency origin for the express-filter integration, but it is not executable on the matrix's current MariaDB because its availability-table schema uses the unquoted reserved identifier `to_date`. Bookings `3.5.3` is the first stable release after that origin whose installer and availability queries quote the identifier, so it is the executable oldest pin. The profile does not patch third-party extension code or schemas.
 
@@ -50,9 +50,13 @@ pnpm exec playwright test \
 	tests/e2e/tests/woopayments-native/merchant/payouts-disputes-smoke.spec.ts
 ```
 
-Repeat from `pnpm env:e2e:restart` with `--pin-set latest`. Each pin set runs six cases: the five compat specs and the Subscriptions settings-tab smoke. The profile prints one `<extension> <version> active` line per extension and records the pin set in the `e2e_woopayments_extension_compat_profile` option the specs read.
+Repeat from `pnpm env:e2e:restart` with `--pin-set latest`. Each pin set runs seven cases: the five compat specs (the PayPal spec has two cases) and the Subscriptions settings-tab smoke. The profile prints one `<extension> <version> active` line per extension and records the pin set in the `e2e_woopayments_extension_compat_profile` option the specs read.
 
-The probes run through the shared `wpCLI`/`wpEvalJson` helpers, which target `.wp-env.e2e.json`'s `cli` service unless `E2E_WP_ENV_CONFIG` names another config. Unless `E2E_WOOPAYMENTS_EXTENSION_COMPAT` is exactly `true`, every compatibility spec skips itself. The profile project is serialized to one worker because the scenarios share WordPress plugin and option state.
+The probes run through the shared `wpCLI`/`wpEvalJson` helpers, which target `.wp-env.e2e.json`'s `cli` service unless `E2E_WP_ENV_CONFIG` names another config.
+
+The recipe's fresh store has no platform account, and the built-in WooPayments declares `WC_Payments`, `WC_Payments_Features` and `WCPAY_VERSION_NUMBER` only from the connected setup tier on. The PayPal spec therefore has two cases: the first expects none of the three and PayPal's card step in place on the fresh store (setup tier option deleted for the probe), the second writes the `connected` tier, expects all three and PayPal's competing onboarding suppressed. Each case puts the tier it found back, so the profile needs no connected-store seed.
+
+Unless `E2E_WOOPAYMENTS_EXTENSION_COMPAT` is exactly `true`, every compatibility spec skips itself. The profile project is serialized to one worker because the scenarios share WordPress plugin and option state.
 
 ## Pin refresh rule
 
