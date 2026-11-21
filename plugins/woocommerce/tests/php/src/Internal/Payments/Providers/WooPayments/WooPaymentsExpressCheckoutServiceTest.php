@@ -1438,6 +1438,37 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * The express element asks for manual capture only where the charge captures later, which only a stored "yes" turns on
+	 * (client 11.3.0 `includes/express-checkout/class-wc-payments-express-checkout-button-handler.php:260`).
+	 *
+	 * @testdox Should flag manual capture for the express element only for a stored yes: $_dataName.
+	 * @dataProvider provide_manual_capture_values
+	 *
+	 * @param mixed $stored   Stored manual capture value.
+	 * @param bool  $expected Expected `is_manual_capture`.
+	 */
+	public function test_flags_manual_capture_only_for_a_stored_yes( $stored, bool $expected ): void {
+		$params = $this->create_service( array( 'manual_capture' => $stored ) )->get_express_checkout_params( 'checkout' );
+
+		$this->assertSame( $expected, $params['is_manual_capture'] );
+	}
+
+	/**
+	 * Provide a stored manual capture value and whether the express element asks for manual capture.
+	 *
+	 * @return array<string,array{0:mixed,1:bool}>
+	 */
+	public function provide_manual_capture_values(): array {
+		return array(
+			'yes'          => array( 'yes', true ),
+			'no'           => array( 'no', false ),
+			'string 1'     => array( '1', false ),
+			'integer 1'    => array( 1, false ),
+			'boolean true' => array( true, false ),
+		);
+	}
+
+	/**
 	 * @testdox Should build reference-shaped ECE params for Apple Pay and Google Pay.
 	 */
 	public function test_builds_payment_request_express_checkout_params(): void {

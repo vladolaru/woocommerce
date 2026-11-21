@@ -1400,6 +1400,114 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * The charge, the card gateway and the account service read a toggle as on only for a stored "yes"; the settings answer
+	 * does the same, so the page never shows on what the charge treats as off (client 11.3.0
+	 * `class-wc-rest-payments-settings-controller.php:550-551`, :583).
+	 *
+	 * @testdox The settings answer reads manual capture stored as $_dataName the way the charge does.
+	 * @dataProvider provide_stored_toggle_values
+	 *
+	 * @param mixed $stored   Stored value.
+	 * @param bool  $expected Whether the toggle reads as on.
+	 */
+	public function test_get_settings_reads_manual_capture_as_the_charge_does( $stored, bool $expected ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'manual_capture' => $stored ) );
+
+		$settings = $this->sut->get_settings();
+
+		$this->assertSame( $expected, $settings['is_manual_capture_enabled'] );
+		$this->assertSame( $this->account_service->is_manual_capture_enabled(), $settings['is_manual_capture_enabled'] );
+	}
+
+	/**
+	 * @testdox The settings answer reads saved cards stored as $_dataName the way the card gateway does.
+	 * @dataProvider provide_stored_toggle_values
+	 *
+	 * @param mixed $stored   Stored value.
+	 * @param bool  $expected Whether the toggle reads as on.
+	 */
+	public function test_get_settings_reads_saved_cards_as_the_card_gateway_does( $stored, bool $expected ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'saved_cards' => $stored ) );
+
+		$settings = $this->sut->get_settings();
+
+		$this->assertSame( $expected, $settings['is_saved_cards_enabled'] );
+		$this->assertSame( $this->create_card_gateway()->is_saved_cards_enabled(), $settings['is_saved_cards_enabled'] );
+	}
+
+	/**
+	 * @testdox The settings answer reads a saved cards setting that was never saved as on, as the card gateway does.
+	 */
+	public function test_get_settings_reads_saved_cards_never_saved_as_on(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
+
+		$settings = $this->sut->get_settings();
+
+		$this->assertTrue( $settings['is_saved_cards_enabled'] );
+		$this->assertTrue( $this->create_card_gateway()->is_saved_cards_enabled() );
+	}
+
+	/**
+	 * @testdox The settings answer reads "Enable WooPayments" stored as $_dataName the way the gateway and the account service do.
+	 * @dataProvider provide_stored_toggle_values
+	 *
+	 * @param mixed $stored   Stored value.
+	 * @param bool  $expected Whether the toggle reads as on.
+	 */
+	public function test_get_settings_reads_wcpay_enabled_as_the_gateway_does( $stored, bool $expected ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => $stored ) );
+
+		$settings = $this->sut->get_settings();
+
+		$this->assertSame( $expected, $settings['is_wcpay_enabled'] );
+		$this->assertSame( $this->account_service->is_gateway_enabled(), $settings['is_wcpay_enabled'] );
+	}
+
+	/**
+	 * Provide a stored toggle value and whether it reads as on: only "yes" does, as in the charge.
+	 *
+	 * @return array<string,array{0:mixed,1:bool}>
+	 */
+	public function provide_stored_toggle_values(): array {
+		return array(
+			'yes'          => array( 'yes', true ),
+			'no'           => array( 'no', false ),
+			'string 1'     => array( '1', false ),
+			'integer 1'    => array( 1, false ),
+			'boolean true' => array( true, false ),
+		);
+	}
+
+	/**
+	 * A save that omits `is_manual_capture_enabled` filters the posted methods by the stored manual capture, read as the
+	 * charge reads it: a stored "1", 1 or true is off, so no method is dropped.
+	 *
+	 * @testdox A save that omits manual capture keeps the posted methods when manual capture is stored as $_dataName, as the charge reads it.
+	 * @dataProvider provide_stored_toggle_values
+	 *
+	 * @param mixed $stored   Stored value.
+	 * @param bool  $expected Whether manual capture reads as on, and so drops iDEAL.
+	 */
+	public function test_update_settings_filters_by_the_stored_manual_capture_as_the_charge_reads_it( $stored, bool $expected ): void {
+		$this->set_card_and_ideal_account_data();
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'enabled'                        => 'yes',
+				'test_mode'                      => 'yes',
+				'manual_capture'                 => $stored,
+				'upe_enabled_payment_method_ids' => array( 'card' ),
+			)
+		);
+
+		$result = $this->sut->update_settings( array( 'enabled_payment_method_ids' => array( 'card', 'ideal' ) ) );
+
+		$this->assertIsArray( $result, is_wp_error( $result ) ? $result->get_error_message() : '' );
+		$saved = get_option( 'woocommerce_woocommerce_payments_settings' );
+		$this->assertSame( $expected ? array( 'card' ) : array( 'card', 'ideal' ), $saved['upe_enabled_payment_method_ids'] );
+	}
+
+	/**
 	 * @testdox Should record the WooPayments extension's WooPay admin Tracks events when a save changes WooPay settings.
 	 *
 	 * Expected names and properties: plugin 11.1.0 `WC_Payment_Gateway_WCPay::update_is_woopay_enabled()`,

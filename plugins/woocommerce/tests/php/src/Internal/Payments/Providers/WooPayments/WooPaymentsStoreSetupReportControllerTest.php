@@ -275,6 +275,64 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * The snapshot tells the platform what the charge does: manual capture and saved cards are on only for a stored "yes"
+	 * (client 11.3.0 `includes/class-wc-payments-account.php:2928-2929`).
+	 *
+	 * @testdox Should report manual capture and saved cards stored as $_dataName the way the charge reads them.
+	 * @dataProvider provider_store_setup_sync_toggle_values
+	 *
+	 * @param mixed $stored   Stored value of both settings.
+	 * @param bool  $expected Whether both read as on.
+	 */
+	public function test_store_setup_sync_reports_manual_capture_and_saved_cards_as_the_charge_reads_them( $stored, bool $expected ): void {
+		$snapshot = $this->send_store_setup_snapshot(
+			array(
+				'enabled'        => 'yes',
+				'test_mode'      => 'yes',
+				'manual_capture' => $stored,
+				'saved_cards'    => $stored,
+			)
+		);
+
+		$this->assertSame( $expected, $snapshot['manual_capture_enabled'] );
+		$this->assertSame( $expected, $snapshot['saved_cards_enabled'] );
+	}
+
+	/**
+	 * Provide a stored value and whether the snapshot reports it as on: only "yes" is.
+	 *
+	 * @return array<string,array{0:mixed,1:bool}>
+	 */
+	public function provider_store_setup_sync_toggle_values(): array {
+		return array(
+			'yes'          => array( 'yes', true ),
+			'no'           => array( 'no', false ),
+			'string 1'     => array( '1', false ),
+			'integer 1'    => array( 1, false ),
+			'boolean true' => array( true, false ),
+		);
+	}
+
+	/**
+	 * No setting named saved_cards_enabled exists, here or in the WooPayments extension, so the snapshot reads saved cards
+	 * from saved_cards alone.
+	 *
+	 * @testdox Should ignore a stray saved_cards_enabled key when reporting saved cards.
+	 */
+	public function test_store_setup_sync_reads_saved_cards_from_saved_cards_alone(): void {
+		$snapshot = $this->send_store_setup_snapshot(
+			array(
+				'enabled'             => 'yes',
+				'test_mode'           => 'yes',
+				'saved_cards'         => 'no',
+				'saved_cards_enabled' => 'yes',
+			)
+		);
+
+		$this->assertFalse( $snapshot['saved_cards_enabled'] );
+	}
+
+	/**
 	 * A store onboarded natively stores only the keys onboarding writes until the merchant saves the settings page; every
 	 * other setting reads as its form default, as WC_Settings_API::get_option() answers a key that was never saved.
 	 *

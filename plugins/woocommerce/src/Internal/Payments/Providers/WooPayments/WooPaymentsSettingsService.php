@@ -283,8 +283,8 @@ class WooPaymentsSettingsService {
 			'dismissed_duplicate_payment_method_notices' => $this->duplicate_gateway_methods_service->get_dismissed_duplicate_payment_method_notices(),
 			'account_fees'                               => $this->get_account_fees(),
 			'pm_promotions'                              => $this->pm_promotions_service->get_visible_promotions() ?? array(),
-			'is_wcpay_enabled'                           => $this->is_yes( $settings['enabled'] ),
-			'is_manual_capture_enabled'                  => $this->is_yes( $settings['manual_capture'] ),
+			'is_wcpay_enabled'                           => $this->account_service->is_gateway_enabled(),
+			'is_manual_capture_enabled'                  => $this->account_service->is_manual_capture_enabled(),
 			'is_test_mode_enabled'                       => $this->account_service->is_test_mode_enabled(),
 			'is_test_mode_onboarding'                    => $this->account_service->is_test_mode_onboarding_enabled(),
 			'is_dev_mode_enabled'                        => $this->account_service->is_dev_mode_enabled(),
@@ -315,7 +315,7 @@ class WooPaymentsSettingsService {
 			'payment_request_button_type'                => $this->get_string_setting( $settings, 'payment_request_button_type' ),
 			'payment_request_button_theme'               => $this->get_string_setting( $settings, 'payment_request_button_theme' ),
 			'payment_request_button_border_radius'       => $this->get_int_setting( $settings, 'payment_request_button_border_radius', 4 ),
-			'is_saved_cards_enabled'                     => $this->is_yes( $settings['saved_cards'] ),
+			'is_saved_cards_enabled'                     => $this->account_service->is_saved_cards_enabled(),
 			'is_card_present_eligible'                   => $this->is_card_present_eligible(),
 			'is_woopay_enabled'                          => $this->woopay_eligibility->is_woopay_eligible() && $this->is_yes( $settings['platform_checkout'] ?? 'no' ),
 			'woopay_last_disable_date'                   => $this->get_string_setting( $settings, 'platform_checkout_last_disable_date' ),
@@ -432,7 +432,7 @@ class WooPaymentsSettingsService {
 		$payment_request_enabled = array_key_exists( 'is_payment_request_enabled', $params )
 			? $this->is_yes( $this->normalize_setting_value( $params['is_payment_request_enabled'], 'bool' ) )
 			: null;
-		$enabled_methods_update  = $this->prepare_enabled_payment_method_ids_update( $params, $settings );
+		$enabled_methods_update  = $this->prepare_enabled_payment_method_ids_update( $params );
 		if ( is_wp_error( $enabled_methods_update ) ) {
 			return $enabled_methods_update;
 		}
@@ -655,11 +655,10 @@ class WooPaymentsSettingsService {
 	 *
 	 * Runs before any platform mutation so a rejected save is fully atomic. An unknown availability (no fee-backed methods, e.g. a cold or errored account cache) rejects every enabled-methods save — including an empty list, which a settings-screen round-trip would otherwise persist, silently wiping the store's enabled methods without self-healing when the cache returns.
 	 *
-	 * @param array<string,mixed> $params   Request parameters.
-	 * @param array<string,mixed> $settings Current gateway settings.
+	 * @param array<string,mixed> $params Request parameters.
 	 * @return array{requested:string[],available:string[]}|WP_Error|null Prepared update, an error, or null when the request does not touch enabled methods.
 	 */
-	private function prepare_enabled_payment_method_ids_update( array $params, array $settings ) {
+	private function prepare_enabled_payment_method_ids_update( array $params ) {
 		if ( ! array_key_exists( 'enabled_payment_method_ids', $params ) ) {
 			return null;
 		}
@@ -668,7 +667,7 @@ class WooPaymentsSettingsService {
 			is_array( $params['enabled_payment_method_ids'] ) ? $params['enabled_payment_method_ids'] : array(),
 			PaymentMethodRegistry::SETTINGS_PAYMENT_METHOD_IDS
 		);
-		if ( $this->is_manual_capture_enabled_after_update( $params, $settings ) ) {
+		if ( $this->is_manual_capture_enabled_after_update( $params ) ) {
 			$requested_payment_method_ids = $this->filter_manual_capture_payment_method_ids( $requested_payment_method_ids );
 		}
 
@@ -825,16 +824,15 @@ class WooPaymentsSettingsService {
 	/**
 	 * Tell whether manual capture will be enabled after this update.
 	 *
-	 * @param array<string,mixed> $params   Request parameters.
-	 * @param array<string,mixed> $settings Current gateway settings.
+	 * @param array<string,mixed> $params Request parameters.
 	 * @return bool
 	 */
-	private function is_manual_capture_enabled_after_update( array $params, array $settings ): bool {
+	private function is_manual_capture_enabled_after_update( array $params ): bool {
 		if ( array_key_exists( 'is_manual_capture_enabled', $params ) ) {
 			return (bool) $params['is_manual_capture_enabled'];
 		}
 
-		return $this->is_yes( $settings['manual_capture'] ?? 'no' );
+		return $this->account_service->is_manual_capture_enabled();
 	}
 
 	/**

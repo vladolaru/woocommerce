@@ -452,7 +452,7 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 	 */
 	private function get_payment_fields_js_config_base( array $supports, ?array $payment_context = null, string $button_context = 'checkout' ): array {
 		$force_network_saved_cards = $this->should_force_network_saved_cards();
-		$saved_cards_enabled       = $this->is_saved_cards_enabled();
+		$saved_cards_enabled       = $this->get_account_service()->is_saved_cards_enabled();
 		$payment_context           = $payment_context ?? $this->get_payment_context();
 		$customer_data             = $this->get_customer_service()->get_prepared_customer_data();
 		if ( '' !== $payment_context['billing_country'] ) {
@@ -1546,17 +1546,6 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 	 */
 	private function should_force_network_saved_cards(): bool {
 		return $this->get_account_service()->is_network_saved_cards_enabled() || $this->get_woopay_eligibility()->should_use_stripe_platform_on_checkout_page();
-	}
-
-	/**
-	 * Tell whether saved cards are enabled in the gateway settings.
-	 *
-	 * @return bool
-	 */
-	private function is_saved_cards_enabled(): bool {
-		$value = $this->get_account_service()->get_gateway_setting( 'saved_cards', 'yes' );
-
-		return true === $value || 'yes' === $value || '1' === $value || 1 === $value;
 	}
 
 	/**

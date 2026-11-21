@@ -360,8 +360,8 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 				'disabled'  => $provider_capabilities_disabled,
 			),
 			'express_checkout_in_payment_methods_enabled' => $express_checkout_payment_methods,
-			'saved_cards_enabled'                         => $this->is_setting_enabled( $settings, 'saved_cards' ) || $this->is_setting_enabled( $settings, 'saved_cards_enabled' ),
-			'manual_capture_enabled'                      => $this->is_setting_enabled( $settings, 'manual_capture' ),
+			'saved_cards_enabled'                         => $this->account_service->is_saved_cards_enabled(),
+			'manual_capture_enabled'                      => $this->account_service->is_manual_capture_enabled(),
 			'debug_log_enabled'                           => $this->is_setting_enabled( $settings, 'enable_logging' ),
 			'payment_request'                             => array(
 				'enabled'              => $this->account_service->is_payment_request_enabled(),

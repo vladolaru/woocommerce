@@ -1216,6 +1216,21 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Tell whether shoppers can save their cards.
+	 *
+	 * Only a stored `yes` turns it on and a setting never saved reads as on, as client 11.3.0's is_saved_cards_enabled()
+	 * (includes/class-wc-payment-gateway-wcpay.php:1239-1240).
+	 * The card gateway keeps its own read, which also reads an empty stored value as on (register row 625 (b)).
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return bool
+	 */
+	public function is_saved_cards_enabled(): bool {
+		return 'yes' === $this->get_gateway_setting( 'saved_cards', 'yes' );
+	}
+
+	/**
 	 * Get the gateway settings, a key never saved reading as its form default.
 	 *
 	 * A store onboarded through the built-in WooPayments stores only the keys onboarding writes until the settings page is

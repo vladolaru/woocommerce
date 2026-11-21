@@ -1579,6 +1579,9 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 			'logged-in WooPay shopper'                => array( true, true, array(), false, true, false, false ),
 			'saved cards disabled'                    => array( false, false, array( 'saved_cards' => 'no' ), false, false, false, false ),
 			'saved cards enabled'                     => array( false, false, array( 'saved_cards' => 'yes' ), false, true, true, false ),
+			'saved cards stored as string 1'          => array( false, false, array( 'saved_cards' => '1' ), false, false, false, false ),
+			'saved cards stored as integer 1'         => array( false, false, array( 'saved_cards' => 1 ), false, false, false, false ),
+			'saved cards stored as boolean true'      => array( false, false, array( 'saved_cards' => true ), false, false, false, false ),
 			'renewal-only cart'                       => array( false, false, array( 'saved_cards' => 'yes' ), true, true, false, true ),
 			'renewal-only cart, no saved-cards value' => array( false, false, array(), true, true, false, true ),
 		);

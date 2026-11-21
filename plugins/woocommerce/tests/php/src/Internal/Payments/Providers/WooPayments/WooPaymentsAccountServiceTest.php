@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiExcept
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsDefaults;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -939,6 +940,55 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 			'integer 1'           => array( 'integer 1', array( 'manual_capture' => 1 ), true ),
 			'boolean true'        => array( 'boolean true', array( 'manual_capture' => true ), true ),
 			'option not an array' => array( 'option not an array', 'corrupt', false ),
+		);
+	}
+
+	/**
+	 * The expected values are the card gateway's own read, which the accessor must equal. The empty value is left out: the
+	 * gateway reads it as on through WC_Settings_API::get_option() and the accessor does not (register row 625 (b)).
+	 *
+	 * @testdox The card gateway reads saved cards as the table expects: $_dataName.
+	 * @dataProvider saved_cards_provider
+	 *
+	 * @param array<string,mixed> $stored   Stored gateway settings.
+	 * @param bool                $expected Whether saved cards read as on.
+	 */
+	public function test_the_card_gateway_reads_saved_cards_as_the_table_expects( array $stored, bool $expected ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', $stored );
+
+		$this->assertSame( $expected, $this->create_card_gateway()->is_saved_cards_enabled() );
+	}
+
+	/**
+	 * @testdox Should read saved cards as the card gateway does: $_dataName.
+	 * @dataProvider saved_cards_provider
+	 *
+	 * @param array<string,mixed> $stored   Stored gateway settings.
+	 * @param bool                $expected Whether saved cards read as on.
+	 */
+	public function test_is_saved_cards_enabled_agrees_with_the_card_gateway( array $stored, bool $expected ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', $stored );
+
+		$sut = $this->create_service();
+
+		$this->assertSame( $expected, $sut->is_saved_cards_enabled() );
+		$this->assertSame( $this->create_card_gateway()->is_saved_cards_enabled(), $sut->is_saved_cards_enabled() );
+	}
+
+	/**
+	 * Provide stored gateway settings and whether saved cards read as on: only "yes" does, and a key never saved reads as
+	 * its form default, "yes".
+	 *
+	 * @return array<string,array{0:array<string,mixed>,1:bool}>
+	 */
+	public function saved_cards_provider(): array {
+		return array(
+			'yes'          => array( array( 'saved_cards' => 'yes' ), true ),
+			'no'           => array( array( 'saved_cards' => 'no' ), false ),
+			'string 1'     => array( array( 'saved_cards' => '1' ), false ),
+			'integer 1'    => array( array( 'saved_cards' => 1 ), false ),
+			'boolean true' => array( array( 'saved_cards' => true ), false ),
+			'never saved'  => array( array( 'enabled' => 'yes' ), true ),
 		);
 	}
 
@@ -2109,6 +2159,15 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		foreach ( $triggers as $trigger ) {
 			$this->assertMatchesRegularExpression( '/^(WCPAY_DEV_MODE|WP_ENVIRONMENT_TYPE=\\w+|WP_DEVELOPMENT_MODE=\\w+|wcpay_dev_mode filter)$/', $trigger );
 		}
+	}
+
+	/**
+	 * Build the card gateway, which reads the stored settings when it is built.
+	 *
+	 * @return WooPaymentsGateway
+	 */
+	private function create_card_gateway(): WooPaymentsGateway {
+		return new WooPaymentsGateway( ( new PaymentMethodRegistry() )->get( 'card' ) );
 	}
 
 	/**

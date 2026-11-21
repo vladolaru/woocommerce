@@ -153,7 +153,7 @@ class WooPaymentsExpressCheckoutService {
 			'has_subscription'            => $this->context_has_subscription( $context ),
 			// Product page (no cart yet) and order-pay (the order route carries no cart extension).
 			'setup_future_usage'          => $this->get_setup_future_usage( $context ),
-			'is_manual_capture'           => $this->account_service->is_gateway_setting_enabled( 'manual_capture' ),
+			'is_manual_capture'           => $this->account_service->is_manual_capture_enabled(),
 			// Snake case only, as client 11.1.0 adds it to these params (class-woopay-tracker.php:672).
 			'is_shopper_tracking_enabled' => $tracking_enabled,
 			'button'                      => $this->get_button_settings( $context ),
