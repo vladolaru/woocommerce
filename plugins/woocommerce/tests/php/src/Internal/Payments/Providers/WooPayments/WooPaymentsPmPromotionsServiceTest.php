@@ -412,6 +412,63 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * A list stored as an empty string reads as cards in client 11.3.0 (`get_upe_enabled_payment_method_ids()` answers its
+	 * default for "", includes/class-wc-payment-gateway-wcpay.php:5132-5139), which the promotion service reads the list
+	 * through (includes/class-wc-payments-pm-promotions-service.php:447-455). Fails when "" reads as no methods, which writes a
+	 * list without cards.
+	 *
+	 * @testdox Should keep cards in the list when activation adds the promoted method to a list stored as an empty string.
+	 */
+	public function test_activate_promotion_keeps_cards_when_the_list_is_stored_as_an_empty_string(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => '' ) );
+		$this->account_service->cached_account_data = array(
+			'fees' => array(
+				'card'   => array(),
+				'klarna' => array(),
+			),
+		);
+		$this->api_client->promotions_response      = array(
+			$this->promotion_fixture( 'klarna-promo__spotlight', 'klarna-promo', 'klarna', 'spotlight' ),
+		);
+
+		$this->assertTrue( $this->sut->activate_promotion( 'klarna-promo__spotlight' ) );
+
+		$this->assertSame( array( 'card', 'klarna' ), get_option( 'woocommerce_woocommerce_payments_settings' )['upe_enabled_payment_method_ids'] );
+	}
+
+	/**
+	 * With the list stored as an empty string cards are enabled, so a cards promotion is not offered, as for a stored
+	 * list of cards; a list stored as an empty array enables no method, so it is.
+	 *
+	 * @testdox Should read the list stored as $name when choosing which promotions to show.
+	 * @testWith ["an empty string", "", ["klarna-promo__spotlight"]]
+	 *           ["an empty array", [], ["card-promo__spotlight", "klarna-promo__spotlight"]]
+	 *
+	 * @param string            $name     Case.
+	 * @param mixed             $stored   Stored list.
+	 * @param array<int,string> $expected Visible promotion IDs.
+	 */
+	public function test_get_visible_promotions_reads_a_stored_list_as_cards_when_it_is_an_empty_string( string $name, $stored, array $expected ): void {
+		unset( $name );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => $stored ) );
+		$this->account_service->cached_account_data = array(
+			'fees' => array(
+				'card'   => array(),
+				'klarna' => array(),
+			),
+		);
+		$this->api_client->promotions_response      = array(
+			$this->promotion_fixture( 'card-promo__spotlight', 'card-promo', 'card', 'spotlight' ),
+			$this->promotion_fixture( 'klarna-promo__spotlight', 'klarna-promo', 'klarna', 'spotlight' ),
+		);
+
+		$promotions = $this->sut->get_visible_promotions();
+
+		$this->assertIsArray( $promotions );
+		$this->assertSame( $expected, array_column( $promotions, 'id' ) );
+	}
+
+	/**
 	 * Client 11.1.0 checks the gateway reads enabled after `enable()` and logs a warning when it does not
 	 * (includes/class-wc-payments-pm-promotions-service.php:398-402,426-433).
 	 *

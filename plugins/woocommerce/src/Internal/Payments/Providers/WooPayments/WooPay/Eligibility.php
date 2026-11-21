@@ -314,7 +314,8 @@ class Eligibility {
 			return in_array( 'woopay', $methods, true );
 		}
 
-		return $this->is_woopay_setting_on();
+		// A list stored as an empty string, or any other non-array, selects no method; only a list stored as null reads the WooPay setting.
+		return null === $methods && $this->is_woopay_setting_on();
 	}
 
 	/**

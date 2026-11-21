@@ -243,7 +243,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			'test_mode'               => $this->get_account_service()->is_test_mode_enabled(),
 			'enabled_payment_methods' => $enabled_payment_methods,
 			'woopay'                  => array(
-				'enabled'           => 'yes' === (string) $woopay_setting || true === $woopay_setting || '1' === (string) $woopay_setting,
+				'enabled'           => 'yes' === $woopay_setting,
 				'enabled_locations' => $woopay_locations,
 			),
 			'express_checkout'        => array(

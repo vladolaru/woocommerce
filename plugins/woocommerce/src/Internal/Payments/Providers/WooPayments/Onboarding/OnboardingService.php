@@ -656,10 +656,11 @@ class OnboardingService {
 	 * Save the test-drive account's enabled payment methods for an hour, so the live account gets them back after KYC.
 	 */
 	private function save_test_drive_settings_for_live_account(): void {
+		// A list stored as an empty string reads as card, as client 11.3.0 get_upe_enabled_payment_method_ids() does.
 		$settings                = $this->proxy->call_function( 'get_option', WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array() );
-		$enabled_payment_methods = is_array( $settings ) && is_array( $settings['upe_enabled_payment_method_ids'] ?? null )
-			? $this->normalize_test_drive_payment_method_ids( $settings['upe_enabled_payment_method_ids'] )
-			: array();
+		$stored_method_ids       = is_array( $settings ) ? ( $settings['upe_enabled_payment_method_ids'] ?? null ) : null;
+		$stored_method_ids       = '' === $stored_method_ids ? array( 'card' ) : $stored_method_ids;
+		$enabled_payment_methods = is_array( $stored_method_ids ) ? $this->normalize_test_drive_payment_method_ids( $stored_method_ids ) : array();
 
 		$this->proxy->call_function(
 			'set_transient',

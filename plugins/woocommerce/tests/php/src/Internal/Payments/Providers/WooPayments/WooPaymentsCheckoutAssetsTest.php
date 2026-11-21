@@ -1306,6 +1306,55 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * The gateway and the wallet buttons read list placement as on only for a stored "yes" (client 11.3.0
+	 * `class-wc-payment-gateway-wcpay.php:1272-1275`), so the checkout configuration does too: a stored "1", 1 or true
+	 * neither sets the flag nor lists the wallets, which the gateway would refuse.
+	 *
+	 * @testdox Should read list placement stored as $_dataName the way the gateway does.
+	 * @dataProvider provider_list_placement_values
+	 *
+	 * @param mixed $stored   Stored value.
+	 * @param bool  $expected Whether the checkout configuration reads list placement as on.
+	 */
+	public function test_get_payment_fields_js_config_reads_list_placement_as_the_gateway_does( $stored, bool $expected ): void {
+		update_option( '_wcpay_feature_dynamic_checkout_place_order_button', '1' );
+		$this->set_wallet_gateway_settings( true );
+		$account_service = $this->create_account_service(
+			true,
+			array(
+				'country'      => 'US',
+				'capabilities' => array( 'card_payments' => 'active' ),
+			),
+			array(
+				'express_checkout_in_payment_methods' => $stored,
+				'upe_enabled_payment_method_ids'      => array( 'card' ),
+			)
+		);
+		$sut             = new WooPaymentsCheckoutAssets();
+		$sut->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new PaymentMethodRegistry() );
+
+		$config = $sut->get_payment_fields_js_config( self::CARD_SUPPORTS );
+
+		$this->assertSame( $expected, $config['isExpressCheckoutInPaymentMethodsEnabled'] );
+		$this->assertSame( $expected, ! empty( $config['paymentListWalletsConfig'] ?? array() ) );
+	}
+
+	/**
+	 * Provide a stored list placement value and whether it reads as on: only "yes" does.
+	 *
+	 * @return array<string,array{0:mixed,1:bool}>
+	 */
+	public function provider_list_placement_values(): array {
+		return array(
+			'yes'          => array( 'yes', true ),
+			'no'           => array( 'no', false ),
+			'string 1'     => array( '1', false ),
+			'integer 1'    => array( 1, false ),
+			'boolean true' => array( true, false ),
+		);
+	}
+
+	/**
 	 * Apple Pay and Google Pay run on the card_payments capability; the client offers a method only while it is `active`
 	 * (client 11.1.0 `includes/class-wc-payment-gateway-wcpay.php:908-913`).
 	 *

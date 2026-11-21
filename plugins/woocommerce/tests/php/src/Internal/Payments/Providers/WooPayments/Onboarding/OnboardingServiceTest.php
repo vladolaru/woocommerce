@@ -3190,6 +3190,42 @@ class OnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * The test-drive save reads the enabled list as client 11.3.0 does when it keeps the methods for the live account
+	 * (includes/class-wc-payments-account.php:3254-3265, through `get_upe_enabled_payment_method_ids()`): a list stored as an
+	 * empty string reads as card, a list stored as an empty array as none.
+	 *
+	 * @testdox Disabling a test-drive account saves $name for the live account.
+	 * @testWith ["card and its capability when the list is stored as an empty string", "", ["card"], ["card_payments"]]
+	 *           ["card and Link when the list holds both", ["card", "link"], ["card", "link"], ["card_payments", "link_payments"]]
+	 *           ["no methods when the list is stored as an empty array", [], [], []]
+	 *
+	 * @param string            $name         Case.
+	 * @param mixed             $stored       Stored enabled list.
+	 * @param array<int,string> $expected_ids Saved payment method IDs.
+	 * @param array<int,string> $expected_caps Requested capability keys.
+	 */
+	public function test_disable_test_account_saves_the_enabled_methods_as_the_extension_reads_them( string $name, $stored, array $expected_ids, array $expected_caps ): void {
+		unset( $name );
+		update_option( 'wcpay_onboarding_test_mode', 'no' );
+		update_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array( 'upe_enabled_payment_method_ids' => $stored ) );
+		$api_client = $this->getMockBuilder( Client::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_available', 'delete_account' ) )
+			->getMock();
+		$api_client->method( 'is_available' )->willReturn( true );
+		$api_client->method( 'delete_account' )->willReturn( array( 'result' => 'success' ) );
+		$this->set_onboarding_collaborators( $api_client );
+
+		$result = $this->onboarding_service->disable_test_account( true );
+
+		$this->assertTrue( $result['success'] );
+		$saved = get_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT );
+		$this->assertIsArray( $saved );
+		$this->assertSame( $expected_ids, $saved['enabled_payment_methods'] );
+		$this->assertSame( $expected_caps, array_keys( $saved['capabilities'] ) );
+	}
+
+	/**
 	 * Store state seeded before an account deletion, and the platform's answer to the delete call.
 	 *
 	 * @return array<string,array{0:string,1:array<int,mixed>,2:array<string,string>,3:bool}>

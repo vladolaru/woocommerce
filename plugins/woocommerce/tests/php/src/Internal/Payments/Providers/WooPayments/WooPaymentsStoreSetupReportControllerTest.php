@@ -404,6 +404,10 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 			'setting on, eligible, flag off'        => array( $woopay_on, $eligible, '0', false ),
 			'setting on, eligible, flag on'         => array( $woopay_on, $eligible, '1', true ),
 			'setting on, eligible, flag never set'  => array( $woopay_on, $eligible, null, true ),
+			// A stored "1", 1 or true reads off in the storefront, the settings answer and client 11.3.0 (only "yes" is on).
+			'string 1 stored, eligible, flag on'    => array( array_merge( $listed_everywhere, array( 'platform_checkout' => '1' ) ), $eligible, '1', false ),
+			'integer 1 stored, eligible, flag on'   => array( array_merge( $listed_everywhere, array( 'platform_checkout' => 1 ) ), $eligible, '1', false ),
+			'true stored, eligible, flag on'        => array( array_merge( $listed_everywhere, array( 'platform_checkout' => true ) ), $eligible, '1', false ),
 		);
 	}
 

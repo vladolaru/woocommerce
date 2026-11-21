@@ -222,6 +222,30 @@ class WooPaymentsCustomersRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * The enabled list stored as an empty string reads as card (client 11.3.0 `get_upe_enabled_payment_method_ids()` answers
+	 * its default for "", class-wc-payment-gateway-wcpay.php:5132-5139, which the route reads,
+	 * class-wc-rest-payments-customer-controller.php:71); a list stored as an empty array names no type.
+	 *
+	 * @testdox Customer payment methods route asks for $name.
+	 * @testWith ["card types when the list is stored as an empty string", "", ["card"]]
+	 *           ["no types when the list is stored as an empty array", [], []]
+	 *
+	 * @param string            $name     Case.
+	 * @param mixed             $stored   Stored enabled list.
+	 * @param array<int,string> $expected Payment method types the route asks the platform for.
+	 */
+	public function test_route_reads_an_enabled_list_stored_as_an_empty_string_as_card( string $name, $stored, array $expected ): void {
+		unset( $name );
+		$this->account_service->gateway_settings = array( 'upe_enabled_payment_method_ids' => $stored );
+		$this->sut->register_routes();
+
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/customers/cus_test/payment_methods' ) );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( $expected, array_column( $this->customer_service->requests, 'type' ) );
+	}
+
+	/**
 	 * A platform error answers 403 with the success/data body, whatever the platform's status, as the extension's
 	 * wp_send_json_error( $message, 403 ) does (class-wc-rest-payments-customer-controller.php:78-83).
 	 *

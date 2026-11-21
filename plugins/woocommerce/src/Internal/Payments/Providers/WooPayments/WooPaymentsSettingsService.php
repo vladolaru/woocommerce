@@ -271,7 +271,8 @@ class WooPaymentsSettingsService {
 		$available_payment_method_ids = $this->get_available_payment_method_ids();
 		$account_fields               = $this->get_account_backed_response_fields();
 		$enabled_payment_method_ids   = $this->sanitize_payment_method_ids(
-			$this->get_array_setting( $settings, 'upe_enabled_payment_method_ids' ),
+			// A list stored as an empty string reads as card, as client 11.3.0 get_upe_enabled_payment_method_ids() answers its default for it.
+			'' === ( $settings['upe_enabled_payment_method_ids'] ?? null ) ? array( 'card' ) : $this->get_array_setting( $settings, 'upe_enabled_payment_method_ids' ),
 			$available_payment_method_ids
 		);
 
@@ -309,7 +310,7 @@ class WooPaymentsSettingsService {
 			'account_domestic_currency'                  => $account_fields['account_domestic_currency'],
 			'account_communications_email'               => $account_fields['account_communications_email'],
 			'is_payment_request_enabled'                 => $this->account_service->is_payment_request_enabled(),
-			'is_express_checkout_in_payment_methods_enabled' => $this->is_yes( $settings['express_checkout_in_payment_methods'] ?? 'no' ),
+			'is_express_checkout_in_payment_methods_enabled' => 'yes' === ( $settings['express_checkout_in_payment_methods'] ?? 'no' ),
 			'is_debug_log_enabled'                       => $this->is_yes( $settings['enable_logging'] ),
 			'payment_request_button_size'                => $this->get_string_setting( $settings, 'payment_request_button_size' ),
 			'payment_request_button_type'                => $this->get_string_setting( $settings, 'payment_request_button_type' ),
@@ -317,7 +318,7 @@ class WooPaymentsSettingsService {
 			'payment_request_button_border_radius'       => $this->get_int_setting( $settings, 'payment_request_button_border_radius', 4 ),
 			'is_saved_cards_enabled'                     => $this->account_service->is_saved_cards_enabled(),
 			'is_card_present_eligible'                   => $this->is_card_present_eligible(),
-			'is_woopay_enabled'                          => $this->woopay_eligibility->is_woopay_eligible() && $this->is_yes( $settings['platform_checkout'] ?? 'no' ),
+			'is_woopay_enabled'                          => $this->woopay_eligibility->is_woopay_enabled(),
 			'woopay_last_disable_date'                   => $this->get_string_setting( $settings, 'platform_checkout_last_disable_date' ),
 			'is_woopay_global_theme_support_enabled'     => $this->is_yes( $settings['is_woopay_global_theme_support_enabled'] ?? 'no' ),
 			'is_woopay_global_theme_support_eligible'    => $this->is_woopay_global_theme_support_eligible(),
@@ -428,7 +429,7 @@ class WooPaymentsSettingsService {
 
 		$settings                = $this->account_service->get_gateway_settings();
 		$previous_settings       = $settings;
-		$was_woopay_enabled      = $this->is_yes( $settings['platform_checkout'] ?? 'no' );
+		$was_woopay_enabled      = 'yes' === ( $settings['platform_checkout'] ?? 'no' );
 		$payment_request_enabled = array_key_exists( 'is_payment_request_enabled', $params )
 			? $this->is_yes( $this->normalize_setting_value( $params['is_payment_request_enabled'], 'bool' ) )
 			: null;
@@ -482,7 +483,7 @@ class WooPaymentsSettingsService {
 			$settings[ $setting_key ]   = $this->normalize_setting_value( $params[ $request_key ], $type );
 		}
 
-		if ( array_key_exists( 'is_woopay_enabled', $params ) && $was_woopay_enabled && ! $this->is_yes( $settings['platform_checkout'] ?? 'no' ) ) {
+		if ( array_key_exists( 'is_woopay_enabled', $params ) && $was_woopay_enabled && 'yes' !== ( $settings['platform_checkout'] ?? 'no' ) ) {
 			$settings['platform_checkout_last_disable_date'] = gmdate( 'Y-m-d' );
 		}
 
@@ -593,8 +594,8 @@ class WooPaymentsSettingsService {
 	private function record_woopay_settings_events( array $params, array $previous, array $settings ): void {
 		$tracking    = $this->frontend_tracking_controller;
 		$properties  = array( 'test_mode' => $this->account_service->is_test_mode_enabled() ? 1 : 0 );
-		$is_enabled  = $this->is_yes( $settings['platform_checkout'] ?? 'no' );
-		$was_enabled = $this->is_yes( $previous['platform_checkout'] ?? 'no' );
+		$is_enabled  = 'yes' === ( $settings['platform_checkout'] ?? 'no' );
+		$was_enabled = 'yes' === ( $previous['platform_checkout'] ?? 'no' );
 		if ( $is_enabled && ! $was_enabled ) {
 			$tracking->record_woopay_admin_event( 'woopay_enabled', $properties );
 		} elseif ( ! $is_enabled && $was_enabled ) {

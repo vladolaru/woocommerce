@@ -175,6 +175,7 @@ class WooPaymentsExpressPaymentMethodTypes {
 	 * Get the express checkout methods configured for a context.
 	 *
 	 * The location setting, or Apple Pay / Google Pay alone while one of them is enabled in its own gateway settings and no location setting exists.
+	 * A location setting stored as an empty string is a setting that selects nothing.
 	 *
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
 	 * @param string                    $context         Express checkout context.
@@ -188,20 +189,26 @@ class WooPaymentsExpressPaymentMethodTypes {
 			return self::normalize_express_method_ids( $methods );
 		}
 
-		return $account_service->is_payment_request_enabled() ? array( self::EXPRESS_METHOD_PAYMENT_REQUEST ) : array();
+		// A location list stored as an empty string, or any other non-array, selects no method, as client 11.3.0 reads it.
+		if ( null === $methods && $account_service->is_payment_request_enabled() ) {
+			return array( self::EXPRESS_METHOD_PAYMENT_REQUEST );
+		}
+
+		return array();
 	}
 
 	/**
 	 * Tell whether express checkout methods are shown in the checkout payment-method list instead of as buttons.
 	 *
-	 * Client 11.1.0 `is_express_checkout_in_payment_methods_enabled()` (gateway :1020-1023).
+	 * Client 11.1.0 `is_express_checkout_in_payment_methods_enabled()` (gateway :1020-1023). Only a stored `yes` turns the
+	 * setting on, as client 11.3.0 reads it (class-wc-payment-gateway-wcpay.php:1272-1275).
 	 *
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
 	 * @return bool
 	 */
 	public static function is_express_checkout_in_payment_methods_enabled( WooPaymentsAccountService $account_service ): bool {
 		return WooPaymentsSettingsService::is_dynamic_checkout_place_order_button_enabled()
-			&& $account_service->is_gateway_setting_enabled( 'express_checkout_in_payment_methods' );
+			&& 'yes' === $account_service->get_gateway_setting( 'express_checkout_in_payment_methods', 'no' );
 	}
 
 	/**

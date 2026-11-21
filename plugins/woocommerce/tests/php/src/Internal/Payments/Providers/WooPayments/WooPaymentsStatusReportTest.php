@@ -323,6 +323,37 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * The status data says what the store does: WooPay is on only for a stored "yes", as the storefront, the settings page
+	 * and client 11.3.0 read it (`includes/class-wc-payments-features.php:56`), so a stored "1", 1 or true reads off here too.
+	 *
+	 * @testdox The status data and the Site Health row report WooPay stored as $_dataName the way the store treats it.
+	 * @testWith ["yes", true]
+	 *           ["no", false]
+	 *           ["1", false]
+	 *           [1, false]
+	 *           [true, false]
+	 *
+	 * @param mixed $platform_checkout The platform_checkout gateway setting.
+	 * @param bool  $expected          Whether WooPay reads as on.
+	 */
+	public function test_status_data_reports_woopay_the_way_the_store_treats_it( $platform_checkout, bool $expected ): void {
+		$this->fake_plugin( false );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$connected_api_client = $this->createMock( Client::class );
+		$connected_api_client->method( 'is_available' )->willReturn( true );
+		wc_get_container()->replace( Client::class, $connected_api_client );
+		$this->seed_connected_store();
+		update_option( 'woocommerce_woocommerce_payments_settings', array_merge( get_option( 'woocommerce_woocommerce_payments_settings' ), array( 'platform_checkout' => $platform_checkout ) ) );
+
+		$data = $this->get_sut()->get_status_data();
+
+		$this->assertSame( $expected, $data['woopay']['enabled'] );
+		$row         = $this->get_sut()->add_site_health_debug_info( array() )['woocommerce_woopayments']['fields']['woopay']['value'];
+		$row_enabled = str_starts_with( $row, 'Enabled' );
+		$this->assertSame( $expected, $row_enabled, 'The Site Health row follows the status data.' );
+	}
+
+	/**
 	 * @testdox On a store the WooPayments extension owns, with the feature on and a stored disabled tier, the status data, the status table and Site Health report the stored tier and the effective tier apart.
 	 */
 	public function test_status_data_reports_the_stored_and_the_effective_tier_apart(): void {

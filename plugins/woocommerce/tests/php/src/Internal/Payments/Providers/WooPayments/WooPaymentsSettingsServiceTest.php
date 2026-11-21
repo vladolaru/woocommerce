@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPm
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeReadinessService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressPaymentMethodTypes;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
@@ -1505,6 +1506,213 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->assertIsArray( $result, is_wp_error( $result ) ? $result->get_error_message() : '' );
 		$saved = get_option( 'woocommerce_woocommerce_payments_settings' );
 		$this->assertSame( $expected ? array( 'card' ) : array( 'card', 'ideal' ), $saved['upe_enabled_payment_method_ids'] );
+	}
+
+	/**
+	 * The storefront, the charge and the extension (client 11.3.0 `class-wc-rest-payments-settings-controller.php:585`) read WooPay
+	 * as on only for a stored "yes", so the settings answer does too: a stored "1", 1 or true is off here, as it is at checkout.
+	 *
+	 * @testdox The settings answer reads WooPay stored as $_dataName the way the storefront does.
+	 * @dataProvider provide_stored_toggle_values
+	 *
+	 * @param mixed $stored   Stored value.
+	 * @param bool  $expected Whether the toggle reads as on.
+	 */
+	public function test_get_settings_reads_woopay_as_the_storefront_does( $stored, bool $expected ): void {
+		$this->store_link_and_woopay_account( true, 'active' );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'platform_checkout' => $stored ) );
+
+		$settings = $this->sut->get_settings();
+
+		$this->assertSame( $expected, $settings['is_woopay_enabled'] );
+		$this->assertSame( $this->create_woopay_eligibility( $this->account_service )->is_woopay_enabled(), $settings['is_woopay_enabled'] );
+	}
+
+	/**
+	 * A save that turns WooPay on while Link is on is refused unless WooPay already was on. WooPay stored as "1", 1 or true was
+	 * not on (the screen and the storefront read it off), so the save is refused and leaves the settings as they were.
+	 *
+	 * @testdox A save turning WooPay on with Link on reads the stored WooPay value $_dataName the way the storefront does.
+	 * @dataProvider provide_stored_toggle_values
+	 *
+	 * @param mixed $stored    Stored value.
+	 * @param bool  $stored_on Whether the stored value reads as on.
+	 */
+	public function test_update_settings_counts_the_stored_woopay_as_the_storefront_does_for_the_link_conflict( $stored, bool $stored_on ): void {
+		$this->store_link_and_woopay_account( true, 'active' );
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'enabled'                        => 'yes',
+				'platform_checkout'              => $stored,
+				'upe_enabled_payment_method_ids' => array( 'card', 'link' ),
+			)
+		);
+		$stored_before = $this->get_raw_option_value( 'woocommerce_woocommerce_payments_settings' );
+
+		$result = $this->sut->update_settings( array( 'is_woopay_enabled' => true ) );
+
+		if ( $stored_on ) {
+			$this->assertIsArray( $result, 'A save that leaves WooPay on beside Link does not newly turn both on.' );
+			$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_settings' )['platform_checkout'] );
+			return;
+		}
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertSame(
+			"Link by Stripe and WooPay can't be enabled at the same time. Disable one of them.",
+			$result->get_error_data()['params']['enabled_payment_method_ids']
+		);
+		$this->assertSame( $stored_before, $this->get_raw_option_value( 'woocommerce_woocommerce_payments_settings' ), 'A refused save must leave the settings option byte-identical.' );
+	}
+
+	/**
+	 * Turning WooPay off records the disable date and the "disabled" event only when it was on. WooPay stored as "1", 1 or true
+	 * was not on (client 11.3.0 `update_is_woopay_enabled()` reads the stored value as "yes" or off), so neither is written.
+	 *
+	 * @testdox A save turning WooPay off with the stored value $_dataName writes the disable date and the event as the extension does.
+	 * @dataProvider provide_stored_toggle_values
+	 *
+	 * @param mixed $stored    Stored value.
+	 * @param bool  $stored_on Whether the stored value reads as on.
+	 */
+	public function test_update_settings_reads_the_stored_woopay_as_the_extension_does_when_turning_it_off( $stored, bool $stored_on ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'platform_checkout' => $stored ) );
+		$recorded = array();
+		$capture  = function ( $properties, $event_name ) use ( &$recorded ) {
+			$recorded[ $event_name ] = $properties;
+			return $properties;
+		};
+		add_filter( 'wcpay_tracks_event_properties', $capture, 10, 2 );
+
+		$result = $this->sut->update_settings( array( 'is_woopay_enabled' => false ) );
+		remove_filter( 'wcpay_tracks_event_properties', $capture, 10 );
+
+		$this->assertIsArray( $result );
+		$saved = get_option( 'woocommerce_woocommerce_payments_settings' );
+		$this->assertSame( 'no', $saved['platform_checkout'] );
+		$date_written = ! empty( $saved['platform_checkout_last_disable_date'] );
+		$this->assertSame( $stored_on, $date_written, 'The disable date is written only when WooPay was on.' );
+		$this->assertSame( $stored_on, array_key_exists( 'wcadmin_woopay_disabled', $recorded ), 'The disabled event is recorded only when WooPay was on.' );
+	}
+
+	/**
+	 * A save that leaves WooPay alone records no WooPay event, whatever value is stored: the before and the after read must
+	 * agree, so a stored "1", 1 or true is never reported as WooPay turned on.
+	 *
+	 * @testdox A save that does not touch WooPay records no WooPay event when it is stored as $_dataName.
+	 * @dataProvider provide_stored_toggle_values
+	 *
+	 * @param mixed $stored Stored value.
+	 */
+	public function test_update_settings_records_no_woopay_event_when_it_does_not_touch_woopay( $stored ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'platform_checkout' => $stored ) );
+		$recorded = array();
+		$capture  = function ( $properties, $event_name ) use ( &$recorded ) {
+			$recorded[] = $event_name;
+			return $properties;
+		};
+		add_filter( 'wcpay_tracks_event_properties', $capture, 10, 2 );
+
+		$result = $this->sut->update_settings( array( 'payment_request_button_size' => 'medium' ) );
+		remove_filter( 'wcpay_tracks_event_properties', $capture, 10 );
+
+		$this->assertIsArray( $result );
+		$this->assertNotContains( 'wcadmin_woopay_enabled', $recorded );
+		$this->assertNotContains( 'wcadmin_woopay_disabled', $recorded );
+	}
+
+	/**
+	 * A stored empty enabled-methods list reads as card in every runtime reader (client 11.3.0 `get_upe_enabled_payment_method_ids()`
+	 * answers its default for "", class-wc-payment-gateway-wcpay.php:5132-5139), so the settings page shows card instead of none.
+	 *
+	 * @testdox The settings answer reads an enabled payment methods list stored as an empty string as card, and a stored empty list as none.
+	 */
+	public function test_get_settings_reads_an_empty_string_methods_list_as_card(): void {
+		$this->set_card_and_ideal_account_data();
+
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => '' ) );
+		$this->assertSame( array( 'card' ), $this->sut->get_settings()['enabled_payment_method_ids'] );
+
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array() ) );
+		$this->assertSame( array(), $this->sut->get_settings()['enabled_payment_method_ids'], 'A stored empty list stays empty.' );
+	}
+
+	/**
+	 * Saving the answer the page shows, unchanged, must not change what is on. With a stored "" the page shows card, so the
+	 * save does not remove card and does not switch the gateway off (card removal writes `enabled` `no`).
+	 *
+	 * @testdox Saving back the methods the page shows keeps the gateway on when the list was stored as $_dataName.
+	 * @dataProvider provide_stored_enabled_methods_lists
+	 *
+	 * @param mixed    $stored   Stored list.
+	 * @param string[] $expected Expected stored list after the save.
+	 */
+	public function test_update_settings_keeps_the_gateway_on_when_the_shown_methods_are_saved_back( $stored, array $expected ): void {
+		$this->set_card_and_ideal_account_data();
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'enabled'                        => 'yes',
+				'test_mode'                      => 'yes',
+				'upe_enabled_payment_method_ids' => $stored,
+			)
+		);
+
+		$result = $this->sut->update_settings( array( 'enabled_payment_method_ids' => $this->sut->get_settings()['enabled_payment_method_ids'] ) );
+
+		$this->assertIsArray( $result, is_wp_error( $result ) ? $result->get_error_message() : '' );
+		$saved = get_option( 'woocommerce_woocommerce_payments_settings' );
+		$this->assertSame( 'yes', $saved['enabled'] );
+		$this->assertSame( $expected, $saved['upe_enabled_payment_method_ids'] );
+	}
+
+	/**
+	 * Provide a stored enabled-methods list and the list stored after the page's own answer is saved back.
+	 *
+	 * @return array<string,array{0:mixed,1:string[]}>
+	 */
+	public function provide_stored_enabled_methods_lists(): array {
+		return array(
+			'an empty string' => array( '', array( 'card' ) ),
+			'card'            => array( array( 'card' ), array( 'card' ) ),
+		);
+	}
+
+	/**
+	 * The settings answer for the list placement toggle reads on only for a stored "yes" (client 11.3.0
+	 * `class-wc-rest-payments-settings-controller.php:577`), as the gateway, the wallet buttons and the checkout configuration do.
+	 *
+	 * @testdox The settings answer reads list placement stored as $_dataName the way the gateway does.
+	 * @dataProvider provide_stored_toggle_values
+	 *
+	 * @param mixed $stored   Stored value.
+	 * @param bool  $expected Whether the toggle reads as on.
+	 */
+	public function test_get_settings_reads_express_checkout_in_payment_methods_as_the_extension_does( $stored, bool $expected ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'express_checkout_in_payment_methods' => $stored ) );
+
+		$settings = $this->sut->get_settings();
+
+		$this->assertSame( $expected, $settings['is_express_checkout_in_payment_methods_enabled'] );
+	}
+
+	/**
+	 * Every reader of list placement answers the same for every stored shape, so no reader can be made strict alone: the
+	 * settings answer, the card gateway and the wallet readers (client 11.3.0 has one reader, gateway :1272-1275).
+	 *
+	 * @testdox The settings answer, the gateway and the wallet readers agree on list placement stored as $_dataName.
+	 * @dataProvider provide_stored_toggle_values
+	 *
+	 * @param mixed $stored   Stored value.
+	 * @param bool  $expected Whether list placement reads as on.
+	 */
+	public function test_every_reader_agrees_on_list_placement( $stored, bool $expected ): void {
+		update_option( '_wcpay_feature_dynamic_checkout_place_order_button', '1' );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'express_checkout_in_payment_methods' => $stored ) );
+
+		$this->assertSame( $expected, $this->sut->get_settings()['is_express_checkout_in_payment_methods_enabled'] );
+		$this->assertSame( $expected, $this->create_card_gateway()->is_express_checkout_in_payment_methods_enabled() );
+		$this->assertSame( $expected, WooPaymentsExpressPaymentMethodTypes::is_express_checkout_in_payment_methods_enabled( $this->account_service ) );
 	}
 
 	/**

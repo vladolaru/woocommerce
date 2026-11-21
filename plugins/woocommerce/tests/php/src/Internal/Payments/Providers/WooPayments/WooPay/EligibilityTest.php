@@ -225,6 +225,36 @@ class EligibilityTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * A location list stored as an empty string selects no method (client 11.3.0 reads a non-array list as none,
+	 * `class-wc-payments-express-checkout-button-helper.php:1169-1178`, which the WooPay button reads through
+	 * `class-wc-payments-woopay-button-handler.php:268-278`). A list stored as null, as one never stored, reads the WooPay
+	 * setting instead (register row 628).
+	 *
+	 * @testdox Should read a WooPay location list stored as $name the way the WooPayments extension does.
+	 * @testWith ["an empty string", "", false]
+	 *           ["an empty array", [], false]
+	 *           ["null, which reads the WooPay setting", null, true]
+	 *           ["a list with woopay", ["woopay"], true]
+	 *
+	 * @param string $name     Case.
+	 * @param mixed  $stored   Stored location list.
+	 * @param bool   $expected Whether WooPay is configured at the location.
+	 */
+	public function test_woopay_express_checkout_is_configured_from_the_stored_location_list( string $name, $stored, bool $expected ): void {
+		unset( $name );
+		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
+		$eligibility = $this->create_eligibility(
+			array(
+				'platform_checkout'                 => 'yes',
+				'express_checkout_checkout_methods' => $stored,
+			)
+		);
+
+		$this->assertSame( $expected, $eligibility->is_woopay_express_checkout_configured_at( 'checkout' ) );
+		$this->assertSame( $expected, $eligibility->should_show_woopay_button( 'checkout' ) );
+	}
+
+	/**
 	 * @testdox Should preserve the WooPay product support filter contract.
 	 */
 	public function test_woopay_product_button_honors_product_support_filter(): void {

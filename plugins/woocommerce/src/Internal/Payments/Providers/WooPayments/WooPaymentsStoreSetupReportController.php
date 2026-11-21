@@ -416,7 +416,7 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_woopay_enabled( array $settings ): bool {
-		return $this->is_setting_enabled( $settings, 'platform_checkout' )
+		return 'yes' === ( $settings['platform_checkout'] ?? null )
 			&& '1' === (string) get_option( '_wcpay_feature_woopay_express_checkout', '1' )
 			&& $this->woopay_eligibility->is_woopay_eligible();
 	}

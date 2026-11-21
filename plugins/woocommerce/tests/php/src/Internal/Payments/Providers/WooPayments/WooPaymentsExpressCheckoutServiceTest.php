@@ -288,6 +288,46 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * The wallet buttons read list placement as on only for a stored "yes" (client 11.3.0
+	 * `class-wc-payment-gateway-wcpay.php:1272-1275`), as the gateway does, so a stored "1", 1 or true keeps the buttons and
+	 * Amazon Pay available instead of hiding every wallet while the list refuses them.
+	 *
+	 * @testdox Should read list placement stored as $_dataName the way the gateway does, for the buttons and Amazon Pay.
+	 * @dataProvider provide_list_placement_values
+	 *
+	 * @param mixed $stored  Stored value.
+	 * @param bool  $in_list Whether list placement reads as on.
+	 */
+	public function test_express_buttons_read_list_placement_as_the_gateway_does( $stored, bool $in_list ): void {
+		update_option( '_wcpay_feature_dynamic_checkout_place_order_button', '1' );
+		$this->set_up_virtual_product_context( 'checkout' );
+		$sut = $this->create_service(
+			array(
+				'express_checkout_in_payment_methods' => $stored,
+				'express_checkout_checkout_methods'   => array( 'payment_request', 'amazon_pay' ),
+			)
+		);
+
+		$this->assertSame( ! $in_list, $sut->should_show_payment_request_button( 'checkout' ) );
+		$this->assertSame( ! $in_list, $sut->is_amazon_pay_usable( 'checkout', 'USD' ) );
+	}
+
+	/**
+	 * Provide a stored list placement value and whether it reads as on: only "yes" does.
+	 *
+	 * @return array<string,array{0:mixed,1:bool}>
+	 */
+	public function provide_list_placement_values(): array {
+		return array(
+			'yes'          => array( 'yes', true ),
+			'no'           => array( 'no', false ),
+			'string 1'     => array( '1', false ),
+			'integer 1'    => array( 1, false ),
+			'boolean true' => array( true, false ),
+		);
+	}
+
+	/**
 	 * @testdox Should refuse a cart holding a product type outside the supported list, unless the supported types filter adds it.
 	 *
 	 * Client 11.1.0 button helper :726-730, after `woocommerce_cart_item_product`.
@@ -1424,6 +1464,31 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 			),
 			'no location settings, a wallet enabled'       => array( array(), true ),
 		);
+	}
+
+	/**
+	 * A location list stored as an empty string selects no wallet in client 11.3.0 (a non-array list reads as none,
+	 * `class-wc-payments-express-checkout-button-helper.php:1169-1178`), for the buttons and for the express charge's allowed
+	 * payment method types. A list stored as null, as one never stored, still falls back to the wallet gateway settings
+	 * (register row 628).
+	 *
+	 * @testdox Should read a checkout location list stored as $name for the buttons and the charge's allowed types.
+	 * @testWith ["an empty string", "", [], []]
+	 *           ["an empty array", [], [], []]
+	 *           ["null, which falls back to the wallet gateways", null, ["payment_request"], ["card"]]
+	 *           ["a list with payment_request", ["payment_request"], ["payment_request"], ["card"]]
+	 *
+	 * @param string            $name          Case.
+	 * @param mixed             $stored        Stored location list.
+	 * @param array<int,string> $methods       Expected enabled methods.
+	 * @param array<int,string> $payment_types Expected allowed payment method types.
+	 */
+	public function test_express_methods_read_a_stored_location_list_as_the_extension_does( string $name, $stored, array $methods, array $payment_types ): void {
+		unset( $name );
+		$sut = $this->create_service( array( 'express_checkout_checkout_methods' => $stored ) );
+
+		$this->assertSame( $methods, $sut->get_enabled_methods_for_context( 'checkout' ) );
+		$this->assertSame( $payment_types, $sut->get_allowed_payment_method_types_for_context( 'checkout' ) );
 	}
 
 	/**

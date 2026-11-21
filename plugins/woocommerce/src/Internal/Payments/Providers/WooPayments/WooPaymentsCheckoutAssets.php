@@ -1254,8 +1254,7 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_express_checkout_in_payment_methods_enabled(): bool {
-		return WooPaymentsSettingsService::is_dynamic_checkout_place_order_button_enabled()
-			&& $this->get_account_service()->is_gateway_setting_enabled( 'express_checkout_in_payment_methods' );
+		return WooPaymentsExpressPaymentMethodTypes::is_express_checkout_in_payment_methods_enabled( $this->get_account_service() );
 	}
 
 	/**
