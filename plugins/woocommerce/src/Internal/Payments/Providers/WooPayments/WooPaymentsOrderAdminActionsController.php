@@ -311,9 +311,10 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 * has the key's charge looked up when that read found no money of its own or nothing was read. Money that is the
 	 * order's own, or a voucher of its own still payable, is applied as the attached-intent check applies it, so an
 	 * authorization or a voucher goes On hold, while a disputed payment gets its note and the order is kept. With no
-	 * money, the order is cancelled only if, read again, it is unchanged and its lock is free. An unreadable payment
-	 * keeps the order until a day after core could first cancel it. Then, read again unchanged with its lock free, an
-	 * order whose record shows a payment stays Pending with a note, once, and any other is cancelled with a note, once.
+	 * money, the order is cancelled only if, read again, it is unchanged and its lock is free. A subscription's first
+	 * order whose bank or wallet step is still open is kept until a day after core could first cancel it. An unreadable
+	 * payment keeps the order until a day after core could first cancel it. Then, read again unchanged with its lock free,
+	 * an order whose record shows a payment stays Pending with a note, once, and any other is cancelled with a note, once.
 	 *
 	 * @internal
 	 *
@@ -365,6 +366,12 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 		if ( self::is_unpaid_order_money( $intent, $order ) ) {
 			$this->apply_unpaid_order_payment( $order, $intent_id, $intent );
 
+			return false;
+		}
+
+		if ( 'requires_action' === (string) ( $intent['status'] ?? '' ) && self::is_within_unpaid_order_window( $order )
+			&& function_exists( 'wcs_order_contains_subscription' ) && wcs_order_contains_subscription( $order, 'parent' ) ) {
+			// Subscriptions never brings back a subscription whose first order was cancelled, even when that order is paid later.
 			return false;
 		}
 

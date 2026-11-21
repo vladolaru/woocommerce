@@ -27,6 +27,7 @@ use Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil;
 use Automattic\WooCommerce\Utilities\OrderUtil;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPlatformEvents;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\StoredPaymentRecords;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentConfirmationService;
@@ -146,6 +147,8 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 			remove_action( self::RETRY_HOOK, array( $this->sut, 'handle_retry_status_change_operation' ) );
 			remove_filter( 'woocommerce_gateway_title', array( $this->sut, 'handle_woocommerce_gateway_title' ) );
 		}
+
+		unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] );
 
 		global $theorder, $post;
 		$theorder = null;
@@ -4655,6 +4658,100 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Core's hold-stock job keeps a subscription's first order while its payment still awaits the shopper's action, with one read, no note and nothing written.
+	 */
+	public function test_unpaid_subscription_parent_with_an_open_payment_step_is_kept_with_nothing_written(): void {
+		$order = $this->create_unpaid_order( 'requires_action' );
+		$this->relate_subscription_to_unpaid_order( $order, 'parent' );
+		$changed    = $this->reload( $order )->get_date_modified()->getTimestamp();
+		$transport  = $this->create_transport( self::http_json( 200, self::unpaid_intent( $order, 'requires_action' ) ) );
+		$processing = $this->createMock( PaymentProcessingService::class );
+		$processing->expects( $this->never() )->method( 'cancel' );
+
+		$this->run_unpaid_order_job( $transport, $processing );
+
+		$order = $this->reload( $order );
+		$this->assertSame( array( 'intentions/pi_unpaid?test_mode=1' ), $this->request_paths( $transport ), 'One read, no cancel request.' );
+		$this->assertSame( OrderStatus::PENDING, $order->get_status() );
+		$this->assertSame( array(), wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'No note while it is kept.' );
+		$this->assertSame( 'requires_action', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( $changed, $order->get_date_modified()->getTimestamp(), 'Keeping writes nothing, so the window does not move.' );
+	}
+
+	/**
+	 * @testdox Core's hold-stock job reads a kept subscription's first order again at the next run and completes it once the shopper paid.
+	 */
+	public function test_unpaid_subscription_parent_kept_for_an_open_payment_step_settles_at_the_next_run(): void {
+		$order = $this->create_unpaid_order( 'requires_action' );
+		$this->relate_subscription_to_unpaid_order( $order, 'parent' );
+		$transport = $this->create_transport( self::http_json( 200, self::unpaid_intent( $order, 'requires_action' ) ), self::http_json( 200, self::unpaid_intent( $order, 'succeeded' ) ) );
+
+		$this->run_unpaid_order_job( $transport );
+		$this->assertSame( OrderStatus::PENDING, $this->reload( $order )->get_status() );
+		$this->run_unpaid_order_job( $transport );
+
+		$order = $this->reload( $order );
+		$this->assertCount( 2, $this->request_paths( $transport ) );
+		$this->assertSame( OrderStatus::PROCESSING, $order->get_status() );
+		$this->assertSame( 0, $this->count_notes_containing( $order, 'Unpaid order cancelled' ) );
+	}
+
+	/**
+	 * @testdox Core's hold-stock job still cancels an unpaid order with one read when $_dataName.
+	 *
+	 * @testWith ["it is no subscription's first order and awaits the shopper's action", "", "requires_action", false]
+	 *           ["it is a subscription's first order past its keeping window", "parent", "requires_action", true]
+	 *           ["it is a subscription's first order whose payment method is gone", "parent", "requires_payment_method", false]
+	 *           ["it is a subscription's first order whose payment was canceled", "parent", "canceled", false]
+	 *           ["it is a subscription's switch order, not its first", "switch", "requires_action", false]
+	 *
+	 * @param string $case_name Case name.
+	 * @param string $relation  How a subscription relates to the order; empty for none.
+	 * @param string $status    Status the platform reads.
+	 * @param bool   $past      Whether the order is past its keeping window.
+	 */
+	public function test_unpaid_order_is_cancelled_unless_a_subscriptions_first_order_awaits_the_shoppers_action( string $case_name, string $relation, string $status, bool $past ): void {
+		unset( $case_name );
+		$order = $this->create_unpaid_order( 'requires_action' );
+		if ( '' !== $relation ) {
+			$this->relate_subscription_to_unpaid_order( $order, $relation );
+		}
+		if ( $past ) {
+			$this->age_unpaid_order( $order, null, self::UNPAID_WINDOW + MINUTE_IN_SECONDS );
+		}
+		$transport = $this->create_transport( self::http_json( 200, self::unpaid_intent( $order, $status ) ) );
+
+		$this->run_unpaid_order_job( $transport );
+
+		$order = $this->reload( $order );
+		$this->assertCount( 1, $this->request_paths( $transport ) );
+		$this->assertSame( OrderStatus::CANCELLED, $order->get_status() );
+		$this->assertSame( 1, $this->count_notes_containing( $order, 'Unpaid order cancelled' ) );
+	}
+
+	/**
+	 * @testdox Core's hold-stock job puts On hold, not keeps Pending, a subscription's first order whose Multibanco voucher awaits payment.
+	 */
+	public function test_unpaid_subscription_parent_whose_multibanco_voucher_awaits_payment_goes_on_hold(): void {
+		$order                             = $this->create_unpaid_order( 'requires_action' );
+		$voucher                           = self::unpaid_intent( $order, 'requires_action' );
+		$voucher['payment_method_options'] = array( 'multibanco' => array() );
+		$voucher['next_action']            = array(
+			'type'                       => 'multibanco_display_details',
+			'multibanco_display_details' => array(
+				'entity'     => '12345',
+				'reference'  => '123 456 789',
+				'expires_at' => time() + 3 * DAY_IN_SECONDS,
+			),
+		);
+		$this->relate_subscription_to_unpaid_order( $order, 'parent' );
+
+		$this->run_unpaid_order_job( $this->create_transport( self::http_json( 200, $voucher ) ) );
+
+		$this->assertSame( OrderStatus::ON_HOLD, $this->reload( $order )->get_status() );
+	}
+
+	/**
 	 * @testdox After a lookup's server error, core's hold-stock job looks up no unpaid order keeping only a charge key for the rest of the run; a read's server error or a refused lookup stops nothing: $_dataName.
 	 *
 	 * Core's job takes the orders in the order they were created.
@@ -5519,6 +5616,17 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$this->age_unpaid_order( $order );
 
 		return $order;
+	}
+
+	/**
+	 * Relate a subscription to an unpaid order, as WooCommerce Subscriptions' order detector reports it.
+	 *
+	 * @param WC_Order $order    Unpaid order.
+	 * @param string   $relation `parent`, `resubscribe` or `switch`.
+	 */
+	private function relate_subscription_to_unpaid_order( WC_Order $order, string $relation ): void {
+		WooCommerceSubscriptionsDoubles::load_order_detector();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ][ $order->get_id() ][ $relation ] = array( 999999 );
 	}
 
 	/**
