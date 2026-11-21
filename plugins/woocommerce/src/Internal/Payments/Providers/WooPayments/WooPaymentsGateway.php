@@ -1554,11 +1554,8 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		$this->get_duplicate_payment_prevention_service()->maybe_update_session_processing_order( (int) $order_id );
 
-		$existing_intent_result = $this->get_duplicate_payment_prevention_service()->check_payment_intent_attached_to_order_succeeded(
-			$order,
-			$this,
-			WooPaymentsPaymentOperationService::charge_takes_payment( $order, $is_subscription_payment_method_change )
-		);
+		$failed_intent_read     = null;
+		$existing_intent_result = $this->get_duplicate_payment_prevention_service()->check_payment_intent_attached_to_order_succeeded( $order, $this, $failed_intent_read );
 		if ( is_wp_error( $existing_intent_result ) ) {
 			// Client 11.1.0 fails the order with the mismatch as the note (`gw:1324-1325`). An amount mismatch on an order whose
 			// stored intent status is succeeded is kept and answered as paid, as client 11.1.0 keeps any refusal on such an
@@ -1634,7 +1631,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			$this->id,
 			$this->get_request_payment_method_id(),
 			$this->get_checkout_payment_data( $is_subscription_change ),
-			$this->get_checkout_provider_data( $is_subscription_change, $is_subscription_payment_method_change )
+			$this->get_checkout_provider_data( $is_subscription_change, $is_subscription_payment_method_change, $failed_intent_read )
 		);
 		$this->checkout_payment_started = true;
 		$outcome                        = $this->get_processing_service()->process_checkout_outcome( $context, $this->get_provider() );
@@ -3044,11 +3041,13 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * Get WooPayments-scoped checkout provider data.
 	 *
-	 * @param bool $is_subscription_change                Whether this is a validated new-method subscription change.
-	 * @param bool $is_subscription_payment_method_change Whether this is a validated subscription payment-method change.
+	 * @param bool       $is_subscription_change                Whether this is a validated new-method subscription change.
+	 * @param bool       $is_subscription_payment_method_change Whether this is a validated subscription payment-method change.
+	 * @param array|null $failed_intent_read                    The duplicate check's failed read of the attached intent, if any.
+	 * @phpstan-param array{intent_id:string,unknown:bool}|null $failed_intent_read
 	 * @return array<string,mixed>
 	 */
-	private function get_checkout_provider_data( bool $is_subscription_change = false, bool $is_subscription_payment_method_change = false ): array {
+	private function get_checkout_provider_data( bool $is_subscription_change = false, bool $is_subscription_payment_method_change = false, ?array $failed_intent_read = null ): array {
 		$cvc_key = 'wc-' . $this->id . '-payment-cvc-confirmation';
 
 		$save_user_in_woopay = $this->get_woopay_session_service()->should_save_user_in_woopay();
@@ -3094,6 +3093,10 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		if ( $is_subscription_payment_method_change ) {
 			$provider_data[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE ] = true;
+		}
+
+		if ( null !== $failed_intent_read ) {
+			$provider_data[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_FAILED_INTENT_READ ] = $failed_intent_read;
 		}
 
 		return $provider_data;

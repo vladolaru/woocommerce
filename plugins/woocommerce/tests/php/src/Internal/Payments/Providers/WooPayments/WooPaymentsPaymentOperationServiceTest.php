@@ -304,6 +304,208 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A 40.00 charge over a Pending order storing $stored_status in mode "$stored_mode", on a store in mode $store_mode, after the duplicate check noted $note, $expected.
+	 *
+	 * The duplicate check could not read the order's attached payment and noted why. The charge decides on the order as
+	 * read again under the order payment lock, in the payment's own mode: a record of money held or on its way refuses on
+	 * any failed read; a record of a started bank step refuses only when the read left the payment unknown. A record from
+	 * the other mode, or a request with no note, such as a scheduled renewal, charges. A refusal sends nothing and writes
+	 * neither the charge key nor the mode.
+	 *
+	 * @dataProvider provider_charges_over_an_unread_payment
+	 *
+	 * @param string $stored_status The order's stored `_intention_status`.
+	 * @param string $stored_mode   The order's stored `_wcpay_mode`; empty for none.
+	 * @param string $store_mode    "test" or "prod".
+	 * @param string $note          The check's note: "an unknown outcome", "an answer", "nothing" or "another intent".
+	 * @param string $expected      "refuses" or "charges".
+	 */
+	public function test_a_charge_over_an_unread_payment_is_decided_by_the_record( string $stored_status, string $stored_mode, string $store_mode, string $note, string $expected ): void {
+		$order = $this->create_woopayments_order( '40.00' );
+		$order->update_meta_data( '_intent_id', 'pi_unread' );
+		$order->update_meta_data( '_intention_status', $stored_status );
+		if ( '' !== $stored_mode ) {
+			$order->update_meta_data( '_wcpay_mode', $stored_mode );
+		}
+		$order->save();
+		$api_client       = $this->create_answering_charge_api_client(
+			array(
+				'id'     => 'pi_new',
+				'status' => 'succeeded',
+			)
+		);
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_native' );
+		$sut = $this->create_operation_service( $api_client, $customer_service, null, $this->create_account_service( 'test' === $store_mode ) );
+
+		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request', array(), self::failed_intent_read_provider_data( $note ) ), 'key_charge' );
+
+		if ( 'charges' === $expected ) {
+			$this->assertCount( 1, $api_client->requests, 'The charge is sent.' );
+			return;
+		}
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertCount( 0, $api_client->requests, 'Nothing is sent.' );
+		$this->assert_unread_payment_refusal( $outcome );
+		$this->assertSame( '', $order->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ), 'No charge key is written.' );
+		$this->assertSame( $stored_mode, $order->get_meta( '_wcpay_mode', true ), 'The mode is not written.' );
+	}
+
+	/**
+	 * Stored records, modes and notes, and what the charge does.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string,3:string,4:string}>
+	 */
+	public function provider_charges_over_an_unread_payment(): array {
+		return array(
+			'a started bank step, an unknown outcome'    => array( 'requires_action', '', 'prod', 'an unknown outcome', 'refuses' ),
+			'a started confirmation, an unknown outcome' => array( 'requires_confirmation', 'prod', 'prod', 'an unknown outcome', 'refuses' ),
+			'a started bank step, an answer'             => array( 'requires_action', 'prod', 'prod', 'an answer', 'charges' ),
+			'a started confirmation, an answer'          => array( 'requires_confirmation', 'prod', 'prod', 'an answer', 'charges' ),
+			'an authorization, an answer'                => array( 'requires_capture', '', 'prod', 'an answer', 'refuses' ),
+			'an authorization, an unknown outcome'       => array( 'requires_capture', 'prod', 'prod', 'an unknown outcome', 'refuses' ),
+			'a payment on its way, an answer'            => array( 'processing', 'prod', 'prod', 'an answer', 'refuses' ),
+			'a payment that succeeded after the check, an answer' => array( 'succeeded', 'prod', 'prod', 'an answer', 'refuses' ),
+			'a failed attempt, an unknown outcome'       => array( 'requires_payment_method', 'prod', 'prod', 'an unknown outcome', 'charges' ),
+			'a test authorization on a store now live'   => array( 'requires_capture', 'test', 'prod', 'an answer', 'charges' ),
+			'a test bank step on a store now live'       => array( 'requires_action', 'test', 'prod', 'an unknown outcome', 'charges' ),
+			'a live bank step on a store now in test'    => array( 'requires_action', 'prod', 'test', 'an unknown outcome', 'charges' ),
+			'a test bank step in its own mode'           => array( 'requires_action', 'test', 'test', 'an unknown outcome', 'refuses' ),
+			'an authorization stored as live, on a live store' => array( 'requires_capture', 'live', 'prod', 'an answer', 'refuses' ),
+			'an authorization stored as live, on a store in test' => array( 'requires_capture', 'live', 'test', 'an answer', 'charges' ),
+			'an authorization, no note (a scheduled renewal)' => array( 'requires_capture', 'prod', 'prod', 'nothing', 'charges' ),
+			'a started bank step, no note'               => array( 'requires_action', '', 'prod', 'nothing', 'charges' ),
+			'an authorization, the note names another intent' => array( 'requires_capture', 'prod', 'prod', 'another intent', 'charges' ),
+		);
+	}
+
+	/**
+	 * @testdox A $_dataName over a stored authorization the duplicate check could not read sets up the card and is not refused.
+	 *
+	 * Only a charge that sends a PaymentIntent can pay again for the attached payment, so a zero total and a subscription
+	 * payment-method change at any total, which set up the payment method, go on.
+	 *
+	 * @testWith ["zero-total checkout", "0.00", false]
+	 *           ["payment-method change", "40.00", true]
+	 *
+	 * @param string $case_name                Case name.
+	 * @param string $total                    Order total.
+	 * @param bool   $is_payment_method_change Whether the request is a subscription payment-method change.
+	 */
+	public function test_a_set_up_over_an_unread_payment_is_not_refused( string $case_name, string $total, bool $is_payment_method_change ): void {
+		unset( $case_name );
+		$order = $this->create_woopayments_order( $total );
+		$order->update_meta_data( '_intent_id', 'pi_unread' );
+		$order->update_meta_data( '_intention_status', 'requires_capture' );
+		$order->save();
+		$api_client       = new class() extends Client {
+			/**
+			 * Intent requests sent, by type.
+			 *
+			 * @var string[]
+			 */
+			public array $intent_requests = array();
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Answer a SetupIntent request with a succeeded SetupIntent.
+			 *
+			 * @param array<string,mixed> $request_data    Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_setup_intention( array $request_data, string $idempotency_key ): array {
+				unset( $request_data, $idempotency_key );
+				$this->intent_requests[] = 'setup';
+
+				return array(
+					'id'             => 'seti_unread',
+					'status'         => 'succeeded',
+					'customer'       => 'cus_native',
+					'payment_method' => 'pm_request',
+				);
+			}
+
+			/**
+			 * Record a PaymentIntent request, which must not be sent.
+			 *
+			 * @param array<string,mixed> $request_data    Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
+				unset( $request_data, $idempotency_key );
+				$this->intent_requests[] = 'payment';
+
+				return array();
+			}
+		};
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order', 'get_or_create_customer_id_for_subscription_payment_method_change' ) )
+			->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_native' );
+		$customer_service->method( 'get_or_create_customer_id_for_subscription_payment_method_change' )->willReturn( 'cus_native' );
+		$sut           = $this->create_operation_service( $api_client, $customer_service, null, $this->create_account_service( false ) );
+		$provider_data = self::failed_intent_read_provider_data( 'an unknown outcome' );
+		if ( $is_payment_method_change ) {
+			$provider_data[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE ] = true;
+		}
+
+		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request', array( 'save_payment_method' => true ), $provider_data ), 'key_setup' );
+
+		$this->assertSame( array( 'setup' ), $api_client->intent_requests, 'One SetupIntent and no PaymentIntent.' );
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+	}
+
+	/**
+	 * Build the provider data the gateway carries from the duplicate check's note about the order's attached `pi_unread`.
+	 *
+	 * @param string $note "an unknown outcome", "an answer", "nothing" or "another intent".
+	 * @return array<string,mixed>
+	 */
+	private static function failed_intent_read_provider_data( string $note ): array {
+		if ( 'nothing' === $note ) {
+			return array();
+		}
+
+		return array(
+			WooPaymentsIntentRequestBuilder::PROVIDER_DATA_FAILED_INTENT_READ => array(
+				'intent_id' => 'another intent' === $note ? 'pi_other' : 'pi_unread',
+				'unknown'   => 'an answer' !== $note,
+			),
+		);
+	}
+
+	/**
+	 * Assert the refusal of a charge over an unread payment: failed, applying nothing to the order, with the duplicate
+	 * check's notice, and no note.
+	 *
+	 * @param PaymentOutcome $outcome Charge outcome.
+	 */
+	private function assert_unread_payment_refusal( PaymentOutcome $outcome ): void {
+		$data = $outcome->get_data();
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( WooPaymentsDuplicatePaymentPreventionService::ERROR_CHECK_FAILED, $data[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
+		$this->assertSame( "We're not able to process this payment. Please try again later.", $data[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? null );
+		$this->assertTrue( $data[ PaymentOutcome::DATA_PRESERVE_ORDER_STATUS ] ?? false, 'The order keeps its status.' );
+		$this->assertTrue( $data[ PaymentOutcome::DATA_NO_ORDER_CHANGE ] ?? false, 'Nothing is applied to the order, so its stored record stays.' );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE, $data, 'No note is added.' );
+	}
+
+	/**
 	 * @testdox Charge should reuse a persisted key after an ambiguous transport failure.
 	 */
 	public function test_charge_reuses_persisted_key_after_ambiguous_transport_failure(): void {

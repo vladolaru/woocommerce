@@ -1369,8 +1369,9 @@ describe( 'WooPayments express checkout', () => {
 			expect( pageLock.isLocked() ).toBe( false );
 		} );
 
-		// The sentence is spoken on every refused click, whether or not the page has a notices wrapper to show it in.
-		test( 'speaks the sentence on every refused wallet click', async () => {
+		// A refused click shows the sentence as a fresh role="alert" notice, which screen readers announce, so it is not
+		// spoken again. With no notices wrapper to show it in, the sentence is spoken instead.
+		test( 'shows a refused wallet click as an alert notice, without speaking it again', async () => {
 			answerOrderStatusUpdate( 503, 'Service Unavailable' );
 			await confirmCheckoutWallet( {
 				paymentIntent: { id: 'pi_3ds', status: 'succeeded' },
@@ -1378,7 +1379,25 @@ describe( 'WooPayments express checkout', () => {
 			window.wp.a11y.speak.mockClear();
 
 			await clickWallet( { keepNotices: true } );
+
+			expect(
+				Array.from(
+					document.querySelectorAll( '.woocommerce-notices-wrapper [role="alert"]' ),
+					( notice ) => notice.textContent
+				)
+			).toEqual( [ PAYMENT_RECEIVED ] );
+			expect( window.wp.a11y.speak ).not.toHaveBeenCalled();
+		} );
+
+		test( 'speaks the sentence of a refused wallet click when the page has no notices wrapper', async () => {
+			answerOrderStatusUpdate( 503, 'Service Unavailable' );
+			await confirmCheckoutWallet( {
+				paymentIntent: { id: 'pi_3ds', status: 'succeeded' },
+			} );
+			window.wp.a11y.speak.mockClear();
 			document.querySelector( '.woocommerce-notices-wrapper' ).remove();
+
+			await clickWallet( { keepNotices: true } );
 			await clickWallet( { keepNotices: true } );
 
 			expect( window.wp.a11y.speak.mock.calls ).toEqual( [

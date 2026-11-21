@@ -55,6 +55,16 @@ class WooPaymentsIntentRequestBuilder {
 	public const PROVIDER_DATA_WOOPAY_INTENT_ID = 'woopay_intent_id';
 
 	/**
+	 * Provider-data key for the duplicate check's failed read of the order's attached intent: the intent and whether the
+	 * failure left its outcome unknown (WooPaymentsDuplicatePaymentPreventionService::check_payment_intent_attached_to_order_succeeded()).
+	 *
+	 * @since 11.4.0
+	 *
+	 * @var string
+	 */
+	public const PROVIDER_DATA_FAILED_INTENT_READ = 'failed_intent_read';
+
+	/**
 	 * WooPayments account service.
 	 *
 	 * @var WooPaymentsAccountService

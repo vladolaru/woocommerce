@@ -131,6 +131,12 @@ class WooPaymentsPaymentOperationService {
 	private const REASON_OPERATION_ON_AN_ORDER_NAMING_TWO_INTENTS = 'operation_on_an_order_naming_two_intents';
 
 	/**
+	 * Stored intent statuses that say a bank step was started: the shopper can still finish it in the browser, and Stripe
+	 * takes the money before the store hears of it.
+	 */
+	private const STARTED_INTENT_STATUSES = array( 'requires_action', 'requires_confirmation' );
+
+	/**
 	 * Outcome error code of a capture or cancel that was not sent because its intent is not the order's stored intent and
 	 * the platform's record of it does not name the order.
 	 *
@@ -282,7 +288,11 @@ class WooPaymentsPaymentOperationService {
 	}
 
 	/**
-	 * Charge an order through the WooPayments platform API, or set up the payment method when the charge takes no payment.
+	 * Charge an order through the WooPayments platform API.
+	 *
+	 * A payment method change takes no payment, whatever the order total: it sets up the payment method, as the
+	 * order-status callback confirms a change through a SetupIntent at any total (client 11.3.0
+	 * class-wc-payment-gateway-wcpay.php:4643-4666).
 	 *
 	 * @param PaymentOperationContext $context         Payment context.
 	 * @param string                  $idempotency_key Key minted fresh for this payment attempt. A positive-amount charge keeps its
@@ -293,7 +303,8 @@ class WooPaymentsPaymentOperationService {
 	public function charge( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
 		if ( $this->api_client->is_available() ) {
 			try {
-				$outcome = self::charge_takes_payment( $context->get_order(), ! empty( $context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE ] ) )
+				$outcome = 0.0 < (float) $context->get_order()->get_total()
+					&& empty( $context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE ] )
 					? $this->charge_order_total( $context, $idempotency_key )
 					: $this->set_up_payment_method( $context, $idempotency_key );
 			} catch ( ApiException $exception ) {
@@ -304,21 +315,6 @@ class WooPaymentsPaymentOperationService {
 		}
 
 		return $this->unavailable_outcome( 'charge' );
-	}
-
-	/**
-	 * Tell whether a charge of the order takes a payment. One for a total of zero or less, or for a payment method change
-	 * at any total, sets up the payment method instead, as the order-status callback confirms a change through a
-	 * SetupIntent at any total (client 11.3.0 class-wc-payment-gateway-wcpay.php:4643-4666).
-	 *
-	 * @since 11.4.0
-	 *
-	 * @param WC_Order $order                    Order being charged.
-	 * @param bool     $is_payment_method_change Whether the request is a subscription payment method change.
-	 * @return bool
-	 */
-	public static function charge_takes_payment( WC_Order $order, bool $is_payment_method_change ): bool {
-		return 0.0 < (float) $order->get_total() && ! $is_payment_method_change;
 	}
 
 	/**
@@ -828,7 +824,8 @@ class WooPaymentsPaymentOperationService {
 	/**
 	 * Send a positive-amount charge under the order's kept key, or under the attempt key when none is kept.
 	 *
-	 * A kept key refused because the new request differs from the earlier one (a new card after a timeout) settles what
+	 * A charge that could pay again for the order's attached payment, which the duplicate check could not read, is refused
+	 * before anything is written or sent; see refuses_a_charge_over_an_unread_payment(). A kept key refused because the new request differs from the earlier one (a new card after a timeout) settles what
 	 * the earlier request did before anything is charged; see settle_earlier_charge(). A scheduled renewal is not looked
 	 * up. A missing customer is replaced and the charge retried, except while the order has an ambiguity record, or for a
 	 * saved card when the user has no other customer.
@@ -840,6 +837,10 @@ class WooPaymentsPaymentOperationService {
 	 * @throws ApiException When replacing a missing customer fails.
 	 */
 	private function send_charge_request( PaymentOperationContext $context, array &$request_data, string $attempt_key ) {
+		if ( $this->refuses_a_charge_over_an_unread_payment( $context ) ) {
+			return $this->unread_payment_refused_outcome();
+		}
+
 		$order    = $context->get_order();
 		$sent_key = $this->ensure_charge_idempotency_key( $order, $attempt_key );
 
@@ -890,6 +891,69 @@ class WooPaymentsPaymentOperationService {
 		}
 
 		return $result;
+	}
+
+	/**
+	 * Tell whether a charge is refused because it could pay again for the order's attached payment, which the duplicate
+	 * check could not read.
+	 *
+	 * Decided on the order as read again under the order payment lock, only when the check's note names the payment still
+	 * attached, made in this request's mode. A record of money held or on its way refuses on any failed read; a record of a
+	 * started bank step refuses only when the read left the payment unknown, since a not-found is the platform's answer. A
+	 * request with no note, such as a scheduled renewal, is not refused here.
+	 *
+	 * @param PaymentOperationContext $context Payment context.
+	 * @return bool
+	 */
+	private function refuses_a_charge_over_an_unread_payment( PaymentOperationContext $context ): bool {
+		$failed_read = $context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_FAILED_INTENT_READ ] ?? null;
+		$order       = $context->get_order();
+		if ( ! is_array( $failed_read ) || (string) $order->get_meta( '_intent_id', true ) !== ( $failed_read['intent_id'] ?? null ) || ! $this->is_payment_of_this_mode( $order ) ) {
+			return false;
+		}
+
+		$stored_status = (string) $order->get_meta( '_intention_status', true );
+
+		return WooPaymentsIntentCodec::holds_money( $stored_status )
+			|| ( in_array( $stored_status, self::STARTED_INTENT_STATUSES, true ) && true === ( $failed_read['unknown'] ?? null ) );
+	}
+
+	/**
+	 * Tell whether the order's stored payment was made in the mode the store charges in now. No stored mode counts as this
+	 * mode, so a record without one keeps its refusal; exactly "test" is test, and any other value is live.
+	 *
+	 * @param WC_Order $order Order being charged.
+	 * @return bool
+	 */
+	private function is_payment_of_this_mode( WC_Order $order ): bool {
+		$stored_mode = (string) $order->get_meta( '_wcpay_mode', true );
+
+		return '' === $stored_mode || ( WooPaymentsOrderMode::TEST === $stored_mode ) === ( WooPaymentsOrderMode::TEST === $this->account_service->get_order_mode() );
+	}
+
+	/**
+	 * Build the refusal of a charge over the order's attached payment that could not be read.
+	 *
+	 * Shaped like the refusal for an earlier request that could not be looked up: nothing is applied to the order, so its
+	 * status and the stored record the refusal stands on stay for the next request; no note is added and the
+	 * failed-transaction limiter is not bumped. The shopper gets the duplicate check's notice.
+	 *
+	 * @return PaymentOutcome
+	 */
+	private function unread_payment_refused_outcome(): PaymentOutcome {
+		return new PaymentOutcome(
+			PaymentOutcome::STATUS_FAILED,
+			'',
+			'',
+			'',
+			'',
+			array(
+				PaymentOutcome::DATA_ERROR_CODE            => WooPaymentsDuplicatePaymentPreventionService::ERROR_CHECK_FAILED,
+				WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY => __( "We're not able to process this payment. Please try again later.", 'woocommerce' ),
+				PaymentOutcome::DATA_PRESERVE_ORDER_STATUS => true,
+				PaymentOutcome::DATA_NO_ORDER_CHANGE       => true,
+			)
+		);
 	}
 
 	/**
@@ -1183,7 +1247,9 @@ class WooPaymentsPaymentOperationService {
 	 * Build the refusal for an attempt whose earlier request could not be looked up.
 	 *
 	 * The order keeps its status, the key and the record, and the shopper gets the generic retry notice; the failure is not
-	 * definitive and not a decline, so the key stays and the failed-transaction limiter is not bumped.
+	 * definitive and not a decline, so the key stays and the failed-transaction limiter is not bumped. The refusal could not
+	 * tell what the earlier request did, so it applies nothing to the order: the stored payment state stays for the next
+	 * request to read.
 	 *
 	 * @return PaymentOutcome
 	 */
@@ -1197,6 +1263,7 @@ class WooPaymentsPaymentOperationService {
 			array(
 				PaymentOutcome::DATA_ERROR_CODE            => 'wcpay_charge_lookup_failed',
 				PaymentOutcome::DATA_PRESERVE_ORDER_STATUS => true,
+				PaymentOutcome::DATA_NO_ORDER_CHANGE       => true,
 			)
 		);
 	}

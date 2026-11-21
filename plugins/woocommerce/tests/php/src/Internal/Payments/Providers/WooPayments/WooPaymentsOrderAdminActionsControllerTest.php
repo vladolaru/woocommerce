@@ -5135,6 +5135,26 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox An answer the store could not read starts the refusals count again: two 500s, an unreadable answer and two 500s read all five orders.
+	 *
+	 * The platform answered, so the store is not being refused; only the checkout's duplicate check counts such an answer
+	 * as leaving the payment unknown.
+	 */
+	public function test_unpaid_order_refusals_count_starts_again_after_an_unreadable_answer(): void {
+		$this->create_unpaid_orders( 5 );
+		$unreadable = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
+			'body'     => 'not json',
+		);
+		$transport  = $this->create_transport( self::platform_error( 500 ), self::platform_error( 500 ), $unreadable, self::platform_error( 500 ), self::platform_error( 500 ) );
+
+		$this->run_unpaid_order_job( $transport );
+
+		$this->assertCount( 5, $this->request_paths( $transport ) );
+	}
+
+	/**
 	 * @testdox A $_dataName stops core's hold-stock job's reads for the run at once.
 	 *
 	 * @dataProvider unpaid_order_reads_stopping_at_once

@@ -3419,6 +3419,74 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A submission refused because the earlier request could not be looked up leaves the order's stored payment record as it was, and so does the next one.
+	 *
+	 * The refusal could not tell what the earlier request did, so it must not rewrite the payment state the order stores:
+	 * the duplicate check and the unpaid-order check read that state on the next request. Here an earlier bank step is
+	 * stored as requires_action.
+	 */
+	public function test_process_checkout_refused_after_a_failed_lookup_keeps_the_stored_payment_record(): void {
+		$order                  = $this->create_woopayments_order( '10.00' );
+		$idempotency_error      = $this->json_transport_response(
+			400,
+			array(
+				'error' => array(
+					'type'    => 'idempotency_error',
+					'message' => 'Keys for idempotent requests can only be used with the same parameters they were first used with.',
+				),
+			)
+		);
+		$lookup_failure         = $this->json_transport_response(
+			500,
+			array(
+				'error' => array(
+					'type'    => 'api_error',
+					'message' => 'An unknown error occurred',
+				),
+			)
+		);
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			$this->json_transport_response(
+				502,
+				array(
+					'code'    => 'wcpay_request_failure',
+					'message' => 'Error: cURL error when connecting to Stripe (see error properties for details).',
+					'data'    => array( 'status' => 502 ),
+				)
+			),
+			$idempotency_error,
+			$lookup_failure,
+			$idempotency_error,
+			$lookup_failure,
+		);
+		$provider               = $this->timeout_transport_provider( $http_client );
+		$this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_first' ), $provider );
+		$pending = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $pending );
+		$pending->set_status( 'pending' );
+		$pending->update_meta_data( '_intent_id', 'pi_bank_step' );
+		$pending->update_meta_data( '_intention_status', 'requires_action' );
+		$pending->save();
+		$record = static fn( WC_Order $stored ): array => array(
+			$stored->get_status(),
+			(string) $stored->get_meta( '_intent_id', true ),
+			(string) $stored->get_meta( '_intention_status', true ),
+			(string) $stored->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ),
+			(string) $stored->get_meta( '_wcpay_mode', true ),
+		);
+		$before = $record( wc_get_order( $order->get_id() ) );
+
+		foreach ( array( 'pm_new', 'pm_newer' ) as $payment_method ) {
+			$refused = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( wc_get_order( $order->get_id() ), WooPaymentsPersistenceVocabulary::GATEWAY_ID, $payment_method ), $provider );
+
+			$this->assertSame( 'wcpay_charge_lookup_failed', $refused->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
+			$this->assertSame( $before, $record( wc_get_order( $order->get_id() ) ), 'The stored payment record is left as it was.' );
+		}
+		$this->assertSame( array( 'pending', 'pi_bank_step', 'requires_action' ), array_slice( $before, 0, 3 ) );
+	}
+
+	/**
 	 * @testdox A submission whose earlier request took nothing is refused without a charge and leaves the order pending, and the next submission charges the new card once.
 	 *
 	 * The order is pending again before the resubmit, as a Store API checkout leaves it, so a refusal that changed the

@@ -85,12 +85,6 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	public const OFFLINE_PAYMENT_METHODS = array( 'multibanco' );
 
 	/**
-	 * Stored intent statuses that say a bank step was started: the shopper can still finish it in the browser, and Stripe
-	 * takes the money before the store hears of it.
-	 */
-	private const STARTED_INTENT_STATUSES = array( 'requires_action', 'requires_confirmation' );
-
-	/**
 	 * WooCommerce session.
 	 *
 	 * @var \WC_Session|null
@@ -288,18 +282,20 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	/**
 	 * Redirect when the current order already has an authorized PaymentIntent attached.
 	 *
-	 * A failed intent fetch refuses checkout on a PHP Error and when the order's stored intent status is succeeded. When the
-	 * request would charge in the mode the order's payment was made in, it also refuses when that status says money is
-	 * held or on its way, and, when the fetch leaves the payment unknown, when that status says a bank step was started.
-	 * Otherwise checkout goes on.
+	 * A failed intent fetch lets checkout go on, except for a PHP Error or an order whose stored intent status is
+	 * succeeded, which refuse checkout. When it goes on, it notes the failure for the charge, which decides on it under the
+	 * order payment lock (WooPaymentsPaymentOperationService::refuses_a_charge_over_an_unread_payment()).
 	 *
-	 * @param WC_Order           $order         Current order.
-	 * @param WC_Payment_Gateway $gateway       Gateway used to build the return URL.
-	 * @param bool               $takes_payment Whether the request would charge, as WooPaymentsPaymentOperationService::charge_takes_payment()
-	 *                                          decides; false for one that only sets up the payment method.
+	 * @param WC_Order           $order       Current order.
+	 * @param WC_Payment_Gateway $gateway     Gateway used to build the return URL.
+	 * @param array|null         $failed_read Set when the fetch failed and checkout goes on: the intent and whether the
+	 *                                        failure left its outcome unknown; null otherwise.
+	 * @phpstan-param array{intent_id:string,unknown:bool}|null $failed_read
 	 * @return array<string,string>|WP_Error|null
 	 */
-	public function check_payment_intent_attached_to_order_succeeded( WC_Order $order, WC_Payment_Gateway $gateway, bool $takes_payment = true ) {
+	public function check_payment_intent_attached_to_order_succeeded( WC_Order $order, WC_Payment_Gateway $gateway, ?array &$failed_read = null ) {
+		$failed_read = null;
+
 		$intent_id = (string) $order->get_meta( '_intent_id', true );
 		if ( '' === $intent_id || 0 !== strpos( $intent_id, 'pi_' ) ) {
 			return null;
@@ -320,21 +316,16 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 			);
 
 			// Client 11.1.0 dpps:100 catches only Exception, so a PHP Error fatals there and nothing is charged. This keeps
-			// that outcome without the fatal, rather than charging again, and refuses on a record of a succeeded payment.
-			// Otherwise, without the read, a new charge in the record's own mode would only guess, so the record decides: a
-			// record of money refuses on any failure; a record of a started bank step refuses unless the platform answered
-			// about this payment, as with a not-found. A record from the other mode says nothing about this mode's money.
-			$stored_status = (string) $order->get_meta( '_intention_status', true );
-			$stored_mode   = (string) $order->get_meta( '_wcpay_mode', true );
-			$pays_again    = $takes_payment && ( '' === $stored_mode || wc_get_container()->get( WooPaymentsAccountService::class )->get_order_mode() === $stored_mode );
-			if (
-				! $exception instanceof Exception
-				|| 'succeeded' === $stored_status
-				|| ( $pays_again && WooPaymentsIntentCodec::holds_money( $stored_status ) )
-				|| ( $pays_again && in_array( $stored_status, self::STARTED_INTENT_STATUSES, true ) && self::leaves_the_payment_unknown( $exception ) )
-			) {
+			// that outcome without the fatal, rather than charging again. An order whose record says its payment succeeded is
+			// refused on any failure: without the read, a new charge would only guess whether the order is already paid.
+			if ( ! $exception instanceof Exception || 'succeeded' === (string) $order->get_meta( '_intention_status', true ) ) {
 				return new WP_Error( self::ERROR_CHECK_FAILED, __( "We're not able to process this payment. Please try again later.", 'woocommerce' ) );
 			}
+
+			$failed_read = array(
+				'intent_id' => $intent_id,
+				'unknown'   => self::leaves_the_payment_unknown( $exception ),
+			);
 
 			return null;
 		}
@@ -513,8 +504,8 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	 * Last-resort guard for a resubmission that reuses the same order.
 	 * `check_payment_intent_attached_to_order_succeeded()` covers that case with a richer
 	 * response, but it needs `_intent_id` to have been written, and when the intent lookup
-	 * fails it refuses only for the stored intent statuses and failures it names; otherwise
-	 * it returns empty-handed. This reads the stored order status instead, so it holds when
+	 * fails it refuses only on a PHP Error or a stored succeeded status; the charge decides
+	 * the other stored statuses. This reads the stored order status instead, so it holds when
 	 * the platform does not respond.
 	 *
 	 * The gateway passes true for every validated payment-method change, to a new method or a saved token, as client 11.1.0

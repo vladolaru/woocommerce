@@ -43,6 +43,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderSuccessPage;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\PaymentIntentEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodDefinition;
@@ -4506,23 +4507,47 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$order->save();
 			wp_set_current_user( $customer_id );
 		}
-		$notes_before = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
-		$service      = new RecordingPaymentProcessingService();
-		$gateway      = $this->create_gateway_whose_duplicate_read_fails( $service, new ApiException( 'Read failed.', 404 === $http_code ? 'resource_missing' : 'api_error', $http_code ) );
+		$notes_before  = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$record_before = $this->stored_payment_record( $order );
+		$platform      = $this->create_platform_whose_read_fails( new ApiException( 'Read failed.', 404 === $http_code ? 'resource_missing' : 'api_error', $http_code ) );
+		$gateway       = $this->create_gateway_over_a_platform_whose_duplicate_read_fails( $platform );
 
 		$result = $gateway->process_payment( $order->get_id() );
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
 		if ( 'charges' === $expected ) {
-			$this->assertSame( 1, $service->checkout_attempt_count );
+			$this->assertContains( 'POST payment', $platform->requests );
 			return;
 		}
-		$this->assertSame( 0, $service->checkout_attempt_count, 'Nothing is charged.' );
+		$this->assertSame( array( 'GET pi_started' ), $platform->requests, 'Nothing is charged.' );
 		$this->assertSame( 'failure', $result['result'] ?? '' );
 		$this->assertSame( array( "We're not able to process this payment. Please try again later." ), array_column( wc_get_notices( 'error' ), 'notice' ) );
-		$this->assertSame( array( OrderStatus::PENDING, 'pi_started', $stored_status ), array( $order->get_status(), $order->get_meta( '_intent_id', true ), $order->get_meta( '_intention_status', true ) ) );
+		$this->assertSame( $record_before, $this->stored_payment_record( $order ), 'The stored payment record is left as it was.' );
 		$this->assertCount( $notes_before, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'No note is added.' );
+
+		wc_clear_notices();
+		$second = $gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( array( 'GET pi_started', 'GET pi_started' ), $platform->requests, 'The second press is refused too; nothing is charged.' );
+		$this->assertSame( 'failure', $second['result'] ?? '' );
+		$this->assertSame( $record_before, $this->stored_payment_record( wc_get_order( $order->get_id() ) ) );
+	}
+
+	/**
+	 * Read the order's stored payment record: status, intent, intent status, charge key and mode.
+	 *
+	 * @param WC_Order $order Order.
+	 * @return string[]
+	 */
+	private function stored_payment_record( WC_Order $order ): array {
+		return array(
+			$order->get_status(),
+			(string) $order->get_meta( '_intent_id', true ),
+			(string) $order->get_meta( '_intention_status', true ),
+			(string) $order->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ),
+			(string) $order->get_meta( '_wcpay_mode', true ),
+		);
 	}
 
 	/**
@@ -4546,12 +4571,12 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_intention_status', $stored_status );
 		$order->update_meta_data( '_wcpay_mode', $stored_mode );
 		$order->save();
-		$service = new RecordingPaymentProcessingService();
-		$gateway = $this->create_gateway_whose_duplicate_read_fails( $service, new ApiException( 'No such payment_intent.', 'resource_missing', 404 ) );
+		$platform = $this->create_platform_whose_read_fails( new ApiException( 'No such payment_intent.', 'resource_missing', 404 ) );
+		$gateway  = $this->create_gateway_over_a_platform_whose_duplicate_read_fails( $platform );
 
 		$result = $gateway->process_payment( $order->get_id() );
 
-		$this->assertSame( 'charges' === $expected ? 1 : 0, $service->checkout_attempt_count );
+		$this->assertSame( 'charges' === $expected ? array( 'GET pi_started', 'POST payment' ) : array( 'GET pi_started' ), $platform->requests );
 		if ( 'refuses' === $expected ) {
 			$this->assertSame( 'failure', $result['result'] ?? '' );
 			$this->assertSame( array( "We're not able to process this payment. Please try again later." ), array_column( wc_get_notices( 'error' ), 'notice' ) );
@@ -4563,7 +4588,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 *
 	 * Inverted from a refusal by the fix that limits the refusals on a stored record to a request that would charge: the
 	 * payment operation sets up the card for a validated payment-method change at any total
-	 * (WooPaymentsPaymentOperationService::charge_takes_payment()), so the change cannot pay the order twice.
+	 * (WooPaymentsPaymentOperationService::charge()), so the change cannot pay the order twice.
 	 */
 	public function test_subscription_payment_method_change_over_a_started_record_whose_read_fails_goes_on(): void {
 		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
@@ -4629,6 +4654,258 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$this->create_fraud_prevention_service( false, $session ),
 			new WooPaymentsFailedTransactionRateLimiter( $session ),
 			$this->create_duplicate_payment_prevention_service( $session, $api_client )
+		);
+		$_POST['wcpay-payment-method'] = 'pm_card_visa';
+
+		return $gateway;
+	}
+
+	/**
+	 * @testdox A WooPay-confirmed checkout over a Pending order storing $stored_status, whose stored intent read fails with a $http_code, records WooPay's payment.
+	 *
+	 * WooPay already took the payment, so the checkout only reads WooPay's intent and checks it names the order; no new
+	 * charge is sent, and the earlier record that could not be read does not stop the store recording the payment.
+	 *
+	 * @testWith ["requires_capture", 404]
+	 *           ["requires_action", 500]
+	 *
+	 * @param string $stored_status The order's stored intent status.
+	 * @param int    $http_code     The HTTP status of the failed read.
+	 */
+	public function test_woopay_confirmed_checkout_over_an_unread_payment_records_woopays_payment( string $stored_status, int $http_code ): void {
+		$order = $this->create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->update_meta_data( '_intent_id', 'pi_started' );
+		$order->update_meta_data( '_intention_status', $stored_status );
+		$order->update_meta_data( '_wcpay_mode', 'prod' );
+		$order->save();
+		$platform                          = $this->create_platform_whose_read_fails( new ApiException( 'Read failed.', 404 === $http_code ? 'resource_missing' : 'api_error', $http_code ) );
+		$woopay_intent                     = $this->create_intent_response( $order, 'succeeded', 1200 );
+		$woopay_intent['id']               = 'pi_woopay';
+		$platform->woopay_intents          = array( 'pi_woopay' => $woopay_intent );
+		$gateway                           = $this->create_gateway_over_a_platform_whose_duplicate_read_fails( $platform );
+		$_POST['platform-checkout-intent'] = 'pi_woopay';
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( array( 'GET pi_started', 'GET pi_woopay' ), $platform->requests, 'WooPay\'s intent is read; nothing is charged.' );
+		$this->assertSame( 'success', $result['result'] ?? '' );
+		$this->assertSame( 'pi_woopay', $order->get_transaction_id() );
+		$this->assertContains( $order->get_status(), wc_get_is_paid_statuses() );
+	}
+
+	/**
+	 * @testdox A checkout whose order totals 0.00 when its stored started bank step cannot be read, and 40.00 under the payment lock, is refused and charges nothing.
+	 *
+	 * The total is read again under the lock, and the charge decides there: a request that sets up the card when checked
+	 * and charges after the re-read is refused as any charge over that record is.
+	 */
+	public function test_process_payment_whose_total_rises_under_the_lock_over_an_unread_started_record_is_refused(): void {
+		$order = $this->create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_total( '0.00' );
+		$order->update_meta_data( '_intent_id', 'pi_started' );
+		$order->update_meta_data( '_intention_status', 'requires_action' );
+		$order->save();
+		$order_id = $order->get_id();
+		$platform = $this->create_platform_whose_read_fails(
+			new ApiException( 'Read failed.', 'api_error', 500 ),
+			static function () use ( $order_id ): void {
+				// Another request changes the order while this one reads its stored intent.
+				$stored = wc_get_order( $order_id );
+				$stored->set_total( '40.00' );
+				$stored->save();
+			}
+		);
+		$gateway  = $this->create_gateway_over_a_platform_whose_duplicate_read_fails( $platform );
+
+		$result = $gateway->process_payment( $order_id );
+
+		$this->assertSame( array( 'GET pi_started' ), $platform->requests, 'Nothing is charged.' );
+		$this->assertSame( 'failure', $result['result'] ?? '' );
+		$this->assertSame( array( "We're not able to process this payment. Please try again later." ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+	}
+
+	/**
+	 * @testdox A zero-total checkout over a stored started bank step whose read fails with a 500 goes on and is not refused.
+	 *
+	 * A zero total sets up the card and takes no payment, so it cannot pay again for the earlier payment.
+	 */
+	public function test_zero_total_checkout_over_an_unread_started_record_goes_on(): void {
+		$order = $this->create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_total( '0.00' );
+		$order->update_meta_data( '_intent_id', 'pi_started' );
+		$order->update_meta_data( '_intention_status', 'requires_action' );
+		$order->save();
+		$platform = $this->create_platform_whose_read_fails( new ApiException( 'Read failed.', 'api_error', 500 ) );
+		$gateway  = $this->create_gateway_over_a_platform_whose_duplicate_read_fails( $platform );
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertNotContains( 'POST payment', $platform->requests );
+		$this->assertSame( 'success', $result['result'] ?? '' );
+		$this->assertSame( array(), array_column( wc_get_notices( 'error' ), 'notice' ), 'No refusal is shown.' );
+	}
+
+	/**
+	 * Create a platform client whose read of the stored `pi_started` fails, and which records every intent request: a read
+	 * of a WooPay intent it holds answers with it, a PaymentIntent and a SetupIntent succeed.
+	 *
+	 * @param \Throwable    $failure       What the read of `pi_started` throws.
+	 * @param callable|null $while_reading Called before the read fails.
+	 * @return Client
+	 */
+	private function create_platform_whose_read_fails( \Throwable $failure, ?callable $while_reading = null ): Client {
+		return new class( $failure, $while_reading ) extends Client {
+			/**
+			 * Requests sent, in order: "GET <intent>", "POST payment" or "POST setup".
+			 *
+			 * @var string[]
+			 */
+			public array $requests = array();
+
+			/**
+			 * WooPay intents a read answers with, by ID.
+			 *
+			 * @var array<string,array<string,mixed>>
+			 */
+			public array $woopay_intents = array();
+
+			/**
+			 * What the read of `pi_started` throws.
+			 *
+			 * @var \Throwable
+			 */
+			private \Throwable $failure;
+
+			/**
+			 * Called before the read fails.
+			 *
+			 * @var callable|null
+			 */
+			private $while_reading;
+
+			/**
+			 * Keep the failure and the callback.
+			 *
+			 * @param \Throwable    $failure       What the read of `pi_started` throws.
+			 * @param callable|null $while_reading Called before the read fails.
+			 */
+			public function __construct( \Throwable $failure, ?callable $while_reading ) {
+				$this->failure       = $failure;
+				$this->while_reading = $while_reading;
+			}
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Answer a read with a WooPay intent held here, or fail it.
+			 *
+			 * @param string $intent_id Intent ID.
+			 * @return array<string,mixed>
+			 * @throws \Throwable The failure, for any other intent.
+			 */
+			public function get_payment_intention( string $intent_id ): array {
+				$this->requests[] = 'GET ' . $intent_id;
+				if ( isset( $this->woopay_intents[ $intent_id ] ) ) {
+					return $this->woopay_intents[ $intent_id ];
+				}
+				if ( null !== $this->while_reading ) {
+					( $this->while_reading )();
+				}
+
+				throw $this->failure;
+			}
+
+			/**
+			 * Answer a PaymentIntent request with a succeeded PaymentIntent and its charge.
+			 *
+			 * @param array<string,mixed> $request_data    Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
+				unset( $idempotency_key );
+				$this->requests[] = 'POST payment';
+
+				return array(
+					'id'             => 'pi_new',
+					'object'         => 'payment_intent',
+					'status'         => 'succeeded',
+					'amount'         => (int) ( $request_data['amount'] ?? 0 ),
+					'currency'       => (string) ( $request_data['currency'] ?? 'usd' ),
+					'customer'       => (string) ( $request_data['customer'] ?? '' ),
+					'payment_method' => (string) ( $request_data['payment_method'] ?? '' ),
+					'metadata'       => $request_data['metadata'] ?? array(),
+					'charges'        => array(
+						'data' => array(
+							array(
+								'id'                  => 'ch_new',
+								'object'              => 'charge',
+								'amount'              => (int) ( $request_data['amount'] ?? 0 ),
+								'balance_transaction' => 'txn_new',
+								'status'              => 'succeeded',
+								'paid'                => true,
+							),
+						),
+					),
+				);
+			}
+
+			/**
+			 * Answer a SetupIntent request with a succeeded SetupIntent.
+			 *
+			 * @param array<string,mixed> $request_data    Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_setup_intention( array $request_data, string $idempotency_key ): array {
+				unset( $idempotency_key );
+				$this->requests[] = 'POST setup';
+
+				return array(
+					'id'             => 'seti_new',
+					'object'         => 'setup_intent',
+					'status'         => 'succeeded',
+					'customer'       => (string) ( $request_data['customer'] ?? '' ),
+					'payment_method' => (string) ( $request_data['payment_method'] ?? '' ),
+					'metadata'       => $request_data['metadata'] ?? array(),
+				);
+			}
+		};
+	}
+
+	/**
+	 * Create a gateway over the real payment service and the WooPayments provider, whose duplicate check and charge both
+	 * use the given platform client.
+	 *
+	 * @param Client $platform Platform client.
+	 * @return WooPaymentsGateway
+	 */
+	private function create_gateway_over_a_platform_whose_duplicate_read_fails( Client $platform ): WooPaymentsGateway {
+		$session = $this->create_session();
+		$gateway = new WooPaymentsGateway();
+		$gateway->init(
+			wc_get_container()->get( PaymentProcessingService::class ),
+			$this->create_provider_over_platform( $platform, $this->create_unhooked_token_service() ),
+			null,
+			null,
+			null,
+			null,
+			null,
+			$this->create_fraud_prevention_service( false, $session ),
+			new WooPaymentsFailedTransactionRateLimiter( $session ),
+			$this->create_duplicate_payment_prevention_service( $session, $platform )
 		);
 		$_POST['wcpay-payment-method'] = 'pm_card_visa';
 

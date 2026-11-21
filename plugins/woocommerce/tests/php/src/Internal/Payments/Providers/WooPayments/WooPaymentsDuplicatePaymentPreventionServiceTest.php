@@ -872,18 +872,18 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	/**
 	 * @testdox A failed read of the attached PaymentIntent on a Pending order storing $stored_status, after $failure, $expected.
 	 *
-	 * The stored record decides when the read fails. One that shows money taken, held or on its way refuses on any failure.
-	 * One that shows a started bank step refuses unless the platform answered about this payment: the shopper may have
-	 * finished the step, and the money is taken before the store hears of it. Any other record lets the checkout go on.
-	 * Client 11.3.0 goes on after any exception (class-duplicate-payment-prevention-service.php:101-110).
+	 * A record of a succeeded payment refuses on any failure, as before. Any other record lets checkout go on, and the check
+	 * notes the failure for the charge, which decides on the record under the order payment lock: whether the failure left
+	 * the payment unknown, or the platform answered about it, as with a not-found. Client 11.3.0 goes on after any
+	 * exception (class-duplicate-payment-prevention-service.php:101-110).
 	 *
 	 * @dataProvider provider_failed_reads_by_stored_status
 	 *
 	 * @param string $stored_status The order's stored `_intention_status`; empty for none.
 	 * @param string $failure       How the read fails, a key of failed_read().
-	 * @param string $expected      "refuses" or "goes on".
+	 * @param string $expected      "refuses", "goes on and notes an unknown outcome" or "goes on and notes an answer".
 	 */
-	public function test_a_failed_read_refuses_by_the_stored_record( string $stored_status, string $failure, string $expected ): void {
+	public function test_a_failed_read_goes_on_and_notes_the_failure_unless_the_record_says_succeeded( string $stored_status, string $failure, string $expected ): void {
 		$order = $this->create_order( 'hash', 'pending' );
 		$order->update_meta_data( '_intent_id', 'pi_existing' );
 		if ( '' !== $stored_status ) {
@@ -895,22 +895,31 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 			->onlyMethods( array( 'get_payment_intention' ) )
 			->getMock();
 		$api_client->expects( $this->once() )->method( 'get_payment_intention' )->with( 'pi_existing' )->willThrowException( self::failed_read( $failure ) );
+		$failed_read = array( 'left' => 'from an earlier call' );
 
 		$result = $this->create_service( $this->create_session(), $api_client )
-			->check_payment_intent_attached_to_order_succeeded( $order, $this->create_gateway() );
+			->check_payment_intent_attached_to_order_succeeded( $order, $this->create_gateway(), $failed_read );
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( array( 'pending', '', $stored_status ), array( $order->get_status(), $order->get_transaction_id(), (string) $order->get_meta( '_intention_status', true ) ), 'The order is left as it is.' );
 		$this->assertSame( array(), wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'No note is written.' );
-		if ( 'goes on' === $expected ) {
-			$this->assertNull( $result );
+		if ( 'refuses' === $expected ) {
+			$this->assertInstanceOf( WP_Error::class, $result );
+			$this->assertSame(
+				array( WooPaymentsDuplicatePaymentPreventionService::ERROR_CHECK_FAILED, "We're not able to process this payment. Please try again later." ),
+				array( $result->get_error_code(), $result->get_error_message() )
+			);
+			$this->assertNull( $failed_read, 'A refusal notes nothing for the charge.' );
 			return;
 		}
-		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertNull( $result );
 		$this->assertSame(
-			array( WooPaymentsDuplicatePaymentPreventionService::ERROR_CHECK_FAILED, "We're not able to process this payment. Please try again later." ),
-			array( $result->get_error_code(), $result->get_error_message() )
+			array(
+				'intent_id' => 'pi_existing',
+				'unknown'   => 'goes on and notes an unknown outcome' === $expected,
+			),
+			$failed_read
 		);
 	}
 
@@ -921,27 +930,27 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	 */
 	public function provider_failed_reads_by_stored_status(): array {
 		return array(
-			'requires_action, a server error'            => array( 'requires_action', 'a server error', 'refuses' ),
-			'requires_confirmation, a server error'      => array( 'requires_confirmation', 'a server error', 'refuses' ),
-			'requires_capture, a server error'           => array( 'requires_capture', 'a server error', 'refuses' ),
-			'processing, a server error'                 => array( 'processing', 'a server error', 'refuses' ),
-			'requires_capture, a plain exception'        => array( 'requires_capture', 'a plain exception', 'refuses' ),
-			'requires_action, a plain exception'         => array( 'requires_action', 'a plain exception', 'refuses' ),
-			'requires_action, a transport failure'       => array( 'requires_action', 'a transport failure', 'refuses' ),
-			'requires_action, too many requests'         => array( 'requires_action', 'too many requests', 'refuses' ),
-			'requires_action, not authorized'            => array( 'requires_action', 'not authorized', 'refuses' ),
-			'requires_confirmation, a store refusal'     => array( 'requires_confirmation', 'a store refusal', 'refuses' ),
-			'requires_action, an unreadable answer'      => array( 'requires_action', 'an unreadable answer', 'refuses' ),
-			'requires_capture, a not-found'              => array( 'requires_capture', 'a not-found', 'refuses' ),
-			'processing, a not-found'                    => array( 'processing', 'a not-found', 'refuses' ),
+			'requires_action, a server error'            => array( 'requires_action', 'a server error', 'goes on and notes an unknown outcome' ),
+			'requires_confirmation, a server error'      => array( 'requires_confirmation', 'a server error', 'goes on and notes an unknown outcome' ),
+			'requires_capture, a server error'           => array( 'requires_capture', 'a server error', 'goes on and notes an unknown outcome' ),
+			'processing, a server error'                 => array( 'processing', 'a server error', 'goes on and notes an unknown outcome' ),
+			'requires_capture, a plain exception'        => array( 'requires_capture', 'a plain exception', 'goes on and notes an unknown outcome' ),
+			'requires_action, a plain exception'         => array( 'requires_action', 'a plain exception', 'goes on and notes an unknown outcome' ),
+			'requires_action, a transport failure'       => array( 'requires_action', 'a transport failure', 'goes on and notes an unknown outcome' ),
+			'requires_action, too many requests'         => array( 'requires_action', 'too many requests', 'goes on and notes an unknown outcome' ),
+			'requires_action, not authorized'            => array( 'requires_action', 'not authorized', 'goes on and notes an unknown outcome' ),
+			'requires_confirmation, a store refusal'     => array( 'requires_confirmation', 'a store refusal', 'goes on and notes an unknown outcome' ),
+			'requires_action, an unreadable answer'      => array( 'requires_action', 'an unreadable answer', 'goes on and notes an unknown outcome' ),
+			'requires_capture, a not-found'              => array( 'requires_capture', 'a not-found', 'goes on and notes an answer' ),
+			'processing, a not-found'                    => array( 'processing', 'a not-found', 'goes on and notes an answer' ),
 			'succeeded, a server error'                  => array( 'succeeded', 'a server error', 'refuses' ),
 			'succeeded, a not-found'                     => array( 'succeeded', 'a not-found', 'refuses' ),
-			'requires_action, a not-found'               => array( 'requires_action', 'a not-found', 'goes on' ),
-			'requires_confirmation, a bad request'       => array( 'requires_confirmation', 'a bad request', 'goes on' ),
-			'requires_payment_method, a server error'    => array( 'requires_payment_method', 'a server error', 'goes on' ),
-			'canceled, a server error'                   => array( 'canceled', 'a server error', 'goes on' ),
-			'no stored status, a server error'           => array( '', 'a server error', 'goes on' ),
-			'requires_payment_method, a plain exception' => array( 'requires_payment_method', 'a plain exception', 'goes on' ),
+			'requires_action, a not-found'               => array( 'requires_action', 'a not-found', 'goes on and notes an answer' ),
+			'requires_confirmation, a bad request'       => array( 'requires_confirmation', 'a bad request', 'goes on and notes an answer' ),
+			'requires_payment_method, a server error'    => array( 'requires_payment_method', 'a server error', 'goes on and notes an unknown outcome' ),
+			'canceled, a server error'                   => array( 'canceled', 'a server error', 'goes on and notes an unknown outcome' ),
+			'no stored status, a server error'           => array( '', 'a server error', 'goes on and notes an unknown outcome' ),
+			'requires_payment_method, a plain exception' => array( 'requires_payment_method', 'a plain exception', 'goes on and notes an unknown outcome' ),
 		);
 	}
 
@@ -977,66 +986,41 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	}
 
 	/**
-	 * @testdox A failed read after $failure on a Pending order storing $stored_status in mode $stored_mode, by a request that $request on a store in mode $store_mode, $expected.
+	 * @testdox A failed read after $failure on a Pending order storing $stored_status in mode prod is refused even when the store's mode cannot be read.
 	 *
-	 * The refusals on a record of money held or on its way, or of a started bank step, stop a second charge of the same
-	 * money, so they apply only to a request that would charge, in the record's own mode. A record from the other mode says
-	 * nothing about this mode's money, and a request routed to set up the payment method charges nothing: those are
-	 * refused only on a PHP Error or a record of a succeeded payment, as before.
+	 * The refusals on a PHP Error and on a record of a succeeded payment come first and read nothing else, so a mode
+	 * callback that throws cannot turn them into an escaped failure.
 	 *
-	 * @dataProvider provider_failed_reads_by_request_and_mode
+	 * @testWith ["succeeded", "a server error"]
+	 *           ["requires_payment_method", "a PHP error"]
 	 *
 	 * @param string $stored_status The order's stored `_intention_status`.
-	 * @param string $stored_mode   The order's stored `_wcpay_mode`.
-	 * @param string $store_mode    The mode the store charges in now, as an order mode.
-	 * @param string $request       "charges" or "sets up".
 	 * @param string $failure       How the read fails, a key of failed_read().
-	 * @param string $expected      "refuses" or "goes on".
 	 */
-	public function test_a_failed_read_refuses_by_the_record_only_a_charge_in_its_own_mode( string $stored_status, string $stored_mode, string $store_mode, string $request, string $failure, string $expected ): void {
-		add_filter( 'wcpay_test_mode', 'test' === $store_mode ? '__return_true' : '__return_false' );
+	public function test_a_failed_read_refuses_first_on_a_php_error_or_a_succeeded_record( string $stored_status, string $failure ): void {
 		$order = $this->create_order( 'hash', 'pending' );
 		$order->update_meta_data( '_intent_id', 'pi_existing' );
 		$order->update_meta_data( '_intention_status', $stored_status );
-		$order->update_meta_data( '_wcpay_mode', $stored_mode );
+		$order->update_meta_data( '_wcpay_mode', 'prod' );
 		$order->save();
 		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_payment_intention' ) )
 			->getMock();
 		$api_client->expects( $this->once() )->method( 'get_payment_intention' )->with( 'pi_existing' )->willThrowException( self::failed_read( $failure ) );
+		$service = $this->create_service( $this->create_session(), $api_client );
+		$gateway = $this->create_gateway();
+		add_filter(
+			'wcpay_test_mode',
+			static function () {
+				throw new \RuntimeException( 'A mode callback failed.' );
+			}
+		);
 
-		$result = $this->create_service( $this->create_session(), $api_client )
-			->check_payment_intent_attached_to_order_succeeded( $order, $this->create_gateway(), 'charges' === $request );
+		$result = $service->check_payment_intent_attached_to_order_succeeded( $order, $gateway );
 
-		if ( 'goes on' === $expected ) {
-			$this->assertNull( $result );
-			return;
-		}
 		$this->assertInstanceOf( WP_Error::class, $result );
 		$this->assertSame( WooPaymentsDuplicatePaymentPreventionService::ERROR_CHECK_FAILED, $result->get_error_code() );
-	}
-
-	/**
-	 * Stored records, modes, requests and read failures, and what the check does.
-	 *
-	 * @return array<string,array{0:string,1:string,2:string,3:string,4:string,5:string}>
-	 */
-	public function provider_failed_reads_by_request_and_mode(): array {
-		return array(
-			'a test authorization on a store now live, a not-found' => array( 'requires_capture', 'test', 'prod', 'charges', 'a not-found', 'goes on' ),
-			'the same authorization in its own mode, a not-found' => array( 'requires_capture', 'prod', 'prod', 'charges', 'a not-found', 'refuses' ),
-			'a test payment on its way on a store now live' => array( 'processing', 'test', 'prod', 'charges', 'a server error', 'goes on' ),
-			'a test bank step on a store now live, a server error' => array( 'requires_action', 'test', 'prod', 'charges', 'a server error', 'goes on' ),
-			'a live bank step on a store now in test, a server error' => array( 'requires_action', 'prod', 'test', 'charges', 'a server error', 'goes on' ),
-			'a test bank step in its own mode, a server error' => array( 'requires_action', 'test', 'test', 'charges', 'a server error', 'refuses' ),
-			'a test success on a store now live, a not-found' => array( 'succeeded', 'test', 'prod', 'charges', 'a not-found', 'refuses' ),
-			'a test record on a store now live, a PHP error' => array( 'requires_payment_method', 'test', 'prod', 'charges', 'a PHP error', 'refuses' ),
-			'a set-up over a started bank step, a server error' => array( 'requires_action', 'prod', 'prod', 'sets up', 'a server error', 'goes on' ),
-			'a set-up over an authorization, a server error' => array( 'requires_capture', 'prod', 'prod', 'sets up', 'a server error', 'goes on' ),
-			'a set-up over a succeeded payment, a server error' => array( 'succeeded', 'prod', 'prod', 'sets up', 'a server error', 'refuses' ),
-			'a set-up over a started bank step, a PHP error' => array( 'requires_action', 'prod', 'prod', 'sets up', 'a PHP error', 'refuses' ),
-		);
 	}
 
 	/**

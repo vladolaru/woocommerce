@@ -987,6 +987,7 @@
 	 * there is no notices wrapper (client 11.1.0 index.js:189 removes every error on the page first).
 	 *
 	 * @param {string} message Error message.
+	 * @return {boolean} Whether the notice was shown.
 	 */
 	function setError( message ) {
 		var notices;
@@ -994,12 +995,12 @@
 		var item;
 
 		if ( ! message ) {
-			return;
+			return false;
 		}
 
 		notices = document.querySelector( '.woocommerce-notices-wrapper' );
 		if ( ! notices ) {
-			return;
+			return false;
 		}
 
 		message =
@@ -1021,6 +1022,8 @@
 		error.appendChild( item );
 		notices.appendChild( error );
 		error.scrollIntoView( { behavior: 'smooth', block: 'start' } );
+
+		return true;
 	}
 
 	function splitName( name ) {
@@ -3345,12 +3348,13 @@
 			var clickOptions;
 
 			// A payment went through but its order could not be updated: no wallet sheet opens for a second one. The
-			// sentence is spoken each time too, as the Blocks wallet does; the notice alone is not read without a
-			// notices wrapper.
+			// notice's role="alert" is read each time it is shown; with no notices wrapper to show it in, the sentence
+			// is spoken instead.
 			if ( isPaymentReceivedShown ) {
 				event.reject();
-				setError( PAYMENT_RECEIVED_MESSAGE );
-				window.wp.a11y.speak( PAYMENT_RECEIVED_MESSAGE, 'assertive' );
+				if ( ! setError( PAYMENT_RECEIVED_MESSAGE ) ) {
+					window.wp.a11y.speak( PAYMENT_RECEIVED_MESSAGE, 'assertive' );
+				}
 				return;
 			}
 
