@@ -56,7 +56,7 @@ class ExtensionBoundRenewalPlugins {
 		),
 		'wpfunnels'                             => array(
 			'name'            => 'WPFunnels',
-			'checked_version' => '3.13.5',
+			'checked_version' => '3.13.8',
 		),
 	);
 
