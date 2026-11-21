@@ -2104,6 +2104,9 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 			$this->sut = $this->create_controller( $processing_service, null, $platform );
 		}
 		$logger = RecordingWcLogger::install();
+		// Whichever test first builds the mailer in a process gets its order status emails hooked, and the mailer then logs this
+		// order's skipped email (it has no billing address). The email is not what this test watches.
+		add_filter( 'woocommerce_email_log_enabled', '__return_false' );
 		$this->sut->register();
 
 		$this->fire_order_hook( 'woocommerce_order_status_completed', $order );
