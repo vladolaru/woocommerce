@@ -53,7 +53,7 @@ class PreflightService {
 	/** The store bills subscriptions through the WooPayments extension's bundled subscriptions; such a store is excluded. */
 	public const FAILURE_BUNDLED_SUBSCRIPTIONS = 'bundled_stripe_billing_subscriptions_present';
 
-	/** A plugin that charges renewals through the WooPayments extension's own classes is active; the switch waits while it is. */
+	/** A plugin that takes payments through the WooPayments extension's own classes is active; the switch waits while it is. */
 	public const FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE = 'extension_renewal_plugin_active';
 
 	private const IDENTIFIER_PLACEHOLDERS_UNAVAILABLE_HOOK = 'woocommerce_woopayments_identifier_placeholders_unavailable';
@@ -104,7 +104,7 @@ class PreflightService {
 	private LegacyProxy $legacy_proxy;
 
 	/**
-	 * Plugins that charge renewals through the WooPayments extension.
+	 * Plugins that take payments through the WooPayments extension.
 	 *
 	 * @var ExtensionBoundRenewalPlugins|null
 	 */
@@ -744,7 +744,7 @@ class PreflightService {
 	}
 
 	/**
-	 * Get the plugins that charge renewals through the WooPayments extension, resolving them on first use.
+	 * Get the plugins that take payments through the WooPayments extension, resolving them on first use.
 	 *
 	 * @return ExtensionBoundRenewalPlugins
 	 */

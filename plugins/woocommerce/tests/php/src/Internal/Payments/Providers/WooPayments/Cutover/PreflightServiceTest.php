@@ -1359,7 +1359,7 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Which plugins count, and how they are found and named, is ExtensionBoundRenewalPluginsTest's.
 	 *
-	 * @testdox The switch is held back while a plugin that renews through the extension is active: $_dataName.
+	 * @testdox The switch is held back while a plugin that takes payments through the extension is active: $_dataName.
 	 * @dataProvider provide_renewal_plugin_holdbacks
 	 *
 	 * @param string[] $active_plugins Active plugin files of the site.

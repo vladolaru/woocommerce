@@ -12,7 +12,7 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the plugins that charge renewals through the WooPayments extension.
+ * Tests for the plugins that take payments through the WooPayments extension.
  */
 class ExtensionBoundRenewalPluginsTest extends WC_Unit_Test_Case {
 

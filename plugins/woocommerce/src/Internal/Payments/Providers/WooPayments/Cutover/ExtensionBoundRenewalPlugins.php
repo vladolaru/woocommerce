@@ -81,7 +81,7 @@ class ExtensionBoundRenewalPlugins {
 	/**
 	 * Get the listed plugins' files that are active for this site or, on a multisite, for the whole network.
 	 *
-	 * Their charges depend on WooPayments extension APIs the built-in WooPayments does not provide, so they are found by
+	 * Their payments depend on WooPayments extension APIs the built-in WooPayments does not provide, so they are found by
 	 * slug rather than by class. A listed plugin in a renamed folder is not found.
 	 *
 	 * @return string[]

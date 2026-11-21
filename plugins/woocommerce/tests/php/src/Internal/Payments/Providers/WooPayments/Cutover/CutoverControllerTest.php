@@ -1002,7 +1002,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox While a plugin that renews through the WooPayments extension is active, the switch notice names it and says why the store cannot switch instead of offering the switch ($_dataName).
+	 * @testdox While a plugin that takes payments through the WooPayments extension is active, the switch notice names it and says why the store cannot switch instead of offering the switch ($_dataName).
 	 * @dataProvider provide_renewal_plugin_holdback_offers
 	 *
 	 * @param string      $store    "extension active" or "waiting for the switch".
@@ -1038,7 +1038,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A switch deferred by a plugin that renews through the WooPayments extension says why under the in-progress line while the plugin is active, and stops once it is not ($_dataName).
+	 * @testdox A switch deferred by a plugin that takes payments through the WooPayments extension says why under the in-progress line while the plugin is active, and stops once it is not ($_dataName).
 	 * @dataProvider provide_deferred_renewal_plugin_holdbacks
 	 *
 	 * @param string   $code  The deferral code on the record.

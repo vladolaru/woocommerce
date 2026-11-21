@@ -21,7 +21,7 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Shows the cutover notices, takes the merchant's start click and the notice dismissals, and applies the mandatory lever.
  *
- * On a store the built-in WooPayments owns, it also names the active plugins whose renewals need the WooPayments extension.
+ * On a store the built-in WooPayments owns, it also names the active plugins whose payments need the WooPayments extension.
  * The plugin lifecycle listener calls its activation and deactivation handlers.
  *
  * @since 11.2.0
@@ -100,7 +100,7 @@ class CutoverController implements RegisterHooksInterface {
 	public const NOTICE_START_SWITCH = 'start_switch';
 
 	/**
-	 * Notice key of the notice naming the active plugins whose renewals need the WooPayments extension.
+	 * Notice key of the notice naming the active plugins whose payments need the WooPayments extension.
 	 *
 	 * @var string
 	 */
@@ -152,7 +152,7 @@ class CutoverController implements RegisterHooksInterface {
 	private ReconciliationJob $reconciliation_job;
 
 	/**
-	 * Plugins that charge renewals through the WooPayments extension.
+	 * Plugins that take payments through the WooPayments extension.
 	 *
 	 * @var ExtensionBoundRenewalPlugins
 	 */
@@ -174,7 +174,7 @@ class CutoverController implements RegisterHooksInterface {
 	 * @param LegacyProxy                  $legacy_proxy       Legacy proxy.
 	 * @param PreflightService             $preflight_service  Cutover preflight service.
 	 * @param ReconciliationJob            $reconciliation_job Durable reconciliation workflow.
-	 * @param ExtensionBoundRenewalPlugins $renewal_plugins    Plugins that charge renewals through the WooPayments extension.
+	 * @param ExtensionBoundRenewalPlugins $renewal_plugins    Plugins that take payments through the WooPayments extension.
 	 * @param WooPaymentsAccountService    $account_service    WooPayments account state.
 	 */
 	final public function init(
@@ -336,7 +336,7 @@ class CutoverController implements RegisterHooksInterface {
 
 	/**
 	 * Forget the cached bundled subscriptions classification when WooCommerce Subscriptions is deactivated, and bring
-	 * forward a switch held back by a plugin that renews through the WooPayments extension, which may be the one deactivated.
+	 * forward a switch held back by a plugin that takes payments through the WooPayments extension, which may be the one deactivated.
 	 *
 	 * A deactivation of the WooPayments extension records nothing: it is never a request to switch.
 	 *
