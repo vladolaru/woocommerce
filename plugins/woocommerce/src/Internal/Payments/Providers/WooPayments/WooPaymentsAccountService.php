@@ -379,6 +379,25 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Put the setup tier back for the account a failed delete left in place, after the overwrite lowered it.
+	 *
+	 * Derives the tier as an account write does, from the account data and the gateway's enabled setting, and keeps the
+	 * account cache as it is.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param array<string,mixed> $account_before The account data the cache held before the overwrite.
+	 * @return void
+	 */
+	public function restore_setup_tier( array $account_before ): void {
+		if ( null === $this->runtime_arbiter ) {
+			return;
+		}
+
+		$this->sync_setup_tier( $account_before, $this->runtime_arbiter->is_extension_owner() );
+	}
+
+	/**
 	 * Get the account data stored in the local account cache without forcing a refresh.
 	 *
 	 * @since 11.0.0
