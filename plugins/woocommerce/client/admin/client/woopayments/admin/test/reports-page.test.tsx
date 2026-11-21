@@ -1766,6 +1766,33 @@ describe( 'WooPaymentsReportsPage', () => {
 		expect( mockUpdateUserPreferences ).not.toHaveBeenCalled();
 	} );
 
+	// Client 11.3.0 `data/reports/hooks.ts:123-125,161,250`: Fees sorts a reversed range before it asks for the rows and the
+	// summary, as Balance, Documents and the money-movement lists do.
+	it( 'sorts a reversed Fees date range for the rows and the summary', async () => {
+		renderReportsPage( [
+			'/woopayments/reports?report_tab=fees&date_between%5B%5D=2026-04-30&date_between%5B%5D=2026-04-01',
+		] );
+
+		const sortedRange = [ '2026-03-31 21:00:00', '2026-04-30 20:59:59' ];
+		await waitFor( () =>
+			expect( mockGetFees ).toHaveBeenCalledWith(
+				expect.objectContaining( { date_between: sortedRange } )
+			)
+		);
+		expect( mockGetFeesSummary ).toHaveBeenCalledWith(
+			expect.objectContaining( { date_between: sortedRange } )
+		);
+		// The filter chip keeps the order the merchant typed.
+		await screen.findByRole( 'searchbox', { name: 'Search fees' } );
+		expect( mockDataViews.mock.lastCall?.[ 0 ].view?.filters ).toEqual( [
+			{
+				field: 'date',
+				operator: 'between',
+				value: [ '2026-04-30', '2026-04-01' ],
+			},
+		] );
+	} );
+
 	it( 'writes Fees view changes to the URL with the client param names', async () => {
 		renderReportsPage( [ '/woopayments/reports?report_tab=fees' ] );
 

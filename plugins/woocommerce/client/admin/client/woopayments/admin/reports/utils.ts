@@ -384,4 +384,5 @@ export {
 	getRangeDays,
 	getBalanceDateFilterFromView,
 	matchDatePreset,
+	sortYmdRange,
 };

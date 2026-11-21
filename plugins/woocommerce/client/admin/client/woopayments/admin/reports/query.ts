@@ -20,7 +20,7 @@ import type {
 	ReportsFeesViewFilter,
 	ReportsSortDirection,
 } from './types';
-import { isYmd } from './utils';
+import { isYmd, sortYmdRange } from './utils';
 
 const FEES_LIST_QUERY_PARAM_ORDER = [
 	'page',
@@ -83,11 +83,11 @@ const getDateFilterQuery = (
 	const dateRange = normalizeStringArray( value );
 
 	if ( Array.isArray( dateRange ) && dateRange.length >= 2 ) {
+		// Client 11.3.0 `data/reports/hooks.ts:123-125,161,250`: a reversed range is sorted, as Balance sorts it.
+		const [ start, end ] = sortYmdRange( dateRange[ 0 ], dateRange[ 1 ] );
+
 		return {
-			date_between: [
-				toDayStart( dateRange[ 0 ] ),
-				toDayEnd( dateRange[ 1 ] ),
-			],
+			date_between: [ toDayStart( start ), toDayEnd( end ) ],
 		};
 	}
 
