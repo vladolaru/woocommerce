@@ -508,6 +508,127 @@ class WooPaymentsFraudOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox With WooCommerce Subscriptions, a subscription loaded with no customer ID keeps the customer ID another request stored since, not the parent's.
+	 *
+	 * The "only when empty" fallback is decided again on the stored meta, so the parent's value never replaces the child's.
+	 */
+	public function test_a_customer_id_stored_after_the_subscription_was_loaded_is_kept(): void {
+		$this->make_subscriptions_available();
+		$service = $this->create_service( new RecordingActionSchedulerService() );
+		$parent  = $this->create_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( '_stripe_customer_id' => 'cus_parent' ) );
+		$object  = $this->create_tracked_object( 'subscription', $parent, $this->create_card_token( 'pm_new' ) );
+
+		$stale = $this->load_tracked_object( 'subscription', $object->get_id() );
+		$stale->read_meta_data( true );
+		$other = $this->load_tracked_object( 'subscription', $object->get_id() );
+		$other->update_meta_data( '_stripe_customer_id', 'cus_child' );
+		$other->save_meta_data();
+
+		$service->handle_woocommerce_update_order( $object->get_id(), $stale );
+
+		$this->assertSame( array( 'cus_child' ), $this->get_stored_values( $object, '_stripe_customer_id' ) );
+		$this->assertSame( array( 'pm_new' ), $this->get_stored_values( $object, '_payment_method_id' ) );
+	}
+
+	/**
+	 * @testdox With WooCommerce Subscriptions, a subscription with no token, loaded with no payment method ID, keeps the payment method ID another request stored since, not the parent's.
+	 */
+	public function test_a_payment_method_id_stored_after_the_subscription_was_loaded_is_kept(): void {
+		$this->make_subscriptions_available();
+		$service = $this->create_service( new RecordingActionSchedulerService() );
+		$parent  = $this->create_order(
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+			array(
+				'_payment_method_id'  => 'pm_parent',
+				'_stripe_customer_id' => 'cus_parent',
+			)
+		);
+		$object  = $this->create_tracked_object( 'subscription', $parent, null );
+
+		$stale = $this->load_tracked_object( 'subscription', $object->get_id() );
+		$stale->read_meta_data( true );
+		$other = $this->load_tracked_object( 'subscription', $object->get_id() );
+		$other->update_meta_data( '_payment_method_id', 'pm_child' );
+		$other->save_meta_data();
+
+		$service->handle_woocommerce_update_order( $object->get_id(), $stale );
+
+		$this->assertSame( array( 'pm_child' ), $this->get_stored_values( $object, '_payment_method_id' ) );
+		$this->assertSame( array( 'cus_parent' ), $this->get_stored_values( $object, '_stripe_customer_id' ) );
+	}
+
+	/**
+	 * @testdox With WooCommerce Subscriptions, a $_dataName with two stored payment method ID rows ends with one row of its latest token's ID when the repair writes it.
+	 *
+	 * @dataProvider provide_tracked_object_types
+	 *
+	 * @param string $type Object type, `order` or `subscription`.
+	 */
+	public function test_a_doubled_payment_method_id_collapses_to_one_row_when_written( string $type ): void {
+		$this->make_subscriptions_available();
+		$service = $this->create_service( new RecordingActionSchedulerService() );
+		$parent  = $this->create_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( '_stripe_customer_id' => 'cus_parent' ) );
+		$object  = $this->create_tracked_object( $type, $parent, $this->create_card_token( 'pm_new' ) );
+		$object->add_meta_data( '_payment_method_id', 'pm_old' );
+		$object->add_meta_data( '_payment_method_id', 'pm_old' );
+		$object->save_meta_data();
+		$this->assertSame( array( 'pm_old', 'pm_old' ), $this->get_stored_values( $object, '_payment_method_id' ) );
+
+		$service->handle_woocommerce_update_order( $object->get_id(), $this->load_tracked_object( $type, $object->get_id() ) );
+
+		$this->assertSame( array( 'pm_new' ), $this->get_stored_values( $object, '_payment_method_id' ) );
+		$this->assertSame( array( 'cus_parent' ), $this->get_stored_values( $object, '_stripe_customer_id' ) );
+	}
+
+	/**
+	 * @testdox With WooCommerce Subscriptions, the repair reads the stored meta again past this request's cache, which still holds the rows it read before another request stored a customer ID.
+	 */
+	public function test_the_repair_reads_past_a_cached_copy_of_the_meta(): void {
+		$this->make_subscriptions_available();
+		$service = $this->create_service( new RecordingActionSchedulerService() );
+		$parent  = $this->create_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( '_stripe_customer_id' => 'cus_parent' ) );
+		$object  = $this->create_tracked_object( 'subscription', $parent, $this->create_card_token( 'pm_new' ) );
+
+		$stale = $this->load_tracked_object( 'subscription', $object->get_id() );
+		$stale->read_meta_data( true );
+		$cached_rows = wp_cache_get( $stale->get_meta_cache_key(), 'orders' );
+		$this->assertIsArray( $cached_rows );
+		$other = $this->load_tracked_object( 'subscription', $object->get_id() );
+		$other->update_meta_data( '_stripe_customer_id', 'cus_child' );
+		$other->save_meta_data();
+		wp_cache_set( $stale->get_meta_cache_key(), $cached_rows, 'orders' );
+
+		$service->handle_woocommerce_update_order( $object->get_id(), $stale );
+
+		$this->assertSame( array( 'cus_child' ), $this->get_stored_values( $object, '_stripe_customer_id' ) );
+	}
+
+	/**
+	 * @testdox With WooCommerce Subscriptions, a subscription loaded when its payment method ID matched the token gets the token's ID back when another request changed the row since and a customer ID write runs.
+	 *
+	 * The old copy finds only the customer ID to write; the decision on the stored meta also finds the changed payment method ID.
+	 */
+	public function test_the_writes_come_from_the_decision_on_the_stored_meta(): void {
+		$this->make_subscriptions_available();
+		$service = $this->create_service( new RecordingActionSchedulerService() );
+		$parent  = $this->create_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( '_stripe_customer_id' => 'cus_parent' ) );
+		$object  = $this->create_tracked_object( 'subscription', $parent, $this->create_card_token( 'pm_new' ) );
+		$object->update_meta_data( '_payment_method_id', 'pm_new' );
+		$object->save_meta_data();
+
+		$stale = $this->load_tracked_object( 'subscription', $object->get_id() );
+		$stale->read_meta_data( true );
+		$other = $this->load_tracked_object( 'subscription', $object->get_id() );
+		$other->update_meta_data( '_payment_method_id', 'pm_old' );
+		$other->save_meta_data();
+
+		$service->handle_woocommerce_update_order( $object->get_id(), $stale );
+
+		$this->assertSame( array( 'pm_new' ), $this->get_stored_values( $object, '_payment_method_id' ) );
+		$this->assertSame( array( 'cus_parent' ), $this->get_stored_values( $object, '_stripe_customer_id' ) );
+	}
+
+	/**
 	 * The two kinds of object the repair runs on.
 	 *
 	 * @return array<string,array{0:string}>
@@ -540,22 +661,24 @@ class WooPaymentsFraudOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a WooPayments order or subscription double holding a token and a parent, with neither ID stored.
+	 * Create a WooPayments order or subscription double holding a parent and, when given, a token, with neither ID stored.
 	 *
-	 * @param string               $type         `order` or `subscription`.
-	 * @param WC_Order             $parent_order Parent order.
-	 * @param \WC_Payment_Token_CC $token        Token the object holds.
+	 * @param string                    $type         `order` or `subscription`.
+	 * @param WC_Order                  $parent_order Parent order.
+	 * @param \WC_Payment_Token_CC|null $token        Token the object holds, or null for none.
 	 * @return WC_Order
 	 */
-	private function create_tracked_object( string $type, WC_Order $parent_order, \WC_Payment_Token_CC $token ): WC_Order {
+	private function create_tracked_object( string $type, WC_Order $parent_order, ?\WC_Payment_Token_CC $token ): WC_Order {
 		$object = 'subscription' === $type ? new SubscriptionDouble() : wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $object );
 		$object->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$object->set_total( 12.34 );
 		$object->set_parent_id( $parent_order->get_id() );
 		$object->save();
-		$object->add_payment_token( $token );
-		$object->save();
+		if ( null !== $token ) {
+			$object->add_payment_token( $token );
+			$object->save();
+		}
 
 		return $object;
 	}

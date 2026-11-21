@@ -129,6 +129,27 @@ class WooPaymentsFraudOrderTrackingService implements RegisterHooksInterface {
 			return;
 		}
 
+		if ( array() === $this->get_subscription_order_tracking_meta_writes( $order ) ) {
+			return;
+		}
+
+		// The order object can be older than the stored meta: another request may have stored these keys since it was loaded.
+		// Read the stored rows again and decide again on them, so a write updates the stored row and never replaces a value
+		// that only looked empty on the old copy.
+		$order->read_meta_data( true );
+		foreach ( $this->get_subscription_order_tracking_meta_writes( $order ) as $key => $value ) {
+			$order->update_meta_data( $key, $value );
+		}
+		$order->save_meta_data();
+	}
+
+	/**
+	 * Decide which payment method and customer ID writes the order needs, from the meta it holds.
+	 *
+	 * @param WC_Order $order Order being updated.
+	 * @return array<string,string> Values to write, by meta key.
+	 */
+	private function get_subscription_order_tracking_meta_writes( WC_Order $order ): array {
 		$writes            = array();
 		$token_ids         = $order->get_payment_tokens();
 		$token_id          = end( $token_ids );
@@ -140,7 +161,7 @@ class WooPaymentsFraudOrderTrackingService implements RegisterHooksInterface {
 				$parent                   = $order->get_parent_id() ? wc_get_order( $order->get_parent_id() ) : false;
 				$parent_payment_method_id = $parent instanceof WC_Order ? $this->get_order_meta_string( $parent, '_payment_method_id' ) : '';
 				if ( '' === $parent_payment_method_id ) {
-					return;
+					return array();
 				}
 				$writes['_payment_method_id'] = $parent_payment_method_id;
 			}
@@ -156,17 +177,7 @@ class WooPaymentsFraudOrderTrackingService implements RegisterHooksInterface {
 			}
 		}
 
-		if ( array() === $writes ) {
-			return;
-		}
-
-		// The order object can be older than the stored meta: another request may have added these keys since it was loaded,
-		// and an update on the old copy would add a second row. Read the stored rows again so the write lands on them.
-		$order->read_meta_data( true );
-		foreach ( $writes as $key => $value ) {
-			$order->update_meta_data( $key, $value );
-		}
-		$order->save_meta_data();
+		return $writes;
 	}
 
 	/**
