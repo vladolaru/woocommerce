@@ -415,6 +415,12 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	public function get_option( $key, $empty_value = null ) {
 		$this->ensure_current_blog_context();
 
+		// The card gateway has no form fields, so give saved cards the client form's "yes" default when it is not set, as
+		// WC_Settings_API does (client 11.3.0 class-wc-payment-gateway-wcpay.php:626-632); a later update_option() keeps it.
+		if ( 'saved_cards' === $key && WooPaymentsPersistenceVocabulary::GATEWAY_ID === $this->id && ! isset( $this->settings[ $key ] ) ) {
+			$this->settings[ $key ] = 'yes';
+		}
+
 		return parent::get_option( $key, $empty_value );
 	}
 

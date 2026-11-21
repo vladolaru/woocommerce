@@ -661,6 +661,61 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.3.0's card gateway has the saved_cards form field with its "yes" default (class-wc-payment-gateway-wcpay.php:626-632),
+	 * so WC_Settings_API::get_option() reads a missing or null value as "yes", and an integration's later update_option() of another
+	 * key stores it with the rest of the settings. A stored empty value stays off.
+	 *
+	 * @testdox Should keep saved cards as stored when an integration reads them and then saves another setting: $_dataName.
+	 * @dataProvider provider_card_gateway_saved_cards_read_then_write
+	 *
+	 * @param array<string,mixed> $settings      Stored WooPayments gateway settings.
+	 * @param string              $expected_read The gateway's saved_cards value, before and after the write.
+	 * @param bool                $expected_on   Whether saved cards are on after the write.
+	 */
+	public function test_card_gateway_saved_cards_read_keeps_its_default_through_a_later_write( array $settings, string $expected_read, bool $expected_on ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', $settings );
+		$gateway = new WooPaymentsGateway();
+
+		$this->assertSame( $expected_read, $gateway->get_option( 'saved_cards' ) );
+
+		$gateway->update_option( 'test_mode', 'no' );
+
+		$stored = get_option( 'woocommerce_woocommerce_payments_settings' );
+		$this->assertSame( 'no', $stored['test_mode'] );
+		$this->assertSame( $expected_read, $stored['saved_cards'] );
+		$after_write = new WooPaymentsGateway();
+		$this->assertSame( $expected_on, $after_write->is_saved_cards_enabled() );
+		$this->assertSame( $expected_on, $after_write->supports( PaymentGatewayFeature::TOKENIZATION ) );
+	}
+
+	/**
+	 * Stored card gateway settings, the saved_cards value the gateway reads and stores, and whether saved cards are on.
+	 *
+	 * @return array<string,array{0:array<string,mixed>,1:string,2:bool}>
+	 */
+	public function provider_card_gateway_saved_cards_read_then_write(): array {
+		return array(
+			'never saved'  => array( array( 'enabled' => 'yes' ), 'yes', true ),
+			'stored null'  => array(
+				array(
+					'enabled'     => 'yes',
+					'saved_cards' => null,
+				),
+				'yes',
+				true,
+			),
+			'stored empty' => array(
+				array(
+					'enabled'     => 'yes',
+					'saved_cards' => '',
+				),
+				'',
+				false,
+			),
+		);
+	}
+
+	/**
 	 * Client 11.1.0 gives only the card gateway the saved_cards form field (class-wc-payment-gateway-wcpay.php:387-410, merged at
 	 * :545); a split gateway reads its own row (:987-989), which the settings sync writes with only `enabled` and the enabled list,
 	 * so it claims neither feature (:338-340), even for a method that can be saved.

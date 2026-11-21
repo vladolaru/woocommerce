@@ -1944,14 +1944,16 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * A save that sends WooPay on while the account is not eligible is not written either: by REST with WooPay alone, and by a
 	 * page loaded while eligible that sends the WooPay settings after eligibility was lost. The answer is a normal one that
-	 * shows WooPay off (N-2036 item 4), and neither the "enabled" event nor the locations event is recorded.
+	 * shows WooPay off, and neither the "enabled" event nor the locations event is recorded. Only WooPay itself
+	 * is kept: the other settings the page sends, the WooPay ones included, are saved.
 	 *
 	 * @testdox A save that sends WooPay on while the account is not eligible keeps WooPay off and answers 200: $_dataName.
 	 * @dataProvider provide_ineligible_woopay_on_saves
 	 *
-	 * @param array<string,mixed> $params Posted settings.
+	 * @param array<string,mixed> $params       Posted settings.
+	 * @param array<string,mixed> $saved_beside Stored settings the save writes beside WooPay.
 	 */
-	public function test_update_settings_keeps_woopay_off_when_turned_on_while_the_account_is_ineligible( array $params ): void {
+	public function test_update_settings_keeps_woopay_off_when_turned_on_while_the_account_is_ineligible( array $params, array $saved_beside ): void {
 		$this->store_woopay_account( 'under review' );
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
@@ -1978,23 +1980,33 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 200, $response->get_status(), (string) wp_json_encode( $response->get_data() ) );
 		$this->assertFalse( $response->get_data()['is_woopay_enabled'] );
-		$this->assertSame( 'no', get_option( 'woocommerce_woocommerce_payments_settings' )['platform_checkout'] );
+		$saved = get_option( 'woocommerce_woocommerce_payments_settings' );
+		$this->assertSame( 'no', $saved['platform_checkout'] );
+		foreach ( $saved_beside as $key => $value ) {
+			$this->assertArrayHasKey( $key, $saved );
+			$this->assertSame( $value, $saved[ $key ], $key );
+		}
 		$this->assertArrayNotHasKey( 'wcadmin_woopay_enabled', $events );
 		$this->assertArrayNotHasKey( 'wcadmin_woopay_express_button_locations_updated', $events );
 	}
 
 	/**
-	 * Provide saves that send WooPay on while the account is not eligible.
+	 * Provide saves that send WooPay on while the account is not eligible, and the settings each writes beside WooPay.
 	 *
-	 * @return array<string,array{0:array<string,mixed>}>
+	 * @return array<string,array{0:array<string,mixed>,1:array<string,mixed>}>
 	 */
 	public function provide_ineligible_woopay_on_saves(): array {
 		return array(
-			'REST, WooPay alone' => array( array( 'is_woopay_enabled' => true ) ),
+			'REST, WooPay alone' => array( array( 'is_woopay_enabled' => true ), array() ),
 			'a page loaded while eligible, with theme support and locations' => array(
 				array(
 					'is_woopay_enabled'                => true,
 					'is_woopay_global_theme_support_enabled' => true,
+					'express_checkout_product_methods' => array(),
+					'express_checkout_cart_methods'    => array( 'woopay' ),
+				),
+				array(
+					'is_woopay_global_theme_support_enabled' => 'yes',
 					'express_checkout_product_methods' => array(),
 					'express_checkout_cart_methods'    => array( 'woopay' ),
 				),

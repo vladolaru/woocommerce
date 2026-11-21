@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
 use WC_Unit_Test_Case;
 
 // phpcs:disable Generic.Files.OneObjectStructurePerFile.MultipleFound,Squiz.Classes.ClassFileName.NoMatch,SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName -- Focused test doubles live next to the tests they support.
@@ -254,6 +255,25 @@ class EligibilityTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( $expected, $eligibility->is_woopay_express_checkout_configured_at( 'checkout' ) );
 		$this->assertSame( $expected, $eligibility->should_show_woopay_button( 'checkout' ) );
+	}
+
+	/**
+	 * A list stored as null reads the WooPay setting (register row 628), so it selects nothing while WooPay is off. The account
+	 * service reads a null only the enabled methods list and saved cards as never saved; read so, this list would take the
+	 * default list, which names WooPay. The stored option is read through the store's own services, not the fixture's double.
+	 *
+	 * @testdox Should read a stored WooPay location list of null as not configured while WooPay is off.
+	 */
+	public function test_woopay_express_checkout_reads_a_stored_null_location_list_as_off_while_woopay_is_off(): void {
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'platform_checkout'                 => 'no',
+				'express_checkout_checkout_methods' => null,
+			)
+		);
+
+		$this->assertFalse( wc_get_container()->get( Eligibility::class )->is_woopay_express_checkout_configured_at( 'checkout' ) );
 	}
 
 	/**
