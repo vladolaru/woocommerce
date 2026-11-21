@@ -4195,6 +4195,79 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Core's hold-stock job, reading an unpaid order's payment that answers $_dataName, $expected.
+	 *
+	 * An answer with no usable status cannot be used, as a failed read cannot, so the order is kept inside its day. The
+	 * checkout's duplicate-payment check counts the same answers as leaving the payment unknown.
+	 *
+	 * @dataProvider unpaid_order_intent_answers
+	 *
+	 * @param array<string,mixed>|callable $answer   Transport response, or a callable building it from the order.
+	 * @param string                       $expected "cancels it" or "keeps it with no note".
+	 */
+	public function test_unpaid_order_intent_answer_with_no_usable_status_keeps_the_order( $answer, string $expected ): void {
+		$order               = $this->create_unpaid_order( 'requires_payment_method' );
+		$transport           = $this->create_transport();
+		$transport->response = is_callable( $answer ) ? $answer( $order ) : $answer;
+
+		$this->run_unpaid_order_job( $transport );
+
+		$order = $this->reload( $order );
+		$this->assertCount( 1, $this->request_paths( $transport ) );
+		if ( 'cancels it' === $expected ) {
+			$this->assertSame( OrderStatus::CANCELLED, $order->get_status() );
+			return;
+		}
+		$this->assertSame( OrderStatus::PENDING, $order->get_status() );
+		$this->assertSame( 0, $this->count_notes_containing( $order, 'could not be checked' ) + $this->count_notes_containing( $order, 'Unpaid order cancelled' ) );
+	}
+
+	/**
+	 * Answers to an unpaid order's intent read, as the transport returns them, and what the job does with the order.
+	 *
+	 * @return array<string,array{0:array<string,mixed>|callable,1:string}>
+	 */
+	public function unpaid_order_intent_answers(): array {
+		$with_status = static function ( $status ): callable {
+			return static function ( WC_Order $order ) use ( $status ): array {
+				$intent           = self::unpaid_intent( $order, 'succeeded' );
+				$intent['status'] = $status;
+				return self::http_json( 200, $intent );
+			};
+		};
+		$raw         = static function ( string $content_type, string $body ): array {
+			return array(
+				'response' => array( 'code' => 200 ),
+				'headers'  => array( 'content-type' => $content_type ),
+				'body'     => $body,
+			);
+		};
+
+		return array(
+			'an intent awaiting a payment method' => array(
+				static function ( WC_Order $order ): array {
+					return self::http_json( 200, self::unpaid_intent( $order, 'requires_payment_method' ) );
+				},
+				'cancels it',
+			),
+			'a null JSON body'                    => array( $raw( 'application/json', 'null' ), 'keeps it with no note' ),
+			'an empty body'                       => array( $raw( 'application/json', '' ), 'keeps it with no note' ),
+			'a page that is not JSON'             => array( $raw( 'text/html; charset=UTF-8', '<html><body>Bad gateway</body></html>' ), 'keeps it with no note' ),
+			'an intent with no status'            => array(
+				static function ( WC_Order $order ): array {
+					$intent = self::unpaid_intent( $order, 'succeeded' );
+					unset( $intent['status'] );
+					return self::http_json( 200, $intent );
+				},
+				'keeps it with no note',
+			),
+			'an intent whose status is a number'  => array( $with_status( 1 ), 'keeps it with no note' ),
+			'an intent whose status is empty'     => array( $with_status( '' ), 'keeps it with no note' ),
+			'a server error'                      => array( self::platform_error( 500 ), 'keeps it with no note' ),
+		);
+	}
+
+	/**
 	 * @testdox Core's hold-stock job keeps an unpaid order whose payment cannot be read, reads it again at the next run, and lets core cancel it a day after core could first cancel it, with one note and no further read.
 	 */
 	public function test_unpaid_order_whose_payment_cannot_be_read_is_kept_for_a_day(): void {

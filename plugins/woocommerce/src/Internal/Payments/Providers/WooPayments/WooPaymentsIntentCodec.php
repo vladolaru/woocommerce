@@ -404,6 +404,19 @@ class WooPaymentsIntentCodec {
 	}
 
 	/**
+	 * Tell whether a platform answer about an intent can be used: it has a status that is a non-empty string. An empty
+	 * body or a page reaches here as an empty array, so it cannot be used either.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param array<string,mixed> $answer Platform answer to an intent read.
+	 * @return bool
+	 */
+	public static function is_usable_intent_answer( array $answer ): bool {
+		return isset( $answer['status'] ) && is_string( $answer['status'] ) && '' !== $answer['status'];
+	}
+
+	/**
 	 * Tell whether an intent is for an offline payment method, by the first of its payment method options, as client 11.3.0
 	 * reads the method for its on-hold writer (class-wc-payments-api-abstract-intention.php:201-203; Payment_Method::OFFLINE_PAYMENT_METHODS).
 	 *

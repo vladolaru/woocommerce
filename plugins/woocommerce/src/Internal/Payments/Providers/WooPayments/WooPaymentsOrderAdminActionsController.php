@@ -475,7 +475,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 			return null;
 		}
 
-		$intent = isset( $answer['status'] ) && is_string( $answer['status'] ) && '' !== $answer['status'] ? $answer : null;
+		$intent = WooPaymentsIntentCodec::is_usable_intent_answer( $answer ) ? $answer : null;
 		$this->note_unpaid_read_outcome( null, null !== $intent );
 
 		return $intent;

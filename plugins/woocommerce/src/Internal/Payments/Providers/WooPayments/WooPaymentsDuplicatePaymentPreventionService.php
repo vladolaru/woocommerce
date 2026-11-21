@@ -284,7 +284,8 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	 *
 	 * A failed intent fetch lets checkout go on, except for a PHP Error or an order whose stored intent status is
 	 * succeeded, which refuse checkout. When it goes on, it notes the failure for the charge, which decides on it under the
-	 * order payment lock (WooPaymentsPaymentOperationService::get_unread_payment_refusal_tier()).
+	 * order payment lock (WooPaymentsPaymentOperationService::get_unread_payment_refusal_tier()). An answer with no usable
+	 * status is noted the same way, as a read that left the payment unknown.
 	 *
 	 * @param WC_Order           $order       Current order.
 	 * @param WC_Payment_Gateway $gateway     Gateway used to build the return URL.
@@ -325,6 +326,15 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 			$failed_read = array(
 				'intent_id' => $intent_id,
 				'unknown'   => self::leaves_the_payment_unknown( $exception ),
+			);
+
+			return null;
+		}
+
+		if ( ! WooPaymentsIntentCodec::is_usable_intent_answer( $intent ) ) {
+			$failed_read = array(
+				'intent_id' => $intent_id,
+				'unknown'   => true,
 			);
 
 			return null;

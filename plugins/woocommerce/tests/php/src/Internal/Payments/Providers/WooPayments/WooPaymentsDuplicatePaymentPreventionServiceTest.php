@@ -9,6 +9,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
@@ -17,6 +18,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Order;
 use WC_Payment_Gateway;
@@ -1061,6 +1063,95 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$this->assertStringContainsString( 'wcpay_previous_successful_intent=yes', $result['redirect'] );
 		$this->assertSame( 'pi_existing', $order->get_transaction_id() );
 		$this->assertContains( $order->get_status(), wc_get_is_paid_statuses() );
+	}
+
+	/**
+	 * @testdox A read of the attached PaymentIntent on a Pending order storing requires_action that answers $_dataName goes on and notes $expected.
+	 *
+	 * An answer with no usable status says nothing about the payment, so it is noted as unknown, as a failed read is, and
+	 * the charge applies its refusal tiers. The unpaid-order check counts the same answers as unreadable.
+	 *
+	 * @dataProvider provider_attached_intent_answers
+	 *
+	 * @param array<string,mixed>|callable $answer   Transport response, or a callable building it from the order.
+	 * @param string                       $expected "nothing" or "an unknown outcome".
+	 */
+	public function test_an_attached_intent_answer_with_no_usable_status_is_noted_as_unknown( $answer, string $expected ): void {
+		$order = $this->create_order( 'hash', 'pending' );
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		$order->update_meta_data( '_intention_status', 'requires_action' );
+		$order->save();
+		$transport           = new FakeHttpClient();
+		$transport->response = is_callable( $answer ) ? $answer( $this->create_intent_response( $order, 'succeeded', 1200 ) ) : $answer;
+		$api_client          = new Client();
+		$api_client->init( $transport, wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( TransportLog::class ) );
+		$failed_read = array( 'left' => 'from an earlier call' );
+
+		$result = $this->create_service( $this->create_session(), $api_client )
+			->check_payment_intent_attached_to_order_succeeded( $order, $this->create_gateway(), $failed_read );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertNull( $result );
+		$this->assertSame( 1, $transport->request_count );
+		$this->assertSame( array( 'pending', '' ), array( $order->get_status(), $order->get_transaction_id() ), 'The order is left as it is.' );
+		$noted = array(
+			'intent_id' => 'pi_existing',
+			'unknown'   => true,
+		);
+		$this->assertSame( 'nothing' === $expected ? null : $noted, $failed_read );
+	}
+
+	/**
+	 * Answers to the attached intent's read, as the transport returns them, and what the check notes for the charge.
+	 *
+	 * @return array<string,array{0:array<string,mixed>|callable,1:string}>
+	 */
+	public function provider_attached_intent_answers(): array {
+		$with_status = static function ( $status ): callable {
+			return static function ( array $intent ) use ( $status ): array {
+				$intent['status'] = $status;
+				return self::transport_answer( 200, 'application/json', (string) wp_json_encode( $intent ) );
+			};
+		};
+
+		$server_error = array(
+			'code'    => 'api_error',
+			'message' => 'Internal server error.',
+		);
+
+		return array(
+			'an intent awaiting a payment method' => array( $with_status( 'requires_payment_method' ), 'nothing' ),
+			'a null JSON body'                    => array( self::transport_answer( 200, 'application/json', 'null' ), 'an unknown outcome' ),
+			'an empty body'                       => array( self::transport_answer( 200, 'application/json', '' ), 'an unknown outcome' ),
+			'a page that is not JSON'             => array( self::transport_answer( 200, 'text/html; charset=UTF-8', '<html><body>Bad gateway</body></html>' ), 'an unknown outcome' ),
+			'an intent with no status'            => array(
+				static function ( array $intent ): array {
+					unset( $intent['status'] );
+					return self::transport_answer( 200, 'application/json', (string) wp_json_encode( $intent ) );
+				},
+				'an unknown outcome',
+			),
+			'an intent whose status is a number'  => array( $with_status( 1 ), 'an unknown outcome' ),
+			'an intent whose status is empty'     => array( $with_status( '' ), 'an unknown outcome' ),
+			'a server error'                      => array( self::transport_answer( 500, 'application/json', (string) wp_json_encode( $server_error ) ), 'an unknown outcome' ),
+		);
+	}
+
+	/**
+	 * Build a transport response.
+	 *
+	 * @param int    $code         HTTP status.
+	 * @param string $content_type Content type.
+	 * @param string $body         Raw body.
+	 * @return array<string,mixed>
+	 */
+	private static function transport_answer( int $code, string $content_type, string $body ): array {
+		return array(
+			'response' => array( 'code' => $code ),
+			'headers'  => array( 'content-type' => $content_type ),
+			'body'     => $body,
+		);
 	}
 
 	/**
