@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling;
 
-use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\LocalizationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
@@ -206,32 +205,10 @@ class StripeBillingInvoiceService {
 	}
 
 	/**
-	 * Mark the invoice paid when a parent order's payment completes from On hold or Cancelled.
-	 *
-	 * Core's payment hook fires only from Pending or Failed, so a payment confirmed while the merchant held the order,
-	 * or a held authorization that is captured, would leave the first invoice open.
-	 *
-	 * @internal
-	 *
-	 * @param mixed $order_id Order ID.
-	 * @param mixed $from     Status the order left.
-	 * @param mixed $to       Status the order reached.
-	 * @throws ApiException When the platform refuses to mark the invoice paid for another reason than it being paid already.
-	 */
-	public function maybe_record_invoice_payment_after_hold( $order_id, $from, $to ): void {
-		if ( ! in_array( $from, array( OrderStatus::ON_HOLD, OrderStatus::CANCELLED ), true ) || ! in_array( $to, wc_get_is_paid_statuses(), true ) ) {
-			return;
-		}
-
-		$this->maybe_record_invoice_payment( $order_id );
-	}
-
-	/**
 	 * Mark the invoice of a Stripe-billed subscription paid, without charging, once the store took the payment.
 	 *
-	 * Runs when a parent order is paid, from whatever status it was in, and when a subscription without a Stripe subscription
-	 * is renewed by hand. A manual subscription then renews automatically with the payment method of this order.
-	 * A subscription that has ended is skipped: Stripe has cancelled it, so there is no invoice left to pay.
+	 * Runs when a parent order is paid, and when a subscription without a Stripe subscription is renewed by hand.
+	 * A manual subscription then renews automatically with the payment method of this order.
 	 *
 	 * @internal
 	 *
@@ -254,7 +231,7 @@ class StripeBillingInvoiceService {
 			}
 
 			$invoice_id = $this->get_subscription_invoice_id( $subscription );
-			if ( ! $invoice_id || ! $this->get_subscription_service()->is_wcpay_subscription( $subscription ) || ( function_exists( 'wcs_get_subscription_ended_statuses' ) && $subscription->has_status( wcs_get_subscription_ended_statuses() ) ) ) {
+			if ( ! $invoice_id || ! $this->get_subscription_service()->is_wcpay_subscription( $subscription ) ) {
 				continue;
 			}
 
