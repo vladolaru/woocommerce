@@ -1437,8 +1437,9 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 		rectSpy.mockRestore();
 	} );
 
-	// Client 11.2.0 woopay-express-checkout-button.js:383-412: the brand as an image; here the card method's card label
-	// image, and the name as text for a brand with none.
+	// Client 11.3.0 woopay-express-checkout-button.js:383-412 and client/utils/woopay-card-brands.ts: the brand as an image,
+	// and for Diners Club too, which the card label does not show; here the WooPay button's own list of images (the card
+	// method's card label images and Diners Club), and the name as text for a brand with none.
 	it.each( [
 		[
 			'visa',
@@ -1451,22 +1452,35 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 		],
 		[
 			'diners',
-			{ tag: 'SPAN', src: null, alt: null, text: 'Diners Club' },
+			{
+				tag: 'IMG',
+				src: 'https://example.test/diners-color.svg',
+				alt: 'Diners Club',
+				text: '',
+			},
 		],
+		[ 'discover', { tag: 'SPAN', src: null, alt: null, text: 'Discover' } ],
 	] )(
-		'shows the preferred %s card as its brand image when the card method has one',
+		'shows the preferred %s card as its brand image when the WooPay button has one',
 		( brand, expected ) => {
 			answerButtonRequests();
 			const rectSpy = jest
 				.spyOn( window.HTMLElement.prototype, 'getBoundingClientRect' )
 				.mockReturnValue( { width: 220 } );
+			const visaIcon = {
+				id: 'visa',
+				alt: 'Visa',
+				src: 'https://example.test/visa-color.svg',
+			};
 			getMockPaymentMethodSettings().paymentMethodsConfig = {
 				card: {
-					cardBrandIcons: [
+					cardBrandIcons: [ visaIcon ],
+					woopayCardBrandIcons: [
+						visaIcon,
 						{
-							id: 'visa',
-							alt: 'Visa',
-							src: 'https://example.test/visa-color.svg',
+							id: 'diners',
+							alt: 'Diners Club',
+							src: 'https://example.test/diners-color.svg',
 						},
 					],
 				},

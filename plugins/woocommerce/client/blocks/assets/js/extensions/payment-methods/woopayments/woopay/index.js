@@ -330,12 +330,12 @@ const getWooPayButtonAriaLabel = ( type, preferredCard ) => {
 	return getWooPayButtonLabel( type );
 };
 
-// Client 11.2.0 woopay-express-checkout-button.js:383-412 shows the preferred card's brand as an image. The image is the
-// one the card method shows for the card label (paymentMethodsConfig.card.cardBrandIcons); a brand with none keeps its
-// name as text.
+// Client 11.3.0 woopay-express-checkout-button.js:383-412 shows the preferred card's brand as an image. The image is the
+// one the card method shows for the card label, and one for Diners Club, which the card label does not show
+// (paymentMethodsConfig.card.woopayCardBrandIcons); a brand with none keeps its name as text.
 const getPreferredCardIconUrl = ( preferredCard ) => {
 	const brand = normalizeCardBrand( preferredCard.brand );
-	const icons = settings.paymentMethodsConfig?.card?.cardBrandIcons;
+	const icons = settings.paymentMethodsConfig?.card?.woopayCardBrandIcons;
 	const icon = Array.isArray( icons )
 		? icons.find( ( entry ) => entry?.id === brand )
 		: null;

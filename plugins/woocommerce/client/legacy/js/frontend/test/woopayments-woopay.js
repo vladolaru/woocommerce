@@ -1015,8 +1015,9 @@ describe( 'WooPayments WooPay checkout', () => {
 			rectSpy.mockRestore();
 		} );
 
-		// Client 11.2.0 woopay-express-checkout-button.js:383-412: the brand as an image; here the checkout's card label
-		// image, and the name as text for a brand with none.
+		// Client 11.3.0 woopay-express-checkout-button.js:383-412 and client/utils/woopay-card-brands.ts: the brand as an
+		// image, Diners Club included; here the WooPay button's list of images (the checkout's card label images and Diners
+		// Club), and the name as text for a brand with none.
 		test.each( [
 			[
 				'visa',
@@ -1029,10 +1030,19 @@ describe( 'WooPayments WooPay checkout', () => {
 			],
 			[
 				'diners',
-				{ tag: 'SPAN', src: null, alt: null, text: 'Diners Club' },
+				{
+					tag: 'IMG',
+					src: 'https://example.test/diners-color.svg',
+					alt: 'Diners Club',
+					text: '',
+				},
+			],
+			[
+				'discover',
+				{ tag: 'SPAN', src: null, alt: null, text: 'Discover' },
 			],
 		] )(
-			'shows the preferred %s card as its brand image when the checkout has one',
+			'shows the preferred %s card as its brand image when the WooPay button has one',
 			( brand, expected ) => {
 				const rectSpy = jest
 					.spyOn( window.HTMLElement.prototype, 'getBoundingClientRect' )
@@ -1042,6 +1052,11 @@ describe( 'WooPayments WooPay checkout', () => {
 						id: 'visa',
 						alt: 'Visa',
 						src: 'https://example.test/visa-color.svg',
+					},
+					{
+						id: 'diners',
+						alt: 'Diners Club',
+						src: 'https://example.test/diners-color.svg',
 					},
 				];
 				window.localStorage.setItem(

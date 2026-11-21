@@ -1045,8 +1045,9 @@ class SessionController implements RegisterHooksInterface {
 				// built the way core's Blocks settings build it (AssetDataRegistry::get_store_pages()); never the browser URL.
 				'woopaySourceUrl'           => (string) get_permalink( wc_get_page_id( 'checkout' ) ),
 				// The preferred card's brand image on the WooPay button (client 11.2.0
-				// woopay-express-checkout-button.js:383-412), the images the checkout shows for the card label.
-				'cardBrandIcons'            => $this->get_checkout_assets()->get_card_brand_icons(),
+				// woopay-express-checkout-button.js:383-412), the images the checkout shows for the card label, and Diners Club
+				// (client 11.3.0 client/utils/woopay-card-brands.ts).
+				'cardBrandIcons'            => $this->get_checkout_assets()->get_card_brand_icons( true ),
 			),
 			array_slice( $config, 0, $flags_end, true ),
 			$this->get_checkout_assets()->get_shared_script_config(),

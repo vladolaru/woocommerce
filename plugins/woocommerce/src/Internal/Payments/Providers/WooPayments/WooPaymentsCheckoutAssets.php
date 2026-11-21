@@ -199,6 +199,18 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 	);
 
 	/**
+	 * Card brand icons only the WooPay button shows, for the preferred card.
+	 *
+	 * Client 11.3.0 shows Diners Club on the WooPay button (client/utils/woopay-card-brands.ts) and not in the card label
+	 * (client/utils/card-brands.ts:35-59).
+	 *
+	 * @var array<string,string>
+	 */
+	private const WOOPAY_BUTTON_CARD_BRAND_ICONS = array(
+		'diners' => 'Diners Club',
+	);
+
+	/**
 	 * Shopper-facing card brand icon asset paths.
 	 *
 	 * Client 11.1.0 draws the checkout card strip from getCardBrands() (client/utils/card-brands.ts): payment-method-icons/{visa,mastercard,amex,discover}, cards/{jcb,unionpay,cartes_bancaires}.
@@ -213,6 +225,7 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 		'jcb'              => 'payment-methods/jcb-color.svg',
 		'unionpay'         => 'payment-methods/unionpay-color.svg',
 		'cartes_bancaires' => 'payment-methods/cartes_bancaires-color.svg',
+		'diners'           => 'payment-methods/diners-color.svg',
 	);
 
 	/**
@@ -1167,6 +1180,7 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 				'isExpressCheckout'      => false,
 				'forceNetworkSavedCards' => $this->should_force_network_saved_cards(),
 				'cardBrandIcons'         => $this->get_card_brand_icons(),
+				'woopayCardBrandIcons'   => $this->get_card_brand_icons( true ),
 				'showSaveOption'         => $this->should_show_card_save_option( $saved_cards_enabled ),
 				'testingInstructions'    => $this->get_card_testing_instructions(),
 				'countries'              => array(),
@@ -1505,12 +1519,18 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 	 *
 	 * @since 11.4.0
 	 *
+	 * @param bool $for_woopay_button Whether to add the brands only the WooPay button shows.
 	 * @return array<int,array{id:string,alt:string,src:string}>
 	 */
-	public function get_card_brand_icons(): array {
-		$icons = array();
+	public function get_card_brand_icons( bool $for_woopay_button = false ): array {
+		$icons  = array();
+		$labels = self::get_card_brand_icon_labels();
 
-		foreach ( self::get_card_brand_icon_labels() as $brand => $label ) {
+		if ( $for_woopay_button ) {
+			$labels = array_merge( $labels, self::WOOPAY_BUTTON_CARD_BRAND_ICONS );
+		}
+
+		foreach ( $labels as $brand => $label ) {
 			$asset_path = self::CARD_BRAND_ICON_ASSETS[ $brand ] ?? 'payment-methods/' . $brand . '.svg';
 			$icons[]    = array(
 				'id'  => $brand,

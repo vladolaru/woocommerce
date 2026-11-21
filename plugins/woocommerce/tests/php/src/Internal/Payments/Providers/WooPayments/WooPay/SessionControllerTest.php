@@ -453,6 +453,8 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertStringContainsString( '/assets/client/blocks/wc-woopayments-phone-validation.js', $this->get_localized_woopay_config()['woopayPhoneValidationScriptUrl'] );
 		$card_brand_icons = array_column( $this->get_localized_woopay_config()['cardBrandIcons'], 'src', 'id' );
 		$this->assertStringContainsString( '/assets/images/payment-methods/visa-color.svg', $card_brand_icons['visa'], 'The WooPay button shows the checkout card label images.' );
+		// Client 11.3.0 client/utils/woopay-card-brands.ts: the WooPay button also shows Diners Club as an image.
+		$this->assertStringContainsString( '/assets/images/payment-methods/diners-color.svg', $card_brand_icons['diners'], 'The WooPay button shows a Diners Club image.' );
 	}
 
 	/**

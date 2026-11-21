@@ -144,8 +144,9 @@
 		return brandDisplayNames[ normalizedBrand ] || normalizedBrand;
 	}
 
-	// Client 11.2.0 woopay-express-checkout-button.js:383-412 shows the preferred card's brand as an image. The image is
-	// the one the checkout shows for the card label (cardBrandIcons); a brand with none keeps its name as text.
+	// Client 11.3.0 woopay-express-checkout-button.js:383-412 shows the preferred card's brand as an image. The image is
+	// the one the checkout shows for the card label, or the Diners Club one (cardBrandIcons); a brand with none keeps its
+	// name as text.
 	function getPreferredCardIconUrl( preferredCard ) {
 		var brand = normalizeCardBrand( preferredCard.brand );
 		var icon = ( Array.isArray( config.cardBrandIcons )

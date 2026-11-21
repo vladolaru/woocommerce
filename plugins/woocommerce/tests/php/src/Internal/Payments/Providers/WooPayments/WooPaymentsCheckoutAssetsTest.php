@@ -1736,6 +1736,36 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should give the WooPay button a Diners Club image beside the card label images, which do not show it.
+	 *
+	 * Client 11.3.0 shows a Diners Club image on the WooPay button (client/utils/woopay-card-brands.ts) and none in the card
+	 * label (client/utils/card-brands.ts:35-59).
+	 */
+	public function test_get_payment_fields_js_config_gives_the_woopay_button_a_diners_club_icon(): void {
+		update_option( 'woocommerce_default_country', 'FR' );
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $this->create_account_service( true ), $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new PaymentMethodRegistry() );
+
+		$card = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS )['paymentMethodsConfig']['card'];
+
+		$this->assertNotContains( 'diners', array_column( $card['cardBrandIcons'], 'id' ), 'The card label does not show Diners Club.' );
+		$this->assertSame(
+			array_merge(
+				$card['cardBrandIcons'],
+				array(
+					array(
+						'id'  => 'diners',
+						'alt' => 'Diners Club',
+						'src' => WC()->plugin_url() . '/assets/images/payment-methods/diners-color.svg',
+					),
+				)
+			),
+			$card['woopayCardBrandIcons'],
+			'The WooPay button shows the card label brands, Cartes Bancaires in France included, and Diners Club.'
+		);
+	}
+
+	/**
 	 * Store and account countries, and the card brands the checkout shows for them.
 	 *
 	 * @return array<string,array{0:string,1:string,2:string,3:array<string,string>,4:string[]}>
