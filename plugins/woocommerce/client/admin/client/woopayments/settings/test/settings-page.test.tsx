@@ -2580,9 +2580,56 @@ describe( 'WooPaymentsSettingsPage', () => {
 		expect(
 			screen.getAllByText( 'Unavailable with manual capture' )
 		).toHaveLength( 2 );
+	} );
+
+	// Client 11.3.0 settings/payment-methods-section/index.js:44,83-98: the dismissal is component state only.
+	it( 'dismisses the manual-capture banner for this mount only, and keeps focus on the list', async () => {
+		const manualCaptureBanner =
+			"Manual capture is enabled, so any payment methods that don't support it have been automatically disabled.";
+		mockUseManualCapture.mockReturnValue( [ true, noop ] );
+		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [
+			'card',
+			'affirm',
+		] );
+		mockApiFetch.mockClear();
+
+		const { unmount } = render( <WooPaymentsSettingsPage /> );
+		const section = getSettingsSectionByName(
+			'Payments accepted on checkout'
+		);
+
 		expect(
-			screen.queryByRole( 'button', { name: 'Dismiss this notice' } )
+			within( section ).getByText( manualCaptureBanner )
+		).toBeVisible();
+		const dismissButton = within( section ).getByRole( 'button', {
+			name: 'Close',
+		} );
+
+		await userEvent.click( dismissButton );
+
+		expect(
+			within( section ).queryByText( manualCaptureBanner )
 		).not.toBeInTheDocument();
+		expect(
+			within( section ).queryByRole( 'button', { name: 'Close' } )
+		).not.toBeInTheDocument();
+		expect(
+			within( section ).getAllByRole( 'checkbox' )[ 0 ].closest( 'li' )
+		).toHaveFocus();
+		expect(
+			mockApiFetch.mock.calls.filter(
+				( [ options ] ) => options?.method === 'post'
+			)
+		).toHaveLength( 0 );
+
+		unmount();
+		render( <WooPaymentsSettingsPage /> );
+
+		expect(
+			within(
+				getSettingsSectionByName( 'Payments accepted on checkout' )
+			).getByText( manualCaptureBanner )
+		).toBeVisible();
 	} );
 
 	it( 'uses account-country branding for Afterpay and Clearpay settings rows', () => {

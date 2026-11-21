@@ -2,6 +2,7 @@
  * External dependencies
  */
 import { Notice } from '@wordpress/components';
+import { useRef, useState } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 
 /**
@@ -117,6 +118,33 @@ const PaymentMethodsSettingsSection = () => {
 			! BNPL_METHOD_IDS.includes( methodId )
 	);
 	const [ isManualCaptureEnabled ] = useManualCapture() as BooleanSetting;
+	// Client 11.3.0 settings/payment-methods-section/index.js:44,83-98: the dismissal lives in component state only, so
+	// the notice is back after a reload or when the section mounts again.
+	const [
+		isManualCaptureNoticeDismissed,
+		setIsManualCaptureNoticeDismissed,
+	] = useState( false );
+	const manualCaptureNoticeRef = useRef< HTMLDivElement >( null );
+
+	const dismissManualCaptureNotice = () => {
+		// The dismiss button leaves the page with the notice. Keep keyboard focus on the list, as the duplicate payment
+		// method notice does: the first checkbox that can still change, else the first row. Manual capture disables most rows.
+		const noticeElement = manualCaptureNoticeRef.current;
+		if (
+			noticeElement?.contains( noticeElement.ownerDocument.activeElement )
+		) {
+			const group = noticeElement.parentElement;
+			(
+				group?.querySelector< HTMLElement >(
+					'.woopayments-settings-payment-method-item input[type="checkbox"]:not(:disabled)'
+				) ??
+				group?.querySelector< HTMLElement >(
+					'.woopayments-settings-payment-method-item'
+				)
+			)?.focus();
+		}
+		setIsManualCaptureNoticeDismissed( true );
+	};
 
 	return (
 		<SettingsSection
@@ -125,18 +153,22 @@ const PaymentMethodsSettingsSection = () => {
 			description={ <PaymentMethodsSectionDescription /> }
 		>
 			<FieldGroup title={ __( 'Payment methods', 'woocommerce' ) }>
-				{ isManualCaptureEnabled && (
-					<Notice
-						status="warning"
-						isDismissible={ false }
-						className="woopayments-settings-payment-methods__manual-capture-notice"
-					>
-						{ __(
-							"Manual capture is enabled, so any payment methods that don't support it have been automatically disabled.",
-							'woocommerce'
-						) }
-					</Notice>
-				) }
+				{ isManualCaptureEnabled &&
+					! isManualCaptureNoticeDismissed && (
+						<div ref={ manualCaptureNoticeRef }>
+							<Notice
+								status="warning"
+								isDismissible
+								onRemove={ dismissManualCaptureNotice }
+								className="woopayments-settings-payment-methods__manual-capture-notice"
+							>
+								{ __(
+									"Manual capture is enabled, so any payment methods that don't support it have been automatically disabled.",
+									'woocommerce'
+								) }
+							</Notice>
+						</div>
+					) }
 				<SettingsPaymentMethodsList
 					methodIds={ standardPaymentMethodIds }
 				/>
