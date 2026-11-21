@@ -1474,6 +1474,8 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @testdox Should read a checkout location list stored as $name for the buttons and the charge's allowed types.
 	 * @testWith ["an empty string", "", [], []]
+	 *           ["false", false, [], []]
+	 *           ["0", 0, [], []]
 	 *           ["an empty array", [], [], []]
 	 *           ["null, which falls back to the wallet gateways", null, ["payment_request"], ["card"]]
 	 *           ["a list with payment_request", ["payment_request"], ["payment_request"], ["card"]]

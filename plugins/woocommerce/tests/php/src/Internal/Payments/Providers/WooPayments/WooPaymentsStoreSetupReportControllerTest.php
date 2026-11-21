@@ -374,6 +374,41 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Manual capture and saved cards each come from their own key: with opposite values stored, each field follows its own.
+	 *
+	 * @testdox Should report manual capture and saved cards from their own keys: $_dataName.
+	 * @dataProvider provider_opposite_capture_and_saved_cards
+	 *
+	 * @param string $manual_capture Stored manual capture.
+	 * @param string $saved_cards    Stored saved cards.
+	 */
+	public function test_store_setup_sync_reports_manual_capture_and_saved_cards_from_their_own_keys( string $manual_capture, string $saved_cards ): void {
+		$snapshot = $this->send_store_setup_snapshot(
+			array(
+				'enabled'        => 'yes',
+				'test_mode'      => 'yes',
+				'manual_capture' => $manual_capture,
+				'saved_cards'    => $saved_cards,
+			)
+		);
+
+		$this->assertSame( 'yes' === $manual_capture, $snapshot['manual_capture_enabled'] );
+		$this->assertSame( 'yes' === $saved_cards, $snapshot['saved_cards_enabled'] );
+	}
+
+	/**
+	 * Provide opposite manual capture and saved cards values.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public function provider_opposite_capture_and_saved_cards(): array {
+		return array(
+			'manual capture on, saved cards off' => array( 'yes', 'no' ),
+			'manual capture off, saved cards on' => array( 'no', 'yes' ),
+		);
+	}
+
+	/**
 	 * No setting named saved_cards_enabled exists, here or in the WooPayments extension, so the snapshot reads saved cards
 	 * from saved_cards alone.
 	 *

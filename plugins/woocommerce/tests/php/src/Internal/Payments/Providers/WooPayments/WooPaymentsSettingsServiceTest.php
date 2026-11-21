@@ -1508,6 +1508,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->assertIsArray( $result, is_wp_error( $result ) ? $result->get_error_message() : '' );
 		$saved = get_option( 'woocommerce_woocommerce_payments_settings' );
 		$this->assertSame( $expected ? array( 'card' ) : array( 'card', 'ideal' ), $saved['upe_enabled_payment_method_ids'] );
+		$this->assertSame( $stored, $saved['manual_capture'], 'A save that omits manual capture stores it as it was.' );
 	}
 
 	/**
@@ -1680,6 +1681,35 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			'an empty string' => array( '', array( 'card' ) ),
 			'card'            => array( array( 'card' ), array( 'card' ) ),
 		);
+	}
+
+	/**
+	 * Saving back the methods the page shows does not turn on a gateway that is off: the shown card is not a newly added
+	 * method, so `enabled` stays `no` (card being added is what writes `yes`).
+	 *
+	 * @testdox Saving back the methods the page shows keeps the gateway off when the list was stored as $_dataName.
+	 * @dataProvider provide_stored_enabled_methods_lists
+	 *
+	 * @param mixed    $stored   Stored list.
+	 * @param string[] $expected Expected stored list after the save.
+	 */
+	public function test_update_settings_keeps_the_gateway_off_when_the_shown_methods_are_saved_back( $stored, array $expected ): void {
+		$this->set_card_and_ideal_account_data();
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'enabled'                        => 'no',
+				'test_mode'                      => 'yes',
+				'upe_enabled_payment_method_ids' => $stored,
+			)
+		);
+
+		$result = $this->sut->update_settings( array( 'enabled_payment_method_ids' => $this->sut->get_settings()['enabled_payment_method_ids'] ) );
+
+		$this->assertIsArray( $result, is_wp_error( $result ) ? $result->get_error_message() : '' );
+		$saved = get_option( 'woocommerce_woocommerce_payments_settings' );
+		$this->assertSame( 'no', $saved['enabled'] );
+		$this->assertSame( $expected, $saved['upe_enabled_payment_method_ids'] );
 	}
 
 	/**

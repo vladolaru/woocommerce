@@ -232,6 +232,8 @@ class EligibilityTest extends WC_Unit_Test_Case {
 	 *
 	 * @testdox Should read a WooPay location list stored as $name the way the WooPayments extension does.
 	 * @testWith ["an empty string", "", false]
+	 *           ["false", false, false]
+	 *           ["0", 0, false]
 	 *           ["an empty array", [], false]
 	 *           ["null, which reads the WooPay setting", null, true]
 	 *           ["a list with woopay", ["woopay"], true]
