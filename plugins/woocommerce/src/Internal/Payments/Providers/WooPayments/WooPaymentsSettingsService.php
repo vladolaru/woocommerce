@@ -430,6 +430,7 @@ class WooPaymentsSettingsService {
 		$settings                = $this->account_service->get_gateway_settings();
 		$previous_settings       = $settings;
 		$was_woopay_enabled      = 'yes' === ( $settings['platform_checkout'] ?? 'no' );
+		$is_woopay_eligible      = $this->woopay_eligibility->is_woopay_eligible();
 		$payment_request_enabled = array_key_exists( 'is_payment_request_enabled', $params )
 			? $this->is_yes( $this->normalize_setting_value( $params['is_payment_request_enabled'], 'bool' ) )
 			: null;
@@ -443,14 +444,18 @@ class WooPaymentsSettingsService {
 		$is_link_woopay_conflict = fn( array $method_ids, bool $is_woopay_on ): bool => $is_woopay_on
 			&& in_array( 'card', $method_ids, true )
 			&& in_array( 'link', $method_ids, true )
-			&& $this->woopay_eligibility->is_woopay_eligible();
+			&& $is_woopay_eligible;
 		// Read the stored list as persistence stores it, through sanitize_key() (the synchronizer's normalize_string_list()).
 		$stored_method_ids       = array_map( 'sanitize_key', $this->normalize_payment_method_ids( $this->get_array_setting( $settings, 'upe_enabled_payment_method_ids', array( 'card' ) ) ) );
 		$is_woopay_on_after_save = array_key_exists( 'is_woopay_enabled', $params )
 			? $this->is_yes( $this->normalize_setting_value( $params['is_woopay_enabled'], 'bool' ) )
 			: $was_woopay_enabled;
+		$method_ids_after_save   = null !== $enabled_methods_update ? $enabled_methods_update['requested'] : $stored_method_ids;
+		// While the account is ineligible the page hides WooPay, so a save keeps the stored choice, unless it leaves Link on:
+		// then WooPay is written off, as onboarding does, so the two are not both on when the account is eligible again.
+		$keeps_woopay = ! $is_woopay_eligible && ! ( in_array( 'card', $method_ids_after_save, true ) && in_array( 'link', $method_ids_after_save, true ) );
 		if (
-			$is_link_woopay_conflict( null !== $enabled_methods_update ? $enabled_methods_update['requested'] : $stored_method_ids, $is_woopay_on_after_save )
+			$is_link_woopay_conflict( $method_ids_after_save, $is_woopay_on_after_save )
 			&& ! $is_link_woopay_conflict( $stored_method_ids, $was_woopay_enabled )
 		) {
 			return $this->enabled_payment_method_ids_error(
@@ -475,7 +480,7 @@ class WooPaymentsSettingsService {
 				continue;
 			}
 
-			if ( $this->should_skip_local_setting_update_in_dev_mode( $request_key ) ) {
+			if ( $this->should_skip_local_setting_update_in_dev_mode( $request_key ) || ( $keeps_woopay && 'is_woopay_enabled' === $request_key ) ) {
 				continue;
 			}
 
@@ -574,7 +579,7 @@ class WooPaymentsSettingsService {
 			);
 		}
 		$settings = $result['settings'];
-		$this->record_woopay_settings_events( $params, $previous_settings, $settings );
+		$this->record_woopay_settings_events( $params, $previous_settings, $settings, $is_woopay_eligible );
 		// The platform gets the store setup report now, inside the save (client 11.1.0
 		// includes/admin/class-wc-rest-payments-settings-controller.php:642-643); the scheduled sync hook does not fire here.
 		$this->store_setup_report_controller->handle_wcpay_store_setup_sync();
@@ -587,11 +592,12 @@ class WooPaymentsSettingsService {
 	 * button locations when WooPay is on and a location list was sent (client 11.1.0
 	 * `includes/class-wc-payment-gateway-wcpay.php:3147-3184`, `includes/admin/class-wc-rest-payments-settings-controller.php:1187-1229`).
 	 *
-	 * @param array<string,mixed> $params   Request parameters.
-	 * @param array<string,mixed> $previous Settings before the update.
-	 * @param array<string,mixed> $settings Settings after the update.
+	 * @param array<string,mixed> $params      Request parameters.
+	 * @param array<string,mixed> $previous    Settings before the update.
+	 * @param array<string,mixed> $settings    Settings after the update.
+	 * @param bool                $is_eligible Whether the account is eligible for WooPay.
 	 */
-	private function record_woopay_settings_events( array $params, array $previous, array $settings ): void {
+	private function record_woopay_settings_events( array $params, array $previous, array $settings, bool $is_eligible ): void {
 		$tracking    = $this->frontend_tracking_controller;
 		$properties  = array( 'test_mode' => $this->account_service->is_test_mode_enabled() ? 1 : 0 );
 		$is_enabled  = 'yes' === ( $settings['platform_checkout'] ?? 'no' );
@@ -612,7 +618,7 @@ class WooPaymentsSettingsService {
 		foreach ( array( 'product', 'cart', 'checkout' ) as $location ) {
 			$locations[ $location . '_enabled' ] = in_array( 'woopay', $this->get_array_setting( $settings, 'express_checkout_' . $location . '_methods' ), true );
 		}
-		if ( $is_enabled && array() !== array_intersect_key( $params, array_flip( array( 'express_checkout_product_methods', 'express_checkout_cart_methods', 'express_checkout_checkout_methods' ) ) ) ) {
+		if ( $is_enabled && $is_eligible && array() !== array_intersect_key( $params, array_flip( array( 'express_checkout_product_methods', 'express_checkout_cart_methods', 'express_checkout_checkout_methods' ) ) ) ) {
 			$tracking->record_woopay_admin_event( 'woopay_express_button_locations_updated', $locations );
 		}
 	}

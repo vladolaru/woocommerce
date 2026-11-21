@@ -1281,6 +1281,8 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_update_settings_records_woopay_last_disable_date( string $scenario, array $stored_settings, array $update, string $platform_checkout, ?string $disable_date ): void {
 		unset( $scenario );
+		// An eligible account: while it is not, a save keeps the stored WooPay choice (see the ineligible rows below).
+		$this->store_woopay_account( 'eligible' );
 		update_option( 'woocommerce_woocommerce_payments_settings', $stored_settings );
 
 		$expected_dates = array( $disable_date ?? gmdate( 'Y-m-d' ) );
@@ -1576,6 +1578,8 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 * @param bool  $stored_on Whether the stored value reads as on.
 	 */
 	public function test_update_settings_reads_the_stored_woopay_as_the_extension_does_when_turning_it_off( $stored, bool $stored_on ): void {
+		// An eligible account: while it is not, a save keeps the stored WooPay choice (see the ineligible rows below).
+		$this->store_woopay_account( 'eligible' );
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'platform_checkout' => $stored ) );
 		$recorded = array();
 		$capture  = function ( $properties, $event_name ) use ( &$recorded ) {
@@ -1781,6 +1785,8 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 * `update_is_woopay_global_theme_support_enabled()` and `WooPay_Tracker::woopay_locations_updated()`.
 	 */
 	public function test_update_settings_records_woopay_admin_tracks_events(): void {
+		// An eligible account: while it is not, a save keeps the stored WooPay choice (see the ineligible rows below).
+		$this->store_woopay_account( 'eligible' );
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'platform_checkout' => 'no' ) );
 		$recorded = array();
 		$capture  = function ( $properties, $event_name ) use ( &$recorded ) {
@@ -1803,6 +1809,407 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->assertArrayHasKey( 'test_mode', $recorded['wcadmin_woopay_enabled'] );
 		$this->assertTrue( $recorded['wcadmin_woopay_express_button_locations_updated']['cart_enabled'] );
 		$this->assertFalse( $recorded['wcadmin_woopay_express_button_locations_updated']['product_enabled'] );
+	}
+
+	/**
+	 * While the account is not eligible for WooPay the page hides WooPay and posts it as off, so a save keeps the stored WooPay
+	 * choice and writes everything else (N-2036). Nothing that follows a change to off happens: no disable date, no "disabled"
+	 * event, and no write takes WooPay from "yes" to off, which is what removes the WooPay webhooks. The stored shape is kept
+	 * byte for byte, so a stored "1", 1 or true is not rewritten either.
+	 *
+	 * @testdox A page save keeps the stored WooPay choice while the account is not eligible: $_dataName.
+	 * @dataProvider provide_ineligible_woopay_page_saves
+	 *
+	 * @param string $account Account state.
+	 * @param mixed  $stored  Stored `platform_checkout`.
+	 */
+	public function test_update_settings_keeps_the_stored_woopay_while_the_account_is_ineligible( string $account, $stored ): void {
+		$this->store_woopay_account( $account );
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'enabled'                        => 'yes',
+				'platform_checkout'              => $stored,
+				'upe_enabled_payment_method_ids' => array( 'card' ),
+				'payment_request_button_size'    => 'small',
+			)
+		);
+		$params = $this->get_page_save_params( array( 'payment_request_button_size' => 'large' ) );
+		$this->assertFalse( $params['is_woopay_enabled'], 'The page posts WooPay as off while the account is not eligible.' );
+
+		list( $result, $events, $turned_off ) = $this->save_and_record_woopay_effects( $params );
+
+		$this->assertIsArray( $result );
+		$saved = get_option( 'woocommerce_woocommerce_payments_settings' );
+		$this->assertSame( $stored, $saved['platform_checkout'] );
+		$this->assertSame( 'large', $saved['payment_request_button_size'] );
+		$this->assertArrayNotHasKey( 'platform_checkout_last_disable_date', $saved );
+		$this->assertArrayNotHasKey( 'wcadmin_woopay_disabled', $events );
+		$this->assertFalse( $turned_off, 'No write takes WooPay from on to off, so the WooPay webhooks stay.' );
+	}
+
+	/**
+	 * Provide ineligible account states and stored WooPay values: the three ways the account is not eligible
+	 * (WooPay/Eligibility::is_woopay_eligible()), WooPay stored off, and the shapes only another writer stores.
+	 *
+	 * @return array<string,array{0:string,1:mixed}>
+	 */
+	public function provide_ineligible_woopay_page_saves(): array {
+		return array(
+			'under review, WooPay on'                  => array( 'under review', 'yes' ),
+			'platform flag false, WooPay on'           => array( 'flag false', 'yes' ),
+			'rejected, WooPay on'                      => array( 'rejected', 'yes' ),
+			'under review, WooPay off'                 => array( 'under review', 'no' ),
+			'under review, WooPay stored as 1'         => array( 'under review', '1' ),
+			'under review, WooPay stored as integer 1' => array( 'under review', 1 ),
+			'under review, WooPay stored as true'      => array( 'under review', true ),
+		);
+	}
+
+	/**
+	 * While the account is eligible a save writes WooPay as posted, with the disable date, the events and the webhook removal
+	 * that follow, as before.
+	 *
+	 * @testdox A page save writes WooPay as posted while the account is eligible: $_dataName.
+	 * @dataProvider provide_eligible_woopay_page_saves
+	 *
+	 * @param string $stored   Stored `platform_checkout`.
+	 * @param bool   $posted   Posted `is_woopay_enabled`.
+	 * @param string $expected Expected stored `platform_checkout`.
+	 * @param string $event    Expected WooPay event.
+	 */
+	public function test_update_settings_writes_woopay_as_posted_while_the_account_is_eligible( string $stored, bool $posted, string $expected, string $event ): void {
+		$this->store_woopay_account( 'eligible' );
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'enabled'                        => 'yes',
+				'platform_checkout'              => $stored,
+				'upe_enabled_payment_method_ids' => array( 'card' ),
+			)
+		);
+
+		list( $result, $events, $turned_off ) = $this->save_and_record_woopay_effects( $this->get_page_save_params( array( 'is_woopay_enabled' => $posted ) ) );
+
+		$this->assertIsArray( $result );
+		$saved = get_option( 'woocommerce_woocommerce_payments_settings' );
+		$this->assertSame( $expected, $saved['platform_checkout'] );
+		$this->assertArrayHasKey( $event, $events );
+		$this->assertSame( 'no' === $expected, ! empty( $saved['platform_checkout_last_disable_date'] ) );
+		$this->assertSame( 'no' === $expected, $turned_off );
+	}
+
+	/**
+	 * Provide eligible saves: stored WooPay, posted WooPay, expected stored WooPay, expected event.
+	 *
+	 * @return array<string,array{0:string,1:bool,2:string,3:string}>
+	 */
+	public function provide_eligible_woopay_page_saves(): array {
+		return array(
+			'turned off' => array( 'yes', false, 'no', 'wcadmin_woopay_disabled' ),
+			'turned on'  => array( 'no', true, 'yes', 'wcadmin_woopay_enabled' ),
+		);
+	}
+
+	/**
+	 * A save that sends WooPay on while the account is not eligible is not written either: by REST with WooPay alone, and by a
+	 * page loaded while eligible that sends the WooPay settings after eligibility was lost. The answer is a normal one that
+	 * shows WooPay off (N-2036 item 4), and neither the "enabled" event nor the locations event is recorded.
+	 *
+	 * @testdox A save that sends WooPay on while the account is not eligible keeps WooPay off and answers 200: $_dataName.
+	 * @dataProvider provide_ineligible_woopay_on_saves
+	 *
+	 * @param array<string,mixed> $params Posted settings.
+	 */
+	public function test_update_settings_keeps_woopay_off_when_turned_on_while_the_account_is_ineligible( array $params ): void {
+		$this->store_woopay_account( 'under review' );
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'enabled'                        => 'yes',
+				'platform_checkout'              => 'no',
+				'upe_enabled_payment_method_ids' => array( 'card' ),
+			)
+		);
+		$this->make_builtin_active();
+		$events  = array();
+		$capture = function ( $properties, $event_name ) use ( &$events ) {
+			$events[ $event_name ] = $properties;
+			return $properties;
+		};
+		add_filter( 'wcpay_tracks_event_properties', $capture, 10, 2 );
+
+		try {
+			$response = $this->post_settings( $params );
+		} finally {
+			remove_filter( 'wcpay_tracks_event_properties', $capture, 10 );
+			$this->clear_builtin_active();
+		}
+
+		$this->assertSame( 200, $response->get_status(), (string) wp_json_encode( $response->get_data() ) );
+		$this->assertFalse( $response->get_data()['is_woopay_enabled'] );
+		$this->assertSame( 'no', get_option( 'woocommerce_woocommerce_payments_settings' )['platform_checkout'] );
+		$this->assertArrayNotHasKey( 'wcadmin_woopay_enabled', $events );
+		$this->assertArrayNotHasKey( 'wcadmin_woopay_express_button_locations_updated', $events );
+	}
+
+	/**
+	 * Provide saves that send WooPay on while the account is not eligible.
+	 *
+	 * @return array<string,array{0:array<string,mixed>}>
+	 */
+	public function provide_ineligible_woopay_on_saves(): array {
+		return array(
+			'REST, WooPay alone' => array( array( 'is_woopay_enabled' => true ) ),
+			'a page loaded while eligible, with theme support and locations' => array(
+				array(
+					'is_woopay_enabled'                => true,
+					'is_woopay_global_theme_support_enabled' => true,
+					'express_checkout_product_methods' => array(),
+					'express_checkout_cart_methods'    => array( 'woopay' ),
+				),
+			),
+		);
+	}
+
+	/**
+	 * A page loaded while the account was eligible shows WooPay; if eligibility is lost before the merchant saves, the save
+	 * keeps the stored choice whichever way the merchant turned WooPay (cells S7 by e7 and S5 by e6 of the state table).
+	 *
+	 * @testdox A page loaded while eligible and saved after eligibility was lost keeps the stored WooPay choice: $_dataName.
+	 * @dataProvider provide_stale_page_woopay_saves
+	 *
+	 * @param string $stored Stored `platform_checkout`.
+	 * @param bool   $posted WooPay as the merchant turned it on the page.
+	 */
+	public function test_update_settings_from_a_page_loaded_while_eligible_keeps_woopay_after_eligibility_is_lost( string $stored, bool $posted ): void {
+		$this->store_woopay_account( 'eligible' );
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'enabled'                        => 'yes',
+				'platform_checkout'              => $stored,
+				'upe_enabled_payment_method_ids' => array( 'card' ),
+			)
+		);
+		$params = $this->get_page_save_params( array( 'is_woopay_enabled' => $posted ) );
+		// The account refresh that reports the review, as a later request sees it.
+		$this->store_woopay_account( 'under review' );
+		$this->account_service->cache_account_data( get_option( 'wcpay_account_data' )['data'] );
+
+		list( $result, $events, $turned_off ) = $this->save_and_record_woopay_effects( $params );
+
+		$this->assertIsArray( $result );
+		$this->assertSame( $stored, get_option( 'woocommerce_woocommerce_payments_settings' )['platform_checkout'] );
+		$this->assertArrayNotHasKey( 'wcadmin_woopay_disabled', $events );
+		$this->assertArrayNotHasKey( 'wcadmin_woopay_enabled', $events );
+		$this->assertFalse( $turned_off );
+	}
+
+	/**
+	 * Provide stale page saves: stored WooPay and WooPay as posted.
+	 *
+	 * @return array<string,array{0:string,1:bool}>
+	 */
+	public function provide_stale_page_woopay_saves(): array {
+		return array(
+			'WooPay turned off (S7 by e7)' => array( 'yes', false ),
+			'WooPay turned on (S5 by e6)'  => array( 'no', true ),
+		);
+	}
+
+	/**
+	 * WooPay and Link are never both on, and Link wins, as onboarding writes them (OnboardingService::add_enabled_payment_methods()):
+	 * while the account is not eligible, a save that leaves card and Link on writes WooPay as posted (off from the page), so the
+	 * two are not both on when eligibility returns.
+	 *
+	 * @testdox A page save that leaves Link on writes WooPay off while the account is not eligible: $_dataName.
+	 * @dataProvider provide_ineligible_link_page_saves
+	 *
+	 * @param string[] $stored_ids Stored enabled payment method IDs.
+	 * @param string[] $posted_ids Posted enabled payment method IDs.
+	 */
+	public function test_update_settings_turns_woopay_off_when_an_ineligible_save_leaves_link_on( array $stored_ids, array $posted_ids ): void {
+		$this->store_woopay_account( 'under review' );
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'enabled'                        => 'yes',
+				'platform_checkout'              => 'yes',
+				'upe_enabled_payment_method_ids' => $stored_ids,
+			)
+		);
+
+		list( $result, $events, $turned_off ) = $this->save_and_record_woopay_effects(
+			$this->get_page_save_params(
+				array(
+					'enabled_payment_method_ids'  => $posted_ids,
+					'payment_request_button_size' => 'large',
+				)
+			)
+		);
+
+		$this->assertIsArray( $result, is_wp_error( $result ) ? $result->get_error_message() : '' );
+		$saved = get_option( 'woocommerce_woocommerce_payments_settings' );
+		$this->assertSame( 'no', $saved['platform_checkout'] );
+		$this->assertSame( array( 'card', 'link' ), $saved['upe_enabled_payment_method_ids'] );
+		$this->assertSame( gmdate( 'Y-m-d' ), $saved['platform_checkout_last_disable_date'] );
+		$this->assertArrayHasKey( 'wcadmin_woopay_disabled', $events );
+		$this->assertTrue( $turned_off );
+	}
+
+	/**
+	 * Provide ineligible saves that leave Link on: stored IDs, posted IDs.
+	 *
+	 * @return array<string,array{0:string[],1:string[]}>
+	 */
+	public function provide_ineligible_link_page_saves(): array {
+		return array(
+			'Link turned on (S7 by e4)'                  => array( array( 'card' ), array( 'card', 'link' ) ),
+			'Link already on, unrelated save (S8 by e3)' => array( array( 'card', 'link' ), array( 'card', 'link' ) ),
+		);
+	}
+
+	/**
+	 * With WooPay and Link both stored on while the account is not eligible, a save that turns Link off keeps WooPay (S8 by e5).
+	 * Link left on without card counts as off, as in the Link refusal: checkout then offers no Link.
+	 *
+	 * @testdox A page save that leaves Link off keeps the stored WooPay choice while the account is not eligible: $_dataName.
+	 * @dataProvider provide_ineligible_link_off_page_saves
+	 *
+	 * @param string[] $posted_ids Posted enabled payment method IDs.
+	 */
+	public function test_update_settings_keeps_woopay_when_an_ineligible_save_turns_link_off( array $posted_ids ): void {
+		$this->store_woopay_account( 'under review' );
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'enabled'                        => 'yes',
+				'platform_checkout'              => 'yes',
+				'upe_enabled_payment_method_ids' => array( 'card', 'link' ),
+			)
+		);
+
+		$result = $this->sut->update_settings( $this->get_page_save_params( array( 'enabled_payment_method_ids' => $posted_ids ) ) );
+
+		$this->assertIsArray( $result, is_wp_error( $result ) ? $result->get_error_message() : '' );
+		$saved = get_option( 'woocommerce_woocommerce_payments_settings' );
+		$this->assertSame( 'yes', $saved['platform_checkout'] );
+		$this->assertSame( $posted_ids, $saved['upe_enabled_payment_method_ids'] );
+	}
+
+	/**
+	 * Provide ineligible saves that leave Link off: posted IDs.
+	 *
+	 * @return array<string,array{0:string[]}>
+	 */
+	public function provide_ineligible_link_off_page_saves(): array {
+		return array(
+			'Link turned off (S8 by e5)'    => array( array( 'card' ) ),
+			'card turned off, Link left on' => array( array( 'link' ) ),
+		);
+	}
+
+	/**
+	 * The WooPay locations event is recorded only while WooPay is on and the account is eligible, as client 11.3.0 checks
+	 * WC_Payments_Features::is_woopay_enabled() (class-wc-rest-payments-settings-controller.php:1187-1191).
+	 *
+	 * @testdox A page save posting locations records the WooPay locations event only while the account is eligible: $_dataName.
+	 * @dataProvider provide_woopay_location_event_accounts
+	 *
+	 * @param string $account  Account state.
+	 * @param bool   $expected Whether the event is recorded.
+	 */
+	public function test_update_settings_records_the_woopay_locations_event_only_while_eligible( string $account, bool $expected ): void {
+		$this->store_woopay_account( $account );
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'enabled'                        => 'yes',
+				'platform_checkout'              => 'yes',
+				'upe_enabled_payment_method_ids' => array( 'card' ),
+			)
+		);
+		$params = $this->get_page_save_params( array( 'express_checkout_cart_methods' => array( 'woopay' ) ) );
+		unset( $params['is_woopay_enabled'] );
+
+		list( $result, $events ) = $this->save_and_record_woopay_effects( $params );
+
+		$this->assertIsArray( $result );
+		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_settings' )['platform_checkout'] );
+		$this->assertSame( $expected, array_key_exists( 'wcadmin_woopay_express_button_locations_updated', $events ) );
+	}
+
+	/**
+	 * Provide account states and whether the locations event is recorded.
+	 *
+	 * @return array<string,array{0:string,1:bool}>
+	 */
+	public function provide_woopay_location_event_accounts(): array {
+		return array(
+			'eligible'     => array( 'eligible', true ),
+			'under review' => array( 'under review', false ),
+		);
+	}
+
+	/**
+	 * After eligibility returns, a page loaded while it was lost posts WooPay off; with Link turned on in the same save the
+	 * store ends with Link on and WooPay off, as today (S3 by e4). A REST save that turns Link on with WooPay on stays refused.
+	 *
+	 * @testdox A save turning Link on while eligible with WooPay on: $_dataName.
+	 * @dataProvider provide_eligible_link_on_saves
+	 *
+	 * @param array<string,mixed> $params  Posted settings.
+	 * @param bool                $refused Whether the save is refused.
+	 */
+	public function test_update_settings_turning_link_on_while_eligible_with_woopay_on( array $params, bool $refused ): void {
+		$this->store_woopay_account( 'eligible' );
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'enabled'                        => 'yes',
+				'platform_checkout'              => 'yes',
+				'upe_enabled_payment_method_ids' => array( 'card' ),
+			)
+		);
+		$stored_before = $this->get_raw_option_value( 'woocommerce_woocommerce_payments_settings' );
+
+		$result = $this->sut->update_settings( $params );
+
+		if ( $refused ) {
+			$this->assertInstanceOf( WP_Error::class, $result );
+			$this->assertSame( $stored_before, $this->get_raw_option_value( 'woocommerce_woocommerce_payments_settings' ) );
+			return;
+		}
+		$this->assertIsArray( $result, is_wp_error( $result ) ? $result->get_error_message() : '' );
+		$saved = get_option( 'woocommerce_woocommerce_payments_settings' );
+		$this->assertSame( 'no', $saved['platform_checkout'] );
+		$this->assertSame( array( 'card', 'link' ), $saved['upe_enabled_payment_method_ids'] );
+	}
+
+	/**
+	 * Provide saves turning Link on: posted settings, whether refused.
+	 *
+	 * @return array<string,array{0:array<string,mixed>,1:bool}>
+	 */
+	public function provide_eligible_link_on_saves(): array {
+		return array(
+			'a page loaded while ineligible, posting WooPay off' => array(
+				array(
+					'is_woopay_enabled'          => false,
+					'enabled_payment_method_ids' => array( 'card', 'link' ),
+				),
+				false,
+			),
+			'REST, WooPay omitted' => array( array( 'enabled_payment_method_ids' => array( 'card', 'link' ) ), true ),
+			'REST, WooPay on'      => array(
+				array(
+					'is_woopay_enabled'          => true,
+					'enabled_payment_method_ids' => array( 'card', 'link' ),
+				),
+				true,
+			),
+		);
 	}
 
 	/**
@@ -4011,6 +4418,66 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 				return $this->options[ $key ] ?? 'no';
 			}
 		};
+	}
+
+	/**
+	 * Store a connected account with active card and Link in one WooPay eligibility state: eligible, under review, the
+	 * platform's flag false, or rejected (the three ways WooPay/Eligibility::is_woopay_eligible() answers false).
+	 *
+	 * @param string $state Eligibility state.
+	 */
+	private function store_woopay_account( string $state ): void {
+		$this->store_link_and_woopay_account( 'flag false' !== $state, 'active' );
+		$statuses                       = array(
+			'under review' => 'under_review',
+			'rejected'     => 'rejected.fraud',
+		);
+		$account_data                   = get_option( 'wcpay_account_data' );
+		$account_data['data']['status'] = $statuses[ $state ] ?? 'complete';
+		update_option( 'wcpay_account_data', $account_data );
+	}
+
+	/**
+	 * Build what the settings page posts: the fields of the settings answer it saves for WooPay, the methods and the button
+	 * locations, with the merchant's changes over them.
+	 *
+	 * @param array<string,mixed> $changes Fields the merchant changed.
+	 * @return array<string,mixed>
+	 */
+	private function get_page_save_params( array $changes ): array {
+		$keys = array( 'is_woopay_enabled', 'enabled_payment_method_ids', 'express_checkout_product_methods', 'express_checkout_cart_methods', 'express_checkout_checkout_methods', 'payment_request_button_size' );
+
+		return array_replace( array_intersect_key( $this->sut->get_settings(), array_flip( $keys ) ), $changes );
+	}
+
+	/**
+	 * Save settings and record the WooPay effects: the Tracks events by name, and whether any write of the gateway settings
+	 * took WooPay from "yes" to off, the change that removes the WooPay webhooks (WooPay/OrderStatusSync::handle_settings_update()).
+	 *
+	 * @param array<string,mixed> $params Posted settings.
+	 * @return array{0:mixed,1:array<string,mixed>,2:bool}
+	 */
+	private function save_and_record_woopay_effects( array $params ): array {
+		$events     = array();
+		$turned_off = false;
+		$capture    = function ( $properties, $event_name ) use ( &$events ) {
+			$events[ $event_name ] = $properties;
+			return $properties;
+		};
+		$watch      = function ( $old_value, $value ) use ( &$turned_off ): void {
+			$turned_off = $turned_off || ( 'yes' === ( $old_value['platform_checkout'] ?? null ) && 'yes' !== ( $value['platform_checkout'] ?? null ) );
+		};
+		add_filter( 'wcpay_tracks_event_properties', $capture, 10, 2 );
+		add_action( 'update_option_woocommerce_woocommerce_payments_settings', $watch, 10, 2 );
+
+		try {
+			$result = $this->sut->update_settings( $params );
+		} finally {
+			remove_filter( 'wcpay_tracks_event_properties', $capture, 10 );
+			remove_action( 'update_option_woocommerce_woocommerce_payments_settings', $watch, 10 );
+		}
+
+		return array( $result, $events, $turned_off );
 	}
 
 	/**
