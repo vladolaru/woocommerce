@@ -277,10 +277,13 @@ const getFeesDateFilterFromParams = (
 /**
  * Read the Fees view from the URL, as client 11.1.0 does in `reports/fees/use-fees-url-sync.ts:58-89,167-195`.
  *
- * @param search The location search string.
+ * @param search         The location search string.
+ * @param defaultPerPage The rows per page when the URL has none: the merchant's saved choice, as client 11.3.0 reads it
+ *                       (`reports/fees/use-fees-url-sync.ts:175-178`).
  */
 export const parseReportsFeesViewFromSearch = (
-	search: string
+	search: string,
+	defaultPerPage = 25
 ): ReportsFeesUrlView => {
 	const params = new URLSearchParams( search );
 	const order = params.get( 'order' );
@@ -311,7 +314,10 @@ export const parseReportsFeesViewFromSearch = (
 
 	return {
 		page: normalizePositiveInteger( params.get( 'paged' ), 1 ),
-		perPage: normalizePositiveInteger( params.get( 'per_page' ), 25 ),
+		perPage: normalizePositiveInteger(
+			params.get( 'per_page' ),
+			defaultPerPage
+		),
 		sort: {
 			field: params.get( 'orderby' ) || 'date',
 			direction: isSortDirection( order ) ? order : 'desc',

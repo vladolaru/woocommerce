@@ -17,7 +17,7 @@ use WC_Unit_Test_Case;
 class UserPreferenceFieldsTest extends WC_Unit_Test_Case {
 
 	/**
-	 * The hidden column keys (the WooPayments extension's WC_Payments::add_user_data_fields()) for the WooPayments lists.
+	 * The hidden column keys, and the Fees report's saved view key (the WooPayments extension's WC_Payments::add_user_data_fields()).
 	 */
 	private const HIDDEN_COLUMN_KEYS = array(
 		'wc_payments_transactions_hidden_columns',
@@ -26,6 +26,7 @@ class UserPreferenceFieldsTest extends WC_Unit_Test_Case {
 		'wc_payments_payouts_hidden_columns',
 		'wc_payments_disputes_hidden_columns',
 		'wc_payments_documents_hidden_columns',
+		'wc_payments_reports_fees_view',
 	);
 
 	/**

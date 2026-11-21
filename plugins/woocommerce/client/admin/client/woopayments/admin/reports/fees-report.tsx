@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from '@wordpress/element';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { recordEvent } from '@woocommerce/tracks';
+import { useUserPreferences } from '@woocommerce/data';
 // @ts-expect-error - Use the WordPress-bundled DataViews entry in wp-admin builds.
 import { DataViews, type Field, type View } from '@wordpress/dataviews/wp';
 
@@ -32,6 +33,7 @@ import {
 	useWooPaymentsExport,
 } from '../money-movement/export';
 import { useDataViewsReloadState } from '../money-movement/use-dataviews-reload-state';
+import { normalizePositiveInteger } from '../list-query';
 import { ReportsDatePresets } from './date-presets';
 import type { ReportsFee, ReportsFeesQuery, ReportsFeesSummary } from './types';
 import {
@@ -116,10 +118,13 @@ const getTransactionRoute = ( item: ReportsFee ) =>
 // Client 11.1.0 `reports/fees/use-fees-url-sync.ts:26,208-233`: a search reaches the URL after typing pauses.
 const FEES_SEARCH_URL_DEBOUNCE_MS = 500;
 
+// Client 11.3.0 `reports/fees/view.ts:5`: the user meta that keeps the merchant's Fees view; only its rows per page is read.
+const FEES_VIEW_PREFERENCE_KEY = 'wc_payments_reports_fees_view';
+
 // The Fees params in a location search, normalized so equal views compare equal.
-const getFeesUrlKey = ( search: string ) =>
+const getFeesUrlKey = ( search: string, defaultPerPage?: number ) =>
 	serializeReportsFeesViewToSearch(
-		parseReportsFeesViewFromSearch( search )
+		parseReportsFeesViewFromSearch( search, defaultPerPage )
 	);
 
 /**
@@ -163,6 +168,12 @@ const FeesReport = ( {
 	);
 	const location = useLocation();
 	const navigate = useNavigate();
+	const { updateUserPreferences, ...preferences } = useUserPreferences();
+	// The stored value is '' until the first save.
+	const savedView = ( ( preferences as Record< string, unknown > )[
+		FEES_VIEW_PREFERENCE_KEY
+	] || {} ) as { perPage?: unknown };
+	const savedPerPage = normalizePositiveInteger( savedView.perPage, 25 );
 	// Client 11.1.0 `reports/fees/use-fees-url-sync.ts:167-195`: sort, paging, search and filters come from the URL.
 	const [ view, setView ] = useState< View >( () => ( {
 		type: 'table',
@@ -176,9 +187,11 @@ const FeesReport = ( {
 			'amount',
 			'fees',
 		],
-		...parseReportsFeesViewFromSearch( location.search ),
+		...parseReportsFeesViewFromSearch( location.search, savedPerPage ),
 	} ) );
-	const feesUrlKeyRef = useRef( getFeesUrlKey( location.search ) );
+	const feesUrlKeyRef = useRef(
+		getFeesUrlKey( location.search, savedPerPage )
+	);
 	const searchUrlTimerRef = useRef< ReturnType< typeof setTimeout > | null >(
 		null
 	);
@@ -244,7 +257,7 @@ const FeesReport = ( {
 
 	// Back, forward or a pasted link re-seeds the view; the page's own writes do not, so staged filter chips stay.
 	useEffect( () => {
-		const urlKey = getFeesUrlKey( location.search );
+		const urlKey = getFeesUrlKey( location.search, savedPerPage );
 
 		if ( urlKey === feesUrlKeyRef.current ) {
 			return;
@@ -253,9 +266,9 @@ const FeesReport = ( {
 		feesUrlKeyRef.current = urlKey;
 		setView( ( previousView: View ) => ( {
 			...previousView,
-			...parseReportsFeesViewFromSearch( location.search ),
+			...parseReportsFeesViewFromSearch( location.search, savedPerPage ),
 		} ) );
-	}, [ location.search ] );
+	}, [ location.search, savedPerPage ] );
 
 	const applyView = ( nextView: View ) => {
 		const currentSearch = serializeReportsFeesViewToSearch( view );
@@ -277,6 +290,17 @@ const FeesReport = ( {
 		};
 
 		setView( nextView );
+
+		// Client 11.3.0 `reports/fees/use-fees-user-prefs.ts:68-96`: the rows per page the merchant picks are kept for the
+		// next visit, beside the rest of the saved view.
+		if ( nextView.perPage !== view.perPage ) {
+			void updateUserPreferences( {
+				[ FEES_VIEW_PREFERENCE_KEY ]: {
+					...savedView,
+					perPage: nextView.perPage,
+				},
+			} );
+		}
 
 		if ( searchUrlTimerRef.current ) {
 			clearTimeout( searchUrlTimerRef.current );

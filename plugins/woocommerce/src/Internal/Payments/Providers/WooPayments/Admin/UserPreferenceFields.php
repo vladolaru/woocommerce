@@ -10,7 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * Registers the user meta that keeps each admin list's hidden columns.
+ * Registers the user meta that keeps each admin list's hidden columns and the Fees report's saved view.
  *
  * The keys are the WooPayments extension's, so a choice made while it ran carries over. The admin reads them from the
  * preloaded current user and writes them through the users REST route, so this loads on admin and REST requests only.
@@ -49,6 +49,8 @@ class UserPreferenceFields implements RegisterHooksInterface {
 				'wc_payments_payouts_hidden_columns',
 				'wc_payments_disputes_hidden_columns',
 				'wc_payments_documents_hidden_columns',
+				// The Fees report's saved view, `{ fields, perPage, layout }` (client 11.3.0 includes/class-wc-payments.php:1074); only its `perPage` is read.
+				'wc_payments_reports_fees_view',
 			)
 		);
 	}

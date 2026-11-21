@@ -32,6 +32,10 @@ import {
 import { formatAmount as formatMoneyMovementAmount } from '../money-movement/utils';
 import { ZERO_DECIMAL_CURRENCIES } from './helpers/zero-decimal-currencies';
 import { pinLocalCalendarAt } from './helpers/browser-calendar';
+import {
+	mockUpdateUserPreferences,
+	setMockUserPreferences,
+} from './helpers/user-preferences';
 
 // The export raises snackbars; other stores keep the real dispatch.
 jest.mock( '@wordpress/data', () => {
@@ -51,6 +55,13 @@ jest.mock( '@wordpress/data', () => {
 
 jest.mock( '@woocommerce/tracks', () => ( {
 	recordEvent: jest.fn(),
+} ) );
+
+jest.mock( '@woocommerce/data', () => ( {
+	useUserPreferences: () =>
+		jest
+			.requireActual( './helpers/user-preferences' )
+			.useMockUserPreferences(),
 } ) );
 
 jest.mock( '@wordpress/a11y', () => ( {
@@ -458,6 +469,7 @@ describe( 'WooPaymentsReportsPage', () => {
 	beforeEach( () => {
 		mockSiteTimeFormat = 'H:i';
 		mockRealDateI18n = false;
+		setMockUserPreferences( {} );
 		window.wcSettings = {
 			adminUrl: 'http://example.com/wp-admin',
 			dateFormat: 'd/m/Y',
@@ -1630,6 +1642,86 @@ describe( 'WooPaymentsReportsPage', () => {
 			)
 		);
 		expect( mockGetFees ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	// Client 11.3.0 `reports/fees/use-fees-url-sync.ts:175-178`: with no `per_page` in the URL the rows per page come from
+	// the merchant's saved Fees view (`reports/fees/use-fees-user-prefs.ts`, user meta `wc_payments_reports_fees_view`).
+	it( "opens Fees with the merchant's saved rows per page when the URL has none", async () => {
+		setMockUserPreferences( {
+			wc_payments_reports_fees_view: {
+				fields: [ 'type', 'fees' ],
+				perPage: 50,
+			},
+		} );
+
+		renderReportsPage( [ '/woopayments/reports?report_tab=fees' ] );
+
+		await waitFor( () =>
+			expect( mockGetFees ).toHaveBeenCalledWith(
+				expect.objectContaining( { per_page: 50 } )
+			)
+		);
+		expect( mockGetFees ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	it( "lets the URL's rows per page win over the saved one", async () => {
+		setMockUserPreferences( {
+			wc_payments_reports_fees_view: { perPage: 50 },
+		} );
+
+		renderReportsPage( [
+			'/woopayments/reports?report_tab=fees&per_page=10',
+		] );
+
+		await waitFor( () =>
+			expect( mockGetFees ).toHaveBeenCalledWith(
+				expect.objectContaining( { per_page: 10 } )
+			)
+		);
+	} );
+
+	it( 'saves the Fees rows per page when the merchant changes it, keeping the rest of the saved view', async () => {
+		setMockUserPreferences( {
+			wc_payments_reports_fees_view: {
+				fields: [ 'type', 'fees' ],
+				perPage: 25,
+			},
+		} );
+		renderReportsPage( [ '/woopayments/reports?report_tab=fees' ] );
+
+		await screen.findByRole( 'searchbox', { name: 'Search fees' } );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Apply detailed fees view' } )
+		);
+
+		expect( mockUpdateUserPreferences ).toHaveBeenCalledTimes( 1 );
+		expect( mockUpdateUserPreferences ).toHaveBeenCalledWith( {
+			wc_payments_reports_fees_view: {
+				fields: [ 'type', 'fees' ],
+				perPage: 50,
+			},
+		} );
+	} );
+
+	it( 'does not write the saved Fees view when the rows per page stay the same', async () => {
+		setMockUserPreferences( {
+			wc_payments_reports_fees_view: { perPage: 50 },
+		} );
+		renderReportsPage( [
+			'/woopayments/reports?report_tab=fees&per_page=50',
+		] );
+
+		fireEvent.change(
+			await screen.findByRole( 'searchbox', { name: 'Search fees' } ),
+			{ target: { value: 'txn_456' } }
+		);
+
+		await waitFor( () =>
+			expect( screen.getByTestId( 'location' ) ).toHaveTextContent(
+				'search%5B%5D=txn_456'
+			)
+		);
+		expect( mockUpdateUserPreferences ).not.toHaveBeenCalled();
 	} );
 
 	it( 'writes Fees view changes to the URL with the client param names', async () => {
