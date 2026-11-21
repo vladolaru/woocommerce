@@ -2571,15 +2571,58 @@ describe( 'WooPaymentsSettingsPage', () => {
 		expect(
 			screen.getByRole( 'checkbox', { name: /Klarna/ } )
 		).toBeDisabled();
+	} );
+
+	// Client 11.3.0 settings/payment-methods-list/use-payment-method-availability.tsx:198-202: a method that manual
+	// capture disables shows its disabled checkbox and nothing else, because the banner above the list says why.
+	it( 'shows no chip on a method that manual capture disables, and leaves the status chips alone', () => {
+		mockUseManualCapture.mockReturnValue( [ true, noop ] );
+		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [
+			'card',
+			'affirm',
+			'klarna',
+			'alipay',
+		] );
+		mockUseGetPaymentMethodStatuses.mockReturnValue( {
+			card_payments: { status: 'active', requirements: [] },
+			affirm_payments: { status: 'active', requirements: [] },
+			klarna_payments: { status: 'active', requirements: [] },
+			alipay_payments: { status: 'pending', requirements: [] },
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		for ( const [ name, id ] of [
+			[ /Affirm/, 'affirm' ],
+			[ /Klarna/, 'klarna' ],
+		] as const ) {
+			const checkbox = screen.getByRole( 'checkbox', { name } );
+
+			expect( checkbox ).toBeDisabled();
+			expect(
+				checkbox
+					.closest( 'li' )
+					?.querySelector( '.woocommerce-status-badge' )
+			).toBeNull();
+			// The row is described by its own description only, with no reference left to a removed chip or notice.
+			expect( checkbox ).toHaveAttribute(
+				'aria-describedby',
+				`woopayments-settings-payment-method-${ id }-description`
+			);
+		}
 		expect(
-			screen.getByRole( 'checkbox', { name: /Affirm/ } )
-		).toHaveAccessibleDescription( /Unavailable with manual capture/ );
-		expect(
-			screen.getByRole( 'checkbox', { name: /Klarna/ } )
-		).toHaveAccessibleDescription( /Unavailable with manual capture/ );
-		expect(
-			screen.getAllByText( 'Unavailable with manual capture' )
-		).toHaveLength( 2 );
+			screen.queryByText( 'Unavailable with manual capture' )
+		).not.toBeInTheDocument();
+
+		// The other chips are unchanged, and still describe their row.
+		const alipayCheckbox = screen.getByRole( 'checkbox', {
+			name: 'Alipay',
+		} );
+		expect( alipayCheckbox ).toBeDisabled();
+		expect( screen.getByText( 'Approval pending' ) ).toBeInTheDocument();
+		expect( alipayCheckbox ).toHaveAccessibleDescription(
+			/Approval pending/
+		);
 	} );
 
 	// Client 11.3.0 settings/payment-methods-section/index.js:44,83-98: the dismissal is component state only.
