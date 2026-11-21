@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\Utilities\ArrayUtil;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -26,6 +27,8 @@ defined( 'ABSPATH' ) || exit;
 class NavigationController implements RegisterHooksInterface {
 
 	private const CAPABILITY = 'manage_woocommerce';
+
+	private const MAX_BOOKMARK_SEARCH_TERMS = 10;
 
 	private const MENU_HOOK_PRIORITY = 70;
 
@@ -412,10 +415,11 @@ class NavigationController implements RegisterHooksInterface {
 			$target_path = $this->get_fallback_redirect_path( $route_availability );
 		}
 
-		$query    = array();
-		$fragment = '';
+		$query        = array();
+		$filter_query = '';
+		$fragment     = '';
 		foreach ( $request as $key => $value ) {
-			if ( in_array( $key, array( 'page', 'path' ), true ) || ! is_scalar( $value ) ) {
+			if ( in_array( $key, array( 'page', 'path' ), true ) ) {
 				continue;
 			}
 
@@ -424,7 +428,30 @@ class NavigationController implements RegisterHooksInterface {
 				continue;
 			}
 
-			$query[ $sanitized_key ] = sanitize_text_field( wp_unslash( (string) $value ) );
+			if ( is_scalar( $value ) ) {
+				$query[ $sanitized_key ] = sanitize_text_field( wp_unslash( (string) $value ) );
+				continue;
+			}
+
+			if ( ! is_array( $value ) || count( $value ) > self::MAX_BOOKMARK_SEARCH_TERMS || ! ArrayUtil::array_is_list( $value ) ) {
+				continue;
+			}
+
+			$is_range  = 'date_between' === $sanitized_key && in_array( $target_path, array( self::PATH_TRANSACTIONS, self::PATH_PAYOUTS, self::PATH_DISPUTES, self::PATH_DOCUMENTS, self::PATH_REPORTS ), true );
+			$is_search = 'search' === $sanitized_key && ( self::PATH_TRANSACTIONS === $target_path || ( self::PATH_REPORTS === $target_path && 'fees' === $this->get_request_scalar( $request, 'tab' ) ) );
+			if ( ! $is_range && ! $is_search ) {
+				continue;
+			}
+
+			$members = array_filter( $value, 'is_scalar' );
+			if ( $is_range && ( 2 !== count( $value ) || 2 !== count( $members ) ) ) {
+				continue;
+			}
+
+			// The list and report readers all accept repeated bare keys. http_build_query() on a list would add numeric indices.
+			foreach ( $members as $member ) {
+				$filter_query .= '&' . $sanitized_key . '=' . rawurlencode( sanitize_text_field( wp_unslash( (string) $member ) ) );
+			}
 		}
 
 		// `tab` belongs to wc-settings on these routes, so an old link's tab moves to the argument each page reads.
@@ -446,7 +473,8 @@ class NavigationController implements RegisterHooksInterface {
 			$fragment = self::SETTINGS_FRAGMENT_PAYMENT_METHODS;
 		}
 
-		return Utils::wc_payments_settings_url( $target_path, $query, $fragment );
+		$url_parts = explode( '#', Utils::wc_payments_settings_url( $target_path, $query, $fragment ), 2 );
+		return $url_parts[0] . $filter_query . ( isset( $url_parts[1] ) ? '#' . $url_parts[1] : '' );
 	}
 
 	/**

@@ -272,6 +272,162 @@ class NavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should keep both dates from an extension bookmark on the destination page.
+	 *
+	 * @testWith ["transactions", "transactions", ""]
+	 *           ["deposits", "payouts", ""]
+	 *           ["disputes", "disputes", ""]
+	 *           ["documents", "documents", ""]
+	 *           ["reports", "reports", "fees"]
+	 *           ["reports", "reports", "balance"]
+	 *
+	 * @param string $page   Extension list or report page.
+	 * @param string $target Built-in page.
+	 * @param string $tab    Report tab, if any.
+	 */
+	public function test_redirects_bookmarked_date_range( string $page, string $target, string $tab ): void {
+		$sut = $this->create_controller(
+			true,
+			array(
+				'is_documents_enabled' => true,
+				'is_reports_enabled'   => true,
+			)
+		);
+		parse_str( 'date_between%5B0%5D=2026-01-03&date_between%5B1%5D=2026-01-27', $filters );
+		$request = array(
+			'page'         => 'wc-admin',
+			'path'         => '/payments/' . $page,
+			'date_between' => $filters['date_between'],
+		);
+		if ( '' !== $tab ) {
+			$request['tab'] = $tab;
+			if ( 'fees' === $tab ) {
+				$request['search'] = array( 'Jane Doe' );
+			}
+		}
+
+		$url   = $sut->get_payments_path_redirect_url( $request );
+		$pairs = explode( '&', (string) wp_parse_url( $url, PHP_URL_QUERY ) );
+
+		$this->assertContains( 'path=/woopayments/' . $target, $pairs );
+		if ( '' !== $tab ) {
+			$this->assertContains( 'report_tab=' . $tab, $pairs );
+		}
+		$dates = array_filter( $pairs, static fn( $pair ) => str_starts_with( $pair, 'date_between' ) );
+		$this->assertSame( array( 'date_between=2026-01-03', 'date_between=2026-01-27' ), array_values( $dates ) );
+		if ( 'fees' === $tab ) {
+			$this->assertContains( 'search=Jane Doe', array_map( 'urldecode', $pairs ) );
+		}
+	}
+
+	/**
+	 * @testdox Should carry only supported filter members from an extension bookmark.
+	 *
+	 * @dataProvider provider_bookmarked_filters
+	 *
+	 * @param array<string,mixed> $filters  Query parameters from the bookmark.
+	 * @param string[]            $expected Decoded query pairs, in browser order.
+	 */
+	public function test_redirects_bookmarked_filters( array $filters, array $expected ): void {
+		$sut = $this->create_controller( true );
+		$url = $sut->get_payments_path_redirect_url(
+			array(
+				'page' => 'wc-admin',
+				'path' => '/payments/transactions',
+			) + $filters
+		);
+
+		// parse_str would keep only the last occurrence of each bare key.
+		$pairs = array_map( 'urldecode', explode( '&', (string) wp_parse_url( $url, PHP_URL_QUERY ) ) );
+		$this->assertSame( $expected, array_values( array_diff( $pairs, array( 'page=wc-settings', 'tab=checkout', 'path=/woopayments/transactions' ) ) ) );
+	}
+
+	/**
+	 * @return array<string,array{0:array<string,mixed>,1:string[]}> Bookmarked query inputs and expected filter pairs.
+	 */
+	public function provider_bookmarked_filters(): array {
+		$range = array( '2026-01-03', '2026-01-27' );
+		return array(
+			'search terms'       => array( array( 'search' => array( 'Jane, Doe', 'A & B' ) ), array( 'search=Jane, Doe', 'search=A & B' ) ),
+			'nested array'       => array( array( 'search' => array( array( 'ignored' ), 'Jane' ) ), array( 'search=Jane' ) ),
+			'non-scalar member'  => array( array( 'search' => array( new \stdClass(), 'Jane' ) ), array( 'search=Jane' ) ),
+			'ten terms'          => array( array( 'search' => array_fill( 0, 10, 'Jane' ) ), array_fill( 0, 10, 'search=Jane' ) ),
+			'other arrays'       => array(
+				array(
+					'date_between' => array(
+						'from' => $range[0],
+						'to'   => $range[1],
+					),
+					'other'        => $range,
+					'search'       => array( 'Jane' ),
+				),
+				array( 'search=Jane' ),
+			),
+			'incomplete range'   => array(
+				array(
+					'date_between' => array( $range[0], array( $range[1] ) ),
+					'search'       => array( 'Jane' ),
+				),
+				array( 'search=Jane' ),
+			),
+			'over ten terms'     => array(
+				array(
+					'search'       => array_fill( 0, 11, 'Jane' ),
+					'date_between' => $range,
+				),
+				array( 'date_between=2026-01-03', 'date_between=2026-01-27' ),
+			),
+			'sanitized bookmark' => array( array( 'SeArCh!' => array( wp_slash( "<b>O'Brien</b>  Smith" ) ) ), array( "search=O'Brien Smith" ) ),
+		);
+	}
+
+	/**
+	 * @testdox Should drop a bookmarked filter when the destination does not use it.
+	 *
+	 * @testWith ["reports", {"tab":"balance","search":["Jane","Alex"]}, "search"]
+	 *           ["overview", {"date_between":["2026-01-03","2026-01-27"]}, "date_between"]
+	 *
+	 * @param string              $page   Destination page.
+	 * @param array<string,mixed> $args   Arguments in the bookmarked URL.
+	 * @param string              $filter Filter the destination does not use.
+	 */
+	public function test_drops_unused_bookmark_filter( string $page, array $args, string $filter ): void {
+		$sut = $this->create_controller( true, array( 'is_reports_enabled' => true ) );
+		$url = $sut->get_payments_path_redirect_url(
+			array(
+				'page' => 'wc-admin',
+				'path' => '/payments/' . $page,
+			) + $args
+		);
+		parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
+
+		$this->assertSame( '/woopayments/' . $page, $query['path'] );
+		if ( isset( $args['tab'] ) ) {
+			$this->assertSame( $args['tab'], $query['report_tab'] );
+		}
+		$this->assertArrayNotHasKey( $filter, $query );
+	}
+
+	/**
+	 * @testdox Should keep bookmarked search terms in the query when the admin URL includes a fragment.
+	 */
+	public function test_keeps_bookmark_filters_before_url_fragment(): void {
+		$sut = $this->create_controller( true );
+		add_filter( 'admin_url', static fn( $url ) => $url . '#activity' );
+
+		$url = $sut->get_payments_path_redirect_url(
+			array(
+				'page'   => 'wc-admin',
+				'path'   => '/payments/transactions',
+				'search' => array( 'Jane', 'Alex' ),
+			)
+		);
+
+		$this->assertSame( 'activity', wp_parse_url( $url, PHP_URL_FRAGMENT ) );
+		$this->assertStringContainsString( '&search=Jane&search=Alex', (string) wp_parse_url( $url, PHP_URL_QUERY ) );
+	}
+
+	/**
 	 * @testdox Should open the Transactions view that matches a WooPayments extension Transactions tab link.
 	 *
 	 * Client 11.1.0 `client/transactions/index.tsx:32-43, :77-97` writes the open tab to the URL as
