@@ -147,7 +147,7 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 		$previous_settings = is_array( $previous_settings ) ? $previous_settings : array();
 		$settings          = is_array( $settings ) ? $settings : array();
 
-		if ( ! $this->is_truthy( $previous_settings['enabled'] ?? 'no' ) && $this->is_truthy( $settings['enabled'] ?? 'no' ) ) {
+		if ( 'yes' !== ( $previous_settings['enabled'] ?? 'no' ) && 'yes' === ( $settings['enabled'] ?? 'no' ) ) {
 			$this->verify_domain_if_configured();
 		}
 	}
@@ -483,18 +483,8 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_apple_pay_configured( array $settings ): bool {
-		return $this->is_truthy( $settings['enabled'] ?? 'no' )
+		return 'yes' === ( $settings['enabled'] ?? 'no' )
 			&& $this->account_service->is_payment_request_method_enabled( 'apple_pay' );
-	}
-
-	/**
-	 * Tell whether a setting value is truthy by WooPayments settings conventions.
-	 *
-	 * @param mixed $value Setting value.
-	 * @return bool
-	 */
-	private function is_truthy( $value ): bool {
-		return true === $value || 1 === $value || '1' === $value || 'yes' === $value || 'true' === $value;
 	}
 
 	/**

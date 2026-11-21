@@ -627,6 +627,87 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * The gateway counts as enabled only for a stored "yes", as every other reader and client 11.3.0 read it
+	 * (`includes/class-wc-payments-apple-pay-registration.php:106-120`, through the gateway's is_enabled()).
+	 *
+	 * @testdox A gateway settings write turning enabled to $_dataName registers the Apple Pay domain only for "yes".
+	 * @dataProvider provide_enabled_flag_values
+	 *
+	 * @param mixed $enabled  Stored enabled value after the write.
+	 * @param bool  $expected Whether the domain is registered.
+	 */
+	public function test_gateway_settings_write_registers_only_when_enabled_is_yes( $enabled, bool $expected ): void {
+		$this->service = $this->create_service();
+		update_option( self::APPLE_PAY_SETTINGS_OPTION, array( 'enabled' => 'yes' ) );
+		update_option( self::SETTINGS_OPTION, array( 'enabled' => 'no' ) );
+		$this->service->register();
+
+		update_option(
+			self::SETTINGS_OPTION,
+			array(
+				'enabled'                           => $enabled,
+				'express_checkout_checkout_methods' => array( 'payment_request' ),
+			)
+		);
+
+		$this->assertSame( $expected ? array( $this->expected_domain ) : array(), $this->api_client->registered_domains );
+	}
+
+	/**
+	 * The split Apple Pay gateway counts as turned on only when its row goes to a stored "yes", as client 11.3.0 reads both sides
+	 * (`includes/class-wc-payments-apple-pay-registration.php:119`, :129-131).
+	 *
+	 * @testdox The split Apple Pay settings turning enabled to $_dataName register the domain only for "yes".
+	 * @dataProvider provide_enabled_flag_values
+	 *
+	 * @param mixed $enabled  Apple Pay enabled value after the write.
+	 * @param bool  $expected Whether the domain is registered.
+	 */
+	public function test_apple_pay_settings_turning_on_registers_only_for_yes( $enabled, bool $expected ): void {
+		$this->service = $this->create_service();
+		$this->set_gateway_settings( array( 'enabled' => 'yes' ) );
+
+		$this->service->verify_domain_on_updated_apple_pay_settings( array( 'enabled' => 'no' ), array( 'enabled' => $enabled ) );
+
+		$this->assertSame( $expected ? array( $this->expected_domain ) : array(), $this->api_client->registered_domains );
+	}
+
+	/**
+	 * A split Apple Pay row that was already on is not turned on by a write, whatever shape it held before: only a row that
+	 * was not "yes" counts as turned on.
+	 *
+	 * @testdox The split Apple Pay settings going from $_dataName to "yes" register the domain unless the row already was "yes".
+	 * @dataProvider provide_enabled_flag_values
+	 *
+	 * @param mixed $previous Apple Pay enabled value before the write.
+	 * @param bool  $was_on   Whether that value already counts as on.
+	 */
+	public function test_apple_pay_settings_previous_value_counts_as_on_only_for_yes( $previous, bool $was_on ): void {
+		$this->service = $this->create_service();
+		$this->set_gateway_settings( array( 'enabled' => 'yes' ) );
+
+		$this->service->verify_domain_on_updated_apple_pay_settings( array( 'enabled' => $previous ), array( 'enabled' => 'yes' ) );
+
+		$this->assertSame( $was_on ? array() : array( $this->expected_domain ), $this->api_client->registered_domains );
+	}
+
+	/**
+	 * Provide a stored enabled value and whether it counts as on: only "yes" does.
+	 *
+	 * @return array<string,array{0:mixed,1:bool}>
+	 */
+	public function provide_enabled_flag_values(): array {
+		return array(
+			'yes'          => array( 'yes', true ),
+			'no'           => array( 'no', false ),
+			'string 1'     => array( '1', false ),
+			'integer 1'    => array( 1, false ),
+			'boolean true' => array( true, false ),
+			'string true'  => array( 'true', false ),
+		);
+	}
+
+	/**
 	 * Create the service under test.
 	 *
 	 * @param bool                                       $live_account    Whether the account should be treated as live.

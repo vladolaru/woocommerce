@@ -314,6 +314,66 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * The snapshot reports the gateway and debug logging as on only for a stored "yes", as the gateway and the logger read them
+	 * and as client 11.3.0 sends them (`includes/class-wc-payments-account.php:2907`, :2930). The other key holds the opposite
+	 * value, so a read of the wrong key fails.
+	 *
+	 * @testdox Should report the gateway enabled flag stored as $_dataName only when it is "yes".
+	 * @dataProvider provider_store_setup_sync_enabled_flag_values
+	 *
+	 * @param mixed $stored   Stored value.
+	 * @param bool  $expected Whether the snapshot reports it on.
+	 */
+	public function test_store_setup_sync_reports_the_gateway_enabled_only_for_yes( $stored, bool $expected ): void {
+		$snapshot = $this->send_store_setup_snapshot(
+			array(
+				'enabled'        => $stored,
+				'test_mode'      => 'yes',
+				'enable_logging' => $expected ? 'no' : 'yes',
+			)
+		);
+
+		$this->assertSame( $expected, $snapshot['gateway']['enabled'] );
+		$this->assertSame( ! $expected, $snapshot['debug_log_enabled'] );
+	}
+
+	/**
+	 * @testdox Should report debug logging stored as $_dataName only when it is "yes".
+	 * @dataProvider provider_store_setup_sync_enabled_flag_values
+	 *
+	 * @param mixed $stored   Stored value.
+	 * @param bool  $expected Whether the snapshot reports it on.
+	 */
+	public function test_store_setup_sync_reports_debug_logging_only_for_yes( $stored, bool $expected ): void {
+		$snapshot = $this->send_store_setup_snapshot(
+			array(
+				'enabled'        => $expected ? 'no' : 'yes',
+				'test_mode'      => 'yes',
+				'enable_logging' => $stored,
+			)
+		);
+
+		$this->assertSame( $expected, $snapshot['debug_log_enabled'] );
+		$this->assertSame( ! $expected, $snapshot['gateway']['enabled'] );
+	}
+
+	/**
+	 * Provide a stored yes/no flag and whether the snapshot reports it on: only "yes" is.
+	 *
+	 * @return array<string,array{0:mixed,1:bool}>
+	 */
+	public function provider_store_setup_sync_enabled_flag_values(): array {
+		return array(
+			'yes'          => array( 'yes', true ),
+			'no'           => array( 'no', false ),
+			'string 1'     => array( '1', false ),
+			'integer 1'    => array( 1, false ),
+			'boolean true' => array( true, false ),
+			'string true'  => array( 'true', false ),
+		);
+	}
+
+	/**
 	 * No setting named saved_cards_enabled exists, here or in the WooPayments extension, so the snapshot reads saved cards
 	 * from saved_cards alone.
 	 *

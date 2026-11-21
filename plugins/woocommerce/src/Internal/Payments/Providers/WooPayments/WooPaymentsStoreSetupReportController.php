@@ -344,7 +344,7 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 
 		return array(
 			'gateway'                                     => array(
-				'enabled'              => $this->is_setting_enabled( $settings, 'enabled' ),
+				'enabled'              => $this->account_service->is_gateway_enabled(),
 				'test_mode'            => $this->account_service->is_test_mode_enabled(),
 				'test_mode_onboarding' => $this->account_service->is_test_mode_onboarding_enabled(),
 			),
@@ -362,7 +362,7 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 			'express_checkout_in_payment_methods_enabled' => $express_checkout_payment_methods,
 			'saved_cards_enabled'                         => $this->account_service->is_saved_cards_enabled(),
 			'manual_capture_enabled'                      => $this->account_service->is_manual_capture_enabled(),
-			'debug_log_enabled'                           => $this->is_setting_enabled( $settings, 'enable_logging' ),
+			'debug_log_enabled'                           => 'yes' === ( $settings['enable_logging'] ?? 'no' ),
 			'payment_request'                             => array(
 				'enabled'              => $this->account_service->is_payment_request_enabled(),
 				'enabled_locations'    => $payment_request_locations,
@@ -419,17 +419,6 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 		return 'yes' === ( $settings['platform_checkout'] ?? null )
 			&& '1' === (string) get_option( '_wcpay_feature_woopay_express_checkout', '1' )
 			&& $this->woopay_eligibility->is_woopay_eligible();
-	}
-
-	/**
-	 * Tell whether a yes/no gateway setting is enabled.
-	 *
-	 * @param array<string,mixed> $settings Gateway settings.
-	 * @param string              $key      Setting key.
-	 * @return bool
-	 */
-	private function is_setting_enabled( array $settings, string $key ): bool {
-		return isset( $settings[ $key ] ) && true === wc_string_to_bool( $settings[ $key ] );
 	}
 
 	/**
