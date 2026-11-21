@@ -125,10 +125,12 @@ const PaymentMethodsSettingsSection = () => {
 		setIsManualCaptureNoticeDismissed,
 	] = useState( false );
 	const manualCaptureNoticeRef = useRef< HTMLDivElement >( null );
+	const fieldGroupHeadingRef = useRef< HTMLHeadingElement >( null );
 
 	const dismissManualCaptureNotice = () => {
 		// The dismiss button leaves the page with the notice. Keep keyboard focus on the list, as the duplicate payment
-		// method notice does: the first checkbox that can still change, else the first row. Manual capture disables most rows.
+		// method notice does: the first checkbox that can still change, else the first row. Manual capture disables most
+		// rows. With no rows at all, focus goes to the field group heading, which stays mounted.
 		const noticeElement = manualCaptureNoticeRef.current;
 		if (
 			noticeElement?.contains( noticeElement.ownerDocument.activeElement )
@@ -140,7 +142,8 @@ const PaymentMethodsSettingsSection = () => {
 				) ??
 				group?.querySelector< HTMLElement >(
 					'.woopayments-settings-payment-method-item'
-				)
+				) ??
+				fieldGroupHeadingRef.current
 			)?.focus();
 		}
 		setIsManualCaptureNoticeDismissed( true );
@@ -152,7 +155,10 @@ const PaymentMethodsSettingsSection = () => {
 			title={ __( 'Payments accepted on checkout', 'woocommerce' ) }
 			description={ <PaymentMethodsSectionDescription /> }
 		>
-			<FieldGroup title={ __( 'Payment methods', 'woocommerce' ) }>
+			<FieldGroup
+				title={ __( 'Payment methods', 'woocommerce' ) }
+				headingRef={ fieldGroupHeadingRef }
+			>
 				{ isManualCaptureEnabled &&
 					! isManualCaptureNoticeDismissed && (
 						<div ref={ manualCaptureNoticeRef }>

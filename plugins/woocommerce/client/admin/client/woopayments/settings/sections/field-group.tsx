@@ -1,15 +1,18 @@
 /**
  * External dependencies
  */
-import { useId } from '@wordpress/element';
+import { useId, type Ref } from '@wordpress/element';
 
 const FieldGroup = ( {
 	id,
 	title,
+	headingRef,
 	children,
 }: {
 	id?: string;
 	title: string;
+	/** Makes the heading a programmatic focus target, for focus that has nowhere else to land. */
+	headingRef?: Ref< HTMLHeadingElement >;
 	children: React.ReactNode;
 } ) => {
 	// Expose each field group as a `group` named by its heading, so it can be
@@ -24,7 +27,14 @@ const FieldGroup = ( {
 			role="group"
 			aria-labelledby={ headingId }
 		>
-			<h3 id={ headingId }>{ title }</h3>
+			<h3
+				id={ headingId }
+				ref={ headingRef }
+				// Focusable by script only, not in the tab order, as the wrapper in settings-recommendations/dismissable-list.tsx.
+				tabIndex={ headingRef ? -1 : undefined }
+			>
+				{ title }
+			</h3>
 			{ children }
 		</div>
 	);

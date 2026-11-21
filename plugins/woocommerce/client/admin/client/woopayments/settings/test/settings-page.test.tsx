@@ -2635,6 +2635,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 			'affirm',
 		] );
 		mockApiFetch.mockClear();
+		mockSaveSettings.mockClear();
 
 		const { unmount } = render( <WooPaymentsSettingsPage /> );
 		const section = getSettingsSectionByName(
@@ -2659,9 +2660,12 @@ describe( 'WooPaymentsSettingsPage', () => {
 		expect(
 			within( section ).getAllByRole( 'checkbox' )[ 0 ].closest( 'li' )
 		).toHaveFocus();
+		// Nothing is saved: no settings action, and no direct request that is not a read, whatever the method's case.
+		expect( mockSaveSettings ).not.toHaveBeenCalled();
 		expect(
 			mockApiFetch.mock.calls.filter(
-				( [ options ] ) => options?.method === 'post'
+				( [ options ] ) =>
+					String( options?.method ?? 'get' ).toLowerCase() !== 'get'
 			)
 		).toHaveLength( 0 );
 
@@ -2673,6 +2677,35 @@ describe( 'WooPaymentsSettingsPage', () => {
 				getSettingsSectionByName( 'Payments accepted on checkout' )
 			).getByText( manualCaptureBanner )
 		).toBeVisible();
+	} );
+
+	// Same pattern as settings-recommendations/dismissable-list.tsx: the dismissed notice held focus, so a
+	// programmatic target that stays mounted takes it. With no rows to focus, that is the field group heading.
+	it( 'moves focus to the payment methods heading when the manual-capture banner is dismissed with no methods listed', async () => {
+		mockUseManualCapture.mockReturnValue( [ true, noop ] );
+		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [] );
+
+		render( <WooPaymentsSettingsPage /> );
+		const section = getSettingsSectionByName(
+			'Payments accepted on checkout'
+		);
+
+		expect( within( section ).queryAllByRole( 'checkbox' ) ).toHaveLength(
+			0
+		);
+		await userEvent.click(
+			within( section ).getByRole( 'button', { name: 'Close' } )
+		);
+
+		expect(
+			within( section ).queryByRole( 'button', { name: 'Close' } )
+		).not.toBeInTheDocument();
+		expect(
+			within( section ).getByRole( 'heading', {
+				level: 3,
+				name: 'Payment methods',
+			} )
+		).toHaveFocus();
 	} );
 
 	it( 'uses account-country branding for Afterpay and Clearpay settings rows', () => {
