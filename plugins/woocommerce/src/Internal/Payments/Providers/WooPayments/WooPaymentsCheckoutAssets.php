@@ -30,11 +30,6 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 	private const PAYMENT_METHOD_CAPABILITY_TOKENIZATION = 'tokenization';
 
 	/**
-	 * Payment method capability for buy-now-pay-later methods.
-	 */
-	private const PAYMENT_METHOD_CAPABILITY_BUY_NOW_PAY_LATER = 'buy_now_pay_later';
-
-	/**
 	 * Payment method capability for express checkout methods.
 	 */
 	private const PAYMENT_METHOD_CAPABILITY_EXPRESS_CHECKOUT = 'express_checkout';
@@ -1232,7 +1227,7 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 			'icon'              => $this->get_payment_method_icon_url( $definition->get_icon_asset_path( $account_country ) ),
 			'darkIcon'          => $this->get_payment_method_icon_url( $definition->get_dark_icon_asset_path( $account_country ) ),
 			'isReusable'        => $is_reusable,
-			'isBnpl'            => $this->payment_method_definition_supports( $definition, self::PAYMENT_METHOD_CAPABILITY_BUY_NOW_PAY_LATER ),
+			'isBnpl'            => $this->payment_method_definition_supports( $definition, PaymentMethodRegistry::BUY_NOW_PAY_LATER ),
 			'isExpressCheckout' => $this->payment_method_definition_supports( $definition, self::PAYMENT_METHOD_CAPABILITY_EXPRESS_CHECKOUT ),
 			'showSaveOption'    => $is_reusable && $this->should_show_save_option( $saved_cards_enabled ),
 			'countries'         => $definition->get_supported_countries( $account_country ),

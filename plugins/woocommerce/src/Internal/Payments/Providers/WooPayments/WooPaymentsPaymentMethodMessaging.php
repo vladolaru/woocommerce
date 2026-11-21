@@ -33,8 +33,6 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 
 	private const CART_BLOCK_STYLE_HANDLE = 'wc-woopayments-cart-block-payment-method-messaging';
 
-	private const BNPL_CAPABILITY = 'buy_now_pay_later';
-
 	/**
 	 * WooPayments account service.
 	 *
@@ -536,7 +534,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 				continue;
 			}
 
-			if ( ! in_array( self::BNPL_CAPABILITY, $definition->get_capabilities(), true ) ) {
+			if ( ! in_array( PaymentMethodRegistry::BUY_NOW_PAY_LATER, $definition->get_capabilities(), true ) ) {
 				continue;
 			}
 
