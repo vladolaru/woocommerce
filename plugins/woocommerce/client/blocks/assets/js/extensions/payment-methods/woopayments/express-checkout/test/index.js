@@ -3536,6 +3536,78 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 				);
 			} );
 
+			const ORDER_PAGE =
+				'http://localhost/checkout/order-received/77/?key=wc_order_abc';
+
+			// A failed request names no order page, even when its body has a return URL.
+			it.each( [
+				[
+					'an error with no message',
+					{ error: {}, return_url: ORDER_PAGE },
+				],
+				[ 'no error', { return_url: ORDER_PAGE } ],
+			] )(
+				'shows the sentence for a 503 answer with %s and a return URL',
+				async ( label, body ) => {
+					const setExpressPaymentError = jest.fn();
+					answerOrderStatusUpdateWithText(
+						503,
+						JSON.stringify( body )
+					);
+
+					await confirmGooglePay( { setExpressPaymentError } );
+
+					expect( setExpressPaymentError ).toHaveBeenCalledWith(
+						PAYMENT_RECEIVED
+					);
+					expect( navigate ).not.toHaveBeenCalled();
+				}
+			);
+
+			it( 'follows the return URL of a 200 answer with an error that has no message', async () => {
+				answerOrderStatusUpdateWithText(
+					200,
+					JSON.stringify( { error: {}, return_url: ORDER_PAGE } )
+				);
+
+				await confirmGooglePay();
+
+				expect( navigate ).toHaveBeenCalledWith( ORDER_PAGE );
+			} );
+
+			it( 'shows the sentence for a blank store error message', async () => {
+				const setExpressPaymentError = jest.fn();
+				answerOrderStatusUpdate( { error: { message: '   ' } } );
+
+				await confirmGooglePay( { setExpressPaymentError } );
+
+				expect( setExpressPaymentError ).toHaveBeenCalledWith(
+					PAYMENT_RECEIVED
+				);
+				expect( navigate ).not.toHaveBeenCalled();
+			} );
+
+			it( 'shows the store message, not the sentence, when the store refuses with one', async () => {
+				const setExpressPaymentError = jest.fn();
+				// The refusal shape of WooPaymentsCheckoutAjaxController::confirm_order_payment().
+				answerOrderStatusUpdateWithText(
+					403,
+					JSON.stringify( {
+						error: {
+							message:
+								"We're not able to process this payment. Please refresh the page and try again.",
+						},
+					} )
+				);
+
+				await confirmGooglePay( { setExpressPaymentError } );
+
+				expect( setExpressPaymentError ).toHaveBeenCalledWith(
+					"We're not able to process this payment. Please refresh the page and try again."
+				);
+				expect( navigate ).not.toHaveBeenCalled();
+			} );
+
 			it( 'leaves for the order with the page locked once the payment is confirmed', async () => {
 				const pageLock = createPageLock();
 				window.jQuery = {

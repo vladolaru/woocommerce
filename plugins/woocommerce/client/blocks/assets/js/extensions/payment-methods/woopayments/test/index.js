@@ -3770,6 +3770,20 @@ describe( 'wc-payment-method-woopayments', () => {
 			);
 		} );
 
+		it.each( [
+			[ 'a blank return URL', { return_url: ' \n ' } ],
+			[ 'a blank error message', { error: { message: '   ' } } ],
+		] )( 'shows the sentence for %s', async ( label, body ) => {
+			confirmPaymentIntent( 'succeeded' );
+			window.fetch = jest
+				.fn()
+				.mockResolvedValue( answer( 200, JSON.stringify( body ) ) );
+
+			await expect( runSavedTokenConfirmation() ).resolves.toEqual(
+				notice( PAYMENT_RECEIVED )
+			);
+		} );
+
 		it( 'shows the sentence when the request never reaches the store', async () => {
 			confirmPaymentIntent( 'succeeded' );
 			window.fetch = jest

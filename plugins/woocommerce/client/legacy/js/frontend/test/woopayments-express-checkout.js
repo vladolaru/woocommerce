@@ -1263,6 +1263,91 @@ describe( 'WooPayments express checkout', () => {
 			expect( navigate ).not.toHaveBeenCalled();
 		} );
 
+		test.each( [ 'requires_capture', 'processing' ] )(
+			'shows the sentence for a 503 text answer after a %s payment intent',
+			async ( status ) => {
+				answerOrderStatusUpdate( 503, 'Service Unavailable' );
+
+				const navigate = await confirmCheckoutWallet( {
+					paymentIntent: { id: 'pi_3ds', status: status },
+				} );
+
+				expect( getErrorText() ).toBe( PAYMENT_RECEIVED );
+				expect( navigate ).not.toHaveBeenCalled();
+			}
+		);
+
+		const ORDER_PAGE = 'https://example.test/checkout/order-received/77/';
+
+		// A failed request names no order page, even when its body has a return URL.
+		test.each( [
+			[ 'an error with no message', { error: {}, return_url: ORDER_PAGE } ],
+			[ 'no error', { return_url: ORDER_PAGE } ],
+		] )( 'shows the sentence for a 503 answer with %s and a return URL', async ( label, body ) => {
+			answerOrderStatusUpdate( 503, JSON.stringify( body ) );
+
+			const navigate = await confirmCheckoutWallet( {
+				paymentIntent: { id: 'pi_3ds', status: 'succeeded' },
+			} );
+
+			expect( getErrorText() ).toBe( PAYMENT_RECEIVED );
+			expect( navigate ).not.toHaveBeenCalled();
+		} );
+
+		test( 'follows the return URL of a 200 answer with an error that has no message', async () => {
+			answerOrderStatusUpdate( 200, JSON.stringify( { error: {}, return_url: ORDER_PAGE } ) );
+
+			const navigate = await confirmCheckoutWallet( {
+				paymentIntent: { id: 'pi_3ds', status: 'succeeded' },
+			} );
+
+			expect( navigate ).toHaveBeenCalledWith( ORDER_PAGE );
+		} );
+
+		test( 'shows the sentence for a blank store error message', async () => {
+			answerOrderStatusUpdate( 200, '{"error":{"message":"   "}}' );
+
+			const navigate = await confirmCheckoutWallet( {
+				paymentIntent: { id: 'pi_3ds', status: 'succeeded' },
+			} );
+
+			expect( getErrorText() ).toBe( PAYMENT_RECEIVED );
+			expect( navigate ).not.toHaveBeenCalled();
+		} );
+
+		test( 'shows the store message, not the sentence, when the store refuses with one', async () => {
+			// The refusal shape of WooPaymentsCheckoutAjaxController::confirm_order_payment().
+			answerOrderStatusUpdate(
+				403,
+				JSON.stringify( {
+					error: {
+						message: "We're not able to process this payment. Please refresh the page and try again.",
+					},
+				} )
+			);
+
+			const navigate = await confirmCheckoutWallet( {
+				paymentIntent: { id: 'pi_3ds', status: 'succeeded' },
+			} );
+
+			expect( getErrorText() ).toBe(
+				"We're not able to process this payment. Please refresh the page and try again."
+			);
+			expect( navigate ).not.toHaveBeenCalled();
+		} );
+
+		test( 'keeps the generic error when the payment intent holds no money', async () => {
+			answerOrderStatusUpdate( 503, 'Service Unavailable' );
+
+			await confirmCheckoutWallet( {
+				paymentIntent: { id: 'pi_3ds', status: 'requires_payment_method' },
+			} );
+
+			expect( getErrorText() ).toBe(
+				'Unable to process this payment, please try again.'
+			);
+		} );
+
 		test( 'shows the wallet’s payment error, not the sentence, when the sheet was closed', async () => {
 			answerOrderStatusUpdate( 503, 'Service Unavailable' );
 

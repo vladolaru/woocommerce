@@ -452,11 +452,16 @@ const updateOrderStatusAfterConfirmation = async (
 		return null;
 	}
 
-	if ( result?.error?.message ) {
-		throw new Error( result.error.message );
+	// A blank message or return URL reads as none.
+	const message = result?.error?.message;
+	if ( typeof message === 'string' && message.trim() ) {
+		throw new Error( message );
 	}
 
-	return result?.return_url || null;
+	const returnUrl =
+		typeof result?.return_url === 'string' ? result.return_url.trim() : '';
+
+	return returnUrl || null;
 };
 
 const handleConfirmationResponse = async (

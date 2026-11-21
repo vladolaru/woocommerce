@@ -1019,7 +1019,10 @@ const requestOrderStatusUpdate = async ( orderId, nonce, intentId ) => {
 			body,
 		} );
 
-		return await response.json();
+		const answer = await response.json();
+
+		// A failed request names no order page, even when its body has a return URL.
+		return response.ok === false ? { error: answer?.error } : answer;
 	} catch {
 		// A transport failure or a body that is not JSON (a host's error page): no readable answer.
 		return null;
@@ -1092,8 +1095,10 @@ const confirmIntent = ( redirectUrl ) => {
 			intentId
 		);
 
-		if ( response?.error?.message ) {
-			throw new Error( response.error.message );
+		// A blank message reads as none.
+		const storeMessage = response?.error?.message;
+		if ( typeof storeMessage === 'string' && storeMessage.trim() ) {
+			throw new Error( storeMessage );
 		}
 
 		if ( paymentError ) {

@@ -3035,6 +3035,98 @@ describe( 'WooPayments checkout', () => {
 			}
 		);
 
+		test.each( [ 'requires_capture', 'processing' ] )(
+			'shows only the sentence for a 503 text answer after a %s payment intent',
+			async ( status ) => {
+				mockStoreFailure( {
+					status: 503,
+					responseText: 'Service Unavailable',
+				} );
+				confirmPaymentIntent( status );
+
+				require( '../woopayments-checkout' );
+				await flushPromises();
+
+				expect( getErrorText() ).toBe( PAYMENT_RECEIVED );
+				expectClassicCheckoutBlockedOnce();
+			}
+		);
+
+		test.each( [
+			[
+				'a 200 answer',
+				() =>
+					mockConfirmationCallbackResponse( {
+						error: { message: '   ' },
+					} ),
+			],
+			[
+				'a 403 answer',
+				() =>
+					mockStoreFailure( {
+						status: 403,
+						responseJSON: { error: { message: '   ' } },
+					} ),
+			],
+		] )(
+			'shows only the sentence for a blank store error message in %s',
+			async ( _answer, arrange ) => {
+				arrange();
+				confirmPaymentIntent( 'succeeded' );
+
+				require( '../woopayments-checkout' );
+				await flushPromises();
+
+				expect( getErrorText() ).toBe( PAYMENT_RECEIVED );
+				expectClassicCheckoutBlockedOnce();
+			}
+		);
+
+		// A filtered config, or a page cached before this release, may lack the sentence.
+		test( 'keeps the generic error and its line when the config has no sentence', async () => {
+			delete window.wc_woopayments_checkout_params
+				.paymentReceivedOrderNotUpdatedMessage;
+			mockStoreFailure( { status: 503, responseText: 'Service Unavailable' } );
+			confirmPaymentIntent( 'succeeded' );
+
+			require( '../woopayments-checkout' );
+			await flushPromises();
+
+			expect( getErrorText() ).toBe( GENERIC + ' ' + LINE );
+			expectClassicCheckoutBlockedOnce();
+		} );
+
+		test( 'shows only the sentence for a 503 answer with an error that has no message and a return URL', async () => {
+			mockStoreFailure( {
+				status: 503,
+				responseJSON: {
+					error: {},
+					return_url: window.location.origin + '/#order-received',
+				},
+			} );
+			confirmPaymentIntent( 'succeeded' );
+
+			require( '../woopayments-checkout' );
+			await flushPromises();
+
+			expect( getErrorText() ).toBe( PAYMENT_RECEIVED );
+			expect( window.location.hash ).not.toBe( '#order-received' );
+		} );
+
+		test( 'follows the return URL of a 200 answer with an error that has no message', async () => {
+			mockConfirmationCallbackResponse( {
+				error: {},
+				return_url: window.location.origin + '/#order-received',
+			} );
+			confirmPaymentIntent( 'succeeded' );
+
+			require( '../woopayments-checkout' );
+			await flushPromises();
+
+			expect( window.location.hash ).toBe( '#order-received' );
+			expectClassicCheckoutBlockedOnce();
+		} );
+
 		test( 'keeps the generic error and its line after a setup intent', async () => {
 			mockStoreFailure( { status: 503, responseText: 'Service Unavailable' } );
 			stripeMock.handleNextAction.mockResolvedValueOnce( {

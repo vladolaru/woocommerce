@@ -1492,7 +1492,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should source add-payment-method billing details from the customer service.
+	 * @testdox Should source add-payment-method billing details from the customer service and leave out the paid-order sentence.
 	 */
 	public function test_get_payment_fields_js_config_uses_customer_data_on_add_payment_method_page(): void {
 		$user_id = self::factory()->user->create(
@@ -1536,6 +1536,8 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'Ada Lovelace', $config['customerData']['name'] );
 		$this->assertSame( 'ada@example.com', $config['customerData']['email'] );
 		$this->assertSame( 'RO', $config['customerData']['billing_country'] );
+		// Adding a payment method takes no payment.
+		$this->assertArrayNotHasKey( 'paymentReceivedOrderNotUpdatedMessage', $config );
 	}
 
 	/**

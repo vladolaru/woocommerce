@@ -530,6 +530,10 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 			'cardBrandPopoverLabel'                    => __( 'Supported credit card brands', 'woocommerce' ),
 			'cardBrandLogosLabel'                      => __( 'Show all supported credit card brands', 'woocommerce' ),
 		);
+		// Adding a payment method takes no payment, so the paid-order sentence has no use there.
+		if ( is_add_payment_method_page() ) {
+			unset( $config['paymentReceivedOrderNotUpdatedMessage'] );
+		}
 		if ( 0 < $payment_context['order_id'] ) {
 			$config['isOrderPay'] = true;
 			$config['orderId']    = $payment_context['order_id'];

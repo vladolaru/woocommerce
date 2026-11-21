@@ -1380,7 +1380,12 @@
 				body: body,
 			} )
 			.then( function ( response ) {
-				return response.json();
+				return response.json().then( function ( answer ) {
+					// A failed request names no order page, even when its body has a return URL.
+					return response.ok === false
+						? { error: answer && answer.error }
+						: answer;
+				} );
 			} )
 			.catch( function () {
 				// A transport failure or a body that is not JSON (a host's error page): no readable answer.
@@ -1498,7 +1503,13 @@
 			.then( function ( response ) {
 				var returnUrl;
 
-				if ( response && response.error && response.error.message ) {
+				// A blank message reads as none.
+				if (
+					response &&
+					response.error &&
+					typeof response.error.message === 'string' &&
+					response.error.message.trim()
+				) {
 					throw new Error( response.error.message );
 				}
 

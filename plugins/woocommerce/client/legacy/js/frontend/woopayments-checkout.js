@@ -2843,9 +2843,12 @@
 		).documentElement.textContent;
 	}
 
+	// A blank message reads as none.
 	function hasStoreErrorMessage( error ) {
 		return Boolean(
-			error && typeof error.message === 'string' && error.message
+			error &&
+				typeof error.message === 'string' &&
+				error.message.trim()
 		);
 	}
 
@@ -2963,8 +2966,12 @@
 		// The store's answer has no readable error and no order page. After a payment Stripe confirmed, one sentence
 		// tells the shopper not to pay again; the form stays blocked either way.
 		function setUnreadableAnswerError( result ) {
-			if ( isConfirmedPayment( confirmation, result ) ) {
-				setError( config.paymentReceivedOrderNotUpdatedMessage || '' );
+			// A config without the sentence (a filtered or cached one) keeps the generic error and its line.
+			if (
+				isConfirmedPayment( confirmation, result ) &&
+				config.paymentReceivedOrderNotUpdatedMessage
+			) {
+				setError( config.paymentReceivedOrderNotUpdatedMessage );
 				return;
 			}
 
