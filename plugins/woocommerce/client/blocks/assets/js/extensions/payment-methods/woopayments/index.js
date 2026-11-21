@@ -29,6 +29,7 @@ import {
 	confirmWithStripe,
 	isConfirmedPayment,
 	parseConfirmationHash,
+	readOrderStatusAnswer,
 	StripeWaitTimeoutError,
 	waitForStripe,
 } from './common';
@@ -434,7 +435,6 @@ const updateOrderStatusAfterConfirmation = async (
 		isChangingPaymentMethodForSubscription() ? 'true' : 'false'
 	);
 
-	let result;
 	try {
 		const response = await window.fetch( paymentSettings.ajaxUrl, {
 			method: 'POST',
@@ -446,22 +446,15 @@ const updateOrderStatusAfterConfirmation = async (
 			body,
 		} );
 
-		result = await response.json();
+		return {
+			ok: response.ok !== false,
+			status: response.status,
+			body: await response.json(),
+		};
 	} catch {
 		// A transport failure or a body that is not JSON (a host's error page): no readable answer.
 		return null;
 	}
-
-	// A blank message or return URL reads as none.
-	const message = result?.error?.message;
-	if ( typeof message === 'string' && message.trim() ) {
-		throw new Error( message );
-	}
-
-	const returnUrl =
-		typeof result?.return_url === 'string' ? result.return_url.trim() : '';
-
-	return returnUrl || null;
 };
 
 const handleConfirmationResponse = async (
@@ -522,17 +515,26 @@ const handleConfirmationResponse = async (
 
 		// Client 11.2.0 client/checkout/api/index.js:236-278 always reports the confirmed intent and sends the shopper
 		// to the return_url the store answers.
-		const redirectUrl = await updateOrderStatusAfterConfirmation(
-			confirmation,
-			intentId,
-			shouldSavePaymentMethod,
-			paymentSettings
+		const isPaid = isConfirmedPayment( confirmation, result );
+		const answer = readOrderStatusAnswer(
+			await updateOrderStatusAfterConfirmation(
+				confirmation,
+				intentId,
+				shouldSavePaymentMethod,
+				paymentSettings
+			),
+			isPaid
 		);
+
+		if ( answer && 'message' in answer ) {
+			return getErrorResponse( emitResponse, answer.message );
+		}
+
 		// No readable error and no order page: after a payment Stripe confirmed, the shopper must not pay again.
-		if ( ! redirectUrl ) {
+		if ( ! answer ) {
 			return getErrorResponse(
 				emitResponse,
-				isConfirmedPayment( confirmation, result )
+				isPaid
 					? __(
 							"Your payment was received, but we couldn't finish updating your order. Please don't pay again. If your order confirmation email doesn't arrive soon, contact us.",
 							'woocommerce'
@@ -541,7 +543,7 @@ const handleConfirmationResponse = async (
 			);
 		}
 
-		return getSuccessResponse( emitResponse, {}, redirectUrl );
+		return getSuccessResponse( emitResponse, {}, answer.url );
 	} catch ( error ) {
 		// Stripe's error message as is; the translated confirmation message when there is none and when Stripe.js
 		// never loads.

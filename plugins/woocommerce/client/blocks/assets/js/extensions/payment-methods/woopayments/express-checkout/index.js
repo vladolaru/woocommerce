@@ -21,8 +21,10 @@ import { recordWooPaymentsUserEvent } from '../tracks';
 import {
 	confirmWithStripe,
 	expressCheckout,
+	getHttpUrl,
 	isConfirmedPayment,
 	parseConfirmationHash,
+	readOrderStatusAnswer,
 	waitForStripe,
 } from '../common';
 import { getBlocksCheckoutAppearance } from '../upe-styles';
@@ -971,31 +973,6 @@ const getRedirectUrl = ( response ) =>
 	)?.value ||
 	'';
 
-/**
- * The URL resolved against the page when it is an http: or https: one, so a payment answer never sends the shopper to a
- * javascript: or data: URL.
- *
- * @param {string} url Absolute or page-relative URL.
- * @return {string} The resolved URL, or '' for an empty, invalid or non-http(s) one.
- */
-const getHttpUrl = ( url ) => {
-	const trimmed = typeof url === 'string' ? url.trim() : '';
-
-	if ( ! trimmed ) {
-		return '';
-	}
-
-	try {
-		const resolved = new window.URL( trimmed, window.location.href );
-
-		return [ 'http:', 'https:' ].includes( resolved.protocol )
-			? resolved.href
-			: '';
-	} catch {
-		return '';
-	}
-};
-
 const requestOrderStatusUpdate = async ( orderId, nonce, intentId ) => {
 	const body = new window.URLSearchParams();
 	body.append( 'action', 'update_order_status' );
@@ -1019,10 +996,11 @@ const requestOrderStatusUpdate = async ( orderId, nonce, intentId ) => {
 			body,
 		} );
 
-		const answer = await response.json();
-
-		// A failed request names no order page, even when its body has a return URL.
-		return response.ok === false ? { error: answer?.error } : answer;
+		return {
+			ok: response.ok !== false,
+			status: response.status,
+			body: await response.json(),
+		};
 	} catch {
 		// A transport failure or a body that is not JSON (a host's error page): no readable answer.
 		return null;
@@ -1089,34 +1067,30 @@ const confirmIntent = ( redirectUrl ) => {
 			throw new Error( GENERIC_PAYMENT_ERROR_MESSAGE );
 		}
 
-		const response = await requestOrderStatusUpdate(
-			orderId,
-			nonce,
-			intentId
+		const isPaid = isConfirmedPayment( confirmation, result );
+		const answer = readOrderStatusAnswer(
+			await requestOrderStatusUpdate( orderId, nonce, intentId ),
+			isPaid
 		);
 
-		// A blank message reads as none.
-		const storeMessage = response?.error?.message;
-		if ( typeof storeMessage === 'string' && storeMessage.trim() ) {
-			throw new Error( storeMessage );
+		if ( answer && 'message' in answer ) {
+			throw new Error( answer.message );
 		}
 
 		if ( paymentError ) {
 			throw new Error( paymentError );
 		}
 
-		// As the classic express script checks it: an empty or non-http(s) return URL is no order page.
-		const returnUrl = getHttpUrl( response?.return_url );
-
-		if ( ! returnUrl ) {
+		// No readable error and no order page: after a payment Stripe confirmed, the shopper must not pay again.
+		if ( ! answer ) {
 			throw new Error(
-				isConfirmedPayment( confirmation, result )
+				isPaid
 					? PAYMENT_RECEIVED_MESSAGE
 					: GENERIC_PAYMENT_ERROR_MESSAGE
 			);
 		}
 
-		return returnUrl;
+		return answer.url;
 	} );
 };
 

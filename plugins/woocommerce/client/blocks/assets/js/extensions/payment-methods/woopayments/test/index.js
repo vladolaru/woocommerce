@@ -28,6 +28,11 @@ import {
 	normalizeAppearanceForStripe,
 	normalizeAppearanceValueForStripe,
 } from '../upe-styles';
+import {
+	ANSWER_SHAPES,
+	MONEY_STATUS_FIXTURE,
+	ORDER_PAGE,
+} from '../common/test/fixtures/answer-shapes';
 
 jest.mock( '@fingerprintjs/fingerprintjs', () => ( {
 	__esModule: true,
@@ -3844,6 +3849,88 @@ describe( 'wc-payment-method-woopayments', () => {
 				notice( GENERIC )
 			);
 		} );
+	} );
+
+	// The decision table (common/test/fixtures/answer-shapes.js): every store answer, after a payment intent that holds
+	// money and after a setup intent, with the outcome all four checkout scripts share.
+	describe( 'the store answer after the confirmation, by the decision table', () => {
+		const PAYMENT_RECEIVED =
+			"Your payment was received, but we couldn't finish updating your order. Please don't pay again. If your order confirmation email doesn't arrive soon, contact us.";
+
+		const notice = ( message ) => ( {
+			type: 'error',
+			message,
+			messageContext: 'payments',
+		} );
+
+		// A fetch Response whose json() parses the raw body as Response.json() does, or a request that never arrives.
+		const answerOrderStatus = ( transport ) => {
+			window.fetch = jest.fn( () =>
+				transport === 'reject'
+					? Promise.reject( new TypeError( 'Failed to fetch' ) )
+					: Promise.resolve( {
+							ok:
+								transport.status >= 200 &&
+								transport.status < 300,
+							status: transport.status,
+							json: () =>
+								Promise.resolve().then( () =>
+									JSON.parse( transport.body )
+								),
+						} )
+			);
+		};
+
+		const cases = ANSWER_SHAPES.flatMap( ( shape ) => [
+			...( shape.id === MONEY_STATUS_FIXTURE
+				? [ 'succeeded', 'requires_capture', 'processing' ]
+				: [ 'succeeded' ]
+			).map( ( status ) => [
+				shape.id,
+				`a ${ status } payment intent`,
+				'pi',
+				status,
+				shape,
+			] ),
+			[ shape.id, 'a setup intent', 'si', 'succeeded', shape ],
+		] );
+
+		it.each( cases )(
+			'%s: after %s',
+			async ( id, label, type, status, shape ) => {
+				window.Stripe = jest.fn( () => ( {
+					handleNextAction: jest
+						.fn()
+						.mockResolvedValue(
+							type === 'pi'
+								? { paymentIntent: { id: 'pi_123', status } }
+								: { setupIntent: { id: 'seti_123', status } }
+						),
+				} ) );
+				answerOrderStatus( shape.transport );
+
+				const expected = {
+					SENTENCE: notice( PAYMENT_RECEIVED ),
+					GENERIC: notice(
+						'There was a problem confirming your payment.'
+					),
+					MESSAGE: notice( shape.message ),
+					FOLLOW: {
+						type: 'success',
+						redirectUrl: ORDER_PAGE,
+						meta: { paymentMethodData: {} },
+					},
+				}[ shape.expect[ type ] ];
+
+				await expect(
+					runSavedTokenConfirmation(
+						type === 'pi'
+							? '#wcpay-confirm-pi:123:pi_123_secret_abc:nonce_123'
+							: '#wcpay-confirm-si:123:seti_123_secret_abc:nonce_123'
+					)
+				).resolves.toEqual( expected );
+			}
+		);
 	} );
 
 	it( 'shows the Stripe.js message when the next action rejects', async () => {

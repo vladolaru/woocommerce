@@ -5,8 +5,10 @@ import { getIdentity, recordEvent } from './tracks';
 import { StripeWaitTimeoutError, waitForStripe } from '../wait-for-stripe';
 import {
 	confirmWithStripe,
+	getHttpUrl,
 	isConfirmedPayment,
 	parseConfirmationHash,
+	readOrderStatusAnswer,
 } from './confirmation';
 import {
 	getBillingAddress,
@@ -35,5 +37,7 @@ export {
 	StripeWaitTimeoutError,
 	parseConfirmationHash,
 	confirmWithStripe,
+	getHttpUrl,
 	isConfirmedPayment,
+	readOrderStatusAnswer,
 };

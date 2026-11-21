@@ -3175,6 +3175,189 @@ describe( 'WooPayments checkout', () => {
 			);
 			expectClassicCheckoutBlockedOnce();
 		} );
+
+		// A filter can leave the sentence blank; a blank one counts as none.
+		test( 'keeps the generic error and its line when the configured sentence is blank', async () => {
+			window.wc_woopayments_checkout_params.paymentReceivedOrderNotUpdatedMessage =
+				'   ';
+			mockStoreFailure( { status: 503, responseText: 'Service Unavailable' } );
+			confirmPaymentIntent( 'succeeded' );
+
+			require( '../woopayments-checkout' );
+			await flushPromises();
+
+			expect( getErrorText() ).toBe( GENERIC + ' ' + LINE );
+			expectClassicCheckoutBlockedOnce();
+		} );
+	} );
+
+	// The decision table (fixtures/woopayments-answer-shapes.js): every store answer, after a payment intent that holds
+	// money and after a setup intent, with the outcome all four checkout scripts share.
+	describe( 'the store answer after a confirmation, by the decision table', () => {
+		const fs = require( 'fs' );
+		const path = require( 'path' );
+		const {
+			ANSWER_SHAPES,
+			MONEY_STATUS_FIXTURE,
+			ORDER_PAGE,
+		} = require( './fixtures/woopayments-answer-shapes' );
+		const GENERIC = 'There was a problem confirming your payment.';
+		const LINE =
+			'Your payment may have gone through. Check your email for an order confirmation before you try again, or refresh the page.';
+		const PAYMENT_RECEIVED =
+			"Your payment was received, but we couldn't finish updating your order. " +
+			"Please don't pay again. If your order confirmation email doesn't arrive soon, contact us.";
+
+		// What jQuery.post() does with each answer: done() for a 2xx it can read (a JSON content type is parsed, any
+		// other body is passed as text), fail() for a failed status, a lost connection or a 2xx JSON body that does not
+		// parse; responseJSON is set only for a JSON body that parses.
+		function answerOrderStatus( transport ) {
+			var parsed;
+			var parses = true;
+			var isJson;
+			var outcome;
+
+			if ( transport === 'reject' ) {
+				outcome = { fail: { status: 0, responseText: '' } };
+			} else {
+				try {
+					parsed = JSON.parse( transport.body );
+				} catch ( error ) {
+					parses = false;
+				}
+				isJson = transport.contentType === 'application/json';
+
+				if ( transport.status >= 200 && transport.status < 300 ) {
+					if ( ! isJson ) {
+						outcome = { done: transport.body };
+					} else if ( parses ) {
+						outcome = { done: parsed };
+					} else {
+						outcome = {
+							fail: {
+								status: transport.status,
+								responseText: transport.body,
+								statusText: 'parsererror',
+							},
+						};
+					}
+				} else {
+					outcome = {
+						fail: Object.assign(
+							{
+								status: transport.status,
+								responseText: transport.body,
+							},
+							isJson && parses ? { responseJSON: parsed } : {}
+						),
+					};
+				}
+			}
+
+			global.jQuery.post.mockImplementationOnce( () => ( {
+				done: jest.fn( ( callback ) => {
+					if ( 'done' in outcome ) {
+						callback( outcome.done );
+					}
+
+					return {
+						fail: jest.fn( ( failCallback ) => {
+							if ( 'fail' in outcome ) {
+								failCallback( outcome.fail );
+							}
+						} ),
+					};
+				} ),
+			} ) );
+		}
+
+		beforeEach( () => {
+			document
+				.querySelector( 'form.checkout' )
+				.insertAdjacentHTML(
+					'beforeend',
+					'<div class="woopayments-payment-errors" hidden></div>'
+				);
+			window.wc_woopayments_checkout_params.confirmationErrorMessage =
+				GENERIC;
+			window.wc_woopayments_checkout_params.paymentMayHaveGoneThroughMessage =
+				LINE;
+			window.wc_woopayments_checkout_params.paymentReceivedOrderNotUpdatedMessage =
+				PAYMENT_RECEIVED;
+		} );
+
+		test( 'reads the same fixtures as the Blocks tests', () => {
+			expect(
+				fs.readFileSync(
+					path.join( __dirname, 'fixtures/woopayments-answer-shapes.js' ),
+					'utf8'
+				)
+			).toBe(
+				fs.readFileSync(
+					path.join(
+						__dirname,
+						'../../../../blocks/assets/js/extensions/payment-methods/woopayments/common/test/fixtures/answer-shapes.js'
+					),
+					'utf8'
+				)
+			);
+		} );
+
+		const cases = ANSWER_SHAPES.flatMap( ( shape ) =>
+			( shape.id === MONEY_STATUS_FIXTURE
+				? [ 'succeeded', 'requires_capture', 'processing' ]
+				: [ 'succeeded' ]
+			)
+				.map( ( status ) => [
+					shape.id,
+					'a ' + status + ' payment intent',
+					'pi',
+					status,
+					shape,
+				] )
+				.concat( [ [ shape.id, 'a setup intent', 'si', 'succeeded', shape ] ] )
+		);
+
+		test.each( cases )( '%s: after %s', async ( id, label, type, status, shape ) => {
+			var errorBox;
+			var text;
+
+			answerOrderStatus( shape.transport );
+			if ( type === 'pi' ) {
+				stripeMock.handleNextAction.mockResolvedValueOnce( {
+					paymentIntent: { id: 'pi_native', status: status },
+				} );
+				setPaymentIntentConfirmationHash();
+			} else {
+				stripeMock.handleNextAction.mockResolvedValueOnce( {
+					setupIntent: { id: 'seti_native', status: status },
+				} );
+				window.location.hash =
+					'#wcpay-confirm-si:123:seti_native_secret_abc:nonce';
+			}
+
+			require( '../woopayments-checkout' );
+			await flushPromises();
+
+			errorBox = document.querySelector( '.woopayments-payment-errors' );
+			expectClassicCheckoutBlockedOnce();
+			expectNoConfirmationResubmit();
+
+			if ( shape.expect[ type ] === 'FOLLOW' ) {
+				expect( window.location.href ).toBe( ORDER_PAGE );
+				expect( errorBox.textContent ).toBe( '' );
+				return;
+			}
+
+			text = {
+				SENTENCE: PAYMENT_RECEIVED,
+				GENERIC: GENERIC + ' ' + LINE,
+				MESSAGE: shape.message + ' ' + LINE,
+			}[ shape.expect[ type ] ];
+			expect( errorBox.textContent ).toBe( text );
+			expect( errorBox.hidden ).toBe( false );
+			expect( window.location.href ).not.toBe( ORDER_PAGE );
+		} );
 	} );
 
 	// Client 11.2.0 releases the form one microtask after it sets the location (checkout/classic/3ds-flow-handling.js:40-43,

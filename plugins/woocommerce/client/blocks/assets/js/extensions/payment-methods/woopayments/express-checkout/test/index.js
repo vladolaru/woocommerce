@@ -7,6 +7,15 @@ import { registerExpressPaymentMethod } from '@woocommerce/blocks-registry';
 import apiFetch from '@wordpress/api-fetch';
 import { reload as navigate } from '@woocommerce/utils/navigation';
 
+/**
+ * Internal dependencies
+ */
+import {
+	ANSWER_SHAPES,
+	MONEY_STATUS_FIXTURE,
+	ORDER_PAGE as TABLE_ORDER_PAGE,
+} from '../../common/test/fixtures/answer-shapes';
+
 jest.mock( '@woocommerce/blocks-registry', () => ( {
 	registerExpressPaymentMethod: jest.fn(),
 } ) );
@@ -3642,6 +3651,122 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 
 				expect( navigate ).toHaveBeenCalledWith(
 					'http://localhost/checkout/order-received/77/?key=wc_order_abc'
+				);
+			} );
+
+			// The decision table (common/test/fixtures/answer-shapes.js): every store answer, after a payment intent that
+			// holds money and after a setup intent, with the outcome all four checkout scripts share.
+			describe( 'by the decision table', () => {
+				// A fetch Response whose json() parses the raw body as Response.json() does, or a request that never
+				// arrives.
+				const answerOrderStatus = ( transport ) => {
+					window.fetch = jest.fn( ( url, options ) => {
+						if (
+							options?.body?.get?.( 'action' ) !==
+							'update_order_status'
+						) {
+							return Promise.resolve( {
+								json: () => Promise.resolve( {} ),
+							} );
+						}
+
+						return transport === 'reject'
+							? Promise.reject(
+									new TypeError( 'Failed to fetch' )
+								)
+							: Promise.resolve( {
+									ok:
+										transport.status >= 200 &&
+										transport.status < 300,
+									status: transport.status,
+									json: () =>
+										Promise.resolve().then( () =>
+											JSON.parse( transport.body )
+										),
+								} );
+					} );
+				};
+
+				const confirmSetupIntent = () => {
+					apiFetch.mockReset();
+					apiFetch.mockResolvedValueOnce( {
+						order_id: 77,
+						status: 'pending',
+						payment_result: {
+							payment_status: 'success',
+							payment_details: [
+								{ key: 'result', value: 'success' },
+								{
+									key: 'redirect',
+									value: '#wcpay-confirm-si:77:seti_3ds_secret_abc:nonce-3ds',
+								},
+							],
+							redirect_url: '',
+						},
+					} );
+					stripe.handleNextAction = jest.fn().mockResolvedValue( {
+						setupIntent: { id: 'seti_3ds', status: 'succeeded' },
+					} );
+				};
+
+				const cases = ANSWER_SHAPES.flatMap( ( shape ) => [
+					...( shape.id === MONEY_STATUS_FIXTURE
+						? [ 'succeeded', 'requires_capture', 'processing' ]
+						: [ 'succeeded' ]
+					).map( ( status ) => [
+						shape.id,
+						`a ${ status } payment intent`,
+						'pi',
+						status,
+						shape,
+					] ),
+					[ shape.id, 'a setup intent', 'si', 'succeeded', shape ],
+				] );
+
+				it.each( cases )(
+					'%s: after %s',
+					async ( id, label, type, status, shape ) => {
+						const setExpressPaymentError = jest.fn();
+						const paymentFailed = jest.fn();
+						const pageBefore = window.location.href;
+						if ( type === 'pi' ) {
+							stripe.handleNextAction = jest
+								.fn()
+								.mockResolvedValue( {
+									paymentIntent: { id: 'pi_3ds', status },
+								} );
+						} else {
+							confirmSetupIntent();
+						}
+						answerOrderStatus( shape.transport );
+
+						await confirmGooglePay( {
+							setExpressPaymentError,
+							paymentFailed,
+						} );
+
+						// No text for FOLLOW.
+						const text = {
+							SENTENCE: PAYMENT_RECEIVED,
+							GENERIC:
+								'Unable to process this payment, please try again.',
+							MESSAGE: shape.message,
+						}[ shape.expect[ type ] ];
+						expect( navigate.mock.calls ).toEqual(
+							text ? [] : [ [ TABLE_ORDER_PAGE ] ]
+						);
+						expect(
+							setExpressPaymentError.mock.calls
+								.map( ( [ message ] ) => message )
+								.filter( Boolean )
+						).toEqual( text ? [ text ] : [] );
+						expect( paymentFailed.mock.calls ).toEqual(
+							text
+								? [ [ { reason: 'fail', message: text } ] ]
+								: []
+						);
+						expect( window.location.href ).toBe( pageBefore );
+					}
 				);
 			} );
 		} );

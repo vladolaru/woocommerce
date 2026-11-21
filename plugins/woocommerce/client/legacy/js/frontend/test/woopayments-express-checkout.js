@@ -1373,6 +1373,73 @@ describe( 'WooPayments express checkout', () => {
 				'Unable to process this payment, please try again.'
 			);
 		} );
+
+		// The decision table (fixtures/woopayments-answer-shapes.js): every store answer, after a payment intent that
+		// holds money and after a setup intent, with the outcome all four checkout scripts share.
+		describe( 'by the decision table', () => {
+			const {
+				ANSWER_SHAPES,
+				MONEY_STATUS_FIXTURE,
+				ORDER_PAGE,
+			} = require( './fixtures/woopayments-answer-shapes' );
+
+			function answerOrderStatus( transport ) {
+				if ( transport !== 'reject' ) {
+					answerOrderStatusUpdate( transport.status, transport.body );
+					return;
+				}
+
+				window.fetch = jest.fn( ( url, options ) =>
+					isOrderStatusUpdate( options )
+						? Promise.reject( new TypeError( 'Failed to fetch' ) )
+						: Promise.resolve( {} )
+				);
+			}
+
+			const cases = ANSWER_SHAPES.flatMap( ( shape ) =>
+				( shape.id === MONEY_STATUS_FIXTURE
+					? [ 'succeeded', 'requires_capture', 'processing' ]
+					: [ 'succeeded' ]
+				)
+					.map( ( status ) => [ shape.id, 'a ' + status + ' payment intent', 'pi', status, shape ] )
+					.concat( [ [ shape.id, 'a setup intent', 'si', 'succeeded', shape ] ] )
+			);
+
+			test.each( cases )( '%s: after %s', async ( id, label, type, status, shape ) => {
+				let checkoutResponse;
+				let navigate;
+
+				answerOrderStatus( shape.transport );
+				if ( type === 'pi' ) {
+					navigate = await confirmCheckoutWallet( {
+						paymentIntent: { id: 'pi_3ds', status: status },
+					} );
+				} else {
+					checkoutResponse = getConfirmationCheckoutResponse( 77 );
+					checkoutResponse.payment_result.payment_details[ 1 ].value =
+						'#wcpay-confirm-si:77:seti_3ds_secret_abc:nonce-3ds';
+					navigate = await confirmCheckoutWallet(
+						{ setupIntent: { id: 'seti_3ds', status: status } },
+						checkoutResponse
+					);
+				}
+
+				if ( shape.expect[ type ] === 'FOLLOW' ) {
+					expect( navigate ).toHaveBeenCalledWith( ORDER_PAGE );
+					expect( getErrorText() ).toBe( '' );
+					return;
+				}
+
+				expect( getErrorText() ).toBe(
+					{
+						SENTENCE: PAYMENT_RECEIVED,
+						GENERIC: 'Unable to process this payment, please try again.',
+						MESSAGE: shape.message,
+					}[ shape.expect[ type ] ]
+				);
+				expect( navigate ).not.toHaveBeenCalled();
+			} );
+		} );
 	} );
 
 	test( 'mounts product page ECE from server product data without reading the current cart', async () => {

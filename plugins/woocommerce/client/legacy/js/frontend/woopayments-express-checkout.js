@@ -1363,6 +1363,33 @@
 			: '';
 	}
 
+	/**
+	 * Read the store's update_order_status answer by the rule all four checkout scripts share (the other classic script
+	 * and the Blocks common module carry the same function): a readable message is shown, except a 5xx one after a
+	 * payment that holds money; only a 2xx answer's http(s) return URL is followed.
+	 *
+	 * @param {{ok: boolean, status: number, body: *}|null} answer The answer, or null when it never arrived or was not JSON.
+	 * @param {boolean}                                      isPaid Whether Stripe confirmed a payment that holds money.
+	 * @return {{message: string}|{url: string}|null} The message to show, the page to follow, or null for neither.
+	 */
+	function readOrderStatusAnswer( answer, isPaid ) {
+		var body = answer && answer.body;
+		var message = body && body.error && body.error.message;
+		var url;
+
+		if (
+			typeof message === 'string' &&
+			message.trim() &&
+			! ( isPaid && answer.status >= 500 )
+		) {
+			return { message: message };
+		}
+
+		url = answer && answer.ok ? getHttpUrl( body && body.return_url ) : '';
+
+		return url ? { url: url } : null;
+	}
+
 	function requestOrderStatusUpdate( confirmation, intentId ) {
 		var body = new window.FormData();
 
@@ -1380,11 +1407,12 @@
 				body: body,
 			} )
 			.then( function ( response ) {
-				return response.json().then( function ( answer ) {
-					// A failed request names no order page, even when its body has a return URL.
-					return response.ok === false
-						? { error: answer && answer.error }
-						: answer;
+				return response.json().then( function ( body ) {
+					return {
+						ok: response.ok !== false,
+						status: response.status,
+						body: body,
+					};
 				} );
 			} )
 			.catch( function () {
@@ -1500,23 +1528,15 @@
 					}
 				);
 			} )
-			.then( function ( response ) {
-				var returnUrl;
+			.then( function ( answer ) {
+				var next = readOrderStatusAnswer( answer, isPaymentConfirmed );
 
-				// A blank message reads as none.
-				if (
-					response &&
-					response.error &&
-					typeof response.error.message === 'string' &&
-					response.error.message.trim()
-				) {
-					throw new Error( response.error.message );
+				if ( next && next.message ) {
+					throw new Error( next.message );
 				}
 
-				returnUrl = getHttpUrl( response && response.return_url );
-
 				// No readable error and no order page: after a payment Stripe confirmed, the shopper must not pay again.
-				if ( ! returnUrl ) {
+				if ( ! next ) {
 					throw new Error(
 						isPaymentConfirmed
 							? PAYMENT_RECEIVED_MESSAGE
@@ -1524,7 +1544,7 @@
 					);
 				}
 
-				completePayment( returnUrl );
+				completePayment( next.url );
 			} );
 	}
 

@@ -2843,13 +2843,57 @@
 		).documentElement.textContent;
 	}
 
-	// A blank message reads as none.
-	function hasStoreErrorMessage( error ) {
-		return Boolean(
-			error &&
-				typeof error.message === 'string' &&
-				error.message.trim()
-		);
+	/**
+	 * The URL resolved against the page when it is an http: or https: one, so a payment answer never sends the shopper
+	 * to a javascript: or data: URL.
+	 *
+	 * @param {string} url Absolute or page-relative URL.
+	 * @return {string} The resolved URL, or '' for an empty, invalid or non-http(s) one.
+	 */
+	function getHttpUrl( url ) {
+		var resolved;
+
+		url = typeof url === 'string' ? url.trim() : '';
+		if ( ! url ) {
+			return '';
+		}
+
+		try {
+			resolved = new window.URL( url, window.location.href );
+		} catch ( error ) {
+			return '';
+		}
+
+		return resolved.protocol === 'http:' || resolved.protocol === 'https:'
+			? resolved.href
+			: '';
+	}
+
+	/**
+	 * Read the store's update_order_status answer by the rule all four checkout scripts share (the other classic script
+	 * and the Blocks common module carry the same function): a readable message is shown, except a 5xx one after a
+	 * payment that holds money; only a 2xx answer's http(s) return URL is followed.
+	 *
+	 * @param {{ok: boolean, status: number, body: *}|null} answer The answer, or null when it never arrived or was not JSON.
+	 * @param {boolean}                                      isPaid Whether Stripe confirmed a payment that holds money.
+	 * @return {{message: string}|{url: string}|null} The message to show, the page to follow, or null for neither.
+	 */
+	function readOrderStatusAnswer( answer, isPaid ) {
+		var body = answer && answer.body;
+		var message = body && body.error && body.error.message;
+		var url;
+
+		if (
+			typeof message === 'string' &&
+			message.trim() &&
+			! ( isPaid && answer.status >= 500 )
+		) {
+			return { message: message };
+		}
+
+		url = answer && answer.ok ? getHttpUrl( body && body.return_url ) : '';
+
+		return url ? { url: url } : null;
 	}
 
 	// The payment intent statuses that hold the shopper's money (WooPaymentsIntentCodec::holds_money()).
@@ -2966,16 +3010,42 @@
 		// The store's answer has no readable error and no order page. After a payment Stripe confirmed, one sentence
 		// tells the shopper not to pay again; the form stays blocked either way.
 		function setUnreadableAnswerError( result ) {
-			// A config without the sentence (a filtered or cached one) keeps the generic error and its line.
+			var sentence = config.paymentReceivedOrderNotUpdatedMessage;
+
+			// A config without the sentence, or with a blank one (a filtered or cached config), keeps the generic error
+			// and its line.
 			if (
 				isConfirmedPayment( confirmation, result ) &&
-				config.paymentReceivedOrderNotUpdatedMessage
+				typeof sentence === 'string' &&
+				sentence.trim()
 			) {
-				setError( config.paymentReceivedOrderNotUpdatedMessage );
+				setError( sentence );
 				return;
 			}
 
 			setKeptBlockedError( config.confirmationErrorMessage || '' );
+		}
+
+		function showOrderStatusAnswer( result, answer ) {
+			var next = readOrderStatusAnswer(
+				answer,
+				isConfirmedPayment( confirmation, result )
+			);
+
+			if ( next && next.message ) {
+				setKeptBlockedError( getStoreErrorMessage( next ) );
+				return;
+			}
+
+			if ( ! next ) {
+				setUnreadableAnswerError( result );
+				return;
+			}
+
+			// The form stays blocked while the order page loads, so a second Place order cannot start another order and
+			// charge; it is released if the shopper comes back here from the back-forward cache.
+			releaseConfirmationOnReturn( releaseConfirmationUi );
+			window.location.href = next.url;
 		}
 
 		setCurrentGatewayConfig();
@@ -3088,80 +3158,32 @@
 						shouldSaveAfterConfirmation
 					)
 						.done( function ( response ) {
-							var resultResponse;
-							var returnUrl;
+							var body;
 
 							try {
-								resultResponse =
+								body =
 									typeof response === 'string'
 										? JSON.parse( response )
 										: response;
 							} catch ( error ) {
-								setUnreadableAnswerError( result );
-								return;
+								body = null;
 							}
 
-							if (
-								! resultResponse ||
-								typeof resultResponse !== 'object'
-							) {
-								setUnreadableAnswerError( result );
-								return;
-							}
-
-							if ( hasStoreErrorMessage( resultResponse.error ) ) {
-								setKeptBlockedError(
-									getStoreErrorMessage( resultResponse.error )
-								);
-								return;
-							}
-
-							returnUrl =
-								typeof resultResponse.return_url === 'string'
-									? resultResponse.return_url.trim()
-									: '';
-							if ( ! returnUrl ) {
-								setUnreadableAnswerError( result );
-								return;
-							}
-
-							try {
-								returnUrl = new window.URL(
-									returnUrl,
-									window.location.href
-								);
-							} catch ( error ) {
-								setUnreadableAnswerError( result );
-								return;
-							}
-							if (
-								returnUrl.protocol !== 'http:' &&
-								returnUrl.protocol !== 'https:'
-							) {
-								setUnreadableAnswerError( result );
-								return;
-							}
-
-							// The form stays blocked while the order page loads, so a second Place order cannot start another
-							// order and charge; it is released if the shopper comes back here from the back-forward cache.
-							releaseConfirmationOnReturn( releaseConfirmationUi );
-							window.location.href = returnUrl.href;
+							showOrderStatusAnswer( result, { ok: true, body: body } );
 						} )
-						// The store answers its refusals with a non-2xx status and { error: { message } }.
+						// jQuery calls fail() for a non-2xx status or a lost connection; responseJSON is set only for a
+						// JSON body.
 						.fail( function ( jqXHR ) {
-							var storeError =
-								jqXHR &&
-								jqXHR.responseJSON &&
-								jqXHR.responseJSON.error;
-
-							if ( hasStoreErrorMessage( storeError ) ) {
-								setKeptBlockedError(
-									getStoreErrorMessage( storeError )
-								);
-								return;
-							}
-
-							setUnreadableAnswerError( result );
+							showOrderStatusAnswer(
+								result,
+								jqXHR
+									? {
+											ok: false,
+											status: jqXHR.status,
+											body: jqXHR.responseJSON,
+									  }
+									: null
+							);
 						} );
 				},
 				function ( error ) {

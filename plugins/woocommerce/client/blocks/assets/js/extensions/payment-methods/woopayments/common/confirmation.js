@@ -49,6 +49,55 @@ export const isConfirmedPayment = ( confirmation, result ) =>
 	MONEY_HOLDING_STATUSES.includes( result?.paymentIntent?.status ?? '' );
 
 /**
+ * The URL resolved against the page when it is an http: or https: one, so a payment answer never sends the shopper to a
+ * javascript: or data: URL.
+ *
+ * @param {string} url Absolute or page-relative URL.
+ * @return {string} The resolved URL, or '' for an empty, invalid or non-http(s) one.
+ */
+export const getHttpUrl = ( url ) => {
+	const trimmed = typeof url === 'string' ? url.trim() : '';
+
+	if ( ! trimmed ) {
+		return '';
+	}
+
+	try {
+		const resolved = new window.URL( trimmed, window.location.href );
+
+		return [ 'http:', 'https:' ].includes( resolved.protocol )
+			? resolved.href
+			: '';
+	} catch {
+		return '';
+	}
+};
+
+/**
+ * Read the store's update_order_status answer by the rule all four checkout scripts share (the classic scripts carry
+ * the same function): a readable message is shown, except a 5xx one after a payment that holds money; only a 2xx
+ * answer's http(s) return URL is followed.
+ *
+ * @param {{ok: boolean, status?: number, body: *}|null} answer The answer, or null when it never arrived or was not JSON.
+ * @param {boolean}                                      isPaid Whether Stripe confirmed a payment that holds money.
+ * @return {{message: string}|{url: string}|null} The message to show, the page to follow, or null for neither.
+ */
+export const readOrderStatusAnswer = ( answer, isPaid ) => {
+	const message = answer?.body?.error?.message;
+	if (
+		typeof message === 'string' &&
+		message.trim() &&
+		! ( isPaid && ( answer?.status ?? 0 ) >= 500 )
+	) {
+		return { message };
+	}
+
+	const url = answer?.ok ? getHttpUrl( answer.body?.return_url ) : '';
+
+	return url ? { url } : null;
+};
+
+/**
  * Ask Stripe to complete the intent's next action, as client 11.2.0 confirmIntent() does: a setup intent with a
  * confirmation token is confirmed with it, every other intent has its next action handled.
  *
