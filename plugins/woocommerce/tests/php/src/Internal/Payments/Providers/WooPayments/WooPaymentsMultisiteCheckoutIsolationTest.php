@@ -203,7 +203,9 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 			$this->assertSame( array(), $this->get_payment_method_ids( $gateway ) );
 			$this->assertSame( 'no', $gateway->get_option( 'saved_cards' ) );
 			$this->assertSame( 'no', $gateway->enabled );
-			$this->assertSame( 1, $settings_reads, 'The gateway should reload settings once per blog transition.' );
+			// One reload of the gateway's settings, then one read by the account service's saved cards check, which the card
+			// gateway's supports rebuild asks after the blog context changed.
+			$this->assertSame( 2, $settings_reads, 'The gateway should read settings twice per blog transition: its reload and the saved cards check.' );
 			remove_filter( 'pre_option_woocommerce_woocommerce_payments_settings', $count_settings_read );
 			update_option(
 				'woocommerce_woocommerce_payments_settings',
@@ -227,7 +229,8 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 			$this->assertSame( array( 'pm_primary' ), $this->get_payment_method_ids( $gateway ) );
 			$this->assertSame( 'yes', $gateway->get_option( 'saved_cards' ) );
 			$this->assertSame( 'yes', $gateway->enabled );
-			$this->assertSame( 1, $settings_reads, 'Repeated calls within one blog should not reload settings.' );
+			// The count runs on from the blog switch above, so the two reads there are the whole total: no new read here.
+			$this->assertSame( 2, $settings_reads, 'Repeated calls within one blog should not reload settings.' );
 			remove_filter( 'pre_option_woocommerce_woocommerce_payments_settings', $count_settings_read );
 
 			switch_to_blog( $secondary_blog_id );
