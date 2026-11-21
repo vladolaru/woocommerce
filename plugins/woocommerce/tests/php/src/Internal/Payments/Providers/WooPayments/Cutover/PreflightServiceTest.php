@@ -1378,6 +1378,7 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 		return array(
 			'a listed plugin' => array( array( 'woocommerce/woocommerce.php', 'order-subscriptions/order-subscriptions.php' ), true ),
 			'Autoship Cloud'  => array( array( 'woocommerce/woocommerce.php', 'autoship-cloud/autoship.php' ), true ),
+			'WPFunnels'       => array( array( 'woocommerce/woocommerce.php', 'wpfunnels/wpfnl.php' ), true ),
 			'none of them'    => array( array( 'woocommerce/woocommerce.php', 'yith-woocommerce-subscription/init.php' ), false ),
 		);
 	}

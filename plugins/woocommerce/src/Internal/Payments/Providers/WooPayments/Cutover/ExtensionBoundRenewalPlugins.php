@@ -12,8 +12,8 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Lists the plugins that charge renewals or scheduled payments through the WooPayments extension's own classes, finds the
- * active ones, and names them for merchant messages.
+ * Lists the plugins that take payments through the WooPayments extension's own classes, finds the active ones, and names
+ * them for merchant messages.
  *
  * The built-in WooPayments does not provide those classes, so the switch waits while one is active, and a store the
  * built-in WooPayments owns is told which ones cannot charge. The list here is the floor: a list served by the platform is
@@ -53,6 +53,10 @@ class ExtensionBoundRenewalPlugins {
 		'autoship-cloud'                        => array(
 			'name'            => 'Autoship Cloud powered by QPilot',
 			'checked_version' => '2.17.1',
+		),
+		'wpfunnels'                             => array(
+			'name'            => 'WPFunnels',
+			'checked_version' => '3.13.5',
 		),
 	);
 
