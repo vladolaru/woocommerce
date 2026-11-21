@@ -80,6 +80,9 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 	 */
 	private bool $stripe_billing_enabled = true;
 
+	/** @var bool Current store payment mode. */
+	private bool $test_mode = true;
+
 	/**
 	 * Subscriptions controller stand-in that records the payment method copied to a subscription.
 	 *
@@ -102,7 +105,7 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_test_mode_enabled', 'is_test_mode_onboarding_enabled', 'get_account_id', 'is_dev_mode_enabled', 'get_gateway_setting' ) )
 			->getMock();
-		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+		$account_service->method( 'is_test_mode_enabled' )->willReturnCallback( fn() => $this->test_mode );
 		$account_service->method( 'is_test_mode_onboarding_enabled' )->willReturn( true );
 		$account_service->method( 'get_account_id' )->willReturn( self::RECORDED_ACCOUNT_ID );
 
@@ -229,7 +232,7 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 	private const FAILURE_NOTE       = "WooPayments could not tell Stripe that this subscription's first payment was received, so Stripe stopped billing it and it will not renew. The customer's first payment is not affected. To keep billing this customer, ask them to subscribe again, then cancel this subscription. Stripe subscription ID: " . self::MAIN_SUBSCRIPTION_ID . '.';
 
 	/**
-	 * @testdox An inline invoice failure leaves the order paid and records only the appropriate retry or subscription note.
+	 * @testdox An inline invoice failure leaves the order paid and schedules the next step without a merchant note.
 	 * @testWith ["F1", 400, false]
 	 *           ["A1", 503, true]
 	 *           ["A1-transport", 0, true]
@@ -304,7 +307,7 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 		}
 		$this->assertTrue( $order->is_paid() );
 		$this->assertSame( array(), preg_grep( '/Error during status transition/', $this->get_order_note_texts( $order ) ) );
-		$this->assertSame( 400 === $code ? 1 : 0, count( array_keys( $this->get_order_note_texts( $subscription ), self::FAILURE_NOTE, true ) ) );
+		$this->assertNotContains( self::FAILURE_NOTE, $this->get_order_note_texts( $subscription ) );
 		if ( 0 === $code ) {
 			$this->assertGreaterThan( 0, $this->http_client->request_count );
 		} else {
@@ -319,7 +322,9 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 			$this->assertStringEndsWith( '/in_second/pay', $this->http_client->last_path );
 			$this->assertNotContains( self::FAILURE_NOTE, $this->get_order_note_texts( $second ) );
 		}
-		if ( 'old inline' === $row ) {
+		if ( 400 === $code ) {
+			$this->assert_invoice_schedule( $order, $subscription, 5, $start );
+		} elseif ( 'old inline' === $row ) {
 			$this->assert_invoice_schedule( $order, $subscription, 4, $start );
 		} else {
 			$this->assert_invoice_schedule( $order, $subscription, $retry ? 1 : null, $start + 60 );
@@ -401,36 +406,45 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox A late job relies on Stripe's answer about the first invoice.
-	 * @testWith ["active", false, 0, 0, 0]
-	 *           ["incomplete_expired", false, 0, 1, 0]
-	 *           ["canceled", false, 0, 1, 0]
-	 *           ["incomplete", false, 1, 0, 0]
-	 *           ["incomplete", true, 0, 0, 0]
-	 *           ["read failed", false, 0, 0, 1]
+	 * @testWith ["active", 0, 0, 0]
+	 *           ["incomplete_expired", 0, 1, 0]
+	 *           ["canceled", 0, 1, 0]
+	 *           ["incomplete", 1, 0, 0]
+	 *           ["trialing", 0, 0, 0]
+	 *           ["past_due", 0, 0, 0]
+	 *           ["paused", 0, 0, 0]
+	 *           ["", 0, 0, 1]
+	 *           ["read failed", 0, 0, 1]
+	 *           ["local cancellation during read", 0, 0, 0]
 	 *
 	 * @param string $state Stripe subscription status or a failed request.
-	 * @param bool   $paid  Whether the subscription includes a paid first invoice.
 	 * @param int    $pays  Expected pay requests.
 	 * @param int    $notes Expected merchant notes.
 	 * @param int    $logs  Expected warnings about the failed state check.
 	 */
-	public function test_first_invoice_end_state( string $state, bool $paid, int $pays, int $notes, int $logs ): void {
+	public function test_first_invoice_end_state( string $state, int $pays, int $notes, int $logs ): void {
 		$order = \WC_Helper_Order::create_order();
 		$order->set_date_created( time() - DAY_IN_SECONDS );
 		$order->update_meta_data( '_intention_status', 'succeeded' );
 		$order->update_meta_data( '_intent_id', 'pi_late' );
 		$order->save();
-		$subscription = $this->create_stripe_billed_subscription( $order, 'parent' );
+		$subscription = $this->create_stripe_billed_subscription( $order, 'parent', array( '_requires_manual_renewal' => 'true' ) );
 		$subscription->set_date_created( $order->get_date_created() );
 		$subscription->save();
 
-		$answer = array( 'status' => $state );
-		if ( $paid ) {
-			$answer['latest_invoice'] = array(
-				'id'     => self::MAIN_INVOICE_ID,
-				'status' => 'paid',
+		if ( 'local cancellation during read' === $state ) {
+			add_filter(
+				'wcpay_api_request_params',
+				static function ( $params ) use ( $subscription ) {
+					$subscription->update_status( 'cancelled' );
+					return $params;
+				}
 			);
 		}
+		$answer                         = array(
+			'status'         => 'local cancellation during read' === $state ? 'canceled' : $state,
+			'latest_invoice' => self::MAIN_INVOICE_ID,
+		);
 		$this->http_client->responses[] = $this->make_response( 'read failed' === $state ? 403 : 200, $answer );
 		$this->queue_recorded_responses( 'charge_invoice' );
 		$warnings = array();
@@ -448,6 +462,9 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 
 		$this->sut->handle_first_invoice_job( $order->get_id(), $subscription->get_id(), self::MAIN_INVOICE_ID, 1 );
 
+		if ( in_array( $state, array( 'active', 'trialing', 'past_due', 'paused' ), true ) ) {
+			$this->assertFalse( wc_get_order( $subscription->get_id() )->is_manual() );
+		}
 		$requests = $this->get_requests();
 		$this->assertCount( 1 + $pays, $requests );
 		$this->assertSame( 'GET', $requests[0][0] );
@@ -465,9 +482,13 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox After the last ambiguous pay, Stripe can still authorize one more attempt. Another unknown answer leaves no merchant note.
+	 * @testdox An incomplete subscription permits one more pay. Even a lasting refusal leaves no merchant note.
+	 * @testWith [401]
+	 *           [400]
+	 *
+	 * @param int $code Response to the extra pay.
 	 */
-	public function test_last_first_invoice_attempt_still_open(): void {
+	public function test_last_first_invoice_attempt_still_open( int $code ): void {
 		$order = \WC_Helper_Order::create_order();
 		$order->set_date_created( time() - 22 * HOUR_IN_SECONDS );
 		$order->update_meta_data( '_intention_status', 'succeeded' );
@@ -478,13 +499,109 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 		$subscription->save();
 		$this->queue_invoice_answer( 503, 'Unavailable.' );
 		$this->http_client->responses[] = $this->make_response( 200, array( 'status' => 'incomplete' ) );
-		$this->queue_invoice_answer( 401, 'Store authentication failed.' );
+		$this->queue_invoice_answer( $code, 'Unable to pay this invoice.' );
 
 		$this->sut->handle_first_invoice_job( $order->get_id(), $subscription->get_id(), self::MAIN_INVOICE_ID, 4 );
 
 		$this->assertSame( array( 'POST', 'GET', 'POST' ), array_column( $this->get_requests(), 0 ) );
 		$this->assertNotContains( self::FAILURE_NOTE, $this->get_order_note_texts( $subscription ) );
 		$this->assert_invoice_schedule( $order, $subscription, null, 0 );
+	}
+
+	/**
+	 * @testdox A lasting pay refusal can come from the store switching modes or the trial update failing after payment.
+	 * @testWith [404, "No such invoice."]
+	 *           [400, "Invalid trial end."]
+	 *
+	 * @param int    $code    Error returned by the pay endpoint.
+	 * @param string $message Platform error message.
+	 */
+	public function test_first_invoice_refused( int $code, string $message ): void {
+		$order = \WC_Helper_Order::create_order();
+		$order->update_meta_data( '_intention_status', 'succeeded' );
+		$order->update_meta_data( '_intent_id', 'pi_first' );
+		$order->save();
+		$subscription = $this->create_stripe_billed_subscription( $order, 'parent' );
+		$this->queue_invoice_answer( $code, $message );
+		if ( 404 === $code ) {
+			$this->test_mode = false;
+			$this->queue_invoice_answer( 404, 'No such subscription.' );
+			$this->sut->maybe_record_invoice_payment( $order->get_id() );
+			$this->assertSame( array( 'POST' ), array_column( $this->get_requests(), 0 ) );
+			$this->assertFalse( $this->get_requests()[0][2]['test_mode'] );
+			$this->assertNotContains( self::FAILURE_NOTE, $this->get_order_note_texts( $subscription ) );
+			$this->assert_invoice_schedule( $order, $subscription, 5, time() );
+			$args = $this->take_pending_invoice_job();
+			$this->sut->handle_first_invoice_job( ...$args );
+		} else {
+			$this->http_client->responses[] = $this->make_response( 200, array( 'status' => 'active' ) );
+			$this->sut->handle_first_invoice_job( $order->get_id(), $subscription->get_id(), self::MAIN_INVOICE_ID, 1 );
+		}
+
+		$requests = $this->get_requests();
+		$this->assertSame( array( 'POST', 'GET' ), array_column( $requests, 0 ) );
+		$this->assertStringEndsWith( '/invoices/' . self::MAIN_INVOICE_ID . '/pay', $requests[0][1] );
+		$this->assertStringContainsString( '/subscriptions/' . self::MAIN_SUBSCRIPTION_ID . '?', $requests[1][1] );
+		$this->assertNotContains( self::FAILURE_NOTE, $this->get_order_note_texts( $subscription ) );
+		$this->assert_invoice_schedule( $order, $subscription, null, 0 );
+	}
+
+	/**
+	 * @testdox A retry that finds the invoice paid warns once that the deferred trial end may still be missing.
+	 */
+	public function test_first_invoice_already_paid_after_lost_answer(): void {
+		$order = \WC_Helper_Order::create_order();
+		$order->update_meta_data( '_intention_status', 'succeeded' );
+		$order->update_meta_data( '_intent_id', 'pi_first' );
+		$order->save();
+		$subscription = $this->create_stripe_billed_subscription( $order, 'parent' );
+		$this->queue_invoice_answer( 503, 'Lost pay response.' );
+		$this->sut->maybe_record_invoice_payment( $order->get_id() );
+
+		$this->assert_invoice_schedule( $order, $subscription, 1, time() + 60 );
+		$args = $this->take_pending_invoice_job();
+
+		$warnings = array();
+		add_filter(
+			'woocommerce_logger_log_message',
+			static function ( $message, $level, $context, $handler ) use ( &$warnings, $subscription ) {
+				if ( 'warning' === $level && $subscription->get_id() === ( $context['subscription_id'] ?? null ) ) {
+					$warnings[ spl_object_id( $handler ) ][] = $message;
+				}
+				return $message;
+			},
+			10,
+			4
+		);
+		$this->queue_invoice_answer( 400, 'Invoice is already paid.' );
+		$this->sut->handle_first_invoice_job( ...$args );
+		$this->assert_invoice_schedule( $order, $subscription, null, 0 );
+		$this->assertSame( array( 'POST', 'POST' ), array_column( $this->get_requests(), 0 ) );
+		$this->assertNotContains( self::FAILURE_NOTE, $this->get_order_note_texts( $subscription ) );
+		$this->assertNotEmpty( $warnings );
+		foreach ( $warnings as $messages ) {
+			$this->assertCount( 1, $messages );
+			$this->assertStringContainsString( 'trial end', $messages[0] );
+		}
+	}
+
+	/**
+	 * Remove the pending job before directly invoking its callback with the scheduled arguments.
+	 *
+	 * @return array Job arguments.
+	 */
+	private function take_pending_invoice_job(): array {
+		$jobs = as_get_scheduled_actions(
+			array(
+				'hook'   => self::FIRST_INVOICE_HOOK,
+				'status' => 'pending',
+				'group'  => 'woocommerce_payments',
+			)
+		);
+		$this->assertCount( 1, $jobs );
+		$args = reset( $jobs )->get_args();
+		as_unschedule_action( self::FIRST_INVOICE_HOOK, $args, 'woocommerce_payments' );
+		return array_values( $args );
 	}
 
 	/**
