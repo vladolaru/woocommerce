@@ -4730,6 +4730,60 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Core's hold-stock job keeps Pending an order that is both a resubscribe order and a new subscription's first order, while its payment awaits the shopper's action.
+	 */
+	public function test_unpaid_resubscribe_order_that_is_a_subscriptions_first_order_is_kept(): void {
+		$order = $this->create_unpaid_order( 'requires_action' );
+		$this->relate_subscription_to_unpaid_order( $order, 'resubscribe' );
+		$this->relate_subscription_to_unpaid_order( $order, 'parent' );
+		$transport = $this->create_transport( self::http_json( 200, self::unpaid_intent( $order, 'requires_action' ) ) );
+
+		$this->run_unpaid_order_job( $transport );
+
+		$this->assertSame( OrderStatus::PENDING, $this->reload( $order )->get_status() );
+		$this->assertCount( 1, $this->request_paths( $transport ) );
+	}
+
+	/**
+	 * @testdox Core's hold-stock job still cancels a subscription's first order whose stored intent the platform reads as another order's, one read, though it awaits action.
+	 */
+	public function test_unpaid_subscription_parent_whose_open_intent_is_another_orders_is_cancelled(): void {
+		$order              = $this->create_unpaid_order( 'requires_action' );
+		$intent             = self::unpaid_intent( $order, 'requires_action' );
+		$intent['metadata'] = array( 'order_id' => '999999' );
+		$this->relate_subscription_to_unpaid_order( $order, 'parent' );
+		$transport = $this->create_transport( self::http_json( 200, $intent ) );
+
+		$this->run_unpaid_order_job( $transport );
+
+		$order = $this->reload( $order );
+		$this->assertCount( 1, $this->request_paths( $transport ) );
+		$this->assertSame( OrderStatus::CANCELLED, $order->get_status() );
+		$this->assertSame( 1, $this->count_notes_containing( $order, 'Unpaid order cancelled' ) );
+	}
+
+	/**
+	 * @testdox Without WooCommerce Subscriptions, core's hold-stock job cancels an unpaid order whose payment awaits the shopper's action, as before.
+	 *
+	 * Runs in its own process, so no WooCommerce Subscriptions double declared by another test is loaded.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_unpaid_order_awaiting_action_is_cancelled_without_subscriptions(): void {
+		$this->assertFalse( function_exists( 'wcs_order_contains_subscription' ), 'WooCommerce Subscriptions must not be loaded.' );
+		$order     = $this->create_unpaid_order( 'requires_action' );
+		$transport = $this->create_transport( self::http_json( 200, self::unpaid_intent( $order, 'requires_action' ) ) );
+
+		$this->run_unpaid_order_job( $transport );
+
+		$order = $this->reload( $order );
+		$this->assertCount( 1, $this->request_paths( $transport ) );
+		$this->assertSame( OrderStatus::CANCELLED, $order->get_status() );
+		$this->assertSame( 1, $this->count_notes_containing( $order, 'Unpaid order cancelled' ) );
+	}
+
+	/**
 	 * @testdox Core's hold-stock job puts On hold, not keeps Pending, a subscription's first order whose Multibanco voucher awaits payment.
 	 */
 	public function test_unpaid_subscription_parent_whose_multibanco_voucher_awaits_payment_goes_on_hold(): void {
