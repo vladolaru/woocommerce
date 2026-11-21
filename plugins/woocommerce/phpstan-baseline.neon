@@ -54257,6 +54257,72 @@ parameters:
 			path: src/Internal/Admin/Notes/UnsecuredReportFiles.php
 
 		-
+			message: '#^Call to an undefined method WC_Data_Store\:\:get_notes_with_name\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: src/Internal/Admin/Notes/WooCommercePayments.php
+
+		-
+			message: '#^Call to function method_exists\(\) with ''Automattic\\\\WooCommerce\\\\Internal\\\\Admin\\\\Notes\\\\WooCommercePayments'' and ''get_note'' will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: src/Internal/Admin/Notes/WooCommercePayments.php
+
+		-
+			message: '#^Cannot call method get_action\(\) on Automattic\\WooCommerce\\Admin\\Notes\\Note\|true\.$#'
+			identifier: method.nonObject
+			count: 1
+			path: src/Internal/Admin/Notes/WooCommercePayments.php
+
+		-
+			message: '#^Cannot call method get_status\(\) on Automattic\\WooCommerce\\Admin\\Notes\\Note\|true\.$#'
+			identifier: method.nonObject
+			count: 1
+			path: src/Internal/Admin/Notes/WooCommercePayments.php
+
+		-
+			message: '#^Cannot call method save\(\) on Automattic\\WooCommerce\\Admin\\Notes\\Note\|true\.$#'
+			identifier: method.nonObject
+			count: 1
+			path: src/Internal/Admin/Notes/WooCommercePayments.php
+
+		-
+			message: '#^Cannot call method set_status\(\) on Automattic\\WooCommerce\\Admin\\Notes\\Note\|true\.$#'
+			identifier: method.nonObject
+			count: 1
+			path: src/Internal/Admin/Notes/WooCommercePayments.php
+
+		-
+			message: '#^Method Automattic\\WooCommerce\\Internal\\Admin\\Notes\\WooCommercePayments\:\:install_on_action\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: src/Internal/Admin/Notes/WooCommercePayments.php
+
+		-
+			message: '#^Method Automattic\\WooCommerce\\Internal\\Admin\\Notes\\WooCommercePayments\:\:is_installed\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: src/Internal/Admin/Notes/WooCommercePayments.php
+
+		-
+			message: '#^Method Automattic\\WooCommerce\\Internal\\Admin\\Notes\\WooCommercePayments\:\:possibly_add_note\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: src/Internal/Admin/Notes/WooCommercePayments.php
+
+		-
+			message: '#^Parameter \#1 \$request of method Automattic\\WooCommerce\\Admin\\API\\Plugins\:\:activate_plugins\(\) expects WP_REST_Request, array\<string, string\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Internal/Admin/Notes/WooCommercePayments.php
+
+		-
+			message: '#^Parameter \#1 \$request of method Automattic\\WooCommerce\\Admin\\API\\Plugins\:\:install_plugins\(\) expects WP_REST_Request, array\<string, string\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Internal/Admin/Notes/WooCommercePayments.php
+
+		-
 			message: '#^Call to function method_exists\(\) with ''Automattic\\\\WooCommerce\\\\Internal\\\\Admin\\\\Notes\\\\WooCommerceSubscriptions'' and ''get_note'' will always evaluate to true\.$#'
 			identifier: function.alreadyNarrowedType
 			count: 1

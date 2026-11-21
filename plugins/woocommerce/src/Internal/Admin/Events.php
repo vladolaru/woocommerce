@@ -35,6 +35,7 @@ use Automattic\WooCommerce\Internal\Admin\Notes\ScheduledUpdatesPromotion;
 use Automattic\WooCommerce\Internal\Admin\Notes\SellingOnlineCourses;
 use Automattic\WooCommerce\Internal\Admin\Notes\TrackingOptIn;
 use Automattic\WooCommerce\Internal\Admin\Notes\UnsecuredReportFiles;
+use Automattic\WooCommerce\Internal\Admin\Notes\WooCommercePayments;
 use Automattic\WooCommerce\Internal\Admin\Notes\WooCommerceSubscriptions;
 use Automattic\WooCommerce\Internal\Admin\Notes\WooSubscriptionsNotes;
 use Automattic\WooCommerce\Internal\Admin\Schedulers\MailchimpScheduler;
@@ -88,6 +89,7 @@ class Events {
 		RefundDoubleCountToolNotice::class,
 		ScheduledUpdatesPromotion::class,
 		TrackingOptIn::class,
+		WooCommercePayments::class,
 		WooCommerceSubscriptions::class,
 	);
 
@@ -197,6 +199,7 @@ class Events {
 	 * Deletes notes that should be deleted.
 	 */
 	protected function possibly_delete_notes(): void {
+		WooCommercePayments::delete_if_not_applicable();
 		FullRefundFixDataToolNotice::delete_if_not_applicable();
 		RefundDoubleCountToolNotice::delete_if_not_applicable();
 	}
@@ -218,7 +221,6 @@ class Events {
 	protected function possibly_delete_deprecated_notes(): void {
 		Notes::delete_notes_with_name(
 			array(
-				'wc-admin-woocommerce-payments',
 				'wc-admin-payments-remind-me-later',
 				'wc-admin-payments-more-info-needed',
 			)
