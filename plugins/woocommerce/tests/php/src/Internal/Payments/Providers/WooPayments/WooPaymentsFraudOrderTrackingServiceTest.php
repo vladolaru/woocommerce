@@ -612,7 +612,7 @@ class WooPaymentsFraudOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox With WooCommerce Subscriptions, a subscription loaded when its payment method ID matched the token keeps the ID another request stored since while a customer ID write runs, and its next save writes the token's ID.
 	 *
-	 * The old copy finds only the customer ID to write; the repair decides once, on that copy.
+	 * The decision on the stored meta wants the token's ID, but the stored ID is not the one the copy saw, so that write waits.
 	 */
 	public function test_a_payment_method_id_changed_behind_a_matching_copy_is_corrected_by_the_next_save(): void {
 		$this->make_subscriptions_available();
@@ -679,6 +679,109 @@ class WooPaymentsFraudOrderTrackingServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( $other_request_ran );
 		$this->assertSame( array( 'pm_new' ), $this->get_stored_values( $object, '_payment_method_id' ) );
+		$this->assertSame( array( 'cus_parent' ), $this->get_stored_values( $object, '_stripe_customer_id' ) );
+	}
+
+	/**
+	 * @testdox With WooCommerce Subscriptions, a subscription takes the customer ID its parent holds when the repair writes, not the one the parent held when it decided.
+	 *
+	 * Another request corrects the parent's customer ID after the first decision read it, and before the stored meta is
+	 * read again. The write follows the second decision, which loads the parent again.
+	 */
+	public function test_the_customer_id_written_is_the_parents_after_the_stored_meta_is_read_again(): void {
+		$this->make_subscriptions_available();
+		$service = $this->create_service( new RecordingActionSchedulerService() );
+		$parent  = $this->create_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( '_stripe_customer_id' => 'cus_old' ) );
+		$object  = $this->create_tracked_object( 'subscription', $parent, $this->create_card_token( 'pm_new' ) );
+		$object->update_meta_data( '_payment_method_id', 'pm_new' );
+		$object->save_meta_data();
+
+		$stale = $this->load_tracked_object( 'subscription', $object->get_id() );
+		$stale->read_meta_data( true );
+		$other_request_ran = false;
+		$other_request     = function ( $value, $order ) use ( &$other_request_ran, $parent ) {
+			if ( $other_request_ran || ! $order instanceof WC_Order || $parent->get_id() !== $order->get_id() ) {
+				return $value;
+			}
+			$other_request_ran = true;
+			$other_parent      = new WC_Order( $parent->get_id() );
+			$other_parent->update_meta_data( '_stripe_customer_id', 'cus_new' );
+			$other_parent->save_meta_data();
+
+			return $value;
+		};
+		add_filter( 'woocommerce_order_get__stripe_customer_id', $other_request, 10, 2 );
+
+		$service->handle_woocommerce_update_order( $object->get_id(), $stale );
+		remove_filter( 'woocommerce_order_get__stripe_customer_id', $other_request, 10 );
+
+		$this->assertTrue( $other_request_ran );
+		$this->assertSame( array( 'cus_new' ), $this->get_stored_values( $object, '_stripe_customer_id' ) );
+		$this->assertSame( array( 'pm_new' ), $this->get_stored_values( $object, '_payment_method_id' ) );
+	}
+
+	/**
+	 * @testdox With WooCommerce Subscriptions, a subscription with no token whose payment method ID another request removed gets neither the parent's payment method ID nor its customer ID written.
+	 *
+	 * The parent holds a customer ID and no payment method ID. The first decision wrote the customer ID because the copy
+	 * still carried a payment method ID; on the stored meta there is none and no parent one to take, so nothing is written.
+	 */
+	public function test_a_payment_method_id_removed_since_the_load_leaves_the_repair_with_nothing_to_write(): void {
+		$this->make_subscriptions_available();
+		$service = $this->create_service( new RecordingActionSchedulerService() );
+		$parent  = $this->create_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( '_stripe_customer_id' => 'cus_parent' ) );
+		$object  = $this->create_tracked_object( 'subscription', $parent, null );
+		$object->update_meta_data( '_payment_method_id', 'pm_child' );
+		$object->save_meta_data();
+
+		$stale = $this->load_tracked_object( 'subscription', $object->get_id() );
+		$stale->read_meta_data( true );
+		$other = $this->load_tracked_object( 'subscription', $object->get_id() );
+		$other->delete_meta_data( '_payment_method_id' );
+		$other->save_meta_data();
+		$this->assertSame( array(), $this->get_stored_values( $object, '_payment_method_id' ) );
+
+		$service->handle_woocommerce_update_order( $object->get_id(), $stale );
+
+		$this->assertSame( array(), $this->get_stored_values( $object, '_payment_method_id' ) );
+		$this->assertSame( array(), $this->get_stored_values( $object, '_stripe_customer_id' ) );
+	}
+
+	/**
+	 * @testdox With WooCommerce Subscriptions, a subscription takes the latest token's payment method ID when another request attaches a newer card after the repair first read the token list.
+	 *
+	 * The stored ID is still the one the copy saw, so the write goes ahead, with the ID the second decision finds. The
+	 * other request writes while the repair loads the parent for a missing customer ID, after the token list was read.
+	 */
+	public function test_a_card_attached_while_the_repair_decides_is_the_one_written(): void {
+		$this->make_subscriptions_available();
+		$service = $this->create_service( new RecordingActionSchedulerService() );
+		$parent  = $this->create_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( '_stripe_customer_id' => 'cus_parent' ) );
+		$object  = $this->create_tracked_object( 'subscription', $parent, $this->create_card_token( 'pm_b' ) );
+		$object->update_meta_data( '_payment_method_id', 'pm_a' );
+		$object->save_meta_data();
+		$attached_token = $this->create_card_token( 'pm_c' );
+
+		$stale = $this->load_tracked_object( 'subscription', $object->get_id() );
+		$stale->read_meta_data( true );
+		$other_request_ran = false;
+		$other_request     = function ( $value, $order ) use ( &$other_request_ran, $parent, $object, $attached_token ) {
+			if ( $other_request_ran || ! $order instanceof WC_Order || $parent->get_id() !== $order->get_id() ) {
+				return $value;
+			}
+			$other_request_ran = true;
+			$other             = $this->load_tracked_object( 'subscription', $object->get_id() );
+			$other->add_payment_token( $attached_token );
+
+			return $value;
+		};
+		add_filter( 'woocommerce_order_get__stripe_customer_id', $other_request, 10, 2 );
+
+		$service->handle_woocommerce_update_order( $object->get_id(), $stale );
+		remove_filter( 'woocommerce_order_get__stripe_customer_id', $other_request, 10 );
+
+		$this->assertTrue( $other_request_ran );
+		$this->assertSame( array( 'pm_c' ), $this->get_stored_values( $object, '_payment_method_id' ) );
 		$this->assertSame( array( 'cus_parent' ), $this->get_stored_values( $object, '_stripe_customer_id' ) );
 	}
 

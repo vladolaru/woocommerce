@@ -138,9 +138,10 @@ class WooPaymentsFraudOrderTrackingService implements RegisterHooksInterface {
 			return;
 		}
 
-		// The repair never replaces a value another request stored since this object was loaded.
+		// Decide again on the stored meta, so the writes follow the latest token and parent.
+		// Write a key only where its stored value is still the one this object was loaded with.
 		$order->read_meta_data( true );
-		foreach ( $writes as $key => $value ) {
+		foreach ( $this->get_subscription_order_tracking_meta_writes( $order ) as $key => $value ) {
 			if ( $this->get_order_meta_string( $order, $key ) === $seen[ $key ] ) {
 				$order->update_meta_data( $key, $value );
 			}
