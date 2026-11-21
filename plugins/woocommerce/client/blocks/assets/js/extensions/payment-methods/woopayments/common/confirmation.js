@@ -29,6 +29,25 @@ export const parseConfirmationHash = ( value ) => {
 	};
 };
 
+// The payment intent statuses that hold the shopper's money (WooPaymentsIntentCodec::holds_money()).
+const MONEY_HOLDING_STATUSES = [
+	'succeeded',
+	'requires_capture',
+	'processing',
+];
+
+/**
+ * Whether Stripe confirmed a payment intent without an error and the intent now holds the shopper's money.
+ *
+ * @param {{type?: string}|null}                                     confirmation The parsed confirmation (parseConfirmationHash()).
+ * @param {{error?: Object, paymentIntent?: {status?: string}}|null} result       Stripe's result for the confirmation.
+ * @return {boolean} False after a setup intent, an error, or a status that holds no money.
+ */
+export const isConfirmedPayment = ( confirmation, result ) =>
+	confirmation?.type === 'pi' &&
+	! result?.error &&
+	MONEY_HOLDING_STATUSES.includes( result?.paymentIntent?.status ?? '' );
+
 /**
  * Ask Stripe to complete the intent's next action, as client 11.2.0 confirmIntent() does: a setup intent with a
  * confirmation token is confirmed with it, every other intent has its next action handled.

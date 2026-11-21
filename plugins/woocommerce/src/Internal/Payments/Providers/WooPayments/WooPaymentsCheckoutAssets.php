@@ -58,6 +58,8 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 	private const BLOCKS_OMITTED_CONFIG_KEYS = array(
 		'confirmationErrorMessage',
 		'paymentMayHaveGoneThroughMessage',
+		// The Blocks card and express methods translate their own.
+		'paymentReceivedOrderNotUpdatedMessage',
 		'customerData',
 		// The Blocks card method translates its own (index.js FINGERPRINT_GENERIC_ERROR).
 		'fingerprintErrorMessage',
@@ -518,6 +520,9 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 			// form stays blocked so a second Place order cannot pay twice.
 			/* translators: Shown after a payment error when the payment may still have been taken. */
 			'paymentMayHaveGoneThroughMessage'         => __( 'Your payment may have gone through. Check your email for an order confirmation before you try again, or refresh the page.', 'woocommerce' ),
+			// The classic checkout shows it alone when the store's answer after a confirmed payment has no readable error and no order page.
+			/* translators: Shown when a payment was taken but the order could not be updated. */
+			'paymentReceivedOrderNotUpdatedMessage'    => __( "Your payment was received, but we couldn't finish updating your order. Please don't pay again. If your order confirmation email doesn't arrive soon, contact us.", 'woocommerce' ),
 			// Client 11.2.0 client/checkout/utils/fingerprint.js:12-15; the classic checkout shows it when the device fingerprint fails.
 			'fingerprintErrorMessage'                  => __( 'An error was encountered when preparing the payment form. Please try again later.', 'woocommerce' ),
 			// The classic checkout's prompt when the browser has no Clipboard API, beside the test card number.

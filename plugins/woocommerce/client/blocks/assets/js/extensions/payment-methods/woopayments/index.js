@@ -27,6 +27,7 @@ import {
 import { recordWooPaymentsUserEvent } from './tracks';
 import {
 	confirmWithStripe,
+	isConfirmedPayment,
 	parseConfirmationHash,
 	StripeWaitTimeoutError,
 	waitForStripe,
@@ -433,21 +434,29 @@ const updateOrderStatusAfterConfirmation = async (
 		isChangingPaymentMethodForSubscription() ? 'true' : 'false'
 	);
 
-	const response = await window.fetch( paymentSettings.ajaxUrl, {
-		method: 'POST',
-		credentials: 'same-origin',
-		headers: {
-			'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-		},
-		body,
-	} );
+	let result;
+	try {
+		const response = await window.fetch( paymentSettings.ajaxUrl, {
+			method: 'POST',
+			credentials: 'same-origin',
+			headers: {
+				'Content-Type':
+					'application/x-www-form-urlencoded; charset=UTF-8',
+			},
+			body,
+		} );
 
-	const result = await response.json();
+		result = await response.json();
+	} catch {
+		// A transport failure or a body that is not JSON (a host's error page): no readable answer.
+		return null;
+	}
+
 	if ( result?.error?.message ) {
 		throw new Error( result.error.message );
 	}
 
-	return result?.return_url;
+	return result?.return_url || null;
 };
 
 const handleConfirmationResponse = async (
@@ -514,8 +523,17 @@ const handleConfirmationResponse = async (
 			shouldSavePaymentMethod,
 			paymentSettings
 		);
+		// No readable error and no order page: after a payment Stripe confirmed, the shopper must not pay again.
 		if ( ! redirectUrl ) {
-			return getErrorResponse( emitResponse, confirmationErrorMessage );
+			return getErrorResponse(
+				emitResponse,
+				isConfirmedPayment( confirmation, result )
+					? __(
+							"Your payment was received, but we couldn't finish updating your order. Please don't pay again. If your order confirmation email doesn't arrive soon, contact us.",
+							'woocommerce'
+						)
+					: confirmationErrorMessage
+			);
 		}
 
 		return getSuccessResponse( emitResponse, {}, redirectUrl );

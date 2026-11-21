@@ -21,6 +21,7 @@ import { recordWooPaymentsUserEvent } from '../tracks';
 import {
 	confirmWithStripe,
 	expressCheckout,
+	isConfirmedPayment,
 	parseConfirmationHash,
 	waitForStripe,
 } from '../common';
@@ -923,6 +924,12 @@ const GENERIC_PAYMENT_ERROR_MESSAGE = __(
 	'woocommerce'
 );
 
+// The store's answer after a payment Stripe confirmed has no readable error and no order page.
+const PAYMENT_RECEIVED_MESSAGE = __(
+	"Your payment was received, but we couldn't finish updating your order. Please don't pay again. If your order confirmation email doesn't arrive soon, contact us.",
+	'woocommerce'
+);
+
 const getCheckoutErrorMessage = ( response ) => {
 	const details = response?.payment_result?.payment_details;
 	const errorDetail = Array.isArray( details )
@@ -1001,16 +1008,22 @@ const requestOrderStatusUpdate = async ( orderId, nonce, intentId ) => {
 		settings?.isChangingPayment ? 'true' : 'false'
 	);
 
-	const response = await window.fetch( params.ajax_url, {
-		method: 'POST',
-		credentials: 'same-origin',
-		headers: {
-			'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-		},
-		body,
-	} );
+	try {
+		const response = await window.fetch( params.ajax_url, {
+			method: 'POST',
+			credentials: 'same-origin',
+			headers: {
+				'Content-Type':
+					'application/x-www-form-urlencoded; charset=UTF-8',
+			},
+			body,
+		} );
 
-	return response.json();
+		return await response.json();
+	} catch {
+		// A transport failure or a body that is not JSON (a host's error page): no readable answer.
+		return null;
+	}
 };
 
 /**
@@ -1079,7 +1092,7 @@ const confirmIntent = ( redirectUrl ) => {
 			intentId
 		);
 
-		if ( response?.error ) {
+		if ( response?.error?.message ) {
 			throw new Error( response.error.message );
 		}
 
@@ -1091,7 +1104,11 @@ const confirmIntent = ( redirectUrl ) => {
 		const returnUrl = getHttpUrl( response?.return_url );
 
 		if ( ! returnUrl ) {
-			throw new Error( GENERIC_PAYMENT_ERROR_MESSAGE );
+			throw new Error(
+				isConfirmedPayment( confirmation, result )
+					? PAYMENT_RECEIVED_MESSAGE
+					: GENERIC_PAYMENT_ERROR_MESSAGE
+			);
 		}
 
 		return returnUrl;

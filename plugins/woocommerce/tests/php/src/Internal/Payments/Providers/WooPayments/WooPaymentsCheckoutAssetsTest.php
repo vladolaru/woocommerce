@@ -775,6 +775,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		// (client/checkout/utils/copy-test-number.js:23-26).
 		$this->assertSame( 'Copy test card number:', $config['copyTestCardNumberPrompt'] );
 		$this->assertSame( 'Your payment may have gone through. Check your email for an order confirmation before you try again, or refresh the page.', $config['paymentMayHaveGoneThroughMessage'] );
+		$this->assertSame( "Your payment was received, but we couldn't finish updating your order. Please don't pay again. If your order confirmation email doesn't arrive soon, contact us.", $config['paymentReceivedOrderNotUpdatedMessage'] );
 		// With no account fraud-services config and the platform unreachable,
 		// the prepared config falls back to the bare stripe default.
 		$this->assertSame( array( 'stripe' => array() ), $config['fraudServices'] );
@@ -2561,6 +2562,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	private const DROPPED_BLOCKS_DATA_KEYS = array(
 		'confirmationErrorMessage',
 		'paymentMayHaveGoneThroughMessage',
+		'paymentReceivedOrderNotUpdatedMessage',
 		'customerData',
 		'fingerprintErrorMessage',
 		'copyTestCardNumberPrompt',

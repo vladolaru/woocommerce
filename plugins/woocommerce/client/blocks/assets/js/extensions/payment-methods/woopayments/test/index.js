@@ -3616,15 +3616,16 @@ describe( 'wc-payment-method-woopayments', () => {
 		expect( requestBody.get( 'is_changing_payment' ) ).toBe( 'false' );
 	} );
 
-	const runSavedTokenConfirmation = async () => {
+	const runSavedTokenConfirmation = async (
+		redirect = '#wcpay-confirm-pi:123:pi_123_secret_abc:nonce_123'
+	) => {
 		const registration = registerWooPayments();
 		let checkoutSuccessResult;
 		const onCheckoutSuccess = jest.fn( ( callback ) => {
 			checkoutSuccessResult = callback( {
 				processingResponse: {
 					paymentDetails: {
-						redirect:
-							'#wcpay-confirm-pi:123:pi_123_secret_abc:nonce_123',
+						redirect,
 					},
 				},
 			} );
@@ -3704,6 +3705,131 @@ describe( 'wc-payment-method-woopayments', () => {
 		expect( window.fetch.mock.calls[ 0 ][ 1 ].body.get( 'action' ) ).toBe(
 			'update_order_status'
 		);
+	} );
+
+	// After a payment Stripe confirmed, a store answer with no readable error and no order page (a host's error page, a
+	// transport failure, JSON with neither) shows one sentence instead of the browser's parse error. A setup intent, or a
+	// payment that holds no money, keeps the generic sentence.
+	describe( 'an unreadable store answer after the confirmation', () => {
+		const PAYMENT_RECEIVED =
+			"Your payment was received, but we couldn't finish updating your order. Please don't pay again. If your order confirmation email doesn't arrive soon, contact us.";
+		const GENERIC = 'There was a problem confirming your payment.';
+
+		// A fetch Response whose json() parses the body as Response.json() does: a body that is not JSON rejects with
+		// the browser's SyntaxError.
+		const answer = ( status, body ) => ( {
+			ok: status >= 200 && status < 300,
+			status,
+			json: () => Promise.resolve().then( () => JSON.parse( body ) ),
+		} );
+
+		const confirmPaymentIntent = ( status ) => {
+			window.Stripe = jest.fn( () => ( {
+				handleNextAction: jest.fn().mockResolvedValue( {
+					paymentIntent: { id: 'pi_123', status },
+				} ),
+			} ) );
+		};
+
+		const notice = ( message ) => ( {
+			type: 'error',
+			message,
+			messageContext: 'payments',
+		} );
+
+		it.each( [ 'succeeded', 'requires_capture', 'processing' ] )(
+			'shows the sentence for a 503 text answer after a %s payment intent',
+			async ( status ) => {
+				confirmPaymentIntent( status );
+				window.fetch = jest
+					.fn()
+					.mockResolvedValue( answer( 503, 'Service Unavailable' ) );
+
+				await expect( runSavedTokenConfirmation() ).resolves.toEqual(
+					notice( PAYMENT_RECEIVED )
+				);
+			}
+		);
+
+		it.each( [
+			[
+				'a 200 HTML page',
+				200,
+				'<!DOCTYPE html><html><body>Error</body></html>',
+			],
+			[ 'a 400 answer of 0', 400, '0' ],
+			[ 'a 200 empty JSON object', 200, '{}' ],
+		] )( 'shows the sentence for %s', async ( label, status, body ) => {
+			confirmPaymentIntent( 'succeeded' );
+			window.fetch = jest
+				.fn()
+				.mockResolvedValue( answer( status, body ) );
+
+			await expect( runSavedTokenConfirmation() ).resolves.toEqual(
+				notice( PAYMENT_RECEIVED )
+			);
+		} );
+
+		it( 'shows the sentence when the request never reaches the store', async () => {
+			confirmPaymentIntent( 'succeeded' );
+			window.fetch = jest
+				.fn()
+				.mockRejectedValue( new TypeError( 'Failed to fetch' ) );
+
+			await expect( runSavedTokenConfirmation() ).resolves.toEqual(
+				notice( PAYMENT_RECEIVED )
+			);
+		} );
+
+		it( 'shows the store message when the store refuses with one', async () => {
+			confirmPaymentIntent( 'succeeded' );
+			// The refusal shape of WooPaymentsCheckoutAjaxController::confirm_order_payment().
+			window.fetch = jest.fn().mockResolvedValue(
+				answer(
+					403,
+					JSON.stringify( {
+						error: {
+							message:
+								"We're not able to process this payment. Please refresh the page and try again.",
+						},
+					} )
+				)
+			);
+
+			await expect( runSavedTokenConfirmation() ).resolves.toEqual(
+				notice(
+					"We're not able to process this payment. Please refresh the page and try again."
+				)
+			);
+		} );
+
+		it( 'keeps the generic sentence after a setup intent', async () => {
+			window.Stripe = jest.fn( () => ( {
+				handleNextAction: jest.fn().mockResolvedValue( {
+					setupIntent: { id: 'seti_123', status: 'succeeded' },
+				} ),
+			} ) );
+			window.fetch = jest
+				.fn()
+				.mockResolvedValue( answer( 503, 'Service Unavailable' ) );
+
+			await expect(
+				runSavedTokenConfirmation(
+					'#wcpay-confirm-si:123:seti_123_secret_abc:nonce_123'
+				)
+			).resolves.toEqual( notice( GENERIC ) );
+		} );
+
+		it( 'keeps the generic sentence when the payment intent holds no money', async () => {
+			confirmPaymentIntent( 'requires_payment_method' );
+			window.fetch = jest
+				.fn()
+				.mockResolvedValue( answer( 503, 'Service Unavailable' ) );
+
+			await expect( runSavedTokenConfirmation() ).resolves.toEqual(
+				notice( GENERIC )
+			);
+		} );
 	} );
 
 	it( 'shows the Stripe.js message when the next action rejects', async () => {

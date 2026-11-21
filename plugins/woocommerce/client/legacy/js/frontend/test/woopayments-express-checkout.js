@@ -1174,6 +1174,122 @@ describe( 'WooPayments express checkout', () => {
 		}
 	);
 
+	// After a payment Stripe confirmed, a store answer with no readable error and no order page shows one sentence
+	// instead of the browser's parse error. A wallet payment error and a setup intent keep today's text.
+	describe( 'an unreadable store answer after a wallet payment that needs 3DS', () => {
+		const PAYMENT_RECEIVED =
+			"Your payment was received, but we couldn't finish updating your order. " +
+			"Please don't pay again. If your order confirmation email doesn't arrive soon, contact us.";
+
+		function isOrderStatusUpdate( options ) {
+			return (
+				!! options &&
+				!! options.body &&
+				!! options.body.get &&
+				options.body.get( 'action' ) === 'update_order_status'
+			);
+		}
+
+		// A fetch Response whose json() parses the body as Response.json() does: a body that is not JSON rejects with
+		// the browser's SyntaxError.
+		function answerOrderStatusUpdate( status, text ) {
+			window.fetch = jest.fn( ( url, options ) =>
+				Promise.resolve(
+					isOrderStatusUpdate( options )
+						? {
+								ok: status >= 200 && status < 300,
+								status: status,
+								json: () =>
+									Promise.resolve().then( () =>
+										JSON.parse( text )
+									),
+						  }
+						: {}
+				)
+			);
+		}
+
+		async function confirmCheckoutWallet( stripeResult, checkoutResponse ) {
+			const navigate = jest.fn();
+			stripe.handleNextAction = jest.fn().mockResolvedValue( stripeResult );
+			window.wp.apiFetch
+				.mockResolvedValueOnce( getCartResponse() )
+				.mockResolvedValueOnce(
+					checkoutResponse || getConfirmationCheckoutResponse( 77 )
+				);
+			require( '../woopayments-express-checkout' ).__test__.setNavigate(
+				navigate
+			);
+			await bodyEventHandlers.updated_checkout();
+			await flushPromises();
+
+			await expressHandlers.confirm( {
+				billingDetails: {
+					email: 'shopper@example.test',
+					name: 'Ada Lovelace',
+				},
+			} );
+			await flushPromises();
+
+			return navigate;
+		}
+
+		function getErrorText() {
+			return document.querySelector( '.woocommerce-notices-wrapper' )
+				.textContent;
+		}
+
+		test.each( [
+			[ 'a 503 text answer', () => answerOrderStatusUpdate( 503, 'Service Unavailable' ) ],
+			[ 'an error answer with no message', () => answerOrderStatusUpdate( 200, '{"error":{}}' ) ],
+			[
+				'a lost connection',
+				() => {
+					window.fetch = jest.fn( ( url, options ) =>
+						isOrderStatusUpdate( options )
+							? Promise.reject( new TypeError( 'Failed to fetch' ) )
+							: Promise.resolve( {} )
+					);
+				},
+			],
+		] )( 'shows the sentence for %s after a confirmed payment', async ( label, arrange ) => {
+			arrange();
+
+			const navigate = await confirmCheckoutWallet( {
+				paymentIntent: { id: 'pi_3ds', status: 'succeeded' },
+			} );
+
+			expect( getErrorText() ).toBe( PAYMENT_RECEIVED );
+			expect( navigate ).not.toHaveBeenCalled();
+		} );
+
+		test( 'shows the wallet’s payment error, not the sentence, when the sheet was closed', async () => {
+			answerOrderStatusUpdate( 503, 'Service Unavailable' );
+
+			await confirmCheckoutWallet( {
+				paymentIntent: { id: 'pi_3ds', status: 'requires_action' },
+			} );
+
+			expect( getErrorText() ).toBe( 'Payment requires additional action.' );
+		} );
+
+		test( 'keeps the generic error after a setup intent', async () => {
+			const checkoutResponse = getConfirmationCheckoutResponse( 77 );
+			checkoutResponse.payment_result.payment_details[ 1 ].value =
+				'#wcpay-confirm-si:77:seti_3ds_secret_abc:nonce-3ds';
+			answerOrderStatusUpdate( 503, 'Service Unavailable' );
+
+			await confirmCheckoutWallet(
+				{ setupIntent: { id: 'seti_3ds', status: 'succeeded' } },
+				checkoutResponse
+			);
+
+			expect( getErrorText() ).toBe(
+				'Unable to process this payment, please try again.'
+			);
+		} );
+	} );
+
 	test( 'mounts product page ECE from server product data without reading the current cart', async () => {
 		window.wcpayExpressCheckoutParams.button_context = 'product';
 		window.wcpayExpressCheckoutParams.product = {

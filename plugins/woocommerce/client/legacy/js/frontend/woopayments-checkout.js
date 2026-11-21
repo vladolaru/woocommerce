@@ -2843,6 +2843,26 @@
 		).documentElement.textContent;
 	}
 
+	function hasStoreErrorMessage( error ) {
+		return Boolean(
+			error && typeof error.message === 'string' && error.message
+		);
+	}
+
+	// The payment intent statuses that hold the shopper's money (WooPaymentsIntentCodec::holds_money()).
+	var MONEY_HOLDING_STATUSES = [ 'succeeded', 'requires_capture', 'processing' ];
+
+	// Whether Stripe confirmed a payment intent without an error and the intent now holds the shopper's money.
+	function isConfirmedPayment( confirmation, result ) {
+		return (
+			confirmation.type === 'pi' &&
+			!! result &&
+			! result.error &&
+			!! result.paymentIntent &&
+			MONEY_HOLDING_STATUSES.indexOf( result.paymentIntent.status ) !== -1
+		);
+	}
+
 	// A confirmation error is retry-safe when its payment or setup intent waits for a new payment method or is canceled:
 	// no money moved, so the form is released, as the client always does (client 11.2.0
 	// checkout/classic/event-handlers.js:69-71, :108-114). Any other intent state, or an error with no intent, may have
@@ -2938,6 +2958,17 @@
 					.filter( Boolean )
 					.join( ' ' )
 			);
+		}
+
+		// The store's answer has no readable error and no order page. After a payment Stripe confirmed, one sentence
+		// tells the shopper not to pay again; the form stays blocked either way.
+		function setUnreadableAnswerError( result ) {
+			if ( isConfirmedPayment( confirmation, result ) ) {
+				setError( config.paymentReceivedOrderNotUpdatedMessage || '' );
+				return;
+			}
+
+			setKeptBlockedError( config.confirmationErrorMessage || '' );
 		}
 
 		setCurrentGatewayConfig();
@@ -3059,7 +3090,7 @@
 										? JSON.parse( response )
 										: response;
 							} catch ( error ) {
-								setKeptBlockedError( config.confirmationErrorMessage || '' );
+								setUnreadableAnswerError( result );
 								return;
 							}
 
@@ -3067,11 +3098,11 @@
 								! resultResponse ||
 								typeof resultResponse !== 'object'
 							) {
-								setKeptBlockedError( config.confirmationErrorMessage || '' );
+								setUnreadableAnswerError( result );
 								return;
 							}
 
-							if ( resultResponse.error ) {
+							if ( hasStoreErrorMessage( resultResponse.error ) ) {
 								setKeptBlockedError(
 									getStoreErrorMessage( resultResponse.error )
 								);
@@ -3083,7 +3114,7 @@
 									? resultResponse.return_url.trim()
 									: '';
 							if ( ! returnUrl ) {
-								setKeptBlockedError( config.confirmationErrorMessage || '' );
+								setUnreadableAnswerError( result );
 								return;
 							}
 
@@ -3093,14 +3124,14 @@
 									window.location.href
 								);
 							} catch ( error ) {
-								setKeptBlockedError( config.confirmationErrorMessage || '' );
+								setUnreadableAnswerError( result );
 								return;
 							}
 							if (
 								returnUrl.protocol !== 'http:' &&
 								returnUrl.protocol !== 'https:'
 							) {
-								setKeptBlockedError( config.confirmationErrorMessage || '' );
+								setUnreadableAnswerError( result );
 								return;
 							}
 
@@ -3111,13 +3142,19 @@
 						} )
 						// The store answers its refusals with a non-2xx status and { error: { message } }.
 						.fail( function ( jqXHR ) {
-							setKeptBlockedError(
-								getStoreErrorMessage(
-									jqXHR &&
-										jqXHR.responseJSON &&
-										jqXHR.responseJSON.error
-								)
-							);
+							var storeError =
+								jqXHR &&
+								jqXHR.responseJSON &&
+								jqXHR.responseJSON.error;
+
+							if ( hasStoreErrorMessage( storeError ) ) {
+								setKeptBlockedError(
+									getStoreErrorMessage( storeError )
+								);
+								return;
+							}
+
+							setUnreadableAnswerError( result );
 						} );
 				},
 				function ( error ) {

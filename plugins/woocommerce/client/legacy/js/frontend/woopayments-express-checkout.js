@@ -63,6 +63,14 @@
 		'Unable to process this payment, please try again.',
 		'woocommerce'
 	);
+	// The store's answer after a payment Stripe confirmed has no readable error and no order page.
+	var PAYMENT_RECEIVED_MESSAGE = __(
+		// eslint-disable-next-line max-len -- One translatable string, kept whole for string extraction.
+		"Your payment was received, but we couldn't finish updating your order. Please don't pay again. If your order confirmation email doesn't arrive soon, contact us.",
+		'woocommerce'
+	);
+	// The payment intent statuses that hold the shopper's money (WooPaymentsIntentCodec::holds_money()).
+	var MONEY_HOLDING_STATUSES = [ 'succeeded', 'requires_capture', 'processing' ];
 	// Marks the error notices setError() adds, so a later wallet error replaces them and no other error.
 	var WALLET_ERROR_ATTRIBUTE = 'data-woopayments-wallet-error';
 	var ERRORS_BEFORE_PERSISTENCE = [
@@ -1373,12 +1381,17 @@
 			} )
 			.then( function ( response ) {
 				return response.json();
+			} )
+			.catch( function () {
+				// A transport failure or a body that is not JSON (a host's error page): no readable answer.
+				return null;
 			} );
 	}
 
 	function confirmIntentAndRedirect( confirmation ) {
 		var stripe = getStripe();
 		var confirmationPromise;
+		var isPaymentConfirmed = false;
 
 		if ( ! stripe ) {
 			return Promise.reject(
@@ -1451,6 +1464,11 @@
 					throw new Error( GENERIC_PAYMENT_ERROR_MESSAGE );
 				}
 
+				// Stripe confirmed a payment intent without an error, and it holds the shopper's money.
+				isPaymentConfirmed =
+					confirmation.type === 'pi' &&
+					MONEY_HOLDING_STATUSES.indexOf( intent.status ) !== -1;
+
 				if (
 					intent.last_payment_error &&
 					intent.last_payment_error.message
@@ -1480,17 +1498,19 @@
 			.then( function ( response ) {
 				var returnUrl;
 
-				if ( response && response.error ) {
-					throw new Error(
-						( response.error && response.error.message ) ||
-							GENERIC_PAYMENT_ERROR_MESSAGE
-					);
+				if ( response && response.error && response.error.message ) {
+					throw new Error( response.error.message );
 				}
 
 				returnUrl = getHttpUrl( response && response.return_url );
 
+				// No readable error and no order page: after a payment Stripe confirmed, the shopper must not pay again.
 				if ( ! returnUrl ) {
-					throw new Error( GENERIC_PAYMENT_ERROR_MESSAGE );
+					throw new Error(
+						isPaymentConfirmed
+							? PAYMENT_RECEIVED_MESSAGE
+							: GENERIC_PAYMENT_ERROR_MESSAGE
+					);
 				}
 
 				completePayment( returnUrl );

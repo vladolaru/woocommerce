@@ -3,7 +3,11 @@
  */
 import { getIdentity, recordEvent } from './tracks';
 import { StripeWaitTimeoutError, waitForStripe } from '../wait-for-stripe';
-import { confirmWithStripe, parseConfirmationHash } from './confirmation';
+import {
+	confirmWithStripe,
+	isConfirmedPayment,
+	parseConfirmationHash,
+} from './confirmation';
 import {
 	getBillingAddress,
 	getWalletAddress,
@@ -31,4 +35,5 @@ export {
 	StripeWaitTimeoutError,
 	parseConfirmationHash,
 	confirmWithStripe,
+	isConfirmedPayment,
 };

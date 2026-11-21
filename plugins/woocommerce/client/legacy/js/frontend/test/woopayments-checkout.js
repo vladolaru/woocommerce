@@ -2949,6 +2949,142 @@ describe( 'WooPayments checkout', () => {
 		}
 	);
 
+	// After a payment Stripe confirmed, a store answer with no readable error and no order page shows one sentence in
+	// place of the generic error and its extra line; the form stays blocked. A setup intent, a payment that holds no
+	// money and a readable store error keep today's text.
+	describe( 'an unreadable store answer after a confirmed payment', () => {
+		const GENERIC = 'There was a problem confirming your payment.';
+		const LINE =
+			'Your payment may have gone through. Check your email for an order confirmation before you try again, or refresh the page.';
+		const PAYMENT_RECEIVED =
+			"Your payment was received, but we couldn't finish updating your order. " +
+			"Please don't pay again. If your order confirmation email doesn't arrive soon, contact us.";
+
+		function getErrorText() {
+			return document.querySelector( '.woopayments-payment-errors' )
+				.textContent;
+		}
+
+		// jQuery calls fail() for a non-2xx status or a lost connection; responseJSON is set only for a JSON body.
+		function mockStoreFailure( jqXHR ) {
+			global.jQuery.post.mockImplementationOnce( () => ( {
+				done: jest.fn( () => ( {
+					fail: jest.fn( ( callback ) => callback( jqXHR ) ),
+				} ) ),
+			} ) );
+		}
+
+		function confirmPaymentIntent( status ) {
+			stripeMock.handleNextAction.mockResolvedValueOnce( {
+				paymentIntent: { id: 'pi_native', status },
+			} );
+			setPaymentIntentConfirmationHash();
+		}
+
+		beforeEach( () => {
+			document
+				.querySelector( 'form.checkout' )
+				.insertAdjacentHTML(
+					'beforeend',
+					'<div class="woopayments-payment-errors" hidden></div>'
+				);
+			window.wc_woopayments_checkout_params.confirmationErrorMessage =
+				GENERIC;
+			window.wc_woopayments_checkout_params.paymentMayHaveGoneThroughMessage =
+				LINE;
+			window.wc_woopayments_checkout_params.paymentReceivedOrderNotUpdatedMessage =
+				PAYMENT_RECEIVED;
+		} );
+
+		test.each( [
+			[
+				'a 503 text answer',
+				() =>
+					mockStoreFailure( {
+						status: 503,
+						responseText: 'Service Unavailable',
+					} ),
+			],
+			[
+				'a 200 HTML page',
+				() =>
+					mockConfirmationCallbackResponse(
+						'<!DOCTYPE html><html><body>Error</body></html>'
+					),
+			],
+			[
+				'an error answer with no message',
+				() => mockConfirmationCallbackResponse( { error: {} } ),
+			],
+			[
+				'a lost connection',
+				() => mockStoreFailure( { status: 0, responseText: '' } ),
+			],
+		] )(
+			'shows only the sentence for %s, and the form stays blocked',
+			async ( _answer, arrange ) => {
+				arrange();
+				confirmPaymentIntent( 'succeeded' );
+
+				require( '../woopayments-checkout' );
+				await flushPromises();
+
+				expect( getErrorText() ).toBe( PAYMENT_RECEIVED );
+				expectClassicCheckoutBlockedOnce();
+				expectNoConfirmationResubmit();
+			}
+		);
+
+		test( 'keeps the generic error and its line after a setup intent', async () => {
+			mockStoreFailure( { status: 503, responseText: 'Service Unavailable' } );
+			stripeMock.handleNextAction.mockResolvedValueOnce( {
+				setupIntent: { id: 'seti_native', status: 'succeeded' },
+			} );
+			window.location.hash =
+				'#wcpay-confirm-si:123:seti_native_secret_abc:nonce';
+
+			require( '../woopayments-checkout' );
+			await flushPromises();
+
+			expect( getErrorText() ).toBe( GENERIC + ' ' + LINE );
+			expectClassicCheckoutBlockedOnce();
+		} );
+
+		test( 'keeps the generic error and its line when the payment intent holds no money', async () => {
+			mockStoreFailure( { status: 503, responseText: 'Service Unavailable' } );
+			confirmPaymentIntent( 'requires_payment_method' );
+
+			require( '../woopayments-checkout' );
+			await flushPromises();
+
+			expect( getErrorText() ).toBe( GENERIC + ' ' + LINE );
+			expectClassicCheckoutBlockedOnce();
+		} );
+
+		test( 'keeps a readable store refusal and its line', async () => {
+			// The refusal shape of WooPaymentsCheckoutAjaxController::confirm_order_payment(), HTML-escaped.
+			mockStoreFailure( {
+				status: 403,
+				responseJSON: {
+					error: {
+						message:
+							'We&#039;re not able to process this payment. Please refresh the page and try again.',
+					},
+				},
+			} );
+			confirmPaymentIntent( 'succeeded' );
+
+			require( '../woopayments-checkout' );
+			await flushPromises();
+
+			expect( getErrorText() ).toBe(
+				"We're not able to process this payment. Please refresh the page and try again. " +
+					LINE
+			);
+			expectClassicCheckoutBlockedOnce();
+		} );
+	} );
+
 	// Client 11.2.0 releases the form one microtask after it sets the location (checkout/classic/3ds-flow-handling.js:40-43,
 	// event-handlers.js:69-71), so Place order is live while the order page loads, and a second click can place a second
 	// order. The form stays blocked through the navigation and is released when the page comes back from the

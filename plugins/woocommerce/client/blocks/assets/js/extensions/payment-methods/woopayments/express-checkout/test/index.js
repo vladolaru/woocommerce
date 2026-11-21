@@ -3397,25 +3397,144 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 				} );
 			} );
 
+			const PAYMENT_RECEIVED =
+				"Your payment was received, but we couldn't finish updating your order. Please don't pay again. If your order confirmation email doesn't arrive soon, contact us.";
+
+			// An answer with no order page after a payment Stripe confirmed shows the sentence.
 			it.each( [
 				[ 'empty', { return_url: '' } ],
 				[ 'missing', {} ],
 				[ 'blank', { return_url: ' \n ' } ],
 				[ 'a javascript: URL', { return_url: 'javascript:alert(1)' } ],
 			] )(
-				'shows the payment error and stays on the page when the return URL is %s',
+				'shows the sentence and stays on the page when the return URL is %s',
 				async ( label, answer ) => {
 					const setExpressPaymentError = jest.fn();
+					const pageBefore = window.location.href;
 					answerOrderStatusUpdate( answer );
 
 					await confirmGooglePay( { setExpressPaymentError } );
 
 					expect( setExpressPaymentError ).toHaveBeenCalledWith(
-						'Unable to process this payment, please try again.'
+						PAYMENT_RECEIVED
 					);
 					expect( navigate ).not.toHaveBeenCalled();
+					expect( window.location.href ).toBe( pageBefore );
 				}
 			);
+
+			// A fetch Response whose json() parses the body as Response.json() does: a body that is not JSON rejects
+			// with the browser's SyntaxError.
+			const answerOrderStatusUpdateWithText = ( status, text ) => {
+				window.fetch = jest.fn( ( url, options ) =>
+					Promise.resolve(
+						options?.body?.get?.( 'action' ) ===
+							'update_order_status'
+							? {
+									ok: status >= 200 && status < 300,
+									status,
+									json: () =>
+										Promise.resolve().then( () =>
+											JSON.parse( text )
+										),
+								}
+							: { json: () => Promise.resolve( {} ) }
+					)
+				);
+			};
+
+			it( 'shows the sentence for a 503 text answer after a confirmed payment', async () => {
+				const setExpressPaymentError = jest.fn();
+				const paymentFailed = jest.fn();
+				answerOrderStatusUpdateWithText( 503, 'Service Unavailable' );
+
+				await confirmGooglePay( {
+					setExpressPaymentError,
+					paymentFailed,
+				} );
+
+				expect( setExpressPaymentError ).toHaveBeenCalledWith(
+					PAYMENT_RECEIVED
+				);
+				expect( paymentFailed ).toHaveBeenCalledWith( {
+					reason: 'fail',
+					message: PAYMENT_RECEIVED,
+				} );
+				expect( navigate ).not.toHaveBeenCalled();
+			} );
+
+			it( 'shows the sentence for an error answer with no message after a confirmed payment', async () => {
+				const setExpressPaymentError = jest.fn();
+				answerOrderStatusUpdate( { error: {} } );
+
+				await confirmGooglePay( { setExpressPaymentError } );
+
+				expect( setExpressPaymentError ).toHaveBeenCalledWith(
+					PAYMENT_RECEIVED
+				);
+				expect( navigate ).not.toHaveBeenCalled();
+			} );
+
+			it( 'shows the sentence when the request never reaches the store after a confirmed payment', async () => {
+				const setExpressPaymentError = jest.fn();
+				window.fetch = jest.fn( ( url, options ) =>
+					options?.body?.get?.( 'action' ) === 'update_order_status'
+						? Promise.reject( new TypeError( 'Failed to fetch' ) )
+						: Promise.resolve( {
+								json: () => Promise.resolve( {} ),
+							} )
+				);
+
+				await confirmGooglePay( { setExpressPaymentError } );
+
+				expect( setExpressPaymentError ).toHaveBeenCalledWith(
+					PAYMENT_RECEIVED
+				);
+			} );
+
+			it( 'shows the wallet’s payment error, not the sentence, when the sheet was closed', async () => {
+				const setExpressPaymentError = jest.fn();
+				stripe.handleNextAction = jest.fn().mockResolvedValue( {
+					paymentIntent: { id: 'pi_3ds', status: 'requires_action' },
+				} );
+				answerOrderStatusUpdateWithText( 503, 'Service Unavailable' );
+
+				await confirmGooglePay( { setExpressPaymentError } );
+
+				expect( setExpressPaymentError ).toHaveBeenCalledWith(
+					'Payment requires additional action.'
+				);
+			} );
+
+			it( 'keeps the generic error after a setup intent', async () => {
+				const setExpressPaymentError = jest.fn();
+				apiFetch.mockReset();
+				apiFetch.mockResolvedValueOnce( {
+					order_id: 77,
+					status: 'pending',
+					payment_result: {
+						payment_status: 'success',
+						payment_details: [
+							{ key: 'result', value: 'success' },
+							{
+								key: 'redirect',
+								value: '#wcpay-confirm-si:77:seti_3ds_secret_abc:nonce-3ds',
+							},
+						],
+						redirect_url: '',
+					},
+				} );
+				stripe.handleNextAction = jest.fn().mockResolvedValue( {
+					setupIntent: { id: 'seti_3ds', status: 'succeeded' },
+				} );
+				answerOrderStatusUpdateWithText( 503, 'Service Unavailable' );
+
+				await confirmGooglePay( { setExpressPaymentError } );
+
+				expect( setExpressPaymentError ).toHaveBeenCalledWith(
+					'Unable to process this payment, please try again.'
+				);
+			} );
 
 			it( 'leaves for the order with the page locked once the payment is confirmed', async () => {
 				const pageLock = createPageLock();
