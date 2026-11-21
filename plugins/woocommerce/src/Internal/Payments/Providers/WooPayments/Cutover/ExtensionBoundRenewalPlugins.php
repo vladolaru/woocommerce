@@ -50,6 +50,10 @@ class ExtensionBoundRenewalPlugins {
 			'name'            => 'Payment Plan Suite',
 			'checked_version' => '2.6.0',
 		),
+		'autoship-cloud'                        => array(
+			'name'            => 'Autoship Cloud powered by QPilot',
+			'checked_version' => '2.17.1',
+		),
 	);
 
 	/**

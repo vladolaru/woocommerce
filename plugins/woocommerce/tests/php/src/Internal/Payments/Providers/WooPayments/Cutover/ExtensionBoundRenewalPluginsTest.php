@@ -53,7 +53,8 @@ class ExtensionBoundRenewalPluginsTest extends WC_Unit_Test_Case {
 	/**
 	 * Each listed plugin charges renewals or scheduled payments through the extension's own classes (YITH 4.26.3
 	 * class-ywsbs-wc-payments.php extends WC_Payment_Gateway_WCPay; Order Subscriptions 1.2.15, Ultimate Payment Plans 4.5.0,
-	 * Deposit and Partial Payment Plan 1.0.5 and Payment Plan Suite 2.6.0 build WCPay\Payment_Information), which the built-in
+	 * Deposit and Partial Payment Plan 1.0.5 and Payment Plan Suite 2.6.0 build WCPay\Payment_Information, and Autoship Cloud 2.17.1
+	 * builds it and WCPay\Core\Server\Request\Create_And_Confirm_Intention, WooPaymentsApiClient.php:120-133), which the built-in
 	 * WooPayments does not declare. The free YITH WooCommerce Subscription has no WooPayments integration.
 	 *
 	 * @testdox The active listed plugins, from the site list and on a multisite also the network list, are found once by their folder and named by their header: $_dataName.
@@ -83,6 +84,7 @@ class ExtensionBoundRenewalPluginsTest extends WC_Unit_Test_Case {
 			'Ultimate Payment Plans'                       => array( array( 'ultimate-payment-plans/ultimate-payment-plans.php' ), array( 'ultimate-payment-plans/ultimate-payment-plans.php' ), array( 'Ultimate Payment Plans' ), array(), false ),
 			'Deposit and Partial Payment Plan'             => array( array( 'deposit-and-partial-payment-plan/deposit-and-partial-payment-plan.php' ), array( 'deposit-and-partial-payment-plan/deposit-and-partial-payment-plan.php' ), array( 'Deposit and Partial Payment Plan' ), array(), false ),
 			'Payment Plan Suite'                           => array( array( 'payment-plan-suite/payment-plan-suite.php' ), array( 'payment-plan-suite/payment-plan-suite.php' ), array( 'Payment Plan Suite' ), array(), false ),
+			'Autoship Cloud'                               => array( array( 'woocommerce/woocommerce.php', 'autoship-cloud/autoship.php' ), array( 'autoship-cloud/autoship.php' ), array( 'Autoship Cloud powered by QPilot' ), array(), false ),
 			'two of them'                                  => array( array( 'yith-woocommerce-subscription-premium/init.php', 'ultimate-payment-plans/ultimate-payment-plans.php' ), array( 'yith-woocommerce-subscription-premium/init.php', 'ultimate-payment-plans/ultimate-payment-plans.php' ), array( 'YITH WooCommerce Subscription Premium', 'Ultimate Payment Plans' ), array(), false ),
 			'none of them'                                 => array( array( 'woocommerce/woocommerce.php' ), array(), array(), array(), false ),
 			'the free YITH WooCommerce Subscription'       => array( array( 'yith-woocommerce-subscription/init.php' ), array(), array(), array(), false ),
@@ -111,7 +113,7 @@ class ExtensionBoundRenewalPluginsTest extends WC_Unit_Test_Case {
 	 * Control the site and network active plugin lists and the plugin headers WordPress reads.
 	 *
 	 * WordPress stores active_sitewide_plugins as a plugin-file => activation-timestamp map (wp-admin/includes/plugin.php:712-715),
-	 * and get_plugin_data() in the same file returns a plugin's header, whose Name is its "Plugin Name" header; the five names
+	 * and get_plugin_data() in the same file returns a plugin's header, whose Name is its "Plugin Name" header; the six names
 	 * are those headers in the plugins' current main files. A file with no header here is not readable.
 	 *
 	 * @param array<int,mixed>                        $site_plugins    Active plugin entries of the site.
@@ -126,6 +128,7 @@ class ExtensionBoundRenewalPluginsTest extends WC_Unit_Test_Case {
 			'ultimate-payment-plans/ultimate-payment-plans.php' => array( 'Name' => 'Ultimate Payment Plans' ),
 			'deposit-and-partial-payment-plan/deposit-and-partial-payment-plan.php' => array( 'Name' => 'Deposit and Partial Payment Plan' ),
 			'payment-plan-suite/payment-plan-suite.php'   => array( 'Name' => 'Payment Plan Suite' ),
+			'autoship-cloud/autoship.php'                 => array( 'Name' => 'Autoship Cloud powered by QPilot' ),
 		);
 		$this->register_legacy_proxy_function_mocks(
 			array(
