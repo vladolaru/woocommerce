@@ -41,17 +41,6 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 	private const READ_TIMEOUT_SECONDS = 5;
 
 	/**
-	 * Claims of the order payment lock before giving up, as the in-person capture route waits
-	 * (WooPaymentsTerminalPaymentsRestController): a WooPayments operation on the order holds it for well under a second.
-	 */
-	private const LOCK_CLAIM_ATTEMPTS = 4;
-
-	/**
-	 * Wait between two claims of the order payment lock, in microseconds.
-	 */
-	private const LOCK_RETRY_WAIT_MICROSECONDS = 500000;
-
-	/**
 	 * The operation the cleanup claims the order payment lock as.
 	 */
 	private const LOCK_OPERATION = 'takeover cleanup';
@@ -473,21 +462,15 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Claim the order payment lock, waiting for a WooPayments operation on the order to finish.
+	 * Claim the order payment lock once. The cleanup runs inside another gateway's checkout, so it does not wait for a
+	 * holder: a refused cleanup leaves its note instead.
 	 *
 	 * @param WC_Order $order     The order.
 	 * @param string   $intent_id The stored intent, the lock value, or empty for the provider's sentinel.
-	 * @return string|null Lock token, or null when the lock stayed held.
+	 * @return string|null Lock token, or null when the lock is held.
 	 */
 	private function claim_order_payment_lock( WC_Order $order, string $intent_id ): ?string {
-		for ( $attempt = 1; ; ++$attempt ) {
-			$lock_token = $this->get_order_payment_lock()->claim( $order, $this->get_persistence_vocabulary(), '' === $intent_id ? null : $intent_id, self::LOCK_OPERATION );
-			if ( null !== $lock_token || self::LOCK_CLAIM_ATTEMPTS === $attempt ) {
-				return $lock_token;
-			}
-
-			$this->wait_before_lock_retry();
-		}
+		return $this->get_order_payment_lock()->claim( $order, $this->get_persistence_vocabulary(), '' === $intent_id ? null : $intent_id, self::LOCK_OPERATION );
 	}
 
 	/**
@@ -545,15 +528,6 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 	 */
 	private function get_logger(): WooPaymentsLogger {
 		return wc_get_container()->get( WooPaymentsLogger::class );
-	}
-
-	/**
-	 * Wait before claiming the order payment lock again.
-	 *
-	 * Overridable so tests need not pay the wait.
-	 */
-	protected function wait_before_lock_retry(): void {
-		usleep( self::LOCK_RETRY_WAIT_MICROSECONDS );
 	}
 
 	/**
