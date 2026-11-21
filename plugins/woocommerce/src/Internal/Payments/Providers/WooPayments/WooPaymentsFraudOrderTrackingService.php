@@ -129,16 +129,21 @@ class WooPaymentsFraudOrderTrackingService implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( array() === $this->get_subscription_order_tracking_meta_writes( $order ) ) {
+		$seen   = array(
+			'_payment_method_id'  => $this->get_order_meta_string( $order, '_payment_method_id' ),
+			'_stripe_customer_id' => $this->get_order_meta_string( $order, '_stripe_customer_id' ),
+		);
+		$writes = $this->get_subscription_order_tracking_meta_writes( $order );
+		if ( array() === $writes ) {
 			return;
 		}
 
-		// The order object can be older than the stored meta: another request may have stored these keys since it was loaded.
-		// Read the stored rows again and decide again on them, so a write updates the stored row and never replaces a value
-		// that only looked empty on the old copy.
+		// The repair never replaces a value another request stored since this object was loaded.
 		$order->read_meta_data( true );
-		foreach ( $this->get_subscription_order_tracking_meta_writes( $order ) as $key => $value ) {
-			$order->update_meta_data( $key, $value );
+		foreach ( $writes as $key => $value ) {
+			if ( $this->get_order_meta_string( $order, $key ) === $seen[ $key ] ) {
+				$order->update_meta_data( $key, $value );
+			}
 		}
 		$order->save_meta_data();
 	}
