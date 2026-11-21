@@ -90,8 +90,8 @@ export const SettingsSection = ( {
 };
 
 /**
- * The save bar of the WooPayments settings pages: the Save button, the save status, and the prompt before leaving
- * with unsaved changes.
+ * The save bar of the WooPayments settings pages: the Save button, the line naming a field that blocks saving, and
+ * the prompt before leaving with unsaved changes.
  */
 export const SettingsSaveBar = ( {
 	isDirty,
@@ -142,11 +142,14 @@ export const SettingsSaveBar = ( {
 					isInactive || isBlockedByValidation || undefined
 				}
 				accessibleWhenDisabled
-				aria-describedby={ SAVE_STATUS_ID }
+				aria-describedby={
+					isBlockedByValidation ? SAVE_STATUS_ID : undefined
+				}
 				onClick={ saveOnClick }
 			>
 				{ __( 'Save changes', 'woocommerce' ) }
 			</Button>
+			{ /* Always rendered, so the message is announced when it appears in an empty live region. */ }
 			<p
 				id={ SAVE_STATUS_ID }
 				aria-live="polite"
@@ -155,10 +158,6 @@ export const SettingsSaveBar = ( {
 				} ) }
 			>
 				{ isBlockedByValidation && validationError.message }
-				{ ! isBlockedByValidation &&
-					( isDirty
-						? __( 'You have unsaved changes.', 'woocommerce' )
-						: __( 'Settings are up to date.', 'woocommerce' ) ) }
 			</p>
 			{ children }
 		</div>
