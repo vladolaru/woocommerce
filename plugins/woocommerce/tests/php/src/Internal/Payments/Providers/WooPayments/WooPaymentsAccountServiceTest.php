@@ -944,8 +944,8 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * The expected values are the card gateway's own read, which the accessor must equal. The empty value is left out: the
-	 * gateway reads it as on through WC_Settings_API::get_option() and the accessor does not (register row 625 (b)).
+	 * The expected values are client 11.3.0's reads (includes/class-wc-payment-gateway-wcpay.php:1239-1240 through
+	 * WC_Settings_API::get_option()): a stored empty value is off, and a stored null takes the form default, on.
 	 *
 	 * @testdox The card gateway reads saved cards as the table expects: $_dataName.
 	 * @dataProvider saved_cards_provider
@@ -976,8 +976,8 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Provide stored gateway settings and whether saved cards read as on: only "yes" does, and a key never saved reads as
-	 * its form default, "yes".
+	 * Provide stored gateway settings and whether saved cards read as on: only "yes" does, and a key never saved or stored as
+	 * null reads as its form default, "yes".
 	 *
 	 * @return array<string,array{0:array<string,mixed>,1:bool}>
 	 */
@@ -988,6 +988,8 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 			'string 1'     => array( array( 'saved_cards' => '1' ), false ),
 			'integer 1'    => array( array( 'saved_cards' => 1 ), false ),
 			'boolean true' => array( array( 'saved_cards' => true ), false ),
+			'empty string' => array( array( 'saved_cards' => '' ), false ),
+			'null'         => array( array( 'saved_cards' => null ), true ),
 			'never saved'  => array( array( 'enabled' => 'yes' ), true ),
 		);
 	}

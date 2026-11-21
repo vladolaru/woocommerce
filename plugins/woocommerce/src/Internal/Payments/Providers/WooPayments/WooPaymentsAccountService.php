@@ -1260,7 +1260,6 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 *
 	 * Only a stored `yes` turns it on and a setting never saved reads as on, as client 11.3.0's is_saved_cards_enabled()
 	 * (includes/class-wc-payment-gateway-wcpay.php:1239-1240).
-	 * The card gateway keeps its own read, which also reads an empty stored value as on (register row 625 (b)).
 	 *
 	 * @since 11.4.0
 	 *
@@ -1450,12 +1449,24 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	/**
 	 * Get the gateway settings as stored, without the form defaults.
 	 *
+	 * A stored null for the enabled methods or saved cards reads as never saved, as client 11.3.0 reads it
+	 * (WC_Settings_API::get_option() takes the form default when the value is not set).
+	 *
 	 * @return array<string,mixed>
 	 */
 	private function get_stored_gateway_settings(): array {
 		$settings = $this->legacy_proxy->call_function( 'get_option', WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array() );
+		if ( ! is_array( $settings ) ) {
+			return array();
+		}
 
-		return is_array( $settings ) ? $settings : array();
+		foreach ( array( 'upe_enabled_payment_method_ids', 'saved_cards' ) as $key ) {
+			if ( ! isset( $settings[ $key ] ) ) {
+				unset( $settings[ $key ] );
+			}
+		}
+
+		return $settings;
 	}
 
 	/**

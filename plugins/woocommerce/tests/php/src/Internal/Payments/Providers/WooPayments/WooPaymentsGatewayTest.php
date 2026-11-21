@@ -627,8 +627,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 *
 	 * @dataProvider provider_card_gateway_saved_cards_setting
 	 *
-	 * @param array<string,string> $settings WooPayments gateway settings.
-	 * @param bool                 $expected Whether saved cards are on.
+	 * @param array<string,mixed> $settings WooPayments gateway settings.
+	 * @param bool                $expected Whether saved cards are on.
 	 */
 	public function test_card_gateway_saved_card_support_follows_saved_cards_setting( array $settings, bool $expected ): void {
 		$this->with_gateway_settings(
@@ -646,15 +646,17 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Card gateway settings and whether they turn saved cards on.
+	 * Card gateway settings and whether they turn saved cards on. A stored empty value is off, as client 11.3.0 reads it
+	 * (class-wc-payment-gateway-wcpay.php:1239-1240), and as the settings page shows it.
 	 *
-	 * @return array<string,array{0:array<string,string>,1:bool}>
+	 * @return array<string,array{0:array<string,mixed>,1:bool}>
 	 */
 	public function provider_card_gateway_saved_cards_setting(): array {
 		return array(
 			'no saved cards setting stored' => array( array( 'enabled' => 'yes' ), true ),
 			'saved cards on'                => array( array( 'saved_cards' => 'yes' ), true ),
 			'saved cards off'               => array( array( 'saved_cards' => 'no' ), false ),
+			'saved cards stored empty'      => array( array( 'saved_cards' => '' ), false ),
 		);
 	}
 
@@ -1148,6 +1150,64 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		} finally {
 			remove_filter( 'pre_option_woocommerce_currency', $currency_filter );
 		}
+	}
+
+	/**
+	 * Client 11.3.0 reads an enabled methods list stored as null as its form default, card (`get_upe_enabled_payment_method_ids()`,
+	 * class-wc-payment-gateway-wcpay.php:5132-5139, through WC_Settings_API::get_option()'s isset), so card stays offered.
+	 *
+	 * @testdox Should offer the card gateway when the enabled methods are stored as $_dataName, read through the account service.
+	 * @dataProvider provider_stored_enabled_methods_for_card_availability
+	 *
+	 * @param mixed $enabled_methods Stored enabled payment method IDs.
+	 * @param bool  $expected        Whether the card gateway should be offered.
+	 */
+	public function test_card_gateway_availability_reads_a_stored_null_list_as_card( $enabled_methods, bool $expected ): void {
+		$this->activate_builtin_tier();
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data', 'is_test_mode_enabled' ) )
+			->getMock();
+		$account_service->init( new LegacyProxy(), wc_get_container()->get( WooPaymentsDatabaseCache::class ) );
+		$account_service->method( 'get_cached_account_data' )->willReturn(
+			array(
+				'country'      => 'US',
+				'capabilities' => array( 'card_payments' => 'active' ),
+			)
+		);
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+		$currency_filter = static fn(): string => 'USD';
+		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
+
+		try {
+			$this->with_gateway_settings(
+				array(
+					'enabled'                        => 'yes',
+					'upe_enabled_payment_method_ids' => $enabled_methods,
+				),
+				function () use ( $account_service, $expected ): void {
+					$gateway = new WooPaymentsGateway();
+					$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
+
+					$this->assertSame( $expected, $gateway->is_available() );
+				}
+			);
+		} finally {
+			remove_filter( 'pre_option_woocommerce_currency', $currency_filter );
+		}
+	}
+
+	/**
+	 * Stored enabled methods lists and whether the card gateway is offered.
+	 *
+	 * @return array<string,array{0:mixed,1:bool}>
+	 */
+	public function provider_stored_enabled_methods_for_card_availability(): array {
+		return array(
+			'null'            => array( null, true ),
+			'card'            => array( array( 'card' ), true ),
+			'card not listed' => array( array( 'ideal' ), false ),
+		);
 	}
 
 	/**
@@ -11034,6 +11094,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	public function test_construction_does_not_touch_wc_instance_when_country_uncached(): void {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_cached_account_data' ) )->getMock();
 		$account_service->expects( $this->never() )->method( 'get_cached_account_data' );
+		// The card gateway reads saved cards through the account service while it is built, so the double reads settings.
+		$account_service->init( new LegacyProxy(), wc_get_container()->get( WooPaymentsDatabaseCache::class ) );
 		wc_get_container()->replace( WooPaymentsAccountService::class, $account_service );
 		wc_get_container()->reset_all_resolved();
 
@@ -11054,6 +11116,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$account_service->expects( $this->once() )
 			->method( 'get_cached_account_data' )
 			->willReturn( array( 'country' => 'US' ) );
+		// The card gateway reads saved cards through the account service while it is built, so the double reads settings.
+		$account_service->init( new LegacyProxy(), wc_get_container()->get( WooPaymentsDatabaseCache::class ) );
 		wc_get_container()->replace( WooPaymentsAccountService::class, $account_service );
 		wc_get_container()->reset_all_resolved();
 
@@ -11197,7 +11261,9 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$this->assertSame( 'no', $gateway->get_option( 'saved_cards' ) );
 			$this->assertSame( 'no', $gateway->get_option( 'saved_cards' ) );
 			$this->assertSame( 'no', $gateway->enabled );
-			$this->assertSame( 1, $settings_reads );
+			// One reload of the gateway's settings, then one read by the account service's saved cards check, which the card
+			// gateway's supports rebuild asks after the blog context changed.
+			$this->assertSame( 2, $settings_reads );
 		} finally {
 			remove_filter( 'pre_option_woocommerce_woocommerce_payments_settings', $count_read );
 		}

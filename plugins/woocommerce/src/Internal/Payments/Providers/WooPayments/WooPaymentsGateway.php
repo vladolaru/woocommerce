@@ -1055,9 +1055,9 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * Tell whether saved payment methods are enabled for this gateway.
 	 *
-	 * Each gateway reads its own setting, as client 11.1.0 does (class-wc-payment-gateway-wcpay.php:987-989). Only the card
-	 * gateway has the saved_cards form field and its "yes" default (:387-410, merged at :545); a split gateway reads its own
-	 * stored value, so it is on only where its row stores "yes", as rows first written before client 10.1.0 do.
+	 * Each gateway reads its own setting, as client 11.1.0 does (class-wc-payment-gateway-wcpay.php:987-989). The card gateway
+	 * reads it through the account service, the one reader of the setting; a split gateway reads its own stored value, so it is
+	 * on only where its row stores "yes", as rows first written before client 10.1.0 do.
 	 *
 	 * @return bool
 	 */
@@ -1066,8 +1066,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return 'yes' === $this->get_option( 'saved_cards' );
 		}
 
-		// A literal default: the shared defaults translate labels, which gateway construction must not do before init.
-		return 'yes' === $this->get_option( 'saved_cards', 'yes' );
+		return $this->get_account_service()->is_saved_cards_enabled();
 	}
 
 	/**

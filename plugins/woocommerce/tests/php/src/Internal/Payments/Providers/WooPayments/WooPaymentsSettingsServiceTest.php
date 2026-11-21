@@ -1679,6 +1679,65 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.3.0 reads an enabled methods list stored as null as its form default, card (`get_upe_enabled_payment_method_ids()`,
+	 * class-wc-payment-gateway-wcpay.php:5132-5139, through WC_Settings_API::get_option()'s isset), so the page shows card.
+	 *
+	 * @testdox The settings answer reads an enabled payment methods list stored as null as card.
+	 */
+	public function test_get_settings_reads_a_null_methods_list_as_card(): void {
+		$this->set_card_and_ideal_account_data();
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => null ) );
+
+		$this->assertSame( array( 'card' ), $this->sut->get_settings()['enabled_payment_method_ids'] );
+	}
+
+	/**
+	 * Saving the methods the page shows, beside an unrelated change, keeps the gateway on: with a stored null the page shows
+	 * card, so the save does not count card as removed (card removal writes `enabled` `no`).
+	 *
+	 * @testdox An unrelated save that posts back the methods the page shows keeps the gateway on when the list was stored as $_dataName.
+	 * @dataProvider provide_stored_null_or_card_methods_lists
+	 *
+	 * @param mixed $stored Stored list.
+	 */
+	public function test_update_settings_keeps_the_gateway_on_when_an_unrelated_save_posts_back_the_shown_methods( $stored ): void {
+		$this->set_card_and_ideal_account_data();
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'enabled'                        => 'yes',
+				'test_mode'                      => 'yes',
+				'upe_enabled_payment_method_ids' => $stored,
+			)
+		);
+
+		$result = $this->sut->update_settings(
+			array(
+				'enabled_payment_method_ids'  => $this->sut->get_settings()['enabled_payment_method_ids'],
+				'payment_request_button_size' => 'large',
+			)
+		);
+
+		$this->assertIsArray( $result, is_wp_error( $result ) ? $result->get_error_message() : '' );
+		$saved = get_option( 'woocommerce_woocommerce_payments_settings' );
+		$this->assertSame( 'yes', $saved['enabled'] );
+		$this->assertSame( array( 'card' ), $saved['upe_enabled_payment_method_ids'] );
+		$this->assertSame( 'large', $saved['payment_request_button_size'] );
+	}
+
+	/**
+	 * Provide a stored enabled-methods list the page shows as card.
+	 *
+	 * @return array<string,array{0:mixed}>
+	 */
+	public function provide_stored_null_or_card_methods_lists(): array {
+		return array(
+			'null' => array( null ),
+			'card' => array( array( 'card' ) ),
+		);
+	}
+
+	/**
 	 * The settings answer for the list placement toggle reads on only for a stored "yes" (client 11.3.0
 	 * `class-wc-rest-payments-settings-controller.php:577`), as the gateway, the wallet buttons and the checkout configuration do.
 	 *
