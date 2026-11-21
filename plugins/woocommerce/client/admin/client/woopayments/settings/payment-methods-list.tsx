@@ -1082,8 +1082,8 @@ export const getPaymentMethodAvailability = (
 			};
 	}
 
-	// Client 11.3.0 settings/payment-methods-list/use-payment-method-availability.tsx:198-202: the row only loses its
-	// checkbox. The banner above the list says why, so the row adds no chip of its own.
+	// Client 11.3.0 settings/payment-methods-list/use-payment-method-availability.tsx:198-202: the row keeps its
+	// checkbox, disabled, and loses the chip. The banner above the list says why, so the row adds no chip of its own.
 	if ( isManualCaptureEnabled && ! definition.allowsManualCapture ) {
 		return { isActionable: false };
 	}

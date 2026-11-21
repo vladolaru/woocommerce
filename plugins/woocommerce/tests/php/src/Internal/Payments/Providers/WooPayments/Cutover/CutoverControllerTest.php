@@ -848,7 +848,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A plugin deactivation brings forward a switch held back by a renewal plugin.
+	 * @testdox A plugin deactivation brings forward a switch held back by a listed plugin that takes payments through the extension.
 	 */
 	public function test_plugin_events_bring_the_waiting_switch_forward(): void {
 		$job        = new class() extends ReconciliationJob {
@@ -1100,7 +1100,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	 * @testdox On a store the built-in WooPayments owns, a warning names the active plugins whose payments need the WooPayments extension ($_dataName).
 	 * @dataProvider provide_built_in_store_renewal_plugins
 	 *
-	 * @param array<string,string> $plugins  Active renewal plugin names by plugin file.
+	 * @param array<string,string> $plugins  Active listed plugin names by plugin file.
 	 * @param string|null          $expected The warning text, or null when there is none.
 	 */
 	public function test_built_in_store_names_the_active_renewal_plugins( array $plugins, ?string $expected ): void {
@@ -1137,7 +1137,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox No renewal plugins warning shows on a store the built-in WooPayments does not own; the switch notice says why it waits instead ($store).
+	 * @testdox No listed plugins warning shows on a store the built-in WooPayments does not own; the switch notice says why it waits instead ($store).
 	 * @testWith ["extension active"]
 	 *           ["waiting for the switch"]
 	 *

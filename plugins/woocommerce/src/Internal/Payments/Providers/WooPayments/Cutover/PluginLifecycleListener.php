@@ -65,8 +65,8 @@ class PluginLifecycleListener implements RegisterHooksInterface {
 
 	/**
 	 * Hand a plugin deactivation to the cutover controller, which forgets its cached bundled subscriptions classification
-	 * when WooCommerce Subscriptions changes and brings forward a switch held back by a renewal plugin; a WooPayments
-	 * deactivation records nothing.
+	 * when WooCommerce Subscriptions changes and brings forward a switch held back by a listed plugin that takes payments
+	 * through the extension; a WooPayments deactivation records nothing.
 	 *
 	 * @internal
 	 *

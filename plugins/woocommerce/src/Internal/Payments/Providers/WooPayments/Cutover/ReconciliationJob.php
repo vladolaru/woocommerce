@@ -1045,8 +1045,8 @@ class ReconciliationJob implements RegisterHooksInterface {
 			$past_finalize = null !== ( $claimed['request_origin_token'] ?? null );
 			$this->preflight_service->invalidate_current_blog_memoization();
 			$failures = $this->preflight_service->get_failures();
-			// Past finalize the extension's classes never load again, so neither a plugin that renews through them nor their
-			// version has anything left to hold back.
+			// Past finalize the extension's classes never load again, so neither a listed plugin that takes payments through them
+			// nor their version has anything left to hold back.
 			if ( $past_finalize ) {
 				$failures = array_values( array_diff( $failures, array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE, PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED ) ) );
 			}

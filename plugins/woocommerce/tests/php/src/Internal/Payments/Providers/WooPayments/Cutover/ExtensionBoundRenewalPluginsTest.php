@@ -54,7 +54,7 @@ class ExtensionBoundRenewalPluginsTest extends WC_Unit_Test_Case {
 	 * Each listed plugin takes payments through the extension's own classes (YITH 4.26.3
 	 * class-ywsbs-wc-payments.php extends WC_Payment_Gateway_WCPay; Order Subscriptions 1.2.15, Ultimate Payment Plans 4.5.0,
 	 * Deposit and Partial Payment Plan 1.0.5 and Payment Plan Suite 2.6.0 build WCPay\Payment_Information, and Autoship Cloud 2.17.1
-	 * builds it and WCPay\Core\Server\Request\Create_And_Confirm_Intention, WooPaymentsApiClient.php:120-133, and WPFunnels 3.13.5
+	 * builds it and WCPay\Core\Server\Request\Create_And_Confirm_Intention, WooPaymentsApiClient.php:120-133, and WPFunnels 3.13.8
 	 * builds both, class-wpfnl-gateway-woocommerce-payments.php), which the built-in WooPayments does not declare. The free YITH
 	 * WooCommerce Subscription has no WooPayments integration.
 	 *
