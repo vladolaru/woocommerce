@@ -288,15 +288,18 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	/**
 	 * Redirect when the current order already has an authorized PaymentIntent attached.
 	 *
-	 * A failed intent fetch refuses checkout when a new charge could pay the order twice: on a PHP Error, when the order's
-	 * stored intent status says money was taken, held or is on its way, and, when the fetch leaves the payment unknown, when
-	 * that status says a bank step was started. Otherwise checkout goes on.
+	 * A failed intent fetch refuses checkout on a PHP Error and when the order's stored intent status is succeeded. When the
+	 * request would charge in the mode the order's payment was made in, it also refuses when that status says money is
+	 * held or on its way, and, when the fetch leaves the payment unknown, when that status says a bank step was started.
+	 * Otherwise checkout goes on.
 	 *
-	 * @param WC_Order           $order   Current order.
-	 * @param WC_Payment_Gateway $gateway Gateway used to build the return URL.
+	 * @param WC_Order           $order         Current order.
+	 * @param WC_Payment_Gateway $gateway       Gateway used to build the return URL.
+	 * @param bool               $takes_payment Whether the request would charge, as WooPaymentsPaymentOperationService::charge_takes_payment()
+	 *                                          decides; false for one that only sets up the payment method.
 	 * @return array<string,string>|WP_Error|null
 	 */
-	public function check_payment_intent_attached_to_order_succeeded( WC_Order $order, WC_Payment_Gateway $gateway ) {
+	public function check_payment_intent_attached_to_order_succeeded( WC_Order $order, WC_Payment_Gateway $gateway, bool $takes_payment = true ) {
 		$intent_id = (string) $order->get_meta( '_intent_id', true );
 		if ( '' === $intent_id || 0 !== strpos( $intent_id, 'pi_' ) ) {
 			return null;
@@ -317,14 +320,18 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 			);
 
 			// Client 11.1.0 dpps:100 catches only Exception, so a PHP Error fatals there and nothing is charged. This keeps
-			// that outcome without the fatal, rather than charging again. Without the read, a new charge would only guess, so
-			// the order's record decides: a record of money refuses on any failure; a record of a started bank step refuses
-			// unless the platform answered about this payment, as with a not-found.
+			// that outcome without the fatal, rather than charging again, and refuses on a record of a succeeded payment.
+			// Otherwise, without the read, a new charge in the record's own mode would only guess, so the record decides: a
+			// record of money refuses on any failure; a record of a started bank step refuses unless the platform answered
+			// about this payment, as with a not-found. A record from the other mode says nothing about this mode's money.
 			$stored_status = (string) $order->get_meta( '_intention_status', true );
+			$stored_mode   = (string) $order->get_meta( '_wcpay_mode', true );
+			$pays_again    = $takes_payment && ( '' === $stored_mode || wc_get_container()->get( WooPaymentsAccountService::class )->get_order_mode() === $stored_mode );
 			if (
 				! $exception instanceof Exception
-				|| WooPaymentsIntentCodec::holds_money( $stored_status )
-				|| ( in_array( $stored_status, self::STARTED_INTENT_STATUSES, true ) && self::leaves_the_payment_unknown( $exception ) )
+				|| 'succeeded' === $stored_status
+				|| ( $pays_again && WooPaymentsIntentCodec::holds_money( $stored_status ) )
+				|| ( $pays_again && in_array( $stored_status, self::STARTED_INTENT_STATUSES, true ) && self::leaves_the_payment_unknown( $exception ) )
 			) {
 				return new WP_Error( self::ERROR_CHECK_FAILED, __( "We're not able to process this payment. Please try again later.", 'woocommerce' ) );
 			}
@@ -372,21 +379,14 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	}
 
 	/**
-	 * Tell whether a failed read of the attached intent leaves the payment unknown: a failure that is not an API error, a
-	 * transport failure or server error, a refusal of the whole store (401, 403, 429), or an answer with no error status.
-	 * Any other 4xx, such as a not-found, is the platform's answer about this payment.
+	 * Tell whether a failed read of the attached intent leaves the payment unknown: when it says nothing about the intent,
+	 * as the unpaid-order check also counts it, or when it is an answer the store could not read, with no error status.
 	 *
 	 * @param Throwable $failure The read's failure.
 	 * @return bool
 	 */
 	private static function leaves_the_payment_unknown( Throwable $failure ): bool {
-		if ( ! $failure instanceof ApiException ) {
-			return true;
-		}
-
-		$code = $failure->get_http_code();
-
-		return $code < 400 || 500 <= $code || in_array( $code, array( 401, 403, 429 ), true );
+		return ApiException::leaves_the_answer_unknown( $failure ) || ( $failure instanceof ApiException && $failure->get_http_code() < 400 );
 	}
 
 	/**

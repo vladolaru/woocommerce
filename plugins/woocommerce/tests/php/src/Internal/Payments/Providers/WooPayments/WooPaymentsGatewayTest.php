@@ -4526,11 +4526,46 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A subscription payment-method change over a stored requires_action intent whose read fails is refused and leaves the subscription as it is.
+	 * @testdox A checkout over a Pending order storing $stored_status in mode $stored_mode, on a store in mode prod, whose stored intent read fails with a 404, $expected.
 	 *
-	 * The check runs for every caller of process_payment(), the payment-method change included.
+	 * A record from the other mode says nothing about this mode's money, so a test authorization does not block the first
+	 * live payment. The same record in its own mode is refused, and nothing is charged.
+	 *
+	 * @testWith ["requires_capture", "test", "charges"]
+	 *           ["requires_capture", "prod", "refuses"]
+	 *
+	 * @param string $stored_status The order's stored intent status.
+	 * @param string $stored_mode   The order's stored `_wcpay_mode`.
+	 * @param string $expected      "refuses" or "charges".
 	 */
-	public function test_subscription_payment_method_change_over_a_started_record_whose_read_fails_is_refused(): void {
+	public function test_process_payment_over_a_record_from_another_mode_whose_read_fails( string $stored_status, string $stored_mode, string $expected ): void {
+		add_filter( 'wcpay_test_mode', '__return_false' );
+		$order = $this->create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->update_meta_data( '_intent_id', 'pi_started' );
+		$order->update_meta_data( '_intention_status', $stored_status );
+		$order->update_meta_data( '_wcpay_mode', $stored_mode );
+		$order->save();
+		$service = new RecordingPaymentProcessingService();
+		$gateway = $this->create_gateway_whose_duplicate_read_fails( $service, new ApiException( 'No such payment_intent.', 'resource_missing', 404 ) );
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( 'charges' === $expected ? 1 : 0, $service->checkout_attempt_count );
+		if ( 'refuses' === $expected ) {
+			$this->assertSame( 'failure', $result['result'] ?? '' );
+			$this->assertSame( array( "We're not able to process this payment. Please try again later." ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+		}
+	}
+
+	/**
+	 * @testdox A subscription payment-method change over a stored requires_action intent whose read fails goes on to set up the card.
+	 *
+	 * Inverted from a refusal by the fix that limits the refusals on a stored record to a request that would charge: the
+	 * payment operation sets up the card for a validated payment-method change at any total
+	 * (WooPaymentsPaymentOperationService::charge_takes_payment()), so the change cannot pay the order twice.
+	 */
+	public function test_subscription_payment_method_change_over_a_started_record_whose_read_fails_goes_on(): void {
 		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
 		WooCommerceSubscriptionsDoubles::load_subscription_detector();
 		$subscription = $this->create_order();
@@ -4561,12 +4596,11 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$service = new RecordingPaymentProcessingService();
 		$gateway = $this->create_gateway_whose_duplicate_read_fails( $service, new ApiException( 'Read failed.', 'api_error', 500 ) );
 
-		$result = $gateway->process_payment( $subscription_id );
+		$gateway->process_payment( $subscription_id );
 
-		$this->assertSame( 0, $service->checkout_attempt_count, 'Nothing is charged.' );
-		$this->assertSame( array( 'failure', '' ), array( $result['result'] ?? '', $result['redirect'] ?? '' ) );
-		$this->assertSame( array( "We're not able to process this payment. Please try again later." ), array_column( wc_get_notices( 'error' ), 'notice' ) );
-		$this->assertSame( array( OrderStatus::PENDING, 'requires_action' ), array( wc_get_order( $subscription_id )->get_status(), wc_get_order( $subscription_id )->get_meta( '_intention_status', true ) ), 'The subscription keeps its status and record.' );
+		$this->assertSame( 1, $service->checkout_attempt_count, 'The change goes on to the payment operation.' );
+		$this->assertTrue( $service->last_checkout_context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE ] ?? false, 'The operation sets up the card.' );
+		$this->assertSame( array(), array_column( wc_get_notices( 'error' ), 'notice' ), 'No refusal is shown.' );
 	}
 
 	/**

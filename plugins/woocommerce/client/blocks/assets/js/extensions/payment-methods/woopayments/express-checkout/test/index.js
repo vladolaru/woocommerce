@@ -23,10 +23,17 @@ jest.mock( '@woocommerce/blocks-registry', () => ( {
 jest.mock( '@woocommerce/utils/navigation', () => ( { reload: jest.fn() } ) );
 
 const mockInvalidateResolutionForStore = jest.fn();
+const mockCreateErrorNotice = jest.fn();
 jest.mock( '@wordpress/data', () => ( {
 	dispatch: jest.fn( () => ( {
 		invalidateResolutionForStore: mockInvalidateResolutionForStore,
+		createErrorNotice: mockCreateErrorNotice,
 	} ) ),
+} ) );
+
+const mockSpeak = jest.fn();
+jest.mock( '@wordpress/a11y', () => ( {
+	speak: ( ...args ) => mockSpeak( ...args ),
 } ) );
 
 jest.mock( '@woocommerce/block-data', () => ( {
@@ -3520,11 +3527,94 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 
 					expect( event.reject ).toHaveBeenCalledTimes( 1 );
 					expect( event.resolve ).not.toHaveBeenCalled();
-					expect( setExpressPaymentError ).toHaveBeenCalledWith(
-						PAYMENT_RECEIVED
-					);
+					expect( setExpressPaymentError ).not.toHaveBeenCalled();
 					expect( onClick ).not.toHaveBeenCalled();
 					expect( pageLock.isLocked() ).toBe( false );
+				} );
+
+				// The express error callback puts back the payment method chosen before the wallet's first click
+				// (express-payment-methods.tsx onExpressPaymentError), so the sentence comes back as the express notice
+				// alone, under that notice's ID, and the shopper's current choice stays.
+				it( 'shows the sentence again as the express notice only, keeping the method choice', async () => {
+					const setExpressPaymentError = jest.fn();
+					answerOrderStatusUpdateWithText(
+						503,
+						'Service Unavailable'
+					);
+					await confirmGooglePay( {
+						setExpressPaymentError,
+						emitResponse: {
+							noticeContexts: {
+								EXPRESS_PAYMENTS:
+									'wc/checkout/express-payments',
+							},
+						},
+					} );
+					setExpressPaymentError.mockClear();
+					mockCreateErrorNotice.mockClear();
+
+					clickGooglePay();
+
+					expect( setExpressPaymentError ).not.toHaveBeenCalled();
+					expect( mockCreateErrorNotice ).toHaveBeenCalledTimes( 1 );
+					expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
+						PAYMENT_RECEIVED,
+						{
+							id: 'wc-express-payment-error',
+							context: 'wc/checkout/express-payments',
+						}
+					);
+				} );
+
+				// The notice shown again keeps its text and ID, so the notice list does not announce it again.
+				it( 'speaks the sentence on every refused click', async () => {
+					answerOrderStatusUpdateWithText(
+						503,
+						'Service Unavailable'
+					);
+					await confirmGooglePay();
+					mockSpeak.mockClear();
+
+					clickGooglePay();
+					clickGooglePay();
+
+					expect( mockSpeak.mock.calls ).toEqual( [
+						[ PAYMENT_RECEIVED, 'assertive' ],
+						[ PAYMENT_RECEIVED, 'assertive' ],
+					] );
+				} );
+
+				// The flag is the page's, not one Element's: every wallet button on it is refused.
+				it( 'refuses a click on another wallet after the sentence', async () => {
+					const onClick = jest.fn();
+					answerOrderStatusUpdateWithText(
+						503,
+						'Service Unavailable'
+					);
+					await confirmGooglePay();
+
+					delete expressHandlers.click;
+					renderExpressPaymentMethod(
+						getRegistration(
+							'woocommerce_payments_express_checkout_applePay'
+						),
+						{ onClick }
+					);
+					await waitFor( () => {
+						expect( expressHandlers.click ).toBeDefined();
+					} );
+					const event = {
+						expressPaymentType: 'apple_pay',
+						resolve: jest.fn(),
+						reject: jest.fn(),
+					};
+					act( () => {
+						expressHandlers.click( event );
+					} );
+
+					expect( event.reject ).toHaveBeenCalledTimes( 1 );
+					expect( event.resolve ).not.toHaveBeenCalled();
+					expect( onClick ).not.toHaveBeenCalled();
 				} );
 
 				it.each( [

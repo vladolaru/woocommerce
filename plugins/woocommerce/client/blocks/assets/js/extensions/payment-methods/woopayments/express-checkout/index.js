@@ -6,6 +6,7 @@ import { getPaymentMethodData } from '@woocommerce/settings';
 import { cartStore } from '@woocommerce/block-data';
 import { extensionCartUpdate } from '@woocommerce/blocks-checkout';
 import { reload as navigate } from '@woocommerce/utils/navigation';
+import { speak } from '@wordpress/a11y';
 import { decodeEntities } from '@wordpress/html-entities';
 import { dispatch } from '@wordpress/data';
 import { applyFilters } from '@wordpress/hooks';
@@ -935,6 +936,17 @@ const PAYMENT_RECEIVED_MESSAGE = __(
 // Set once the page showed PAYMENT_RECEIVED_MESSAGE; until a reload, every wallet click is refused with it.
 let isPaymentReceivedShown = false;
 
+// Show PAYMENT_RECEIVED_MESSAGE again for a refused wallet click. It is only a notice: the express error callback would
+// also put back the payment method chosen before the wallet's first click. It keeps the ID of the express error notice
+// it replaces, and is spoken each time, since the same notice shown again is not announced.
+const showPaymentReceivedAgain = ( noticeContext ) => {
+	dispatch( 'core/notices' ).createErrorNotice( PAYMENT_RECEIVED_MESSAGE, {
+		id: 'wc-express-payment-error',
+		context: noticeContext,
+	} );
+	speak( PAYMENT_RECEIVED_MESSAGE, 'assertive' );
+};
+
 const getCheckoutErrorMessage = ( response ) => {
 	const details = response?.payment_result?.payment_details;
 	const errorDetail = Array.isArray( details )
@@ -1195,6 +1207,7 @@ const ExpressCheckoutElement = ( {
 	onClick,
 	onClose,
 	setExpressPaymentError,
+	emitResponse,
 } ) => {
 	const containerRef = useRef( null );
 	const stripeRef = useRef( null );
@@ -1203,6 +1216,9 @@ const ExpressCheckoutElement = ( {
 	const cartDataRef = useRef( cartData );
 	const billingRef = useRef( billing );
 	const shippingDataRef = useRef( shippingData );
+	const expressNoticeContextRef = useRef(
+		emitResponse?.noticeContexts?.EXPRESS_PAYMENTS
+	);
 	const appliedElementsOptionsRef = useRef( null );
 	const latestCartDataRef = useRef( null );
 	const walletMutatedCartRef = useRef( false );
@@ -1229,6 +1245,8 @@ const ExpressCheckoutElement = ( {
 	cartDataRef.current = cartData;
 	billingRef.current = billing;
 	shippingDataRef.current = shippingData;
+	expressNoticeContextRef.current =
+		emitResponse?.noticeContexts?.EXPRESS_PAYMENTS;
 
 	const getCurrentCart = useCallback(
 		() =>
@@ -1283,7 +1301,7 @@ const ExpressCheckoutElement = ( {
 			// A payment went through but its order could not be updated: no wallet sheet opens for a second one.
 			if ( isPaymentReceivedShown ) {
 				event.reject();
-				setExpressPaymentError?.( PAYMENT_RECEIVED_MESSAGE );
+				showPaymentReceivedAgain( expressNoticeContextRef.current );
 				return;
 			}
 

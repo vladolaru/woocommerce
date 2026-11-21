@@ -1554,7 +1554,11 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		$this->get_duplicate_payment_prevention_service()->maybe_update_session_processing_order( (int) $order_id );
 
-		$existing_intent_result = $this->get_duplicate_payment_prevention_service()->check_payment_intent_attached_to_order_succeeded( $order, $this );
+		$existing_intent_result = $this->get_duplicate_payment_prevention_service()->check_payment_intent_attached_to_order_succeeded(
+			$order,
+			$this,
+			WooPaymentsPaymentOperationService::charge_takes_payment( $order, $is_subscription_payment_method_change )
+		);
 		if ( is_wp_error( $existing_intent_result ) ) {
 			// Client 11.1.0 fails the order with the mismatch as the note (`gw:1324-1325`). An amount mismatch on an order whose
 			// stored intent status is succeeded is kept and answered as paid, as client 11.1.0 keeps any refusal on such an

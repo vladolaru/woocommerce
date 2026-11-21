@@ -491,7 +491,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 			return;
 		}
 
-		$refused                              = null === $failure ? ! $usable : ( ! $failure instanceof ApiException || 500 <= $code || in_array( $code, array( 401, 403, 429 ), true ) );
+		$refused                              = null === $failure ? ! $usable : ApiException::leaves_the_answer_unknown( $failure );
 		$this->unpaid_order_failures_in_a_row = $refused ? $this->unpaid_order_failures_in_a_row + 1 : 0;
 		// Three in a row from different orders is the store being refused; one or two can be single orders' bad luck.
 		$this->unpaid_order_reads_stopped = 3 <= $this->unpaid_order_failures_in_a_row;

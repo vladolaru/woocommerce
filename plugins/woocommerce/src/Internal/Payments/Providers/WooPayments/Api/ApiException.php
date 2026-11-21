@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
 
 use RuntimeException;
+use Throwable;
 use WP_Error;
 
 /**
@@ -190,6 +191,26 @@ class ApiException extends RuntimeException {
 		}
 
 		return 500 <= $this->get_http_code() || 'idempotency_key_in_use' === $this->get_error_code();
+	}
+
+	/**
+	 * Tell whether a failed read says nothing about what it asked for: a failure that is not an API error, a transport
+	 * failure or server error, or a refusal of the whole store (401, 403, 429). Any other 4xx, such as a not-found, is the
+	 * platform's answer about it.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param Throwable $failure The read's failure.
+	 * @return bool
+	 */
+	public static function leaves_the_answer_unknown( Throwable $failure ): bool {
+		if ( ! $failure instanceof self ) {
+			return true;
+		}
+
+		$code = $failure->get_http_code();
+
+		return 500 <= $code || in_array( $code, array( 401, 403, 429 ), true );
 	}
 
 	/**

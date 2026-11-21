@@ -3344,10 +3344,13 @@
 		expressElement.on( 'click', async function ( event ) {
 			var clickOptions;
 
-			// A payment went through but its order could not be updated: no wallet sheet opens for a second one.
+			// A payment went through but its order could not be updated: no wallet sheet opens for a second one. The
+			// sentence is spoken each time too, as the Blocks wallet does; the notice alone is not read without a
+			// notices wrapper.
 			if ( isPaymentReceivedShown ) {
 				event.reject();
 				setError( PAYMENT_RECEIVED_MESSAGE );
+				window.wp.a11y.speak( PAYMENT_RECEIVED_MESSAGE, 'assertive' );
 				return;
 			}
 

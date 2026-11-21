@@ -282,11 +282,7 @@ class WooPaymentsPaymentOperationService {
 	}
 
 	/**
-	 * Charge an order through the WooPayments platform API.
-	 *
-	 * A payment method change takes no payment, whatever the order total: it sets up the payment method, as the
-	 * order-status callback confirms a change through a SetupIntent at any total (client 11.3.0
-	 * class-wc-payment-gateway-wcpay.php:4643-4666).
+	 * Charge an order through the WooPayments platform API, or set up the payment method when the charge takes no payment.
 	 *
 	 * @param PaymentOperationContext $context         Payment context.
 	 * @param string                  $idempotency_key Key minted fresh for this payment attempt. A positive-amount charge keeps its
@@ -297,8 +293,7 @@ class WooPaymentsPaymentOperationService {
 	public function charge( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
 		if ( $this->api_client->is_available() ) {
 			try {
-				$outcome = 0.0 < (float) $context->get_order()->get_total()
-					&& empty( $context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE ] )
+				$outcome = self::charge_takes_payment( $context->get_order(), ! empty( $context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE ] ) )
 					? $this->charge_order_total( $context, $idempotency_key )
 					: $this->set_up_payment_method( $context, $idempotency_key );
 			} catch ( ApiException $exception ) {
@@ -309,6 +304,21 @@ class WooPaymentsPaymentOperationService {
 		}
 
 		return $this->unavailable_outcome( 'charge' );
+	}
+
+	/**
+	 * Tell whether a charge of the order takes a payment. One for a total of zero or less, or for a payment method change
+	 * at any total, sets up the payment method instead, as the order-status callback confirms a change through a
+	 * SetupIntent at any total (client 11.3.0 class-wc-payment-gateway-wcpay.php:4643-4666).
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param WC_Order $order                    Order being charged.
+	 * @param bool     $is_payment_method_change Whether the request is a subscription payment method change.
+	 * @return bool
+	 */
+	public static function charge_takes_payment( WC_Order $order, bool $is_payment_method_change ): bool {
+		return 0.0 < (float) $order->get_total() && ! $is_payment_method_change;
 	}
 
 	/**

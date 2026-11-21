@@ -418,6 +418,7 @@ describe( 'WooPayments express checkout', () => {
 		window.jQuery = jQueryMock;
 		window.$ = jQueryMock;
 		window.wp = {
+			a11y: { speak: jest.fn() },
 			apiFetch: jest.fn().mockResolvedValue( getCartResponse() ),
 			hooks: createWpHooks(),
 			i18n: createI18nStub(),
@@ -1339,13 +1340,15 @@ describe( 'WooPayments express checkout', () => {
 		// After the sentence, a wallet click opens no sheet for a second payment until the page loads again. Express
 		// Checkout Element `click` event: `resolve( options )` and `reject()`
 		// (https://docs.stripe.com/js/elements_object/express_checkout_element_click_event).
-		async function clickWallet() {
+		async function clickWallet( { keepNotices = false } = {} ) {
 			const event = {
 				expressPaymentType: 'google_pay',
 				resolve: jest.fn(),
 				reject: jest.fn(),
 			};
-			document.querySelector( '.woocommerce-notices-wrapper' ).innerHTML = '';
+			if ( ! keepNotices ) {
+				document.querySelector( '.woocommerce-notices-wrapper' ).innerHTML = '';
+			}
 			await expressHandlers.click( event );
 			await flushPromises();
 
@@ -1364,6 +1367,24 @@ describe( 'WooPayments express checkout', () => {
 			expect( event.resolve ).not.toHaveBeenCalled();
 			expect( getErrorText() ).toBe( PAYMENT_RECEIVED );
 			expect( pageLock.isLocked() ).toBe( false );
+		} );
+
+		// The sentence is spoken on every refused click, whether or not the page has a notices wrapper to show it in.
+		test( 'speaks the sentence on every refused wallet click', async () => {
+			answerOrderStatusUpdate( 503, 'Service Unavailable' );
+			await confirmCheckoutWallet( {
+				paymentIntent: { id: 'pi_3ds', status: 'succeeded' },
+			} );
+			window.wp.a11y.speak.mockClear();
+
+			await clickWallet( { keepNotices: true } );
+			document.querySelector( '.woocommerce-notices-wrapper' ).remove();
+			await clickWallet( { keepNotices: true } );
+
+			expect( window.wp.a11y.speak.mock.calls ).toEqual( [
+				[ PAYMENT_RECEIVED, 'assertive' ],
+				[ PAYMENT_RECEIVED, 'assertive' ],
+			] );
 		} );
 
 		test.each( [
