@@ -15,6 +15,10 @@ This folder moves a store from the WooPayments extension to the built-in WooPaym
 | `BundledSubscriptionsGuard` | Tells whether a store runs the bundled WooPayments subscriptions, which the cutover excludes. |
 | `PerSiteActivationController` | Offers the network-wide to per-site activation conversion, checks network-wide activations of the extension and records each site's rollback after one. |
 
+## Naming
+
+Anything a person reads says "switch": notices, labels, notes, help text and CLI output labels. The mechanism is named "cutover": this folder, its classes, stored option names, hook, job and group names, and the log source; those stored and public names are never renamed. Comments and docblocks may use either word. The state questions other code asks (`is_awaiting_switch()`, `has_switched_from_extension()`, `can_offer_switch()` and their like) keep their names.
+
 ## Remove with this folder
 
 Deleting the folder alone breaks the code that reads it. Make these edits in the same commit:
