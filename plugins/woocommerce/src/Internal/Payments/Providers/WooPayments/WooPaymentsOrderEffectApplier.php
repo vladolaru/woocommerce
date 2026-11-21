@@ -651,8 +651,8 @@ class WooPaymentsOrderEffectApplier {
 	/**
 	 * Attach a payment's intent to the order before its status is decided: the transaction ID and the intent's meta, so the
 	 * order keeps the payment's record whatever the decision. An intent with no charge removes the stored charge, so the
-	 * stored charge never names an earlier attempt's payment. Once the order stores a succeeded payment intent, the transaction
-	 * ID and the intent's meta are left as they are, and only the caller's other fields are written.
+	 * stored charge never names an earlier attempt's payment. Once the stored intent status is succeeded, the transaction ID
+	 * and the intent's meta are left as they are, and only the caller's other fields are written.
 	 *
 	 * Client 11.3.0 does this in attach_intent_info_to_order() (class-wc-payments-order-service.php:1818-1884), called by its
 	 * checkout, redirect return, order-status callback and terminal capture before they update the order from the intent
@@ -665,14 +665,14 @@ class WooPaymentsOrderEffectApplier {
 	 * @param array<string,string> $meta                    The payment's order meta; only its intent info, and the keys below, are written.
 	 * @param string[]             $beside_keys             Meta the caller's client counterpart writes beside the intent's:
 	 *                                                      CHARGE_META_KEYS or CONFIRMATION_META_KEYS, or none for the terminal capture.
-	 * @param bool                 $allow_update_on_success Whether the intent's record is written also once the order stores a
-	 *                                                      succeeded payment intent, as a checkout charge's is when overrides_attach_guard() says so.
+	 * @param bool                 $allow_update_on_success Whether the intent's record is written also once the stored intent status
+	 *                                                      is succeeded, as a checkout charge's is when overrides_attach_guard() says so.
 	 * @return bool Whether the intent's record and the transaction ID were written.
 	 */
 	public function attach_intent_info( WC_Order $order, string $intent_id, array $meta, array $beside_keys = array(), bool $allow_update_on_success = false ): bool {
 		$keys    = $beside_keys;
 		$delete  = array();
-		$records = $allow_update_on_success || ! WooPaymentsOrderEffects::stores_succeeded_payment_intent( $order );
+		$records = $allow_update_on_success || 'succeeded' !== (string) $order->get_meta( '_intention_status', true );
 		if ( $records ) {
 			$order->set_transaction_id( $intent_id );
 			$keys = array_merge( self::INTENT_INFO_META_KEYS, $beside_keys );

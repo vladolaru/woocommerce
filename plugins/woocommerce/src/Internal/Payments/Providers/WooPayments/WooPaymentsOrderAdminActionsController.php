@@ -353,7 +353,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 			}
 			$payment_id   = '' !== $state['intent_id'] ? $state['intent_id'] : $state['charge_key'];
 			$note_service = wc_get_container()->get( WooPaymentsOrderNoteService::class );
-			if ( WooPaymentsIntentCodec::holds_money( $state['intent_status'] ) && ( 'succeeded' !== $state['intent_status'] || WooPaymentsOrderEffects::stores_succeeded_payment_intent( $order ) ) ) {
+			if ( WooPaymentsIntentCodec::holds_money( $state['intent_status'] ) ) {
 				$note_service->add_note_once( $order, __( 'This order was not cancelled as unpaid because its record shows a payment that could not be checked with WooPayments. Check the payment in WooPayments before you cancel or fulfill this order.', 'woocommerce' ), 'unpaid_order_kept_with_payment|' . $payment_id );
 
 				return false;

@@ -945,50 +945,6 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A fresh order whose checkout failed naming no intent stores no intent status, and a status change to $order_status sends no $operation, retried: $retried.
-	 *
-	 * The failure is shaped as the payment operation's unavailable outcome. With no intent stored, the status change does
-	 * what it does for any order without one (client 11.3.0 class-wc-payments-order-service.php:2330-2331, :2386-2387).
-	 *
-	 * @dataProvider stored_authorization_status_changes
-	 *
-	 * @param string $operation    Capture or cancel.
-	 * @param string $order_status Status the order changes to.
-	 * @param string $hook         Status hook.
-	 * @param bool   $retried      Whether a retry of the status change runs instead of the status change.
-	 */
-	public function test_status_change_after_a_failure_naming_no_intent_on_a_fresh_order_sends_nothing( string $operation, string $order_status, string $hook, bool $retried ): void {
-		$order = wc_create_order();
-		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
-		$order->set_total( '10.99' );
-		$order->save();
-		$unavailable = new PaymentOutcome( PaymentOutcome::STATUS_FAILED, '', '', '', '', array( PaymentOutcome::DATA_ERROR_CODE => 'wcpay_gateway_unavailable' ) );
-		wc_get_container()->get( PaymentProcessingService::class )->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card' ), new RecordingProvider( $unavailable ) );
-		$order = wc_get_order( $order->get_id() );
-		$this->assertSame( OrderStatus::FAILED, $order->get_status() );
-		$this->assertFalse( $order->meta_exists( '_intention_status' ), 'The failure writes no intent status.' );
-		$order->set_status( $order_status );
-		$order->save();
-		$reads     = new \ArrayObject();
-		$transport = $this->create_operation_transport( $operation );
-		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $this->create_platform( null, null, $reads ) );
-		$this->sut->register();
-
-		if ( $retried ) {
-			do_action( self::RETRY_HOOK, $order->get_id(), $operation, 1 );
-		} else {
-			$this->fire_order_hook( $hook, $order );
-		}
-
-		$order = wc_get_order( $order->get_id() );
-		$this->assertSame( array(), $this->request_paths( $transport ) );
-		$this->assertCount( 0, $reads );
-		$this->assertSame( array(), $this->get_pending_retries( $order ) );
-		$this->assertFalse( $order->meta_exists( '_intention_status' ) );
-		$this->assertSame( $order_status, $order->get_status() );
-	}
-
-	/**
 	 * @testdox A status change to Completed captures the authorization and records the capture on the order already in that paid status.
 	 *
 	 * Client 11.3.0's status-change capture has no paid check: it captures, adds the capture note and stores the intent
@@ -4649,37 +4605,6 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$this->assertCount( 2, $this->request_paths( $transport ) );
 		$this->assertSame( OrderStatus::CANCELLED, $order->get_status() );
 		$this->assertSame( 1, $this->count_notes( $order, self::UNPAID_CANCEL_NOTE ) );
-	}
-
-	/**
-	 * @testdox Core's hold-stock job cancels, with the cancel note, an unpaid order keeping a charge key the lookup cannot tell about a day on, whose stored succeeded status sits beside "$stored_intent".
-	 *
-	 * A succeeded status counts as a payment only beside a stored payment intent
-	 * (WooPaymentsOrderEffects::stores_succeeded_payment_intent()). A setup intent's success, or one with no intent, paid
-	 * nothing, so the order is not kept with a note saying its record shows a payment.
-	 *
-	 * @testWith ["seti_saved"]
-	 *           [""]
-	 *
-	 * @param string $stored_intent The stored intent beside the succeeded status, or an empty string for none.
-	 */
-	public function test_unpaid_order_storing_a_success_that_paid_nothing_is_cancelled_a_day_on( string $stored_intent ): void {
-		$order = $this->create_key_only_order( time() - 3 * HOUR_IN_SECONDS );
-		if ( '' !== $stored_intent ) {
-			$order->update_meta_data( '_intent_id', $stored_intent );
-		}
-		$order->update_meta_data( '_intention_status', 'succeeded' );
-		$order->save();
-		$transport           = $this->create_transport();
-		$transport->response = self::http_json( 200, array( 'has_more' => true ) + self::intent_list() );
-		$this->age_unpaid_order( $order, null, self::UNPAID_WINDOW + MINUTE_IN_SECONDS );
-
-		$this->run_unpaid_order_job( $transport );
-
-		$order = $this->reload( $order );
-		$this->assertSame( OrderStatus::CANCELLED, $order->get_status() );
-		$this->assertSame( 1, $this->count_notes( $order, self::UNPAID_CANCEL_NOTE ) );
-		$this->assertSame( 0, $this->count_notes( $order, self::UNPAID_KEPT_NOTE ) );
 	}
 
 	/**

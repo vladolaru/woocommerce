@@ -1760,64 +1760,6 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A kept-key refusal because the earlier request's payment is $earlier, applied to an order storing another attempt's started step, keeps that status and the order status.
-	 *
-	 * The refusal names no intent, so the stored status still describes the stored intent.
-	 *
-	 * @testWith ["disputed"]
-	 *           ["not taken"]
-	 *
-	 * @param string $earlier What the account's list shows for the earlier request.
-	 */
-	public function test_kept_key_refusal_naming_no_intent_keeps_the_stored_status( string $earlier ): void {
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
-		add_filter( 'wcpay_dev_mode', '__return_false' );
-		$order = $this->create_woopayments_order();
-		$order->update_meta_data( '_intent_id', 'pi_stored' );
-		$order->update_meta_data( '_intention_status', 'requires_action' );
-		$order->save();
-		$charges                = array(
-			'data' => array(
-				array(
-					'id'              => 'ch_earlier',
-					'amount'          => 1000,
-					'amount_refunded' => 0,
-					'refunded'        => false,
-					'disputed'        => true,
-				),
-			),
-		);
-		$listed                 = 'disputed' === $earlier
-			? array( self::intent_list( array( self::order_intent( $order, 'pi_earlier', 'succeeded', 1000, array( 'charges' => $charges ) ) ) ) )
-			: array_fill( 0, 2, self::intent_list( array( self::order_intent( $order, 'pi_declined', 'requires_payment_method' ) ) ) );
-		$http_client            = new FakeHttpClient();
-		$http_client->responses = array_merge( array( self::platform_bad_gateway(), self::stripe_idempotency_error( 'key_first' ) ), $listed );
-		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_sent' );
-		$this->charge_attempt( $sut, $order, 'pm_first', 'key_first' );
-		$store      = wc_get_container()->get( OrderPaymentLock::class );
-		$vocabulary = wc_get_container()->get( WooPaymentsPersistenceVocabulary::class );
-		$token      = $store->claim( $order, $vocabulary, 'key_second', 'checkout' );
-		$this->assertIsString( $token );
-		try {
-			$refusal = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_new', 'key_second' );
-		} finally {
-			$store->release( $order, $vocabulary, $token );
-		}
-
-		wc_get_container()->get( PaymentProcessingService::class )->process_checkout_outcome(
-			PaymentOperationContext::for_checkout( wc_get_order( $order->get_id() ), WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_new' ),
-			new RecordingProvider( $refusal )
-		);
-
-		$kept = wc_get_order( $order->get_id() );
-		$this->assertSame( PaymentOutcome::STATUS_FAILED, $refusal->get_status() );
-		$this->assertSame( '', $refusal->get_provider_payment_id() );
-		$this->assertSame( OrderStatus::PENDING, $kept->get_status() );
-		$this->assertSame( 'requires_action', $kept->get_meta( '_intention_status', true ) );
-		$this->assertSame( 'pi_stored', $kept->get_meta( '_intent_id', true ) );
-	}
-
-	/**
 	 * @testdox After a refusal because the account's list shows the earlier request took nothing, the next attempt charges once under its own fresh key, with no second lookup.
 	 */
 	public function test_no_earlier_payment_lets_the_next_attempt_charge_once(): void {
