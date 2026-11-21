@@ -136,10 +136,14 @@ const getBalanceDateFilterFromSearch = (
 	let requested: BalanceDateFilterValue | undefined;
 
 	if ( between.length >= 2 ) {
-		requested = {
-			operator: 'between',
-			value: [ between[ 0 ], between[ 1 ] ],
-		};
+		// Client 11.3.0 `reports/date-filter/url.ts:32-34`: the same day twice is "on" that day, as "on" is written below.
+		requested =
+			between[ 0 ] === between[ 1 ]
+				? { operator: 'on', value: between[ 0 ] }
+				: {
+						operator: 'between',
+						value: [ between[ 0 ], between[ 1 ] ],
+					};
 	} else if ( isYmd( dateStart ) && isYmd( dateEnd ) ) {
 		requested = {
 			operator: 'between',

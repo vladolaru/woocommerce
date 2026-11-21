@@ -1322,6 +1322,48 @@ describe( 'WooPaymentsReportsPage', () => {
 		);
 	} );
 
+	// Client 11.3.0 `reports/date-filter/url.ts:32-34`: a range with the same day twice reads back as "on" that day, the
+	// way Balance writes "on" (`date_between[]=X&date_between[]=X`), so the filter does not turn into "between".
+	it( 'reads a Balance range of one day back as the "on" filter', async () => {
+		renderReportsPage( [
+			'/woopayments/reports?date_between%5B%5D=2026-05-10&date_between%5B%5D=2026-05-10',
+		] );
+
+		await waitFor( () =>
+			expect( mockGetBalanceSummary ).toHaveBeenLastCalledWith( {
+				date_start: '2026-05-10T00:00:00.000Z',
+				date_end: '2026-05-10T23:59:59.999Z',
+				currency: 'usd',
+			} )
+		);
+		await screen.findByRole( 'heading', { name: 'Balance summary' } );
+		expect( mockDataViews.mock.lastCall?.[ 0 ].view?.filters ).toEqual( [
+			{ field: 'date', operator: 'on', value: '2026-05-10' },
+		] );
+	} );
+
+	it( 'reads a Balance range of two days as the "between" filter', async () => {
+		renderReportsPage( [
+			'/woopayments/reports?date_between%5B%5D=2026-05-10&date_between%5B%5D=2026-05-11',
+		] );
+
+		await waitFor( () =>
+			expect( mockGetBalanceSummary ).toHaveBeenLastCalledWith( {
+				date_start: '2026-05-10T00:00:00.000Z',
+				date_end: '2026-05-11T23:59:59.999Z',
+				currency: 'usd',
+			} )
+		);
+		await screen.findByRole( 'heading', { name: 'Balance summary' } );
+		expect( mockDataViews.mock.lastCall?.[ 0 ].view?.filters ).toEqual( [
+			{
+				field: 'date',
+				operator: 'between',
+				value: [ '2026-05-10', '2026-05-11' ],
+			},
+		] );
+	} );
+
 	it( 'syncs the active tab to the URL and tracks tab changes', async () => {
 		renderReportsPage();
 
