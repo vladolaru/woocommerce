@@ -568,7 +568,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$html = $this->render_report_for_connected_store();
 
 		$this->assertSame(
-			array( 'Runtime owner', 'WooPayments feature', 'Stored setup tier', 'Effective setup tier', 'Cutover preflight failures', 'WooPayments rate provider', 'Last fetch of failed webhook events' ),
+			array( 'Runtime owner', 'WooPayments feature', 'Stored setup tier', 'Effective setup tier', 'Switch checks that failed', 'WooPayments rate provider', 'Last fetch of failed webhook events' ),
 			array_keys( $this->get_status_tables( $html )['Built-in WooPayments'] )
 		);
 		$this->assertSame(
@@ -577,7 +577,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 				'WooPayments feature',
 				'Stored setup tier',
 				'Effective setup tier',
-				'Cutover preflight failures',
+				'Switch checks that failed',
 				'Account ID',
 				'Account connected',
 				'Gateway enabled',

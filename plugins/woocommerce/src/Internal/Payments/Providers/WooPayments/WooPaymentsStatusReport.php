@@ -39,7 +39,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 		'builtin_enabled'              => 'WooPayments feature',
 		'setup_tier'                   => 'Stored setup tier',
 		'effective_setup_tier'         => 'Effective setup tier',
-		'preflight_failures'           => 'Cutover preflight failures',
+		'preflight_failures'           => 'Switch checks that failed',
 		'multi_currency_rate_provider' => 'WooPayments rate provider',
 		'last_webhook_fetch'           => 'Last fetch of failed webhook events',
 	);
@@ -284,7 +284,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 				'value' => (string) $data['effective_setup_tier'],
 			),
 			'preflight_failures'           => array(
-				'label' => __( 'Cutover preflight failures', 'woocommerce' ),
+				'label' => __( 'Switch checks that failed', 'woocommerce' ),
 				'value' => $this->format_list( $data['preflight_failures'] ),
 			),
 			'account_id'                   => array(
