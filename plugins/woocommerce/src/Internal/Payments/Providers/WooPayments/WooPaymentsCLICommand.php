@@ -80,7 +80,7 @@ class WooPaymentsCLICommand {
 				'WooPayments feature: %s',
 				(bool) $data['builtin_enabled'] ? 'yes' : 'no'
 			),
-			'Cutover preflight failures: ' . ( empty( $preflight_failures ) ? 'none' : implode( ', ', $preflight_failures ) ),
+			'Switch checks that failed: ' . ( empty( $preflight_failures ) ? 'none' : implode( ', ', $preflight_failures ) ),
 			sprintf(
 				'Account: %s (%s)',
 				$account_id,

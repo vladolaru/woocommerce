@@ -53,13 +53,13 @@ class WooPaymentsCLICommandTest extends WC_Unit_Test_Case {
 		$text  = implode( "\n", $lines );
 
 		$this->assertSame(
-			array( 'Runtime owner', 'WooPayments feature', 'Cutover preflight failures', 'Account', 'Gateway enabled', 'Test mode', 'Enabled payment methods', 'WooPay', 'Multi-currency', 'Last fetch of failed webhook events' ),
+			array( 'Runtime owner', 'WooPayments feature', 'Switch checks that failed', 'Account', 'Gateway enabled', 'Test mode', 'Enabled payment methods', 'WooPay', 'Multi-currency', 'Last fetch of failed webhook events' ),
 			array_map( static fn( string $line ): string => (string) strstr( $line, ':', true ), $lines )
 		);
 		$this->assertStringContainsString( 'Runtime owner: builtin', $text );
 		$this->assertStringContainsString( 'WooPayments feature: yes', $text );
 		$this->assertStringNotContainsString( 'filter', $text );
-		$this->assertStringContainsString( 'Cutover preflight failures:', $text );
+		$this->assertStringContainsString( 'Switch checks that failed:', $text );
 		$this->assertStringContainsString( 'Account: acct_native_test (connected)', $text );
 	}
 
