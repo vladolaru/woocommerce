@@ -1336,6 +1336,69 @@ describe( 'WooPayments express checkout', () => {
 			expect( navigate ).not.toHaveBeenCalled();
 		} );
 
+		// After the sentence, a wallet click opens no sheet for a second payment until the page loads again. Express
+		// Checkout Element `click` event: `resolve( options )` and `reject()`
+		// (https://docs.stripe.com/js/elements_object/express_checkout_element_click_event).
+		async function clickWallet() {
+			const event = {
+				expressPaymentType: 'google_pay',
+				resolve: jest.fn(),
+				reject: jest.fn(),
+			};
+			document.querySelector( '.woocommerce-notices-wrapper' ).innerHTML = '';
+			await expressHandlers.click( event );
+			await flushPromises();
+
+			return event;
+		}
+
+		test( 'refuses the next wallet click with the sentence after the sentence', async () => {
+			answerOrderStatusUpdate( 503, 'Service Unavailable' );
+			await confirmCheckoutWallet( {
+				paymentIntent: { id: 'pi_3ds', status: 'succeeded' },
+			} );
+
+			const event = await clickWallet();
+
+			expect( event.reject ).toHaveBeenCalledTimes( 1 );
+			expect( event.resolve ).not.toHaveBeenCalled();
+			expect( getErrorText() ).toBe( PAYMENT_RECEIVED );
+			expect( pageLock.isLocked() ).toBe( false );
+		} );
+
+		test.each( [
+			[
+				'the store message',
+				() =>
+					answerOrderStatusUpdate(
+						403,
+						JSON.stringify( {
+							error: {
+								message: "We're not able to process this payment. Please refresh the page and try again.",
+							},
+						} )
+					),
+				'succeeded',
+			],
+			[ 'the wallet’s payment error', () => answerOrderStatusUpdate( 503, 'Service Unavailable' ), 'requires_action' ],
+			[
+				'the generic error for a payment that holds no money',
+				() => answerOrderStatusUpdate( 503, 'Service Unavailable' ),
+				'requires_payment_method',
+			],
+		] )( 'opens the sheet on the next wallet click after %s', async ( label, arrange, status ) => {
+			arrange();
+			await confirmCheckoutWallet( {
+				paymentIntent: { id: 'pi_3ds', status: status },
+			} );
+
+			const event = await clickWallet();
+
+			expect( event.resolve ).toHaveBeenCalledTimes( 1 );
+			expect( event.reject ).not.toHaveBeenCalled();
+			expect( pageLock.isLocked() ).toBe( true );
+		} );
+
 		test( 'keeps the generic error when the payment intent holds no money', async () => {
 			answerOrderStatusUpdate( 503, 'Service Unavailable' );
 

@@ -530,17 +530,25 @@ const handleConfirmationResponse = async (
 			return getErrorResponse( emitResponse, answer.message );
 		}
 
-		// No readable error and no order page: after a payment Stripe confirmed, the shopper must not pay again.
+		if ( ! answer && ! isPaid ) {
+			return getErrorResponse( emitResponse, confirmationErrorMessage );
+		}
+
+		// No readable error and no order page: after a payment Stripe confirmed, the shopper must not pay again. With
+		// `retry: false` core ends the checkout instead of returning it to idle, so Place order stays disabled until a
+		// reload; the empty redirect replaces the confirmation hash core would otherwise navigate to.
 		if ( ! answer ) {
-			return getErrorResponse(
-				emitResponse,
-				isPaid
-					? __(
-							"Your payment was received, but we couldn't finish updating your order. Please don't pay again. If your order confirmation email doesn't arrive soon, contact us.",
-							'woocommerce'
-						)
-					: confirmationErrorMessage
-			);
+			return {
+				...getErrorResponse(
+					emitResponse,
+					__(
+						"Your payment was received, but we couldn't finish updating your order. Please don't pay again. If your order confirmation email doesn't arrive soon, contact us.",
+						'woocommerce'
+					)
+				),
+				retry: false,
+				redirectUrl: '',
+			};
 		}
 
 		return getSuccessResponse( emitResponse, {}, answer.url );

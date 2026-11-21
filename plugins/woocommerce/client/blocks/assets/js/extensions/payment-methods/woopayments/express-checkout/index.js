@@ -932,6 +932,9 @@ const PAYMENT_RECEIVED_MESSAGE = __(
 	'woocommerce'
 );
 
+// Set once the page showed PAYMENT_RECEIVED_MESSAGE; until a reload, every wallet click is refused with it.
+let isPaymentReceivedShown = false;
+
 const getCheckoutErrorMessage = ( response ) => {
 	const details = response?.payment_result?.payment_details;
 	const errorDetail = Array.isArray( details )
@@ -1083,11 +1086,12 @@ const confirmIntent = ( redirectUrl ) => {
 
 		// No readable error and no order page: after a payment Stripe confirmed, the shopper must not pay again.
 		if ( ! answer ) {
-			throw new Error(
-				isPaid
-					? PAYMENT_RECEIVED_MESSAGE
-					: GENERIC_PAYMENT_ERROR_MESSAGE
-			);
+			if ( ! isPaid ) {
+				throw new Error( GENERIC_PAYMENT_ERROR_MESSAGE );
+			}
+
+			isPaymentReceivedShown = true;
+			throw new Error( PAYMENT_RECEIVED_MESSAGE );
 		}
 
 		return answer.url;
@@ -1276,6 +1280,13 @@ const ExpressCheckoutElement = ( {
 		} );
 
 		expressElementRef.current.on( 'click', ( event ) => {
+			// A payment went through but its order could not be updated: no wallet sheet opens for a second one.
+			if ( isPaymentReceivedShown ) {
+				event.reject();
+				setExpressPaymentError?.( PAYMENT_RECEIVED_MESSAGE );
+				return;
+			}
+
 			// If login is required for checkout, display the redirect
 			// confirmation dialog instead of opening the wallet sheet.
 			if ( params?.login_confirmation ) {
@@ -1676,6 +1687,7 @@ const getExpressPaymentMethod = ( method ) => {
 const registerWooPaymentsExpressCheckout = () => {
 	availabilityCache.clear();
 	expressStripe = null;
+	isPaymentReceivedShown = false;
 
 	if (
 		Array.isArray( params.enabled_methods ) &&

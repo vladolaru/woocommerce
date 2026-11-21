@@ -3472,6 +3472,147 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 				expect( navigate ).not.toHaveBeenCalled();
 			} );
 
+			// After the sentence, a wallet click opens no sheet for a second payment until the page loads again, which
+			// registers the express methods again. Express Checkout Element `click` event: `resolve( options )` and
+			// `reject()` (https://docs.stripe.com/js/elements_object/express_checkout_element_click_event).
+			describe( 'a wallet click after the outcome', () => {
+				let pageLock;
+
+				const clickGooglePay = () => {
+					const event = {
+						expressPaymentType: 'google_pay',
+						resolve: jest.fn(),
+						reject: jest.fn(),
+					};
+					act( () => {
+						expressHandlers.click( event );
+					} );
+
+					return event;
+				};
+
+				beforeEach( () => {
+					pageLock = createPageLock();
+					window.jQuery = {
+						blockUI: pageLock.blockUI,
+						unblockUI: pageLock.unblockUI,
+					};
+				} );
+
+				afterEach( () => {
+					delete window.jQuery;
+				} );
+
+				it( 'is refused with the sentence after the sentence', async () => {
+					const setExpressPaymentError = jest.fn();
+					const onClick = jest.fn();
+					answerOrderStatusUpdateWithText(
+						503,
+						'Service Unavailable'
+					);
+					await confirmGooglePay( {
+						setExpressPaymentError,
+						onClick,
+					} );
+					setExpressPaymentError.mockClear();
+
+					const event = clickGooglePay();
+
+					expect( event.reject ).toHaveBeenCalledTimes( 1 );
+					expect( event.resolve ).not.toHaveBeenCalled();
+					expect( setExpressPaymentError ).toHaveBeenCalledWith(
+						PAYMENT_RECEIVED
+					);
+					expect( onClick ).not.toHaveBeenCalled();
+					expect( pageLock.isLocked() ).toBe( false );
+				} );
+
+				it.each( [
+					[
+						'the store message',
+						() =>
+							answerOrderStatusUpdateWithText(
+								403,
+								JSON.stringify( {
+									error: {
+										message:
+											"We're not able to process this payment. Please refresh the page and try again.",
+									},
+								} )
+							),
+					],
+					[
+						'the wallet’s payment error',
+						() => {
+							stripe.handleNextAction = jest
+								.fn()
+								.mockResolvedValue( {
+									paymentIntent: {
+										id: 'pi_3ds',
+										status: 'requires_action',
+									},
+								} );
+							answerOrderStatusUpdateWithText(
+								503,
+								'Service Unavailable'
+							);
+						},
+					],
+					[
+						'the generic error for a payment that holds no money',
+						() => {
+							stripe.handleNextAction = jest
+								.fn()
+								.mockResolvedValue( {
+									paymentIntent: {
+										id: 'pi_3ds',
+										status: 'requires_payment_method',
+									},
+								} );
+							answerOrderStatusUpdateWithText(
+								503,
+								'Service Unavailable'
+							);
+						},
+					],
+				] )( 'opens the sheet after %s', async ( label, answer ) => {
+					const onClick = jest.fn();
+					answer();
+					await confirmGooglePay( { onClick } );
+
+					const event = clickGooglePay();
+
+					expect( event.resolve ).toHaveBeenCalledTimes( 1 );
+					expect( event.reject ).not.toHaveBeenCalled();
+					expect( onClick ).toHaveBeenCalledTimes( 1 );
+				} );
+
+				it( 'opens the sheet once the page loads again after the sentence', async () => {
+					answerOrderStatusUpdateWithText(
+						503,
+						'Service Unavailable'
+					);
+					await confirmGooglePay();
+					expect( clickGooglePay().reject ).toHaveBeenCalled();
+
+					// The next page load registers the methods and mounts a new Element.
+					delete expressHandlers.click;
+					registerExpressCheckout();
+					renderExpressPaymentMethod(
+						getRegistration(
+							'woocommerce_payments_express_checkout_googlePay'
+						)
+					);
+					await waitFor( () => {
+						expect( expressHandlers.click ).toBeDefined();
+					} );
+					const event = clickGooglePay();
+
+					expect( event.resolve ).toHaveBeenCalledTimes( 1 );
+					expect( event.reject ).not.toHaveBeenCalled();
+				} );
+			} );
+
 			it( 'shows the sentence for an error answer with no message after a confirmed payment', async () => {
 				const setExpressPaymentError = jest.fn();
 				answerOrderStatusUpdate( { error: {} } );

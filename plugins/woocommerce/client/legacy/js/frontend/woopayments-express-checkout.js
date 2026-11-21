@@ -69,6 +69,8 @@
 		"Your payment was received, but we couldn't finish updating your order. Please don't pay again. If your order confirmation email doesn't arrive soon, contact us.",
 		'woocommerce'
 	);
+	// Set once the page showed PAYMENT_RECEIVED_MESSAGE; until a reload, every wallet click is refused with it.
+	var isPaymentReceivedShown = false;
 	// The payment intent statuses that hold the shopper's money (WooPaymentsIntentCodec::holds_money()).
 	var MONEY_HOLDING_STATUSES = [ 'succeeded', 'requires_capture', 'processing' ];
 	// Marks the error notices setError() adds, so a later wallet error replaces them and no other error.
@@ -1537,11 +1539,12 @@
 
 				// No readable error and no order page: after a payment Stripe confirmed, the shopper must not pay again.
 				if ( ! next ) {
-					throw new Error(
-						isPaymentConfirmed
-							? PAYMENT_RECEIVED_MESSAGE
-							: GENERIC_PAYMENT_ERROR_MESSAGE
-					);
+					if ( ! isPaymentConfirmed ) {
+						throw new Error( GENERIC_PAYMENT_ERROR_MESSAGE );
+					}
+
+					isPaymentReceivedShown = true;
+					throw new Error( PAYMENT_RECEIVED_MESSAGE );
 				}
 
 				completePayment( next.url );
@@ -3340,6 +3343,13 @@
 
 		expressElement.on( 'click', async function ( event ) {
 			var clickOptions;
+
+			// A payment went through but its order could not be updated: no wallet sheet opens for a second one.
+			if ( isPaymentReceivedShown ) {
+				event.reject();
+				setError( PAYMENT_RECEIVED_MESSAGE );
+				return;
+			}
 
 			// If login is required for checkout, display the redirect
 			// confirmation dialog instead of opening the wallet sheet.

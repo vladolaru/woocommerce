@@ -3742,8 +3742,16 @@ describe( 'wc-payment-method-woopayments', () => {
 			messageContext: 'payments',
 		} );
 
+		// The sentence ends the checkout: with `retry: false` core completes it instead of returning it to idle, so Place
+		// order stays disabled, and the empty redirect replaces the confirmation hash core would navigate to.
+		const sentence = {
+			...notice( PAYMENT_RECEIVED ),
+			retry: false,
+			redirectUrl: '',
+		};
+
 		it.each( [ 'succeeded', 'requires_capture', 'processing' ] )(
-			'shows the sentence for a 503 text answer after a %s payment intent',
+			'shows the sentence and ends the checkout for a 503 text answer after a %s payment intent',
 			async ( status ) => {
 				confirmPaymentIntent( status );
 				window.fetch = jest
@@ -3751,7 +3759,7 @@ describe( 'wc-payment-method-woopayments', () => {
 					.mockResolvedValue( answer( 503, 'Service Unavailable' ) );
 
 				await expect( runSavedTokenConfirmation() ).resolves.toEqual(
-					notice( PAYMENT_RECEIVED )
+					sentence
 				);
 			}
 		);
@@ -3771,7 +3779,7 @@ describe( 'wc-payment-method-woopayments', () => {
 				.mockResolvedValue( answer( status, body ) );
 
 			await expect( runSavedTokenConfirmation() ).resolves.toEqual(
-				notice( PAYMENT_RECEIVED )
+				sentence
 			);
 		} );
 
@@ -3785,7 +3793,7 @@ describe( 'wc-payment-method-woopayments', () => {
 				.mockResolvedValue( answer( 200, JSON.stringify( body ) ) );
 
 			await expect( runSavedTokenConfirmation() ).resolves.toEqual(
-				notice( PAYMENT_RECEIVED )
+				sentence
 			);
 		} );
 
@@ -3796,7 +3804,7 @@ describe( 'wc-payment-method-woopayments', () => {
 				.mockRejectedValue( new TypeError( 'Failed to fetch' ) );
 
 			await expect( runSavedTokenConfirmation() ).resolves.toEqual(
-				notice( PAYMENT_RECEIVED )
+				sentence
 			);
 		} );
 
@@ -3863,6 +3871,14 @@ describe( 'wc-payment-method-woopayments', () => {
 			messageContext: 'payments',
 		} );
 
+		// The sentence ends the checkout: with `retry: false` core completes it instead of returning it to idle, so Place
+		// order stays disabled, and the empty redirect replaces the confirmation hash core would navigate to.
+		const sentence = {
+			...notice( PAYMENT_RECEIVED ),
+			retry: false,
+			redirectUrl: '',
+		};
+
 		// A fetch Response whose json() parses the raw body as Response.json() does, or a request that never arrives.
 		const answerOrderStatus = ( transport ) => {
 			window.fetch = jest.fn( () =>
@@ -3910,7 +3926,7 @@ describe( 'wc-payment-method-woopayments', () => {
 				answerOrderStatus( shape.transport );
 
 				const expected = {
-					SENTENCE: notice( PAYMENT_RECEIVED ),
+					SENTENCE: sentence,
 					GENERIC: notice(
 						'There was a problem confirming your payment.'
 					),
