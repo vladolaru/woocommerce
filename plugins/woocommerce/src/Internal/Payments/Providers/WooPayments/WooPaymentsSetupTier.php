@@ -106,7 +106,7 @@ final class WooPaymentsSetupTier {
 	 * On a `disabled` or `available` tier, cron and WP-CLI requests also list the listener that notes a status-change
 	 * capture or cancel retry queued while the built-in WooPayments took payments, when the stored tier is not `disabled`:
 	 * it leaves `disabled` only through an account sync while the WooPayments feature was on, which every store that could
-	 * queue such a retry went through. On an `available` tier they also list the setup tier recheck while its event is pending.
+	 * queue such a retry went through.
 	 *
 	 * @since 11.2.0
 	 *
@@ -130,9 +130,6 @@ final class WooPaymentsSetupTier {
 			&& self::DISABLED !== $this->get_stored_tier()
 		) {
 			$classes[] = WooPaymentsStatusChangeRetryListener::class;
-			if ( self::AVAILABLE === $tier && WooPaymentsSetupTierRecheck::is_pending() ) {
-				$classes[] = WooPaymentsSetupTierRecheck::class;
-			}
 		}
 
 		return $classes;

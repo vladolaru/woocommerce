@@ -191,27 +191,6 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Refetch the account and tell whether the platform answered.
-	 *
-	 * An answer rewrites the account cache and the setup tier from it. A read that errored, or one with no platform
-	 * connection, leaves both as they were.
-	 *
-	 * @since 11.4.0
-	 *
-	 * @return bool
-	 */
-	public function try_refresh_account_data(): bool {
-		if ( ! $this->is_connection_state_known() || ! $this->is_platform_connected() ) {
-			return false;
-		}
-
-		$this->refresh_account_data();
-		$cache_contents = $this->get_account_cache();
-
-		return is_array( $cache_contents ) && false === ( $cache_contents['errored'] ?? true );
-	}
-
-	/**
 	 * Refetch WooPayments account data and persist the refreshed account cache.
 	 *
 	 * @return array<string,mixed>
@@ -572,10 +551,6 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		}
 
 		if ( $extension_owns_payments || array() === $account_data ) {
-			if ( ! $extension_owns_payments && in_array( $this->setup_tier->get_stored_tier(), array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true ) ) {
-				// A tier that drops should be confirmed by a later read, even if nothing else reads the account.
-				WooPaymentsSetupTierRecheck::schedule_first_read();
-			}
 			$this->setup_tier->write_tier( WooPaymentsSetupTier::AVAILABLE );
 			return;
 		}
