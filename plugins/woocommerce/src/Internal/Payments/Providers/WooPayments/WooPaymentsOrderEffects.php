@@ -496,6 +496,20 @@ class WooPaymentsOrderEffects {
 	}
 
 	/**
+	 * Tell whether the order stores a payment intent that already succeeded: a stored succeeded status counts only beside a
+	 * stored payment intent, since a setup intent's success, or a status with no intent, paid nothing. A refused checkout
+	 * keeps such an order as paid, and its record is not replaced by another payment's. Client 11.3.0 reads the stored
+	 * status alone (class-wc-payment-gateway-wcpay.php:1563, class-wc-payments-order-service.php:1818-1822).
+	 *
+	 * @param WC_Order $order Order read under the order payment lock, or the order a refused checkout is paying.
+	 * @return bool
+	 */
+	public static function stores_succeeded_payment_intent( WC_Order $order ): bool {
+		return 'succeeded' === (string) $order->get_meta( '_intention_status', true )
+			&& 0 === strpos( (string) $order->get_meta( '_intent_id', true ), 'pi_' );
+	}
+
+	/**
 	 * Tell whether the order's transaction ID names a payment, by its intent ID or its charge ID. An empty transaction ID
 	 * names nothing. Event ownership, the Stripe Billing renewal records and the capture of an authorization ask this, so
 	 * they cannot answer it differently.

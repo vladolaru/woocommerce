@@ -80,6 +80,45 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Attaching a payment to an order storing a succeeded status beside "$stored_intent" $expected.
+	 *
+	 * Only a payment intent's success keeps its record (client 11.3.0 keeps any stored success,
+	 * class-wc-payments-order-service.php:1818-1822). A setup intent's success, or a succeeded status with no intent, paid
+	 * nothing, so the arriving payment's record replaces it.
+	 *
+	 * @testWith ["seti_saved", "records the payment"]
+	 *           ["", "records the payment"]
+	 *           ["pi_paid", "keeps the stored record"]
+	 *
+	 * @param string $stored_intent The stored intent beside the succeeded status, or an empty string for none.
+	 * @param string $expected      "records the payment" or "keeps the stored record".
+	 */
+	public function test_attach_over_a_stored_success_records_the_payment_unless_a_payment_succeeded( string $stored_intent, string $expected ): void {
+		$order = $this->create_woopayments_order();
+		$order->set_transaction_id( $stored_intent );
+		$order->update_meta_data( '_intent_id', $stored_intent );
+		$order->update_meta_data( '_intention_status', 'succeeded' );
+		$order->save();
+
+		$records = $this->create_applier()->attach_intent_info(
+			$order,
+			'pi_arriving',
+			array(
+				'_intent_id'        => 'pi_arriving',
+				'_intention_status' => 'requires_action',
+				'_charge_id'        => '',
+			)
+		);
+
+		$stored   = wc_get_order( $order->get_id() );
+		$recorded = 'records the payment' === $expected;
+		$this->assertSame( $recorded, $records );
+		$this->assertSame( $recorded ? 'pi_arriving' : $stored_intent, $stored->get_transaction_id() );
+		$this->assertSame( $recorded ? 'pi_arriving' : $stored_intent, $stored->get_meta( '_intent_id', true ) );
+		$this->assertSame( $recorded ? 'requires_action' : 'succeeded', $stored->get_meta( '_intention_status', true ) );
+	}
+
+	/**
 	 * @testdox Lifecycle enrichment carries SetupIntent metadata without persisting it directly.
 	 */
 	public function test_lifecycle_enrichment_carries_setup_meta_without_persisting_it(): void {

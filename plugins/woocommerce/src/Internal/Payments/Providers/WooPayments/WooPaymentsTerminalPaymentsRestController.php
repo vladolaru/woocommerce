@@ -626,7 +626,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 		$stored_status = (string) $order->get_meta( '_intention_status', true );
 		$stored_intent = (string) $order->get_meta( '_intent_id', true );
 
-		if ( in_array( $stored_status, array( 'succeeded', 'canceled', 'processing' ), true ) ) {
+		if ( WooPaymentsOrderEffects::stores_succeeded_payment_intent( $order ) || in_array( $stored_status, array( 'canceled', 'processing' ), true ) ) {
 			return new WP_Error( 'wcpay_payment_uncapturable', __( 'The payment cannot be captured for completed or processed orders.', 'woocommerce' ), array( 'status' => 409 ) );
 		}
 

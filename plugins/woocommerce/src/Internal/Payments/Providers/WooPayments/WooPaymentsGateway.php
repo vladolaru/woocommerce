@@ -1460,7 +1460,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return $this->process_order_payment( $order );
 		} catch ( Exception $exception ) {
 			$failure = $exception instanceof PaymentOutcomeApplyException ? $exception->get_failure() : $exception;
-			if ( $this->is_succeeded_intent_outcome( $exception ) || $this->has_succeeded_intent( $order ) ) {
+			if ( $this->is_succeeded_intent_outcome( $exception ) || WooPaymentsOrderEffects::stores_succeeded_payment_intent( $order ) ) {
 				// Client 11.1.0 logs the failure with its class, code and trace before this check (gw:1274).
 				$this->log_checkout_payment_failure( $order, $failure );
 
@@ -2577,21 +2577,6 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Whether the order stores a payment intent that already succeeded.
-	 *
-	 * A refused checkout must not fail an order whose payment already succeeded. A stored succeeded status counts only beside
-	 * a stored payment intent: a setup intent's success, or a status with no intent, paid nothing. Client 11.3.0 keeps on the
-	 * stored status alone (`gw:1563`).
-	 *
-	 * @param WC_Order $order Order being paid.
-	 * @return bool
-	 */
-	private function has_succeeded_intent( WC_Order $order ): bool {
-		return 'succeeded' === (string) $order->get_meta( '_intention_status', true )
-			&& 0 === strpos( (string) $order->get_meta( '_intent_id', true ), 'pi_' );
-	}
-
-	/**
 	 * Log one warning when a refused checkout fails an order that stores a succeeded status beside no payment intent, which
 	 * client 11.3.0 keeps and answers as paid (`gw:1563-1584`).
 	 *
@@ -2974,7 +2959,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 */
 	private function refuse_checkout( WC_Order $order, string $message, string $code, bool $fail_order = true, string $note = '', string $status_note = '', bool $keep_succeeded_intent_order = true ): array {
 		if ( $keep_succeeded_intent_order ) {
-			if ( $this->has_succeeded_intent( $order ) ) {
+			if ( WooPaymentsOrderEffects::stores_succeeded_payment_intent( $order ) ) {
 				return $this->keep_succeeded_intent_order( $order, $message, $code );
 			}
 			$this->log_stored_success_without_a_payment( $order );

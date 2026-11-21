@@ -129,6 +129,43 @@ class WooPaymentsOutcomeMetadataMapperTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A failed outcome that names no intent writes no intention status, so the stored status still describes the stored intent.
+	 *
+	 * Client 11.3.0's checkout catch writes no status (class-wc-payment-gateway-wcpay.php:1552-1733).
+	 */
+	public function test_failure_naming_no_intent_writes_no_intention_status(): void {
+		$outcome = new PaymentOutcome( PaymentOutcome::STATUS_FAILED, '', '', '', '', array( PaymentOutcome::DATA_ERROR_CODE => 'wcpay_gateway_unavailable' ) );
+
+		$this->assertSame( array(), $this->sut->get_outcome_meta( $outcome ) );
+	}
+
+	/**
+	 * @testdox A failed outcome naming its intent still writes requires_payment_method beside it.
+	 */
+	public function test_failure_naming_its_intent_writes_requires_payment_method(): void {
+		$outcome = new PaymentOutcome( PaymentOutcome::STATUS_FAILED, 'pi_declined' );
+
+		$this->assertSame(
+			array(
+				'_intent_id'        => 'pi_declined',
+				'_intention_status' => 'requires_payment_method',
+			),
+			$this->sut->get_outcome_meta( $outcome )
+		);
+	}
+
+	/**
+	 * @testdox A failure naming no intent still writes the status it sets itself, and a failed capture naming none stays requires_capture.
+	 */
+	public function test_failure_naming_no_intent_keeps_an_explicit_status(): void {
+		$blocked = new PaymentOutcome( PaymentOutcome::STATUS_FAILED, '', '', '', '', array( 'meta' => array( '_intention_status' => 'canceled' ) ) );
+		$capture = new PaymentOutcome( PaymentOutcome::STATUS_FAILED );
+
+		$this->assertSame( array( '_intention_status' => 'canceled' ), $this->sut->get_outcome_meta( $blocked ) );
+		$this->assertSame( array( '_intention_status' => 'requires_capture' ), $this->sut->get_failed_capture_or_cancel_outcome_meta( $capture ) );
+	}
+
+	/**
 	 * Data provider for neutral outcome status mappings.
 	 *
 	 * @return array<string,array{string,string}>
@@ -140,7 +177,6 @@ class WooPaymentsOutcomeMetadataMapperTest extends WC_Unit_Test_Case {
 			'pending async'            => array( PaymentOutcome::STATUS_PENDING_ASYNC, 'processing' ),
 			'requires redirect'        => array( PaymentOutcome::STATUS_REQUIRES_REDIRECT, 'requires_action' ),
 			'requires customer action' => array( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, 'requires_action' ),
-			'failed'                   => array( PaymentOutcome::STATUS_FAILED, 'requires_payment_method' ),
 			'canceled'                 => array( PaymentOutcome::STATUS_CANCELED, 'canceled' ),
 			'no external payment'      => array( PaymentOutcome::STATUS_NO_EXTERNAL_PAYMENT, 'succeeded' ),
 		);

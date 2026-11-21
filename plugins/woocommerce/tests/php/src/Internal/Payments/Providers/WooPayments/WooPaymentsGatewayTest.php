@@ -4794,6 +4794,301 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A checkout over a stored $stored_status payment whose read fails, failing at "$door" before any charge, keeps the stored status, and the next press is refused.
+	 *
+	 * A failure that names no intent says nothing about the stored one, so it writes no intent status: client 11.3.0's
+	 * checkout catch writes none (class-wc-payment-gateway-wcpay.php:1552-1733). The order still goes to Failed, with the
+	 * note the failure adds today. The next press, whose read fails again, is judged on the stored payment's status: a
+	 * money status, or a started step whose read left it unknown.
+	 *
+	 * @dataProvider provide_failures_that_name_no_intent
+	 *
+	 * @param string $door          Where the first press fails.
+	 * @param string $note          Text of the note the failure adds, or an empty string for none.
+	 * @param string $stored_status The stored payment's status.
+	 */
+	public function test_a_failure_that_names_no_intent_keeps_the_stored_status_for_the_next_press( string $door, string $note, string $stored_status ): void {
+		$order = $this->create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_transaction_id( 'pi_started' );
+		$order->update_meta_data( '_intent_id', 'pi_started' );
+		$order->update_meta_data( '_intention_status', $stored_status );
+		$order->save();
+		$platform         = $this->create_platform_whose_read_fails( new ApiException( 'Read failed.', 'api_error', 500 ) );
+		$customer_failure = 'customer' === $door ? new ApiException( 'Customer not created.', 'api_error', 400 ) : null;
+		$first_press      = $this->create_gateway_over_a_platform_whose_duplicate_read_fails( $platform, $customer_failure );
+		$fails_at_door    = $this->open_failure_door( $door, $order, $platform );
+
+		$first = $first_press->process_payment( $order->get_id() );
+		$fails_at_door();
+
+		$failed = wc_get_order( $order->get_id() );
+		$this->assertSame( 'failure', $first['result'] ?? '' );
+		$this->assertNotContains( 'POST payment', $platform->requests, 'The first press sends no charge.' );
+		$this->assertSame( OrderStatus::FAILED, $failed->get_status() );
+		$this->assertSame( $stored_status, $failed->get_meta( '_intention_status', true ) );
+		$this->assertSame( 'pi_started', $failed->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'pi_started', $failed->get_transaction_id() );
+		$failure_notes = array_values( array_filter( array_column( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $content ): bool => false !== strpos( $content, '<strong>failed</strong> to complete' ) ) );
+		$this->assertCount( '' === $note ? 0 : 1, $failure_notes, 'The failure adds the note it adds today.' );
+		if ( '' !== $note ) {
+			$this->assertStringContainsString( $note, $failure_notes[0] );
+		}
+
+		wc_clear_notices();
+		$platform->requests = array();
+		$second             = $this->create_gateway_over_a_platform_whose_duplicate_read_fails( $platform )->process_payment( $order->get_id() );
+
+		$this->assertSame( array( 'GET pi_started' ), $platform->requests, 'The next press is refused and charges nothing.' );
+		$this->assertSame( 'failure', $second['result'] ?? '' );
+		$this->assertSame( array( "We're not able to process this payment. Please try again later." ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+	}
+
+	/**
+	 * @testdox A zero-total checkout over a stored $stored_intent started step, whose card set-up fails at "$door" naming no intent, fails the order and keeps the stored status.
+	 *
+	 * The set-up fails naming no intent, so the stored status still describes the stored intent. The SetupIntent failure
+	 * still writes the mode it ran in.
+	 *
+	 * @testWith ["customer", "pi_started"]
+	 *           ["setup", "seti_started"]
+	 *
+	 * @param string $door          Where the set-up fails: the customer, or the SetupIntent request.
+	 * @param string $stored_intent The stored intent beside `requires_action`.
+	 */
+	public function test_a_zero_total_set_up_failing_naming_no_intent_keeps_the_stored_status( string $door, string $stored_intent ): void {
+		$order = $this->create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_total( '0.00' );
+		$order->update_meta_data( '_intent_id', $stored_intent );
+		$order->update_meta_data( '_intention_status', 'requires_action' );
+		$order->save();
+		$platform                = $this->create_platform_whose_read_fails( new ApiException( 'Read failed.', 'api_error', 500 ) );
+		$platform->setup_failure = new ApiException( 'Card not saved.', 'card_declined', 402, 'card_error' );
+		$gateway                 = $this->create_gateway_over_a_platform_whose_duplicate_read_fails( $platform, 'customer' === $door ? new ApiException( 'Customer not created.', 'api_error', 400 ) : null );
+		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-new-payment-method' ] = 'true';
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$failed = wc_get_order( $order->get_id() );
+		$this->assertSame( 'failure', $result['result'] ?? '' );
+		$this->assertSame( 'customer' === $door ? array( 'GET pi_started' ) : array( 'POST setup' ), $platform->requests );
+		$this->assertSame( OrderStatus::FAILED, $failed->get_status() );
+		$this->assertSame( 'requires_action', $failed->get_meta( '_intention_status', true ) );
+		$this->assertSame( $stored_intent, $failed->get_meta( '_intent_id', true ) );
+		if ( 'setup' === $door ) {
+			$this->assertNotSame( '', $failed->get_meta( '_wcpay_mode', true ), 'The SetupIntent failure writes its mode.' );
+		}
+	}
+
+	/**
+	 * @testdox A subscription card change whose SetupIntent request fails naming no intent keeps the subscription's status and its stored setup.
+	 *
+	 * The change saves a card and takes no payment, so the subscription keeps its status, and a failure naming no intent
+	 * writes no intent status over its last change's setup intent.
+	 */
+	public function test_a_subscription_card_change_failing_naming_no_intent_keeps_the_stored_setup(): void {
+		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
+		WooCommerceSubscriptionsDoubles::load_subscription_detector();
+		$subscription = $this->create_order();
+		$subscription->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$subscription->set_total( '0.00' );
+		$subscription->set_status( 'on-hold' );
+		$subscription->update_meta_data( '_intent_id', 'seti_saved' );
+		$subscription->update_meta_data( '_intention_status', 'succeeded' );
+		$subscription->save();
+		$subscription_class = get_class(
+			new class() extends WC_Order {
+				/**
+				 * Get the order type a subscription reports.
+				 *
+				 * @return string
+				 */
+				public function get_type() {
+					return 'shop_subscription';
+				}
+			}
+		);
+		$subscription_id    = $subscription->get_id();
+		add_filter( 'woocommerce_order_class', static fn( $classname, $order_type, $order_id ) => $subscription_id === (int) $order_id ? $subscription_class : $classname, 10, 3 );
+		$GLOBALS['wcpay_test_subscription_ids'] = array( $subscription_id );
+		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
+		$_POST['woocommerce_change_payment']    = (string) $subscription_id;
+		$_GET['change_payment_method']          = (string) $subscription_id;
+		$platform                               = $this->create_platform_whose_read_fails( new ApiException( 'Read failed.', 'api_error', 500 ) );
+		$platform->setup_failure                = new ApiException( 'Card not saved.', 'card_declined', 402, 'card_error' );
+
+		$this->create_gateway_over_a_platform_whose_duplicate_read_fails( $platform )->process_payment( $subscription_id );
+
+		$kept = wc_get_order( $subscription_id );
+		$this->assertSame( array( 'POST setup' ), $platform->requests );
+		$this->assertSame( 'on-hold', $kept->get_status() );
+		$this->assertSame( 'succeeded', $kept->get_meta( '_intention_status', true ) );
+		$this->assertSame( 'seti_saved', $kept->get_meta( '_intent_id', true ) );
+	}
+
+	/**
+	 * @testdox A charge whose request fails $failure naming no intent, over a stored started step, keeps the stored status, and the next press sends under $next_key.
+	 *
+	 * The failure names no intent, so the stored status still describes the stored intent. Client 11.3.0 stores an intent ID
+	 * only when the exception carries one, and no status (class-wc-payment-gateway-wcpay.php:1610-1614). An ambiguous
+	 * failure keeps the charge key for the next press; a definitive one retires it.
+	 *
+	 * @testWith ["ambiguously", "the same key"]
+	 *           ["definitively", "a new key"]
+	 *
+	 * @param string $failure  "ambiguously" (a timeout) or "definitively" (a validation error).
+	 * @param string $next_key "the same key" or "a new key".
+	 */
+	public function test_a_charge_failing_naming_no_intent_keeps_the_stored_status( string $failure, string $next_key ): void {
+		$order = $this->create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->update_meta_data( '_intent_id', 'pi_started' );
+		$order->update_meta_data( '_intention_status', 'requires_action' );
+		$order->save();
+		$platform                  = $this->create_platform_whose_read_fails( new ApiException( 'Read failed.', 'api_error', 500 ) );
+		$started                   = $this->create_intent_response( $order, 'requires_action', 1200 );
+		$started['id']             = 'pi_started';
+		$platform->woopay_intents  = array( 'pi_started' => $started );
+		$platform->payment_failure = 'ambiguously' === $failure ? new ApiException( 'Timed out.', 'http_request_failed', 0 ) : new ApiException( 'Invalid request.', 'parameter_invalid_empty', 400, 'invalid_request_error' );
+
+		$this->create_gateway_over_a_platform_whose_duplicate_read_fails( $platform )->process_payment( $order->get_id() );
+		$failed                    = wc_get_order( $order->get_id() );
+		$platform->payment_failure = null;
+		wc_clear_notices();
+		$this->create_gateway_over_a_platform_whose_duplicate_read_fails( $platform )->process_payment( $order->get_id() );
+
+		$this->assertSame( array( 'GET pi_started', 'POST payment', 'GET pi_started', 'POST payment' ), $platform->requests );
+		$this->assertSame( OrderStatus::FAILED, $failed->get_status() );
+		$this->assertSame( 'requires_action', $failed->get_meta( '_intention_status', true ) );
+		$this->assertSame( 'pi_started', $failed->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'the same key' === $next_key, $platform->payment_keys[0] === $platform->payment_keys[1] );
+	}
+
+	/**
+	 * @testdox A payment that needs the shopper's action, on an order storing a succeeded status beside "$stored_intent", after a failure naming no intent: $fails_first, records the new payment.
+	 *
+	 * Only a payment intent's success blocks another payment's record (WooPaymentsOrderEffects::stores_succeeded_payment_intent()).
+	 * A setup intent's success, or a succeeded status with no intent, paid nothing, so the started payment replaces it,
+	 * whether or not a failure came between. A started payment is written only by the attach, so the guard decides here.
+	 *
+	 * @testWith ["seti_saved", false]
+	 *           ["seti_saved", true]
+	 *           ["", false]
+	 *           ["", true]
+	 *
+	 * @param string $stored_intent The stored intent beside the succeeded status, or an empty string for none.
+	 * @param bool   $fails_first   Whether a press failing naming no intent comes first.
+	 */
+	public function test_a_payment_over_a_success_that_paid_nothing_records_the_payment( string $stored_intent, bool $fails_first ): void {
+		$order = $this->create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		if ( '' !== $stored_intent ) {
+			$order->update_meta_data( '_intent_id', $stored_intent );
+		}
+		$order->update_meta_data( '_intention_status', 'succeeded' );
+		$order->save();
+		$platform = $this->create_platform_whose_read_fails( new ApiException( 'Read failed.', 'api_error', 500 ) );
+		if ( $fails_first ) {
+			$platform->available = false;
+			$this->create_gateway_over_a_platform_whose_duplicate_read_fails( $platform )->process_payment( $order->get_id() );
+			$platform->available = true;
+			$this->assertSame( 'succeeded', wc_get_order( $order->get_id() )->get_meta( '_intention_status', true ), 'The failure keeps the stored status.' );
+			wc_clear_notices();
+		}
+
+		$platform->payment_status = 'requires_action';
+
+		$result = $this->create_gateway_over_a_platform_whose_duplicate_read_fails( $platform )->process_payment( $order->get_id() );
+
+		$started = wc_get_order( $order->get_id() );
+		$this->assertSame( 'success', $result['result'] ?? '' );
+		$this->assertSame( array( 'POST payment' ), $platform->requests );
+		$this->assertSame( 'pi_new', $started->get_transaction_id() );
+		$this->assertSame( 'pi_new', $started->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'requires_action', $started->get_meta( '_intention_status', true ) );
+	}
+
+	/**
+	 * Failures that name no intent, each before the charge request, over each stored status B-937's refusal reads: the
+	 * door, the note it adds today, and the stored status.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string}>
+	 */
+	public function provide_failures_that_name_no_intent(): array {
+		$doors = array(
+			'gateway unavailable'          => array( 'unavailable', '' ),
+			'missing payment credential'   => array( 'credential', '' ),
+			'below the platform minimum'   => array( 'minimum', 'requires a total amount of at least $50.00' ),
+			'customer not created'         => array( 'customer', 'Customer not created' ),
+			'WooPay intent ID malformed'   => array( 'woopay malformed', 'abc123 is not a valid Stripe identifier' ),
+			'WooPay intent unread'         => array( 'woopay unread', 'Read failed' ),
+			'WooPay intent of other order' => array( 'woopay other order', 'WooPayMeta: intent_meta_order_id' ),
+			'metadata filter throws'       => array( 'metadata', 'A metadata callback failed' ),
+		);
+		$rows  = array();
+		foreach ( array( 'requires_capture', 'requires_action', 'processing' ) as $stored_status ) {
+			foreach ( $doors as $name => $door ) {
+				$rows[ $name . ', over ' . $stored_status ] = array( $door[0], $door[1], $stored_status );
+			}
+		}
+
+		return $rows;
+	}
+
+	/**
+	 * Make the next press fail at the given door, before any charge is sent.
+	 *
+	 * @param string   $door     Door from provide_failures_that_name_no_intent().
+	 * @param WC_Order $order    Order being paid.
+	 * @param Client   $platform Platform client from create_platform_whose_read_fails().
+	 * @return callable Closes the door again.
+	 */
+	private function open_failure_door( string $door, WC_Order $order, Client $platform ): callable {
+		switch ( $door ) {
+			case 'unavailable':
+				$platform->available = false;
+				return static function () use ( $platform ): void {
+					$platform->available = true;
+				};
+			case 'credential':
+				// With network-wide saved cards the gateway lets a request with no payment method through to the charge.
+				add_filter( 'wcpay_force_network_saved_cards', '__return_true' );
+				unset( $_POST['wcpay-payment-method'] );
+				return static function (): void {
+					remove_filter( 'wcpay_force_network_saved_cards', '__return_true' );
+				};
+			case 'minimum':
+				set_transient( 'wcpay_minimum_amount_' . strtolower( $order->get_currency() ), 5000 );
+				return static function () use ( $order ): void {
+					delete_transient( 'wcpay_minimum_amount_' . strtolower( $order->get_currency() ) );
+				};
+			case 'woopay malformed':
+			case 'woopay unread':
+			case 'woopay other order':
+				$woopay_intent                     = $this->create_intent_response( $order, 'succeeded', 1200 );
+				$woopay_intent['id']               = 'pi_woopay';
+				$woopay_intent['metadata']         = array( 'order_id' => (string) ( $order->get_id() + 1 ) );
+				$platform->woopay_intents          = 'woopay other order' === $door ? array( 'pi_woopay' => $woopay_intent ) : array();
+				$_POST['platform-checkout-intent'] = 'woopay malformed' === $door ? 'abc123' : 'pi_woopay';
+				return static function () use ( $platform ): void {
+					$platform->woopay_intents = array();
+					unset( $_POST['platform-checkout-intent'] );
+				};
+			case 'metadata':
+				$throw = static function (): void {
+					throw new \RuntimeException( 'A metadata callback failed.' );
+				};
+				add_filter( 'wcpay_metadata_from_order', $throw );
+				return static function () use ( $throw ): void {
+					remove_filter( 'wcpay_metadata_from_order', $throw );
+				};
+		}
+
+		return static function (): void {};
+	}
+
+	/**
 	 * Create a platform client whose read of the stored `pi_started` fails, and which records every intent request: a read
 	 * of a WooPay intent it holds answers with it, a PaymentIntent and a SetupIntent succeed.
 	 *
@@ -4816,6 +5111,41 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			 * @var array<string,array<string,mixed>>
 			 */
 			public array $woopay_intents = array();
+
+			/**
+			 * Whether the transport is available.
+			 *
+			 * @var bool
+			 */
+			public bool $available = true;
+
+			/**
+			 * Keys a PaymentIntent request was sent under, in order.
+			 *
+			 * @var string[]
+			 */
+			public array $payment_keys = array();
+
+			/**
+			 * What a PaymentIntent request throws, if anything.
+			 *
+			 * @var \Throwable|null
+			 */
+			public ?\Throwable $payment_failure = null;
+
+			/**
+			 * What a SetupIntent request throws, if anything.
+			 *
+			 * @var \Throwable|null
+			 */
+			public ?\Throwable $setup_failure = null;
+
+			/**
+			 * Status a PaymentIntent request answers with; a started one carries no charge.
+			 *
+			 * @var string
+			 */
+			public string $payment_status = 'succeeded';
 
 			/**
 			 * What the read of `pi_started` throws.
@@ -4848,7 +5178,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			 * @return bool
 			 */
 			public function is_available(): bool {
-				return true;
+				return $this->available;
 			}
 
 			/**
@@ -4871,15 +5201,32 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			}
 
 			/**
-			 * Answer a PaymentIntent request with a succeeded PaymentIntent and its charge.
+			 * Answer a PaymentIntent request with a succeeded PaymentIntent and its charge, or throw the set failure.
 			 *
 			 * @param array<string,mixed> $request_data    Request data.
 			 * @param string              $idempotency_key Idempotency key.
 			 * @return array<string,mixed>
+			 * @throws \Throwable The set failure.
 			 */
 			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
-				unset( $idempotency_key );
-				$this->requests[] = 'POST payment';
+				$this->requests[]     = 'POST payment';
+				$this->payment_keys[] = $idempotency_key;
+				if ( null !== $this->payment_failure ) {
+					throw $this->payment_failure;
+				}
+				if ( 'succeeded' !== $this->payment_status ) {
+					return array(
+						'id'             => 'pi_new',
+						'object'         => 'payment_intent',
+						'status'         => $this->payment_status,
+						'amount'         => (int) ( $request_data['amount'] ?? 0 ),
+						'currency'       => (string) ( $request_data['currency'] ?? 'usd' ),
+						'payment_method' => (string) ( $request_data['payment_method'] ?? '' ),
+						'metadata'       => $request_data['metadata'] ?? array(),
+						'client_secret'  => 'pi_new_secret_started',
+						'next_action'    => array( 'type' => 'use_stripe_sdk' ),
+					);
+				}
 
 				return array(
 					'id'             => 'pi_new',
@@ -4906,15 +5253,19 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			}
 
 			/**
-			 * Answer a SetupIntent request with a succeeded SetupIntent.
+			 * Answer a SetupIntent request with a succeeded SetupIntent, or throw the set failure.
 			 *
 			 * @param array<string,mixed> $request_data    Request data.
 			 * @param string              $idempotency_key Idempotency key.
 			 * @return array<string,mixed>
+			 * @throws \Throwable The set failure.
 			 */
 			public function create_and_confirm_setup_intention( array $request_data, string $idempotency_key ): array {
 				unset( $idempotency_key );
 				$this->requests[] = 'POST setup';
+				if ( null !== $this->setup_failure ) {
+					throw $this->setup_failure;
+				}
 
 				return array(
 					'id'             => 'seti_new',
@@ -4932,15 +5283,16 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * Create a gateway over the real payment service and the WooPayments provider, whose duplicate check and charge both
 	 * use the given platform client.
 	 *
-	 * @param Client $platform Platform client.
+	 * @param Client          $platform         Platform client.
+	 * @param \Throwable|null $customer_failure What getting the customer throws, if anything.
 	 * @return WooPaymentsGateway
 	 */
-	private function create_gateway_over_a_platform_whose_duplicate_read_fails( Client $platform ): WooPaymentsGateway {
+	private function create_gateway_over_a_platform_whose_duplicate_read_fails( Client $platform, ?\Throwable $customer_failure = null ): WooPaymentsGateway {
 		$session = $this->create_session();
 		$gateway = new WooPaymentsGateway();
 		$gateway->init(
 			wc_get_container()->get( PaymentProcessingService::class ),
-			$this->create_provider_over_platform( $platform, $this->create_unhooked_token_service() ),
+			$this->create_provider_over_platform( $platform, $this->create_unhooked_token_service(), $customer_failure ),
 			null,
 			null,
 			null,
@@ -6596,18 +6948,24 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * Create the WooPayments provider whose own charge sends its requests to the given platform client, with the real
 	 * effect applier on the given token service.
 	 *
-	 * @param Client                  $platform      Platform client.
-	 * @param WooPaymentsTokenService $token_service Token service the effect applier saves tokens with.
+	 * @param Client                  $platform         Platform client.
+	 * @param WooPaymentsTokenService $token_service    Token service the effect applier saves tokens with.
+	 * @param \Throwable|null         $customer_failure What getting the customer throws, if anything.
 	 * @return WooPaymentsProvider
 	 */
-	private function create_provider_over_platform( Client $platform, WooPaymentsTokenService $token_service ): WooPaymentsProvider {
+	private function create_provider_over_platform( Client $platform, WooPaymentsTokenService $token_service, ?\Throwable $customer_failure = null ): WooPaymentsProvider {
 		$container        = wc_get_container();
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_or_create_customer_id_for_order', 'get_or_create_customer_id_for_subscription_payment_method_change' ) )
 			->getMock();
-		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_change' );
-		$customer_service->method( 'get_or_create_customer_id_for_subscription_payment_method_change' )->willReturn( 'cus_change' );
+		foreach ( array( 'get_or_create_customer_id_for_order', 'get_or_create_customer_id_for_subscription_payment_method_change' ) as $method ) {
+			if ( null === $customer_failure ) {
+				$customer_service->method( $method )->willReturn( 'cus_change' );
+			} else {
+				$customer_service->method( $method )->willThrowException( $customer_failure );
+			}
+		}
 		$payment_operations = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService();
 		$payment_operations->init(
 			$platform,

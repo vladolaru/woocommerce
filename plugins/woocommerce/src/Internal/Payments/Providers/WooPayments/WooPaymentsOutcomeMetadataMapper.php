@@ -58,8 +58,12 @@ final class WooPaymentsOutcomeMetadataMapper implements ProviderOutcomeMetadataM
 			$meta['_stripe_customer_id'] = $outcome->get_customer_id();
 		}
 
-		// A $0 order confirmed without an intent has no intention status; client 11.1.0 writes none there (gw:1673-1771).
-		if ( ! isset( $meta['_intention_status'] ) && ! ( $plan instanceof WooPaymentsOrderEffectPlan && WooPaymentsOrderEffectPlan::TYPE_ZERO_AMOUNT_WITHOUT_INTENT === $plan->get_type() ) ) {
+		// A $0 order confirmed without an intent has no intention status; client 11.1.0 writes none there (gw:1673-1771). Nor
+		// has a failure that names no intent, so the stored status still describes the stored intent; client 11.3.0's
+		// checkout catch writes none (gw:1552-1733).
+		$has_no_status = ( $plan instanceof WooPaymentsOrderEffectPlan && WooPaymentsOrderEffectPlan::TYPE_ZERO_AMOUNT_WITHOUT_INTENT === $plan->get_type() )
+			|| ( PaymentOutcome::STATUS_FAILED === $outcome->get_status() && '' === $outcome->get_provider_payment_id() );
+		if ( ! isset( $meta['_intention_status'] ) && ! $has_no_status ) {
 			$meta['_intention_status'] = $this->get_default_intention_status( $outcome );
 		}
 

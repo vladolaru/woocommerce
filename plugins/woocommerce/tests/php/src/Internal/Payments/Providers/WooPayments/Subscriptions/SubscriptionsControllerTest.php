@@ -577,6 +577,45 @@ class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A scheduled renewal while the platform is unavailable fails the renewal order and keeps its stored intent status.
+	 *
+	 * The failure names no intent, so the stored status still describes the stored intent; the order still goes to Failed,
+	 * which WooCommerce Subscriptions needs to schedule its retry. Client 11.3.0's renewal catch fails the order and writes
+	 * no status (includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:430-433).
+	 */
+	public function test_scheduled_renewal_while_unavailable_fails_and_keeps_the_stored_status(): void {
+		$user_id = self::factory()->user->create();
+		$order   = $this->create_order();
+		$token   = $this->create_card_token( $user_id, 'pm_renewal_unavailable' );
+		$order->set_customer_id( $user_id );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->add_payment_token( $token );
+		$order->update_meta_data( '_intent_id', 'pi_earlier_attempt' );
+		$order->update_meta_data( '_intention_status', 'requires_action' );
+		$order->save();
+		$api_client = new class() extends Client {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return false;
+			}
+		};
+		wc_get_container()->replace( Client::class, $api_client );
+		wc_get_container()->reset_all_resolved();
+
+		$sut = $this->create_sut( wc_get_container()->get( PaymentProcessingService::class ), wc_get_container()->get( WooPaymentsProvider::class ) );
+		$sut->scheduled_subscription_payment( 12.0, wc_get_order( $order->get_id() ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'failed', $order->get_status() );
+		$this->assertSame( 'requires_action', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( 'pi_earlier_attempt', $order->get_meta( '_intent_id', true ) );
+	}
+
+	/**
 	 * @testdox Unusable saved renewal methods fail through the payment lifecycle with an actionable note.
 	 */
 	public function test_scheduled_subscription_payment_fails_unusable_saved_method_with_actionable_note(): void {

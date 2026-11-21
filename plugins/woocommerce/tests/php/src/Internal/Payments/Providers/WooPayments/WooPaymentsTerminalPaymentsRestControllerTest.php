@@ -7,6 +7,10 @@ use Automattic\WooCommerce\Tests\Internal\Payments\StorefrontMultiCurrencyTestTr
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
+use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
+use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
+use Automattic\WooCommerce\Tests\Internal\Payments\RecordingProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventOrderResolver;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -1683,6 +1687,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 		$sut          = $this->create_lock_waiting_controller(
 			static function () use ( $store, $order, $vocabulary, $holder_token, $order_id ): void {
 				$completed = wc_get_order( $order_id );
+				$completed->update_meta_data( '_intent_id', 'pi_terminal' );
 				$completed->update_meta_data( '_intention_status', 'succeeded' );
 				$completed->save();
 				$store->release( $order, $vocabulary, $holder_token );
@@ -1737,10 +1742,14 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	 * @dataProvider provide_processed_intent_statuses
 	 *
 	 * @param string $stored_status Stored intent status.
+	 * @param string $stored_intent Stored intent, or an empty string for none.
 	 */
-	public function test_capture_terminal_payment_refuses_a_processed_order( string $stored_status ): void {
+	public function test_capture_terminal_payment_refuses_a_processed_order( string $stored_status, string $stored_intent ): void {
 		$order = $this->create_order( 12.34, 'USD' );
 		$order->update_meta_data( '_intention_status', $stored_status );
+		if ( '' !== $stored_intent ) {
+			$order->update_meta_data( '_intent_id', $stored_intent );
+		}
 		$order->save();
 		$this->set_capturable_terminal_intent( $order );
 
@@ -1753,16 +1762,52 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
-	 * Stored intent statuses the client treats as already processed.
+	 * Stored intent statuses the client treats as already processed, with the stored intent: a succeeded status counts only
+	 * beside a payment intent.
 	 *
-	 * @return array<string,array{0:string}>
+	 * @return array<string,array{0:string,1:string}>
 	 */
 	public function provide_processed_intent_statuses(): array {
 		return array(
-			'succeeded'  => array( 'succeeded' ),
-			'canceled'   => array( 'canceled' ),
-			'processing' => array( 'processing' ),
+			'succeeded'  => array( 'succeeded', 'pi_terminal' ),
+			'canceled'   => array( 'canceled', '' ),
+			'processing' => array( 'processing', '' ),
 		);
+	}
+
+	/**
+	 * @testdox Terminal capture captures the authorization on an order storing a succeeded status with no intent, after a checkout failure naming no intent: $fails_first.
+	 *
+	 * A succeeded status beside no intent paid nothing (WooPaymentsOrderEffects::stores_succeeded_payment_intent()), as a $0
+	 * checkout with no payment method stores it, so it does not refuse the merchant's in-person capture. A checkout failure
+	 * naming no intent keeps that status, so the capture is not refused after one either.
+	 *
+	 * @testWith [false]
+	 *           [true]
+	 *
+	 * @param bool $fails_first Whether a checkout failure naming no intent, shaped as the gateway-unavailable outcome, comes first.
+	 */
+	public function test_capture_terminal_payment_captures_over_a_success_with_no_intent( bool $fails_first ): void {
+		$order = $this->create_order( 12.34, 'USD' );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->update_meta_data( '_intention_status', 'succeeded' );
+		$order->save();
+		if ( $fails_first ) {
+			$unavailable = new PaymentOutcome( PaymentOutcome::STATUS_FAILED, '', '', '', '', array( PaymentOutcome::DATA_ERROR_CODE => 'wcpay_gateway_unavailable' ) );
+			wc_get_container()->get( PaymentProcessingService::class )->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card' ), new RecordingProvider( $unavailable ) );
+			$order = wc_get_order( $order->get_id() );
+			$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ), 'The failure keeps the stored status.' );
+			// The merchant takes the payment in person on the order put back to Pending.
+			$order->set_status( OrderStatus::PENDING );
+			$order->save();
+		}
+		$this->set_capturable_terminal_intent( $order );
+
+		$response = $this->sut->capture_terminal_payment( $this->make_capture_request( $order ) );
+
+		$this->assertNotInstanceOf( WP_Error::class, $response );
+		$this->assertCount( 1, $this->api_client->captures );
+		$this->assertSame( 'pi_terminal', wc_get_order( $order->get_id() )->get_transaction_id() );
 	}
 
 	/**
