@@ -137,6 +137,16 @@ class WooPaymentsPaymentOperationService {
 	private const STARTED_INTENT_STATUSES = array( 'requires_action', 'requires_confirmation' );
 
 	/**
+	 * Tier of a charge refused over an unread payment whose stored record shows money held or on its way, named in the log.
+	 */
+	private const UNREAD_PAYMENT_TIER_MONEY_HELD = 'money_held';
+
+	/**
+	 * Tier of a charge refused over an unread payment whose stored record shows a started bank step, named in the log.
+	 */
+	private const UNREAD_PAYMENT_TIER_STEP_STARTED = 'step_started';
+
+	/**
 	 * Outcome error code of a capture or cancel that was not sent because its intent is not the order's stored intent and
 	 * the platform's record of it does not name the order.
 	 *
@@ -825,7 +835,7 @@ class WooPaymentsPaymentOperationService {
 	 * Send a positive-amount charge under the order's kept key, or under the attempt key when none is kept.
 	 *
 	 * A charge that could pay again for the order's attached payment, which the duplicate check could not read, is refused
-	 * before anything is written or sent; see refuses_a_charge_over_an_unread_payment(). A kept key refused because the new request differs from the earlier one (a new card after a timeout) settles what
+	 * before anything is written or sent; see get_unread_payment_refusal_tier(). A kept key refused because the new request differs from the earlier one (a new card after a timeout) settles what
 	 * the earlier request did before anything is charged; see settle_earlier_charge(). A scheduled renewal is not looked
 	 * up. A missing customer is replaced and the charge retried, except while the order has an ambiguity record, or for a
 	 * saved card when the user has no other customer.
@@ -837,11 +847,14 @@ class WooPaymentsPaymentOperationService {
 	 * @throws ApiException When replacing a missing customer fails.
 	 */
 	private function send_charge_request( PaymentOperationContext $context, array &$request_data, string $attempt_key ) {
-		if ( $this->refuses_a_charge_over_an_unread_payment( $context ) ) {
+		$order        = $context->get_order();
+		$refusal_tier = $this->get_unread_payment_refusal_tier( $context );
+		if ( null !== $refusal_tier ) {
+			$this->log_charge_refused_over_unread_payment( $order, $refusal_tier );
+
 			return $this->unread_payment_refused_outcome();
 		}
 
-		$order    = $context->get_order();
 		$sent_key = $this->ensure_charge_idempotency_key( $order, $attempt_key );
 
 		try {
@@ -894,8 +907,8 @@ class WooPaymentsPaymentOperationService {
 	}
 
 	/**
-	 * Tell whether a charge is refused because it could pay again for the order's attached payment, which the duplicate
-	 * check could not read.
+	 * Get the tier by which a charge is refused because it could pay again for the order's attached payment, which the
+	 * duplicate check could not read.
 	 *
 	 * Decided on the order as read again under the order payment lock, only when the check's note names the payment still
 	 * attached, made in this request's mode. A record of money held or on its way refuses on any failed read; a record of a
@@ -903,19 +916,48 @@ class WooPaymentsPaymentOperationService {
 	 * request with no note, such as a scheduled renewal, is not refused here.
 	 *
 	 * @param PaymentOperationContext $context Payment context.
-	 * @return bool
+	 * @return string|null The tier that refuses, or null when the charge goes on.
 	 */
-	private function refuses_a_charge_over_an_unread_payment( PaymentOperationContext $context ): bool {
+	private function get_unread_payment_refusal_tier( PaymentOperationContext $context ): ?string {
 		$failed_read = $context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_FAILED_INTENT_READ ] ?? null;
 		$order       = $context->get_order();
 		if ( ! is_array( $failed_read ) || (string) $order->get_meta( '_intent_id', true ) !== ( $failed_read['intent_id'] ?? null ) || ! $this->is_payment_of_this_mode( $order ) ) {
-			return false;
+			return null;
 		}
 
 		$stored_status = (string) $order->get_meta( '_intention_status', true );
+		if ( WooPaymentsIntentCodec::holds_money( $stored_status ) ) {
+			return self::UNREAD_PAYMENT_TIER_MONEY_HELD;
+		}
 
-		return WooPaymentsIntentCodec::holds_money( $stored_status )
-			|| ( in_array( $stored_status, self::STARTED_INTENT_STATUSES, true ) && true === ( $failed_read['unknown'] ?? null ) );
+		return in_array( $stored_status, self::STARTED_INTENT_STATUSES, true ) && true === ( $failed_read['unknown'] ?? null )
+			? self::UNREAD_PAYMENT_TIER_STEP_STARTED
+			: null;
+	}
+
+	/**
+	 * Log, whatever the logging setting, that a charge was refused over the order's attached payment, which could not be
+	 * read, so support can see why the checkout was refused. It names the order, the intent and the tier, nothing else.
+	 *
+	 * @param WC_Order $order Order being charged.
+	 * @param string   $tier  The tier that refused.
+	 */
+	private function log_charge_refused_over_unread_payment( WC_Order $order, string $tier ): void {
+		$intent_id = WooPaymentsLogger::get_loggable_provider_id( (string) $order->get_meta( '_intent_id', true ) );
+		$this->logger->log_always(
+			sprintf(
+				'The charge for order #%1$d was not sent: its attached payment, intent %2$s, could not be read, and the order stores %3$s.',
+				$order->get_id(),
+				$intent_id,
+				self::UNREAD_PAYMENT_TIER_MONEY_HELD === $tier ? 'money held or on its way' : 'a started bank step with an unknown outcome'
+			),
+			'warning',
+			array(
+				'order_id'  => $order->get_id(),
+				'intent_id' => $intent_id,
+				'tier'      => $tier,
+			)
+		);
 	}
 
 	/**

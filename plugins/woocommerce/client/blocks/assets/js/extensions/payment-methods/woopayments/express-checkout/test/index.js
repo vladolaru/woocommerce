@@ -10,6 +10,7 @@ import { reload as navigate } from '@woocommerce/utils/navigation';
 /**
  * Internal dependencies
  */
+import { useSpokenMessage } from '../../../../../base/hooks/use-spoken-message';
 import {
 	ANSWER_SHAPES,
 	MONEY_STATUS_FIXTURE,
@@ -22,12 +23,25 @@ jest.mock( '@woocommerce/blocks-registry', () => ( {
 
 jest.mock( '@woocommerce/utils/navigation', () => ( { reload: jest.fn() } ) );
 
+// The notices the page shows, as the notices store keeps them: one per ID and context. A test dismisses one by emptying it.
+let mockNotices = [];
 const mockInvalidateResolutionForStore = jest.fn();
-const mockCreateErrorNotice = jest.fn();
+const mockCreateErrorNotice = jest.fn( ( content, { id, context } = {} ) => {
+	mockNotices = [
+		...mockNotices.filter(
+			( notice ) => notice.id !== id || notice.context !== context
+		),
+		{ id, content, context },
+	];
+} );
 jest.mock( '@wordpress/data', () => ( {
 	dispatch: jest.fn( () => ( {
 		invalidateResolutionForStore: mockInvalidateResolutionForStore,
 		createErrorNotice: mockCreateErrorNotice,
+	} ) ),
+	select: jest.fn( () => ( {
+		getNotices: ( context ) =>
+			mockNotices.filter( ( notice ) => notice.context === context ),
 	} ) ),
 } ) );
 
@@ -419,6 +433,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 
 	beforeEach( () => {
 		jest.clearAllMocks();
+		mockNotices = [];
 		baseExpressCheckoutParams.enabled_methods = [ 'payment_request' ];
 		baseExpressCheckoutParams.payment_method_types = [ 'card' ];
 		baseExpressCheckoutParams.is_manual_capture = false;
@@ -3566,22 +3581,87 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 					);
 				} );
 
-				// The notice shown again keeps its text and ID, so the notice list does not announce it again.
-				it( 'speaks the sentence on every refused click', async () => {
-					answerOrderStatusUpdateWithText(
-						503,
-						'Service Unavailable'
-					);
-					await confirmGooglePay();
-					mockSpeak.mockClear();
+				// The sentence is spoken once per refused click, counting what the notice banner speaks as it mounts. A
+				// notice still on the page keeps its text and ID, so its banner does not announce it again and the click
+				// speaks it; a notice the shopper dismissed is created anew, and the banner that mounts speaks it, so the
+				// click must not speak it a second time.
+				describe( 'with the express notice', () => {
+					let banner;
 
-					clickGooglePay();
-					clickGooglePay();
+					// What the error notice banner does with its message: the notice banner calls this hook, with
+					// politeness "assertive" for an error.
+					const SpokenBanner = ( { children } ) => {
+						useSpokenMessage( children, 'assertive' );
+						return createElement( 'div', null, children );
+					};
+					const renderBanner = () =>
+						render(
+							createElement(
+								SpokenBanner,
+								null,
+								PAYMENT_RECEIVED
+							)
+						);
 
-					expect( mockSpeak.mock.calls ).toEqual( [
-						[ PAYMENT_RECEIVED, 'assertive' ],
-						[ PAYMENT_RECEIVED, 'assertive' ],
-					] );
+					beforeEach( async () => {
+						answerOrderStatusUpdateWithText(
+							503,
+							'Service Unavailable'
+						);
+						await confirmGooglePay();
+						// The express error callback showed the notice, and its banner spoke it.
+						mockNotices = [
+							{
+								id: 'wc-express-payment-error',
+								content: PAYMENT_RECEIVED,
+								context: undefined,
+							},
+						];
+						banner = renderBanner();
+						mockSpeak.mockClear();
+					} );
+
+					it( 'speaks the sentence once on a refused click while the notice is still shown', () => {
+						clickGooglePay();
+						// The notice list shows the notice again with the same text.
+						banner.rerender(
+							createElement(
+								SpokenBanner,
+								null,
+								PAYMENT_RECEIVED
+							)
+						);
+
+						expect( mockSpeak.mock.calls ).toEqual( [
+							[ PAYMENT_RECEIVED, 'assertive' ],
+						] );
+					} );
+
+					it( 'speaks the sentence on every refused click while the notice is still shown', () => {
+						clickGooglePay();
+						clickGooglePay();
+
+						expect( mockSpeak.mock.calls ).toEqual( [
+							[ PAYMENT_RECEIVED, 'assertive' ],
+							[ PAYMENT_RECEIVED, 'assertive' ],
+						] );
+					} );
+
+					it( 'speaks the sentence once on a refused click after the shopper dismissed the notice', () => {
+						banner.unmount();
+						mockNotices = [];
+
+						clickGooglePay();
+						// The notice list mounts the new notice's banner.
+						renderBanner();
+
+						expect( mockCreateErrorNotice ).toHaveBeenCalledTimes(
+							1
+						);
+						expect( mockSpeak.mock.calls ).toEqual( [
+							[ PAYMENT_RECEIVED, 'assertive' ],
+						] );
+					} );
 				} );
 
 				// The flag is the page's, not one Element's: every wallet button on it is refused.

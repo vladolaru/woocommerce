@@ -4729,6 +4729,49 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A checkout whose order stores $loaded_status when it is loaded and $locked_status under the payment lock, over an intent whose read fails, $expected.
+	 *
+	 * The charge decides on the stored status as read again under the lock, not on the status the order object held when the
+	 * request started: another request that stores a held authorization while this one reads the intent makes it refuse.
+	 *
+	 * @testWith ["requires_payment_method", "requires_capture", "refuses"]
+	 *           ["requires_capture", "requires_payment_method", "charges"]
+	 *
+	 * @param string $loaded_status The stored `_intention_status` when the request loads the order.
+	 * @param string $locked_status The stored `_intention_status` another request writes while this one reads the intent.
+	 * @param string $expected      "refuses" or "charges".
+	 */
+	public function test_process_payment_decides_on_the_stored_status_read_under_the_lock( string $loaded_status, string $locked_status, string $expected ): void {
+		$order = $this->create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->update_meta_data( '_intent_id', 'pi_started' );
+		$order->update_meta_data( '_intention_status', $loaded_status );
+		$order->save();
+		$order_id = $order->get_id();
+		$platform = $this->create_platform_whose_read_fails(
+			new ApiException( 'Read failed.', 'api_error', 500 ),
+			static function () use ( $order_id, $locked_status ): void {
+				// Another request stores a new status while this one reads its stored intent.
+				$stored = wc_get_order( $order_id );
+				$stored->update_meta_data( '_intention_status', $locked_status );
+				$stored->save();
+			}
+		);
+		$gateway  = $this->create_gateway_over_a_platform_whose_duplicate_read_fails( $platform );
+
+		$result = $gateway->process_payment( $order_id );
+
+		if ( 'charges' === $expected ) {
+			$this->assertContains( 'POST payment', $platform->requests );
+			return;
+		}
+		$this->assertSame( array( 'GET pi_started' ), $platform->requests, 'Nothing is charged.' );
+		$this->assertSame( 'failure', $result['result'] ?? '' );
+		$this->assertSame( array( "We're not able to process this payment. Please try again later." ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+		$this->assertSame( $locked_status, wc_get_order( $order_id )->get_meta( '_intention_status', true ), 'The status the other request stored stays.' );
+	}
+
+	/**
 	 * @testdox A zero-total checkout over a stored started bank step whose read fails with a 500 goes on and is not refused.
 	 *
 	 * A zero total sets up the card and takes no payment, so it cannot pay again for the earlier payment.

@@ -8,7 +8,7 @@ import { extensionCartUpdate } from '@woocommerce/blocks-checkout';
 import { reload as navigate } from '@woocommerce/utils/navigation';
 import { speak } from '@wordpress/a11y';
 import { decodeEntities } from '@wordpress/html-entities';
-import { dispatch } from '@wordpress/data';
+import { dispatch, select } from '@wordpress/data';
 import { applyFilters } from '@wordpress/hooks';
 import { __, sprintf } from '@wordpress/i18n';
 import { useCallback, useEffect, useRef } from '@wordpress/element';
@@ -933,18 +933,27 @@ const PAYMENT_RECEIVED_MESSAGE = __(
 	'woocommerce'
 );
 
+// ID of the notice the express error callback shows.
+const EXPRESS_PAYMENT_ERROR_NOTICE_ID = 'wc-express-payment-error';
+
 // Set once the page showed PAYMENT_RECEIVED_MESSAGE; until a reload, every wallet click is refused with it.
 let isPaymentReceivedShown = false;
 
 // Show PAYMENT_RECEIVED_MESSAGE again for a refused wallet click. It is only a notice: the express error callback would
 // also put back the payment method chosen before the wallet's first click. It keeps the ID of the express error notice
-// it replaces, and is spoken each time, since the same notice shown again is not announced.
+// it replaces. The sentence is spoken once: a notice still on the page keeps its text, so its banner does not announce
+// it again and it is spoken here; a notice the shopper dismissed is created anew, and its banner speaks it as it mounts.
 const showPaymentReceivedAgain = ( noticeContext ) => {
+	const isNoticeShown = select( 'core/notices' )
+		.getNotices( noticeContext )
+		.some( ( notice ) => notice.id === EXPRESS_PAYMENT_ERROR_NOTICE_ID );
 	dispatch( 'core/notices' ).createErrorNotice( PAYMENT_RECEIVED_MESSAGE, {
-		id: 'wc-express-payment-error',
+		id: EXPRESS_PAYMENT_ERROR_NOTICE_ID,
 		context: noticeContext,
 	} );
-	speak( PAYMENT_RECEIVED_MESSAGE, 'assertive' );
+	if ( isNoticeShown ) {
+		speak( PAYMENT_RECEIVED_MESSAGE, 'assertive' );
+	}
 };
 
 const getCheckoutErrorMessage = ( response ) => {

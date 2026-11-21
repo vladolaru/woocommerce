@@ -384,6 +384,65 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A 40.00 charge refused over an unread payment storing $stored_status writes one warning naming the order, the intent and the tier $tier.
+	 *
+	 * Support has to see why a checkout was refused, so the refusal writes a line whatever the logging setting. It carries
+	 * the order ID, the intent ID and which tier refused, and nothing else: no amount and no customer. A charge that goes
+	 * on writes no such line.
+	 *
+	 * @testWith ["requires_capture", "an answer", "money_held"]
+	 *           ["processing", "an unknown outcome", "money_held"]
+	 *           ["requires_action", "an unknown outcome", "step_started"]
+	 *           ["requires_confirmation", "an unknown outcome", "step_started"]
+	 *           ["requires_action", "an answer", ""]
+	 *           ["requires_capture", "nothing", ""]
+	 *
+	 * @param string $stored_status The order's stored `_intention_status`.
+	 * @param string $note          The check's note: "an unknown outcome", "an answer" or "nothing".
+	 * @param string $tier          The tier that refuses, or empty when the charge goes on.
+	 */
+	public function test_a_charge_refused_over_an_unread_payment_writes_one_warning( string $stored_status, string $note, string $tier ): void {
+		$order = $this->create_woopayments_order( '40.00' );
+		$order->update_meta_data( '_intent_id', 'pi_unread' );
+		$order->update_meta_data( '_intention_status', $stored_status );
+		$order->save();
+		$api_client       = $this->create_answering_charge_api_client(
+			array(
+				'id'     => 'pi_new',
+				'status' => 'succeeded',
+			)
+		);
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_native' );
+		$sut    = $this->create_operation_service( $api_client, $customer_service, null, $this->create_account_service( false ) );
+		$logger = RecordingWcLogger::install();
+
+		$sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request', array(), self::failed_intent_read_provider_data( $note ) ), 'key_charge' );
+
+		$lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] && 'woopayments' === $line[2] && str_contains( $line[1], 'could not be read' ) ) );
+		if ( '' === $tier ) {
+			$this->assertSame( array(), $lines, 'A charge that goes on writes no refusal line.' );
+			return;
+		}
+		$this->assertCount( 1, $lines );
+		$message = $logger->lines[ $lines[0] ][1];
+		$context = $logger->contexts[ $lines[0] ];
+		$this->assertStringContainsString( 'order #' . $order->get_id(), $message );
+		$this->assertStringContainsString( 'intent pi_unread', $message );
+		$this->assertStringNotContainsString( '40.00', $message );
+		$this->assertStringNotContainsString( 'cus_native', $message );
+		$this->assertSame( $order->get_id(), $context['order_id'] ?? null );
+		$this->assertSame( 'pi_unread', $context['intent_id'] ?? null );
+		$this->assertSame( $tier, $context['tier'] ?? null );
+		$keys = array_keys( $context );
+		sort( $keys );
+		$this->assertSame( array( 'intent_id', 'order_id', 'source', 'tier' ), $keys, 'The line carries nothing else.' );
+	}
+
+	/**
 	 * @testdox A $_dataName over a stored authorization the duplicate check could not read sets up the card and is not refused.
 	 *
 	 * Only a charge that sends a PaymentIntent can pay again for the attached payment, so a zero total and a subscription
