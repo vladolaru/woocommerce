@@ -1843,7 +1843,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * While the account is not eligible for WooPay the page hides WooPay and posts it as off, so a save keeps the stored WooPay
-	 * choice and writes everything else (N-2036). Nothing that follows a change to off happens: no disable date, no "disabled"
+	 * choice and writes everything else. Nothing that follows a change to off happens: no disable date, no "disabled"
 	 * event, and no write takes WooPay from "yes" to off, which is what removes the WooPay webhooks. The stored shape is kept
 	 * byte for byte, so a stored "1", 1 or true is not rewritten either.
 	 *
