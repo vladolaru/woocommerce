@@ -463,8 +463,12 @@ class WooCommerceNameYourPriceTest extends WC_Unit_Test_Case {
 	 * @preserveGlobalState disabled
 	 */
 	public function test_currency_switch_updates_the_nyp_cart_product_price(): void {
-		require_once __DIR__ . '/Fixtures/name-your-price-cart.inc';
-		$GLOBALS['wc_name_your_price'] = new \WC_Name_Your_Price();
+		$singleton = require __DIR__ . '/Fixtures/name-your-price-cart.inc';
+		// The extension class must exist only in this PHPUnit child process.
+		if ( ! class_exists( 'WC_Name_Your_Price' ) ) {
+			class_alias( get_class( $singleton ), 'WC_Name_Your_Price' );
+		}
+		$GLOBALS['wc_name_your_price'] = $singleton;
 		$sut                           = new WooCommerceNameYourPrice();
 		$this->init_controller( $sut, MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$sut->register();

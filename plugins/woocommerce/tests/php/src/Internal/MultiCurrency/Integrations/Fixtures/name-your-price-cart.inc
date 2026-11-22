@@ -5,13 +5,14 @@
  * @package WooCommerce\Tests
  */
 
-/** The extension's global singleton accessor. */
-function WC_Name_Your_Price() {
-	return $GLOBALS['wc_name_your_price'];
+if ( ! function_exists( 'WC_Name_Your_Price' ) ) {
+	/** The extension's global singleton accessor. */
+	function WC_Name_Your_Price() {
+		return $GLOBALS['wc_name_your_price'];
+	}
 }
 
-/** The cart-facing part of the Name Your Price singleton. */
-class WC_Name_Your_Price {
+return new class() {
 	/** @var string Installed extension version. */
 	public $version = '4.0.1';
 
@@ -36,4 +37,4 @@ class WC_Name_Your_Price {
 			};
 		}
 	}
-}
+};

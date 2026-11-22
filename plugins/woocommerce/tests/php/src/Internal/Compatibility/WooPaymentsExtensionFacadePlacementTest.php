@@ -11,6 +11,38 @@ use WC_Unit_Test_Case;
 class WooPaymentsExtensionFacadePlacementTest extends WC_Unit_Test_Case {
 
 	/**
+	 * @testdox Development autoloaders expose only the existing global classes from the WooCommerce tests directory.
+	 */
+	public function test_dev_classmaps_expose_only_known_global_test_classes(): void {
+		$plugin_dir = WC()->plugin_path();
+		$tests_dir  = wp_normalize_path( $plugin_dir ) . '/tests/';
+		$baseline   = array(
+			'ClassWithLoadMethod',
+			'ClassWithSingleton',
+			'Exempt_Fixture',
+			'Not_WC_Data_Fixture',
+			'Stage_Refusal_Fixture',
+			'Twins_Fixture',
+			'WC_Data',
+			'WC_Data_Store',
+			'Writes_Fixture',
+		);
+
+		$unexpected = array();
+		$composer   = require $plugin_dir . '/vendor/composer/autoload_classmap.php';
+		$jetpack    = require $plugin_dir . '/vendor/composer/jetpack_autoload_classmap.php';
+		foreach ( array( $composer, array_map( static fn( $entry ) => $entry['path'], $jetpack ) ) as $map ) {
+			foreach ( $map as $class => $file ) {
+				if ( false === strpos( $class, '\\' ) && 0 === strpos( wp_normalize_path( $file ), $tests_dir ) && ! in_array( $class, $baseline, true ) ) {
+					$unexpected[ $class ] = $file;
+				}
+			}
+		}
+
+		$this->assertSame( array(), $unexpected, 'New global test classes are visible to the dev autoloader.' );
+	}
+
+	/**
 	 * @testdox The placement scanner recognizes every sanctioned extension-shaped declaration.
 	 */
 	public function test_scanner_recognizes_sanctioned_declarations(): void {
