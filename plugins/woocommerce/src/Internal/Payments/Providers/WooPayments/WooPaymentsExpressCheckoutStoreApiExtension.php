@@ -180,6 +180,10 @@ class WooPaymentsExpressCheckoutStoreApiExtension implements RegisterHooksInterf
 	 * @return array<int,string>
 	 */
 	private function get_location_blind_methods_for_current_currency(): array {
+		if ( ! $this->express_checkout_service->is_cart_supported() ) {
+			return array();
+		}
+
 		$methods = array();
 
 		if ( $this->express_checkout_service->is_payment_request_enabled() ) {

@@ -113,6 +113,31 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 	}
 
 	/**
+	 * @testdox Should offer wallets after adding an eligible product and hide them after adding an excluded product.
+	 */
+	public function test_cart_extension_methods_follow_product_exclusions(): void {
+		wc_empty_cart();
+		$eligible = \WC_Helper_Product::create_simple_product();
+		$excluded = \WC_Helper_Product::create_simple_product();
+		$filter   = static fn( $supported, $product ) => $supported && $product->get_id() !== $excluded->get_id();
+
+		$this->sut = $this->create_extension( true, true );
+		add_filter( 'wcpay_payment_request_is_cart_supported', $filter, 10, 2 );
+
+		try {
+			WC()->cart->add_to_cart( $eligible->get_id() );
+			$this->assertSame( array( 'payment_request', 'amazon_pay' ), $this->sut->get_cart_extension_data()['express_checkout_methods'] );
+
+			wc_empty_cart();
+			WC()->cart->add_to_cart( $excluded->get_id() );
+			$this->assertSame( array(), $this->sut->get_cart_extension_data()['express_checkout_methods'] );
+		} finally {
+			remove_filter( 'wcpay_payment_request_is_cart_supported', $filter );
+			wc_empty_cart();
+		}
+	}
+
+	/**
 	 * Data provider for cart extension method sets.
 	 *
 	 * @return array<string,array{0:bool,1:bool,2:array<int,string>}>
