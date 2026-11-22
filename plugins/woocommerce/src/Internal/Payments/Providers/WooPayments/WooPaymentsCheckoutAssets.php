@@ -849,26 +849,32 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get client 11.1.0's Apple Pay/Google Pay and Amazon Pay switches for the current page.
+	 * Get client 11.3.0's Apple Pay/Google Pay and Amazon Pay switches for the current page.
 	 *
-	 * Client 11.1.0 `WC_Payments_Express_Checkout_Button_Handler::payment_fields_js_config()`
-	 * (class-wc-payments-express-checkout-button-handler.php:112-124), added while that handler runs.
+	 * Client 11.3.0 `WC_Payments_Express_Checkout_Button_Handler::payment_fields_js_config()`
+	 * (class-wc-payments-express-checkout-button-handler.php:111-127), added while that handler runs. The Amazon Pay
+	 * switch skips the currency, so the Blocks button is registered on a page whose currency Amazon Pay does not take yet.
 	 *
 	 * @param string $currency Checkout or order-pay currency.
 	 * @return array<string,bool>
 	 */
 	private function get_express_checkout_enabled_config( string $currency ): array {
-		$express_service = $this->get_express_checkout_service();
-		$payment_request = $express_service->is_payment_request_enabled();
-		if ( ! $this->should_add_express_button_config() || ! ( $payment_request || $express_service->is_amazon_pay_usable() ) ) {
+		if ( ! $this->should_add_express_button_config() ) {
 			return array();
 		}
 
-		$context = $this->get_express_button_context();
+		$express_service = $this->get_express_checkout_service();
+		$payment_request = $express_service->is_payment_request_enabled();
+		$context         = $this->get_express_button_context();
+		$amazon_pay      = $express_service->is_amazon_pay_set_up_by_merchant( '' === $context ? 'checkout' : $context );
+		if ( ! ( $payment_request || $amazon_pay ) ) {
+			return array();
+		}
+
 		if ( '' === $context ) {
 			return array(
 				'isPaymentRequestEnabled' => $payment_request,
-				'isAmazonPayEnabled'      => $express_service->is_amazon_pay_usable( 'checkout', $currency ),
+				'isAmazonPayEnabled'      => $amazon_pay,
 			);
 		}
 
@@ -876,7 +882,7 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 
 		return array(
 			'isPaymentRequestEnabled' => $payment_request && in_array( WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_PAYMENT_REQUEST, $enabled_methods, true ),
-			'isAmazonPayEnabled'      => in_array( WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_AMAZON_PAY, $enabled_methods, true ),
+			'isAmazonPayEnabled'      => $amazon_pay && in_array( WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_AMAZON_PAY, $express_service->get_methods_enabled_at_location( $context ), true ),
 		);
 	}
 

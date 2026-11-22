@@ -2080,10 +2080,11 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 				false,
 				false,
 			),
-			'amazon pay not eligible'          => array( $amazon_only, array( 'capabilities' => array() ), false, false ),
 			'amazon pay switched off'          => array( array_merge( $amazon_only, array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) ), array(), false, false ),
-			// Client 11.1.0 class-wc-payments-express-checkout-button-handler.php:79 ignores checkout locations.
+			// Client 11.3.0 class-wc-payments-express-checkout-button-handler.php:79 ignores checkout locations.
 			'amazon pay usable with no location listing it' => array( array_diff_key( $amazon_only, array( 'express_checkout_checkout_methods' => true ) ), array(), true, false ),
+			// Client 11.3.0 class-wc-payments-express-checkout-button-handler.php:79 asks the merchant's switch, not the capability.
+			'amazon pay lacking capability'    => array( $amazon_only, array( 'capabilities' => array() ), true, false ),
 		);
 	}
 

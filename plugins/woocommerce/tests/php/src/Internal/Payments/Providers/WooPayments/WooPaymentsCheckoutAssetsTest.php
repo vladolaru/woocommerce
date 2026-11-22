@@ -2762,17 +2762,29 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Blocks data reports Amazon Pay off once the merchant switched it off or the account cannot use it.
+	 * Client 11.3.0 reports the merchant's Amazon Pay switch without the currency, capability and account checks
+	 * (class-wc-payments-express-checkout-button-handler.php:72-127, button helper :478-503), so the Blocks button is
+	 * registered on a page whose currency Amazon Pay does not take yet.
+	 *
+	 * @testdox Blocks data reports the merchant's Amazon Pay switch whatever the page currency and the account's capability.
 	 */
-	public function test_blocks_data_amazon_pay_switch_uses_amazon_pay_availability(): void {
+	public function test_blocks_data_amazon_pay_switch_follows_the_merchant_setting(): void {
 		$this->replace_page_surface( false, true );
+		$amazon_only = array(
+			'express_checkout_checkout_methods' => array( 'amazon_pay' ),
+		);
 
 		$toggled_off = $this->create_assets_for_express_handlers( array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) )->get_blocks_payment_method_data( self::CARD_SUPPORTS );
 		$ineligible  = $this->create_assets_for_express_handlers( array(), array( 'capabilities' => array() ) )->get_blocks_payment_method_data( self::CARD_SUPPORTS );
+		$usd         = $this->create_assets_for_express_handlers( $amazon_only, array(), false, false )->get_blocks_payment_method_data( self::CARD_SUPPORTS );
+		update_option( 'woocommerce_currency', 'JPY' );
+		$yen = $this->create_assets_for_express_handlers( $amazon_only, array(), false, false )->get_blocks_payment_method_data( self::CARD_SUPPORTS );
 
 		$this->assertTrue( $toggled_off['isPaymentRequestEnabled'] );
 		$this->assertFalse( $toggled_off['isAmazonPayEnabled'] );
-		$this->assertFalse( $ineligible['isAmazonPayEnabled'] );
+		$this->assertTrue( $ineligible['isAmazonPayEnabled'] );
+		$this->assertSame( array( false, true ), array( $usd['isPaymentRequestEnabled'], $usd['isAmazonPayEnabled'] ) );
+		$this->assertSame( array( false, true ), array( $yen['isPaymentRequestEnabled'], $yen['isAmazonPayEnabled'] ), 'A yen page keeps the Amazon Pay switch on.' );
 	}
 
 	/**

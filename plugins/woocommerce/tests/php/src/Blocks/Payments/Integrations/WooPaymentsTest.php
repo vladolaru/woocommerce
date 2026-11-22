@@ -45,6 +45,13 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	use PageSurfaceReplacement;
 
 	/**
+	 * Location settings the Amazon Pay-only account double reads.
+	 *
+	 * @var array<string,mixed>
+	 */
+	private array $amazon_pay_only_settings = array();
+
+	/**
 	 * The theme active before a row switches it.
 	 *
 	 * @var string
@@ -119,6 +126,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		Constants::clear_single_constant( 'WOOCOMMERCE_CART' );
 		Constants::clear_single_constant( 'WOOCOMMERCE_CHECKOUT' );
 		remove_all_filters( 'wcpay_upe_available_payment_methods' );
+		delete_option( 'woocommerce_currency' );
 
 		foreach ( array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-woopay', 'wc-payment-method-woopayments-express-checkout', 'wc-payment-method-woopayments-fraud-scripts', 'wc-payment-method-woopayments-common' ) as $handle ) {
 			wp_dequeue_style( $handle );
@@ -664,6 +672,148 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		WC()->cart->calculate_totals();
 		$this->assertSame( 0.0, (float) WC()->cart->get_total( 'edit' ) );
 		$this->assertArrayNotHasKey( 'expressCheckoutParams', $integration->get_payment_method_data() );
+	}
+
+	/**
+	 * Client 11.3.0 loads the wallets on a Blocks page where Amazon Pay is the only express method at the location and the
+	 * page currency is one Amazon Pay does not take, because a currency change can bring it back without a reload
+	 * (class-wc-payments-express-checkout-button-helper.php:715-725,757-768,825-828).
+	 *
+	 * @testdox Should load the wallets on an Amazon Pay-only $surface block in a currency Amazon Pay does not take, and only there.
+	 * @testWith ["cart"]
+	 *           ["checkout"]
+	 *
+	 * @param string $surface Cart or checkout.
+	 */
+	public function test_amazon_pay_only_block_loads_the_wallets_in_another_currency( string $surface ): void {
+		$block       = 'woocommerce/' . $surface;
+		$integration = $this->create_amazon_pay_only_block_integration( $surface, 'content' );
+		$express     = 'wc-payment-method-woopayments-express-checkout';
+
+		update_option( 'woocommerce_currency', 'JPY' );
+		$this->assertContains( $express, $this->render_block_assets( $integration, $block ), 'Amazon Pay can return on this block.' );
+		$this->assertSame( array(), $integration->get_payment_method_data()['expressCheckoutParams']['enabled_methods'] );
+
+		update_option( 'woocommerce_currency', 'USD' );
+		$this->assertSame( array( 'amazon_pay' ), $integration->get_payment_method_data()['expressCheckoutParams']['enabled_methods'] );
+
+		update_option( 'woocommerce_currency', 'JPY' );
+		$this->set_amazon_pay_only_locations( array() );
+		$this->assertArrayNotHasKey( 'expressCheckoutParams', $integration->get_payment_method_data(), 'Amazon Pay is off at this location.' );
+	}
+
+	/**
+	 * @testdox Should keep the classic $surface page's wallets off in a currency Amazon Pay does not take.
+	 * @testWith ["cart"]
+	 *           ["checkout"]
+	 *
+	 * @param string $surface Cart or checkout.
+	 */
+	public function test_amazon_pay_only_classic_page_stays_off_in_another_currency( string $surface ): void {
+		$this->create_amazon_pay_only_block_integration( $surface, 'shortcode' );
+		$express = $this->create_amazon_pay_only_express_service();
+		update_option( 'woocommerce_currency', 'JPY' );
+
+		$this->assertFalse( $express->should_load_express_checkout_scripts( $surface ) );
+		$this->assertFalse( $express->should_show_payment_request_button( $surface ) );
+	}
+
+	/**
+	 * Client 11.3.0 publishes the location's methods whatever the currency (class-wc-payments-express-checkout-button-handler.php:268,
+	 * button helper :1169-1177), so a Blocks cart can match the live cart's methods to the location.
+	 *
+	 * @testdox Should publish the $surface location's express methods whatever the page currency.
+	 * @testWith ["cart"]
+	 *           ["checkout"]
+	 *
+	 * @param string $surface Cart or checkout.
+	 */
+	public function test_express_params_publish_the_location_methods_whatever_the_currency( string $surface ): void {
+		$integration = $this->create_amazon_pay_only_block_integration( $surface, 'content' );
+		$this->set_amazon_pay_only_locations( array( 'payment_request', 'amazon_pay' ) );
+		update_option( 'woocommerce_currency', 'JPY' );
+
+		$params = $integration->get_payment_method_data()['expressCheckoutParams'];
+
+		$this->assertSame( array( 'payment_request' ), $params['enabled_methods'] );
+		$this->assertSame( array( 'payment_request', 'amazon_pay' ), $params['methods_enabled_at_location'] );
+	}
+
+	/**
+	 * Set the express methods enabled at the cart and checkout locations for the Amazon Pay-only account double.
+	 *
+	 * @param string[] $methods Express method IDs.
+	 */
+	private function set_amazon_pay_only_locations( array $methods ): void {
+		$this->amazon_pay_only_settings['express_checkout_cart_methods']     = $methods;
+		$this->amazon_pay_only_settings['express_checkout_checkout_methods'] = $methods;
+	}
+
+	/**
+	 * Create an express checkout service for a US test-mode account with Amazon Pay switched on and enabled at the cart
+	 * and checkout locations, and Apple Pay and Google Pay off.
+	 *
+	 * @return WooPaymentsExpressCheckoutService
+	 */
+	private function create_amazon_pay_only_express_service(): WooPaymentsExpressCheckoutService {
+		$this->amazon_pay_only_settings = array( 'upe_enabled_payment_method_ids' => array( 'card', 'amazon_pay' ) );
+		$this->set_amazon_pay_only_locations( array( 'amazon_pay' ) );
+		$settings = &$this->amazon_pay_only_settings;
+		$account  = $this->createMock( WooPaymentsAccountService::class );
+		$account->method( 'is_gateway_enabled' )->willReturn( true );
+		$account->method( 'is_test_mode_enabled' )->willReturn( true );
+		$account->method( 'is_ece_confirmation_tokens_enabled' )->willReturn( true );
+		$account->method( 'is_capability_active' )->willReturn( true );
+		$account->method( 'get_cached_account_data' )->willReturn(
+			array(
+				'country'          => 'US',
+				'status'           => 'complete',
+				'payments_enabled' => true,
+			)
+		);
+		$account->method( 'get_gateway_setting' )->willReturnCallback(
+			static function ( string $key, $fallback = null ) use ( &$settings ) {
+				return $settings[ $key ] ?? $fallback;
+			}
+		);
+		$provider = $this->createMock( WooPaymentsProvider::class );
+		$provider->method( 'can_process_payments' )->willReturn( true );
+		$express = new WooPaymentsExpressCheckoutService();
+		$express->init( $account, $provider, $this->createMock( WooPaymentsFrontendTrackingController::class ) );
+
+		return $express;
+	}
+
+	/**
+	 * Visit a cart or checkout page with a $100 shippable item in the cart and the Amazon Pay-only express service.
+	 *
+	 * @param string $surface Cart or checkout.
+	 * @param string $source  `content` for a Blocks page, `shortcode` for a classic page.
+	 * @return WooPayments
+	 */
+	private function create_amazon_pay_only_block_integration( string $surface, string $source ): WooPayments {
+		$this->use_visited_page_surface();
+		wc_empty_cart();
+		if ( 'shortcode' === $source ) {
+			$page_id = self::factory()->post->create(
+				array(
+					'post_type'    => 'page',
+					'post_status'  => 'publish',
+					'post_content' => '[woocommerce_' . $surface . ']',
+				)
+			);
+			update_option( 'woocommerce_' . $surface . '_page_id', $page_id );
+			$this->reset_cart_checkout_page_cache();
+			$this->go_to( get_permalink( $page_id ) );
+		} else {
+			$this->go_to_page_rendered_by( 'woocommerce/' . $surface, $source );
+		}
+		$express = $this->create_amazon_pay_only_express_service();
+		$product = \WC_Helper_Product::create_simple_product( true, array( 'regular_price' => '100' ) );
+		WC()->cart->add_to_cart( $product->get_id() );
+		WC()->cart->calculate_totals();
+
+		return $this->create_registered_integration( false, false, array(), null, null, $express );
 	}
 
 	/**

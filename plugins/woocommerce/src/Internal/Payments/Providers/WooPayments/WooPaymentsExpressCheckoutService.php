@@ -93,11 +93,11 @@ class WooPaymentsExpressCheckoutService {
 	 * @return bool
 	 */
 	public function should_load_express_checkout_scripts( string $context ): bool {
-		$empty_block_cart = in_array( $context, array( 'cart', 'checkout' ), true )
-			&& WC()->cart instanceof \WC_Cart && WC()->cart->is_empty()
+		$block_cart = in_array( $context, array( 'cart', 'checkout' ), true )
+			&& WC()->cart instanceof \WC_Cart
 			&& ( has_block( 'woocommerce/cart' ) || has_block( 'woocommerce/checkout' ) );
 
-		return $this->is_button_available( $context, $empty_block_cart );
+		return $this->is_button_available( $context, $block_cart && WC()->cart->is_empty(), $block_cart );
 	}
 
 	/**
@@ -105,9 +105,10 @@ class WooPaymentsExpressCheckoutService {
 	 *
 	 * @param string $context          Express checkout context.
 	 * @param bool   $empty_block_cart Whether to defer the empty cart's tax and total checks.
+	 * @param bool   $block_cart       Whether the page holds a Cart or Checkout block, which can gain Amazon Pay later.
 	 * @return bool
 	 */
-	private function is_button_available( string $context, bool $empty_block_cart ): bool {
+	private function is_button_available( string $context, bool $empty_block_cart, bool $block_cart = false ): bool {
 		$context = WooPaymentsExpressPaymentMethodTypes::normalize_context( $context );
 
 		// Express methods listed among the checkout payment methods are not shown again as buttons (client 11.1.0 button helper :582-586).
@@ -139,7 +140,15 @@ class WooPaymentsExpressCheckoutService {
 			return false;
 		}
 
-		return ! empty( $this->get_allowed_payment_method_types_for_context( $context, $this->get_context_currency( $context ) ) );
+		if ( ! empty( $this->get_allowed_payment_method_types_for_context( $context, $this->get_context_currency( $context ) ) ) ) {
+			return true;
+		}
+
+		// Amazon Pay's availability follows the currency, so a Blocks cart can gain it when the shopper's currency
+		// changes without a reload (client 11.3.0 class-wc-payments-express-checkout-button-helper.php:757-768,825-828).
+		return $block_cart
+			&& $this->is_amazon_pay_set_up_by_merchant( $context )
+			&& in_array( WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_AMAZON_PAY, $this->get_methods_enabled_at_location( $context ), true );
 	}
 
 	/**
@@ -190,6 +199,8 @@ class WooPaymentsExpressCheckoutService {
 			'store_name'                  => get_bloginfo( 'name' ),
 			'enabled_methods'             => $this->get_enabled_methods_for_context( $context, $context_currency ),
 			'payment_method_types'        => $this->get_allowed_payment_method_types_for_context( $context, $context_currency ),
+			// Whatever the currency, so a Blocks cart can match the live cart's methods to its location (client 11.3.0 button handler :268).
+			'methods_enabled_at_location' => $this->get_methods_enabled_at_location( $context ),
 			'stripe'                      => array(
 				'publishableKey' => $this->account_service->get_publishable_key(),
 				'accountId'      => $this->account_service->get_account_id(),
@@ -295,9 +306,34 @@ class WooPaymentsExpressCheckoutService {
 	}
 
 	/**
+	 * Tell whether the merchant has set Amazon Pay up for express checkout, whatever the currency, capability and
+	 * account state.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param string $context Express checkout context.
+	 * @return bool
+	 */
+	public function is_amazon_pay_set_up_by_merchant( string $context = 'checkout' ): bool {
+		return WooPaymentsExpressPaymentMethodTypes::is_amazon_pay_set_up_by_merchant( $this->account_service, $context );
+	}
+
+	/**
+	 * Get the express methods the merchant enabled at a context's location, whatever the currency.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param string $context Express checkout context.
+	 * @return array<int,string>
+	 */
+	public function get_methods_enabled_at_location( string $context ): array {
+		return WooPaymentsExpressPaymentMethodTypes::get_configured_methods_for_context( $this->account_service, WooPaymentsExpressPaymentMethodTypes::normalize_context( $context ) );
+	}
+
+	/**
 	 * Tell whether express checkout is available, using the guards WooPayments checks before
 	 * registering its express checkout Store API hooks: payments enabled on the account, the
-	 * gateway enabled, and Apple Pay/Google Pay or Amazon Pay usable.
+	 * gateway enabled, and Apple Pay/Google Pay or Amazon Pay set up by the merchant.
 	 *
 	 * @since 11.2.0
 	 *
@@ -306,8 +342,8 @@ class WooPaymentsExpressCheckoutService {
 	public function is_express_checkout_available(): bool {
 		return $this->account_service->is_gateway_enabled()
 			&& $this->account_service->has_working_account()
-			// Client 11.1.0 class-wc-payments-express-checkout-button-handler.php:79 checks Amazon Pay whichever locations list it.
-			&& ( $this->is_payment_request_enabled() || $this->is_amazon_pay_usable() );
+			// Client 11.3.0 class-wc-payments-express-checkout-button-handler.php:79 checks the merchant's Amazon Pay switch, whatever the currency.
+			&& ( $this->is_payment_request_enabled() || $this->is_amazon_pay_set_up_by_merchant() );
 	}
 
 	/**

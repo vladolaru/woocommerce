@@ -8,6 +8,7 @@ import apiFetch from '@wordpress/api-fetch';
 import {
 	addItemToCart,
 	removeItemFromCart,
+	updateCustomerData,
 } from '@woocommerce/block-data/cart/thunks';
 import { apiFetchWithHeaders } from '@woocommerce/block-data/shared-controls';
 import { reload as navigate } from '@woocommerce/utils/navigation';
@@ -102,6 +103,7 @@ const baseExpressCheckoutParams = {
 	ajax_url: 'https://example.test/admin-ajax.php',
 	tracks_url: 'https://example.test/wp-json/wc/v3/payments/tracks',
 	enabled_methods: [ 'payment_request' ],
+	methods_enabled_at_location: [ 'payment_request' ],
 	button_context: 'checkout',
 	store_name: 'Test Store',
 	is_manual_capture: false,
@@ -467,6 +469,9 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		jest.clearAllMocks();
 		mockNotices = [];
 		baseExpressCheckoutParams.enabled_methods = [ 'payment_request' ];
+		baseExpressCheckoutParams.methods_enabled_at_location = [
+			'payment_request',
+		];
 		baseExpressCheckoutParams.payment_method_types = [ 'card' ];
 		baseExpressCheckoutParams.is_manual_capture = false;
 		baseExpressCheckoutParams.has_subscription = false;
@@ -536,6 +541,8 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 
 	afterEach( () => {
 		delete baseExpressCheckoutParams.initially_empty_cart;
+		delete basePaymentMethodData.isAmazonPayEnabled;
+		baseExpressCheckoutParams.button_context = 'checkout';
 		delete basePaymentMethodData.paymentMethodsConfig;
 		delete baseExpressCheckoutParams.stripe.linkEnabled;
 		delete window.Stripe;
@@ -549,6 +556,15 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		registerExpressPaymentMethod.mock.calls.find(
 			( [ registration ] ) => registration.name === name
 		)?.[ 0 ];
+
+	// The merchant has Amazon Pay on and enabled at this location, as the page config and params report it.
+	const enableAmazonPayAtLocation = () => {
+		basePaymentMethodData.isAmazonPayEnabled = true;
+		baseExpressCheckoutParams.methods_enabled_at_location = [
+			'payment_request',
+			'amazon_pay',
+		];
+	};
 
 	const renderExpressPaymentMethod = ( registration, props = {} ) =>
 		render(
@@ -597,54 +613,55 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		);
 	} );
 
+	// Client 11.3.0 registers the Amazon Pay button from the merchant's switch (client/checkout/blocks/index.js:147-152),
+	// so a page loaded in a currency Amazon Pay does not take still has the button for when the cart's currency changes.
 	it.each( [
 		[
-			'include it',
+			'on, in a currency Amazon Pay takes',
+			{ isAmazonPayEnabled: true },
+			[ 'payment_request', 'amazon_pay' ],
 			[ 'card', 'amazon_pay' ],
-			[
-				{
-					name: 'woocommerce_payments_express_checkout_applePay',
-					gatewayId: 'woocommerce_payments',
-					paymentMethodId: 'woocommerce_payments_express_checkout',
-				},
-				{
-					name: 'woocommerce_payments_express_checkout_googlePay',
-					gatewayId: 'woocommerce_payments',
-					paymentMethodId: 'woocommerce_payments_express_checkout',
-				},
-				{
-					name: 'woocommerce_payments_express_checkout_amazonPay',
-					gatewayId: 'woocommerce_payments',
-					paymentMethodId: 'woocommerce_payments_express_checkout',
-				},
-			],
+			true,
 		],
 		[
-			'exclude it',
+			'on, in a currency Amazon Pay does not take',
+			{ isAmazonPayEnabled: true },
+			[ 'payment_request' ],
 			[ 'card' ],
-			[
-				{
-					name: 'woocommerce_payments_express_checkout_applePay',
-					gatewayId: 'woocommerce_payments',
-					paymentMethodId: 'woocommerce_payments_express_checkout',
-				},
-				{
-					name: 'woocommerce_payments_express_checkout_googlePay',
-					gatewayId: 'woocommerce_payments',
-					paymentMethodId: 'woocommerce_payments_express_checkout',
-				},
-			],
+			true,
+		],
+		[
+			'off',
+			{ isAmazonPayEnabled: false },
+			[ 'payment_request', 'amazon_pay' ],
+			[ 'card', 'amazon_pay' ],
+			false,
+		],
+		[
+			'on, with express methods listed among the payment methods',
+			{
+				isAmazonPayEnabled: true,
+				isExpressCheckoutInPaymentMethodsEnabled: true,
+			},
+			[ 'payment_request', 'amazon_pay' ],
+			[ 'card', 'amazon_pay' ],
+			false,
 		],
 	] )(
-		'registers Amazon Pay as a separate express method only when the Stripe method types include it: they %s',
-		( description, paymentMethodTypes, registrations ) => {
-			baseExpressCheckoutParams.enabled_methods = [
-				'payment_request',
-				'amazon_pay',
-			];
+		'registers Amazon Pay from the merchant switch when it is %s',
+		(
+			description,
+			config,
+			enabledMethods,
+			paymentMethodTypes,
+			registered
+		) => {
+			Object.assign( basePaymentMethodData, config );
+			baseExpressCheckoutParams.enabled_methods = enabledMethods;
 			baseExpressCheckoutParams.payment_method_types = paymentMethodTypes;
 
 			registerExpressCheckout();
+			delete basePaymentMethodData.isExpressCheckoutInPaymentMethodsEnabled;
 
 			expect(
 				registerExpressPaymentMethod.mock.calls.map(
@@ -654,7 +671,17 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 						paymentMethodId,
 					} )
 				)
-			).toEqual( registrations );
+			).toEqual(
+				[
+					'applePay',
+					'googlePay',
+					...( registered ? [ 'amazonPay' ] : [] ),
+				].map( ( method ) => ( {
+					name: `woocommerce_payments_express_checkout_${ method }`,
+					gatewayId: 'woocommerce_payments',
+					paymentMethodId: 'woocommerce_payments_express_checkout',
+				} ) )
+			);
 		}
 	);
 
@@ -838,6 +865,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			'payment_request',
 			'amazon_pay',
 		];
+		enableAmazonPayAtLocation();
 		baseExpressCheckoutParams.payment_method_types = [
 			'card',
 			'amazon_pay',
@@ -963,14 +991,16 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			'woocommerce_payments_express_checkout_googlePay'
 		);
 
-		baseExpressCheckoutParams.enabled_methods = [];
+		baseExpressCheckoutParams.methods_enabled_at_location = [];
 
 		expect(
 			applePayRegistration.canMakePayment( { cart: blocksCart } )
 		).toBe( false );
 		expect( elements.create ).not.toHaveBeenCalled();
 
-		baseExpressCheckoutParams.enabled_methods = [ 'payment_request' ];
+		baseExpressCheckoutParams.methods_enabled_at_location = [
+			'payment_request',
+		];
 		availablePaymentMethods = {
 			applePay: true,
 			googlePay: false,
@@ -1063,6 +1093,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			'payment_request',
 			'amazon_pay',
 		];
+		enableAmazonPayAtLocation();
 		baseExpressCheckoutParams.payment_method_types = [
 			'card',
 			'amazon_pay',
@@ -1107,6 +1138,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			'payment_request',
 			'amazon_pay',
 		];
+		enableAmazonPayAtLocation();
 		baseExpressCheckoutParams.payment_method_types = [
 			'card',
 			'amazon_pay',
@@ -1170,6 +1202,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 				'payment_request',
 				'amazon_pay',
 			];
+			enableAmazonPayAtLocation();
 			baseExpressCheckoutParams.payment_method_types = [
 				'card',
 				'amazon_pay',
@@ -1259,6 +1292,161 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			await removeItemFromCart( 'second' )( { dispatch } );
 			await rendered;
 			expect( visible() ).toBe( walletCount );
+		}
+	);
+
+	// Client 11.3.0 matches the live cart's methods to the location list the page publishes whatever its currency
+	// (utils/express-checkout-data.ts:143-164), and maps them to Stripe types without the page's own list
+	// (block-buttons/components/express-checkout-container.js:40-62).
+	it.each( [
+		[
+			'enabled at the location',
+			[ 'payment_request', 'amazon_pay' ],
+			true,
+			[ 'card', 'amazon_pay' ],
+		],
+		[ 'off at the location', [ 'payment_request' ], false, [ 'card' ] ],
+	] )(
+		'matches the live cart methods to the location list when Amazon Pay is %s',
+		async ( description, locationMethods, amazonOffered, probedTypes ) => {
+			baseExpressCheckoutParams.enabled_methods = [ 'payment_request' ];
+			baseExpressCheckoutParams.payment_method_types = [ 'card' ];
+			enableAmazonPayAtLocation();
+			baseExpressCheckoutParams.methods_enabled_at_location =
+				locationMethods;
+			availablePaymentMethods = {
+				applePay: true,
+				amazonPay: true,
+			};
+			registerExpressCheckout();
+			const cart = cartWithExpressMethods( [
+				'payment_request',
+				'amazon_pay',
+			] );
+
+			await expect(
+				getRegistration(
+					'woocommerce_payments_express_checkout_applePay'
+				).canMakePayment( { cart } )
+			).resolves.toBe( true );
+			expect( stripe.elements ).toHaveBeenLastCalledWith(
+				expect.objectContaining( { paymentMethodTypes: probedTypes } )
+			);
+			expect(
+				await getRegistration(
+					'woocommerce_payments_express_checkout_amazonPay'
+				).canMakePayment( { cart } )
+			).toBe( amazonOffered );
+		}
+	);
+
+	// WooPayments 11.3.0 offers Amazon Pay again once a mounted cart's currency changes to one it takes, without a reload
+	// (client/express-checkout/block-buttons/index.js:158-173, utils/express-checkout-data.ts:143-164). The page's params
+	// are those the server sends for a yen page where the merchant enabled both wallets at the location.
+	it.each( [ 'cart', 'checkout' ] )(
+		'offers Amazon Pay on a mounted %s block after its currency changes to one Amazon Pay takes',
+		async ( surface ) => {
+			baseExpressCheckoutParams.button_context = surface;
+			baseExpressCheckoutParams.checkout.currency_code = 'jpy';
+			baseExpressCheckoutParams.checkout.stripe_minor_unit = 0;
+			baseExpressCheckoutParams.enabled_methods = [ 'payment_request' ];
+			baseExpressCheckoutParams.payment_method_types = [ 'card' ];
+			enableAmazonPayAtLocation();
+			availablePaymentMethods = {
+				applePay: true,
+				googlePay: true,
+				amazonPay: true,
+			};
+			const yenTotals = {
+				...blocksCart.totals,
+				currency_code: 'JPY',
+				currency_minor_unit: 0,
+				total_price: '15000',
+			};
+			const yenCart = cartWithExpressMethods( [ 'payment_request' ], {
+				totals: yenTotals,
+				cartTotals: yenTotals,
+			} );
+			const dollarCart = cartWithExpressMethods( [
+				'payment_request',
+				'amazon_pay',
+			] );
+			const billingFor = ( cart ) => ( {
+				...billing,
+				cartTotal: { value: Number( cart.totals.total_price ) },
+				currency: {
+					code: cart.totals.currency_code,
+					minorUnit: cart.totals.currency_minor_unit,
+				},
+			} );
+
+			registerExpressCheckout();
+			const registrations = registerExpressPaymentMethod.mock.calls.map(
+				( [ registration ] ) => registration
+			);
+			const view = render( null );
+			const renderCart = async ( cart ) => {
+				const buttons = await Promise.all(
+					registrations.map( async ( registration ) =>
+						( await registration.canMakePayment( { cart } ) )
+							? createElement( registration.content.type, {
+									...registration.content.props,
+									key: registration.name,
+									billing: billingFor( cart ),
+									...getPaymentMethodInterfaceProps( cart ),
+								} )
+							: null
+					)
+				);
+				view.rerender( buttons );
+			};
+			const amazonButtons = () =>
+				elements.create.mock.calls.filter(
+					( [ type, options ] ) =>
+						type === 'expressCheckout' &&
+						options?.paymentMethods?.amazonPay === 'auto' &&
+						options?.paymentMethods?.applePay === 'never'
+				);
+
+			await renderCart( yenCart );
+			expect(
+				view.container.querySelectorAll(
+					'.woopayments-express-checkout-container__element'
+				)
+			).toHaveLength( 2 );
+			expect( amazonButtons() ).toHaveLength( 0 );
+
+			let rendered;
+			const dispatch = {
+				updatingCustomerData: jest.fn(),
+				updatingAddressFieldsForShippingRates: jest.fn(),
+				receiveCartContents: jest.fn(),
+				receiveError: jest.fn(),
+				receiveCart: ( cart ) => {
+					rendered = renderCart( cart );
+				},
+			};
+			apiFetchWithHeaders.mockResolvedValueOnce( {
+				response: dollarCart,
+			} );
+			await updateCustomerData(
+				{ billing_address: { country: 'US' } },
+				false
+			)( { dispatch } );
+			await rendered;
+
+			expect(
+				view.container.querySelectorAll(
+					'.woopayments-express-checkout-container__element'
+				)
+			).toHaveLength( 3 );
+			expect( amazonButtons() ).toHaveLength( 1 );
+			expect( stripe.elements ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					currency: 'usd',
+					paymentMethodTypes: [ 'card', 'amazon_pay' ],
+				} )
+			);
 		}
 	);
 
@@ -2391,6 +2579,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 				'payment_request',
 				'amazon_pay',
 			];
+			enableAmazonPayAtLocation();
 			baseExpressCheckoutParams.payment_method_types = [
 				'card',
 				'amazon_pay',
@@ -4507,6 +4696,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			'payment_request',
 			'amazon_pay',
 		];
+		enableAmazonPayAtLocation();
 		baseExpressCheckoutParams.payment_method_types = [
 			'card',
 			'amazon_pay',

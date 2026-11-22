@@ -151,6 +151,31 @@ class WooPaymentsExpressPaymentMethodTypes {
 	}
 
 	/**
+	 * Tell whether the merchant has set Amazon Pay up for express checkout, without the currency, capability and
+	 * account checks.
+	 *
+	 * As client 11.3.0 `is_amazon_pay_enabled_by_merchant()` (class-wc-payments-express-checkout-button-helper.php:478-503):
+	 * a Blocks cart loaded in a currency Amazon Pay does not take can still gain it when the currency changes.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param WooPaymentsAccountService $account_service WooPayments account service.
+	 * @param string                    $context         Express checkout context.
+	 * @return bool
+	 */
+	public static function is_amazon_pay_set_up_by_merchant( WooPaymentsAccountService $account_service, string $context = 'checkout' ): bool {
+		if ( self::is_express_checkout_in_payment_methods_enabled( $account_service ) || ! $account_service->is_gateway_enabled() ) {
+			return false;
+		}
+
+		if ( ! self::get_payment_method_registry()->is_amazon_pay_enabled( $account_service ) || ! self::is_amazon_pay_enabled_by_merchant( $account_service ) ) {
+			return false;
+		}
+
+		return ! self::is_tax_based_on_billing_address() || 'pay_for_order' === self::normalize_context( $context );
+	}
+
+	/**
 	 * Tell whether the button-only Amazon Pay checks hold.
 	 *
 	 * As in client 11.1.0's `can_use_amazon_pay()` (class-wc-payments-express-checkout-button-helper.php:362-388): no Amazon Pay button while express methods sit in the
@@ -181,7 +206,7 @@ class WooPaymentsExpressPaymentMethodTypes {
 	 * @param string                    $context         Express checkout context.
 	 * @return array<int,string>
 	 */
-	private static function get_configured_methods_for_context( WooPaymentsAccountService $account_service, string $context ): array {
+	public static function get_configured_methods_for_context( WooPaymentsAccountService $account_service, string $context ): array {
 		$setting_context = 'pay_for_order' === $context ? 'checkout' : $context;
 		$methods         = $account_service->get_gateway_setting( 'express_checkout_' . $setting_context . '_methods', null );
 

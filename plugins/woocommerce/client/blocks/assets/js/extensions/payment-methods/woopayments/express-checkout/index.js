@@ -154,15 +154,20 @@ const getEnabledMethodsForCart = ( cart ) => {
 		return [];
 	}
 
-	const localizedMethods = getLocalizedEnabledMethods();
 	const cartMethods = extension?.express_checkout_methods;
 
 	if ( ! Array.isArray( cartMethods ) ) {
-		return localizedMethods;
+		return getLocalizedEnabledMethods();
 	}
 
-	return localizedMethods.filter( ( method ) =>
-		cartMethods.includes( method )
+	// The cart's list follows its live currency; the location list keeps the merchant's per-page choice, whatever the
+	// currency the page loaded in (client 11.3.0 express-checkout-data.ts:143-164).
+	const locationMethods = Array.isArray( params?.methods_enabled_at_location )
+		? params.methods_enabled_at_location
+		: [];
+
+	return cartMethods.filter( ( method ) =>
+		locationMethods.includes( method )
 	);
 };
 
@@ -177,21 +182,23 @@ const getAllowedPaymentMethodTypes = () => {
 };
 
 const getPaymentMethodTypes = ( cart ) => {
-	const allowedTypes = getAllowedPaymentMethodTypes();
 	const mappedTypes = getEnabledMethodsForCart( cart )
 		.map( ( method ) => EXPRESS_METHOD_TO_PAYMENT_METHOD_TYPE[ method ] )
-		.filter( Boolean )
-		.filter( ( type ) => allowedTypes.includes( type ) );
+		.filter( Boolean );
 
-	if ( mappedTypes.length ) {
+	// The cart's list already follows its live currency, so the page's types do not cap it (client 11.3.0
+	// express-checkout-container.js:40-62).
+	if ( Array.isArray( cart?.extensions?.wcpay?.express_checkout_methods ) ) {
 		return Array.from( new Set( mappedTypes ) );
 	}
 
-	const hasCartMethodList = Array.isArray(
-		cart?.extensions?.wcpay?.express_checkout_methods
+	const allowedTypes = getAllowedPaymentMethodTypes();
+	const allowedMappedTypes = mappedTypes.filter( ( type ) =>
+		allowedTypes.includes( type )
 	);
-	if ( hasCartMethodList ) {
-		return [];
+
+	if ( allowedMappedTypes.length ) {
+		return Array.from( new Set( allowedMappedTypes ) );
 	}
 
 	return allowedTypes.length ? allowedTypes : [ 'card' ];
@@ -1749,10 +1756,11 @@ const registerWooPaymentsExpressCheckout = () => {
 		registerExpressPaymentMethod( getExpressPaymentMethod( 'googlePay' ) );
 	}
 
+	// Registered whatever the page's currency: its canMakePayment() follows the live cart's currency (client 11.3.0
+	// client/checkout/blocks/index.js:147-152).
 	if (
-		Array.isArray( params.enabled_methods ) &&
-		params.enabled_methods.includes( 'amazon_pay' ) &&
-		getPaymentMethodTypes().includes( 'amazon_pay' )
+		settings?.isAmazonPayEnabled &&
+		! settings?.isExpressCheckoutInPaymentMethodsEnabled
 	) {
 		registerExpressPaymentMethod( getExpressPaymentMethod( 'amazonPay' ) );
 	}
