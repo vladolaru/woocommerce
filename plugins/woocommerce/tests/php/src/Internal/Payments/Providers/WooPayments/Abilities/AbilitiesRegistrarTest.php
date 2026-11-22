@@ -9,6 +9,8 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\A
 
 use Automattic\WooCommerce\Internal\Abilities\Domain\ProductsQuery;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Abilities\Domain;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 
 /** Registration timing, opt-in and ownership. */
@@ -146,6 +148,56 @@ class AbilitiesRegistrarTest extends AbilityTestCase {
 			restore_current_blog();
 			wpmu_delete_blog( $blog_id, true );
 		}
+	}
+
+	/**
+	 * Using the bootstrap site's eligibility for every site lists abilities on unconnected or extension-owned subsites.
+	 *
+	 * @testdox A filter installed on a connected site uses the discovery site's effective tier and opt-in.
+	 * @group multisite
+	 * @dataProvider switched_discovery_sites
+	 *
+	 * @param string $tier             Stored tier on the discovery site.
+	 * @param bool   $extension_active Whether the extension owns payments there.
+	 * @param bool   $opt_in           The discovery site's opt-in.
+	 * @param array  $expected         Expected WooPayments names.
+	 */
+	public function test_discovery_after_switch( string $tier, bool $extension_active, bool $opt_in, array $expected ): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Requires two sites on a network.' );
+		}
+
+		$blog_id    = self::factory()->blog->create();
+		$gate_sites = array();
+		add_filter(
+			self::GATE,
+			static function () use ( &$gate_sites, $blog_id, $opt_in ) {
+				$gate_sites[] = get_current_blog_id();
+				return get_current_blog_id() === $blog_id ? $opt_in : ! $opt_in;
+			}
+		);
+		$this->install_root();
+		switch_to_blog( $blog_id );
+		try {
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+			update_option( WooPaymentsSetupTier::OPTION_NAME, $tier );
+			update_option( 'active_plugins', $extension_active ? array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) : array() );
+			$this->assertSame( $expected, $this->provider_names() );
+			$this->assertSame( array( $blog_id ), $gate_sites );
+		} finally {
+			restore_current_blog();
+			wpmu_delete_blog( $blog_id, true );
+		}
+	}
+
+	/** Destination site configurations for first registry discovery after switching blogs. */
+	public static function switched_discovery_sites(): array {
+		return array(
+			'unconnected site inherits bootstrap eligibility' => array( WooPaymentsSetupTier::AVAILABLE, false, true, array() ),
+			'stored active tier hides extension ownership' => array( WooPaymentsSetupTier::ACTIVE, true, true, array() ),
+			'bootstrap opt-out hides connected site'       => array( WooPaymentsSetupTier::CONNECTED, false, true, self::NAMES ),
+			'bootstrap opt-in exposes opted-out active site' => array( WooPaymentsSetupTier::ACTIVE, false, false, array() ),
+		);
 	}
 
 	/**

@@ -133,6 +133,7 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 
 	/**
 	 * Gating registration on Reports, skipping the account check, or always denying reports breaks these reads.
+	 * Dropping a fees selector or sending payment_method_type under its public name changes the platform query.
 	 *
 	 * @testdox Report abilities enforce the route's account and Reports checks before transport.
 	 * @testWith [false, true]
@@ -156,7 +157,14 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 			);
 			foreach ( array(
 				'get-balance'      => $balance,
-				'get-fees-summary' => array( 'deposit_id' => 'po_sample' ),
+				'get-fees-summary' => array(
+					'deposit_id'          => 'po_sample',
+					'payment_method_type' => 'card',
+					'match'               => 'any',
+					'date_after'          => '2026-06-01T00:00:00Z',
+					'date_before'         => '2026-06-30T23:59:59Z',
+					'date_between'        => array( '2026-06-10T00:00:00Z', '2026-06-19T23:59:59Z' ),
+				),
 			) as $name => $input ) {
 				$this->assertTrue( wp_has_ability( 'woocommerce-payments/' . $name ), $name );
 				$ability = wp_get_ability( 'woocommerce-payments/' . $name );
@@ -180,6 +188,12 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 				} else {
 					$this->assertSame( 'get_transactions_summary', $this->api_client->last_call['method'] );
 					$this->assertSame( 'po_sample', $this->api_client->last_call['deposit_id'] );
+					$filters = $this->api_client->last_call['filters'];
+					$this->assertSame( 'card', $filters['source_is'] );
+					$this->assertSame( 'any', $filters['match'] );
+					$this->assertSame( '2026-06-01T00:00:00Z', $filters['date_after'] );
+					$this->assertSame( '2026-06-30T23:59:59Z', $filters['date_before'] );
+					$this->assertSame( array( '2026-06-10T00:00:00Z', '2026-06-19T23:59:59Z' ), $filters['date_between'] );
 				}
 			}
 		} finally {

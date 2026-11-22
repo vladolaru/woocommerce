@@ -185,7 +185,7 @@ class AbstractAbilityTest extends AbilityTestCase {
 	}
 
 	/**
-	 * A direct controller call bypasses the backing route permission check.
+	 * Calling the controller directly skips the backing route permission check.
 	 *
 	 * @testdox A backing route can refuse a caller who passes the ability permission check.
 	 */
@@ -650,7 +650,7 @@ class AbstractAbilityTest extends AbilityTestCase {
 	}
 
 	/**
-	 * @testdox Making currency optional bypasses WordPress's required-property check.
+	 * @testdox Making currency optional lets a balance request reach the callback without a currency.
 	 */
 	public function test_missing_balance_currency(): void {
 		$input = self::BALANCE;
