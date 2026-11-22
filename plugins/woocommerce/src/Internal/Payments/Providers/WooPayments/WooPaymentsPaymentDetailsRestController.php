@@ -239,8 +239,8 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 			// No caller key: the transport mints one per request, as in client 11.1.0 (includes/wc-payment-api/class-wc-payments-api-client.php:2660-2690).
 			$intent = $this->api_client->create_and_confirm_payment_intention( $request_data, '' );
 			try {
-				wc_get_container()->get( WooPaymentsCompositionDataSettler::class )->run_settled(
-					static function () use ( $lifecycle, $order, $intent ): void {
+				$applied = wc_get_container()->get( WooPaymentsCompositionDataSettler::class )->run_settled(
+					static function () use ( $lifecycle, $order, $intent ): bool {
 						$lifecycle->reread_order_from_data_store( $order );
 						$writer = wc_get_container()->get( PaymentIntentEventHandler::class );
 						$status = $intent['status'] ?? '';
@@ -248,9 +248,16 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 							$writer->apply_succeeded_payment_intent_under_lock( $order, $intent );
 						} elseif ( 'requires_capture' === $status ) {
 							$writer->apply_authorization_under_lock_for_answer( $order, $intent );
+						} else {
+							return false;
 						}
+						return true;
 					}
 				);
+				if ( $applied ) {
+					// Checkout also clears the mark once the payment effects are saved (PaymentProcessingService::process_checkout_outcome()).
+					$order_payment_lock->mark_money_request_unsaved( $lock_token, false );
+				}
 			} catch ( Throwable $failure ) {
 				wc_get_container()->get( WooPaymentsLogger::class )->log_throwable_always( 'Failed to record the payment intent from the REST API.', $failure, array( 'order_id' => $order->get_id() ) );
 			}
