@@ -1030,12 +1030,21 @@ class WooPaymentsExpressCheckoutService {
 	 * @return bool
 	 */
 	public function has_subscription_product(): bool {
+		// Subscriptions initializes its cart class at startup. Avoid probing autoloaders on stores without it.
+		if ( ! class_exists( 'WC_Subscriptions_Cart', false ) && ! function_exists( 'wcs_cart_contains_renewal' ) ) {
+			return false;
+		}
+
 		if ( self::is_product_page() && $this->context_has_subscription( 'product' ) ) {
 			return true;
 		}
 
+		if ( ! WC()->cart instanceof \WC_Cart || ! $this->context_has_subscription( 'cart' ) ) {
+			return false;
+		}
+
 		$surface = wc_get_container()->get( WooPaymentsPageSurface::class );
-		return ( $surface->is_checkout_surface() || $surface->is_cart_surface() ) && $this->context_has_subscription( 'cart' );
+		return $surface->is_checkout_surface() || $surface->is_cart_surface();
 	}
 
 	/**

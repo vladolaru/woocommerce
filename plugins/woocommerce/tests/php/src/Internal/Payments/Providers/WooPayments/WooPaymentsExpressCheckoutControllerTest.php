@@ -139,7 +139,11 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 			$this->sut->register();
 			update_option( 'woocommerce_woocommerce_payments_apple_pay_settings', array( 'enabled' => $express ? 'yes' : 'no' ) );
 
+			$settings_reads = did_filter( 'pre_option_woocommerce_woocommerce_payments_settings' );
 			$this->assertSame( $expected, WC()->cart->needs_shipping_address() );
+			if ( ! $subscription ) {
+				$this->assertSame( $settings_reads, did_filter( 'pre_option_woocommerce_woocommerce_payments_settings' ), 'An ordinary cart must skip the gateway settings.' );
+			}
 			/** This filter is documented in includes/class-wc-cart.php. */
 			$this->assertFalse( apply_filters( 'woocommerce_cart_needs_shipping_address', '0' ) );
 			$this->assertSame( 11, has_filter( 'woocommerce_cart_needs_shipping_address', array( $this->sut, 'filter_cart_needs_shipping_address' ) ) );
