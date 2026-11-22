@@ -800,7 +800,7 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 		}
 
 		if ( empty( $config['isChangingPayment'] ) && $this->can_offer_express_checkout() ) {
-			$config = array_merge( $config, $this->get_express_checkout_enabled_config( $base['currency'] ), WooPaymentsOrderPayAccess::get_pay_for_order_page_params() );
+			$config = array_merge( $config, $this->get_express_checkout_enabled_config(), WooPaymentsOrderPayAccess::get_pay_for_order_page_params() );
 		}
 
 		$base['config'] = $config;
@@ -849,34 +849,28 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get client 11.1.0's Apple Pay/Google Pay and Amazon Pay switches for the current page.
+	 * Get the express buttons registered at this location, before the cart currency is known.
+	 * Client 11.3.0 class-wc-payments-express-checkout-button-handler.php:121-126.
 	 *
-	 * Client 11.1.0 `WC_Payments_Express_Checkout_Button_Handler::payment_fields_js_config()`
-	 * (class-wc-payments-express-checkout-button-handler.php:112-124), added while that handler runs.
-	 *
-	 * @param string $currency Checkout or order-pay currency.
+	 * @since 11.4.0
 	 * @return array<string,bool>
 	 */
-	private function get_express_checkout_enabled_config( string $currency ): array {
+	private function get_express_checkout_enabled_config(): array {
+		if ( ! $this->should_add_express_button_config() ) {
+			return array();
+		}
+
 		$express_service = $this->get_express_checkout_service();
 		$payment_request = $express_service->is_payment_request_enabled();
-		if ( ! $this->should_add_express_button_config() || ! ( $payment_request || $express_service->is_amazon_pay_usable() ) ) {
+		$account         = $this->get_account_service();
+		if ( ! $payment_request && ! WooPaymentsExpressPaymentMethodTypes::can_register_amazon_pay( $account ) ) {
 			return array();
 		}
 
 		$context = $this->get_express_button_context();
-		if ( '' === $context ) {
-			return array(
-				'isPaymentRequestEnabled' => $payment_request,
-				'isAmazonPayEnabled'      => $express_service->is_amazon_pay_usable( 'checkout', $currency ),
-			);
-		}
-
-		$enabled_methods = $express_service->get_enabled_methods_for_context( $context, $currency );
-
 		return array(
-			'isPaymentRequestEnabled' => $payment_request && in_array( WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_PAYMENT_REQUEST, $enabled_methods, true ),
-			'isAmazonPayEnabled'      => in_array( WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_AMAZON_PAY, $enabled_methods, true ),
+			'isPaymentRequestEnabled' => $payment_request && ( '' === $context || in_array( WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_PAYMENT_REQUEST, $express_service->get_enabled_methods_for_context( $context ), true ) ),
+			'isAmazonPayEnabled'      => WooPaymentsExpressPaymentMethodTypes::can_register_amazon_pay( $account, $context ),
 		);
 	}
 

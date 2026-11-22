@@ -153,8 +153,11 @@ const getEnabledMethodsForCart = ( cart ) => {
 		return localizedMethods;
 	}
 
-	return localizedMethods.filter( ( method ) =>
-		cartMethods.includes( method )
+	// The cart list follows the currency but has no page location. The registration flag carries that location.
+	return cartMethods.filter( ( method ) =>
+		method === 'amazon_pay' && settings.isAmazonPayEnabled !== undefined
+			? settings.isAmazonPayEnabled
+			: localizedMethods.includes( method )
 	);
 };
 
@@ -170,18 +173,24 @@ const getAllowedPaymentMethodTypes = () => {
 
 const getPaymentMethodTypes = ( cart ) => {
 	const allowedTypes = getAllowedPaymentMethodTypes();
+	const hasCartMethodList = Array.isArray(
+		cart?.extensions?.wcpay?.express_checkout_methods
+	);
 	const mappedTypes = getEnabledMethodsForCart( cart )
 		.map( ( method ) => EXPRESS_METHOD_TO_PAYMENT_METHOD_TYPE[ method ] )
 		.filter( Boolean )
-		.filter( ( type ) => allowedTypes.includes( type ) );
+		.filter(
+			( type ) =>
+				allowedTypes.includes( type ) ||
+				( type === 'amazon_pay' &&
+					settings.isAmazonPayEnabled &&
+					hasCartMethodList )
+		);
 
 	if ( mappedTypes.length ) {
 		return Array.from( new Set( mappedTypes ) );
 	}
 
-	const hasCartMethodList = Array.isArray(
-		cart?.extensions?.wcpay?.express_checkout_methods
-	);
 	if ( hasCartMethodList ) {
 		return [];
 	}
@@ -1744,9 +1753,9 @@ const registerWooPaymentsExpressCheckout = () => {
 	}
 
 	if (
-		Array.isArray( params.enabled_methods ) &&
-		params.enabled_methods.includes( 'amazon_pay' ) &&
-		getPaymentMethodTypes().includes( 'amazon_pay' )
+		settings.isAmazonPayEnabled ??
+		( getLocalizedEnabledMethods().includes( 'amazon_pay' ) &&
+			getPaymentMethodTypes().includes( 'amazon_pay' ) )
 	) {
 		registerExpressPaymentMethod( getExpressPaymentMethod( 'amazonPay' ) );
 	}

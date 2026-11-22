@@ -31,6 +31,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Sessio
 use Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\PageSurfaceReplacement;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use WC_Unit_Test_Case;
 
 /**
@@ -598,6 +599,46 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		$this->assertNotContains( WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE, $loaded );
 		$this->assertNotContains( WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE, $loaded );
 		$this->assertFalse( wp_style_is( 'wc-payment-method-woopayments', 'enqueued' ) );
+	}
+
+	/**
+	 * @testdox Checking button visibility drops scripts on an empty or free block cart, while loading them on every page includes free products.
+	 * @since 11.4.0
+	 * @testWith ["cart"]
+	 *           ["checkout"]
+	 *           ["product"]
+	 *
+	 * @param string $surface Page being visited.
+	 */
+	public function test_wallet_assets_follow_cart_state( string $surface ): void {
+		$this->use_visited_page_surface();
+		WC()->cart->empty_cart();
+		if ( 'cart' !== $surface ) {
+			$product = \WC_Helper_Product::create_simple_product();
+			$product->set_regular_price( '0' );
+			$product->set_price( '0' );
+			$product->save();
+			WC()->cart->add_to_cart( $product->get_id() );
+			WC()->cart->calculate_totals();
+		}
+		if ( 'product' === $surface ) {
+			$this->go_to( $product->get_permalink() );
+		} else {
+			$this->go_to_page_rendered_by( 'woocommerce/' . $surface, 'content' );
+		}
+
+		$account = $this->createMock( WooPaymentsAccountService::class );
+		$account->method( 'is_payment_request_enabled' )->willReturn( true );
+		$account->method( 'get_gateway_setting' )->willReturnArgument( 1 );
+		$express  = new WooPaymentsExpressCheckoutService();
+		$provider = $this->createMock( WooPaymentsProvider::class );
+		$provider->method( 'can_process_payments' )->willReturn( true );
+		$express->init( $account, $provider, $this->createMock( WooPaymentsFrontendTrackingController::class ) );
+
+		$integration = $this->create_registered_integration( false, false, null, null, null, $express );
+		$handles     = $integration->get_payment_method_script_handles();
+
+		$this->assertSame( 'product' !== $surface, in_array( 'wc-payment-method-woopayments-express-checkout', $handles, true ) );
 	}
 
 	/**
@@ -1348,9 +1389,9 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		};
 		$express  = $this->getMockBuilder( WooPaymentsExpressCheckoutService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'should_show_payment_request_button', 'get_express_checkout_params' ) )
+			->onlyMethods( array( 'should_load_express_checkout_scripts', 'get_express_checkout_params' ) )
 			->getMock();
-		$express->method( 'should_show_payment_request_button' )->willReturnCallback( $record );
+		$express->method( 'should_load_express_checkout_scripts' )->willReturnCallback( $record );
 		$express->method( 'get_express_checkout_params' )->willReturnCallback(
 			static function ( string $context ) use ( &$contexts ): array {
 				$contexts[] = $context;
@@ -1915,14 +1956,15 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	/**
 	 * Create an active WooPayments Blocks integration that registers through the real Blocks asset API.
 	 *
-	 * @param bool                           $show_woopay_button  Whether the WooPay button is available.
-	 * @param bool                           $show_express_button Whether the Apple Pay and Google Pay buttons are available.
-	 * @param array<string,mixed>|null       $payment_method_data The Blocks payment method data the checkout assets build, or null to leave it unbuilt.
-	 * @param WooPaymentsCheckoutAssets|null $assets              Checkout assets to build the data with, or null for a double.
-	 * @param AssetDataRegistry|null         $asset_data_registry Data registry the page publishes, or null for a double.
+	 * @param bool                                   $show_woopay_button  Whether the WooPay button is available.
+	 * @param bool                                   $show_express_button Whether the Apple Pay and Google Pay buttons are available.
+	 * @param array<string,mixed>|null               $payment_method_data The Blocks payment method data the checkout assets build, or null to leave it unbuilt.
+	 * @param WooPaymentsCheckoutAssets|null         $assets              Checkout assets to build the data with, or null for a double.
+	 * @param AssetDataRegistry|null                 $asset_data_registry Data registry the page publishes, or null for a double.
+	 * @param WooPaymentsExpressCheckoutService|null $express             Express checkout service for the visited page.
 	 * @return WooPayments
 	 */
-	private function create_registered_integration( bool $show_woopay_button = false, bool $show_express_button = false, ?array $payment_method_data = null, ?WooPaymentsCheckoutAssets $assets = null, ?AssetDataRegistry $asset_data_registry = null ): WooPayments {
+	private function create_registered_integration( bool $show_woopay_button = false, bool $show_express_button = false, ?array $payment_method_data = null, ?WooPaymentsCheckoutAssets $assets = null, ?AssetDataRegistry $asset_data_registry = null, ?WooPaymentsExpressCheckoutService $express = null ): WooPayments {
 		if ( null === $assets ) {
 			$assets = $this->getMockBuilder( WooPaymentsCheckoutAssets::class )
 				->disableOriginalConstructor()
@@ -1945,7 +1987,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 			$provider,
 			$assets,
 			$this->create_woopay_eligibility( $show_woopay_button ),
-			$this->create_express_checkout_service( $show_express_button ),
+			$express ?? $this->create_express_checkout_service( $show_express_button ),
 			$this->get_fraud_prevention_service(),
 			$this->get_frontend_assets(),
 			$asset_data_registry ?? $this->createMock( AssetDataRegistry::class )
@@ -2171,9 +2213,9 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	private function create_express_checkout_service( bool $should_show_button = false ): WooPaymentsExpressCheckoutService {
 		$service = $this->getMockBuilder( WooPaymentsExpressCheckoutService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'should_show_payment_request_button', 'get_express_checkout_params' ) )
+			->onlyMethods( array( 'should_load_express_checkout_scripts', 'get_express_checkout_params' ) )
 			->getMock();
-		$service->method( 'should_show_payment_request_button' )->willReturn( $should_show_button );
+		$service->method( 'should_load_express_checkout_scripts' )->willReturn( $should_show_button );
 		$service->method( 'get_express_checkout_params' )->willReturn(
 			array(
 				'enabled_methods' => array( 'payment_request' ),

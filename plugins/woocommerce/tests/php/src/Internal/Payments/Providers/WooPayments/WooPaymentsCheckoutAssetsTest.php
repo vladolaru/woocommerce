@@ -2742,6 +2742,18 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	);
 
 	/**
+	 * @testdox Using the initial currency for registration loses Amazon Pay when it is the only enabled wallet.
+	 * @since 11.4.0
+	 */
+	public function test_blocks_registration_survives_currency(): void {
+		$this->replace_page_surface( false, true );
+		update_option( 'woocommerce_currency', 'JPY' );
+		$data = $this->create_assets_for_express_handlers( array(), array(), false, false )->get_blocks_payment_method_data( self::CARD_SUPPORTS );
+
+		$this->assertTrue( $data['isAmazonPayEnabled'] ?? false );
+	}
+
+	/**
 	 * @testdox Blocks data carries the WooPayments extension's express checkout switches for the checkout page's own location settings.
 	 */
 	public function test_blocks_data_express_switches_follow_the_checkout_location(): void {
@@ -2762,7 +2774,8 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Blocks data reports Amazon Pay off once the merchant switched it off or the account cannot use it.
+	 * @testdox Using the account capability for registration drops the merchant’s enabled Amazon Pay button.
+	 * @since 11.4.0
 	 */
 	public function test_blocks_data_amazon_pay_switch_uses_amazon_pay_availability(): void {
 		add_filter( 'woocommerce_is_checkout', '__return_true' );
@@ -2772,7 +2785,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( $toggled_off['isPaymentRequestEnabled'] );
 		$this->assertFalse( $toggled_off['isAmazonPayEnabled'] );
-		$this->assertFalse( $ineligible['isAmazonPayEnabled'] );
+		$this->assertTrue( $ineligible['isAmazonPayEnabled'] );
 	}
 
 	/**

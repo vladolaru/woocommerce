@@ -351,15 +351,7 @@ class WooPaymentsExpressPaymentMethodTypes {
 	private static function can_use_amazon_pay( WooPaymentsAccountService $account_service, string $context, string $currency = '' ): bool {
 		$context = self::normalize_context( $context );
 
-		if ( ! self::get_payment_method_registry()->is_amazon_pay_enabled( $account_service ) ) {
-			return false;
-		}
-
-		if ( ! self::is_amazon_pay_enabled_by_merchant( $account_service ) ) {
-			return false;
-		}
-
-		if ( self::is_tax_based_on_billing_address() && 'pay_for_order' !== $context ) {
+		if ( ! self::is_amazon_pay_enabled_by_merchant( $account_service, $context ) ) {
 			return false;
 		}
 
@@ -388,15 +380,35 @@ class WooPaymentsExpressPaymentMethodTypes {
 	}
 
 	/**
+	 * Check the merchant's switch and button location before the shopper selects a currency.
+	 * Client 11.3.0 class-wc-payments-express-checkout-button-helper.php:478-516.
+	 *
+	 * @since 11.4.0
+	 * @param WooPaymentsAccountService $account_service WooPayments account service.
+	 * @param string                    $context         Button location, or empty for any location.
+	 * @return bool
+	 */
+	public static function can_register_amazon_pay( WooPaymentsAccountService $account_service, string $context = '' ): bool {
+		return ! self::is_express_checkout_in_payment_methods_enabled( $account_service )
+			&& self::is_amazon_pay_enabled_by_merchant( $account_service, $context )
+			&& ( '' === $context || in_array( self::EXPRESS_METHOD_AMAZON_PAY, self::get_configured_methods_for_context( $account_service, $context ), true ) );
+	}
+
+	/**
 	 * Tell whether the merchant has Amazon Pay switched on in the WooPayments settings.
 	 *
 	 * Amazon Pay is on exactly while `amazon_pay` is in the enabled payment method IDs, and the express payment-type
 	 * allowlist drops Amazon Pay while it is off.
 	 *
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
+	 * @param string                    $context         Button location.
 	 * @return bool
 	 */
-	private static function is_amazon_pay_enabled_by_merchant( WooPaymentsAccountService $account_service ): bool {
+	private static function is_amazon_pay_enabled_by_merchant( WooPaymentsAccountService $account_service, string $context ): bool {
+		if ( ! self::get_payment_method_registry()->is_amazon_pay_enabled( $account_service ) || ( 'pay_for_order' !== $context && self::is_tax_based_on_billing_address() ) ) {
+			return false;
+		}
+
 		$enabled = $account_service->get_gateway_setting( 'upe_enabled_payment_method_ids', array( self::STRIPE_TYPE_CARD ) );
 
 		return is_array( $enabled ) && in_array( self::EXPRESS_METHOD_AMAZON_PAY, self::normalize_express_method_ids( $enabled ), true );

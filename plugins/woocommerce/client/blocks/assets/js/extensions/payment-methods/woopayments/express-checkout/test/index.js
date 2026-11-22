@@ -521,6 +521,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 	} );
 
 	afterEach( () => {
+		delete basePaymentMethodData.isAmazonPayEnabled;
 		delete basePaymentMethodData.paymentMethodsConfig;
 		delete baseExpressCheckoutParams.stripe.linkEnabled;
 		delete window.Stripe;
@@ -1032,6 +1033,37 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		).resolves.toBe( true );
 
 		expect( stripe.elements ).toHaveBeenCalledTimes( 2 );
+	} );
+
+	it( 'freezing Amazon Pay registration or probe types at page load loses the wallet after a currency switch', async () => {
+		basePaymentMethodData.isAmazonPayEnabled = true;
+		registerExpressCheckout();
+		const registration = getRegistration(
+			'woocommerce_payments_express_checkout_amazonPay'
+		);
+		expect( registration ).toBeDefined();
+		expect(
+			registration.canMakePayment( {
+				cart: cartWithExpressMethods( [] ),
+			} )
+		).toBe( false );
+		availablePaymentMethods = { amazonPay: true };
+		await expect(
+			registration.canMakePayment( {
+				cart: cartWithExpressMethods( [ 'amazon_pay' ] ),
+			} )
+		).resolves.toBe( true );
+		expect( stripe.elements ).toHaveBeenCalledWith(
+			expect.objectContaining( { paymentMethodTypes: [ 'amazon_pay' ] } )
+		);
+		expect( elements.create ).toHaveBeenCalledWith(
+			'expressCheckout',
+			expect.objectContaining( {
+				paymentMethods: expect.objectContaining( {
+					amazonPay: 'auto',
+				} ),
+			} )
+		);
 	} );
 
 	it( 'probes Stripe Amazon Pay availability before exposing the Blocks Amazon method', async () => {
