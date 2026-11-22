@@ -295,15 +295,62 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	 * @return array<string,string>|WP_Error|null
 	 */
 	public function check_payment_intent_attached_to_order_succeeded( WC_Order $order, WC_Payment_Gateway $gateway, ?array &$failed_read = null ) {
+		$intent_id = (string) $order->get_meta( '_intent_id', true );
+		$intent    = self::get_attached_payment_that_holds_money( $order, $intent_id, $this->api_client ?? null, $failed_read );
+		if ( ! is_array( $intent ) ) {
+			return $intent;
+		}
+
+		// A full refund or a dispute leaves the intent `succeeded`; client 11.1.0 reads only the status
+		// (class-duplicate-payment-prevention-service.php:105-107) and answers the order as paid from it. Both are refused
+		// here instead, with a notice and a note: a fully refunded order is not paid again, a new order is; a disputed
+		// payment may still come back.
+		if ( WooPaymentsIntentCodec::is_fully_refunded( $intent ) ) {
+			$this->add_refunded_intent_note_once( $order, $intent_id );
+
+			return new WP_Error( self::ERROR_REFUNDED_INTENT, __( "This order's payment was refunded, so it can't be paid again. Please place a new order.", 'woocommerce' ) );
+		}
+
+		if ( WooPaymentsIntentCodec::is_disputed( $intent ) ) {
+			$this->add_disputed_intent_note_once( $order, $intent_id );
+
+			return new WP_Error( self::ERROR_DISPUTED_INTENT, __( "This order's payment is under review. Please contact the store.", 'woocommerce' ) );
+		}
+
+		if ( 'succeeded' === $intent['status'] ) {
+			$this->remove_session_processing_order( $order->get_id() );
+		}
+
+		$amount_error = $this->get_amount_mismatch_error( $intent, $order );
+		if ( $amount_error instanceof WP_Error ) {
+			return $amount_error;
+		}
+
+		$this->get_intent_confirmation_service()->apply_attached_payment_intent( $order, $intent );
+
+		return $this->success_redirect( $gateway, $order, self::FLAG_PREVIOUS_SUCCESSFUL_INTENT );
+	}
+
+	/**
+	 * Read the attached intent before a new charge. Return an error for an outright refusal or record a failed read for the charge decision.
+	 *
+	 * @since 11.4.0
+	 * @param WC_Order    $order       Order being paid.
+	 * @param string      $intent_id   Order's attached intent ID.
+	 * @param Client|null $api_client  Payment client, or null to use the store's client.
+	 * @param array|null  $failed_read Failed read to check under the order lock.
+	 * @phpstan-param array{intent_id:string,unknown:bool}|null $failed_read
+	 * @return array<string,mixed>|WP_Error|null The order's live intent holding money, an outright refusal, or null.
+	 */
+	public static function get_attached_payment_that_holds_money( WC_Order $order, string $intent_id, ?Client $api_client, ?array &$failed_read ) {
 		$failed_read = null;
 
-		$intent_id = (string) $order->get_meta( '_intent_id', true );
 		if ( '' === $intent_id || 0 !== strpos( $intent_id, 'pi_' ) ) {
 			return null;
 		}
 
 		try {
-			$intent = $this->get_api_client()->get_payment_intention( $intent_id );
+			$intent = ( $api_client ?? wc_get_container()->get( Client::class ) )->get_payment_intention( $intent_id );
 		} catch ( Throwable $exception ) {
 			// Client 11.1.0 duplicate-payment-prevention-service:100-101 logs this, when WooPayments logging is on, with the
 			// platform's message; this line logs its status and code instead.
@@ -319,7 +366,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 			// Client 11.1.0 dpps:100 catches only Exception, so a PHP Error fatals there and nothing is charged. This keeps
 			// that outcome without the fatal, rather than charging again. An order whose record says its payment succeeded is
 			// refused on any failure: without the read, a new charge would only guess whether the order is already paid.
-			if ( ! $exception instanceof Exception || 'succeeded' === (string) $order->get_meta( '_intention_status', true ) ) {
+			if ( self::refuses_unread_attached_payment( $exception, $order ) ) {
 				return new WP_Error( self::ERROR_CHECK_FAILED, __( "We're not able to process this payment. Please try again later.", 'woocommerce' ) );
 			}
 
@@ -340,43 +387,21 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 			return null;
 		}
 
-		$status = isset( $intent['status'] ) ? (string) $intent['status'] : '';
-		if ( ! WooPaymentsIntentCodec::holds_money( $status ) ) {
-			return null;
-		}
+		return WooPaymentsIntentCodec::holds_money( (string) $intent['status'] ) && WooPaymentsIntentCodec::intent_belongs_to_order( $intent, $order ) ? $intent : null;
+	}
 
-		if ( ! WooPaymentsIntentCodec::intent_belongs_to_order( $intent, $order ) ) {
-			return null;
-		}
-
-		// A full refund or a dispute leaves the intent `succeeded`; client 11.1.0 reads only the status
-		// (class-duplicate-payment-prevention-service.php:105-107) and answers the order as paid from it. Both are refused
-		// here instead, with a notice and a note: a fully refunded order is not paid again, a new order is; a disputed
-		// payment may still come back.
-		if ( WooPaymentsIntentCodec::is_fully_refunded( $intent ) ) {
-			$this->add_refunded_intent_note_once( $order, $intent_id );
-
-			return new WP_Error( self::ERROR_REFUNDED_INTENT, __( "This order's payment was refunded, so it can't be paid again. Please place a new order.", 'woocommerce' ) );
-		}
-
-		if ( WooPaymentsIntentCodec::is_disputed( $intent ) ) {
-			$this->add_disputed_intent_note_once( $order, $intent_id );
-
-			return new WP_Error( self::ERROR_DISPUTED_INTENT, __( "This order's payment is under review. Please contact the store.", 'woocommerce' ) );
-		}
-
-		if ( 'succeeded' === $status ) {
-			$this->remove_session_processing_order( $order->get_id() );
-		}
-
-		$amount_error = $this->get_amount_mismatch_error( $intent, $order );
-		if ( $amount_error instanceof WP_Error ) {
-			return $amount_error;
-		}
-
-		$this->get_intent_confirmation_service()->apply_attached_payment_intent( $order, $intent );
-
-		return $this->success_redirect( $gateway, $order, self::FLAG_PREVIOUS_SUCCESSFUL_INTENT );
+	/**
+	 * Tell whether a failed read of the order's attached intent refuses the payment outright: on a PHP Error, or when the
+	 * order's stored intent status is succeeded.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param Throwable $failure The read's failure.
+	 * @param WC_Order  $order   Order whose attached intent was read.
+	 * @return bool
+	 */
+	public static function refuses_unread_attached_payment( Throwable $failure, WC_Order $order ): bool {
+		return ! $failure instanceof Exception || 'succeeded' === (string) $order->get_meta( '_intention_status', true );
 	}
 
 	/**
@@ -538,8 +563,20 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 		// The instance loaded by process_payment() may be stale, so the stored status decides.
 		$status = $this->get_stored_order_status( $order->get_id() ) ?? $order->get_status();
 
+		return self::should_prevent_payment_for_paid_status( $order, $status ) ? $this->prevent_payment_for_paid_order( $order, $gateway ) : null;
+	}
+
+	/**
+	 * Decide whether the stored order status should stop a new payment.
+	 *
+	 * @since 11.4.0
+	 * @param WC_Order $order  Order being paid.
+	 * @param string   $status Freshly read order status.
+	 * @return bool
+	 */
+	public static function should_prevent_payment_for_paid_status( WC_Order $order, string $status ): bool {
 		if ( ! in_array( $status, wc_get_is_paid_statuses(), true ) ) {
-			return null;
+			return false;
 		}
 
 		// A store can declare one of its paid statuses still payable — deposit and
@@ -551,7 +588,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 		$payable_statuses = apply_filters( 'woocommerce_valid_order_statuses_for_payment', array( OrderStatus::PENDING, OrderStatus::FAILED ), $order );
 
 		if ( in_array( $status, (array) $payable_statuses, true ) ) {
-			return null;
+			return false;
 		}
 
 		/**
@@ -572,11 +609,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 		 * @param WC_Order $order          The order about to be paid a second time.
 		 * @param string   $status         The order's stored status.
 		 */
-		if ( false === apply_filters( 'wcpay_should_prevent_payment_for_paid_order', true, $order, $status ) ) {
-			return null;
-		}
-
-		return $this->prevent_payment_for_paid_order( $order, $gateway );
+		return false !== apply_filters( 'wcpay_should_prevent_payment_for_paid_order', true, $order, $status );
 	}
 
 	/**
@@ -695,19 +728,6 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 		$value = WooPaymentsSessionService::get_owned_value( $session, self::SESSION_KEY_PROCESSING_ORDER );
 
 		return null === $value ? null : absint( $value );
-	}
-
-	/**
-	 * Get the WooPayments API client.
-	 *
-	 * @return Client
-	 */
-	private function get_api_client(): Client {
-		if ( ! isset( $this->api_client ) ) {
-			$this->api_client = wc_get_container()->get( Client::class );
-		}
-
-		return $this->api_client;
 	}
 
 	/**

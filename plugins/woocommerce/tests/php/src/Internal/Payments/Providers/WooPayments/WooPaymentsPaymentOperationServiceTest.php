@@ -384,6 +384,37 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A charge whose duplicate-check note names no intent goes on, over an order storing no intent and a succeeded record in this store's mode.
+	 *
+	 * A note without an intent ID names no attached payment, so it cannot match the order's empty `_intent_id`. Catches a
+	 * version that reads the note's missing ID as an empty string, which matches the empty stored ID and refuses on the
+	 * stored succeeded record.
+	 */
+	public function test_a_charge_whose_unread_payment_note_names_no_intent_goes_on(): void {
+		$order = $this->create_woopayments_order( '40.00' );
+		$order->update_meta_data( '_intention_status', 'succeeded' );
+		$order->update_meta_data( '_wcpay_mode', 'prod' );
+		$order->save();
+		$api_client       = $this->create_answering_charge_api_client(
+			array(
+				'id'     => 'pi_new',
+				'status' => 'succeeded',
+			)
+		);
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_native' );
+		$sut           = $this->create_operation_service( $api_client, $customer_service, null, $this->create_account_service( false ) );
+		$provider_data = array( WooPaymentsIntentRequestBuilder::PROVIDER_DATA_FAILED_INTENT_READ => array( 'unknown' => true ) );
+
+		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request', array(), $provider_data ), 'key_charge' );
+
+		$this->assertSame( 'pi_new', $outcome->get_provider_payment_id(), 'The new charge is sent.' );
+	}
+
+	/**
 	 * @testdox A 40.00 charge refused over an unread payment storing $stored_status writes one warning naming the order, the intent and the tier $tier.
 	 *
 	 * Support has to see why a checkout was refused, so the refusal writes a line whatever the logging setting. It carries

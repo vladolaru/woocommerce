@@ -814,11 +814,8 @@ class WooPaymentsPaymentOperationService {
 	 * @since 11.2.0
 	 */
 	private function ensure_charge_idempotency_key( WC_Order $order, string $candidate ): string {
-		$persisted_key = (string) $order->get_meta( self::CHARGE_IDEMPOTENCY_KEY_META, true );
-		$record        = $order->get_meta( self::CHARGE_AMBIGUITY_META, true );
-		// A record naming another order means the key was copied from that order with it, so neither belongs here.
-		$is_copied = is_array( $record ) && (int) ( $record['order_id'] ?? 0 ) !== $order->get_id();
-		if ( '' !== $persisted_key && ! $is_copied ) {
+		$persisted_key = self::get_own_charge_idempotency_key( $order );
+		if ( '' !== $persisted_key ) {
 			return $persisted_key;
 		}
 
@@ -829,6 +826,22 @@ class WooPaymentsPaymentOperationService {
 		$order->save_meta_data();
 
 		return $candidate;
+	}
+
+	/**
+	 * Get the charge key checkout would reuse for this order.
+	 *
+	 * @since 11.4.0
+	 * @param WC_Order $order Order being charged.
+	 * @return string The order's own key, or an empty string.
+	 */
+	public static function get_own_charge_idempotency_key( WC_Order $order ): string {
+		$persisted_key = (string) $order->get_meta( self::CHARGE_IDEMPOTENCY_KEY_META, true );
+		$record        = $order->get_meta( self::CHARGE_AMBIGUITY_META, true );
+		// A record naming another order means the key was copied from that order with it, so neither belongs here.
+		$is_copied = is_array( $record ) && (int) ( $record['order_id'] ?? 0 ) !== $order->get_id();
+
+		return $is_copied ? '' : $persisted_key;
 	}
 
 	/**
@@ -920,8 +933,28 @@ class WooPaymentsPaymentOperationService {
 	 */
 	private function get_unread_payment_refusal_tier( PaymentOperationContext $context ): ?string {
 		$failed_read = $context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_FAILED_INTENT_READ ] ?? null;
-		$order       = $context->get_order();
-		if ( ! is_array( $failed_read ) || (string) $order->get_meta( '_intent_id', true ) !== ( $failed_read['intent_id'] ?? null ) || ! $this->is_payment_of_this_mode( $order ) ) {
+		if ( ! is_array( $failed_read ) || ! is_string( $failed_read['intent_id'] ?? null ) ) {
+			return null;
+		}
+
+		$unknown = true === ( $failed_read['unknown'] ?? null );
+
+		return $this->get_unread_payment_refusal_tier_for_order( $context->get_order(), $failed_read['intent_id'], $unknown );
+	}
+
+	/**
+	 * Get the tier by which a charge is refused over an order's attached payment that could not be read, as
+	 * get_unread_payment_refusal_tier() decides it for a checkout.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param WC_Order $order            Order as read under the order payment lock.
+	 * @param string   $failed_intent_id The intent whose read failed.
+	 * @param bool     $unknown          Whether the failed read left the payment unknown.
+	 * @return string|null The tier that refuses, or null when the charge goes on.
+	 */
+	public function get_unread_payment_refusal_tier_for_order( WC_Order $order, string $failed_intent_id, bool $unknown ): ?string {
+		if ( $failed_intent_id !== (string) $order->get_meta( '_intent_id', true ) || ! $this->is_payment_of_this_mode( $order ) ) {
 			return null;
 		}
 
@@ -930,7 +963,7 @@ class WooPaymentsPaymentOperationService {
 			return self::UNREAD_PAYMENT_TIER_MONEY_HELD;
 		}
 
-		return in_array( $stored_status, self::STARTED_INTENT_STATUSES, true ) && true === ( $failed_read['unknown'] ?? null )
+		return in_array( $stored_status, self::STARTED_INTENT_STATUSES, true ) && $unknown
 			? self::UNREAD_PAYMENT_TIER_STEP_STARTED
 			: null;
 	}
