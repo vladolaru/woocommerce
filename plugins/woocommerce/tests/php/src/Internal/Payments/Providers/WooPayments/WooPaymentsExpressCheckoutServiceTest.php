@@ -1666,7 +1666,6 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		$params = $this->create_service()->get_express_checkout_params( 'checkout' );
 
 		$this->assertSame( $expected_code, $params['checkout']['currency_code'] );
-		$this->assertSame( 0 === $expected_minor_unit, in_array( $expected_code, $params['checkout']['zero_decimal_currencies'], true ) );
 		$this->assertSame( $expected_minor_unit, $params['checkout']['stripe_minor_unit'] );
 	}
 

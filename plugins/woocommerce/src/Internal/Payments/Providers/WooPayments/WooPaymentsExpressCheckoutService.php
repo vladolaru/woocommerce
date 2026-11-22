@@ -171,7 +171,6 @@ class WooPaymentsExpressCheckoutService {
 			'checkout'                    => array(
 				'currency_code'              => $currency,
 				'currency_decimals'          => $decimals,
-				'zero_decimal_currencies'    => WooPaymentsCurrencyUtils::get_zero_decimal_currencies(),
 				'stripe_minor_unit'          => WooPaymentsCurrencyUtils::get_stripe_minor_unit_for_currency( $currency ),
 				'country_code'               => $this->get_store_base_country(),
 				'needs_shipping'             => WC()->cart ? WC()->cart->needs_shipping() : false,
