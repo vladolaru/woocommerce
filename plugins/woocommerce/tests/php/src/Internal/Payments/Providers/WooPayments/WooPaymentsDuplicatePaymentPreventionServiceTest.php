@@ -957,27 +957,6 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	}
 
 	/**
-	 * @testdox The unread attached payment rule after $failure on an order storing $stored_status: $expected.
-	 *
-	 * The rule other callers share with the check. Catches a version with no such public function, and one that drops the
-	 * refusal on a succeeded record.
-	 *
-	 * @testWith ["a PHP error", "requires_payment_method", true]
-	 *           ["a server error", "succeeded", true]
-	 *           ["a server error", "requires_action", false]
-	 *
-	 * @param string $failure       How the read fails, a key of failed_read().
-	 * @param string $stored_status The order's stored `_intention_status`.
-	 * @param bool   $expected      Whether the rule refuses.
-	 */
-	public function test_the_unread_attached_payment_rule_is_one_shared_function( string $failure, string $stored_status, bool $expected ): void {
-		$order = $this->create_order( 'hash', 'pending' );
-		$order->update_meta_data( '_intention_status', $stored_status );
-
-		$this->assertSame( $expected, WooPaymentsDuplicatePaymentPreventionService::refuses_unread_attached_payment( self::failed_read( $failure ), $order ) );
-	}
-
-	/**
 	 * Build a failure of the attached intent's read, shaped as Api\Client throws it.
 	 *
 	 * @param string $failure The kind of failure.

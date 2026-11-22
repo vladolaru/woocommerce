@@ -319,7 +319,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 			// Client 11.1.0 dpps:100 catches only Exception, so a PHP Error fatals there and nothing is charged. This keeps
 			// that outcome without the fatal, rather than charging again. An order whose record says its payment succeeded is
 			// refused on any failure: without the read, a new charge would only guess whether the order is already paid.
-			if ( self::refuses_unread_attached_payment( $exception, $order ) ) {
+			if ( ! $exception instanceof Exception || 'succeeded' === (string) $order->get_meta( '_intention_status', true ) ) {
 				return new WP_Error( self::ERROR_CHECK_FAILED, __( "We're not able to process this payment. Please try again later.", 'woocommerce' ) );
 			}
 
@@ -377,20 +377,6 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 		$this->get_intent_confirmation_service()->apply_attached_payment_intent( $order, $intent );
 
 		return $this->success_redirect( $gateway, $order, self::FLAG_PREVIOUS_SUCCESSFUL_INTENT );
-	}
-
-	/**
-	 * Tell whether a failed read of the order's attached intent refuses the payment outright: on a PHP Error, or when the
-	 * order's stored intent status is succeeded.
-	 *
-	 * @since 11.4.0
-	 *
-	 * @param Throwable $failure The read's failure.
-	 * @param WC_Order  $order   Order whose attached intent was read.
-	 * @return bool
-	 */
-	public static function refuses_unread_attached_payment( Throwable $failure, WC_Order $order ): bool {
-		return ! $failure instanceof Exception || 'succeeded' === (string) $order->get_meta( '_intention_status', true );
 	}
 
 	/**
