@@ -58,6 +58,19 @@ const Section = () => (
 );
 const section = () => within( screen.getByTestId( 'stripe-billing-section' ) );
 
+const expectFeeDisclosure = () => {
+	const link = section().getByRole( 'link', {
+		name: /Learn more about fees/,
+	} );
+	expect( link ).toHaveAttribute(
+		'href',
+		'https://woocommerce.com/document/woopayments/fees/#united-states'
+	);
+	expect( link.parentElement ).toHaveTextContent(
+		'Future WooPayments subscriptions will use Stripe Billing, which charges a 1% fee on the full total of any order containing a subscription. It supports card payments only and does not support all WooCommerce Subscriptions features.'
+	);
+};
+
 const renderSection = ( state: Partial< SectionState > = {} ) => {
 	mockState = {
 		isStripeBillingEnabled: false,
@@ -91,11 +104,7 @@ describe( 'StripeBillingSection', () => {
 		);
 
 		expect( mockUpdateIsStripeBillingEnabled ).toHaveBeenCalledWith( true );
-		expect(
-			section().getByText(
-				/By enabling this setting, future WooPayments subscription purchases will utilize Stripe Billing/
-			)
-		).toBeInTheDocument();
+		expectFeeDisclosure();
 	} );
 
 	it( 'explains the manual capture conflict instead of turning Stripe Billing on', async () => {
@@ -127,11 +136,7 @@ describe( 'StripeBillingSection', () => {
 		const { rerender } = renderSection( { subscriptionCount: 2 } );
 
 		expect( section().getByText( MIGRATE_OPTION ) ).toBeInTheDocument();
-		expect(
-			section().getByText(
-				/Alternatively, you can enable this setting and future WooPayments subscription purchases will also utilize Stripe Billing/
-			)
-		).toBeInTheDocument();
+		expectFeeDisclosure();
 
 		await userEvent.click(
 			section().getByRole( 'button', { name: 'Begin migration' } )
@@ -183,11 +188,7 @@ describe( 'StripeBillingSection', () => {
 		expect(
 			section().queryByText( MIGRATE_OPTION )
 		).not.toBeInTheDocument();
-		expect(
-			section().getByText(
-				/By enabling this setting, future WooPayments subscription purchases will utilize Stripe Billing/
-			)
-		).toBeInTheDocument();
+		expectFeeDisclosure();
 	} );
 
 	it( 'warns that turning Stripe Billing off migrates the subscriptions, then shows the migration once saved', () => {

@@ -29,6 +29,10 @@ import {
 const STRIPE_BILLING_DOC_URL =
 	'https://woocommerce.com/document/woopayments/subscriptions/stripe-billing/';
 
+// Client 11.3.0 stripe-billing-toggle.tsx:39-52.
+const STRIPE_BILLING_FEES_URL =
+	'https://woocommerce.com/document/woopayments/fees/#united-states';
+
 type StripeBillingMigrationState = [
 	boolean,
 	number,
@@ -254,24 +258,15 @@ export const StripeBillingSection = () => {
 					'woocommerce'
 				) }
 				help={ withLearnMoreLink(
-					isMigrationOptionShown && migratedCount === 0
-						? sprintf(
-								/* translators: %s: WooPayments. */
-								__(
-									'Alternatively, you can enable this setting and future %s subscription purchases will also utilize Stripe Billing for payment processing. Note: This feature supports card payments only and may lack support for key subscription features. <learnMoreLink>Learn more</learnMoreLink>',
-									'woocommerce'
-								),
-								'WooPayments'
-							)
-						: sprintf(
-								/* translators: %s: WooPayments. */
-								__(
-									'By enabling this setting, future %s subscription purchases will utilize Stripe Billing for payment processing. Note: This feature supports card payments only and may lack support for key subscription features. <learnMoreLink>Learn more</learnMoreLink>',
-									'woocommerce'
-								),
-								'WooPayments'
-							),
-					STRIPE_BILLING_DOC_URL
+					sprintf(
+						/* translators: %s: WooPayments. */
+						__(
+							'Future %s subscriptions will use Stripe Billing, which charges a 1%% fee on the full total of any order containing a subscription. It supports card payments only and does not support all WooCommerce Subscriptions features. <learnMoreLink>Learn more about fees</learnMoreLink>',
+							'woocommerce'
+						),
+						'WooPayments'
+					),
+					STRIPE_BILLING_FEES_URL
 				) }
 				__nextHasNoMarginBottom
 			/>
