@@ -1,0 +1,1189 @@
+[
+  {
+    "name": "woocommerce-payments/accept-dispute",
+    "label": "Accept a dispute",
+    "description": "Accept (concede) a dispute. The disputed funds are forfeited to the cardholder permanently. This cannot be undone.",
+    "category": "woocommerce",
+    "input_schema": {
+      "type": "object",
+      "required": [
+        "dispute_id"
+      ],
+      "properties": {
+        "dispute_id": {
+          "type": "string",
+          "description": "Stripe dispute ID (typically `du_…` or legacy `dp_…`). Stripe ID prefixes are not contractually stable, so this field is not pattern-validated."
+        }
+      },
+      "additionalProperties": false
+    },
+    "output_schema": [],
+    "annotations": {
+      "readonly": false,
+      "destructive": true,
+      "idempotent": false
+    },
+    "show_in_rest": true,
+    "mcp": {
+      "public": false
+    }
+  },
+  {
+    "name": "woocommerce-payments/get-account",
+    "label": "Get WooPayments account state",
+    "description": "Return the merchant's WooPayments account state: onboarding status, country, store and customer currencies, KYC requirements, deadlines, and test/live mode flags.",
+    "category": "woocommerce",
+    "input_schema": {
+      "type": "object",
+      "default": {},
+      "properties": [],
+      "additionalProperties": false
+    },
+    "output_schema": [],
+    "annotations": {
+      "readonly": true,
+      "destructive": false,
+      "idempotent": true
+    },
+    "show_in_rest": true,
+    "mcp": {
+      "public": true
+    }
+  },
+  {
+    "name": "woocommerce-payments/get-active-loan-summary",
+    "label": "Get active Capital loan summary",
+    "description": "Return the merchant's active Stripe Capital loan summary. Answers 'how much do I still owe on my Capital loan and what is the daily repayment rate?'. Returns an empty shape if no loan is active.",
+    "category": "woocommerce",
+    "input_schema": {
+      "type": "object",
+      "default": {},
+      "properties": [],
+      "additionalProperties": false
+    },
+    "output_schema": [],
+    "annotations": {
+      "readonly": true,
+      "destructive": false,
+      "idempotent": true
+    },
+    "show_in_rest": true,
+    "mcp": {
+      "public": true
+    }
+  },
+  {
+    "name": "woocommerce-payments/get-authorizations",
+    "label": "List authorizations",
+    "description": "List uncaptured card authorizations. Answers 'which authorizations expire soon / still need capture?'.",
+    "category": "woocommerce",
+    "input_schema": {
+      "type": "object",
+      "default": {},
+      "properties": {
+        "page": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1,
+          "description": "Page number to return (1-indexed)."
+        },
+        "per_page": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 25,
+          "description": "Maximum number of items per page."
+        },
+        "orderby": {
+          "type": "string"
+        },
+        "order": {
+          "type": "string",
+          "enum": [
+            "asc",
+            "desc"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "output_schema": {
+      "type": "object",
+      "properties": {
+        "authorizations": {
+          "type": "array",
+          "description": "Returned authorizations for the current page.",
+          "items": {
+            "type": "object"
+          }
+        },
+        "total_pages": {
+          "type": "integer",
+          "description": "Total number of result pages available for the current query."
+        },
+        "page": {
+          "type": "integer",
+          "description": "Current result page."
+        },
+        "per_page": {
+          "type": "integer",
+          "description": "Maximum number of items requested per page."
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readonly": true,
+      "destructive": false,
+      "idempotent": true
+    },
+    "show_in_rest": true,
+    "mcp": {
+      "public": true
+    }
+  },
+  {
+    "name": "woocommerce-payments/get-authorizations-summary",
+    "label": "Get authorizations summary",
+    "description": "Return aggregate counts and total authorized amount for pending authorizations. Answers 'how much money is held in uncaptured authorizations?'.",
+    "category": "woocommerce",
+    "input_schema": {
+      "type": "object",
+      "default": {},
+      "properties": [],
+      "additionalProperties": false
+    },
+    "output_schema": [],
+    "annotations": {
+      "readonly": true,
+      "destructive": false,
+      "idempotent": true
+    },
+    "show_in_rest": true,
+    "mcp": {
+      "public": true
+    }
+  },
+  {
+    "name": "woocommerce-payments/get-balance",
+    "label": "Get balance summary",
+    "description": "Return the balance summary (charges, refunds, disputes, fees, payouts, ending balance) for a currency over a date range.",
+    "category": "woocommerce",
+    "input_schema": {
+      "type": "object",
+      "required": [
+        "date_start",
+        "date_end",
+        "currency"
+      ],
+      "properties": {
+        "date_start": {
+          "type": "string",
+          "description": "Start of the period (ISO-8601 date-time)."
+        },
+        "date_end": {
+          "type": "string",
+          "description": "End of the period (ISO-8601 date-time)."
+        },
+        "currency": {
+          "type": "string",
+          "description": "Three-letter ISO-4217 currency code."
+        }
+      },
+      "additionalProperties": false
+    },
+    "output_schema": [],
+    "annotations": {
+      "readonly": true,
+      "destructive": false,
+      "idempotent": true
+    },
+    "show_in_rest": true,
+    "mcp": {
+      "public": true
+    }
+  },
+  {
+    "name": "woocommerce-payments/get-charge",
+    "label": "Get charge by ID",
+    "description": "Look up a single charge by Stripe ID (ch_… or py_…). Answers 'what happened with charge ch_X?'.",
+    "category": "woocommerce",
+    "input_schema": {
+      "type": "object",
+      "default": {},
+      "properties": {
+        "charge_id": {
+          "type": "string",
+          "description": "Stripe charge ID (typically `ch_…` or `py_…`). Stripe ID prefixes are not contractually stable, so this field is not pattern-validated."
+        }
+      },
+      "required": [
+        "charge_id"
+      ],
+      "additionalProperties": false
+    },
+    "output_schema": [],
+    "annotations": {
+      "readonly": true,
+      "destructive": false,
+      "idempotent": true
+    },
+    "show_in_rest": true,
+    "mcp": {
+      "public": true
+    }
+  },
+  {
+    "name": "woocommerce-payments/get-deposits",
+    "label": "List payouts",
+    "description": "List payouts (Stripe deposits) with status, date-range, and currency filters. Answers 'show me my recent payouts'.",
+    "category": "woocommerce",
+    "input_schema": {
+      "type": "object",
+      "default": {},
+      "properties": {
+        "page": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1,
+          "description": "Page number to return (1-indexed)."
+        },
+        "per_page": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 25,
+          "description": "Maximum number of items per page."
+        },
+        "match": {
+          "type": "string"
+        },
+        "store_currency_is": {
+          "type": "string"
+        },
+        "date_before": {
+          "type": "string"
+        },
+        "date_after": {
+          "type": "string"
+        },
+        "date_between": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "status_is": {
+          "type": "string",
+          "description": "Payout status (paid|pending|in_transit|canceled|failed)."
+        },
+        "status_is_not": {
+          "type": "string"
+        },
+        "orderby": {
+          "type": "string"
+        },
+        "order": {
+          "type": "string",
+          "enum": [
+            "asc",
+            "desc"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "output_schema": {
+      "type": "object",
+      "properties": {
+        "deposits": {
+          "type": "array",
+          "description": "Returned deposits for the current page.",
+          "items": {
+            "type": "object"
+          }
+        },
+        "total_pages": {
+          "type": "integer",
+          "description": "Total number of result pages available for the current query."
+        },
+        "page": {
+          "type": "integer",
+          "description": "Current result page."
+        },
+        "per_page": {
+          "type": "integer",
+          "description": "Maximum number of items requested per page."
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readonly": true,
+      "destructive": false,
+      "idempotent": true
+    },
+    "show_in_rest": true,
+    "mcp": {
+      "public": true
+    }
+  },
+  {
+    "name": "woocommerce-payments/get-deposits-overview",
+    "label": "Get payouts overview",
+    "description": "Return a per-currency overview of upcoming and recent payouts (Stripe deposits). Answers 'when is my next payout and how much?'.",
+    "category": "woocommerce",
+    "input_schema": {
+      "type": "object",
+      "default": {},
+      "properties": [],
+      "additionalProperties": false
+    },
+    "output_schema": [],
+    "annotations": {
+      "readonly": true,
+      "destructive": false,
+      "idempotent": true
+    },
+    "show_in_rest": true,
+    "mcp": {
+      "public": true
+    }
+  },
+  {
+    "name": "woocommerce-payments/get-deposits-summary",
+    "label": "Get payouts summary",
+    "description": "Return aggregate counts and totals of payouts by status and currency. Answers 'how many payouts have I received this month?'.",
+    "category": "woocommerce",
+    "input_schema": {
+      "type": "object",
+      "default": {},
+      "properties": {
+        "match": {
+          "type": "string"
+        },
+        "store_currency_is": {
+          "type": "string"
+        },
+        "date_before": {
+          "type": "string"
+        },
+        "date_after": {
+          "type": "string"
+        },
+        "date_between": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "status_is": {
+          "type": "string",
+          "description": "Payout status (paid|pending|in_transit|canceled|failed)."
+        },
+        "status_is_not": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "output_schema": [],
+    "annotations": {
+      "readonly": true,
+      "destructive": false,
+      "idempotent": true
+    },
+    "show_in_rest": true,
+    "mcp": {
+      "public": true
+    }
+  },
+  {
+    "name": "woocommerce-payments/get-dispute",
+    "label": "Get dispute by ID",
+    "description": "Look up a single dispute by ID. Answers 'what evidence is needed for dispute du_X and by when?'.",
+    "category": "woocommerce",
+    "input_schema": {
+      "type": "object",
+      "default": {},
+      "properties": {
+        "dispute_id": {
+          "type": "string",
+          "description": "Stripe dispute ID (typically `du_…` or legacy `dp_…`). Stripe ID prefixes are not contractually stable, so this field is not pattern-validated."
+        }
+      },
+      "required": [
+        "dispute_id"
+      ],
+      "additionalProperties": false
+    },
+    "output_schema": [],
+    "annotations": {
+      "readonly": true,
+      "destructive": false,
+      "idempotent": true
+    },
+    "show_in_rest": true,
+    "mcp": {
+      "public": true
+    }
+  },
+  {
+    "name": "woocommerce-payments/get-disputes",
+    "label": "List disputes",
+    "description": "List disputes with status and date-range filters. Answers 'which disputes need response?'.",
+    "category": "woocommerce",
+    "input_schema": {
+      "type": "object",
+      "default": {},
+      "properties": {
+        "page": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1,
+          "description": "Page number to return (1-indexed)."
+        },
+        "per_page": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 25,
+          "description": "Maximum number of items per page."
+        },
+        "match": {
+          "type": "string"
+        },
+        "store_currency_is": {
+          "type": "string"
+        },
+        "date_before": {
+          "type": "string"
+        },
+        "date_after": {
+          "type": "string"
+        },
+        "date_between": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "search": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "status_is": {
+          "type": "string",
+          "description": "Dispute status (warning_needs_response|needs_response|under_review|won|lost|warning_under_review|warning_closed)."
+        },
+        "status_is_not": {
+          "type": "string"
+        },
+        "orderby": {
+          "type": "string"
+        },
+        "order": {
+          "type": "string",
+          "enum": [
+            "asc",
+            "desc"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "output_schema": {
+      "type": "object",
+      "properties": {
+        "disputes": {
+          "type": "array",
+          "description": "Returned disputes for the current page.",
+          "items": {
+            "type": "object"
+          }
+        },
+        "total_pages": {
+          "type": "integer",
+          "description": "Total number of result pages available for the current query."
+        },
+        "page": {
+          "type": "integer",
+          "description": "Current result page."
+        },
+        "per_page": {
+          "type": "integer",
+          "description": "Maximum number of items requested per page."
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readonly": true,
+      "destructive": false,
+      "idempotent": true
+    },
+    "show_in_rest": true,
+    "mcp": {
+      "public": true
+    }
+  },
+  {
+    "name": "woocommerce-payments/get-disputes-summary",
+    "label": "Get disputes summary",
+    "description": "Return aggregate counts of disputes by status. Answers 'how many disputes are pending response right now?'.",
+    "category": "woocommerce",
+    "input_schema": {
+      "type": "object",
+      "default": {},
+      "properties": {
+        "match": {
+          "type": "string"
+        },
+        "store_currency_is": {
+          "type": "string"
+        },
+        "date_before": {
+          "type": "string"
+        },
+        "date_after": {
+          "type": "string"
+        },
+        "date_between": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "search": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "status_is": {
+          "type": "string",
+          "description": "Dispute status (warning_needs_response|needs_response|under_review|won|lost|warning_under_review|warning_closed)."
+        },
+        "status_is_not": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "output_schema": [],
+    "annotations": {
+      "readonly": true,
+      "destructive": false,
+      "idempotent": true
+    },
+    "show_in_rest": true,
+    "mcp": {
+      "public": true
+    }
+  },
+  {
+    "name": "woocommerce-payments/get-fees-summary",
+    "label": "Get processing-fee summary",
+    "description": "Return aggregate processing-fee totals (count, fees, net) over a date range. Answers 'how much did I pay in fees this period?'.",
+    "category": "woocommerce",
+    "input_schema": {
+      "type": "object",
+      "default": {},
+      "properties": {
+        "date_before": {
+          "type": "string"
+        },
+        "date_after": {
+          "type": "string"
+        },
+        "date_between": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "match": {
+          "type": "string"
+        },
+        "deposit_id": {
+          "type": "string"
+        },
+        "payment_method_type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "output_schema": [],
+    "annotations": {
+      "readonly": true,
+      "destructive": false,
+      "idempotent": true
+    },
+    "show_in_rest": true,
+    "mcp": {
+      "public": true
+    }
+  },
+  {
+    "name": "woocommerce-payments/get-fraud-outcomes",
+    "label": "List flagged (fraud outcome) transactions",
+    "description": "List transactions flagged by fraud protection for a given outcome status (e.g. block, review).",
+    "category": "woocommerce",
+    "input_schema": {
+      "type": "object",
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "page": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1,
+          "description": "Page number to return (1-indexed)."
+        },
+        "per_page": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 25,
+          "description": "Maximum number of items per page."
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "allow",
+            "block",
+            "review"
+          ],
+          "description": "Fraud outcome status to filter by (e.g. block, review)."
+        },
+        "search": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "search_term": {
+          "type": "string"
+        },
+        "orderby": {
+          "type": "string"
+        },
+        "order": {
+          "type": "string",
+          "enum": [
+            "asc",
+            "desc"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "output_schema": {
+      "type": "object",
+      "properties": {
+        "fraud_outcomes": {
+          "type": "array",
+          "description": "Returned fraud_outcomes for the current page.",
+          "items": {
+            "type": "object"
+          }
+        },
+        "total_pages": {
+          "type": "integer",
+          "description": "Total number of result pages available for the current query."
+        },
+        "page": {
+          "type": "integer",
+          "description": "Current result page."
+        },
+        "per_page": {
+          "type": "integer",
+          "description": "Maximum number of items requested per page."
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readonly": true,
+      "destructive": false,
+      "idempotent": true
+    },
+    "show_in_rest": true,
+    "mcp": {
+      "public": true
+    }
+  },
+  {
+    "name": "woocommerce-payments/get-payment-intent",
+    "label": "Get payment intent by ID",
+    "description": "Look up a single payment intent by Stripe ID (pi_…). Answers 'what is the state of intent pi_X?' during incident response.",
+    "category": "woocommerce",
+    "input_schema": {
+      "type": "object",
+      "default": {},
+      "properties": {
+        "payment_intent_id": {
+          "type": "string",
+          "description": "Stripe payment intent ID (typically `pi_…`). Stripe ID prefixes are not contractually stable, so this field is not pattern-validated."
+        }
+      },
+      "required": [
+        "payment_intent_id"
+      ],
+      "additionalProperties": false
+    },
+    "output_schema": [],
+    "annotations": {
+      "readonly": true,
+      "destructive": false,
+      "idempotent": true
+    },
+    "show_in_rest": true,
+    "mcp": {
+      "public": true
+    }
+  },
+  {
+    "name": "woocommerce-payments/get-timeline",
+    "label": "Get timeline for payment intent",
+    "description": "Return the chronological event timeline for a payment intent (created → succeeded → refunded → disputed). Helps reconstruct what happened to one transaction. Takes `intention_id` (the same Stripe `pi_…` identifier accepted by `get-payment-intent` as `payment_intent_id` — both names exist because they mirror the underlying REST route parameters).",
+    "category": "woocommerce",
+    "input_schema": {
+      "type": "object",
+      "default": {},
+      "properties": {
+        "intention_id": {
+          "type": "string",
+          "description": "Stripe payment intent ID (typically `pi_…`). Same identifier accepted by `get-payment-intent` under the field name `payment_intent_id`. Stripe ID prefixes are not contractually stable, so this field is not pattern-validated."
+        }
+      },
+      "required": [
+        "intention_id"
+      ],
+      "additionalProperties": false
+    },
+    "output_schema": [],
+    "annotations": {
+      "readonly": true,
+      "destructive": false,
+      "idempotent": true
+    },
+    "show_in_rest": true,
+    "mcp": {
+      "public": true
+    }
+  },
+  {
+    "name": "woocommerce-payments/get-transactions",
+    "label": "List transactions",
+    "description": "List WooPayments transactions with filters (date range, type, source device, channel, customer country, risk level, currency, search). Answers 'show me transactions where X'.",
+    "category": "woocommerce",
+    "input_schema": {
+      "type": "object",
+      "default": {},
+      "properties": {
+        "page": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1,
+          "description": "Page number to return (1-indexed)."
+        },
+        "per_page": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 25,
+          "description": "Maximum number of items per page."
+        },
+        "match": {
+          "type": "string",
+          "description": "Filter join mode (any|all)."
+        },
+        "date_before": {
+          "type": "string",
+          "description": "ISO-8601 date upper bound."
+        },
+        "date_after": {
+          "type": "string",
+          "description": "ISO-8601 date lower bound."
+        },
+        "date_between": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Two-element ISO date range [start, end]."
+        },
+        "type_is": {
+          "type": "string",
+          "description": "Transaction type filter (charge|refund|dispute|adjustment|…)."
+        },
+        "source_device_is": {
+          "type": "string"
+        },
+        "channel_is": {
+          "type": "string"
+        },
+        "customer_country_is": {
+          "type": "string"
+        },
+        "risk_level_is": {
+          "type": "string"
+        },
+        "store_currency_is": {
+          "type": "string"
+        },
+        "customer_currency_is": {
+          "type": "string"
+        },
+        "search": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "orderby": {
+          "type": "string"
+        },
+        "order": {
+          "type": "string",
+          "enum": [
+            "asc",
+            "desc"
+          ]
+        },
+        "deposit_id": {
+          "type": "string",
+          "description": "Filter to transactions belonging to a single payout (deposit) ID. Accepted by both the list and the summary endpoints."
+        }
+      },
+      "additionalProperties": false
+    },
+    "output_schema": {
+      "type": "object",
+      "properties": {
+        "transactions": {
+          "type": "array",
+          "description": "Returned transactions for the current page.",
+          "items": {
+            "type": "object"
+          }
+        },
+        "total_pages": {
+          "type": "integer",
+          "description": "Total number of result pages available for the current query."
+        },
+        "page": {
+          "type": "integer",
+          "description": "Current result page."
+        },
+        "per_page": {
+          "type": "integer",
+          "description": "Maximum number of items requested per page."
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readonly": true,
+      "destructive": false,
+      "idempotent": true
+    },
+    "show_in_rest": true,
+    "mcp": {
+      "public": true
+    }
+  },
+  {
+    "name": "woocommerce-payments/get-transactions-summary",
+    "label": "Get transactions summary",
+    "description": "Return aggregate counts and totals for a transactions filter. Answers 'how many transactions / how much volume in this window?' without paging the list.",
+    "category": "woocommerce",
+    "input_schema": {
+      "type": "object",
+      "default": {},
+      "properties": {
+        "match": {
+          "type": "string",
+          "description": "Filter join mode (any|all)."
+        },
+        "date_before": {
+          "type": "string",
+          "description": "ISO-8601 date upper bound."
+        },
+        "date_after": {
+          "type": "string",
+          "description": "ISO-8601 date lower bound."
+        },
+        "date_between": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Two-element ISO date range [start, end]."
+        },
+        "type_is": {
+          "type": "string",
+          "description": "Transaction type filter (charge|refund|dispute|adjustment|…)."
+        },
+        "source_device_is": {
+          "type": "string"
+        },
+        "channel_is": {
+          "type": "string"
+        },
+        "customer_country_is": {
+          "type": "string"
+        },
+        "risk_level_is": {
+          "type": "string"
+        },
+        "store_currency_is": {
+          "type": "string"
+        },
+        "customer_currency_is": {
+          "type": "string"
+        },
+        "search": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "deposit_id": {
+          "type": "string",
+          "description": "Filter to transactions belonging to a single payout (deposit) ID. Accepted by both the list and the summary endpoints."
+        }
+      },
+      "additionalProperties": false
+    },
+    "output_schema": [],
+    "annotations": {
+      "readonly": true,
+      "destructive": false,
+      "idempotent": true
+    },
+    "show_in_rest": true,
+    "mcp": {
+      "public": true
+    }
+  },
+  {
+    "name": "woocommerce-payments/refund-charge",
+    "label": "Refund a charge",
+    "description": "Create a full or partial refund on a Stripe charge. Supply a stable idempotency_key to make retries safe — identical keys return the original refund. Amount is in minor units (e.g. cents).",
+    "category": "woocommerce",
+    "input_schema": {
+      "type": "object",
+      "required": [
+        "charge_id",
+        "idempotency_key"
+      ],
+      "properties": {
+        "charge_id": {
+          "type": "string",
+          "pattern": "^(ch_|py_)",
+          "description": "Stripe charge ID to refund (ch_… or py_…)."
+        },
+        "amount": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Amount to refund in minor units (e.g. cents). Omit for a full refund."
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "duplicate",
+            "fraudulent",
+            "requested_by_customer"
+          ],
+          "description": "Optional refund reason."
+        },
+        "idempotency_key": {
+          "type": "string",
+          "description": "Required. A stable, caller-unique key so duplicate retries dedupe to the original refund instead of creating a second one. Reuse the exact same key when retrying the same logical refund."
+        }
+      },
+      "additionalProperties": false
+    },
+    "output_schema": [],
+    "annotations": {
+      "readonly": false,
+      "destructive": true,
+      "idempotent": true
+    },
+    "show_in_rest": true,
+    "mcp": {
+      "public": false
+    }
+  },
+  {
+    "name": "woocommerce-payments/submit-dispute-evidence",
+    "label": "Submit dispute evidence",
+    "description": "Stage or submit evidence for a dispute. With submit=false (default) the evidence is saved as a draft you can revise; with submit=true it is sent to the card network and cannot be changed.",
+    "category": "woocommerce",
+    "input_schema": {
+      "type": "object",
+      "required": [
+        "dispute_id"
+      ],
+      "properties": {
+        "dispute_id": {
+          "type": "string",
+          "description": "Stripe dispute ID (typically `du_…` or legacy `dp_…`). Stripe ID prefixes are not contractually stable, so this field is not pattern-validated."
+        },
+        "evidence": {
+          "type": "object",
+          "description": "Evidence fields. Text fields take free text; document fields take the ID of a file uploaded via woocommerce-payments/upload-dispute-evidence-file (not raw file contents).",
+          "properties": {
+            "product_description": {
+              "type": "string",
+              "description": "Description of the product or service and how it was presented to the customer."
+            },
+            "customer_purchase_ip": {
+              "type": "string",
+              "description": "IP address the customer used for the purchase."
+            },
+            "cancellation_rebuttal": {
+              "type": "string",
+              "description": "Explanation of why the customer was not entitled to cancel."
+            },
+            "access_activity_log": {
+              "type": "string",
+              "description": "Activity log showing the customer accessed or downloaded a digital product."
+            },
+            "uncategorized_text": {
+              "type": "string",
+              "description": "Any additional explanation that does not fit another field."
+            },
+            "shipping_carrier": {
+              "type": "string",
+              "description": "Delivery service that shipped the product (e.g. USPS, FedEx, UPS, DHL)."
+            },
+            "shipping_date": {
+              "type": "string",
+              "description": "Date the product was shipped."
+            },
+            "shipping_tracking_number": {
+              "type": "string",
+              "description": "Tracking number for a shipped physical product."
+            },
+            "shipping_address": {
+              "type": "string",
+              "description": "Address the product was shipped to."
+            },
+            "customer_communication": {
+              "type": "string",
+              "description": "Correspondence with the customer relevant to the dispute (e.g. emails). Provide the ID of a file uploaded via woocommerce-payments/upload-dispute-evidence-file, not raw file contents."
+            },
+            "customer_signature": {
+              "type": "string",
+              "description": "Proof the customer signed for the product or agreed to terms. Provide the ID of a file uploaded via woocommerce-payments/upload-dispute-evidence-file, not raw file contents."
+            },
+            "receipt": {
+              "type": "string",
+              "description": "Receipt or message sent to the customer for the charge. Provide the ID of a file uploaded via woocommerce-payments/upload-dispute-evidence-file, not raw file contents."
+            },
+            "refund_policy": {
+              "type": "string",
+              "description": "Your refund policy as shown to the customer. Provide the ID of a file uploaded via woocommerce-payments/upload-dispute-evidence-file, not raw file contents."
+            },
+            "duplicate_charge_documentation": {
+              "type": "string",
+              "description": "Documentation for the prior charge a duplicate dispute refers to. Provide the ID of a file uploaded via woocommerce-payments/upload-dispute-evidence-file, not raw file contents."
+            },
+            "shipping_documentation": {
+              "type": "string",
+              "description": "Proof the product was delivered (e.g. signed delivery confirmation). Provide the ID of a file uploaded via woocommerce-payments/upload-dispute-evidence-file, not raw file contents."
+            },
+            "service_documentation": {
+              "type": "string",
+              "description": "Proof the service was provided to the customer. Provide the ID of a file uploaded via woocommerce-payments/upload-dispute-evidence-file, not raw file contents."
+            },
+            "cancellation_policy": {
+              "type": "string",
+              "description": "Your cancellation policy as shown to the customer. Provide the ID of a file uploaded via woocommerce-payments/upload-dispute-evidence-file, not raw file contents."
+            },
+            "uncategorized_file": {
+              "type": "string",
+              "description": "Any additional supporting document. Provide the ID of a file uploaded via woocommerce-payments/upload-dispute-evidence-file, not raw file contents."
+            }
+          },
+          "additionalProperties": false
+        },
+        "submit": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether to submit to the card network (irreversible). Default false stages a draft."
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Optional metadata to attach to the dispute. Maximum 10 keys; keys up to 40 characters; values up to 500 characters.",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "maxProperties": 10
+        }
+      },
+      "additionalProperties": false
+    },
+    "output_schema": [],
+    "annotations": {
+      "readonly": false,
+      "destructive": true,
+      "idempotent": false
+    },
+    "show_in_rest": true,
+    "mcp": {
+      "public": false
+    }
+  },
+  {
+    "name": "woocommerce-payments/upload-dispute-evidence-file",
+    "label": "Upload dispute evidence file",
+    "description": "Upload a document (PDF, PNG, or JPEG) to use as dispute evidence. Returns a file object whose id can be passed to the document fields of woocommerce-payments/submit-dispute-evidence.",
+    "category": "woocommerce",
+    "input_schema": {
+      "type": "object",
+      "required": [
+        "file_name",
+        "file_type",
+        "file_contents"
+      ],
+      "properties": {
+        "file_name": {
+          "type": "string",
+          "description": "File name including extension (e.g. receipt.pdf)."
+        },
+        "file_type": {
+          "type": "string",
+          "enum": [
+            "application/pdf",
+            "image/jpeg",
+            "image/png"
+          ],
+          "description": "File MIME type. One of application/pdf, image/jpeg, or image/png."
+        },
+        "file_contents": {
+          "type": "string",
+          "description": "Base64-encoded file contents. The decoded size must not exceed the dispute-evidence size limit."
+        }
+      },
+      "additionalProperties": false
+    },
+    "output_schema": [],
+    "annotations": {
+      "readonly": false,
+      "destructive": false,
+      "idempotent": false
+    },
+    "show_in_rest": true,
+    "mcp": {
+      "public": false
+    }
+  }
+]

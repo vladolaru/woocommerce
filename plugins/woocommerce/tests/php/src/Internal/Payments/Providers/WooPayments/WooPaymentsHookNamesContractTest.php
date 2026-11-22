@@ -122,7 +122,6 @@ class WooPaymentsHookNamesContractTest extends WC_Unit_Test_Case {
 		'wcpay_update_intention_request'                   => 'Request-framework or other non-contract filter, a changelog item',
 		'wcpay_update_payment_result_on_error'             => 'Request-framework or other non-contract filter, a changelog item',
 		'wcpay_woopay_use_blog_token'                      => 'dropped by design (no mode switch)',
-		'woocommerce_payments_abilities_enabled'           => 'Abilities API registration of the extension 10.9.0, not part of the built-in WooPayments',
 		'woocommerce_payments_order_failed'                => 'Request-framework or other non-contract filter, a changelog item',
 		'woocommerce_woocommerce_payments_updated'         => 'dropped by design (no plugin version)',
 	);

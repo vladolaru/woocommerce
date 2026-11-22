@@ -152,7 +152,10 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 		$listed = array();
 		foreach ( WooPaymentsProvider::get_classes_by_setup_tier() as $state => $request_groups ) {
 			foreach ( $request_groups as $request => $roots ) {
-				if ( in_array( $root, $roots, true ) ) {
+				foreach ( $roots as $listed_root ) {
+					if ( $listed_root !== $root ) {
+						continue;
+					}
 					$listed[] = "$state $request";
 				}
 			}
@@ -200,6 +203,7 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 			'The session payment values'            => array( self::WCPAY . 'WooPaymentsSessionService', array( 'active ajax', 'active front', 'active rest' ) ),
 			// No request loads it: the registrar hears every refund and resolves it only then.
 			'The early fraud warning list'          => array( self::WCPAY . 'WooPaymentsEarlyFraudWarningOrderService', array() ),
+			'Registrar omitted from connected CLI'  => array( self::WCPAY . 'Abilities\\AbilitiesRegistrar', $set_up ),
 			// A REST server can start in any request of a set-up store, and the registrar adds the routes when it does.
 			'The REST route registrar'              => array( WooPaymentsAdminRestRouteRegistrar::class, $set_up ),
 		);
