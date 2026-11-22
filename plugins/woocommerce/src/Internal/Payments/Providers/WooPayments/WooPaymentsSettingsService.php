@@ -439,12 +439,10 @@ class WooPaymentsSettingsService {
 			return $enabled_methods_update;
 		}
 
-		// With both on, the platform refuses every Link payment, so refuse a save that turns both on, as the settings screen
-		// does; one stored before this save does not block it. Link counts with card and WooPay with eligibility, as there.
+		// WooPay eligibility can return after a save. Check the stored choices even while WooPay is unavailable.
 		$is_link_woopay_conflict = fn( array $method_ids, bool $is_woopay_on ): bool => $is_woopay_on
 			&& in_array( 'card', $method_ids, true )
-			&& in_array( 'link', $method_ids, true )
-			&& $is_woopay_eligible;
+			&& in_array( 'link', $method_ids, true );
 		// Read the stored list as persistence stores it, through sanitize_key() (the synchronizer's normalize_string_list()).
 		$stored_method_ids       = array_map( 'sanitize_key', $this->normalize_payment_method_ids( $this->get_array_setting( $settings, 'upe_enabled_payment_method_ids', array( 'card' ) ) ) );
 		$is_woopay_on_after_save = array_key_exists( 'is_woopay_enabled', $params )

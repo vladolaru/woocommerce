@@ -1137,9 +1137,11 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should persist active gateway settings and refresh the settings response.
+	 * Prepare the account and the full settings request for a store turning on its gateway.
+	 *
+	 * @return array<string,mixed>
 	 */
-	public function test_update_settings_persists_active_gateway_settings_and_returns_refreshed_contract(): void {
+	private function prepare_full_gateway_settings_save(): array {
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
 			array(
@@ -1172,34 +1174,39 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 				'errored' => false,
 			)
 		);
-		$store_setup_sync_count = did_action( 'wcpay_store_setup_sync' );
-
-		$result = $this->sut->update_settings(
-			array(
-				'is_wcpay_enabled'                       => true,
-				'is_manual_capture_enabled'              => true,
-				'is_test_mode_enabled'                   => true,
-				'is_debug_log_enabled'                   => true,
-				'is_saved_cards_enabled'                 => true,
-				'is_payment_request_enabled'             => false,
-				'is_express_checkout_in_payment_methods_enabled' => true,
-				'payment_request_button_size'            => 'medium',
-				'payment_request_button_type'            => 'default',
-				'payment_request_button_theme'           => 'light',
-				'payment_request_button_border_radius'   => 8,
-				'is_woopay_enabled'                      => true,
-				'is_woopay_global_theme_support_enabled' => true,
-				'woopay_custom_message'                  => 'Pay faster with [terms_of_service_link] and [privacy_policy_link].',
-				'woopay_store_logo'                      => 'file_new',
-				'enabled_payment_method_ids'             => array( 'card', 'link', 'affirm', 'woopay', 'invalid_method' ),
-				'express_checkout_product_methods'       => array( 'payment_request', 'link', 'invalid_method' ),
-				'express_checkout_cart_methods'          => array( 'amazon_pay' ),
-				'express_checkout_checkout_methods'      => array( 'woopay' ),
-				'is_multi_currency_enabled'              => true,
-				'is_wcpay_subscriptions_enabled'         => false,
-				'is_stripe_billing_enabled'              => false,
-			)
+		return array(
+			'is_wcpay_enabled'                       => true,
+			'is_manual_capture_enabled'              => true,
+			'is_test_mode_enabled'                   => true,
+			'is_debug_log_enabled'                   => true,
+			'is_saved_cards_enabled'                 => true,
+			'is_payment_request_enabled'             => false,
+			'is_express_checkout_in_payment_methods_enabled' => true,
+			'payment_request_button_size'            => 'medium',
+			'payment_request_button_type'            => 'default',
+			'payment_request_button_theme'           => 'light',
+			'payment_request_button_border_radius'   => 8,
+			'is_woopay_enabled'                      => false,
+			'is_woopay_global_theme_support_enabled' => true,
+			'woopay_custom_message'                  => 'Pay faster with [terms_of_service_link] and [privacy_policy_link].',
+			'woopay_store_logo'                      => 'file_new',
+			'enabled_payment_method_ids'             => array( 'card', 'link', 'affirm', 'woopay', 'invalid_method' ),
+			'express_checkout_product_methods'       => array( 'payment_request', 'link', 'invalid_method' ),
+			'express_checkout_cart_methods'          => array( 'amazon_pay' ),
+			'express_checkout_checkout_methods'      => array( 'woopay' ),
+			'is_multi_currency_enabled'              => true,
+			'is_wcpay_subscriptions_enabled'         => false,
+			'is_stripe_billing_enabled'              => false,
 		);
+	}
+
+	/**
+	 * @testdox Should persist active gateway settings and refresh the settings response.
+	 */
+	public function test_update_settings_persists_active_gateway_settings_and_returns_refreshed_contract(): void {
+		$params                 = $this->prepare_full_gateway_settings_save();
+		$store_setup_sync_count = did_action( 'wcpay_store_setup_sync' );
+		$result                 = $this->sut->update_settings( $params );
 
 		$stored = get_option( 'woocommerce_woocommerce_payments_settings' );
 
@@ -1216,7 +1223,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'default', $stored['payment_request_button_type'] );
 		$this->assertSame( 'light', $stored['payment_request_button_theme'] );
 		$this->assertSame( 8, $stored['payment_request_button_border_radius'] );
-		$this->assertSame( 'yes', $stored['platform_checkout'] );
+		$this->assertSame( 'no', $stored['platform_checkout'] );
 		$this->assertSame( 'yes', $stored['is_woopay_global_theme_support_enabled'] );
 		$this->assertSame( 'Pay faster with [terms] and [privacy_policy].', $stored['platform_checkout_custom_message'] );
 		$this->assertSame( 'file_new', $stored['platform_checkout_store_logo'] );
@@ -1227,9 +1234,21 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( '1', get_option( '_wcpay_feature_customer_multi_currency' ) );
 		$this->assertSame( '0', get_option( '_wcpay_feature_subscriptions' ) );
 		$this->assertSame( '0', get_option( '_wcpay_feature_stripe_billing' ), 'Turning Stripe Billing off is saved, as the plugin does.' );
+		$this->assertIsArray( $result );
 		$this->assertSame( $stored['upe_enabled_payment_method_ids'], $result['enabled_payment_method_ids'] );
 		$this->assertSame( 1, $this->store_setup_report->sync_count, 'The save sends the store setup report once.' );
 		$this->assertSame( $store_setup_sync_count, did_action( 'wcpay_store_setup_sync' ), 'The save calls the sync directly; callbacks on the scheduled sync hook do not run.' );
+	}
+
+	/**
+	 * @testdox A whole save enabling both methods is refused even when the account has no WooPay eligibility flag.
+	 */
+	public function test_full_gateway_settings_save_refuses_woopay_with_link_after_manual_capture_filtering(): void {
+		$params                      = $this->prepare_full_gateway_settings_save();
+		$params['is_woopay_enabled'] = true;
+		$stored_before               = $this->get_raw_option_value( 'woocommerce_woocommerce_payments_settings' );
+
+		$this->assert_link_and_woopay_save_refused( $this->sut->update_settings( $params ), $stored_before );
 	}
 
 	/**
@@ -3545,17 +3564,16 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should refuse a save that would turn on Link and WooPay together, with the settings screen's sentence, before any settings write: $scenario.
+	 * @testdox Should refuse a save that would turn on Link and WooPay together, with the settings screen's sentence, before any settings write: $_dataName.
 	 * @dataProvider provide_link_woopay_conflicting_saves
 	 *
-	 * @param string              $scenario      Case.
+	 * @param bool                $eligible      Whether the account is eligible for WooPay.
 	 * @param string[]            $stored_ids    Stored enabled payment method IDs.
-	 * @param string              $stored_woopay Stored `platform_checkout`.
+	 * @param string              $stored_woopay Stored WooPay choice.
 	 * @param array<string,mixed> $update        Settings update.
 	 */
-	public function test_update_settings_refuses_turning_on_link_and_woopay_together( string $scenario, array $stored_ids, string $stored_woopay, array $update ): void {
-		unset( $scenario );
-		$this->store_link_and_woopay_account( true, 'unrequested' );
+	public function test_update_settings_refuses_turning_on_link_and_woopay_together( bool $eligible, array $stored_ids, string $stored_woopay, array $update ): void {
+		$this->store_link_and_woopay_account( $eligible, 'unrequested' );
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
 			array(
@@ -3567,55 +3585,94 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		);
 		$stored_before = $this->get_raw_option_value( 'woocommerce_woocommerce_payments_settings' );
 
-		$result = $this->sut->update_settings( $update );
-
-		$this->assertInstanceOf( WP_Error::class, $result );
-		$this->assertSame( 'rest_invalid_param', $result->get_error_code() );
-		$this->assertSame( 400, $result->get_error_data()['status'] );
-		$this->assertSame(
-			"Link by Stripe and WooPay can't be enabled at the same time. Disable one of them.",
-			$result->get_error_data()['params']['enabled_payment_method_ids']
-		);
-		$this->assertSame( $stored_before, $this->get_raw_option_value( 'woocommerce_woocommerce_payments_settings' ), 'A refused save must leave the settings option byte-identical.' );
-		$this->assertSame( array(), $this->api_client->capability_requests, 'A refused save must not request capabilities on the platform.' );
-		$this->assertSame( array(), $this->pm_promotions_service->maybe_activated_payment_methods, 'A refused save must not activate promotions.' );
+		$this->assert_link_and_woopay_save_refused( $this->sut->update_settings( $update ), $stored_before );
 	}
 
 	/**
-	 * Provide saves that would turn on Link and WooPay together: case, stored method IDs, stored WooPay, update.
+	 * Provide partial and combined requests that would newly enable both methods.
 	 *
-	 * @return array<string,array{0:string,1:string[],2:string,3:array<string,mixed>}>
+	 * @return iterable<string,array{bool,string[],string,array<string,mixed>}>
 	 */
-	public function provide_link_woopay_conflicting_saves(): array {
-		return array(
-			'(a) Link enabled while WooPay is on' => array(
-				'(a) Link enabled while WooPay is on',
+	public function provide_link_woopay_conflicting_saves(): iterable {
+		$link = array( 'card', 'link' );
+		$both = array(
+			'is_woopay_enabled'          => true,
+			'enabled_payment_method_ids' => $link,
+		);
+
+		$eligibility = array(
+			'eligible'   => true,
+			'ineligible' => false,
+		);
+		foreach ( $eligibility as $state => $eligible ) {
+			yield "$state, adding Link with WooPay stored" => array(
+				$eligible,
 				array( 'card' ),
 				'yes',
 				array(
-					'enabled_payment_method_ids'  => array( 'card', 'link' ),
-					'payment_request_button_size' => 'medium',
+					'enabled_payment_method_ids'   => $link,
+					'payment_request_button_size'  => 'medium',
+					'account_statement_descriptor' => 'NEW STORE',
 				),
-			),
-			'(b) WooPay enabled while Link is on' => array(
-				'(b) WooPay enabled while Link is on',
-				array( 'card', 'link' ),
-				'no',
-				array(
-					'is_woopay_enabled'           => true,
-					'payment_request_button_size' => 'medium',
-				),
-			),
-			'WooPay enabled while a noncanonical stored LINK is on' => array(
-				'WooPay enabled while a noncanonical stored LINK is on',
-				array( 'card', 'LINK' ),
-				'no',
-				array(
-					'is_woopay_enabled'           => true,
-					'payment_request_button_size' => 'medium',
-				),
-			),
+			);
+			yield "$state, adding WooPay with Link stored" => array( $eligible, $link, 'no', array( 'is_woopay_enabled' => true ) );
+			yield "$state, posting both with neither stored" => array( $eligible, array( 'card' ), 'no', $both );
+			yield "$state, posting both with Link stored" => array( $eligible, $link, 'no', $both );
+			yield "$state, posting both with WooPay stored" => array( $eligible, array( 'card' ), 'yes', $both );
+		}
+
+		yield 'WooPay enabled while a noncanonical stored LINK is on' => array( true, array( 'card', 'LINK' ), 'no', array( 'is_woopay_enabled' => true ) );
+	}
+
+	/**
+	 * @testdox A methods-only REST save returns the field error when WooPay is stored on an account under review.
+	 */
+	public function test_settings_route_refuses_link_when_ineligible_woopay_is_stored(): void {
+		$this->store_woopay_account( 'under review' );
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'platform_checkout'              => 'yes',
+				'upe_enabled_payment_method_ids' => array( 'card' ),
+			)
 		);
+		$before = $this->get_raw_option_value( 'woocommerce_woocommerce_payments_settings' );
+
+		try {
+			$response = $this->post_settings( array( 'enabled_payment_method_ids' => array( 'card', 'link' ) ) );
+			$this->assertSame( 400, $response->get_status() );
+			$data = $response->get_data();
+			$this->assertSame( 'rest_invalid_param', $data['code'] );
+			$this->assertSame( "Link by Stripe and WooPay can't be enabled at the same time. Disable one of them.", $data['data']['params']['enabled_payment_method_ids'] );
+			$this->assertSame( $before, $this->get_raw_option_value( 'woocommerce_woocommerce_payments_settings' ) );
+		} finally {
+			$this->clear_rest_server();
+		}
+	}
+
+	/**
+	 * @testdox Turning off WooPay alone through REST keeps Link on while the account is under review.
+	 */
+	public function test_settings_route_turns_off_ineligible_woopay_with_link_stored(): void {
+		$this->store_woopay_account( 'under review' );
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'platform_checkout'              => 'yes',
+				'upe_enabled_payment_method_ids' => array( 'card', 'link' ),
+			)
+		);
+
+		try {
+			$response = $this->post_settings( array( 'is_woopay_enabled' => false ) );
+			$this->assertSame( 200, $response->get_status() );
+			$stored = get_option( 'woocommerce_woocommerce_payments_settings' );
+			$this->assertSame( 'no', $stored['platform_checkout'] );
+			$this->assertSame( array( 'card', 'link' ), $stored['upe_enabled_payment_method_ids'] );
+			$this->assertSame( gmdate( 'Y-m-d' ), $stored['platform_checkout_last_disable_date'] );
+		} finally {
+			$this->clear_rest_server();
+		}
 	}
 
 	/**
@@ -3694,15 +3751,12 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 				array( 'card', 'link' ),
 				'no',
 			),
-			'Link enabled while WooPay is set but the account is not eligible, as the screen shows WooPay off' => array(
-				'Link enabled while WooPay is set but the account is not eligible, as the screen shows WooPay off',
+			'an ineligible store changes only the button size with both already on' => array(
+				'an ineligible store changes only the button size with both already on',
 				false,
-				array( 'card' ),
+				array( 'card', 'link' ),
 				'yes',
-				array(
-					'enabled_payment_method_ids'  => array( 'card', 'link' ),
-					'payment_request_button_size' => 'medium',
-				),
+				array( 'payment_request_button_size' => 'medium' ),
 				array( 'card', 'link' ),
 				'yes',
 			),
@@ -4460,6 +4514,26 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 				return $this->options[ $key ] ?? 'no';
 			}
 		};
+	}
+
+	/**
+	 * Assert the field error and the absence of local or platform changes.
+	 *
+	 * @param array<string,mixed>|WP_Error $result        Settings response.
+	 * @param string|null                  $stored_before Gateway option before the save.
+	 */
+	private function assert_link_and_woopay_save_refused( $result, ?string $stored_before ): void {
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertSame( 'rest_invalid_param', $result->get_error_code() );
+		$this->assertSame( 400, $result->get_error_data()['status'] );
+		$this->assertSame(
+			"Link by Stripe and WooPay can't be enabled at the same time. Disable one of them.",
+			$result->get_error_data()['params']['enabled_payment_method_ids']
+		);
+		$this->assertSame( $stored_before, $this->get_raw_option_value( 'woocommerce_woocommerce_payments_settings' ), 'A refused save must leave the settings option byte-identical.' );
+		$this->assertNull( $this->api_client->last_account_settings, 'A refused save must not update account settings.' );
+		$this->assertSame( array(), $this->api_client->capability_requests, 'A refused save must not request capabilities on the platform.' );
+		$this->assertSame( array(), $this->pm_promotions_service->maybe_activated_payment_methods, 'A refused save must not activate promotions.' );
 	}
 
 	/**
