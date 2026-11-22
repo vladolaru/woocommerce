@@ -848,18 +848,20 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	}
 
 	/**
-	 * Skipping checkout's prevention gives the wrong refusal. Skipping the final paid-status check can replace an earlier payment.
+	 * Skipping checkout's note hides a prevented duplicate. A generic refusal leaves callers without a way to pay the balance.
 	 * R6's zero-call expectation applies only when no intent is attached. With an attached intent, checkout makes one GET.
 	 * Both cases return 409 without sending a charge, and the attached intent and charge IDs are preserved.
 	 *
 	 * @testWith [true, false]
 	 *           [false, false]
 	 *           [false, true]
+	 *           [true, true, true]
 	 *
-	 * @param bool $prevent  Whether checkout should prevent payment for the paid status.
-	 * @param bool $attached Whether an earlier payment intent is attached.
+	 * @param bool $prevent        Whether checkout should prevent payment for the paid status.
+	 * @param bool $attached       Whether an earlier payment intent is attached.
+	 * @param bool $payable_status Whether the store declares Processing payable.
 	 */
-	public function test_payment_detail_create_intent_route_respects_checkout_for_a_paid_order_made_payable( bool $prevent, bool $attached ): void {
+	public function test_payment_detail_create_intent_route_respects_checkout_for_a_paid_order_made_payable( bool $prevent, bool $attached, bool $payable_status = false ): void {
 		$order = $this->create_order_for_payment_intent();
 		$order->set_status( 'processing' );
 		if ( $attached ) {
@@ -872,17 +874,23 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		}
 		$order->save();
 		$this->create_payment_details_controller()->register_routes();
-		$paid_filter = $prevent ? '__return_true' : '__return_false';
-		add_filter( 'woocommerce_order_needs_payment', '__return_true' );
+		$paid_filter      = $prevent ? '__return_true' : '__return_false';
+		$payable_hook     = $payable_status ? 'woocommerce_valid_order_statuses_for_payment' : 'woocommerce_order_needs_payment';
+		$payable_callback = $payable_status ? static fn( $statuses ) => array_merge( $statuses, array( 'processing' ) ) : '__return_true';
+		add_filter( $payable_hook, $payable_callback );
 		add_filter( 'wcpay_should_prevent_payment_for_paid_order', $paid_filter );
 		try {
 			$response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
 		} finally {
 			remove_filter( 'wcpay_should_prevent_payment_for_paid_order', $paid_filter );
-			remove_filter( 'woocommerce_order_needs_payment', '__return_true' );
+			remove_filter( $payable_hook, $payable_callback );
 		}
 
-		$this->assert_refused_with_the_order_free( $response, $prevent ? 'wcpay_order_already_paid' : 'wcpay_order_paid_status_payable', $order );
+		$checkout_refuses = $prevent && ! $payable_status;
+		$this->assert_refused_with_the_order_free( $response, $checkout_refuses ? 'wcpay_order_already_paid' : 'wcpay_order_paid_status_payable', $order );
+		$this->assertSame( $checkout_refuses ? 'This order is already paid.' : "Pay the balance through this order's pay page.", $response->get_data()['message'] );
+		$notes = array_keys( $this->card_notes( $order ), 'WooPayments: detected and prevented a second payment for this order, which had already been paid.', true );
+		$this->assertCount( $checkout_refuses ? 1 : 0, $notes );
 		if ( $attached ) {
 			$fresh = wc_get_order( $order->get_id() );
 			$this->assertInstanceOf( WC_Order::class, $fresh );
@@ -1534,23 +1542,22 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	}
 
 	/**
-	 * Leaving the card selected after a definite decline discards the order's previous payment method and title.
+	 * Restoring the earlier method after a decline discards the gateway used for the attempt. Keeping the lock prevents another payment.
 	 *
 	 * @testWith [""]
 	 *           ["bacs"]
 	 *
 	 * @param string $method Earlier method.
 	 */
-	public function test_definite_decline_restores_the_method_and_title( string $method ): void {
+	public function test_definite_decline_leaves_the_card_selected_and_releases_the_lock( string $method ): void {
 		$order                       = $this->order_for_card_answer( $method );
-		$title                       = $order->get_payment_method_title( 'edit' );
 		$this->api_client->exception = new ApiException( 'Declined.', 'card_declined', 402 );
 		$this->create_payment_details_controller()->register_routes();
 		$response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
 		$this->assertSame( 500, $response->get_status() );
 		$fresh = $this->stored_card_order( $order );
-		$this->assertSame( $method, $fresh->get_payment_method( 'edit' ) );
-		$this->assertSame( $title, $fresh->get_payment_method_title( 'edit' ) );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $fresh->get_payment_method( 'edit' ) );
+		$this->assertSame( 'WooPayments card', $fresh->get_payment_method_title( 'edit' ) );
 		$this->assertSame( 'pending', $fresh->get_status() );
 		$this->assertNull( $fresh->get_date_paid() );
 		$this->assertSame( '', $fresh->get_meta( '_intent_id' ) );
@@ -1581,8 +1588,8 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$this->assert_card_lock_free( $order );
 	}
 
-	/** Keeping the card method when the builder fails changes the gateway without sending a payment. */
-	public function test_before_send_failure_restores_the_bank_method(): void {
+	/** Restoring bank transfer when the builder fails discards the card selection. Keeping the lock blocks the next attempt. */
+	public function test_before_send_failure_keeps_the_card_method_and_releases_the_lock(): void {
 		$order   = $this->order_for_card_answer( 'bacs' );
 		$builder = $this->getMockBuilder( WooPaymentsOrderDetailsService::class )->onlyMethods( array( 'build_create_payment_intent_request_from_order' ) )->getMock();
 		$builder->expects( $this->once() )->method( 'build_create_payment_intent_request_from_order' )->willThrowException( new \RuntimeException( 'Request construction failed.' ) );
@@ -1593,27 +1600,40 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$this->assertSame( 500, $response->get_status() );
 		$this->assertSame( array(), $this->api_client->calls );
 		$fresh = $this->stored_card_order( $order );
-		$this->assertSame( 'bacs', $fresh->get_payment_method() );
-		$this->assertSame( 'Bank transfer', $fresh->get_payment_method_title() );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $fresh->get_payment_method() );
+		$this->assertSame( 'WooPayments card', $fresh->get_payment_method_title() );
 		$this->assert_card_lock_free( $order );
 	}
 
-	/**
-	 * Ignoring the first failed save sends a charge without its gateway. Ignoring a failed restore hides the change from the merchant.
-	 *
-	 * @testWith [1]
-	 *           [2]
-	 *
-	 * @param int $failed_save Which method save fails.
-	 */
-	public function test_method_save_errors_stop_the_charge_or_report_the_failed_restore( int $failed_save ): void {
-		$order                       = $this->order_for_card_answer( 'bacs' );
-		$this->api_client->exception = new ApiException( 'Declined.', 'card_declined', 402 );
+	/** Restoring the old method when a response filter throws loses the card selection after the charge was sent. */
+	public function test_unread_response_keeps_the_card_method_and_releases_the_lock(): void {
+		$order = $this->order_for_card_answer( 'bacs' );
+		$fail  = static function ( $response, $method, $url, $api ) {
+			if ( 'POST' === $method && 'intentions' === $api ) {
+				throw new ApiException( 'Unable to process the response.', 'invalid_response', 400 );
+			}
+			return $response;
+		};
+		add_filter( 'wcpay_api_request_response', $fail, 10, 4 );
+		try {
+			$response = $this->dispatch_card_answer( $order, $this->card_answer( $order ) );
+		} finally {
+			remove_filter( 'wcpay_api_request_response', $fail );
+		}
+		$this->assertSame( 500, $response->get_status() );
+		$this->assertSame( 'Unable to process the response.', $response->get_data()['message'] );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $this->stored_card_order( $order )->get_payment_method( 'edit' ) );
+		$this->assert_card_lock_free( $order );
+	}
+
+	/** Retrying a failed method save writes the order again when the request should already have stopped. */
+	public function test_failed_method_save_stops_before_the_charge(): void {
+		$order = $this->order_for_card_answer( 'bacs' );
 		$this->create_payment_details_controller()->register_routes();
-		$logger = RecordingWcLogger::install();
-		$saves  = 0;
-		$fail   = static function ( $saving ) use ( $order, $failed_save, &$saves ): void {
-			if ( $order->get_id() === $saving->get_id() && ++$saves === $failed_save ) {
+		$saves = 0;
+		$fail  = static function ( $saving ) use ( $order, &$saves ): void {
+			if ( $order->get_id() === $saving->get_id() ) {
+				++$saves;
 				throw new \RuntimeException( 'Failed method save.' );
 			}
 		};
@@ -1624,13 +1644,9 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 			remove_action( 'woocommerce_before_order_object_save', $fail );
 		}
 		$this->assertSame( 500, $response->get_status() );
-		$this->assertCount( $failed_save - 1, $this->api_client->calls );
+		$this->assertSame( 1, $saves );
+		$this->assertSame( array(), $this->api_client->calls );
 		$this->assert_card_lock_free( $order );
-		if ( 2 === $failed_save ) {
-			$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $this->stored_card_order( $order )->get_payment_method() );
-			$warnings = array_values( array_filter( $logger->lines, static fn( $line ) => 'warning' === $line[0] ) );
-			$this->assertSame( array( array( 'warning', sprintf( 'payment method not restored: order %d keeps woocommerce_payments, was "bacs"', $order->get_id() ), 'woopayments' ) ), $warnings );
-		}
 	}
 
 	/**

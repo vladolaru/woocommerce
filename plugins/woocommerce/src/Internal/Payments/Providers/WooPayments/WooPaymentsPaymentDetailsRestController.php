@@ -208,10 +208,6 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 			return new WP_Error( 'wcpay_order_payment_locked', __( 'A payment operation is already in progress for this order.', 'woocommerce' ), array( 'status' => 409 ) );
 		}
 
-		$old_method = null;
-		$old_title  = '';
-		$sent       = false;
-		$declined   = false;
 		try {
 			$lifecycle = wc_get_container()->get( OrderPaymentLifecycleService::class );
 			$order     = $lifecycle->get_fresh_order_from_data_store( $order );
@@ -225,8 +221,6 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 				return new WP_Error( 'wcpay_server_error', __( 'The WooPayments card gateway is unavailable.', 'woocommerce' ), array( 'status' => 500 ) );
 			}
 			if ( WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $order->get_payment_method( 'edit' ) ) {
-				$old_method = $order->get_payment_method( 'edit' );
-				$old_title  = $order->get_payment_method_title( 'edit' );
 				$order->set_payment_method( $gateway );
 				$order->save();
 				$save_error = $order->get_last_save_error();
@@ -242,8 +236,8 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 				(string) $request->get_param( 'payment_method' ),
 				$this->account_service->is_manual_capture_enabled()
 			);
-			$sent         = true;
-			$intent       = $this->api_client->create_and_confirm_payment_intention( $request_data, '' );
+			// No caller key: the transport mints one per request, as in client 11.1.0 (includes/wc-payment-api/class-wc-payments-api-client.php:2660-2690).
+			$intent = $this->api_client->create_and_confirm_payment_intention( $request_data, '' );
 			try {
 				wc_get_container()->get( WooPaymentsCompositionDataSettler::class )->run_settled(
 					static function () use ( $lifecycle, $order, $intent ): void {
@@ -263,25 +257,9 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 
 			return new WP_REST_Response( $this->prepare_payment_intent_for_response( $intent, $request ) );
 		} catch ( Throwable $exception ) {
-			$declined = ! isset( $intent ) && $exception instanceof ApiException && 400 <= $exception->get_http_code() && $exception->get_http_code() < 500 && ! $exception->has_ambiguous_outcome();
 			return $this->get_create_payment_error( $order, $exception );
 		} finally {
-			try {
-				if ( null !== $old_method && ( ! $sent || $declined ) ) {
-					$order->set_payment_method( $old_method );
-					$order->set_payment_method_title( $old_title );
-					$order->save();
-					if ( null !== $order->get_last_save_error() ) {
-						wc_get_container()->get( WooPaymentsLogger::class )->log_always(
-							sprintf( 'payment method not restored: order %d keeps %s, was "%s"', $order->get_id(), WooPaymentsPersistenceVocabulary::GATEWAY_ID, WooPaymentsLogger::get_loggable_payment_method( $old_method ) ),
-							'warning'
-						);
-					}
-				}
-			} finally {
-				$order_payment_lock->mark_money_request_unsaved( $lock_token, false );
-				$order_payment_lock->release( $order, $vocabulary, $lock_token );
-			}
+			$order_payment_lock->release( $order, $vocabulary, $lock_token );
 		}
 	}
 
@@ -294,6 +272,7 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 	 * @return WP_Error
 	 */
 	private function get_create_payment_error( WC_Order $order, Throwable $exception ): WP_Error {
+		// The client logs the failure and returns its message (class-wc-rest-payments-payment-intents-controller.php:149-152).
 		wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Failed to create an intention via the REST API.', $exception, array( 'order_id' => $order->get_id() ) );
 
 		return new WP_Error( 'wcpay_server_error', $exception->getMessage(), array( 'status' => 500 ) );
@@ -345,10 +324,11 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 			);
 		}
 		if ( WooPaymentsDuplicatePaymentPreventionService::should_prevent_payment_for_paid_status( $order, $order->get_status( 'edit' ) ) ) {
+			WooPaymentsDuplicatePaymentPreventionService::add_prevented_payment_note( $order );
 			return new WP_Error( 'wcpay_order_already_paid', __( 'This order is already paid.', 'woocommerce' ), array( 'status' => 409 ) );
 		}
 		if ( wc_get_container()->get( OrderPaymentLifecycleService::class )->has_paid_status( $order ) ) {
-			return new WP_Error( 'wcpay_order_paid_status_payable', __( 'This order is already paid.', 'woocommerce' ), array( 'status' => 409 ) );
+			return new WP_Error( 'wcpay_order_paid_status_payable', __( "Pay the balance through this order's pay page.", 'woocommerce' ), array( 'status' => 409 ) );
 		}
 		return null;
 	}

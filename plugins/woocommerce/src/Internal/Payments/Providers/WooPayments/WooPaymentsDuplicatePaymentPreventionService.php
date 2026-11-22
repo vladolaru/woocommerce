@@ -625,13 +625,23 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	 * @return array<string,string>
 	 */
 	public function prevent_payment_for_paid_order( WC_Order $order, WC_Payment_Gateway $gateway ): array {
-		$order->add_order_note(
-			__( 'WooPayments: detected and prevented a second payment for this order, which had already been paid.', 'woocommerce' )
-		);
+		self::add_prevented_payment_note( $order );
 
 		$this->remove_session_processing_order( $order->get_id() );
 
 		return $this->success_redirect( $gateway, $order, self::FLAG_PREVIOUS_SUCCESSFUL_INTENT );
+	}
+
+	/**
+	 * Record that WooPayments prevented a second payment for an already paid order.
+	 *
+	 * @since 11.4.0
+	 * @param WC_Order $order Order whose payment was prevented.
+	 */
+	public static function add_prevented_payment_note( WC_Order $order ): void {
+		$order->add_order_note(
+			__( 'WooPayments: detected and prevented a second payment for this order, which had already been paid.', 'woocommerce' )
+		);
 	}
 
 	/**
