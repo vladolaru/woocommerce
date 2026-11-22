@@ -476,7 +476,7 @@ class WooPaymentsExpressCheckoutService {
 	 *
 	 * @return bool
 	 */
-	public function is_cart_supported(): bool {
+	private function is_cart_supported(): bool {
 		$cart = WC()->cart;
 		if ( ! $cart instanceof \WC_Cart ) {
 			return false;
