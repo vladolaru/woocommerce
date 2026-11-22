@@ -2778,7 +2778,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	 * @since 11.4.0
 	 */
 	public function test_blocks_data_amazon_pay_switch_uses_amazon_pay_availability(): void {
-		add_filter( 'woocommerce_is_checkout', '__return_true' );
+		$this->replace_page_surface( false, true );
 
 		$toggled_off = $this->create_assets_for_express_handlers( array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) )->get_blocks_payment_method_data( self::CARD_SUPPORTS );
 		$ineligible  = $this->create_assets_for_express_handlers( array(), array( 'capabilities' => array() ) )->get_blocks_payment_method_data( self::CARD_SUPPORTS );
