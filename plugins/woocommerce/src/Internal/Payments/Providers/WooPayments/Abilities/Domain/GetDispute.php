@@ -34,7 +34,24 @@ final class GetDispute extends AbstractAbility {
 		return array(
 			'label'        => __( 'Get dispute by ID', 'woocommerce' ),
 			'description'  => __( 'Look up a single dispute by ID. Answers \'what evidence is needed for dispute du_X and by when?\'.', 'woocommerce' ),
-			'input_schema' => self::get_id_input_schema( __( 'Stripe dispute ID (typically `du_…` or legacy `dp_…`). Stripe ID prefixes are not contractually stable, so this field is not pattern-validated.', 'woocommerce' ) ),
+			'input_schema' => self::get_id_input_schema( __( 'Stripe dispute ID using letters, digits, or underscores. The word `summary` is reserved.', 'woocommerce' ) ),
 		);
+	}
+
+	/**
+	 * Limit the lookup to IDs served by the dispute detail route.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param mixed $input Validated ability input.
+	 * @return array|\WP_Error Dispute details or an input or route error.
+	 */
+	public static function execute( $input = null ) {
+		$params = (array) $input;
+		$id     = $params[ self::ID_FIELD ] ?? null;
+		if ( is_string( $id ) && '' !== $id && ! preg_match( '/\A(?!summary\z)\w+\z/i', $id ) ) {
+			return new \WP_Error( 'wcpay_invalid_dispute_id', __( 'Enter a valid dispute ID.', 'woocommerce' ) );
+		}
+		return parent::execute( $params );
 	}
 }

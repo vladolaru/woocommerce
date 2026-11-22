@@ -904,9 +904,25 @@ class AbstractAbilityTest extends AbilityTestCase {
 			10,
 			3
 		);
-		$error = $this->ability( 'get-dispute' )->execute( array( 'dispute_id' => 'two words' ) );
-		$this->assertSame( array( self::API . 'disputes/two%20words' ), $paths );
+		$error = $this->ability( 'get-charge' )->execute( array( 'charge_id' => 'two words' ) );
+		$this->assertSame( array( self::API . 'charges/two%20words' ), $paths );
 		$this->assertSame( 'rest_no_route', $error->get_error_code() );
+	}
+
+	/**
+	 * @testdox A reserved route word is read as a dispute ID when the detail lookup accepts every string.
+	 * @testWith ["summary"]
+	 *           ["SuMmArY"]
+	 *           ["two/segments"]
+	 *           ["two words"]
+	 *
+	 * @param string $id Value outside the dispute detail route.
+	 */
+	public function test_invalid_dispute_id( string $id ): void {
+		add_filter( 'rest_pre_dispatch', static fn() => new \WP_Error( 'unexpected_dispatch', 'An invalid dispute ID reached REST.' ) );
+		$error = $this->ability( 'get-dispute' )->execute( array( 'dispute_id' => $id ) );
+		$this->assertWPError( $error );
+		$this->assertSame( 'wcpay_invalid_dispute_id', $error->get_error_code() );
 	}
 
 	/**
