@@ -105,6 +105,21 @@ abstract class AbstractAbility extends AbstractDomainAbility implements AbilityD
 	}
 
 	/**
+	 * Paging and ordering fields for list routes.
+	 *
+	 * @since 11.4.0
+	 */
+	protected static function get_list_input_properties(): array {
+		return self::get_pagination_input_properties() + array(
+			'orderby' => array( 'type' => 'string' ),
+			'order'   => array(
+				'type' => 'string',
+				'enum' => array( 'asc', 'desc' ),
+			),
+		);
+	}
+
+	/**
 	 * Dispatch a single read or fetch the requested list page and its total.
 	 *
 	 * @since 11.4.0
@@ -137,7 +152,11 @@ abstract class AbstractAbility extends AbstractDomainAbility implements AbilityD
 			return $collection;
 		}
 
-		return static::wrap_paginated_response( $collection, (int) $params['page'], max( 1, (int) $params['pagesize'] ) );
+		$page     = (int) $params['page'];
+		$per_page = max( 1, (int) $params['pagesize'] );
+		unset( $params['page'], $params['pagesize'], $params['sort'], $params['direction'] );
+
+		return static::wrap_paginated_response( $collection, $page, $per_page, $params );
 	}
 
 	/**
@@ -148,10 +167,11 @@ abstract class AbstractAbility extends AbstractDomainAbility implements AbilityD
 	 * @param array $collection Response body from the list route.
 	 * @param int   $page       Requested page number.
 	 * @param int   $per_page   Requested page size.
+	 * @param array $selectors  Filters shared with the list request.
 	 * @return array|WP_Error Page of records or an error reading the total.
 	 */
-	protected static function wrap_paginated_response( array $collection, int $page, int $per_page ) {
-		$summary = self::delegate_to_rest_controller( 'GET', static::ROUTE . '/summary' );
+	protected static function wrap_paginated_response( array $collection, int $page, int $per_page, array $selectors = array() ) {
+		$summary = self::delegate_to_rest_controller( 'GET', static::ROUTE . '/summary', $selectors );
 		if ( is_wp_error( $summary ) ) {
 			return $summary;
 		}

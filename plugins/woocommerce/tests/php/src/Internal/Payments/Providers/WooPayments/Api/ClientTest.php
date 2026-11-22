@@ -4125,7 +4125,7 @@ class ClientTest extends WC_Unit_Test_Case {
 			'get_deposit'                 => array( static fn( Client $sut ) => $sut->get_deposit( '../po_test' ), $route ),
 			'get_authorization'           => array( static fn( Client $sut ) => $sut->get_authorization( '../pi_auth' ), $route ),
 			'get_transactions_export_url' => array( static fn( Client $sut ) => $sut->get_transactions_export_url( '../txexp_test' ), $route ),
-			'get_fraud_outcomes'          => array( static fn( Client $sut ) => $sut->get_fraud_outcomes( array( 'status' => 'invalid' ) ), 'invalid_fraud_outcome_status' ),
+			'missing fraud status guard'  => array( static fn( Client $sut ) => $sut->get_fraud_outcomes( array( 'status' => 'invalid' ) ), 'invalid_fraud_outcome_status' ),
 			'get_latest_fraud_outcome'    => array( static fn( Client $sut ) => $sut->get_latest_fraud_outcome( 'pi-test' ), $route ),
 			'get_disputes_export_url'     => array( static fn( Client $sut ) => $sut->get_disputes_export_url( 'dpexp%2Ftest' ), $route ),
 			'get_document'                => array( static fn( Client $sut ) => $sut->get_document( '../vat_invoice-123' ), $route ),
@@ -5018,9 +5018,16 @@ class ClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve the fraud outcomes endpoint and move status into the path.
+	 * Rejecting a supported status or leaving it in the query selects the wrong endpoint.
+	 *
+	 * @testdox The client moves the supported fraud status into its endpoint path.
+	 * @testWith ["allow"]
+	 *           ["block"]
+	 *           ["review"]
+	 *
+	 * @param string $status Fraud outcome status.
 	 */
-	public function test_get_fraud_outcomes_uses_preserved_endpoint(): void {
+	public function test_get_fraud_outcomes_uses_preserved_endpoint( string $status ): void {
 		list( $sut, $http_client ) = $this->make_sut(
 			true,
 			array(
@@ -5031,14 +5038,14 @@ class ClientTest extends WC_Unit_Test_Case {
 
 		$sut->get_fraud_outcomes(
 			array(
-				'status'      => 'review',
+				'status'      => $status,
 				'search_term' => 'Ada',
 			)
 		);
 
-		$this->assertStringStartsWith( '/sites/123/wcpay/fraud_outcomes/status/review?', $http_client->last_path );
+		$this->assertStringStartsWith( '/sites/123/wcpay/fraud_outcomes/status/' . $status . '?', $http_client->last_path );
 		$this->assertStringContainsString( 'search_term=Ada', $http_client->last_path );
-		$this->assertStringNotContainsString( 'status=review', $http_client->last_path );
+		$this->assertStringNotContainsString( 'status=' . $status, $http_client->last_path );
 		$this->assertSame( 'GET', $http_client->last_method );
 	}
 

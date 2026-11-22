@@ -37,13 +37,7 @@ final class GetAuthorizations extends AbstractAbility {
 			'input_schema' => array(
 				'type'                 => 'object',
 				'default'              => new \stdClass(),
-				'properties'           => self::get_pagination_input_properties() + array(
-					'orderby' => array( 'type' => 'string' ),
-					'order'   => array(
-						'type' => 'string',
-						'enum' => array( 'asc', 'desc' ),
-					),
-				),
+				'properties'           => self::get_list_input_properties(),
 				'additionalProperties' => false,
 			),
 		);

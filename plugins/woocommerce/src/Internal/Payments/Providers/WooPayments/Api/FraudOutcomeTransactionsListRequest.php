@@ -22,6 +22,13 @@ use WP_REST_Request;
  */
 class FraudOutcomeTransactionsListRequest extends PaginatedListRequest {
 
+	/**
+	 * Outcome statuses accepted by the fraud list and summary.
+	 *
+	 * @since 11.4.0
+	 */
+	public const STATUSES = array( 'allow', 'block', 'review' );
+
 	protected const DEFAULT_PARAMS = array(
 		'page'      => 1,
 		'pagesize'  => 25,
@@ -58,7 +65,7 @@ class FraudOutcomeTransactionsListRequest extends PaginatedListRequest {
 	public function get_api(): string {
 		$status = $this->get_param( 'status' );
 		// The client refuses any other status before a request is built (class-list-fraud-outcome-transactions.php:40-45).
-		if ( ! in_array( $status, array( 'allow', 'block', 'review' ), true ) ) {
+		if ( ! in_array( $status, self::STATUSES, true ) ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
 			throw new ApiException( __( 'Invalid fraud outcome status provided.', 'woocommerce' ), 'invalid_fraud_outcome_status', 400 );
 		}

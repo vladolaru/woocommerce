@@ -1329,7 +1329,7 @@ class Client {
 		$status = isset( $query['status'] ) && is_scalar( $query['status'] ) ? (string) $query['status'] : '';
 		unset( $query['status'] );
 
-		if ( ! in_array( $status, array( 'allow', 'block', 'review' ), true ) ) {
+		if ( ! in_array( $status, FraudOutcomeTransactionsListRequest::STATUSES, true ) ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
 			throw new ApiException( __( 'Invalid fraud outcome status provided.', 'woocommerce' ), 'invalid_fraud_outcome_status', 400 );
 		}

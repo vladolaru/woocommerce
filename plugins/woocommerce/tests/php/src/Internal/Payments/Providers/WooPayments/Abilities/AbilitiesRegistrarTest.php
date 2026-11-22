@@ -38,7 +38,7 @@ class AbilitiesRegistrarTest extends AbilityTestCase {
 	}
 
 	/**
-	 * A true default exposes all five reads without opt-in.
+	 * A true default exposes all ten reads without opt-in.
 	 *
 	 * @testdox WooPayments leaves existing definitions alone until a store opts in.
 	 */
@@ -52,7 +52,7 @@ class AbilitiesRegistrarTest extends AbilityTestCase {
 	/**
 	 * A truthiness check loses the zero opt-in, and replacing the list loses earlier providers.
 	 *
-	 * @testdox Each opt-in value except literal false appends the five reads after existing definitions.
+	 * @testdox Each opt-in value except literal false appends the ten reads after existing definitions.
 	 * @testWith [true]
 	 *           [1]
 	 *           ["yes"]
@@ -63,7 +63,19 @@ class AbilitiesRegistrarTest extends AbilityTestCase {
 	public function test_opt_in_values( $value ): void {
 		$this->install_root();
 		$prior    = array( ProductsQuery::class );
-		$expected = array_merge( $prior, array( Domain\GetAccount::class, Domain\GetDepositsOverview::class, Domain\GetActiveLoanSummary::class, Domain\GetAuthorizations::class, Domain\GetAuthorizationsSummary::class ) );
+		$expected = array(
+			ProductsQuery::class,
+			Domain\GetAccount::class,
+			Domain\GetDepositsOverview::class,
+			Domain\GetActiveLoanSummary::class,
+			Domain\GetAuthorizations::class,
+			Domain\GetAuthorizationsSummary::class,
+			Domain\GetTransactions::class,
+			Domain\GetTransactionsSummary::class,
+			Domain\GetFraudOutcomes::class,
+			Domain\GetBalance::class,
+			Domain\GetFeesSummary::class,
+		);
 		add_filter( self::GATE, static fn() => $value );
 		$this->assertSame( $expected, apply_filters( self::CLASS_FILTER, $prior ) );
 	}
@@ -106,6 +118,34 @@ class AbilitiesRegistrarTest extends AbilityTestCase {
 	 */
 	public function test_extension_owner(): void {
 		$this->assert_registry_absent( WooPaymentsSetupTier::ACTIVE, true );
+	}
+
+	/**
+	 * Reading the main site's tier can expose abilities on an unconnected subsite or hide them on a connected one.
+	 *
+	 * @testdox Discovery follows the subsite's own connection state on a network.
+	 * @group multisite
+	 * @testWith [true]
+	 *           [false]
+	 *
+	 * @param bool $connected Whether the subsite is connected.
+	 */
+	public function test_subsite_discovery( bool $connected ): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Requires two sites on a network.' );
+		}
+
+		update_option( WooPaymentsSetupTier::OPTION_NAME, $connected ? WooPaymentsSetupTier::AVAILABLE : WooPaymentsSetupTier::CONNECTED );
+		$blog_id = self::factory()->blog->create();
+		switch_to_blog( $blog_id );
+		try {
+			add_filter( self::GATE, '__return_true' );
+			$this->install_root( $connected ? WooPaymentsSetupTier::CONNECTED : WooPaymentsSetupTier::AVAILABLE );
+			$this->assertSame( $connected ? self::NAMES : array(), $this->provider_names() );
+		} finally {
+			restore_current_blog();
+			wpmu_delete_blog( $blog_id, true );
+		}
 	}
 
 	/**

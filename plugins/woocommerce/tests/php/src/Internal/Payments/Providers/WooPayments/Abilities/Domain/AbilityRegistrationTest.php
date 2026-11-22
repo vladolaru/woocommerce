@@ -13,19 +13,14 @@ use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Abiliti
 class AbilityRegistrationTest extends AbilityTestCase {
 	private const NOT_YET_PORTED = array(
 		'accept-dispute',
-		'get-balance',
 		'get-charge',
 		'get-deposits',
 		'get-deposits-summary',
 		'get-dispute',
 		'get-disputes',
 		'get-disputes-summary',
-		'get-fees-summary',
-		'get-fraud-outcomes',
 		'get-payment-intent',
 		'get-timeline',
-		'get-transactions',
-		'get-transactions-summary',
 		'refund-charge',
 		'submit-dispute-evidence',
 		'upload-dispute-evidence-file',
@@ -59,7 +54,7 @@ class AbilityRegistrationTest extends AbilityTestCase {
 	}
 
 	/**
-	 * Installing transactions early makes the registered and pending sets overlap.
+	 * Leaving the fees summary pending after registration makes the registered and pending sets overlap.
 	 *
 	 * @testdox Registered and pending names together account for the complete extension inventory.
 	 */
@@ -82,7 +77,7 @@ class AbilityRegistrationTest extends AbilityTestCase {
 	/**
 	 * Omitting the Capital loan definition loses a name from the registry.
 	 *
-	 * @testdox The registry exposes exactly the five implemented WooPayments reads.
+	 * @testdox The registry exposes exactly the ten implemented WooPayments reads.
 	 */
 	public function test_registered_names(): void {
 		$this->install_root();
@@ -94,7 +89,7 @@ class AbilityRegistrationTest extends AbilityTestCase {
 	}
 
 	/**
-	 * Catches a renamed payout label, an array default instead of an object, an account output schema,
+	 * Catches a shortened fraud label, an array default for the transactions summary, a declared fees output schema,
 	 * non-idempotent reads, hidden loan summaries, and an extra MCP tool type.
 	 *
 	 * @testdox The registration of $_dataName matches its status and settings in the extension inventory.
@@ -138,7 +133,7 @@ class AbilityRegistrationTest extends AbilityTestCase {
 		$this->install_root();
 		add_filter( self::GATE, '__return_true' );
 		$classes = apply_filters( 'woocommerce_ability_definition_classes', array() );
-		$this->assertCount( 5, $classes );
+		$this->assertCount( 10, $classes );
 		foreach ( $classes as $class ) {
 			$this->assertArrayNotHasKey( 'public', $class::get_registration_args()['meta'], $class );
 		}

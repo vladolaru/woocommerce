@@ -10,6 +10,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLevel3Service;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsReportsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransactionsListRequest;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Abilities\AbilityRegistryFixture;
 use WC_Order;
 use WC_REST_Unit_Test_Case;
 use WP_REST_Request;
@@ -19,6 +20,7 @@ use WP_REST_Server;
  * Tests for the native WooPayments Reports REST controller.
  */
 class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
+	use AbilityRegistryFixture;
 
 	/**
 	 * Recording API client.
@@ -127,6 +129,62 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->assertSame( 403, $response->get_status() );
 		$this->assertSame( array(), $this->api_client->last_call );
+	}
+
+	/**
+	 * Gating registration on Reports, skipping the account check, or always denying reports breaks these reads.
+	 *
+	 * @testdox Report abilities enforce the route's account and Reports checks before transport.
+	 * @testWith [false, true]
+	 *           [true, false]
+	 *           [true, true]
+	 *
+	 * @param bool $reports_enabled Whether Reports is enabled.
+	 * @param bool $has_account     Whether the store has an account.
+	 */
+	public function test_report_abilities( bool $reports_enabled, bool $has_account ): void {
+		$this->set_up_ability_registry();
+		try {
+			$this->install_root();
+			add_filter( 'woocommerce_payments_abilities_enabled', '__return_true' );
+			wp_set_current_user( self::factory()->user->create( array( 'role' => 'shop_manager' ) ) );
+			$this->create_controller( $reports_enabled, $has_account )->register_routes();
+			$balance = array(
+				'date_start' => '2026-06-01T00:00:00Z',
+				'date_end'   => '2026-06-19T23:59:59Z',
+				'currency'   => 'USD',
+			);
+			foreach ( array(
+				'get-balance'      => $balance,
+				'get-fees-summary' => array( 'deposit_id' => 'po_sample' ),
+			) as $name => $input ) {
+				$this->assertTrue( wp_has_ability( 'woocommerce-payments/' . $name ), $name );
+				$ability = wp_get_ability( 'woocommerce-payments/' . $name );
+				$this->assertTrue( $ability->check_permissions( $input ) );
+				$this->api_client->response = array(
+					'count' => 5,
+					'total' => 9400,
+				);
+				$result                     = $ability->execute( $input );
+				if ( ! $reports_enabled || ! $has_account ) {
+					$this->assertWPError( $result );
+					$this->assertSame( 'rest_forbidden', $result->get_error_code() );
+					$this->assertSame( 403, $result->get_error_data()['status'] );
+					$this->assertSame( array(), $this->api_client->last_call );
+					continue;
+				}
+				$this->assertSame( $this->api_client->response, $result );
+				if ( 'get-balance' === $name ) {
+					$this->assertSame( 'get_reporting_balance_summary', $this->api_client->last_call['method'] );
+					$this->assertSame( array_merge( $balance, array( 'currency' => 'usd' ) ), $this->api_client->last_call['query'] );
+				} else {
+					$this->assertSame( 'get_transactions_summary', $this->api_client->last_call['method'] );
+					$this->assertSame( 'po_sample', $this->api_client->last_call['deposit_id'] );
+				}
+			}
+		} finally {
+			$this->restore_ability_registry();
+		}
 	}
 
 	/**
@@ -1014,6 +1072,8 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 		} else {
 			$account_service->expects( $this->never() )->method( 'has_account' );
 		}
+
+		wc_get_container()->replace( WooPaymentsAccountService::class, $account_service );
 
 		$controller = new WooPaymentsReportsRestController();
 		$controller->init( $this->api_client, $account_service, $this->create_order_service() );
