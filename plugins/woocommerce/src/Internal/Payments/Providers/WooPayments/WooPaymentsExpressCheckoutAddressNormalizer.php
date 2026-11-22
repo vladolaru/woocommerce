@@ -1451,7 +1451,9 @@ final class WooPaymentsExpressCheckoutAddressNormalizer {
 	}
 
 	/**
-	 * Normalize redacted postal-code values for countries where wallets can send partial values.
+	 * Complete partial wallet postcodes for shipping rates. Client 11.3.0 class-wc-payments-express-checkout-ajax-handler.php:470-497.
+	 *
+	 * @since 11.4.0
 	 *
 	 * @param string $postcode Postcode value.
 	 * @param string $country  Country code.
@@ -1464,13 +1466,15 @@ final class WooPaymentsExpressCheckoutAddressNormalizer {
 			$cleaned_postcode = preg_replace( '/[^A-Za-z0-9]/', '', $postcode );
 			$cleaned_postcode = substr( is_string( $cleaned_postcode ) ? $cleaned_postcode : '', 0, 7 );
 
-			return strlen( $cleaned_postcode ) >= 5 ? $cleaned_postcode : $cleaned_postcode . '000';
+			return strlen( $cleaned_postcode ) >= 5 ? $cleaned_postcode : $cleaned_postcode . '0AA';
 		}
 
 		if ( 'CA' === $country ) {
 			$cleaned_postcode = preg_replace( '/\s+/', '', $postcode );
 
-			return str_pad( is_string( $cleaned_postcode ) ? $cleaned_postcode : '', 6, '0' );
+			$cleaned_postcode = is_string( $cleaned_postcode ) ? $cleaned_postcode : '';
+
+			return $cleaned_postcode . substr( 'A0A0A0', strlen( $cleaned_postcode ) );
 		}
 
 		return $postcode;

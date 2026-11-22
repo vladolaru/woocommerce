@@ -186,29 +186,38 @@ class WooPaymentsExpressCheckoutAddressNormalizerTest extends WC_Unit_Test_Case 
 	}
 
 	/**
-	 * @testdox Should normalize redacted tokenized update-customer postcodes before Store API validation.
+	 * @testdox Zero-only padding gives carriers invalid partial postcodes, and unconditional padding changes complete ones.
+	 * @since 11.4.0
+	 * @testWith ["GB", "N1C", "N1C0AA"]
+	 *           ["CA", "H3B", "H3B0A0"]
+	 *           ["GB", "N1C4AG", "N1C4AG"]
+	 *           ["CA", "H3B4G7", "H3B4G7"]
+	 *
+	 * @param string $country  Address country.
+	 * @param string $postcode Wallet postcode.
+	 * @param string $expected Postcode for shipping rates.
 	 */
-	public function test_normalizes_tokenized_update_customer_postcodes_before_store_api_validation(): void {
+	public function test_normalizes_tokenized_update_customer_postcodes_before_store_api_validation( string $country, string $postcode, string $expected ): void {
 		$request = $this->create_tokenized_store_api_request( 'POST', '/wc/store/v1/cart/update-customer', wp_create_nonce( 'woopayments_tokenized_cart_nonce' ) );
 		$request->set_param(
 			'shipping_address',
 			array(
-				'country'  => 'GB',
-				'postcode' => 'N1C',
+				'country'  => $country,
+				'postcode' => $postcode,
 			)
 		);
 
 		$this->sut->normalize_tokenized_cart_store_api_addresses( $request );
 
 		$shipping_address = $request->get_param( 'shipping_address' );
-		$this->assertSame( 'N1C000', $shipping_address['postcode'] );
-		$this->assertTrue( $this->sut->maybe_skip_postcode_validation( false, 'N1C000', 'GB' ) );
-		$this->assertTrue( $this->sut->maybe_skip_postcode_validation( false, 'N1C 000', 'GB' ) );
-		$this->assertFalse( $this->sut->maybe_skip_postcode_validation( false, 'SW1000', 'GB' ) );
+		$this->assertSame( $expected, $shipping_address['postcode'] );
+		$this->assertTrue( $this->sut->maybe_skip_postcode_validation( false, $expected, $country ) );
+		$this->assertFalse( $this->sut->maybe_skip_postcode_validation( false, 'SW1000', $country ) );
 	}
 
 	/**
-	 * @testdox Should clear the tokenized postcode validation bypass after Store API dispatch.
+	 * @testdox Forgetting the padded postcode rejects it during dispatch, and retaining it accepts it on the next request.
+	 * @since 11.4.0
 	 */
 	public function test_clears_tokenized_postcode_validation_after_store_api_dispatch(): void {
 		$request = $this->create_tokenized_store_api_request( 'POST', '/wc/store/v1/cart/update-customer', wp_create_nonce( 'woopayments_tokenized_cart_nonce' ) );
@@ -222,11 +231,11 @@ class WooPaymentsExpressCheckoutAddressNormalizerTest extends WC_Unit_Test_Case 
 
 		$this->sut->normalize_tokenized_cart_store_api_addresses( $request );
 
-		$this->assertTrue( $this->sut->maybe_skip_postcode_validation( false, 'N1C000', 'GB' ) );
+		$this->assertTrue( $this->sut->maybe_skip_postcode_validation( false, 'N1C 0AA', 'GB' ) );
 
 		$this->sut->clear_tokenized_postcode_validation( new WP_REST_Response( array() ), null, $request );
 
-		$this->assertFalse( $this->sut->maybe_skip_postcode_validation( false, 'N1C000', 'GB' ) );
+		$this->assertFalse( $this->sut->maybe_skip_postcode_validation( false, 'N1C0AA', 'GB' ) );
 	}
 
 	/**
