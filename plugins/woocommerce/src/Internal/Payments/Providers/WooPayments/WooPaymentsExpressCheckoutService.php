@@ -980,6 +980,8 @@ class WooPaymentsExpressCheckoutService {
 	/**
 	 * Tell whether account creation is possible during checkout.
 	 *
+	 * @since 11.4.0
+	 *
 	 * @param string $context Express checkout context.
 	 * @return bool
 	 */
@@ -991,12 +993,8 @@ class WooPaymentsExpressCheckoutService {
 			$is_signup_from_checkout_allowed = 'yes' === get_option( 'woocommerce_enable_signup_from_checkout_for_subscriptions', 'no' );
 		}
 
-		// With automatically generated username/password disabled, the express
-		// checkout payload can't carry those fields, so account creation is
-		// not possible.
-		return $is_signup_from_checkout_allowed
-			&& 'yes' === get_option( 'woocommerce_registration_generate_username', 'yes' )
-			&& 'yes' === get_option( 'woocommerce_registration_generate_password', 'yes' );
+		// The Store API generates the credentials. Client 11.3.0 class-wc-payments-express-checkout-button-handler.php:210-215.
+		return $is_signup_from_checkout_allowed;
 	}
 
 	/**

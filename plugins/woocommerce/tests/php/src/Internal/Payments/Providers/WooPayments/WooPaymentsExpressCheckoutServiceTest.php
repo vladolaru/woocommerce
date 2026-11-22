@@ -856,6 +856,29 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Requiring an automatically generated username or password sends a guest buying a subscription to login.
+	 * @since 11.4.0
+	 * @testWith ["woocommerce_registration_generate_username"]
+	 *           ["woocommerce_registration_generate_password"]
+	 *
+	 * @param string $disabled_option Credential generation option turned off by the merchant.
+	 */
+	public function test_subscription_signup_without_generated_credentials( string $disabled_option ): void {
+		wp_set_current_user( 0 );
+		WooCommerceSubscriptionsDoubles::load_product();
+		WooCommerceSubscriptionsDoubles::load_cart();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_SUBSCRIPTION ] = true;
+		update_option( 'woocommerce_enable_signup_from_checkout_for_subscriptions', 'yes' );
+		update_option( $disabled_option, 'no' );
+		WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product()->get_id() );
+		WC()->cart->calculate_totals();
+
+		$sut = $this->create_service();
+		$this->assertTrue( $sut->should_show_payment_request_button( 'cart' ) );
+		$this->assertFalse( $sut->get_express_checkout_params( 'cart' )['login_confirmation'] );
+	}
+
+	/**
 	 * @testdox Should require login confirmation on a subscription product page unless the shopper can sign up during checkout: $_dataName.
 	 * @dataProvider provide_subscription_product_page_signup_options
 	 *
