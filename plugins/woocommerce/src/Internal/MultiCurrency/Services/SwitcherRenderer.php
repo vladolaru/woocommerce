@@ -151,7 +151,8 @@ class SwitcherRenderer {
 			$with_flag,
 			$this->get_accessible_label( '' ),
 			$select_styles,
-			true
+			true,
+			self::implode_styles_array( $styles['option'] )
 		);
 		$markup .= '</div></form>';
 
@@ -167,6 +168,7 @@ class SwitcherRenderer {
 	 * @param string             $aria_label    Accessible select label.
 	 * @param string             $select_styles Optional select styles.
 	 * @param bool               $plain_labels  Whether option labels are escaped as plain text (block) rather than filtered HTML (widget).
+	 * @param string             $option_styles Optional styles for each currency option.
 	 * @return string
 	 */
 	private function get_select_markup(
@@ -175,7 +177,8 @@ class SwitcherRenderer {
 		bool $with_flag,
 		string $aria_label,
 		string $select_styles = '',
-		bool $plain_labels = false
+		bool $plain_labels = false,
+		string $option_styles = ''
 	): string {
 		$style_attribute = '' !== $select_styles
 			? ' style="' . esc_attr( $select_styles ) . '"'
@@ -184,7 +187,7 @@ class SwitcherRenderer {
 		$selected_code   = $state->get_selected_currency()->get_code();
 
 		foreach ( $state->get_enabled_currencies() as $currency ) {
-			$markup .= $this->get_currency_option_markup( $currency, $selected_code, $with_symbol, $with_flag, $plain_labels );
+			$markup .= $this->get_currency_option_markup( $currency, $selected_code, $with_symbol, $with_flag, $plain_labels, $option_styles );
 		}
 
 		$markup .= '</select>';
@@ -200,6 +203,7 @@ class SwitcherRenderer {
 	 * @param bool                  $with_symbol   Whether to include currency symbols.
 	 * @param bool                  $with_flag     Whether to include currency flags.
 	 * @param bool                  $plain_label   Whether to escape the label as plain text.
+	 * @param string                $option_styles Optional styles for the option.
 	 * @return string
 	 */
 	private function get_currency_option_markup(
@@ -207,15 +211,17 @@ class SwitcherRenderer {
 		string $selected_code,
 		bool $with_symbol,
 		bool $with_flag,
-		bool $plain_label
+		bool $plain_label,
+		string $option_styles
 	): string {
 		$code     = $currency->get_code();
 		$selected = $selected_code === $code ? ' selected' : '';
 		$label    = $this->get_currency_option_label( $currency, $with_symbol, $with_flag );
+		$style    = '' !== $option_styles ? ' style="' . esc_attr( $option_styles ) . '"' : '';
 
 		// Widget labels are filtered through wp_kses_post(), block labels escaped with esc_html().
 		// The client widget prints its label raw (client 11.1.0 `CurrencySwitcherWidget.php:146`); its block uses esc_html() (`CurrencySwitcherBlock.php:178`).
-		return '<option value="' . esc_attr( $code ) . '"' . $selected . '>' . ( $plain_label ? esc_html( $label ) : wp_kses_post( $label ) ) . '</option>';
+		return '<option value="' . esc_attr( $code ) . '"' . $selected . $style . '>' . ( $plain_label ? esc_html( $label ) : wp_kses_post( $label ) ) . '</option>';
 	}
 
 	/**
@@ -283,10 +289,10 @@ class SwitcherRenderer {
 	 * Get block styles grouped by target element.
 	 *
 	 * @param array<string,mixed> $block_attributes Block attributes.
-	 * @return array{div: array<string,string>, select: array<string,string>}
+	 * @return array{div: array<string,string>, select: array<string,string>, option: array<string,string>}
 	 */
 	private function get_block_styles( array $block_attributes ): array {
-		return array(
+		$styles = array(
 			'div'    => array(
 				'line-height' => self::get_numeric_style_value( $block_attributes['fontLineHeight'] ?? null, '1.2' ),
 			),
@@ -299,7 +305,19 @@ class SwitcherRenderer {
 				'color'            => self::sanitize_color_value( $block_attributes['fontColor'] ?? null, '#000000' ),
 				'background-color' => self::sanitize_color_value( $block_attributes['backgroundColor'] ?? null, '#000000' ),
 			),
+			'option' => array(),
 		);
+
+		// Client 11.3.0 CurrencySwitcherBlock.php:223 uses system colours when the browser supplies the option list background.
+		if ( in_array( $styles['select']['background-color'], array( '', 'transparent' ), true ) ) {
+			$styles['select']['color-scheme'] = 'light dark';
+			$styles['option']                 = array(
+				'background-color' => 'Canvas',
+				'color'            => 'CanvasText',
+			);
+		}
+
+		return $styles;
 	}
 
 	/**

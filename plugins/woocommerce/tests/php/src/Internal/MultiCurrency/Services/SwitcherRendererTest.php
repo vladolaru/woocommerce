@@ -148,6 +148,33 @@ class SwitcherRendererTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should use system option colours only when the currency switcher background is transparent.
+	 *
+	 * Client 11.3.0 CurrencySwitcherBlock.php:223 fixes unreadable options in 11.2.0.
+	 */
+	public function test_uses_system_option_colours_only_on_transparent_backgrounds(): void {
+		$sut = $this->create_service( $this->create_state( 'USD' ) );
+
+		foreach ( array( 'transparent', '', '#123456' ) as $background ) {
+			$tags        = new \WP_HTML_Tag_Processor( $sut->get_block_markup( array( 'backgroundColor' => $background ) ) );
+			$transparent = '#123456' !== $background;
+			$this->assertTrue( $tags->next_tag( 'select' ) );
+			$style = $tags->get_attribute( 'style' );
+			$this->assertStringContainsString( 'background-color: ' . $background . ';', $style );
+			if ( $transparent ) {
+				$this->assertStringContainsString( 'color-scheme: light dark;', $style );
+			} else {
+				$this->assertStringNotContainsString( 'color-scheme:', $style );
+			}
+			foreach ( array( 'USD', 'GBP', 'JPY' ) as $code ) {
+				$this->assertTrue( $tags->next_tag( 'option' ) );
+				$this->assertSame( $code, $tags->get_attribute( 'value' ) );
+				$this->assertSame( $transparent ? 'background-color: Canvas; color: CanvasText;' : null, $tags->get_attribute( 'style' ) );
+			}
+		}
+	}
+
+	/**
 	 * @testdox Should entity-encode markup in a currency option label.
 	 *
 	 * Client 11.1.0 CurrencySwitcherBlock.php:178 prints the option text through `esc_html()`,
