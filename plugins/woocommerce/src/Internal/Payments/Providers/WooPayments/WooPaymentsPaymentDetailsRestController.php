@@ -7,8 +7,12 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventOrderResolver;
 use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use WC_Order;
 use WP_Error;
@@ -178,6 +182,11 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 	/**
 	 * Create and confirm a payment intent from an order.
 	 *
+	 * The order payment lock is held around the platform call, and the order is read again under it. The route answers
+	 * 409 and sends nothing while another payment operation holds the order, or when the order as read again is paid,
+	 * refunded, has an unresolved checkout charge, or has an attached payment that holds money or cannot be read
+	 * (get_order_payment_refusal()). The idempotency key is unchanged: the transport mints one per request.
+	 *
 	 * @param WP_REST_Request $request Request.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
 	 * @return WP_REST_Response|WP_Error
@@ -192,7 +201,22 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 			);
 		}
 
+		$order_payment_lock = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary         = new WooPaymentsPersistenceVocabulary();
+		$lock_token         = $order_payment_lock->claim( $order, $vocabulary, null, 'payment intent creation' );
+		if ( null === $lock_token ) {
+			$order_payment_lock->log_refusal( $order, $vocabulary, 'payment intent creation' );
+
+			return new WP_Error( 'wcpay_order_payment_locked', __( 'A payment operation is already in progress for this order.', 'woocommerce' ), array( 'status' => 409 ) );
+		}
+
 		try {
+			$order   = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
+			$refusal = $this->get_order_payment_refusal( $order );
+			if ( null !== $refusal ) {
+				return $refusal;
+			}
+
 			$intent = $this->api_client->create_and_confirm_payment_intention(
 				$this->order_service->build_create_payment_intent_request_from_order(
 					$order,
@@ -211,7 +235,61 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Failed to create an intention via the REST API.', $exception, array( 'order_id' => $order->get_id() ) );
 
 			return new WP_Error( 'wcpay_server_error', $exception->getMessage(), array( 'status' => 500 ) );
+		} finally {
+			$order_payment_lock->release( $order, $vocabulary, $lock_token );
 		}
+	}
+
+	/**
+	 * Get the refusal of a new charge for an order, from what the store knows, in the order the checks run: a paid order;
+	 * a refunded order that does not need payment, as the pay page refuses it; an unresolved checkout charge; an attached
+	 * payment that holds money and names the order on a live read, or whose read fails and the checkout's own rules refuse
+	 * (WooPaymentsDuplicatePaymentPreventionService::refuses_unread_attached_payment() and
+	 * WooPaymentsPaymentOperationService::get_unread_payment_refusal_tier_for_order(), with the outcome taken as unknown).
+	 *
+	 * @param WC_Order $order Order as read again under the order payment lock.
+	 * @return WP_Error|null The 409 to answer, or null when the charge goes on.
+	 */
+	private function get_order_payment_refusal( WC_Order $order ): ?WP_Error {
+		if ( wc_get_container()->get( EventOrderResolver::class )->is_paid_for_ownership( $order ) ) {
+			return new WP_Error( 'wcpay_order_already_paid', __( 'This order is already paid.', 'woocommerce' ), array( 'status' => 409 ) );
+		}
+		if ( $order->has_status( OrderStatus::REFUNDED ) && ! $order->needs_payment() ) {
+			return new WP_Error( 'wcpay_order_refunded', __( "This order's payment was refunded, so it can't be paid again. Please place a new order.", 'woocommerce' ), array( 'status' => 409 ) );
+		}
+		if ( '' !== (string) $order->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) ) {
+			return new WP_Error( 'wcpay_order_payment_unresolved', __( "This order's last payment attempt is not resolved yet. Try again later.", 'woocommerce' ), array( 'status' => 409 ) );
+		}
+
+		$intent_id = (string) $order->get_meta( '_intent_id', true );
+		if ( 0 !== strpos( $intent_id, 'pi_' ) ) {
+			return null;
+		}
+		$unreadable = new WP_Error( 'wcpay_order_payment_unreadable', __( "This order's attached payment could not be checked. Try again later.", 'woocommerce' ), array( 'status' => 409 ) );
+		// A stated exception to the order payment lock's rule: the attached payment's read may run under the claim.
+		try {
+			$intent = $this->api_client->get_payment_intention( $intent_id );
+		} catch ( Throwable $failure ) {
+			if ( WooPaymentsDuplicatePaymentPreventionService::refuses_unread_attached_payment( $failure, $order ) ) {
+				return $unreadable;
+			}
+			$intent = array();
+		}
+
+		if ( ! WooPaymentsIntentCodec::is_usable_intent_answer( $intent ) ) {
+			return null === wc_get_container()->get( WooPaymentsPaymentOperationService::class )->get_unread_payment_refusal_tier_for_order( $order, $intent_id, true ) ? null : $unreadable;
+		}
+
+		return WooPaymentsIntentCodec::holds_money( (string) $intent['status'] ) && WooPaymentsIntentCodec::intent_belongs_to_order( $intent, $order )
+			? new WP_Error(
+				'wcpay_order_payment_holds_money',
+				__( 'This order already has a payment that holds money.', 'woocommerce' ),
+				array(
+					'status'    => 409,
+					'intent_id' => $intent_id,
+				)
+			)
+			: null;
 	}
 
 	/**
