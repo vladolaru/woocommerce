@@ -132,9 +132,9 @@ class WooCommercePaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Starts the install on the note's action while the WooPayments feature is off.
+	 * @testdox Keeps trunk's behaviour while the WooPayments feature is off: a failed install lookup still redirects to onboarding.
 	 */
-	public function test_starts_install_while_feature_is_off(): void {
+	public function test_keeps_trunk_onboarding_redirect_after_failed_install_while_feature_is_off(): void {
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 		require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		if ( ! is_wp_error( validate_plugin( WooCommercePayments::PLUGIN_FILE ) ) ) {

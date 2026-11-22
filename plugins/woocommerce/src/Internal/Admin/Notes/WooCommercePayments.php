@@ -139,7 +139,7 @@ class WooCommercePayments {
 	/**
 	 * The note applies only while the WooPayments feature is off; while it is on, the built-in WooPayments is offered instead.
 	 *
-	 * @since 11.5.0
+	 * @since 11.4.0
 	 *
 	 * @return bool
 	 */
