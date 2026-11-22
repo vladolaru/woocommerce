@@ -82,27 +82,6 @@ abstract class AbstractAbility extends AbstractDomainAbility implements AbilityD
 	}
 
 	/**
-	 * Describe a write with its own destructive and idempotent flags.
-	 *
-	 * @since 11.4.0
-	 *
-	 * @param bool $destructive Whether the write can destroy data.
-	 * @param bool $idempotent  Whether repeating the write has the same effect.
-	 * @return array Ability metadata.
-	 */
-	protected static function get_write_meta( bool $destructive, bool $idempotent ): array {
-		return array(
-			'annotations'  => array(
-				'readonly'    => false,
-				'destructive' => $destructive,
-				'idempotent'  => $idempotent,
-			),
-			'show_in_rest' => true,
-			'mcp'          => array( 'public' => false ),
-		);
-	}
-
-	/**
 	 * Paging fields shared by WooPayments collection schemas.
 	 *
 	 * @since 11.4.0
@@ -185,7 +164,7 @@ abstract class AbstractAbility extends AbstractDomainAbility implements AbilityD
 			$count = (int) $count;
 		}
 		if ( ! is_int( $count ) || $count < 0 ) {
-			return new WP_Error( 'woopayments_ability_count_unavailable', __( 'The authorization count is unavailable.', 'woocommerce' ), array( 'status' => 502 ) );
+			return new WP_Error( 'woopayments_ability_count_unavailable', __( 'The record count is unavailable.', 'woocommerce' ), array( 'status' => 502 ) );
 		}
 
 		return array(

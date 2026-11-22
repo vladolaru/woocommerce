@@ -141,6 +141,8 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Among these rows, skipping the abilities registrar on connected CLI requests loses a required cell.
+	 *
 	 * @testdox $_dataName loads on exactly the listed setup tier and request cells, and on no other.
 	 *
 	 * @dataProvider root_cells_provider
@@ -203,7 +205,8 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 			'The session payment values'            => array( self::WCPAY . 'WooPaymentsSessionService', array( 'active ajax', 'active front', 'active rest' ) ),
 			// No request loads it: the registrar hears every refund and resolves it only then.
 			'The early fraud warning list'          => array( self::WCPAY . 'WooPaymentsEarlyFraudWarningOrderService', array() ),
-			'Registrar omitted from connected CLI'  => array( self::WCPAY . 'Abilities\\AbilitiesRegistrar', $set_up ),
+			// A connected merchant can discover abilities from any request, including WP-CLI with checkout disabled.
+			'The abilities registrar'               => array( self::WCPAY . 'Abilities\\AbilitiesRegistrar', $set_up ),
 			// A REST server can start in any request of a set-up store, and the registrar adds the routes when it does.
 			'The REST route registrar'              => array( WooPaymentsAdminRestRouteRegistrar::class, $set_up ),
 		);

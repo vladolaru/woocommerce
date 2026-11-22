@@ -58,7 +58,11 @@ class AbilityRegistrationTest extends AbilityTestCase {
 		return is_array( $value ) ? array_map( array( self::class, 'canonicalize' ), $value ) : $value;
 	}
 
-	/** Installing transactions early makes the registered and pending sets overlap. */
+	/**
+	 * Installing transactions early makes the registered and pending sets overlap.
+	 *
+	 * @testdox Registered and pending names together account for the complete extension inventory.
+	 */
 	public function test_inventory_partition(): void {
 		$this->install_root();
 		add_filter( self::GATE, '__return_true' );
@@ -75,7 +79,11 @@ class AbilityRegistrationTest extends AbilityTestCase {
 		}
 	}
 
-	/** Omitting the Capital loan definition loses a name from the registry. */
+	/**
+	 * Omitting the Capital loan definition loses a name from the registry.
+	 *
+	 * @testdox The registry exposes exactly the five implemented WooPayments reads.
+	 */
 	public function test_registered_names(): void {
 		$this->install_root();
 		add_filter( self::GATE, '__return_true' );
@@ -89,6 +97,7 @@ class AbilityRegistrationTest extends AbilityTestCase {
 	 * Catches a renamed payout label, an array default instead of an object, an account output schema,
 	 * non-idempotent reads, hidden loan summaries, and an extra MCP tool type.
 	 *
+	 * @testdox The registration of $_dataName matches its status and settings in the extension inventory.
 	 * @dataProvider inventory_records
 	 *
 	 * @param \stdClass $record Reference registration from the extension.
@@ -120,7 +129,11 @@ class AbilityRegistrationTest extends AbilityTestCase {
 		}
 	}
 
-	/** A hard-coded public default is indistinguishable after WordPress prepares metadata. */
+	/**
+	 * A hard-coded public default is indistinguishable after WordPress prepares metadata.
+	 *
+	 * @testdox The definitions leave the public metadata default to WordPress.
+	 */
 	public function test_raw_meta_omits_public(): void {
 		$this->install_root();
 		add_filter( self::GATE, '__return_true' );

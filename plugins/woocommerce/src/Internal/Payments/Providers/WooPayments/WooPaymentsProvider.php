@@ -379,6 +379,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 				// the controllers only when the server starts. It also hands each refund to the early fraud warning service,
 				// resolved only then, since a refund can complete on any request, a shopper's page included.
 				$matrix[ $state ][ $request ][] = WooPaymentsAdminRestRouteRegistrar::class;
+				// Any request can build the abilities registry, and the registrar reads the opt-in only when it does.
 				$matrix[ $state ][ $request ][] = AbilitiesRegistrar::class;
 				// Every request that can write a WooPayments log line numbers it under one request id, as client 11.1.0's logger
 				// context does on every request (`includes/class-wc-payments.php:552`, `src/Internal/LoggerContext.php:73-79`).

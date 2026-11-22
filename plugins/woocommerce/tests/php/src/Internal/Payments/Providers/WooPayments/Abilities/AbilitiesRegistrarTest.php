@@ -15,7 +15,11 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSe
 class AbilitiesRegistrarTest extends AbilityTestCase {
 	private const CLASS_FILTER = 'woocommerce_ability_definition_classes';
 
-	/** Reading the opt-in during register misses a late opt-in. A misspelled hook or changed default breaks existing opt-ins. */
+	/**
+	 * Reading the opt-in during register misses a late opt-in. A misspelled hook or changed default breaks existing opt-ins.
+	 *
+	 * @testdox An opt-in added after WooPayments boots takes effect when the registry builds.
+	 */
 	public function test_late_opt_in(): void {
 		$calls = 0;
 		add_filter(
@@ -33,7 +37,11 @@ class AbilitiesRegistrarTest extends AbilityTestCase {
 		$this->assertSame( 1, $calls );
 	}
 
-	/** A true default exposes all five reads without opt-in. */
+	/**
+	 * A true default exposes all five reads without opt-in.
+	 *
+	 * @testdox WooPayments leaves existing definitions alone until a store opts in.
+	 */
 	public function test_default_gate(): void {
 		$this->install_root();
 		$prior = array( ProductsQuery::class );
@@ -44,6 +52,7 @@ class AbilitiesRegistrarTest extends AbilityTestCase {
 	/**
 	 * A truthiness check loses the zero opt-in, and replacing the list loses earlier providers.
 	 *
+	 * @testdox Each opt-in value except literal false appends the five reads after existing definitions.
 	 * @testWith [true]
 	 *           [1]
 	 *           ["yes"]
@@ -59,7 +68,11 @@ class AbilitiesRegistrarTest extends AbilityTestCase {
 		$this->assertSame( $expected, apply_filters( self::CLASS_FILTER, $prior ) );
 	}
 
-	/** Merging a non-array sentinel loses the earlier filter's result. */
+	/**
+	 * Merging a non-array sentinel loses the earlier filter's result.
+	 *
+	 * @testdox The registrar preserves a non-array value from an earlier filter.
+	 */
 	public function test_non_array_filter(): void {
 		$this->install_root();
 		add_filter( self::GATE, '__return_true' );
@@ -68,17 +81,29 @@ class AbilitiesRegistrarTest extends AbilityTestCase {
 		$this->assertSame( $sentinel, apply_filters( self::CLASS_FILTER, array() ) );
 	}
 
-	/** The all-tier cutover loop leaks reads onto an available store. */
+	/**
+	 * The all-tier cutover loop leaks reads onto an available store.
+	 *
+	 * @testdox An available store exposes no built-in WooPayments abilities.
+	 */
 	public function test_available_store(): void {
 		$this->assert_registry_absent( WooPaymentsSetupTier::AVAILABLE );
 	}
 
-	/** Registering the root unconditionally exposes reads on a disabled store. */
+	/**
+	 * Registering the root unconditionally exposes reads on a disabled store.
+	 *
+	 * @testdox A disabled store exposes no built-in WooPayments abilities.
+	 */
 	public function test_disabled_store(): void {
 		$this->assert_registry_absent( WooPaymentsSetupTier::DISABLED );
 	}
 
-	/** Selecting the stored active tier ignores extension ownership. */
+	/**
+	 * Selecting the stored active tier ignores extension ownership.
+	 *
+	 * @testdox An extension-owned store with a stored active tier exposes no built-in WooPayments abilities.
+	 */
 	public function test_extension_owner(): void {
 		$this->assert_registry_absent( WooPaymentsSetupTier::ACTIVE, true );
 	}
