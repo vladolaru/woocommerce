@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Enums\ProductTaxStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutStoreApiExtension;
@@ -107,9 +108,95 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 			array(
 				'express_checkout_methods' => $expected,
 				'setup_future_usage'       => null,
+				'cart_supported'           => true,
+				'tax_risk'                 => false,
 			),
 			$this->sut->get_cart_extension_data()
 		);
+	}
+
+	/**
+	 * @testdox Should keep the currency methods for product previews while the Blocks cart follows additions and removals.
+	 */
+	public function test_cart_support_follows_sku_exclusions(): void {
+		wc_empty_cart();
+		$this->sut = $this->create_extension( true, true );
+		$eligible  = \WC_Helper_Product::create_simple_product();
+		$excluded  = \WC_Helper_Product::create_simple_product();
+		add_filter( 'wcpay_payment_request_is_cart_supported', static fn( $allowed, $product ) => $allowed && $product->get_id() !== $excluded->get_id(), 10, 2 );
+		WC()->cart->add_to_cart( $eligible->get_id() );
+		$this->assert_cart_wallet_data( true, false );
+		$key = WC()->cart->add_to_cart( $excluded->get_id() );
+		$this->assert_cart_wallet_data( false, false );
+		$this->assertSame( array( 'payment_request', 'amazon_pay' ), $this->sut->get_cart_extension_data()['express_checkout_methods'] );
+		WC()->cart->remove_cart_item( $key );
+		$this->assert_cart_wallet_data( true, false );
+	}
+
+	/**
+	 * @testdox Should mark billing-address tax only while a taxable line has no shipping address update.
+	 */
+	public function test_cart_tax_follows_taxable_items_and_shipping(): void {
+		wc_empty_cart();
+		$this->sut = $this->create_extension();
+		( new \WC_Shipping_Zone( 0 ) )->add_shipping_method( 'flat_rate' );
+		update_option( 'woocommerce_calc_taxes', 'yes' );
+		update_option( 'woocommerce_tax_based_on', 'billing' );
+		update_option( 'woocommerce_prices_include_tax', 'no' );
+		\WC_Tax::_insert_tax_rate(
+			array(
+				'tax_rate'          => '10.0000',
+				'tax_rate_name'     => 'Test tax',
+				'tax_rate_priority' => 1,
+			)
+		);
+		$virtual = \WC_Helper_Product::create_simple_product( true, array( 'regular_price' => '100' ) );
+		$virtual->set_virtual( true );
+		$virtual->set_tax_status( ProductTaxStatus::NONE );
+		$virtual->save();
+		$this->assert_cart_wallet_data( true, false );
+		$key = WC()->cart->add_to_cart( $virtual->get_id() );
+		$this->assert_cart_wallet_data( true, false );
+		WC()->cart->remove_cart_item( $key );
+		$virtual->set_tax_status( ProductTaxStatus::TAXABLE );
+		$virtual->save();
+		WC()->cart->add_to_cart( $virtual->get_id() );
+		$this->assert_cart_wallet_data( true, true );
+		$physical = \WC_Helper_Product::create_simple_product();
+		WC()->cart->add_to_cart( $physical->get_id() );
+		$this->assert_cart_wallet_data( true, false );
+	}
+
+	/**
+	 * @testdox Should use the merchant's answer for the Store API request on the mounted cart.
+	 * @testWith [true]
+	 *           [false]
+	 *
+	 * @param bool $allow_api Whether the filter accepts the Store API request.
+	 */
+	public function test_cart_support_uses_current_request( bool $allow_api ): void {
+		wc_empty_cart();
+		$this->sut = $this->create_extension();
+		$product   = \WC_Helper_Product::create_simple_product();
+		WC()->cart->add_to_cart( $product->get_id() );
+		add_filter( 'wcpay_payment_request_is_cart_supported', static fn() => WC()->is_store_api_request() === $allow_api );
+		foreach ( array( '/cart/', '/checkout/', '/wp-json/wc/store/v1/cart/add-item' ) as $uri ) {
+			$_SERVER['REQUEST_URI'] = $uri;
+			$this->assert_cart_wallet_data( '/wp-json/wc/store/v1/cart/add-item' === $uri ? $allow_api : ! $allow_api, false );
+		}
+	}
+
+	/**
+	 * Check the two independent Blocks fields on the current cart.
+	 *
+	 * @param bool $supported Whether the cart supports wallets.
+	 * @param bool $tax_risk  Whether a taxable line can add unseen tax.
+	 */
+	private function assert_cart_wallet_data( bool $supported, bool $tax_risk ): void {
+		$data = $this->sut->get_cart_extension_data();
+		$this->assertSame( $supported, $data['cart_supported'] );
+		$this->assertSame( $tax_risk, $data['tax_risk'] );
+		$this->assertContains( 'payment_request', $data['express_checkout_methods'] );
 	}
 
 	/**
@@ -147,6 +234,8 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 			array(
 				'express_checkout_methods' => array( 'payment_request' ),
 				'setup_future_usage'       => null,
+				'cart_supported'           => true,
+				'tax_risk'                 => false,
 			),
 			$this->sut->get_cart_extension_data()
 		);
@@ -195,6 +284,8 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 			array(
 				'express_checkout_methods' => $listed ? array( 'amazon_pay' ) : array(),
 				'setup_future_usage'       => null,
+				'cart_supported'           => true,
+				'tax_risk'                 => false,
 			),
 			$this->sut->get_cart_extension_data()
 		);
@@ -229,6 +320,8 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 			array(
 				'express_checkout_methods' => array( 'amazon_pay' ),
 				'setup_future_usage'       => null,
+				'cart_supported'           => true,
+				'tax_risk'                 => false,
 			),
 			$this->sut->get_cart_extension_data()
 		);
@@ -256,6 +349,18 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 					'description' => __( 'Whether the payment method should be saved for future off-session payments.', 'woocommerce' ),
 					'type'        => array( 'string', 'null' ),
 					'enum'        => array( 'off_session', null ),
+					'context'     => array( 'view', 'edit' ),
+					'readonly'    => true,
+				),
+				'cart_supported'           => array(
+					'description' => __( 'Whether the current cart supports express checkout.', 'woocommerce' ),
+					'type'        => 'boolean',
+					'context'     => array( 'view', 'edit' ),
+					'readonly'    => true,
+				),
+				'tax_risk'                 => array(
+					'description' => __( 'Whether billing-address tax can change the wallet total for a taxable cart with no shipping.', 'woocommerce' ),
+					'type'        => 'boolean',
 					'context'     => array( 'view', 'edit' ),
 					'readonly'    => true,
 				),

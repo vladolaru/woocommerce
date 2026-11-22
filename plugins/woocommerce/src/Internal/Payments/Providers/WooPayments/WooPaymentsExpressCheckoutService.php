@@ -82,6 +82,32 @@ class WooPaymentsExpressCheckoutService {
 	 * @return bool
 	 */
 	public function should_show_payment_request_button( string $context = 'checkout' ): bool {
+		return $this->is_button_available( $context, false );
+	}
+
+	/**
+	 * Keep the scripts ready when the shopper can add the first item without reloading a Cart or Checkout block.
+	 *
+	 * @since 11.4.0
+	 * @param string $context Express checkout context.
+	 * @return bool
+	 */
+	public function should_load_express_checkout_scripts( string $context ): bool {
+		$empty_block_cart = in_array( $context, array( 'cart', 'checkout' ), true )
+			&& WC()->cart instanceof \WC_Cart && WC()->cart->is_empty()
+			&& ( has_block( 'woocommerce/cart' ) || has_block( 'woocommerce/checkout' ) );
+
+		return $this->is_button_available( $context, $empty_block_cart );
+	}
+
+	/**
+	 * Check the configured wallets and the current page or cart.
+	 *
+	 * @param string $context          Express checkout context.
+	 * @param bool   $empty_block_cart Whether to defer the empty cart's tax and total checks.
+	 * @return bool
+	 */
+	private function is_button_available( string $context, bool $empty_block_cart ): bool {
 		$context = WooPaymentsExpressPaymentMethodTypes::normalize_context( $context );
 
 		// Express methods listed among the checkout payment methods are not shown again as buttons (client 11.1.0 button helper :582-586).
@@ -105,11 +131,11 @@ class WooPaymentsExpressCheckoutService {
 			return false;
 		}
 
-		if ( 'pay_for_order' !== $context && $this->would_add_unshown_billing_address_tax( $context ) ) {
+		if ( ! $empty_block_cart && 'pay_for_order' !== $context && $this->would_add_unshown_billing_address_tax( $context ) ) {
 			return false;
 		}
 
-		if ( 'pay_for_order' !== $context && $this->is_zero_amount( $context ) ) {
+		if ( ! $empty_block_cart && 'pay_for_order' !== $context && $this->is_zero_amount( $context ) ) {
 			return false;
 		}
 
@@ -447,7 +473,7 @@ class WooPaymentsExpressCheckoutService {
 	 *
 	 * @return bool
 	 */
-	private function is_cart_supported(): bool {
+	public function is_cart_supported(): bool {
 		$cart = WC()->cart;
 		if ( ! $cart instanceof \WC_Cart ) {
 			return false;
@@ -495,6 +521,27 @@ class WooPaymentsExpressCheckoutService {
 
 		// The wallet sheet can only choose one shipping rate.
 		return count( $cart->get_shipping_packages() ) <= 1;
+	}
+
+	/**
+	 * Whether a taxable line can add unseen billing-address tax after an empty Blocks cart gains items.
+	 *
+	 * @since 11.4.0
+	 * @return bool
+	 */
+	public function has_unshown_cart_tax(): bool {
+		if ( ! $this->would_add_unshown_billing_address_tax( 'cart' ) ) {
+			return false;
+		}
+
+		foreach ( WC()->cart->get_cart() as $item ) {
+			$product = $item['data'] ?? null;
+			if ( $product instanceof \WC_Product && $product->is_taxable() ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**

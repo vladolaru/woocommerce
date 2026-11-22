@@ -146,8 +146,16 @@ const getLocalizedEnabledMethods = () =>
 	Array.isArray( params?.enabled_methods ) ? params.enabled_methods : [];
 
 const getEnabledMethodsForCart = ( cart ) => {
+	const extension = cart?.extensions?.wcpay;
+	if (
+		extension?.cart_supported === false ||
+		( params.initially_empty_cart && extension?.tax_risk )
+	) {
+		return [];
+	}
+
 	const localizedMethods = getLocalizedEnabledMethods();
-	const cartMethods = cart?.extensions?.wcpay?.express_checkout_methods;
+	const cartMethods = extension?.express_checkout_methods;
 
 	if ( ! Array.isArray( cartMethods ) ) {
 		return localizedMethods;

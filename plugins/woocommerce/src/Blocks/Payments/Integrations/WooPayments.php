@@ -247,6 +247,9 @@ final class WooPayments extends AbstractPaymentMethodType {
 
 		if ( $this->is_card_gateway() && $this->should_enqueue_express_checkout_assets() ) {
 			$data['expressCheckoutParams'] = $this->express_checkout_service->get_express_checkout_params( $this->get_button_context() );
+			if ( ! empty( $data['expressCheckoutParams']['has_block'] ) && WC()->cart instanceof \WC_Cart && WC()->cart->is_empty() ) {
+				$data['expressCheckoutParams']['initially_empty_cart'] = true;
+			}
 		}
 
 		$is_enqueue_data_action = doing_action( 'woocommerce_blocks_checkout_enqueue_data' ) || doing_action( 'woocommerce_blocks_cart_enqueue_data' );
@@ -421,7 +424,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 	private function should_enqueue_express_checkout_assets(): bool {
 		return $this->is_active() &&
 			$this->is_cart_checkout_or_admin() &&
-			$this->express_checkout_service->should_show_payment_request_button( $this->get_button_context() );
+			$this->express_checkout_service->should_load_express_checkout_scripts( $this->get_button_context() );
 	}
 
 	/**

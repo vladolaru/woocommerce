@@ -160,13 +160,15 @@ class WooPaymentsExpressCheckoutStoreApiExtension implements RegisterHooksInterf
 	 * Get WooPayments cart extension data: the express checkout methods and the setup_future_usage the wallet token is
 	 * minted with, as client 11.2.0 `extend_cart_data()` (class-wc-payments-express-checkout-store-api-extension.php:84-100).
 	 *
-	 * @return array{express_checkout_methods: array<int,string>, setup_future_usage: string|null}
+	 * @return array{express_checkout_methods: array<int,string>, setup_future_usage: string|null, cart_supported: bool, tax_risk: bool}
 	 */
 	public function get_cart_extension_data(): array {
 		return array(
 			'express_checkout_methods' => $this->get_location_blind_methods_for_current_currency(),
 			// The Store API request has no page context, so the context is named.
 			'setup_future_usage'       => $this->express_checkout_service->get_setup_future_usage( 'cart' ),
+			'cart_supported'           => $this->express_checkout_service->is_cart_supported(),
+			'tax_risk'                 => $this->express_checkout_service->has_unshown_cart_tax(),
 		);
 	}
 
@@ -214,6 +216,18 @@ class WooPaymentsExpressCheckoutStoreApiExtension implements RegisterHooksInterf
 				'description' => __( 'Whether the payment method should be saved for future off-session payments.', 'woocommerce' ),
 				'type'        => array( 'string', 'null' ),
 				'enum'        => array( 'off_session', null ),
+				'context'     => array( 'view', 'edit' ),
+				'readonly'    => true,
+			),
+			'cart_supported'           => array(
+				'description' => __( 'Whether the current cart supports express checkout.', 'woocommerce' ),
+				'type'        => 'boolean',
+				'context'     => array( 'view', 'edit' ),
+				'readonly'    => true,
+			),
+			'tax_risk'                 => array(
+				'description' => __( 'Whether billing-address tax can change the wallet total for a taxable cart with no shipping.', 'woocommerce' ),
+				'type'        => 'boolean',
 				'context'     => array( 'view', 'edit' ),
 				'readonly'    => true,
 			),

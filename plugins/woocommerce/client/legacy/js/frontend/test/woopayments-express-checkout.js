@@ -1601,9 +1601,9 @@ describe( 'WooPayments express checkout', () => {
 			product_type: 'simple',
 		};
 		window.wcpayAsyncCurrency = { ready: currency.promise };
-		window.wp.apiFetch.mockResolvedValue(
-			getResolvedProductCart( [ 'payment_request' ] )
-		);
+		const preview = getResolvedProductCart( [ 'payment_request' ] );
+		preview.extensions.wcpay.cart_supported = false;
+		window.wp.apiFetch.mockResolvedValue( preview );
 
 		require( '../woopayments-express-checkout' );
 		await flushPromises();

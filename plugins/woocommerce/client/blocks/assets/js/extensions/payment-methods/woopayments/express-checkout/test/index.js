@@ -5,6 +5,11 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { createElement, StrictMode } from '@wordpress/element';
 import { registerExpressPaymentMethod } from '@woocommerce/blocks-registry';
 import apiFetch from '@wordpress/api-fetch';
+import {
+	addItemToCart,
+	removeItemFromCart,
+} from '@woocommerce/block-data/cart/thunks';
+import { apiFetchWithHeaders } from '@woocommerce/block-data/shared-controls';
 import { reload as navigate } from '@woocommerce/utils/navigation';
 
 /**
@@ -71,6 +76,15 @@ jest.mock( '@wordpress/a11y', () => ( {
 jest.mock( '@woocommerce/block-data', () => ( {
 	cartStore: 'wc/store/cart',
 } ) );
+
+jest.mock( '@woocommerce/base-utils', () => ( {
+	debounce: ( callback ) => callback,
+} ) );
+jest.mock( '@woocommerce/block-data/shared-controls', () => ( {
+	apiFetchWithHeaders: jest.fn(),
+} ) );
+jest.mock( '@woocommerce/block-data/utils', () => ( {} ) );
+jest.mock( '@woocommerce/block-data/checkout', () => ( { store: {} } ) );
 
 const mockExtensionCartUpdate = jest.fn();
 jest.mock( '@woocommerce/blocks-checkout', () => ( {
@@ -521,6 +535,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 	} );
 
 	afterEach( () => {
+		delete baseExpressCheckoutParams.initially_empty_cart;
 		delete basePaymentMethodData.paymentMethodsConfig;
 		delete baseExpressCheckoutParams.stripe.linkEnabled;
 		delete window.Stripe;
@@ -1135,6 +1150,117 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			} )
 		);
 	} );
+
+	it.each( [
+		[ 'an eligible product', true, false, true, true ],
+		[ 'an excluded product', false, false, true, false ],
+		[ 'a taxable virtual product', true, true, true, false ],
+		[
+			'a taxable virtual product on a populated page',
+			true,
+			true,
+			false,
+			true,
+		],
+	] )(
+		'updates rendered wallets after adding and removing %s',
+		async ( name, supported, taxRisk, initiallyEmpty, offered ) => {
+			baseExpressCheckoutParams.initially_empty_cart = initiallyEmpty;
+			baseExpressCheckoutParams.enabled_methods = [
+				'payment_request',
+				'amazon_pay',
+			];
+			baseExpressCheckoutParams.payment_method_types = [
+				'card',
+				'amazon_pay',
+			];
+			availablePaymentMethods = {
+				applePay: true,
+				googlePay: true,
+				amazonPay: true,
+			};
+			registerExpressCheckout();
+			const registrations = registerExpressPaymentMethod.mock.calls.map(
+				( [ registration ] ) => registration
+			);
+			const view = render( null );
+			const renderCart = async ( cart ) => {
+				const buttons = await Promise.all(
+					registrations.map( async ( registration ) => {
+						if (
+							! ( await registration.canMakePayment( { cart } ) )
+						) {
+							return null;
+						}
+						return createElement( registration.content.type, {
+							...registration.content.props,
+							key: registration.name,
+							billing,
+							...getPaymentMethodInterfaceProps( cart ),
+						} );
+					} )
+				);
+				view.rerender( buttons );
+			};
+			const methods = taxRisk
+				? [ 'payment_request' ]
+				: baseExpressCheckoutParams.enabled_methods;
+			const eligible = cartWithExpressMethods( methods, {
+				extensions: {
+					wcpay: { cart_supported: true, tax_risk: false },
+				},
+			} );
+			const added = cartWithExpressMethods( methods, {
+				items: [
+					...( initiallyEmpty ? [] : eligible.items ),
+					{ ...eligible.items[ 0 ], name, key: 'second' },
+				],
+				extensions: {
+					wcpay: { cart_supported: supported, tax_risk: taxRisk },
+				},
+			} );
+			let rendered;
+			const dispatch = {
+				startAddingToCart: jest.fn(),
+				finishAddingToCart: jest.fn(),
+				itemIsPendingDelete: jest.fn(),
+				receiveCart: ( cart ) => {
+					rendered = renderCart( cart );
+				},
+			};
+			const visible = () =>
+				view.container.querySelectorAll(
+					'.woopayments-express-checkout-container__element'
+				).length;
+			const walletCount = taxRisk ? 2 : 3;
+
+			if ( ! initiallyEmpty ) {
+				await renderCart( eligible );
+			}
+			expect( visible() ).toBe( initiallyEmpty ? 0 : walletCount );
+			apiFetchWithHeaders.mockResolvedValueOnce( { response: added } );
+			await addItemToCart( 2, 1, [] )( { dispatch } );
+			await rendered;
+			expect( visible() ).toBe( offered ? walletCount : 0 );
+
+			const recovered = cartWithExpressMethods( methods, {
+				items: [ ...added.items, ...eligible.items ],
+				extensions: {
+					wcpay: { cart_supported: supported, tax_risk: false },
+				},
+			} );
+			apiFetchWithHeaders.mockResolvedValueOnce( {
+				response: recovered,
+			} );
+			await addItemToCart( 1, 1, [] )( { dispatch } );
+			await rendered;
+			expect( visible() ).toBe( supported ? walletCount : 0 );
+			apiFetchWithHeaders.mockResolvedValueOnce( { response: eligible } );
+			await removeItemFromCart( 'second' )( { dispatch } );
+			await rendered;
+			expect( visible() ).toBe( walletCount );
+		}
+	);
 
 	it( 'surfaces a Blocks error when wallet shipping address has no available rates', async () => {
 		const setExpressPaymentError = jest.fn();
