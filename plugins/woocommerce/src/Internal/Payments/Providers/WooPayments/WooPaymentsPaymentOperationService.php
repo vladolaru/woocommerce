@@ -814,8 +814,11 @@ class WooPaymentsPaymentOperationService {
 	 * @since 11.2.0
 	 */
 	private function ensure_charge_idempotency_key( WC_Order $order, string $candidate ): string {
-		$persisted_key = self::get_own_charge_idempotency_key( $order );
-		if ( '' !== $persisted_key ) {
+		$persisted_key = (string) $order->get_meta( self::CHARGE_IDEMPOTENCY_KEY_META, true );
+		$record        = $order->get_meta( self::CHARGE_AMBIGUITY_META, true );
+		// A record naming another order means the key was copied from that order with it, so neither belongs here.
+		$is_copied = is_array( $record ) && (int) ( $record['order_id'] ?? 0 ) !== $order->get_id();
+		if ( '' !== $persisted_key && ! $is_copied ) {
 			return $persisted_key;
 		}
 
@@ -826,22 +829,6 @@ class WooPaymentsPaymentOperationService {
 		$order->save_meta_data();
 
 		return $candidate;
-	}
-
-	/**
-	 * Get the charge key checkout would reuse for this order.
-	 *
-	 * @since 11.4.0
-	 * @param WC_Order $order Order being charged.
-	 * @return string The order's own key, or an empty string.
-	 */
-	public static function get_own_charge_idempotency_key( WC_Order $order ): string {
-		$persisted_key = (string) $order->get_meta( self::CHARGE_IDEMPOTENCY_KEY_META, true );
-		$record        = $order->get_meta( self::CHARGE_AMBIGUITY_META, true );
-		// A record naming another order means the key was copied from that order with it, so neither belongs here.
-		$is_copied = is_array( $record ) && (int) ( $record['order_id'] ?? 0 ) !== $order->get_id();
-
-		return $is_copied ? '' : $persisted_key;
 	}
 
 	/**

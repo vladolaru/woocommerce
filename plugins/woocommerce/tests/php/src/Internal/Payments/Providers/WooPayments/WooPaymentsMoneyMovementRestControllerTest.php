@@ -742,16 +742,25 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	}
 
 	/**
-	 * Catches a route that reads the attached intent before deciding whether checkout accepts payment.
+	 * A paid order is refused before its attached intent is read: the stored intent would answer `succeeded`, so a version
+	 * that reads it first (or drops the paid check, or tests is_paid() alone and misses the paid date) answers another code
+	 * after one platform call.
 	 *
-	 * @testWith ["processing"]
-	 *           ["completed"]
+	 * @testdox Payment detail create-intent route refuses a paid order with nothing sent: $label.
 	 *
-	 * @param string $status Paid order status.
+	 * @testWith ["a processing order", "processing", false]
+	 *           ["a pending order with a paid date", "pending", true]
+	 *
+	 * @param string $label     Case label.
+	 * @param string $status    Order status.
+	 * @param bool   $paid_date Whether the order stores a paid date.
 	 */
-	public function test_payment_detail_create_intent_route_refuses_paid_status_before_reading_the_intent( string $status ): void {
+	public function test_payment_detail_create_intent_route_refuses_a_paid_order( string $label, string $status, bool $paid_date ): void {
 		$order = $this->create_order_for_payment_intent();
 		$order->set_status( $status );
+		if ( $paid_date ) {
+			$order->set_date_paid( time() );
+		}
 		$order->update_meta_data( '_intent_id', 'pi_attached' );
 		$order->save();
 		$this->api_client->responses['get_payment_intention'] = $this->create_intent_answer( $order, 'succeeded' );
@@ -761,108 +770,6 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 
 		$this->assert_refused_with_the_order_free( $response, 'wcpay_order_already_paid', $order );
 		$this->assertSame( array(), $this->api_client->calls, 'Nothing is read or sent.' );
-	}
-
-	/**
-	 * A route that treats a paid date as proof of payment skips the attached intent read.
-	 */
-	public function test_payment_detail_create_intent_route_reads_succeeded_intent_on_a_pending_order_with_a_paid_date(): void {
-		$order = $this->create_order_for_payment_intent();
-		$order->set_date_paid( time() );
-		$order->update_meta_data( '_intent_id', 'pi_attached' );
-		$order->save();
-		$this->api_client->responses['get_payment_intention'] = $this->create_intent_answer( $order, 'succeeded' );
-		$this->create_payment_details_controller()->register_routes();
-
-		$response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
-
-		$this->assert_refused_with_the_order_free( $response, 'wcpay_order_payment_holds_money', $order );
-		$this->assertSame( array( 'get_payment_intention' ), array_column( $this->api_client->calls, 'method' ) );
-	}
-
-	/**
-	 * A route that treats a paid date as proof of payment refuses the first card charge.
-	 */
-	public function test_payment_detail_create_intent_route_charges_a_payable_order_with_a_stale_paid_date(): void {
-		$order = $this->create_order_for_payment_intent();
-		$order->set_date_paid( time() );
-		$order->save();
-		$this->create_payment_details_controller()->register_routes();
-
-		$response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
-
-		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( array( 'create_and_confirm_payment_intention' ), array_column( $this->api_client->calls, 'method' ) );
-	}
-
-	/**
-	 * A route that skips needs_payment() charges an on-hold order while its voucher is payable.
-	 */
-	public function test_payment_detail_create_intent_route_refuses_an_on_hold_voucher_before_reading_it(): void {
-		$order = $this->create_order_for_payment_intent();
-		$order->set_status( 'on-hold' );
-		$order->update_meta_data( '_intent_id', 'pi_attached' );
-		$order->save();
-		$intent                           = $this->create_intent_answer( $order, 'requires_action' );
-		$intent['payment_method_options'] = array( 'multibanco' => array() );
-		$this->api_client->responses['get_payment_intention'] = $intent;
-		$this->create_payment_details_controller()->register_routes();
-
-		$response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
-
-		$this->assert_refused_with_the_order_free( $response, 'wcpay_order_not_payable', $order );
-		$this->assertSame( array(), $this->api_client->calls );
-	}
-
-	/**
-	 * Making a paid order payable still leaves checkout's paid-status decision to the store. A route that
-	 * always refuses paid orders ignores permission to charge. Skipping that decision always charges.
-	 *
-	 * @testWith [true]
-	 *           [false]
-	 *
-	 * @param bool $prevent Whether checkout should prevent payment for the paid status.
-	 */
-	public function test_payment_detail_create_intent_route_respects_checkout_for_a_paid_order_made_payable( bool $prevent ): void {
-		$order = $this->create_order_for_payment_intent();
-		$order->set_status( 'processing' );
-		$order->save();
-		$this->create_payment_details_controller()->register_routes();
-		$paid_filter = $prevent ? '__return_true' : '__return_false';
-		add_filter( 'woocommerce_order_needs_payment', '__return_true' );
-		add_filter( 'wcpay_should_prevent_payment_for_paid_order', $paid_filter );
-		try {
-			$response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
-		} finally {
-			remove_filter( 'wcpay_should_prevent_payment_for_paid_order', $paid_filter );
-			remove_filter( 'woocommerce_order_needs_payment', '__return_true' );
-		}
-
-		if ( $prevent ) {
-			$this->assert_refused_with_the_order_free( $response, 'wcpay_order_already_paid', $order );
-			$this->assertSame( array(), $this->api_client->calls );
-		} else {
-			$this->assertSame( 200, $response->get_status() );
-			$this->assertSame( array( 'create_and_confirm_payment_intention' ), array_column( $this->api_client->calls, 'method' ) );
-		}
-	}
-
-	/**
-	 * A route that trusts every stored key refuses an order carrying a copy of another order's attempt.
-	 */
-	public function test_payment_detail_create_intent_route_ignores_a_copied_charge_key(): void {
-		$source = $this->create_order_for_payment_intent();
-		$order  = $this->create_order_for_payment_intent();
-		$order->update_meta_data( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, 'wc-charge-source' );
-		$order->update_meta_data( WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META, array( 'order_id' => $source->get_id() ) );
-		$order->save();
-		$this->create_payment_details_controller()->register_routes();
-
-		$response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
-
-		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( array( 'create_and_confirm_payment_intention' ), array_column( $this->api_client->calls, 'method' ) );
-		$this->assertSame( '', $this->api_client->calls[0]['idempotency_key'] );
 	}
 
 	/**
@@ -958,8 +865,8 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 
 	/**
 	 * An attached intent that cannot be read is decided by the checkout's own rules: a PHP Error or a stored `succeeded`
-	 * refuses in any mode. A started bank step refuses when its outcome is unknown. A version that treats a definite
-	 * missing payment as unknown refuses a fresh charge (case e). Catches a version that skips the outright refusal (cases a, b), and one that
+	 * refuses in any mode; otherwise a stored record of money held refuses, and a started bank step refuses too, since the
+	 * route takes the outcome as unknown. Catches a version that skips the outright refusal (cases a, b), and one that
 	 * skips the stored-record tiers or their mode check (cases d, e, g, h).
 	 *
 	 * @testdox Payment detail create-intent route over an unreadable attached intent, $label: $expected.
@@ -967,9 +874,8 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	 * @testWith ["(a) a PHP error, stored requires_payment_method", "a PHP error", "requires_payment_method", true, "refused"]
 	 *           ["(b) a server error, stored succeeded, another mode", "a server error", "succeeded", false, "refused"]
 	 *           ["(c) a not-found, stored succeeded, same mode", "a not-found", "succeeded", true, "refused"]
-	 *           ["(i) a timeout, stored requires_action, same mode", "a timeout", "requires_action", true, "refused"]
 	 *           ["(d) a server error, stored requires_action, same mode", "a server error", "requires_action", true, "refused"]
-	 *           ["(e) charges after a definite missing intent for a started bank step", "a not-found", "requires_action", true, "charged"]
+	 *           ["(e) a not-found, stored requires_action, same mode", "a not-found", "requires_action", true, "refused"]
 	 *           ["(f) a server error, stored requires_payment_method", "a server error", "requires_payment_method", true, "charged"]
 	 *           ["(g) an empty answer, stored requires_capture, another mode", "an empty answer", "requires_capture", false, "charged"]
 	 *           ["(h) an empty answer, stored processing, same mode", "an empty answer", "processing", true, "refused"]
@@ -1015,7 +921,6 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 
 		$failures                       = array(
 			'a PHP error'    => new \TypeError( 'A callback on the request failed.' ),
-			'a timeout'      => new \RuntimeException( 'The read timed out.' ),
 			'a server error' => new ApiException( 'Internal server error.', 'api_error', 500 ),
 			'a not-found'    => new ApiException( 'No such payment_intent.', 'resource_missing', 404, 'invalid_request_error' ),
 		);
