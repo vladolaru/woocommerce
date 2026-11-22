@@ -856,7 +856,9 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Requiring an automatically generated username or password sends a guest buying a subscription to login.
+	 * Requiring an automatically generated username or password sends a guest buying a subscription to login.
+	 *
+	 * @testdox Guests can sign up for a subscription with credentials they choose.
 	 * @since 11.4.0
 	 * @testWith ["woocommerce_registration_generate_username"]
 	 *           ["woocommerce_registration_generate_password"]

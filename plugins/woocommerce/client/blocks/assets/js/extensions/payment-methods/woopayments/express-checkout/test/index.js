@@ -817,7 +817,8 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		);
 	} );
 
-	it( 'hiding the express loader overrides the Blocks wallet loading state alongside its appearance', async () => {
+	/** Hiding the express loader overrides the Blocks wallet loading state alongside its appearance. */
+	it( 'mounts the wallet with cart-aware Elements options, checkout appearance and the default loader', async () => {
 		baseExpressCheckoutParams.enabled_methods = [
 			'payment_request',
 			'amazon_pay',
@@ -937,7 +938,8 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		}
 	);
 
-	it( 'hiding the express loader overrides the default while probing Blocks wallet availability', async () => {
+	/** Hiding the express loader overrides the default while probing Blocks wallet availability. */
+	it( 'probes availability with the default loader before exposing each Blocks wallet', async () => {
 		registerExpressCheckout();
 		const applePayRegistration = getRegistration(
 			'woocommerce_payments_express_checkout_applePay'

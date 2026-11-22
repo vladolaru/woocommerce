@@ -186,7 +186,9 @@ class WooPaymentsExpressCheckoutAddressNormalizerTest extends WC_Unit_Test_Case 
 	}
 
 	/**
-	 * @testdox Zero-only padding gives carriers invalid partial postcodes, and unconditional padding changes complete ones.
+	 * Zero-only padding gives carriers invalid partial postcodes, and unconditional padding changes complete ones.
+	 *
+	 * @testdox Partial wallet postcodes are padded for their country and complete postcodes are preserved.
 	 * @since 11.4.0
 	 * @testWith ["GB", "N1C", "N1C0AA"]
 	 *           ["CA", "H3B", "H3B0A0"]
@@ -216,7 +218,9 @@ class WooPaymentsExpressCheckoutAddressNormalizerTest extends WC_Unit_Test_Case 
 	}
 
 	/**
-	 * @testdox Forgetting the padded postcode rejects it during dispatch, and retaining it accepts it on the next request.
+	 * Forgetting the padded postcode rejects it during dispatch, and retaining it accepts it on the next request.
+	 *
+	 * @testdox Only the current Store API request accepts its padded postcode.
 	 * @since 11.4.0
 	 */
 	public function test_clears_tokenized_postcode_validation_after_store_api_dispatch(): void {
