@@ -340,6 +340,38 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Price conversion uses the requested currency and keeps the selected currency as the default.
+	 *
+	 * @testWith ["product", 9.95, 7.49]
+	 *           ["shipping", 10.0, 7.5]
+	 *           ["tax", 9.15, 7.42]
+	 *           ["coupon", 9.15, 7.42]
+	 *           ["exchange_rate", 9.15, 7.42]
+	 *
+	 * @param string $type           Price type.
+	 * @param float  $selected_price Expected price in EUR.
+	 * @param float  $explicit_price Expected price in GBP.
+	 */
+	public function test_get_price_with_an_explicit_currency( string $type, float $selected_price, float $explicit_price ): void {
+		$this->declare_facade();
+		$customer_id = self::factory()->user->create();
+		wp_set_current_user( $customer_id );
+		update_user_meta( $customer_id, 'wcpay_currency', 'EUR' );
+		update_option( 'wcpay_multi_currency_price_rounding_eur', '1.00' );
+		update_option( 'wcpay_multi_currency_price_charm_eur', '-0.05' );
+		update_option( 'wcpay_multi_currency_price_rounding_gbp', '0.50' );
+		update_option( 'wcpay_multi_currency_price_charm_gbp', '-0.01' );
+
+		$this->expect_facade_deprecations( 'get_price', 'get_enabled_currencies' );
+		$facade = $this->get_facade();
+		$gbp    = $facade->get_enabled_currencies()['GBP'];
+
+		$this->assertSame( $explicit_price, $facade->get_price( 10.17, $type, $gbp ), 'An explicit target uses GBP.' );
+		$this->assertSame( $selected_price, $facade->get_price( 10.17, $type ), 'An omitted target uses EUR.' );
+		$this->assertSame( $selected_price, $facade->get_price( 10.17, $type, null ), 'A null target uses EUR.' );
+	}
+
+	/**
 	 * @testdox The facade rounds an amount in the selected currency, with its charm unless the caller asks not to.
 	 *
 	 * Client 11.1.0 `includes/multi-currency/MultiCurrency.php:1632-1634` and `:1657-1685`: a 1.00 rounding step ceils

@@ -56,9 +56,15 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 			return;
 		}
 		$this->assertContains( $instance_type->getName(), array( 'self', 'WCPay\\MultiCurrency\\MultiCurrency' ), 'The singleton return type is part of the approved facade contract.' );
-		$this->assertCount( 2, $get_price->getParameters() );
+		$this->assertCount( 3, $get_price->getParameters() );
+		$this->assertSame( 2, $get_price->getNumberOfRequiredParameters() );
 		$this->assertFalse( $get_price->getParameters()[0]->hasType(), 'The legacy amount parameter must continue accepting numeric strings.' );
 		$this->assertSame( 'string', (string) $get_price->getParameters()[1]->getType() );
+		$currency_type = $get_price->getParameters()[2]->getType();
+		$this->assertInstanceOf( \ReflectionNamedType::class, $currency_type );
+		$this->assertSame( MultiCurrencyCurrency::class, $currency_type->getName() );
+		$this->assertTrue( $currency_type->allowsNull() );
+		$this->assertNull( $get_price->getParameters()[2]->getDefaultValue() );
 		$this->assertSame( 'float', $get_price_type->getName() );
 
 		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::instance' );

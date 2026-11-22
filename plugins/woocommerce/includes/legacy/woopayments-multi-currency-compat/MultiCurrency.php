@@ -131,21 +131,23 @@ class MultiCurrency {
 	}
 
 	/**
-	 * Convert a price to the selected currency.
+	 * Convert a price to the given currency, defaulting to the selected currency.
 	 *
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
+	 * @since 11.4.0 Added the optional target currency.
 	 * @deprecated 11.0.0 No public replacement.
 	 *
-	 * @param mixed  $amount Price amount.
-	 * @param string $type   Price type.
+	 * @param mixed                      $amount   Price amount.
+	 * @param string                     $type     Price type.
+	 * @param MultiCurrencyCurrency|null $currency Target currency. Defaults to the selected currency.
 	 * @return float
 	 */
-	public function get_price( $amount, string $type ): float {
+	public function get_price( $amount, string $type, ?MultiCurrencyCurrency $currency = null ): float {
 		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_price', '11.0.0', '' );
 
-		return $this->get_service_factory()->create_price_converter()->get_price( $amount, $type );
+		return $this->get_service_factory()->create_price_converter()->get_price( $amount, $type, $currency );
 	}
 
 	/**
