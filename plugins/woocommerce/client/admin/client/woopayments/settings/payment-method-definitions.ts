@@ -232,18 +232,6 @@ const getAfterpayClearpayDefinition = (
 				),
 				iconUrl: assetUrl( 'images/payment-methods/clearpay-icon.svg' ),
 			};
-		case 'US':
-			return {
-				...afterpayClearpayBase,
-				label: __( 'Cash App Afterpay', 'woocommerce' ),
-				description: __(
-					'Allow customers to pay over time with Cash App Afterpay.',
-					'woocommerce'
-				),
-				iconUrl: assetUrl(
-					'images/payment-methods/afterpay-cashapp-badge.svg'
-				),
-			};
 		default:
 			return {
 				...afterpayClearpayBase,
@@ -252,7 +240,11 @@ const getAfterpayClearpayDefinition = (
 					'Allow customers to pay over time with Afterpay.',
 					'woocommerce'
 				),
-				iconUrl: assetUrl( 'images/payment-methods/afterpay-logo.svg' ),
+				iconUrl: assetUrl(
+					accountCountry?.toUpperCase() === 'US'
+						? 'images/payment-methods/afterpay-cashapp-badge.svg'
+						: 'images/payment-methods/afterpay-logo.svg'
+				),
 			};
 	}
 };

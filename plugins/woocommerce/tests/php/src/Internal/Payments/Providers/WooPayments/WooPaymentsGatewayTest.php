@@ -274,9 +274,9 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	public function provider_afterpay_titles_by_account_country(): array {
 		return array(
 			'GB account'                   => array( array( 'country' => 'GB' ), null, 'Clearpay' ),
-			'US account'                   => array( array( 'country' => 'US' ), null, 'Cash App Afterpay' ),
+			'US account'                   => array( array( 'country' => 'US' ), null, 'Afterpay' ),
 			'AU account'                   => array( array( 'country' => 'AU' ), null, 'Afterpay' ),
-			'no account country, GB store' => array( array(), 'GB', 'Cash App Afterpay' ),
+			'no account country, GB store' => array( array(), 'GB', 'Afterpay' ),
 		);
 	}
 
@@ -11189,8 +11189,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function provider_branded_title_reads(): array {
 		return array(
-			'card title'                    => array( null, 'get_title', 'Card' ),
-			'Cash App Afterpay admin title' => array( 'afterpay_clearpay', 'get_method_title', 'WooPayments (Cash App Afterpay)' ),
+			'card title'           => array( null, 'get_title', 'Card' ),
+			'Afterpay admin title' => array( 'afterpay_clearpay', 'get_method_title', 'WooPayments (Afterpay)' ),
 		);
 	}
 
@@ -11670,7 +11670,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertStringContainsString( '/assets/images/payment-methods/afterpay-cashapp-logo.svg', $icon );
-		$this->assertStringContainsString( 'alt="Cash App Afterpay"', $icon );
+		$this->assertStringContainsString( 'alt="Afterpay"', $icon );
 		$this->assertStringNotContainsString( '/assets/images/payment-methods/visa-color.svg', $icon );
 		$this->assertStringContainsString( 'data-gateway-id="woocommerce_payments_afterpay_clearpay"', $icon );
 		$this->assertSame( 1, $filter_calls );

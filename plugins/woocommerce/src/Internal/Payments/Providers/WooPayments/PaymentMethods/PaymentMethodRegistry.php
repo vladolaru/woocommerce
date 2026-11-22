@@ -271,7 +271,6 @@ class PaymentMethodRegistry {
 			'Apple Pay'         => __( 'Apple Pay', 'woocommerce' ),
 			'Google Pay'        => __( 'Google Pay', 'woocommerce' ),
 			'Amazon Pay'        => __( 'Amazon Pay', 'woocommerce' ),
-			'Cash App Afterpay' => __( 'Cash App Afterpay', 'woocommerce' ),
 			'Clearpay'          => __( 'Clearpay', 'woocommerce' ),
 			'Let your customers pay with major credit and debit cards without leaving your store.' => __( 'Let your customers pay with major credit and debit cards without leaving your store.', 'woocommerce' ),
 			'Allow customers to pay over time with Affirm.' => __( 'Allow customers to pay over time with Affirm.', 'woocommerce' ),
@@ -292,7 +291,6 @@ class PaymentMethodRegistry {
 			'Apple Pay is an easy and secure way for customers to pay on your store.' => __( 'Apple Pay is an easy and secure way for customers to pay on your store.', 'woocommerce' ),
 			'Offer customers a fast, secure checkout experience with Google Pay.' => __( 'Offer customers a fast, secure checkout experience with Google Pay.', 'woocommerce' ),
 			'Offer customers a fast, secure checkout experience with Amazon Pay.' => __( 'Offer customers a fast, secure checkout experience with Amazon Pay.', 'woocommerce' ),
-			'Allow customers to pay over time with Cash App Afterpay.' => __( 'Allow customers to pay over time with Cash App Afterpay.', 'woocommerce' ),
 			'Allow customers to pay over time with Clearpay.' => __( 'Allow customers to pay over time with Clearpay.', 'woocommerce' ),
 		);
 
@@ -361,12 +359,10 @@ class PaymentMethodRegistry {
 				'stripe_payment_method_type' => 'afterpay_clearpay',
 				'title'                      => 'Afterpay',
 				'titles_by_country'          => array(
-					'US' => 'Cash App Afterpay',
 					'GB' => 'Clearpay',
 				),
 				'description'                => 'Allow customers to pay over time with Afterpay.',
 				'descriptions_by_country'    => array(
-					'US' => 'Allow customers to pay over time with Cash App Afterpay.',
 					'GB' => 'Allow customers to pay over time with Clearpay.',
 				),
 				'currencies'                 => array( 'USD', 'CAD', 'AUD', 'NZD', 'GBP' ),
@@ -380,6 +376,7 @@ class PaymentMethodRegistry {
 				'icon'                       => 'assets/images/payment-methods/afterpay-badge-color.svg',
 				'dark_icon'                  => 'assets/images/payment-methods/afterpay-badge-color.svg',
 				'settings_icon'              => 'assets/images/payment-methods/afterpay-logo.svg',
+				// Client 11.3.0 AfterpayDefinition.php:173 retains the US logos.
 				'icons_by_country'           => array(
 					'US' => 'assets/images/payment-methods/afterpay-cashapp-logo.svg',
 					'GB' => 'assets/images/payment-methods/clearpay-icon.svg',

@@ -113,7 +113,7 @@ class PaymentMethodsMapTest extends WC_Unit_Test_Case {
 				array( 'card', 'afterpay_clearpay' ),
 				'',
 				'GB',
-				array( 'USD' => array( 'afterpay_clearpay' => 'Cash App Afterpay' ) ),
+				array( 'USD' => array( 'afterpay_clearpay' => 'Afterpay' ) ),
 			),
 			'Amazon Pay and iDEAL for a British account' => array(
 				array( 'card', 'ideal', 'amazon_pay' ),

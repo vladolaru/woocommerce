@@ -2767,15 +2767,15 @@ describe( 'WooPaymentsSettingsPage', () => {
 		const { rerender } = render( <WooPaymentsSettingsPage /> );
 
 		expect(
-			screen.getByRole( 'checkbox', { name: 'Cash App Afterpay' } )
+			screen.getByRole( 'checkbox', { name: 'Afterpay' } )
 		).toBeInTheDocument();
 		expect(
 			screen.getByText(
-				'Allow customers to pay over time with Cash App Afterpay.'
+				'Allow customers to pay over time with Afterpay.'
 			)
 		).toBeInTheDocument();
 		expect(
-			screen.getByRole( 'img', { name: 'Cash App Afterpay logo' } )
+			screen.getByRole( 'img', { name: 'Afterpay logo' } )
 		).toBeInTheDocument();
 
 		mockUseGetSettings.mockReturnValue( {

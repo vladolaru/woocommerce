@@ -270,8 +270,8 @@ class PaymentMethodRegistryTest extends WC_Unit_Test_Case {
 		$klarna   = $this->registry->get( 'klarna' );
 
 		$this->assertNotNull( $afterpay );
-		$this->assertSame( 'Cash App Afterpay', $afterpay->get_title( 'US' ) );
-		$this->assertSame( 'Allow customers to pay over time with Cash App Afterpay.', $afterpay->get_description( 'US' ) );
+		$this->assertSame( 'Afterpay', $afterpay->get_title( 'US' ) );
+		$this->assertSame( 'Allow customers to pay over time with Afterpay.', $afterpay->get_description( 'US' ) );
 		$this->assertSame( 'assets/images/payment-methods/afterpay-cashapp-logo.svg', $afterpay->get_icon_asset_path( 'US' ) );
 		$this->assertSame( 'assets/images/payment-methods/afterpay-cashapp-logo-dark.svg', $afterpay->get_dark_icon_asset_path( 'US' ) );
 		$this->assertSame( 'assets/images/payment-methods/afterpay-cashapp-badge.svg', $afterpay->get_settings_icon_asset_path( 'US' ) );

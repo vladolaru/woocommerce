@@ -395,8 +395,8 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 		try {
 			update_option( 'wcpay_account_data', $this->account_cache( 'primary', 'US' ) );
 			$gateway = new WooPaymentsGateway( $definition );
-			$this->assertSame( 'Cash App Afterpay', $gateway->get_title() );
-			$this->assertSame( 'WooPayments (Cash App Afterpay)', $gateway->get_method_title() );
+			$this->assertSame( 'Afterpay', $gateway->get_title() );
+			$this->assertSame( 'WooPayments (Afterpay)', $gateway->get_method_title() );
 
 			switch_to_blog( $secondary_blog_id );
 			update_option( 'wcpay_account_data', $this->account_cache( 'secondary', 'GB' ) );
@@ -405,8 +405,8 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 
 			restore_current_blog();
 			$this->assertSame( $original_blog_id, get_current_blog_id() );
-			$this->assertSame( 'Cash App Afterpay', $gateway->get_title() );
-			$this->assertSame( 'WooPayments (Cash App Afterpay)', $gateway->get_method_title() );
+			$this->assertSame( 'Afterpay', $gateway->get_title() );
+			$this->assertSame( 'WooPayments (Afterpay)', $gateway->get_method_title() );
 		} finally {
 			while ( ms_is_switched() ) {
 				restore_current_blog();
