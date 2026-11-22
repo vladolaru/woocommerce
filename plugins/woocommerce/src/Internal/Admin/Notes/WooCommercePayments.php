@@ -5,8 +5,6 @@
  * Adds a note to the merchant's inbox showing the benefits of the WooCommerce Payments.
  */
 
-declare( strict_types = 1 );
-
 namespace Automattic\WooCommerce\Internal\Admin\Notes;
 
 defined( 'ABSPATH' ) || exit;
@@ -186,6 +184,7 @@ class WooCommercePayments {
 	 * Install & activate WooCommerce Payments plugin, and redirect to setup.
 	 */
 	public function install_on_action() {
+		// TODO: Need to validate this request more strictly since we're taking install actions directly?
 		if (
 			! isset( $_GET['page'] ) ||
 			'wc-admin' !== $_GET['page'] ||
