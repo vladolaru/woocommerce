@@ -52,6 +52,13 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	);
 
 	/**
+	 * Filtered triggers for this request. An empty list means development mode is off.
+	 *
+	 * @var string[]|null
+	 */
+	private ?array $dev_mode_triggers = null;
+
+	/**
 	 * The LegacyProxy instance.
 	 *
 	 * @var LegacyProxy
@@ -1363,11 +1370,15 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	/**
 	 * Get what put WooPayments in development mode, empty when it is off.
 	 *
-	 * The trigger names are the client's (client 11.1.0 `includes/core/class-mode.php:72-111`).
+	 * Client 11.3.0 includes/core/class-mode.php:63-66,101-111 resolves the mode and triggers together once per request.
 	 *
 	 * @return string[]
 	 */
 	public function get_dev_mode_triggers(): array {
+		if ( null !== $this->dev_mode_triggers ) {
+			return $this->dev_mode_triggers;
+		}
+
 		$triggers = array();
 		if ( $this->is_wcpay_dev_mode_defined() ) {
 			$triggers[] = 'WCPAY_DEV_MODE';
@@ -1388,10 +1399,13 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		 */
 		$dev_mode = (bool) apply_filters( 'wcpay_dev_mode', array() !== $triggers );
 		if ( ! $dev_mode ) {
-			return array();
+			$triggers = array();
+		} elseif ( array() === $triggers ) {
+			$triggers[] = 'wcpay_dev_mode filter';
 		}
 
-		return array() !== $triggers ? $triggers : array( 'wcpay_dev_mode filter' );
+		$this->dev_mode_triggers = $triggers;
+		return $triggers;
 	}
 
 	/**

@@ -241,6 +241,45 @@ class SharedSettingsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Reading development mode and its notice reason should apply the public filter only once per request.
+	 *
+	 * Client 11.3.0 includes/core/class-mode.php:63-66,101-111.
+	 */
+	public function test_notice_and_dev_mode_read_apply_filter_once(): void {
+		$_GET['page'] = 'wc-settings';
+		$_GET['tab']  = 'checkout';
+		$_GET['path'] = '/woopayments/settings';
+		$this->replace_overview_service(
+			null,
+			array(
+				'account' => array(
+					'connected' => true,
+					'live'      => true,
+				),
+			)
+		);
+		$sut   = $this->create_shared_settings( true, array( 'is_test_mode_enabled' => true ) );
+		$calls = array();
+		add_filter(
+			'wcpay_dev_mode',
+			static function ( ...$args ) use ( &$calls ) {
+				$calls[] = $args;
+				return true;
+			},
+			10,
+			PHP_INT_MAX
+		);
+
+		$settings = $sut->preload_shared_settings( array() )['woopaymentsSettings'];
+
+		$this->assertCount( 1, $calls, 'The dev mode read and notice reason must not apply wcpay_dev_mode twice.' );
+		$this->assertCount( 1, $calls[0] );
+		$this->assertIsBool( $calls[0][0] );
+		$this->assertTrue( $settings['devMode'] );
+		$this->assertNotSame( '', $settings['devModeReason'] );
+	}
+
+	/**
 	 * @testdox Should preload the account's default currency, which the Balance report requests, and the REST root the settings page builds file URLs from.
 	 *
 	 * Source: plugin 11.1.0 `class-wc-payments-admin.php:1053` (`accountDefaultCurrency` in `wcpaySettings`), read by
@@ -1104,7 +1143,6 @@ class SharedSettingsTest extends WC_Unit_Test_Case {
 				'get_cached_account_data'                => array(),
 				'get_account_id'                         => '',
 				'is_test_mode_enabled'                   => false,
-				'is_dev_mode_enabled'                    => false,
 			),
 			$overrides
 		);

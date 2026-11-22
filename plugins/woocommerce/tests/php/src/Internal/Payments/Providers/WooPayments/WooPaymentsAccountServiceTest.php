@@ -2174,13 +2174,16 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	 * Client 11.1.0 `includes/core/class-mode.php:72-111`.
 	 */
 	public function test_dev_mode_triggers_follow_the_dev_mode_filter(): void {
-		$account_service = wc_get_container()->get( WooPaymentsAccountService::class );
 		add_filter( 'wcpay_dev_mode', '__return_false' );
-		$this->assertSame( array(), $account_service->get_dev_mode_triggers() );
+		$first_request = $this->create_service();
+		$this->assertSame( array(), $first_request->get_dev_mode_triggers() );
 		remove_filter( 'wcpay_dev_mode', '__return_false' );
 
 		add_filter( 'wcpay_dev_mode', '__return_true' );
-		$triggers = $account_service->get_dev_mode_triggers();
+		$this->assertFalse( $first_request->is_dev_mode_enabled() );
+
+		$account_service = $this->create_service();
+		$triggers        = $account_service->get_dev_mode_triggers();
 
 		$this->assertNotEmpty( $triggers );
 		$this->assertTrue( $account_service->is_dev_mode_enabled() );

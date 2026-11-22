@@ -10,6 +10,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Testing\Tools;
 
 use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use PHPUnit\Framework\Assert;
@@ -143,6 +144,7 @@ final class EnvironmentIsolation {
 		self::$refused_requests = array();
 		self::restore_run_session();
 		self::forget_runtime_owner();
+		self::forget_dev_mode();
 
 		foreach ( self::OFFLINE_TEST_NAMESPACES as $namespace ) {
 			if ( 0 === strpos( $test_class, $namespace ) ) {
@@ -202,6 +204,17 @@ final class EnvironmentIsolation {
 	 */
 	private static function forget_runtime_owner(): void {
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+	}
+
+	/**
+	 * The test container outlives a request. Drop the previous test's filtered development mode.
+	 */
+	private static function forget_dev_mode(): void {
+		$triggers = new \ReflectionProperty( WooPaymentsAccountService::class, 'dev_mode_triggers' );
+		if ( PHP_VERSION_ID < 80100 ) {
+			$triggers->setAccessible( true );
+		}
+		$triggers->setValue( wc_get_container()->get( WooPaymentsAccountService::class ), null );
 	}
 
 	/**
