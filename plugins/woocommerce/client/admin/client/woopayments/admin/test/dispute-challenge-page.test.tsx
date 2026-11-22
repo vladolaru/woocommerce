@@ -1703,21 +1703,20 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 		expect( mockUpdateDispute ).toHaveBeenCalledTimes( 1 );
 	} );
 
-	// Client 11.1.0 `new-evidence/index.tsx:291-292` prints `String( error )` ("[object Object]"); native keeps its own copy, never the server's message.
-	it( 'shows its own copy, not the server message, when the dispute fails to load', async () => {
-		mockGetDispute.mockRejectedValue(
-			new Error( 'Internal Server Error' )
-		);
-
-		renderChallengePage();
-
-		expect( await screen.findByRole( 'alert' ) ).toHaveTextContent(
-			'Unable to load WooPayments dispute details.'
-		);
-		expect(
-			screen.queryByText( 'Internal Server Error' )
-		).not.toBeInTheDocument();
-	} );
+	// Client 11.3.0 new-evidence/index.tsx:300.
+	it.each( [
+		[ { message: 'Case unavailable' }, 'Case unavailable' ],
+		[ 'Request timed out', 'Request timed out' ],
+	] )(
+		'shows the dispute load error in the alert: %p',
+		async ( error, message ) => {
+			mockGetDispute.mockRejectedValue( error );
+			renderChallengePage();
+			expect( await screen.findByRole( 'alert' ) ).toHaveTextContent(
+				message
+			);
+		}
+	);
 
 	it( 'should surface update failures in a notice', async () => {
 		mockGetDispute.mockResolvedValue( makeDispute() );

@@ -158,14 +158,10 @@ export const WooPaymentsDisputeChallengePage = () => {
 							)
 						: null
 				);
-			} catch {
+			} catch ( error ) {
 				if ( isMounted ) {
-					// Client 11.1.0 new-evidence/index.tsx:291-292 prints `String( error )` here; this page shows its own copy.
 					setErrorMessage(
-						__(
-							'Unable to load WooPayments dispute details.',
-							'woocommerce'
-						)
+						getErrorMessage( error, String( error ) )
 					);
 					setIsLoading( false );
 				}
