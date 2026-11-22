@@ -14,6 +14,7 @@ import { SetupLivePaymentsModal } from '~/woopayments/settings/account-mode-noti
 import { getWooPaymentsSettingsBootstrap } from '~/woopayments/settings/bootstrap';
 import BannerNotice from '~/settings-payments/onboarding/providers/woopayments/components/banner-notice';
 import type { WooPaymentsOverviewAccount } from '../types';
+import { DevModeMessage } from '../../dev-mode-message';
 import { HelpPopover } from './help-popover';
 import { getSettingsPaymentsProviderRouteUrl } from '../../utils';
 
@@ -100,26 +101,41 @@ export const OverviewNotices = () => {
 	);
 };
 
-// Client 11.1.0 components/sandbox-mode-switch-to-live-notice/index.tsx, four account/dev-mode variants.
+// Client 11.3.0 client/components/sandbox-mode-switch-to-live-notice/index.tsx:68-76,232-245.
 const SandboxModeNotice = ( {
 	account,
-	isDevMode,
 	setupUrl,
 }: {
 	account: WooPaymentsOverviewAccount;
-	isDevMode: boolean;
 	setupUrl?: string;
 } ) => {
 	const [ isModalVisible, setModalVisible ] = useState( false );
 	const accountType = account.test_drive ? 'test' : 'sandbox';
-	const devHelp = [
-		__( 'Learn more about development mode', 'woocommerce' ),
-		__(
-			'To begin accepting real payments, please go to the live store or change your <wpEnvLink>WordPress environment</wpEnvLink> to a production one. <learnMoreLink>Learn more</learnMoreLink>',
-			'woocommerce'
-		),
-		`${ TEST_ACCOUNTS_URL }#developer-notes`,
-	];
+	if ( account.dev_mode ) {
+		return (
+			<BannerNotice
+				className="woocommerce-woopayments-overview-mode-notice"
+				status="warning"
+				isDismissible={ false }
+			>
+				<div>
+					<DevModeMessage
+						onLearnMoreClick={ () =>
+							recordEvent(
+								'wcpay_overview_sandbox_mode_learn_more_clicked',
+								{
+									account_type: account.live
+										? 'live'
+										: accountType,
+									is_dev_mode: true,
+								}
+							)
+						}
+					/>
+				</div>
+			</BannerNotice>
+		);
+	}
 	const [ message, helpLabel, helpText, helpUrl ] = {
 		test: [
 			sprintf(
@@ -157,21 +173,7 @@ const SandboxModeNotice = ( {
 			),
 			'https://woocommerce.com/document/woopayments/startup-guide/#signup-process',
 		],
-		testDev: [
-			__(
-				"<strong>You're using a test account.</strong> ⚠️ Development mode is enabled for the store! There can be no live onboarding process while using development, testing, or staging WordPress environments!",
-				'woocommerce'
-			),
-			...devHelp,
-		],
-		sandboxDev: [
-			__(
-				'<strong>You are using a sandbox test account.</strong> ⚠️ Development mode is enabled for the store! There can be no live onboarding process while using development, testing, or staging WordPress environments!',
-				'woocommerce'
-			),
-			...devHelp,
-		],
-	}[ isDevMode ? `${ accountType }Dev` : accountType ] as string[];
+	}[ accountType ];
 	return (
 		<>
 			{ /* Client 11.1.0 `components/sandbox-mode-switch-to-live-notice`: a banner notice with the help icon at its end. */ }
@@ -207,15 +209,12 @@ const SandboxModeNotice = ( {
 					</span>
 					<HelpPopover label={ helpLabel }>
 						{ createInterpolateElement( helpText, {
-							wpEnvLink: link(
-								'https://make.wordpress.org/core/2020/08/27/wordpress-environment-types/'
-							),
 							learnMoreLink: link( helpUrl, () =>
 								recordEvent(
 									'wcpay_overview_sandbox_mode_learn_more_clicked',
 									{
 										account_type: accountType,
-										is_dev_mode: isDevMode,
+										is_dev_mode: false,
 									}
 								)
 							),
@@ -243,14 +242,13 @@ export const OverviewModeNotice = ( {
 	account: WooPaymentsOverviewAccount;
 	setupUrl?: string;
 } ) => {
-	// Client Mode.php:114: dev mode implies test-mode onboarding.
+	// Client 11.3.0 client/components/sandbox-mode-switch-to-live-notice/index.tsx:54-65.
 	if ( account.test_mode_onboarding || account.dev_mode ) {
-		return account.connected && ! account.live ? (
-			<SandboxModeNotice
-				account={ account }
-				isDevMode={ account.dev_mode }
-				setupUrl={ setupUrl }
-			/>
+		const showNotice = account.live
+			? account.dev_mode && account.test_mode
+			: account.test_drive || account.sandbox;
+		return account.connected && showNotice ? (
+			<SandboxModeNotice account={ account } setupUrl={ setupUrl } />
 		) : null;
 	}
 

@@ -84,14 +84,7 @@ describe( 'OverviewModeNotice', () => {
 			href: TEST_ACCOUNTS_URL,
 			properties: { account_type: 'test', is_dev_mode: false },
 		},
-		{
-			label: 'test account in dev mode',
-			overrides: { dev_mode: true, test_drive: true },
-			heading: "You're using a test account.",
-			helpLabel: 'Learn more about development mode',
-			href: `${ TEST_ACCOUNTS_URL }#developer-notes`,
-			properties: { account_type: 'test', is_dev_mode: true },
-		},
+
 		{
 			label: 'sandbox account',
 			overrides: { test_mode_onboarding: true, sandbox: true },
@@ -99,14 +92,6 @@ describe( 'OverviewModeNotice', () => {
 			helpLabel: 'Learn more about sandbox accounts',
 			href: 'https://woocommerce.com/document/woopayments/startup-guide/#signup-process',
 			properties: { account_type: 'sandbox', is_dev_mode: false },
-		},
-		{
-			label: 'sandbox account in dev mode',
-			overrides: { dev_mode: true, sandbox: true },
-			heading: 'You are using a sandbox test account.',
-			helpLabel: 'Learn more about development mode',
-			href: `${ TEST_ACCOUNTS_URL }#developer-notes`,
-			properties: { account_type: 'sandbox', is_dev_mode: true },
 		},
 	] )(
 		'shows the sandbox notice for a $label and records its Learn more click',
@@ -145,6 +130,67 @@ describe( 'OverviewModeNotice', () => {
 				'wcpay_overview_sandbox_mode_learn_more_clicked',
 				properties
 			);
+		}
+	);
+
+	// Client 11.3.0 client/components/sandbox-mode-switch-to-live-notice/index.tsx:54-65,232-245.
+	it.each( [ 'test', 'sandbox', 'live' ] )(
+		'shows one staging notice and tracks the inline link for %s',
+		async ( accountType ) => {
+			const original = window.wcSettings;
+			window.wcSettings = {
+				...original,
+				admin: {
+					woopaymentsSettings: {
+						devModeReason: 'This site is set up as a staging site.',
+					},
+				},
+			};
+			try {
+				const account = createAccount( {
+					dev_mode: true,
+					live: accountType === 'live',
+					sandbox: accountType === 'sandbox',
+					test_drive: accountType === 'test',
+					test_mode: true,
+				} );
+				const off = renderNotice( { ...account, test_mode: false } );
+				expect(
+					off.container.querySelectorAll(
+						'.woopayments-banner-notice'
+					)
+				).toHaveLength( account.live ? 0 : 1 );
+				off.unmount();
+				const { container } = renderNotice( account );
+				expect(
+					container.querySelectorAll( '.woopayments-banner-notice' )
+				).toHaveLength( 1 );
+				expect(
+					container.querySelector(
+						'.woopayments-banner-notice__content'
+					)?.textContent
+				).toBe(
+					'Your store is in development mode, so payments are simulated. This site is set up as a staging site. Real payments only work on your live store. Learn more'
+				);
+				expect(
+					screen.queryByRole( 'button' )
+				).not.toBeInTheDocument();
+				const link = screen.getByRole( 'link', {
+					name: /^Learn more/,
+				} );
+				expect( link ).toHaveAttribute(
+					'href',
+					`${ TEST_ACCOUNTS_URL }#developer-notes`
+				);
+				await userEvent.click( link );
+				expect( recordEvent ).toHaveBeenCalledTimes( 1 );
+				expect( recordEvent ).toHaveBeenCalledWith(
+					'wcpay_overview_sandbox_mode_learn_more_clicked',
+					{ account_type: accountType, is_dev_mode: true }
+				);
+			} finally {
+				window.wcSettings = original;
+			}
 		}
 	);
 

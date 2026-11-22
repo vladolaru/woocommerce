@@ -187,9 +187,10 @@ class SharedSettings implements RegisterHooksInterface {
 
 		$route_availability                                        = $this->navigation->get_admin_route_availability();
 		$settings['woopaymentsSettings']['adminRouteAvailability'] = $route_availability;
-		// The account mode notice reads `devMode`.
-		$settings['woopaymentsSettings']['testMode'] = $this->account_service->is_test_mode_enabled();
-		$settings['woopaymentsSettings']['devMode']  = $this->account_service->is_dev_mode_enabled();
+		// Client 11.3.0 includes/admin/class-wc-payments-admin.php:961-965,985-986.
+		$settings['woopaymentsSettings']['testMode']      = $this->account_service->is_test_mode_enabled();
+		$settings['woopaymentsSettings']['devMode']       = $this->account_service->is_dev_mode_enabled();
+		$settings['woopaymentsSettings']['devModeReason'] = $settings['woopaymentsSettings']['devMode'] ? $this->account_service->get_dev_mode_reason() : '';
 		// The payment method icons pick the Afterpay brand by the account country.
 		$settings['woopaymentsSettings']['accountCountry'] = $this->account_service->get_account_country();
 		// Client 11.1.0 `class-wc-payments-admin.php:1053` localizes this; the Balance report requests it (`reports/balance/index.tsx:177`).

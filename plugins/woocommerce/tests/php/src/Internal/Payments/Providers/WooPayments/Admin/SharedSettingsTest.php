@@ -212,7 +212,7 @@ class SharedSettingsTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should preload the test and dev mode flags the test-mode notice reads.
 	 *
-	 * Source: plugin 11.1.0 `class-wc-payments-admin.php:1012-1014` (`devMode`, `testMode` in `wcpaySettings`).
+	 * Client 11.3.0 includes/admin/class-wc-payments-admin.php:985-986.
 	 *
 	 * @testWith [true, false]
 	 *           [true, true]
@@ -227,8 +227,9 @@ class SharedSettingsTest extends WC_Unit_Test_Case {
 		$sut          = $this->create_shared_settings(
 			true,
 			array(
-				'is_test_mode_enabled' => $test_mode,
-				'is_dev_mode_enabled'  => $dev_mode,
+				'is_test_mode_enabled'  => $test_mode,
+				'is_dev_mode_enabled'   => $dev_mode,
+				'get_dev_mode_triggers' => $dev_mode ? array( 'WP_ENVIRONMENT_TYPE=staging' ) : array(),
 			)
 		);
 
@@ -236,6 +237,7 @@ class SharedSettingsTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( $test_mode, $settings['woopaymentsSettings']['testMode'] );
 		$this->assertSame( $dev_mode, $settings['woopaymentsSettings']['devMode'] );
+		$this->assertSame( $dev_mode ? 'This site is set up as a staging site.' : '', $settings['woopaymentsSettings']['devModeReason'] );
 	}
 
 	/**

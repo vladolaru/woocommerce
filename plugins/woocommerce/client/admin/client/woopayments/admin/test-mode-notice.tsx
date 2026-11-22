@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { ExternalLink, Notice } from '@wordpress/components';
+import { Notice } from '@wordpress/components';
 import { createInterpolateElement } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 
@@ -9,6 +9,7 @@ import { __, sprintf } from '@wordpress/i18n';
  * Internal dependencies
  */
 import { getWooPaymentsSettingsBootstrap } from '../settings/bootstrap';
+import { DevModeMessage } from './dev-mode-message';
 import { getSettingsPaymentsProviderRouteUrl } from './utils';
 
 // Client 11.1.0 components/test-mode-notice/index.tsx:17-24. The client's `overview` value is
@@ -20,9 +21,6 @@ export type WooPaymentsTestModeNoticePage =
 	| 'loans'
 	| 'payments'
 	| 'transactions';
-
-const TEST_ACCOUNTS_URL =
-	'https://woocommerce.com/document/woopayments/testing-and-troubleshooting/test-accounts/';
 
 // Client index.tsx:173-175 and 221-223: the page value is the resource, with deposits read as payouts.
 const resourceLabels: Record< WooPaymentsTestModeNoticePage, string > = {
@@ -40,24 +38,12 @@ const pluralNounToUse: Record< WooPaymentsTestModeNoticePage, string > = {
 	payments: resourceLabels.transactions,
 };
 
-// Client index.tsx:163-236: dev mode first, then the details view, then the list sentence.
+// Client 11.3.0 client/components/test-mode-notice/index.tsx:131-166.
 const getNoticeMessage = (
 	currentPage: WooPaymentsTestModeNoticePage,
-	isDetailsView: boolean,
-	isDevMode: boolean
+	isDetailsView: boolean
 ) => {
 	const resource = resourceLabels[ currentPage ];
-
-	if ( isDevMode ) {
-		return sprintf(
-			/* translators: %1$s: WooPayments admin resource, such as "transactions". */
-			__(
-				'Viewing test %1$s. Test mode is active because your store is in a development or staging environment. <learnMoreLink>Learn more</learnMoreLink>',
-				'woocommerce'
-			),
-			resource
-		);
-	}
 
 	if ( isDetailsView ) {
 		return sprintf(
@@ -109,27 +95,29 @@ export const WooPaymentsTestModeNotice = ( {
 			isDismissible={ false }
 		>
 			<span>
-				{ createInterpolateElement(
-					getNoticeMessage(
-						currentPage,
-						isDetailsView,
-						settings.devMode === true
-					),
-					{
-						settingsLink: (
-							// eslint-disable-next-line jsx-a11y/anchor-has-content -- Content comes from the interpolated message.
-							<a
-								href={ getSettingsPaymentsProviderRouteUrl(
-									'/woopayments/settings'
-								) }
-							/>
-						),
-						learnMoreLink: (
-							<ExternalLink href={ TEST_ACCOUNTS_URL }>
-								<></>
-							</ExternalLink>
-						),
-					}
+				{ settings.devMode === true ? (
+					<>
+						{ sprintf(
+							/* translators: %1$s: plural record type, such as "transactions". */
+							__( 'Viewing test %1$s.', 'woocommerce' ),
+							pluralNounToUse[ currentPage ]
+						) }{ ' ' }
+						<DevModeMessage />
+					</>
+				) : (
+					createInterpolateElement(
+						getNoticeMessage( currentPage, isDetailsView ),
+						{
+							settingsLink: (
+								// eslint-disable-next-line jsx-a11y/anchor-has-content -- Content comes from the interpolated message.
+								<a
+									href={ getSettingsPaymentsProviderRouteUrl(
+										'/woopayments/settings'
+									) }
+								/>
+							),
+						}
+					)
 				) }
 			</span>
 		</Notice>

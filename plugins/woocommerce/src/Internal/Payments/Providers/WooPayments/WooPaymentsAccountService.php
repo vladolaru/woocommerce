@@ -1395,6 +1395,30 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Explain the first active development mode trigger to the merchant.
+	 *
+	 * Client 11.3.0 includes/class-wc-payments-utils.php:84-104.
+	 *
+	 * @return string The translated reason, or an empty string for an unrecognized trigger.
+	 */
+	public function get_dev_mode_reason(): string {
+		$trigger = $this->get_dev_mode_triggers()[0] ?? '';
+
+		switch ( $trigger ) {
+			case 'WCPAY_DEV_MODE':
+				return __( 'The WCPAY_DEV_MODE constant is set.', 'woocommerce' );
+			case 'WP_ENVIRONMENT_TYPE=staging':
+				return __( 'This site is set up as a staging site.', 'woocommerce' );
+			case 'WP_ENVIRONMENT_TYPE=development':
+				return __( 'This site is set up as a development site.', 'woocommerce' );
+			case 'wcpay_dev_mode filter':
+				return __( 'A plugin or custom code turned it on using the wcpay_dev_mode filter.', 'woocommerce' );
+		}
+
+		return str_starts_with( $trigger, 'WP_DEVELOPMENT_MODE=' ) ? __( 'The WP_DEVELOPMENT_MODE constant is set.', 'woocommerce' ) : '';
+	}
+
+	/**
 	 * Tell whether WooPayments dev mode constant is defined.
 	 *
 	 * @return bool

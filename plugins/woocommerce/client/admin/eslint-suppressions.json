@@ -469,11 +469,6 @@
       "count": 2
     }
   },
-  "client/woopayments/admin/test-mode-notice.tsx": {
-    "@wordpress/use-recommended-components": {
-      "count": 1
-    }
-  },
   "client/woopayments/promotions/spotlight.tsx": {
     "@wordpress/use-recommended-components": {
       "count": 5

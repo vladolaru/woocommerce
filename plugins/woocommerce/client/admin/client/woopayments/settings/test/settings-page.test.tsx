@@ -3520,13 +3520,19 @@ describe( 'WooPaymentsSettingsPage', () => {
 
 		const setAccountMode = (
 			accountMode: Record< string, unknown >,
-			devMode = false
+			devMode = false,
+			testMode = false
 		) => {
 			( window as BootstrapWindow ).wcSettings = {
 				...previousWcSettings,
 				admin: {
 					...previousWcSettings?.admin,
-					woopaymentsSettings: { accountMode, devMode },
+					woopaymentsSettings: {
+						accountMode,
+						devMode,
+						testMode,
+						devModeReason: 'This site is set up as a staging site.',
+					},
 				},
 			};
 		};
@@ -3611,32 +3617,41 @@ describe( 'WooPaymentsSettingsPage', () => {
 			).toBeInTheDocument();
 		} );
 
-		// Client 11.1.0 picks the development copy from the server's `WC_Payments::mode()->is_dev()`.
-		it( 'uses the preloaded development mode when the settings read fails', () => {
-			setAccountMode(
-				{
-					connected: true,
-					live: false,
-					testDrive: true,
-					sandbox: false,
-					setupUrl: 'https://example.com/preloaded-setup',
-				},
-				true
-			);
-
-			render( <WooPaymentsSettingsPage /> );
-
-			expect(
-				screen
-					.getByText( 'You are using a test account.' )
-					.closest( 'p' )
-			).toHaveTextContent(
-				'⚠️ Development mode is enabled for the store!'
-			);
-			expect(
-				screen.queryByRole( 'button', { name: 'Activate payments' } )
-			).not.toBeInTheDocument();
-		} );
+		// Client 11.3.0 includes/admin/class-wc-payments-admin-settings.php:92,159,233.
+		it.each( [
+			{ label: 'test drive', mode: { testDrive: true } },
+			{ label: 'sandbox', mode: { sandbox: true } },
+			{ label: 'live', mode: { live: true } },
+		] )(
+			'shows one populated staging notice for a $label account',
+			( { label, mode } ) => {
+				const account = { connected: true, ...mode };
+				const selector = '.woopayments-settings-account-mode-notice';
+				setAccountMode( account, true, false );
+				const { container, rerender } = render(
+					<WooPaymentsSettingsPage />
+				);
+				expect( container.querySelectorAll( selector ) ).toHaveLength(
+					label === 'live' ? 0 : 1
+				);
+				setAccountMode( account, true, true );
+				rerender( <WooPaymentsSettingsPage /> );
+				const notices = container.querySelectorAll( selector );
+				expect( notices ).toHaveLength( 1 );
+				expect( notices[ 0 ].querySelector( 'p' )?.textContent ).toBe(
+					'Your store is in development mode, so payments are simulated. This site is set up as a staging site. Real payments only work on your live store. Learn more'
+				);
+				expect( notices[ 0 ].querySelector( 'a' ) ).toHaveAttribute(
+					'href',
+					'https://woocommerce.com/document/woopayments/testing-and-troubleshooting/test-accounts/#developer-notes'
+				);
+				expect(
+					screen.queryByRole( 'button', {
+						name: 'Activate payments',
+					} )
+				).not.toBeInTheDocument();
+			}
+		);
 
 		it( 'shows no notice for a live account and does not ask for the account', () => {
 			setAccountMode( {
@@ -3829,9 +3844,14 @@ describe( 'WooPaymentsSettingsPage', () => {
 				render( <WooPaymentsSettingsPage /> );
 
 				const notice = (
-					await screen.findByText( /You are using a/, {
-						selector: 'strong',
-					} )
+					await screen.findByText(
+						isDevMode
+							? 'Your store is in development mode, so payments are simulated.'
+							: 'You are using a test account.',
+						{
+							selector: 'strong',
+						}
+					)
 				).closest(
 					'.woopayments-settings-account-mode-notice'
 				) as HTMLElement;
@@ -4115,20 +4135,12 @@ describe( 'WooPaymentsSettingsPage', () => {
 		render( <WooPaymentsSettingsPage /> );
 
 		const heading = await screen.findByText(
-			'You are using a test account.'
+			'Your store is in development mode, so payments are simulated.'
 		);
-		expect( heading.closest( 'p' ) ).toHaveTextContent(
-			'⚠️ Development mode is enabled for the store! There can be no live onboarding process while using development, testing, or staging WordPress environments!'
+		expect( heading.closest( 'p' )?.textContent ).toBe(
+			'Your store is in development mode, so payments are simulated. Real payments only work on your live store. Learn more'
 		);
-		const noticeCopy = heading.closest( 'p' ) as HTMLElement;
-		expect(
-			within( noticeCopy ).getByRole( 'link', {
-				name: /WordPress environment/,
-			} )
-		).toHaveAttribute(
-			'href',
-			'https://make.wordpress.org/core/2020/08/27/wordpress-environment-types/'
-		);
+
 		expect(
 			screen.queryByRole( 'button', { name: 'Activate payments' } )
 		).not.toBeInTheDocument();

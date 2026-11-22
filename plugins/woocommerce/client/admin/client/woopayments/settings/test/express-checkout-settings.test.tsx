@@ -571,14 +571,13 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 			<WooPaymentsExpressCheckoutSettings methodId="payment_request" />
 		);
 
-		const notice = (
-			await screen.findByText( 'You are using a sandbox test account.' )
-		).closest( '.woopayments-settings-account-mode-notice' ) as HTMLElement;
-		expect(
-			within( notice ).getByText(
-				/Development mode is enabled for the store!/
-			)
-		).toBeInTheDocument();
+		const heading = await screen.findByText(
+			'Your store is in development mode, so payments are simulated.'
+		);
+		expect( heading.closest( 'p' )?.textContent ).toBe(
+			'Your store is in development mode, so payments are simulated. Real payments only work on your live store. Learn more'
+		);
+
 		expect(
 			screen.queryByRole( 'button', { name: 'Activate payments' } )
 		).not.toBeInTheDocument();

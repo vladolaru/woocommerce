@@ -101,28 +101,34 @@ describe( 'WooPaymentsTestModeNotice', () => {
 		}
 	);
 
-	// Client index.tsx:163-181: dev mode wins over the details view and drops the settings link.
+	// Client 11.3.0 client/components/test-mode-notice/index.tsx:119-128.
 	it.each( [ false, true ] )(
-		'shows the development-environment copy in dev mode (details view: %s)',
+		'uses the transactions record prefix on staging (details: %s)',
 		( isDetailsView ) => {
-			mockMode( { testMode: true, devMode: true } );
-
+			window.wcSettings = {
+				admin: {
+					woopaymentsSettings: {
+						devMode: true,
+						testMode: true,
+						devModeReason: 'This site is set up as a staging site.',
+					},
+				},
+			};
 			render(
 				<WooPaymentsTestModeNotice
-					currentPage="deposits"
+					currentPage="payments"
 					isDetailsView={ isDetailsView }
 				/>
 			);
-
 			expect( getNotice() ).toHaveTextContent(
-				'Viewing test payouts. Test mode is active because your store is in a development or staging environment. Learn more'
+				'Viewing test transactions. Your store is in development mode, so payments are simulated. This site is set up as a staging site. Real payments only work on your live store. Learn more'
 			);
 			expect(
 				screen.getByRole( 'link', { name: /Learn more/ } )
-			).toHaveAttribute( 'href', TEST_ACCOUNTS_URL );
-			expect(
-				screen.queryByRole( 'link', { name: 'WooPayments settings' } )
-			).not.toBeInTheDocument();
+			).toHaveAttribute(
+				'href',
+				`${ TEST_ACCOUNTS_URL }#developer-notes`
+			);
 		}
 	);
 

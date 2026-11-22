@@ -10,13 +10,14 @@ import { recordEvent } from '@woocommerce/tracks';
 /**
  * Internal dependencies
  */
+import { DevModeMessage } from '../admin/dev-mode-message';
 import { getWooPaymentsAccountSettings } from './api';
 import { getWooPaymentsSettingsBootstrap } from './bootstrap';
 import { TextLink } from './text-link';
 import './setup-live-payments-modal.scss';
 
 type AccountModeNoticeState = {
-	kind: 'test' | 'sandbox';
+	kind: 'live' | 'test' | 'sandbox';
 	setupUrl?: string;
 };
 
@@ -31,8 +32,12 @@ type AccountModeFields = {
 const getNoticeState = (
 	account: AccountModeFields
 ): AccountModeNoticeState | null => {
-	if ( ! account.connected || account.live ) {
+	if ( ! account.connected ) {
 		return null;
+	}
+
+	if ( account.live ) {
+		return { kind: 'live' };
 	}
 
 	if ( account.testDrive ) {
@@ -59,8 +64,6 @@ const RESET_ACCOUNT_URL =
 	'https://woocommerce.com/document/woopayments/startup-guide/#resetting';
 export const WORDPRESS_ENVIRONMENT_URL =
 	'https://make.wordpress.org/core/2020/08/27/wordpress-environment-types/';
-const TEST_ACCOUNT_DEV_URL =
-	'https://woocommerce.com/document/woopayments/testing-and-troubleshooting/test-accounts/#developer-notes';
 const SETUP_LIVE_FROM = 'WCPAY_SETTINGS';
 const SETUP_LIVE_SOURCE = 'wcadmin-settings-page';
 
@@ -172,8 +175,8 @@ export const AccountModeNotice = ( {
 		);
 	const [ isModalVisible, setModalVisible ] = useState( false );
 	// The settings read carries dev mode; when it fails, the page's own flag still picks the development copy.
-	const isDevMode =
-		isDevModeEnabled || getWooPaymentsSettingsBootstrap().devMode === true;
+	const bootstrap = getWooPaymentsSettingsBootstrap();
+	const isDevMode = isDevModeEnabled || bootstrap.devMode === true;
 
 	useEffect( () => {
 		if ( preloadedAccountMode ) {
@@ -236,7 +239,12 @@ export const AccountModeNotice = ( {
 		};
 	}, [ isDevMode, noticeState ] );
 
-	if ( ! noticeState ) {
+	// Client 11.3.0 includes/admin/class-wc-payments-admin-settings.php:77-92.
+	if (
+		! noticeState ||
+		( noticeState.kind === 'live' &&
+			( ! isDevMode || bootstrap.testMode !== true ) )
+	) {
 		return null;
 	}
 
@@ -246,29 +254,6 @@ export const AccountModeNotice = ( {
 		: __( 'You are using a sandbox test account.', 'woocommerce' );
 
 	const renderNoticeCopy = () => {
-		if ( isDevMode ) {
-			return (
-				<>
-					{ __(
-						'⚠️ Development mode is enabled for the store! There can be no live onboarding process while using development, testing, or staging WordPress environments!',
-						'woocommerce'
-					) }{ ' ' }
-					<br />
-					{ __(
-						'To begin accepting real payments, please go to the live store or change your',
-						'woocommerce'
-					) }{ ' ' }
-					<TextLink href={ WORDPRESS_ENVIRONMENT_URL }>
-						{ __( 'WordPress environment', 'woocommerce' ) }
-					</TextLink>{ ' ' }
-					{ __( 'to a production one.', 'woocommerce' ) }{ ' ' }
-					<TextLink href={ TEST_ACCOUNT_DEV_URL }>
-						{ __( 'Learn more', 'woocommerce' ) }
-					</TextLink>
-				</>
-			);
-		}
-
 		if ( isTestAccount ) {
 			return (
 				<>
@@ -313,7 +298,14 @@ export const AccountModeNotice = ( {
 				isDismissible={ false }
 			>
 				<p>
-					<strong>{ noticeHeading }</strong> { renderNoticeCopy() }
+					{ isDevMode ? (
+						<DevModeMessage plainLink />
+					) : (
+						<>
+							<strong>{ noticeHeading }</strong>{ ' ' }
+							{ renderNoticeCopy() }
+						</>
+					) }
 				</p>
 				{ isTestAccount && ! isDevMode && (
 					<Button

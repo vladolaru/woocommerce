@@ -11,7 +11,7 @@ test.use( { storageState: ADMIN_STATE_PATH } );
 /**
  * Native WooPayments test-mode notice (finding F-T60-3).
  *
- * Every copy string below is client 11.1.0's, not native's:
+ * The copy follows the client notices in
  * `components/test-mode-notice/index.tsx` for the admin pages and
  * `order/test-mode-notice/index.tsx` for the order edit screen. The client
  * has no browser case for this notice, so no ledger contract is annotated.
@@ -93,12 +93,26 @@ interface ExpectedCopy {
  * The client's copy for one page, in its own order: dev mode first, then the
  * details view, then the list sentence (client index.tsx:163-236).
  */
-function expectedCopy( surface: Surface, devMode: boolean ): ExpectedCopy {
-	const resource = resourceLabel( surface.currentPage );
+function expectedCopy(
+	surface: Surface,
+	devMode: boolean,
+	reason: string
+): ExpectedCopy {
 	if ( devMode ) {
 		return {
-			sentence: `Viewing test ${ resource }. Test mode is active because your store is in a development or staging environment. Learn more`,
-			link: { name: 'Learn more', href: TEST_ACCOUNTS_URL },
+			// Client 11.3.0 client/components/test-mode-notice/index.tsx:119-128.
+			sentence: [
+				`Viewing test ${ PLURAL_NOUNS[ surface.currentPage ] }.`,
+				'Your store is in development mode, so payments are simulated.',
+				reason,
+				'Real payments only work on your live store. Learn more',
+			]
+				.filter( Boolean )
+				.join( ' ' ),
+			link: {
+				name: 'Learn more',
+				href: `${ TEST_ACCOUNTS_URL }#developer-notes`,
+			},
 		};
 	}
 
@@ -115,6 +129,7 @@ function expectedCopy( surface: Surface, devMode: boolean ): ExpectedCopy {
 		};
 	}
 
+	const resource = resourceLabel( surface.currentPage );
 	return {
 		sentence: `Viewing test ${ resource }. To view live ${ resource }, disable test mode in WooPayments settings.`,
 		link: settingsLink,
@@ -221,6 +236,7 @@ async function answerPaymentsReadWithOutage( route: Route ): Promise< void > {
 interface WooPaymentsBootstrap {
 	testMode?: unknown;
 	devMode?: unknown;
+	devModeReason: string;
 }
 
 async function readBootstrap( page: Page ): Promise< WooPaymentsBootstrap > {
@@ -232,7 +248,14 @@ async function readBootstrap( page: Page ): Promise< WooPaymentsBootstrap > {
 				};
 			}
 		 ).wcSettings?.admin?.woopaymentsSettings;
-		return { testMode: settings?.testMode, devMode: settings?.devMode };
+		return {
+			testMode: settings?.testMode,
+			devMode: settings?.devMode,
+			devModeReason:
+				typeof settings?.devModeReason === 'string'
+					? settings.devModeReason
+					: '',
+		};
 	} );
 }
 
@@ -285,9 +308,10 @@ async function sightedText( element: Locator ): Promise< string > {
 async function expectNotice(
 	page: Page,
 	surface: Surface,
-	devMode: boolean
+	devMode: boolean,
+	reason: string
 ): Promise< void > {
-	const copy = expectedCopy( surface, devMode );
+	const copy = expectedCopy( surface, devMode, reason );
 	const notice = page.locator( NOTICE_SELECTOR );
 	await expect( notice, `${ surface.name } shows one notice` ).toHaveCount(
 		1
@@ -311,8 +335,8 @@ async function visitSurface(
 	expect(
 		bootstrap,
 		`${ surface.name } receives the test-mode bootstrap`
-	).toEqual( { testMode: true, devMode } );
-	await expectNotice( page, surface, devMode );
+	).toMatchObject( { testMode: true, devMode } );
+	await expectNotice( page, surface, devMode, bootstrap.devModeReason );
 	if ( surface.loadErrorText ) {
 		await expect(
 			page.getByText( surface.loadErrorText ).first(),

@@ -2143,6 +2143,32 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should explain only the first development mode trigger.
+	 *
+	 * Client 11.3.0 includes/class-wc-payments-utils.php:84-104.
+	 *
+	 * @testWith [["WCPAY_DEV_MODE"], "The WCPAY_DEV_MODE constant is set."]
+	 *           [["WP_ENVIRONMENT_TYPE=staging"], "This site is set up as a staging site."]
+	 *           [["WP_ENVIRONMENT_TYPE=development"], "This site is set up as a development site."]
+	 *           [["WP_DEVELOPMENT_MODE=theme"], "The WP_DEVELOPMENT_MODE constant is set."]
+	 *           [["wcpay_dev_mode filter"], "A plugin or custom code turned it on using the wcpay_dev_mode filter."]
+	 *           [["WCPAY_DEV_MODE", "WP_ENVIRONMENT_TYPE=staging"], "The WCPAY_DEV_MODE constant is set."]
+	 *           [["unknown", "WP_ENVIRONMENT_TYPE=staging"], ""]
+	 *           [[], ""]
+	 *
+	 * @param string[] $triggers Active triggers in priority order.
+	 * @param string   $expected Expected merchant-facing reason.
+	 */
+	public function test_dev_mode_reason( array $triggers, string $expected ): void {
+		$sut = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->onlyMethods( array( 'get_dev_mode_triggers' ) )
+			->getMock();
+		$sut->method( 'get_dev_mode_triggers' )->willReturn( $triggers );
+
+		$this->assertSame( $expected, $sut->get_dev_mode_reason() );
+	}
+
+	/**
 	 * @testdox Dev mode triggers follow the wcpay_dev_mode filter, which can turn dev mode on or off, as in the extension.
 	 *
 	 * Client 11.1.0 `includes/core/class-mode.php:72-111`.
