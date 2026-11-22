@@ -602,7 +602,10 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Checking button visibility drops scripts on an empty or free block cart, while loading them on every page includes free products.
+	 * Requiring a visible button drops empty-cart scripts. Ignoring every block cart total loads wallets on fully discounted orders.
+	 * Loading the scripts on every page also includes free products.
+	 *
+	 * @testdox An empty Cart block loads express assets. A fully discounted checkout and a free product do not.
 	 * @since 11.4.0
 	 * @testWith ["cart"]
 	 *           ["checkout"]
@@ -613,18 +616,34 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	public function test_wallet_assets_follow_cart_state( string $surface ): void {
 		$this->use_visited_page_surface();
 		WC()->cart->empty_cart();
-		if ( 'cart' !== $surface ) {
+		if ( 'product' === $surface ) {
 			$product = \WC_Helper_Product::create_simple_product();
 			$product->set_regular_price( '0' );
 			$product->set_price( '0' );
 			$product->save();
 			WC()->cart->add_to_cart( $product->get_id() );
 			WC()->cart->calculate_totals();
-		}
-		if ( 'product' === $surface ) {
 			$this->go_to( $product->get_permalink() );
 		} else {
 			$this->go_to_page_rendered_by( 'woocommerce/' . $surface, 'content' );
+		}
+
+		if ( 'checkout' === $surface ) {
+			$product = \WC_Helper_Product::create_simple_product();
+			$product->set_virtual( true );
+			$product->save();
+			WC()->cart->add_to_cart( $product->get_id() );
+
+			$coupon = new \WC_Coupon();
+			$coupon->set_code( 'free-checkout' );
+			$coupon->set_discount_type( 'percent' );
+			$coupon->set_amount( 100 );
+			$coupon->save();
+			$this->assertTrue( WC()->cart->apply_coupon( $coupon->get_code() ) );
+			WC()->cart->calculate_totals();
+			$this->assertSame( 1, WC()->cart->get_cart_contents_count() );
+			$this->assertGreaterThan( 0, WC()->cart->get_subtotal() );
+			$this->assertSame( 0.0, (float) WC()->cart->get_total( 'edit' ) );
 		}
 
 		$account = $this->createMock( WooPaymentsAccountService::class );
@@ -636,9 +655,11 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		$express->init( $account, $provider, $this->createMock( WooPaymentsFrontendTrackingController::class ) );
 
 		$integration = $this->create_registered_integration( false, false, null, null, null, $express );
-		$handles     = $integration->get_payment_method_script_handles();
+		$handles     = 'product' === $surface ? $integration->get_payment_method_script_handles() : $this->render_block_assets( $integration, 'woocommerce/' . $surface );
 
-		$this->assertSame( 'product' !== $surface, in_array( 'wc-payment-method-woopayments-express-checkout', $handles, true ) );
+		$this->assertFalse( $express->should_show_payment_request_button( $surface ) );
+		$this->assertSame( 'cart' === $surface, in_array( 'wc-payment-method-woopayments-express-checkout', $handles, true ) );
+		$this->assertSame( 'cart' === $surface, wp_style_is( 'wc-payment-method-woopayments-express-checkout', 'enqueued' ) );
 	}
 
 	/**

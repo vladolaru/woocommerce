@@ -131,11 +131,12 @@ class WooPaymentsExpressCheckoutService {
 			return false;
 		}
 
-		if ( 'pay_for_order' !== $context && $this->would_add_unshown_billing_address_tax( $context ) && ! ( $cart_block && WC()->cart->is_empty() ) ) {
+		$empty_block_cart = $cart_block && WC()->cart->is_empty();
+		if ( ! $empty_block_cart && 'pay_for_order' !== $context && $this->would_add_unshown_billing_address_tax( $context ) ) {
 			return false;
 		}
 
-		if ( ! $cart_block && 'pay_for_order' !== $context && $this->is_zero_amount( $context ) ) {
+		if ( ! $empty_block_cart && 'pay_for_order' !== $context && $this->is_zero_amount( $context ) ) {
 			return false;
 		}
 

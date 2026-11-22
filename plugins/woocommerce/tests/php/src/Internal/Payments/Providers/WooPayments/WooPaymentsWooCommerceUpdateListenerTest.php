@@ -76,7 +76,9 @@ class WooPaymentsWooCommerceUpdateListenerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Clearing the cache on update loses the saved account on failure and skips the new account on success.
+	 * Clearing the cache on update loses the saved account on failure and skips the new account on success.
+	 *
+	 * @testdox An update keeps the saved account on failure and stores the refreshed account on success.
 	 * @since 11.4.0
 	 * @testWith [false, "acct_saved"]
 	 *           [true, "acct_new"]
@@ -117,7 +119,10 @@ class WooPaymentsWooCommerceUpdateListenerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Clearing the cache skips the account refresh alongside the two scheduled update duties.
+	 * Clearing the cache skips the account refresh alongside the two scheduled update duties.
+	 *
+	 * @testdox An update refreshes the account and runs both scheduled duties.
+	 * @since 11.4.0
 	 */
 	public function test_woocommerce_update_runs_the_update_duties(): void {
 		// Client 11.1.0 runs these on its own update action: class-wc-payments-account.php:143,147 and
@@ -131,7 +136,10 @@ class WooPaymentsWooCommerceUpdateListenerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Refreshing during registration would fetch the account before an update.
+	 * Refreshing during registration would fetch the account before an update.
+	 *
+	 * @testdox Registration defers all three duties until WooCommerce updates.
+	 * @since 11.4.0
 	 */
 	public function test_registration_runs_no_update_duty(): void {
 		$this->account_service->expects( $this->never() )->method( 'refresh_account_data' );
