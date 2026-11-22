@@ -827,73 +827,88 @@ describe( 'WooPayments payout details admin surface', () => {
 		).not.toBeInTheDocument();
 	} );
 
-	it( 'does not render embedded transaction history for instant payouts', async () => {
-		mockGetDeposit.mockResolvedValue( {
-			id: 'po_test',
-			date: '2026-06-18',
-			type: 'deposit',
-			amount: 12500,
-			status: 'paid',
-			bankAccount: 'STRIPE TEST BANK **** 6789',
-			bank_reference_key: 'REF123',
-			currency: 'usd',
-			automatic: false,
-		} );
-		mockGetTransactionsSummary.mockResolvedValue( {
-			count: 1,
-			total: 12500,
-			fees: 0,
-			net: 12500,
-			currency: 'usd',
-		} );
-		mockGetTransactions.mockResolvedValue( {
-			total_count: 1,
-			data: [
-				{
-					transaction_id: 'txn_payout',
-					type: 'charge',
-					amount: 12500,
-					currency: 'usd',
-					date: '2026-06-18',
-				},
-			],
-		} );
+	it.each( [
+		[ 30, 0 ],
+		[ 0, 1.5 ],
+	] )(
+		'shows instant payout history with fee %s and percentage %s',
+		async ( fee, feePercentage ) => {
+			mockGetDeposit.mockResolvedValue( {
+				id: 'po_test',
+				date: '2026-06-18',
+				type: 'deposit',
+				amount: 12500,
+				status: 'paid',
+				bankAccount: 'STRIPE TEST BANK **** 6789',
+				bank_reference_key: 'REF123',
+				currency: 'usd',
+				automatic: false,
+				fee,
+				fee_percentage: feePercentage,
+			} );
+			mockGetTransactionsSummary.mockResolvedValue( {
+				count: 1,
+				total: 12500,
+				fees: 0,
+				net: 12500,
+				currency: 'usd',
+			} );
+			mockGetTransactions.mockResolvedValue( {
+				total_count: 1,
+				data: [
+					{
+						transaction_id: 'txn_payout',
+						type: 'charge',
+						amount: 12500,
+						currency: 'usd',
+						date: '2026-06-18',
+					},
+				],
+			} );
 
-		render(
-			<MemoryRouter
-				initialEntries={ [ '/woopayments/payouts/details?id=po_test' ] }
-			>
-				<WooPaymentsPayoutDetailsPage />
-			</MemoryRouter>
-		);
+			render(
+				<MemoryRouter
+					initialEntries={ [
+						'/woopayments/payouts/details?id=po_test',
+					] }
+				>
+					<WooPaymentsPayoutDetailsPage />
+				</MemoryRouter>
+			);
 
-		expect(
-			await screen.findByText(
-				( _, element ) =>
-					element?.classList.contains( 'components-card__body' ) &&
-					!! element.textContent?.startsWith(
-						"We're unable to show transaction history on instant payouts. Learn more"
-					)
-			)
-		).toBeInTheDocument();
-		expect(
-			screen.getByRole( 'link', {
-				name: ( accessibleName: string ) =>
-					accessibleName.startsWith( 'Learn more' ),
-			} )
-		).toHaveAttribute(
-			'href',
-			'https://woocommerce.com/document/woopayments/payouts/instant-payouts/#request-an-instant-payout'
-		);
-		// Client 11.1.0 `deposits/details/index.tsx:330-353`: no list, so no list or summary request.
-		expect( mockGetTransactions ).not.toHaveBeenCalled();
-		expect( mockGetTransactionsSummary ).not.toHaveBeenCalled();
-		expect(
-			screen.queryByRole( 'link', {
-				name: 'View transaction details for Charge transaction txn_payout',
-			} )
-		).not.toBeInTheDocument();
-	} );
+			expect(
+				await screen.findByText(
+					( _, element ) =>
+						element?.classList.contains(
+							'components-card__body'
+						) &&
+						!! element.textContent?.startsWith(
+							"We're unable to show transaction history on instant payouts. Learn more"
+						)
+				)
+			).toBeInTheDocument();
+			expect(
+				screen.getByRole( 'link', {
+					name: ( accessibleName: string ) =>
+						accessibleName.startsWith( 'Learn more' ),
+				} )
+			).toHaveAttribute(
+				'href',
+				'https://woocommerce.com/document/woopayments/payouts/instant-payouts/#request-an-instant-payout'
+			);
+			// Client 11.1.0 `deposits/details/index.tsx:330-353`: no list, so no list or summary request.
+			expect(
+				screen.getByText( /^Instant payout date:/ )
+			).toBeInTheDocument();
+			expect( mockGetTransactions ).not.toHaveBeenCalled();
+			expect( mockGetTransactionsSummary ).not.toHaveBeenCalled();
+			expect(
+				screen.queryByRole( 'link', {
+					name: 'View transaction details for Charge transaction txn_payout',
+				} )
+			).not.toBeInTheDocument();
+		}
+	);
 
 	it( 'uses withdrawal wording for withdrawal details', async () => {
 		mockGetDeposit.mockResolvedValue( {
@@ -1189,7 +1204,7 @@ describe( 'WooPayments payout details admin surface', () => {
 			expect( net ).toHaveTextContent( '$20.00' );
 		} );
 
-		it( 'shows a zero service fee as 0% and $0.00', async () => {
+		it( 'describes a zero-fee manual payout without an instant payout link', async () => {
 			await renderPayout( {
 				...depositFixture,
 				automatic: false,
@@ -1197,6 +1212,18 @@ describe( 'WooPayments payout details admin surface', () => {
 				fee_percentage: 0,
 			} );
 
+			expect(
+				getOverviewItem( 'Manual payout date: Jan 2, 2020' )
+			).toBeInTheDocument();
+			expect(
+				screen.getByText(
+					"We're unable to show transaction history on manual payouts."
+				)
+			).toBeInTheDocument();
+			expect(
+				screen.queryByRole( 'link', { name: /Learn more/ } )
+			).not.toBeInTheDocument();
+			expect( mockGetTransactions ).not.toHaveBeenCalled();
 			const fee = getOverviewItem( '0% service fee' );
 			expect( fee ).toHaveTextContent( '$0.00' );
 		} );

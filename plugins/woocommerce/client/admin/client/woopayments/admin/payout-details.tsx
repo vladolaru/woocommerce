@@ -187,10 +187,17 @@ const OverviewItem = ( {
 	</li>
 );
 
+// Client 11.3.0 deposits/details/index.tsx:48 distinguishes manual and instant payouts by their fees.
+const isInstantPayout = ( payout: WooPaymentsDeposit ) =>
+	payout.automatic === false &&
+	( ( payout.fee ?? 0 ) > 0 || ( payout.fee_percentage ?? 0 ) > 0 );
+
 const PayoutDateItem = ( { payout }: { payout: WooPaymentsDeposit } ) => {
 	let label: string = __( 'Payout date', 'woocommerce' );
-	if ( payout.automatic === false ) {
+	if ( isInstantPayout( payout ) ) {
 		label = __( 'Instant payout date', 'woocommerce' );
+	} else if ( payout.automatic === false ) {
+		label = __( 'Manual payout date', 'woocommerce' );
 	}
 	if ( payout.type === 'withdrawal' ) {
 		label = __( 'Withdrawal date', 'woocommerce' );
@@ -412,7 +419,6 @@ export const WooPaymentsPayoutDetailsPage = () => {
 	}
 
 	const isWithdrawal = payout?.type === 'withdrawal';
-	const isInstantPayout = payout?.automatic === false;
 	const payoutTitle = isWithdrawal
 		? __( 'Withdrawal details', 'woocommerce' )
 		: __( 'Payout details', 'woocommerce' );
@@ -509,7 +515,7 @@ export const WooPaymentsPayoutDetailsPage = () => {
 							</dl>
 						</CardBody>
 					</Card>
-					{ isInstantPayout ? (
+					{ payout.automatic === false ? (
 						<Card>
 							<CardHeader>
 								<h2 className="woocommerce-woopayments-payout-details__title">
@@ -517,13 +523,27 @@ export const WooPaymentsPayoutDetailsPage = () => {
 								</h2>
 							</CardHeader>
 							<CardBody>
-								{ __(
-									"We're unable to show transaction history on instant payouts.",
-									'woocommerce'
-								) }{ ' ' }
-								<ExternalLink href={ INSTANT_PAYOUTS_DOCS_URL }>
-									{ __( 'Learn more', 'woocommerce' ) }
-								</ExternalLink>
+								{ isInstantPayout( payout ) ? (
+									<>
+										{ __(
+											"We're unable to show transaction history on instant payouts.",
+											'woocommerce'
+										) }{ ' ' }
+										<ExternalLink
+											href={ INSTANT_PAYOUTS_DOCS_URL }
+										>
+											{ __(
+												'Learn more',
+												'woocommerce'
+											) }
+										</ExternalLink>
+									</>
+								) : (
+									__(
+										"We're unable to show transaction history on manual payouts.",
+										'woocommerce'
+									)
+								) }
 							</CardBody>
 						</Card>
 					) : (
