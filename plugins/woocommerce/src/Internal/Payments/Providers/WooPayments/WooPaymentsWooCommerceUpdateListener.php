@@ -30,13 +30,16 @@ class WooPaymentsWooCommerceUpdateListener implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Clear the account cache so the next read fetches it, queue a store setup sync and drop the retired WooPay schedule.
+	 * Refresh the account, queue a store setup sync and drop the retired WooPay schedule.
+	 * A failed fetch keeps the saved account data. Client 11.3.0 includes/class-wc-payments-account.php:153-154.
+	 *
+	 * @since 11.4.0
 	 *
 	 * @internal
 	 */
 	public function handle_woocommerce_updated(): void {
 		$container = wc_get_container();
-		$container->get( WooPaymentsAccountService::class )->clear_cache();
+		$container->get( WooPaymentsAccountService::class )->refresh_account_data();
 		$container->get( WooPaymentsStoreSetupReportController::class )->queue_store_setup_sync();
 		$container->get( ExtensionSync::class )->remove_retired_validation_schedule();
 	}

@@ -7,10 +7,13 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\ExtensionSync;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStoreSetupReportController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooCommerceUpdateListener;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 use PHPUnit\Framework\MockObject\MockObject;
 use WC_Unit_Test_Case;
 
@@ -73,12 +76,53 @@ class WooPaymentsWooCommerceUpdateListenerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A WooCommerce update refreshes the account, queues a store setup sync and drops the retired WooPay schedule.
+	 * @testdox Clearing the cache on update loses the saved account on failure and skips the new account on success.
+	 * @since 11.4.0
+	 * @testWith [false, "acct_saved"]
+	 *           [true, "acct_new"]
+	 *
+	 * @param bool   $succeeds Whether the account request succeeds.
+	 * @param string $expected Account ID expected in the cache.
+	 */
+	public function test_update_preserves_or_renews_saved_account( bool $succeeds, string $expected ): void {
+		$saved = array(
+			'account_id' => 'acct_saved',
+			'is_live'    => true,
+		);
+		update_option( 'wcpay_account_data', array( 'data' => $saved ) );
+
+		$client = $this->createMock( Client::class );
+		$client->method( 'is_available' )->willReturn( true );
+		$request = $client->expects( $this->once() )->method( 'get_account' );
+		if ( $succeeds ) {
+			$request->willReturn( array_merge( $saved, array( 'account_id' => 'acct_new' ) ) );
+		} else {
+			$request->willThrowException( new \RuntimeException( 'Account service unavailable.' ) );
+		}
+
+		$container = wc_get_container();
+		$proxy     = $container->get( LegacyProxy::class );
+		$cache     = new WooPaymentsDatabaseCache();
+		$cache->init( $proxy );
+		$account = new WooPaymentsAccountService();
+		$account->init( $proxy, $cache );
+		$container->replace( WooPaymentsAccountService::class, $account );
+		$container->replace( Client::class, $client );
+		try {
+			$this->sut->handle_woocommerce_updated();
+			$this->assertSame( $expected, get_option( 'wcpay_account_data' )['data']['account_id'] ?? null );
+		} finally {
+			$container->reset_replacement( Client::class );
+		}
+	}
+
+	/**
+	 * @testdox Clearing the cache skips the account refresh alongside the two scheduled update duties.
 	 */
 	public function test_woocommerce_update_runs_the_update_duties(): void {
 		// Client 11.1.0 runs these on its own update action: class-wc-payments-account.php:143,147 and
 		// woopay/class-woopay-scheduler.php:50.
-		$this->account_service->expects( $this->once() )->method( 'clear_cache' );
+		$this->account_service->expects( $this->once() )->method( 'refresh_account_data' );
 		$this->store_setup_report->expects( $this->once() )->method( 'queue_store_setup_sync' );
 		$this->woopay_extension_sync->expects( $this->once() )->method( 'remove_retired_validation_schedule' );
 		$this->sut->register();
@@ -87,10 +131,10 @@ class WooPaymentsWooCommerceUpdateListenerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Registering the listener runs none of the update duties; they wait for a WooCommerce update.
+	 * @testdox Refreshing during registration would fetch the account before an update.
 	 */
 	public function test_registration_runs_no_update_duty(): void {
-		$this->account_service->expects( $this->never() )->method( 'clear_cache' );
+		$this->account_service->expects( $this->never() )->method( 'refresh_account_data' );
 		$this->store_setup_report->expects( $this->never() )->method( 'queue_store_setup_sync' );
 		$this->woopay_extension_sync->expects( $this->never() )->method( 'remove_retired_validation_schedule' );
 
