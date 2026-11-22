@@ -5,6 +5,13 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\C
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\CutoverActionScheduler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PreflightService;
+use PhpParser\Node;
+use PhpParser\Node\Expr;
+use PhpParser\NodeFinder;
+use PhpParser\NodeTraverser;
+use PhpParser\NodeVisitor\NameResolver;
+use PhpParser\NodeVisitor\ParentConnectingVisitor;
+use PhpParser\ParserFactory;
 use WC_Unit_Test_Case;
 
 /**
@@ -33,17 +40,15 @@ class PreflightHandledQueueHooksTest extends WC_Unit_Test_Case {
 	);
 
 	/**
-	 * Inherited scheduling methods that take no hook, each with the property holding the hook they schedule.
-	 * WooCommerce Subscriptions' `WCS_Background_Upgrader::schedule_repair()` schedules `$this->scheduled_hook`.
+	 * Calls that forward hooks checked at their originating scheduling calls.
+	 * Each entry matches one caller, scheduling method and hook expression.
 	 */
-	private const INHERITED_SCHEDULING_CALLS = array(
-		'schedule_repair' => '$this->scheduled_hook',
+	private const FORWARDED_HOOKS = array(
+		'WooPaymentsActionSchedulerService::schedule_job as_schedule_single_action $hook'                     => 'Forwards the hook supplied to schedule_job().',
+		'WooPaymentsActionSchedulerService::schedule_recurring_job as_schedule_recurring_action $hook'        => 'Forwards the hook supplied to schedule_recurring_job().',
+		"WooPaymentsActionSchedulerService::handle_action_scheduler_init schedule_job \$job['hook']"          => 'Replays a job saved by schedule_job() before initialization.',
+		'WooPaymentsCanceledAuthorizationFeeRemediationService::schedule_job as_schedule_single_action $hook' => 'Forwards the hook supplied to the private remediation scheduler.',
 	);
-
-	/**
-	 * Pattern for one part of a hook expression: a string literal, a class constant or a property of `$this`.
-	 */
-	private const OPERAND = '\'[^\']*\'|[\\\\\w]+::[A-Z][A-Z0-9_]*|\$this->\w+';
 
 	/**
 	 * Scheduled hooks that are deliberately not on the handled list, each with the reason.
@@ -88,193 +93,157 @@ class PreflightHandledQueueHooksTest extends WC_Unit_Test_Case {
 	 */
 	private function scheduled_hooks(): array {
 		$directory = WC()->plugin_path() . '/src/Internal/Payments/';
-		$hooks     = array();
+		$parser    = ( new ParserFactory() )->createForNewestSupportedVersion();
+		$traverser = new NodeTraverser( new NameResolver(), new ParentConnectingVisitor( true ) );
+		$finder    = new NodeFinder();
+		$constants = array();
+		$calls     = array();
 
 		$iterator = new \RecursiveIteratorIterator( new \RecursiveDirectoryIterator( $directory, \FilesystemIterator::SKIP_DOTS ) );
 		foreach ( $iterator as $file ) {
-			if ( ! $file instanceof \SplFileInfo || 'php' !== $file->getExtension() ) {
+			if ( 'php' !== $file->getExtension() ) {
 				continue;
 			}
 
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading local production source for a completeness assertion.
-			$source = $this->without_comments( (string) file_get_contents( $file->getPathname() ) );
-			foreach ( $this->hook_expressions( $source ) as $expression ) {
-				foreach ( $this->resolve_hooks( $expression, $source ) as $hook ) {
-					$hooks[ $hook ][] = basename( $file->getPathname() );
-				}
-			}
-		}
-
-		ksort( $hooks );
-		return array_map( 'array_unique', $hooks );
-	}
-
-	/**
-	 * Strip comments, so a call named in a docblock is not read as a call.
-	 *
-	 * @param string $source PHP source.
-	 * @return string
-	 */
-	private function without_comments( string $source ): string {
-		$code = '';
-		foreach ( token_get_all( $source ) as $token ) {
-			if ( is_array( $token ) && in_array( $token[0], array( T_COMMENT, T_DOC_COMMENT ), true ) ) {
-				continue;
-			}
-			$code .= is_array( $token ) ? $token[1] : $token;
-		}
-
-		return $code;
-	}
-
-	/**
-	 * The expression passed as the hook of each scheduling call in the source, without the arguments of nested calls.
-	 *
-	 * @param string $source PHP source without comments.
-	 * @return string[]
-	 */
-	private function hook_expressions( string $source ): array {
-		$expressions = array();
-		$names       = implode( '|', array_merge( array_keys( self::SCHEDULING_CALLS ), array_keys( self::INHERITED_SCHEDULING_CALLS ) ) );
-		preg_match_all( '/\b(' . $names . ')\s*\(/', $source, $matches, PREG_OFFSET_CAPTURE | PREG_SET_ORDER );
-		foreach ( $matches as $match ) {
-			if ( isset( self::INHERITED_SCHEDULING_CALLS[ $match[1][0] ] ) ) {
-				$expressions[] = self::INHERITED_SCHEDULING_CALLS[ $match[1][0] ];
-				continue;
-			}
-
-			$offset = $match[0][1] + strlen( $match[0][0] );
-			$depth  = 1;
-			$args   = array( '' );
-			for ( $i = $offset, $length = strlen( $source ); $i < $length && $depth > 0; $i++ ) {
-				$char = $source[ $i ];
-				if ( '(' === $char || '[' === $char ) {
-					++$depth;
-				} elseif ( ')' === $char || ']' === $char ) {
-					--$depth;
-					if ( 0 === $depth ) {
-						break;
-					}
-				} elseif ( ',' === $char && 1 === $depth ) {
-					$args[] = '';
+			$source = (string) file_get_contents( $file->getPathname() );
+			$nodes  = $traverser->traverse( $parser->parse( $source ) );
+			foreach ( $finder->findInstanceOf( $nodes, Node\Stmt\ClassLike::class ) as $class ) {
+				$class_name = $this->class_name( $class );
+				if ( '' === $class_name ) {
 					continue;
 				}
-				$args[ count( $args ) - 1 ] .= $char;
-			}
-
-			$expression = $args[ self::SCHEDULING_CALLS[ $match[1][0] ] ] ?? '';
-			do {
-				$expression = preg_replace( '/\([^()]*\)/', '', $expression, -1, $replaced );
-			} while ( $replaced > 0 );
-			$expressions[] = $expression;
-		}
-
-		return $expressions;
-	}
-
-	/**
-	 * The hook names in a hook expression, with the scanned prefixes. Each run of parts joined by `.` is one name; a part
-	 * the scan cannot read is kept as `*` in a joined name, so the test fails on it instead of reading a wrong name.
-	 *
-	 * @param string $expression Hook expression.
-	 * @param string $source     The file's PHP source, which names its class, namespace and imports.
-	 * @return string[]
-	 */
-	private function resolve_hooks( string $expression, string $source ): array {
-		$values = array();
-		preg_match_all( '/(?:' . self::OPERAND . ')(?:\s*\.\s*(?:' . self::OPERAND . '))*/', $expression, $chains );
-		foreach ( $chains[0] as $chain ) {
-			preg_match_all( '/' . self::OPERAND . '/', $chain, $parts );
-			$value = '';
-			foreach ( $parts[0] as $part ) {
-				$part_value = $this->resolve_operand( $part, $source );
-				if ( null === $part_value && 1 === count( $parts[0] ) ) {
-					continue 2;
-				}
-				$value .= $part_value ?? '*';
-			}
-			$values[] = $value;
-		}
-
-		return array_values(
-			array_filter(
-				$values,
-				static function ( string $value ): bool {
-					foreach ( self::SCANNED_PREFIXES as $prefix ) {
-						if ( 0 === strpos( $value, $prefix ) ) {
-							return true;
+				foreach ( $class->getConstants() as $declaration ) {
+					foreach ( $declaration->consts as $constant ) {
+						if ( $constant->value instanceof Node\Scalar\String_ ) {
+							$constants[ $class_name . '::' . $constant->name ] = $constant->value->value;
 						}
 					}
-					return false;
 				}
-			)
-		);
-	}
-
-	/**
-	 * The string value of one part of a hook expression. A property of `$this` is read from its declared default.
-	 *
-	 * @param string $operand A string literal, a class constant or a property of `$this`.
-	 * @param string $source  The file's PHP source.
-	 * @return string|null The value, or null when the source does not give it as a string.
-	 */
-	private function resolve_operand( string $operand, string $source ): ?string {
-		if ( "'" === $operand[0] ) {
-			return substr( $operand, 1, -1 );
-		}
-		if ( preg_match( '/^\$this->(\w+)$/', $operand, $property ) ) {
-			if ( ! preg_match( '/\$' . preg_quote( $property[1], '/' ) . '\s*=\s*(' . self::OPERAND . ')\s*;/', $source, $declared ) ) {
-				return null;
 			}
-			// A local variable copied from the property, such as `$hook = $this->hook;`, is not its default.
-			return 0 === strpos( $declared[1], '$this->' ) ? null : $this->resolve_operand( $declared[1], $source );
-		}
-		list( $class_name, $constant ) = explode( '::', $operand );
 
-		return $this->read_string_constant( $this->resolve_class( $class_name, $source ), $constant );
+			$file_name = substr( $file->getPathname(), strlen( $directory ) );
+			foreach ( $this->scheduling_calls( $nodes, $file_name, $source ) as $call ) {
+				$calls[] = $call;
+			}
+		}
+
+		$hooks     = array();
+		$forwarded = self::FORWARDED_HOOKS;
+		foreach ( $calls as list( $expression, $class_name, $caller, $location ) ) {
+			if ( isset( $forwarded[ $caller ] ) ) {
+				unset( $forwarded[ $caller ] );
+				continue;
+			}
+
+			$branches = $expression instanceof Expr\Ternary ? array( $expression->if, $expression->else ) : array( $expression );
+			foreach ( $branches as $branch ) {
+				$hook = $this->resolve_hook( $branch, $class_name, $constants );
+				$this->assertNotNull( $hook, "Cannot resolve scheduled hook at $location ($caller)." );
+				foreach ( self::SCANNED_PREFIXES as $prefix ) {
+					if ( 0 === strpos( $hook, $prefix ) ) {
+						$hooks[ $hook ][] = $location;
+					}
+				}
+			}
+		}
+		$this->assertSame( array(), array_keys( $forwarded ), 'Remove stale forwarded hook exceptions.' );
+		ksort( $hooks );
+		return $hooks;
 	}
 
 	/**
-	 * Read a string constant from a class's source file, without loading the class: some payments classes extend
-	 * classes of plugins that are not installed in the test environment.
+	 * Find scheduling calls in any scope, including the forwarding call inside a new wrapper.
 	 *
-	 * @param string|null $class_name Full class name.
-	 * @param string      $name       Constant name.
-	 * @return string|null The value, or null when the constant is not a string literal there.
+	 * @param Node[] $nodes  Parsed source.
+	 * @param string $file   Relative source path.
+	 * @param string $source Original PHP source.
+	 * @return \Generator
 	 */
-	private function read_string_constant( ?string $class_name, string $name ): ?string {
-		if ( null === $class_name || 0 !== strpos( $class_name, 'Automattic\\WooCommerce\\' ) ) {
-			return null;
+	private function scheduling_calls( array $nodes, string $file, string $source ): \Generator {
+		foreach ( ( new NodeFinder() )->findInstanceOf( $nodes, Expr\CallLike::class ) as $call ) {
+			$name = $call->name ?? null;
+			if ( ! $name instanceof Node\Identifier && ! $name instanceof Node\Name ) {
+				continue;
+			}
+			$name = strtolower( $name instanceof Node\Name ? $name->getLast() : $name->toString() );
+			if ( ! isset( self::SCHEDULING_CALLS[ $name ] ) && 'schedule_repair' !== $name ) {
+				continue;
+			}
+			if ( $call->isFirstClassCallable() ) {
+				continue;
+			}
+
+			$class  = null;
+			$method = '';
+			$node   = $call;
+			while ( $node->hasAttribute( 'weak_parent' ) ) {
+				$node = $node->getAttribute( 'weak_parent' )->get();
+				if ( $node instanceof Node\Stmt\ClassMethod ) {
+					$method = $node->name->toString();
+				}
+				if ( $node instanceof Node\Stmt\ClassLike ) {
+					$class = $node;
+					break;
+				}
+			}
+
+			if ( 'schedule_repair' === $name ) {
+				// The inherited WCS_Background_Upgrader method schedules the hook in this property.
+				$property   = $class ? $class->getProperty( 'scheduled_hook' ) : null;
+				$expression = null;
+				foreach ( $property->props ?? array() as $item ) {
+					if ( 'scheduled_hook' === $item->name->toString() ) {
+						$expression = $item->default;
+					}
+				}
+			} else {
+				$argument   = $call->getArg( 'hook', self::SCHEDULING_CALLS[ $name ] );
+				$expression = $argument->value ?? null;
+			}
+			$hook_text = $expression ? substr( $source, $expression->getStartFilePos(), $expression->getEndFilePos() - $expression->getStartFilePos() + 1 ) : '(missing hook)';
+			$caller    = ( $class->name ?? '' ) . '::' . $method . ' ' . $name . ' ' . $hook_text;
+			$location  = $file . ':' . $call->name->getStartLine();
+			yield array( $expression, $this->class_name( $class ), $caller, $location );
 		}
-
-		$path = WC()->plugin_path() . '/src/' . str_replace( '\\', '/', substr( $class_name, strlen( 'Automattic\\WooCommerce\\' ) ) ) . '.php';
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading local production source for a completeness assertion.
-		$source = is_readable( $path ) ? (string) file_get_contents( $path ) : '';
-
-		return preg_match( '/\bconst\s+' . preg_quote( $name, '/' ) . "\\s*=\\s*'([^']*)'\\s*;/", $source, $match ) ? $match[1] : null;
 	}
 
 	/**
-	 * Resolve a class name written in the source to its full name.
+	 * Get the fully qualified class name assigned by the parser.
 	 *
-	 * @param string $name   Name as written.
-	 * @param string $source The file's PHP source.
+	 * @param Node\Stmt\ClassLike|null $declaration Enclosing class, when present.
+	 * @return string
+	 */
+	private function class_name( ?Node\Stmt\ClassLike $declaration ): string {
+		// phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- PHP-Parser's resolved class name.
+		return (string) ( $declaration->namespacedName ?? '' );
+	}
+
+	/**
+	 * Resolve a complete hook expression using string constants from the source, without loading optional plugins.
+	 *
+	 * @param Expr|null            $expression Hook expression.
+	 * @param string               $class_name Enclosing class.
+	 * @param array<string,string> $constants  Declared string constants.
 	 * @return string|null
 	 */
-	private function resolve_class( string $name, string $source ): ?string {
-		preg_match( '/^namespace\s+([\w\\\\]+);/m', $source, $namespace );
-		$namespace = $namespace[1] ?? '';
-		if ( in_array( $name, array( 'self', 'static' ), true ) ) {
-			return preg_match( '/^(?:abstract\s+|final\s+)?class\s+(\w+)/m', $source, $class ) ? $namespace . '\\' . $class[1] : null;
+	private function resolve_hook( ?Expr $expression, string $class_name, array $constants ): ?string {
+		if ( $expression instanceof Node\Scalar\String_ ) {
+			return $expression->value;
 		}
-		if ( 0 === strpos( $name, '\\' ) ) {
-			return ltrim( $name, '\\' );
+		if ( $expression instanceof Expr\ClassConstFetch && $expression->class instanceof Node\Name && $expression->name instanceof Node\Identifier ) {
+			$name = $expression->class->toString();
+			if ( in_array( $name, array( 'self', 'static' ), true ) ) {
+				$name = $class_name;
+			}
+			return $constants[ $name . '::' . $expression->name ] ?? null;
 		}
-		$first = strtok( $name, '\\' );
-		if ( preg_match( '/^use\s+([\w\\\\]+\\\\' . preg_quote( (string) $first, '/' ) . ');/m', $source, $import ) ) {
-			return $import[1] . substr( $name, strlen( (string) $first ) );
+		if ( $expression instanceof Expr\BinaryOp\Concat ) {
+			$left  = $this->resolve_hook( $expression->left, $class_name, $constants );
+			$right = $this->resolve_hook( $expression->right, $class_name, $constants );
+			return null === $left || null === $right ? null : $left . $right;
 		}
 
-		return $namespace . '\\' . $name;
+		return null;
 	}
 }
