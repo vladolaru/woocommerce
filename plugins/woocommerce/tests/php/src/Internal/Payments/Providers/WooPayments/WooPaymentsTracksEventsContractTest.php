@@ -146,6 +146,8 @@ class WooPaymentsTracksEventsContractTest extends WC_Unit_Test_Case {
 		'wcpay_onboarding_flow_reset'                    => 'plan.md T.7 Step 6 (d): superseded by the NOX settings_payments_woopayments_* onboarding events; record an old-to-new name map.',
 		'wcpay_onboarding_test_account_disable'          => 'plan.md T.7 Step 6 (d): superseded by the NOX settings_payments_woopayments_* onboarding events; record an old-to-new name map.',
 		'wcpay_subscriptions_account_not_connected_save_product' => 'Task 6.3 spec section 2: bundled WCPay Subscriptions out of scope (onboarding modal and empty state run only without WooCommerce Subscriptions).',
+		'wcadmin_wcpay_fraud_protection_tour_abandoned'  => 'Client 11.3.0 client/settings/fraud-protection/index.tsx:16-26 removed the welcome tour.',
+		'wcadmin_wcpay_fraud_protection_tour_clicked_through' => 'Client 11.3.0 client/settings/fraud-protection/index.tsx:16-26 removed the welcome tour.',
 		'wcpay_post_kyc_activation_email_cta_clicked'    => 'Client 11.3.0 retired the post-KYC reminder emails and their CTA link (includes/class-wc-payments.php).',
 		'wcpay_post_kyc_activation_email_sent'           => 'Client 11.3.0 retired the post-KYC reminder emails (includes/class-wc-payments.php).',
 		'wcpay_post_kyc_activation_email_send_failed'    => 'Client 11.3.0 retired the post-KYC reminder emails (includes/class-wc-payments.php).',

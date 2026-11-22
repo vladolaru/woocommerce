@@ -80,23 +80,6 @@ export default [
 		},
 	},
 	{
-		files: [ 'client/woopayments/settings/fraud-protection/index.tsx' ],
-		rules: {
-			'no-restricted-imports': [
-				'error',
-				{
-					paths: [
-						{
-							name: './tour',
-							message:
-								'Load the fraud protection tour lazily via lazy( () => import( ... ) ) so it stays in its own chunk; a static import bundles it into the main settings chunk.',
-						},
-					],
-				},
-			],
-		},
-	},
-	{
 		files: [
 			'client/woopayments/settings/express-checkout/express-checkout-settings.tsx',
 		],

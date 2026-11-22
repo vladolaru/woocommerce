@@ -2,7 +2,7 @@
  * External dependencies
  */
 import { Button, Modal, Notice } from '@wordpress/components';
-import { lazy, Suspense, useState } from '@wordpress/element';
+import { useState } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 import { help } from '@wordpress/icons';
 import { recordEvent } from '@woocommerce/tracks';
@@ -31,12 +31,6 @@ const ProtectionLevel = {
 	ADVANCED: 'advanced',
 } as const;
 
-const FraudProtectionTour = lazy( () =>
-	import(
-		/* webpackChunkName: "settings-payments-woopayments-fraud-tour" */ './tour'
-	).then( ( module ) => ( { default: module.FraudProtectionTour } ) )
-);
-
 // The settings send both checks as booleans, on by default.
 const getFraudProtectionFlags = ( settings: SettingsRecord ) => {
 	const fraudProtection = asSettingsRecord( settings.fraud_protection );
@@ -51,10 +45,6 @@ const normalizeProtectionLevel = ( level: string ) =>
 	level === ProtectionLevel.ADVANCED
 		? ProtectionLevel.ADVANCED
 		: ProtectionLevel.BASIC;
-
-export const isWelcomeTourDismissed = ( settings: SettingsRecord ) =>
-	asSettingsRecord( settings.fraud_protection ).is_welcome_tour_dismissed ===
-	true;
 
 const BasicFraudProtectionModal = ( {
 	onClose,
@@ -127,10 +117,6 @@ export const FraudProtectionSettings = () => {
 	const settings = asSettingsRecord( useGetSettings() );
 	const hasFraudProtectionSettingsError =
 		advancedFraudProtectionSettings === 'error';
-	const shouldLoadFraudProtectionTour =
-		! hasFraudProtectionSettingsError &&
-		! isWelcomeTourDismissed( settings ) &&
-		typeof window.IntersectionObserver !== 'undefined';
 	const normalizedProtectionLevel =
 		normalizeProtectionLevel( protectionLevel );
 	const advancedSettingsPath =
@@ -273,11 +259,6 @@ export const FraudProtectionSettings = () => {
 					onClose={ () => setBasicModalOpen( false ) }
 					settings={ settings }
 				/>
-			) }
-			{ shouldLoadFraudProtectionTour && (
-				<Suspense fallback={ null }>
-					<FraudProtectionTour />
-				</Suspense>
 			) }
 		</div>
 	);

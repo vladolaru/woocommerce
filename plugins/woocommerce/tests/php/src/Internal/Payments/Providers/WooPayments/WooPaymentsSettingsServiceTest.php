@@ -403,12 +403,10 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		);
 		$this->assertSame(
 			array(
-				'decline_on_avs_failure'    => false,
-				'decline_on_cvc_failure'    => true,
-				'is_welcome_tour_dismissed' => false,
+				'decline_on_avs_failure' => false,
+				'decline_on_cvc_failure' => true,
 			),
-			$settings['fraud_protection'],
-			'The fraud-protection fields come from the cached account and the welcome tour option, which nothing stored here.'
+			$settings['fraud_protection']
 		);
 	}
 
@@ -903,18 +901,13 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose fraud-protection welcome tour dismissed state.
+	 * @testdox Should omit the saved welcome tour dismissal from fraud protection settings.
 	 */
-	public function test_get_settings_exposes_fraud_protection_welcome_tour_dismissed_state(): void {
-		$settings = $this->sut->get_settings();
-
-		$this->assertArrayHasKey( 'is_welcome_tour_dismissed', $settings['fraud_protection'] );
-		$this->assertFalse( $settings['fraud_protection']['is_welcome_tour_dismissed'] );
-
+	public function test_get_settings_omits_saved_fraud_tour_dismissal(): void {
 		update_option( 'wcpay_fraud_protection_welcome_tour_dismissed', true );
 		$settings = $this->sut->get_settings();
 
-		$this->assertTrue( $settings['fraud_protection']['is_welcome_tour_dismissed'] );
+		$this->assertArrayNotHasKey( 'is_welcome_tour_dismissed', $settings['fraud_protection'] );
 	}
 
 	/**

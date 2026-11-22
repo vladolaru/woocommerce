@@ -78,7 +78,6 @@ const setUpServer = () => {
 		fraud_protection: {
 			decline_on_avs_failure: false,
 			decline_on_cvc_failure: true,
-			is_welcome_tour_dismissed: true,
 		},
 		fraud_protection_allowed_countries: { type: 'all', countries: [] },
 	};

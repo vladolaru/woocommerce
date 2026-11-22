@@ -16,8 +16,8 @@ import {
 } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from '@wordpress/element';
+import type { TourKitTypes } from '@woocommerce/components';
 import { recordEvent } from '@woocommerce/tracks';
-import type { ReactNode } from 'react';
 
 /**
  * Internal dependencies
@@ -32,85 +32,12 @@ jest.mock( '@woocommerce/tracks', () => ( {
 	recordEvent: jest.fn(),
 } ) );
 
-type TourStep = {
-	focusElement?: {
-		desktop?: string;
-	};
-	meta?: {
-		heading?: string;
-		descriptions?: {
-			desktop?: ReactNode;
-		};
-	};
-};
-
-type TourConfig = {
-	steps: TourStep[];
-	options?: {
-		callbacks?: {
-			onMinimize?: ( currentStepIndex: number ) => void;
-		};
-		effects?: {
-			autoScroll?:
-				| boolean
-				| {
-						behavior?: ScrollBehavior;
-						block?: ScrollLogicalPosition;
-				  };
-		};
-	};
-	closeHandler: (
-		steps: TourStep[],
-		currentIndex: number,
-		element: string
-	) => void;
-};
-
-const mockTourKitConfigs: TourConfig[] = [];
-
-jest.mock( '@woocommerce/components', () => {
-	const actualComponents = jest.requireActual( '@woocommerce/components' );
-
-	return {
-		...actualComponents,
-		TourKit: ( { config }: { config: TourConfig } ) => {
-			mockTourKitConfigs.push( config );
-
-			return (
-				<div data-testid="fraud-protection-tour">
-					{ config.steps.map( ( step ) => (
-						<div key={ step.meta?.heading }>
-							{ step.meta?.heading }
-							{ step.meta?.descriptions?.desktop && (
-								<div>{ step.meta.descriptions.desktop }</div>
-							) }
-						</div>
-					) ) }
-					<button
-						type="button"
-						onClick={ () =>
-							config.closeHandler(
-								config.steps,
-								config.steps.length - 1,
-								'done-btn'
-							)
-						}
-					>
-						Finish fraud tour
-					</button>
-					<button
-						type="button"
-						onClick={ () =>
-							config.closeHandler( config.steps, 0, 'close-btn' )
-						}
-					>
-						Dismiss fraud tour
-					</button>
-				</div>
-			);
-		},
-	};
-} );
+jest.mock( '@woocommerce/components', () => ( {
+	...jest.requireActual( '@woocommerce/components' ),
+	TourKit: ( { config }: { config: TourKitTypes.WooConfig } ) => (
+		<h2>{ config.steps[ 0 ].meta.heading }</h2>
+	),
+} ) );
 
 const mockCreateErrorNotice = jest.fn();
 const mockCreateInfoNotice = jest.fn();
@@ -160,9 +87,6 @@ const createShellWithAccountLink = () => ( {
 const mockRecordEvent = recordEvent as jest.MockedFunction<
 	typeof recordEvent
 >;
-const FRAUD_TOUR_DISMISSAL_PATH =
-	'/wc/v3/payments/settings/wcpay_fraud_protection_welcome_tour_dismissed';
-
 const mockSaveSettings = jest.fn();
 const mockUseSettings = jest.fn();
 const mockUseGetSavedSettings = jest.fn();
@@ -331,69 +255,6 @@ const setSettingsPageUrl = ( query = '' ) => {
 		`/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/settings${ suffix }`
 	);
 };
-
-type MockIntersectionObserverInstance = IntersectionObserver & {
-	observe: jest.Mock;
-	unobserve: jest.Mock;
-	disconnect: jest.Mock;
-};
-
-let mockIntersectionObserverCallbacks: IntersectionObserverCallback[] = [];
-let mockIntersectionObserverInstances: MockIntersectionObserverInstance[] = [];
-
-const installMockIntersectionObserver = () => {
-	mockIntersectionObserverCallbacks = [];
-	mockIntersectionObserverInstances = [];
-
-	window.IntersectionObserver = jest.fn(
-		( callback: IntersectionObserverCallback ) => {
-			const instance = {
-				root: null,
-				rootMargin: '',
-				thresholds: [ 1 ],
-				observe: jest.fn(),
-				unobserve: jest.fn(),
-				disconnect: jest.fn(),
-				takeRecords: jest.fn( () => [] ),
-			} as MockIntersectionObserverInstance;
-
-			mockIntersectionObserverCallbacks.push( callback );
-			mockIntersectionObserverInstances.push( instance );
-
-			return instance;
-		}
-	);
-};
-
-const intersectObservedElement = ( target: Element ) => {
-	act( () => {
-		mockIntersectionObserverCallbacks[ 0 ](
-			[
-				{
-					isIntersecting: true,
-					target,
-				} as IntersectionObserverEntry,
-			],
-			mockIntersectionObserverInstances[ 0 ]
-		);
-	} );
-};
-
-const getFraudTourDismissalCalls = () =>
-	mockApiFetch.mock.calls.filter( ( [ options ] ) => {
-		const path = typeof options === 'string' ? options : options?.path;
-
-		return path === FRAUD_TOUR_DISMISSAL_PATH;
-	} );
-
-const getFraudTourEventNames = () =>
-	mockRecordEvent.mock.calls
-		.map( ( [ eventName ] ) => eventName )
-		.filter(
-			( eventName ): eventName is string =>
-				typeof eventName === 'string' &&
-				eventName.startsWith( 'wcpay_fraud_protection_tour_' )
-		);
 
 const getRecordedEventCalls = ( expectedEventName: string ) =>
 	mockRecordEvent.mock.calls.filter(
@@ -596,12 +457,6 @@ describe( 'WooPaymentsSettingsPage', () => {
 	beforeEach( () => {
 		initialWcSettings = settingsWindow.wcSettings;
 		jest.clearAllMocks();
-		mockTourKitConfigs.length = 0;
-		delete (
-			window as typeof window & {
-				IntersectionObserver?: typeof IntersectionObserver;
-			}
-		 ).IntersectionObserver;
 		setSettingsPageUrl();
 		mockApiFetch.mockImplementation( ( options ) => {
 			const path = typeof options === 'string' ? options : options?.path;
@@ -620,11 +475,6 @@ describe( 'WooPaymentsSettingsPage', () => {
 	} );
 
 	afterEach( () => {
-		// Redundant safety net: beforeEach already guarantees a clean slate
-		// before each test. Clearing here too releases the captured configs
-		// promptly and keeps the module-scoped array from holding references
-		// between tests.
-		mockTourKitConfigs.length = 0;
 		settingsWindow.wcSettings = initialWcSettings;
 		jest.useRealTimers();
 		// Downshift, behind the phone number input's country select, appends its status live region to the body and
@@ -5652,285 +5502,56 @@ describe( 'WooPaymentsSettingsPage', () => {
 		);
 	} );
 
-	it( 'records fraud tour completion after the fraud section becomes visible', async () => {
-		installMockIntersectionObserver();
-		const settings = {
-			account_country: 'US',
-			store_currency: 'USD',
-			feature_flags: DEFAULT_FEATURE_FLAGS,
-			available_payment_method_ids: [
-				'card',
-				'link',
-				'affirm',
-				'amazon_pay',
-				'apple_pay',
-				'google_pay',
-			],
-			fraud_protection: {
-				decline_on_avs_failure: true,
-				decline_on_cvc_failure: true,
-				is_welcome_tour_dismissed: false,
-			},
-		};
-		mockUseGetSettings.mockReturnValue( settings );
+	// Client 11.3.0 client/settings/fraud-protection/index.tsx:16-26 shows the risk levels without a welcome tour.
+	it.each( [
+		[ 'missing', {} ],
+		[ 'false', { is_welcome_tour_dismissed: false } ],
+		[ 'true', { is_welcome_tour_dismissed: true } ],
+	] )(
+		'shows the risk levels without a tour when dismissal is %s',
+		async ( _, fraudProtection ) => {
+			mockUseGetSettings.mockReturnValue( {
+				feature_flags: DEFAULT_FEATURE_FLAGS,
+				fraud_protection: fraudProtection,
+			} );
+			const originalObserver = window.IntersectionObserver;
+			window.IntersectionObserver = jest
+				.fn()
+				.mockImplementation( ( callback ) => ( {
+					observe: (
+						target: InstanceType< typeof window.Element >
+					) => callback( [ { target, isIntersecting: true } ] ),
+					disconnect: noop,
+					unobserve: noop,
+				} ) );
+			try {
+				render( <WooPaymentsSettingsPage /> );
+				await act( async () => Promise.resolve() );
 
-		const { rerender } = render( <WooPaymentsSettingsPage /> );
-
-		const tourAnchor = document.getElementById(
-			'fraud-protection-card-options'
-		);
-		expect( tourAnchor ).not.toBeNull();
-		await waitFor( () => {
-			expect( mockIntersectionObserverInstances ).toHaveLength( 1 );
-		} );
-		expect(
-			mockIntersectionObserverInstances[ 0 ].observe
-		).toHaveBeenCalledWith( tourAnchor );
-
-		intersectObservedElement( tourAnchor as Element );
-
-		expect(
-			await screen.findByTestId( 'fraud-protection-tour' )
-		).toBeInTheDocument();
-		expect(
-			screen.getByText( 'Enhanced fraud protection' )
-		).toBeInTheDocument();
-		expect(
-			screen.queryByText( /\{\{strong\}\}/ )
-		).not.toBeInTheDocument();
-		expect(
-			screen.getByText( /Payments > Transactions/ )
-		).toBeInTheDocument();
-		await userEvent.click(
-			screen.getByRole( 'button', { name: 'Finish fraud tour' } )
-		);
-
-		await waitFor( () => {
-			expect( getFraudTourDismissalCalls() ).toHaveLength( 1 );
-		} );
-		expect( getFraudTourDismissalCalls()[ 0 ][ 0 ] ).toEqual( {
-			path: FRAUD_TOUR_DISMISSAL_PATH,
-			method: 'post',
-			data: { value: true },
-		} );
-		expect( getFraudTourEventNames() ).toEqual( [
-			'wcpay_fraud_protection_tour_clicked_through',
-		] );
-		expect(
-			screen.queryByTestId( 'fraud-protection-tour' )
-		).not.toBeInTheDocument();
-
-		// Client 11.2.0 `settings/fraud-protection/tour/index.tsx:35-73`: a finished tour stays finished while the
-		// merchant edits settings (the store still holds the value it loaded).
-		mockUseGetSettings.mockReturnValue( {
-			...settings,
-			is_debug_log_enabled: true,
-		} );
-		rerender( <WooPaymentsSettingsPage /> );
-		act( () => {
-			mockIntersectionObserverCallbacks
-				.slice( 1 )
-				.forEach( ( callback, index ) =>
-					callback(
-						[
-							{
-								isIntersecting: true,
-								target: tourAnchor,
-							} as IntersectionObserverEntry,
-						],
-						mockIntersectionObserverInstances[ index + 1 ]
-					)
-				);
-		} );
-
-		expect(
-			screen.queryByTestId( 'fraud-protection-tour' )
-		).not.toBeInTheDocument();
-	} );
-
-	it( 'keeps the fraud tour recoverable when dismissal persistence fails', async () => {
-		installMockIntersectionObserver();
-		mockApiFetch.mockImplementation( ( options ) => {
-			const path = typeof options === 'string' ? options : options?.path;
-
-			if ( path === FRAUD_TOUR_DISMISSAL_PATH ) {
-				return Promise.reject( new Error( 'option save failed' ) );
+				const levels = screen.getByRole( 'group', {
+					name: 'Fraud protection level',
+				} );
+				expect(
+					within( levels ).getByRole( 'radio', { name: 'Basic' } )
+				).toBeEnabled();
+				expect(
+					within( levels ).getByRole( 'radio', { name: 'Advanced' } )
+				).toBeEnabled();
+				expect(
+					screen.queryByText( 'Enhanced fraud protection' )
+				).not.toBeInTheDocument();
+			} finally {
+				window.IntersectionObserver = originalObserver;
 			}
+		}
+	);
 
-			if ( path === '/wc-admin/settings/payments/woopayments/account' ) {
-				return Promise.resolve( getDefaultAccountResponse() );
-			}
-
-			if ( path === '/wc/v3/payments/deposits/overview-all' ) {
-				return new Promise( () => {} );
-			}
-
-			return Promise.resolve( {} );
-		} );
-		mockUseGetSettings.mockReturnValue( {
-			account_country: 'US',
-			store_currency: 'USD',
-			feature_flags: DEFAULT_FEATURE_FLAGS,
-			available_payment_method_ids: [
-				'card',
-				'link',
-				'affirm',
-				'amazon_pay',
-				'apple_pay',
-				'google_pay',
-			],
-			fraud_protection: {
-				decline_on_avs_failure: true,
-				decline_on_cvc_failure: true,
-				is_welcome_tour_dismissed: false,
-			},
-		} );
-
-		render( <WooPaymentsSettingsPage /> );
-
-		const tourAnchor = document.getElementById(
-			'fraud-protection-card-options'
-		);
-		expect( tourAnchor ).not.toBeNull();
-		await waitFor( () => {
-			expect( mockIntersectionObserverInstances ).toHaveLength( 1 );
-		} );
-		intersectObservedElement( tourAnchor as Element );
-		await screen.findByTestId( 'fraud-protection-tour' );
-
-		await userEvent.click(
-			screen.getByRole( 'button', { name: 'Finish fraud tour' } )
-		);
-
-		await waitFor( () => {
-			expect( getFraudTourDismissalCalls() ).toHaveLength( 1 );
-		} );
-		await waitFor( () => {
-			expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
-				'Error saving option'
-			);
-		} );
-		expect( getFraudTourEventNames() ).toEqual( [] );
-		expect(
-			screen.getByTestId( 'fraud-protection-tour' )
-		).toBeInTheDocument();
-	} );
-
-	it( 'records fraud tour abandonment after the fraud section becomes visible', async () => {
-		installMockIntersectionObserver();
-		mockUseGetSettings.mockReturnValue( {
-			feature_flags: DEFAULT_FEATURE_FLAGS,
-			fraud_protection: {
-				decline_on_avs_failure: true,
-				decline_on_cvc_failure: true,
-				is_welcome_tour_dismissed: false,
-			},
-		} );
-
-		render( <WooPaymentsSettingsPage /> );
-
-		const tourAnchor = document.getElementById(
-			'fraud-protection-card-options'
-		);
-		expect( tourAnchor ).not.toBeNull();
-		await waitFor( () => {
-			expect( mockIntersectionObserverInstances ).toHaveLength( 1 );
-		} );
-		intersectObservedElement( tourAnchor as Element );
-		await screen.findByTestId( 'fraud-protection-tour' );
-
-		await userEvent.click(
-			screen.getByRole( 'button', { name: 'Dismiss fraud tour' } )
-		);
-
-		await waitFor( () => {
-			expect( getFraudTourDismissalCalls() ).toHaveLength( 1 );
-		} );
-		expect( getFraudTourDismissalCalls()[ 0 ][ 0 ] ).toEqual( {
-			path: FRAUD_TOUR_DISMISSAL_PATH,
-			method: 'post',
-			data: { value: true },
-		} );
-		expect( getFraudTourEventNames() ).toEqual( [
-			'wcpay_fraud_protection_tour_abandoned',
-		] );
-	} );
-
-	it( 'records fraud tour abandonment when TourKit minimizes the visible tour', async () => {
-		installMockIntersectionObserver();
-		mockUseGetSettings.mockReturnValue( {
-			feature_flags: DEFAULT_FEATURE_FLAGS,
-			fraud_protection: {
-				decline_on_avs_failure: true,
-				decline_on_cvc_failure: true,
-				is_welcome_tour_dismissed: false,
-			},
-		} );
-
-		render( <WooPaymentsSettingsPage /> );
-
-		const tourAnchor = document.getElementById(
-			'fraud-protection-card-options'
-		);
-		expect( tourAnchor ).not.toBeNull();
-		await waitFor( () => {
-			expect( mockIntersectionObserverInstances ).toHaveLength( 1 );
-		} );
-		intersectObservedElement( tourAnchor as Element );
-		await screen.findByTestId( 'fraud-protection-tour' );
-
-		expect(
-			mockTourKitConfigs[ 0 ].options?.callbacks?.onMinimize
-		).toEqual( expect.any( Function ) );
-		mockTourKitConfigs[ 0 ].options?.callbacks?.onMinimize?.( 0 );
-
-		await waitFor( () => {
-			expect( getFraudTourDismissalCalls() ).toHaveLength( 1 );
-		} );
-		expect( getFraudTourEventNames() ).toEqual( [
-			'wcpay_fraud_protection_tour_abandoned',
-		] );
-		await waitFor( () =>
-			expect(
-				screen.queryByTestId( 'fraud-protection-tour' )
-			).not.toBeInTheDocument()
-		);
-	} );
-
-	it( 'does not start the fraud tour after it has been dismissed', () => {
-		installMockIntersectionObserver();
-		mockUseGetSettings.mockReturnValue( {
-			feature_flags: DEFAULT_FEATURE_FLAGS,
-			fraud_protection: {
-				decline_on_avs_failure: true,
-				decline_on_cvc_failure: true,
-				is_welcome_tour_dismissed: true,
-			},
-		} );
-
-		render( <WooPaymentsSettingsPage /> );
-
-		expect( window.IntersectionObserver ).not.toHaveBeenCalled();
-		expect(
-			screen.queryByTestId( 'fraud-protection-tour' )
-		).not.toBeInTheDocument();
-	} );
-
-	it( 'does not start the fraud tour while fraud settings failed to load', async () => {
-		installMockIntersectionObserver();
+	it( 'disables the fraud controls and shows the notice when settings fail to load', () => {
 		mockUseCurrentProtectionLevel.mockReturnValue( [ 'advanced', noop ] );
 		mockUseAdvancedFraudProtectionSettings.mockReturnValue( [
 			'error',
 			noop,
 		] );
-		mockUseGetSettings.mockReturnValue( {
-			feature_flags: DEFAULT_FEATURE_FLAGS,
-			fraud_protection: {
-				decline_on_avs_failure: true,
-				decline_on_cvc_failure: true,
-				is_welcome_tour_dismissed: false,
-			},
-		} );
 
 		render( <WooPaymentsSettingsPage /> );
 
@@ -5945,61 +5566,6 @@ describe( 'WooPaymentsSettingsPage', () => {
 				name: 'Fraud protection level',
 			} )
 		).toBeDisabled();
-		await act( async () => {
-			await Promise.resolve();
-			await Promise.resolve();
-		} );
-
-		expect( window.IntersectionObserver ).not.toHaveBeenCalled();
-		expect( mockTourKitConfigs ).toHaveLength( 0 );
-		expect(
-			screen.queryByTestId( 'fraud-protection-tour' )
-		).not.toBeInTheDocument();
-	} );
-
-	it( 'uses focusable targets and reduced-motion autoscroll for the fraud tour', async () => {
-		installMockIntersectionObserver();
-		const originalMatchMedia = window.matchMedia;
-		window.matchMedia = jest.fn().mockReturnValue( { matches: true } );
-		mockUseGetSettings.mockReturnValue( {
-			feature_flags: DEFAULT_FEATURE_FLAGS,
-			fraud_protection: {
-				decline_on_avs_failure: true,
-				decline_on_cvc_failure: true,
-				is_welcome_tour_dismissed: false,
-			},
-		} );
-
-		try {
-			render( <WooPaymentsSettingsPage /> );
-
-			const tourAnchor = document.getElementById(
-				'fraud-protection-card-options'
-			);
-			expect( tourAnchor ).not.toBeNull();
-			await waitFor( () => {
-				expect( mockIntersectionObserverInstances ).toHaveLength( 1 );
-			} );
-			intersectObservedElement( tourAnchor as Element );
-			await screen.findByTestId( 'fraud-protection-tour' );
-
-			expect(
-				mockTourKitConfigs[ 0 ].options?.effects?.autoScroll
-			).toMatchObject( { behavior: 'auto', block: 'nearest' } );
-
-			mockTourKitConfigs[ 0 ].steps.forEach( ( step ) => {
-				const selector = step.focusElement?.desktop;
-
-				if ( ! selector ) {
-					return;
-				}
-
-				const focusTarget = document.querySelector( selector );
-				expect( focusTarget ).toBeInstanceOf( window.HTMLInputElement );
-			} );
-		} finally {
-			window.matchMedia = originalMatchMedia;
-		}
 	} );
 
 	it( 'honors explicitly disabled Basic fraud checks from the settings contract', async () => {
