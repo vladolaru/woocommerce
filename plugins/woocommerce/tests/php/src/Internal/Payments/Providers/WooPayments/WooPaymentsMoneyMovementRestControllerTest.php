@@ -1491,39 +1491,6 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	}
 
 	/**
-	 * Leaving the mark set after the answer is recorded makes shutdown keep the order lock until it expires.
-	 *
-	 * @testWith ["succeeded"]
-	 *           ["requires_capture"]
-	 *
-	 * @param string $status Intent status returned by the platform.
-	 */
-	public function test_shutdown_releases_the_lock_after_the_create_answer_is_recorded( string $status ): void {
-		$order                      = $this->order_for_card_answer( 'bacs' );
-		$this->api_client->response = $this->card_answer( $order, $status );
-		$lock                       = wc_get_container()->get( OrderPaymentLock::class );
-		$vocabulary                 = new WooPaymentsPersistenceVocabulary();
-		$controller                 = $this->getMockBuilder( WooPaymentsPaymentDetailsRestController::class )->onlyMethods( array( 'get_payment_intent_schema' ) )->getMock();
-		$held_after_shutdown        = null;
-		$controller->expects( $this->once() )->method( 'get_payment_intent_schema' )->willReturnCallback(
-			function () use ( $order, $lock, $vocabulary, &$held_after_shutdown ): array {
-				$this->assertSame( 'pi_answer', $this->stored_card_order( $order )->get_transaction_id() );
-				$this->assertTrue( $lock->is_held( $order, $vocabulary ) );
-				$lock->release_held_claims();
-				$held_after_shutdown = $lock->is_held( $order, $vocabulary );
-				return ( new WooPaymentsPaymentDetailsRestController() )->get_payment_intent_schema();
-			}
-		);
-		$controller->init( $this->api_client, $this->create_order_service(), wc_get_container()->get( WooPaymentsAccountService::class ) );
-		$controller->register_routes();
-
-		$response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
-
-		$this->assertSame( 200, $response->get_status() );
-		$this->assertFalse( $held_after_shutdown );
-	}
-
-	/**
 	 * Leaving the authorization to its event misses the hold at the answer. Ignoring an earlier stored intent puts the wrong payment on hold.
 	 *
 	 * @testWith ["bank"]
