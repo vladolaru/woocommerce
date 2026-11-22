@@ -343,7 +343,9 @@ class OnboardingService {
 	}
 
 	/**
-	 * Create an embedded KYC session.
+	 * Create an embedded KYC session in the connected account’s onboarding mode.
+	 *
+	 * @since 11.4.0
 	 *
 	 * @param bool  $is_dev_mode          Whether the gateway is in dev mode.
 	 * @param array $self_assessment_data Self assessment data.
@@ -351,8 +353,10 @@ class OnboardingService {
 	 * @return array
 	 */
 	private function create_embedded_kyc_session( bool $is_dev_mode, array $self_assessment_data, array $capabilities ): array {
-		$setup_mode = $is_dev_mode ? 'test' : 'live';
-		$this->set_onboarding_test_mode( 'live' !== $setup_mode );
+		// Client 11.3.0 includes/class-wc-payments-onboarding-service.php:344-353.
+		$test_mode  = $is_dev_mode || ( $this->is_onboarding_test_mode_enabled() && $this->account_service->has_account() );
+		$setup_mode = $test_mode ? 'test' : 'live';
+		$this->set_onboarding_test_mode( $test_mode );
 
 		// Client 11.1.0 create_embedded_kyc_session() applies the picks before it calls the platform.
 		if ( ! empty( $capabilities ) && ! $this->apply_payment_method_picks( $capabilities ) ) {

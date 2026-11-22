@@ -315,6 +315,30 @@ class OnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Forcing live changes a sandbox session, and forcing test changes a live session.
+	 * @since 11.4.0
+	 * @testWith ["yes", false]
+	 *           ["no", true]
+	 *
+	 * @param string $flag Stored onboarding test mode.
+	 * @param bool   $live Expected platform session mode.
+	 */
+	public function test_connected_account_kyc_mode( string $flag, bool $live ): void {
+		update_option( 'wcpay_onboarding_test_mode', $flag );
+		$account = $this->createMock( WooPaymentsAccountService::class );
+		$account->method( 'has_account' )->willReturn( true );
+		$client = $this->createMock( Client::class );
+		$client->expects( $this->once() )->method( 'initialize_onboarding_embedded_kyc' )
+			->with( $live )->willReturn( array( 'client_secret' => 'test_session' ) );
+		$this->onboarding_service->init( $this->mockable_proxy, new PaymentMethodRegistry(), $client, $account );
+
+		$session = $this->onboarding_service->create_kyc_session( false, array(), array() );
+
+		$this->assertSame( 'test_session', $session['clientSecret'] );
+		$this->assertSame( $flag, get_option( 'wcpay_onboarding_test_mode' ) );
+	}
+
+	/**
 	 * Test native embedded KYC sessions do not depend on plugin-owned onboarding REST routes.
 	 *
 	 * @return void
