@@ -592,7 +592,7 @@ class PaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'stripe_id'                  => 'klarna_payments',
 					'stripe_payment_method_type' => 'klarna',
 					'title'                      => 'Klarna',
-					'description'                => 'Allow customers to pay over time or pay now with Klarna.',
+					'description'                => 'Offer flexible ways to pay with Klarna: in full, later, or over time.',
 					'currencies'                 => array( 'USD', 'GBP', 'EUR', 'DKK', 'NOK', 'SEK' ),
 					'countries'                  => array( 'US', 'GB', 'AT', 'DE', 'NL', 'BE', 'ES', 'IT', 'IE', 'DK', 'FI', 'NO', 'SE', 'FR' ),
 					'capabilities'               => array( 'buy_now_pay_later', 'refunds', 'domestic_transactions_only' ),

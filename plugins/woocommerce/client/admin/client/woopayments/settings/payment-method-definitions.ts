@@ -452,7 +452,7 @@ const PAYMENT_METHOD_DEFINITIONS: Record<
 		id: 'klarna',
 		label: __( 'Klarna', 'woocommerce' ),
 		description: __(
-			'Allow customers to pay over time or pay now with Klarna.',
+			'Offer flexible ways to pay with Klarna: in full, later, or over time.',
 			'woocommerce'
 		),
 		iconUrl: assetUrl( 'images/payment-methods/klarna-color.svg' ),

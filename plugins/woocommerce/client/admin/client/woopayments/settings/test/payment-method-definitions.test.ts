@@ -21,6 +21,13 @@ const EXPECTED_SETTINGS_ICONS: Record< string, string > = {
 };
 
 describe( 'WooPayments payment method definitions', () => {
+	// Client 11.3.0 KlarnaDefinition.php:99.
+	it( 'describes the three Klarna payment options', () => {
+		expect( getPaymentMethodDefinition( 'klarna' )?.description ).toBe(
+			'Offer flexible ways to pay with Klarna: in full, later, or over time.'
+		);
+	} );
+
 	it.each( Object.entries( EXPECTED_SETTINGS_ICONS ) )(
 		'uses the client settings icon for %s',
 		( methodId, iconPath ) => {
