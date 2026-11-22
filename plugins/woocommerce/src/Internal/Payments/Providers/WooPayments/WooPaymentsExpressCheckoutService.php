@@ -331,6 +331,19 @@ class WooPaymentsExpressCheckoutService {
 	}
 
 	/**
+	 * Tell whether the merchant has enabled WooPayments and at least one express method.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param string $context Express checkout context.
+	 * @return bool
+	 */
+	public function is_express_checkout_enabled( string $context = 'checkout' ): bool {
+		return $this->account_service->is_gateway_enabled()
+			&& ( $this->is_payment_request_enabled() || $this->is_amazon_pay_set_up_by_merchant( $context ) );
+	}
+
+	/**
 	 * Tell whether express checkout is available, using the guards WooPayments checks before
 	 * registering its express checkout Store API hooks: payments enabled on the account, the
 	 * gateway enabled, and Apple Pay/Google Pay or Amazon Pay set up by the merchant.
@@ -340,10 +353,7 @@ class WooPaymentsExpressCheckoutService {
 	 * @return bool
 	 */
 	public function is_express_checkout_available(): bool {
-		return $this->account_service->is_gateway_enabled()
-			&& $this->account_service->has_working_account()
-			// Client 11.3.0 class-wc-payments-express-checkout-button-handler.php:79 checks the merchant's Amazon Pay switch, whatever the currency.
-			&& ( $this->is_payment_request_enabled() || $this->is_amazon_pay_set_up_by_merchant() );
+		return $this->is_express_checkout_enabled() && $this->account_service->has_working_account();
 	}
 
 	/**
@@ -1010,6 +1020,22 @@ class WooPaymentsExpressCheckoutService {
 		}
 
 		return false;
+	}
+
+	/**
+	 * Check the displayed product for a subscription, or the cart on a cart or checkout page.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return bool
+	 */
+	public function has_subscription_product(): bool {
+		if ( self::is_product_page() && $this->context_has_subscription( 'product' ) ) {
+			return true;
+		}
+
+		$surface = wc_get_container()->get( WooPaymentsPageSurface::class );
+		return ( $surface->is_checkout_surface() || $surface->is_cart_surface() ) && $this->context_has_subscription( 'cart' );
 	}
 
 	/**

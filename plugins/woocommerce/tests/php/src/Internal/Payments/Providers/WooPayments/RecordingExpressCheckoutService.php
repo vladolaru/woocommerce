@@ -25,6 +25,16 @@ class RecordingExpressCheckoutService extends WooPaymentsExpressCheckoutService 
 	public array $contexts = array();
 
 	/**
+	 * Tell whether the fixture has its express method enabled.
+	 *
+	 * @param string $context Express checkout context.
+	 * @return bool
+	 */
+	public function is_express_checkout_enabled( string $context = 'checkout' ): bool {
+		return $this->should_show_payment_request_button;
+	}
+
+	/**
 	 * Tell whether the payment-request button should be shown.
 	 *
 	 * @param string $context Express checkout context.

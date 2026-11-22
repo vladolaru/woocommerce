@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPageSurface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionController;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Unit_Test_Case;
 
 /**
@@ -43,6 +44,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 			foreach ( $this->get_expected_frontend_hooks() as $hook => list( $method, $priority ) ) {
 				remove_action( $hook, array( $this->sut, $method ), $priority );
 			}
+			remove_filter( 'woocommerce_cart_needs_shipping_address', array( $this->sut, 'filter_cart_needs_shipping_address' ), 11 );
 			remove_filter( 'wcpay_tracks_event_properties', array( $this->sut, 'add_tracking_event_properties' ) );
 		}
 
@@ -101,6 +103,74 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 			'owner, payment request on'  => array( true, $priorities, 10 ),
 			'owner, payment request off' => array( false, $priorities, 10 ),
 		);
+	}
+
+	/**
+	 * @testdox A physical cart with subscription=$subscription and flat rate enabled=$enabled needs a shipping address: $expected.
+	 * @testWith [true, false, false]
+	 *           [true, true, true]
+	 *           [false, false, true]
+	 *
+	 * @param bool $subscription Whether Subscriptions reports a subscription cart.
+	 * @param bool $enabled      Whether the zone's flat rate is enabled.
+	 * @param bool $expected     Whether classic checkout needs a shipping address.
+	 */
+	public function test_express_cart_shipping_address( bool $subscription, bool $enabled, bool $expected ): void {
+		global $wpdb;
+		$this->set_checkout_shortcode_page();
+		$this->replace_page_surface( false, true );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
+		update_option( 'woocommerce_woocommerce_payments_apple_pay_settings', array( 'enabled' => 'yes' ) );
+		WooCommerceSubscriptionsDoubles::load_product();
+		WooCommerceSubscriptionsDoubles::load_cart();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_SUBSCRIPTION ] = $subscription;
+
+		try {
+			$product = \WC_Helper_Product::create_simple_product();
+			WC()->cart->add_to_cart( $product->get_id() );
+			$instance_id = \WC_Shipping_Zones::get_zone( 0 )->add_shipping_method( 'flat_rate' );
+			$wpdb->update( $wpdb->prefix . 'woocommerce_shipping_zone_methods', array( 'is_enabled' => (int) $enabled ), array( 'instance_id' => $instance_id ) );
+			delete_transient( 'wc_shipping_method_count' );
+			$this->assertTrue( WC()->cart->needs_shipping_address(), 'The unfiltered physical cart requires an address.' );
+
+			$this->sut = $this->create_controller( true, wc_get_container()->get( WooPaymentsExpressCheckoutService::class ) );
+			$this->sut->register();
+
+			$this->assertSame( $expected, WC()->cart->needs_shipping_address() );
+			/** This filter is documented in includes/class-wc-cart.php. */
+			$this->assertFalse( apply_filters( 'woocommerce_cart_needs_shipping_address', '0' ) );
+			$this->assertSame( 11, has_filter( 'woocommerce_cart_needs_shipping_address', array( $this->sut, 'filter_cart_needs_shipping_address' ) ) );
+		} finally {
+			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_SUBSCRIPTION ] );
+			WC()->cart->empty_cart();
+		}
+	}
+
+	/**
+	 * @testdox The shipping-address filter stays off when $reason.
+	 * @testWith ["all express methods are disabled", false]
+	 *           ["the shopper changes a payment method", true]
+	 *
+	 * @param string $reason                Excluded registration case.
+	 * @param bool   $change_payment_method Whether the change-payment-method flag is present.
+	 */
+	public function test_express_shipping_address_registration( string $reason, bool $change_payment_method ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
+		update_option( 'woocommerce_woocommerce_payments_apple_pay_settings', array( 'enabled' => 'yes' ) );
+		$this->sut = $this->create_controller( true, wc_get_container()->get( WooPaymentsExpressCheckoutService::class ) );
+		$hook      = 'woocommerce_cart_needs_shipping_address';
+		$callback  = array( $this->sut, 'filter_cart_needs_shipping_address' );
+		$this->sut->register();
+		$this->assertSame( 11, has_filter( $hook, $callback ), 'The eligible request must attach the filter.' );
+		remove_filter( $hook, $callback, 11 );
+
+		if ( $change_payment_method ) {
+			$_GET['change_payment_method'] = '';
+		} else {
+			update_option( 'woocommerce_woocommerce_payments_apple_pay_settings', array( 'enabled' => 'no' ) );
+		}
+		$this->sut->register();
+		$this->assertFalse( has_filter( $hook, $callback ), $reason );
 	}
 
 	/**
