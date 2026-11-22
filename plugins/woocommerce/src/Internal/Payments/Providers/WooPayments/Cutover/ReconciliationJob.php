@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountMilestonesController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
@@ -1665,10 +1664,6 @@ class ReconciliationJob implements RegisterHooksInterface {
 		if ( self::SOURCE_ROLLBACK === $source ) {
 			delete_option( self::START_NOTICE_SNOOZED_UNTIL_OPTION );
 			as_unschedule_all_actions( WebhookReliabilityService::QUEUED_EVENTS_SWEEP_ACTION, array(), WooPaymentsActionSchedulerService::GROUP_ID );
-			// The extension has no callback for these retries, so a pending one would only fail. Matched by hook alone, as they carry arguments, and named by string like the preflight's list. The status-change retry stays: the extension's store answers it.
-			foreach ( array( 'woocommerce_woopayments_retry_stripe_billing_first_invoice', 'woocommerce_woopayments_retry_stripe_billing_cancel', SubscriptionsController::RETRY_AUTHENTICATION_FAILURE_ACTION ) as $retry_hook ) {
-				as_unschedule_all_actions( $retry_hook );
-			}
 		}
 
 		return true;

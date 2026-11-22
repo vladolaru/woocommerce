@@ -1633,6 +1633,7 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertIsInt( $action_id );
 		$this->assertGreaterThan( 0, $action_id );
+		$this->assertSame( \ActionScheduler_Store::STATUS_PENDING, \ActionScheduler::store()->get_status( (string) $action_id ) );
 	}
 
 	/**

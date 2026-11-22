@@ -11,8 +11,8 @@ use WC_Unit_Test_Case;
  * Keeps the preflight's list of handled queue hooks complete: every Action Scheduler job the built-in WooPayments
  * schedules under the prefixes the preflight scans is on that list, or named here with the reason it is not.
  *
- * A job missing from the list is read as an action nothing handles, so a pending one holds the switch back, and
- * nothing unschedules it when the merchant returns to the extension.
+ * A job missing from the list is read as an action nothing handles, so a pending one holds the switch back until it
+ * runs.
  */
 class PreflightHandledQueueHooksTest extends WC_Unit_Test_Case {
 
@@ -31,6 +31,19 @@ class PreflightHandledQueueHooksTest extends WC_Unit_Test_Case {
 		'as_schedule_single_action'    => 1,
 		'as_schedule_recurring_action' => 2,
 	);
+
+	/**
+	 * Inherited scheduling methods that take no hook, each with the property holding the hook they schedule.
+	 * WooCommerce Subscriptions' `WCS_Background_Upgrader::schedule_repair()` schedules `$this->scheduled_hook`.
+	 */
+	private const INHERITED_SCHEDULING_CALLS = array(
+		'schedule_repair' => '$this->scheduled_hook',
+	);
+
+	/**
+	 * Pattern for one part of a hook expression: a string literal, a class constant or a property of `$this`.
+	 */
+	private const OPERAND = '\'[^\']*\'|[\\\\\w]+::[A-Z][A-Z0-9_]*|\$this->\w+';
 
 	/**
 	 * Scheduled hooks that are deliberately not on the handled list, each with the reason.
@@ -63,6 +76,8 @@ class PreflightHandledQueueHooksTest extends WC_Unit_Test_Case {
 		$this->assertGreaterThanOrEqual( 15, count( $scheduled ) );
 		$this->assertContains( 'woocommerce_woopayments_retry_stripe_billing_first_invoice', $scheduled );
 		$this->assertContains( 'wcpay_webhook_process_event', $scheduled );
+		$this->assertContains( 'wcpay_migrate_subscription_retry', $scheduled );
+		$this->assertContains( 'wcpay_schedule_subscription_migrations', $scheduled );
 		$this->assertSame( array(), array_values( array_diff( array_keys( $this->exceptions() ), $scheduled ) ), 'A named exception is no longer scheduled; remove it.' );
 	}
 
@@ -120,9 +135,14 @@ class PreflightHandledQueueHooksTest extends WC_Unit_Test_Case {
 	 */
 	private function hook_expressions( string $source ): array {
 		$expressions = array();
-		$names       = implode( '|', array_keys( self::SCHEDULING_CALLS ) );
+		$names       = implode( '|', array_merge( array_keys( self::SCHEDULING_CALLS ), array_keys( self::INHERITED_SCHEDULING_CALLS ) ) );
 		preg_match_all( '/\b(' . $names . ')\s*\(/', $source, $matches, PREG_OFFSET_CAPTURE | PREG_SET_ORDER );
 		foreach ( $matches as $match ) {
+			if ( isset( self::INHERITED_SCHEDULING_CALLS[ $match[1][0] ] ) ) {
+				$expressions[] = self::INHERITED_SCHEDULING_CALLS[ $match[1][0] ];
+				continue;
+			}
+
 			$offset = $match[0][1] + strlen( $match[0][0] );
 			$depth  = 1;
 			$args   = array( '' );
@@ -153,7 +173,8 @@ class PreflightHandledQueueHooksTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * The hook names in a hook expression: string literals and class constants, with the scanned prefixes.
+	 * The hook names in a hook expression, with the scanned prefixes. Each run of parts joined by `.` is one name; a part
+	 * the scan cannot read is kept as `*` in a joined name, so the test fails on it instead of reading a wrong name.
 	 *
 	 * @param string $expression Hook expression.
 	 * @param string $source     The file's PHP source, which names its class, namespace and imports.
@@ -161,24 +182,26 @@ class PreflightHandledQueueHooksTest extends WC_Unit_Test_Case {
 	 */
 	private function resolve_hooks( string $expression, string $source ): array {
 		$values = array();
-		if ( preg_match_all( "/'([^']*)'/", $expression, $literals ) ) {
-			$values = $literals[1];
-		}
-		if ( preg_match_all( '/([\\\\\w]+)::([A-Z][A-Z0-9_]*)/', $expression, $constants, PREG_SET_ORDER ) ) {
-			foreach ( $constants as $constant ) {
-				$value = $this->read_string_constant( $this->resolve_class( $constant[1], $source ), $constant[2] );
-				if ( null !== $value ) {
-					$values[] = $value;
+		preg_match_all( '/(?:' . self::OPERAND . ')(?:\s*\.\s*(?:' . self::OPERAND . '))*/', $expression, $chains );
+		foreach ( $chains[0] as $chain ) {
+			preg_match_all( '/' . self::OPERAND . '/', $chain, $parts );
+			$value = '';
+			foreach ( $parts[0] as $part ) {
+				$part_value = $this->resolve_operand( $part, $source );
+				if ( null === $part_value && 1 === count( $parts[0] ) ) {
+					continue 2;
 				}
+				$value .= $part_value ?? '*';
 			}
+			$values[] = $value;
 		}
 
 		return array_values(
 			array_filter(
 				$values,
-				static function ( $value ): bool {
+				static function ( string $value ): bool {
 					foreach ( self::SCANNED_PREFIXES as $prefix ) {
-						if ( is_string( $value ) && 0 === strpos( $value, $prefix ) ) {
+						if ( 0 === strpos( $value, $prefix ) ) {
 							return true;
 						}
 					}
@@ -186,6 +209,29 @@ class PreflightHandledQueueHooksTest extends WC_Unit_Test_Case {
 				}
 			)
 		);
+	}
+
+	/**
+	 * The string value of one part of a hook expression. A property of `$this` is read from its declared default.
+	 *
+	 * @param string $operand A string literal, a class constant or a property of `$this`.
+	 * @param string $source  The file's PHP source.
+	 * @return string|null The value, or null when the source does not give it as a string.
+	 */
+	private function resolve_operand( string $operand, string $source ): ?string {
+		if ( "'" === $operand[0] ) {
+			return substr( $operand, 1, -1 );
+		}
+		if ( preg_match( '/^\$this->(\w+)$/', $operand, $property ) ) {
+			if ( ! preg_match( '/\$' . preg_quote( $property[1], '/' ) . '\s*=\s*(' . self::OPERAND . ')\s*;/', $source, $declared ) ) {
+				return null;
+			}
+			// A local variable copied from the property, such as `$hook = $this->hook;`, is not its default.
+			return 0 === strpos( $declared[1], '$this->' ) ? null : $this->resolve_operand( $declared[1], $source );
+		}
+		list( $class_name, $constant ) = explode( '::', $operand );
+
+		return $this->read_string_constant( $this->resolve_class( $class_name, $source ), $constant );
 	}
 
 	/**

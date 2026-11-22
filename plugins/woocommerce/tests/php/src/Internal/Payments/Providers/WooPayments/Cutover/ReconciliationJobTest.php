@@ -4853,34 +4853,38 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A rollback unschedules a pending retry job of the hook $hook, which carries arguments.
+	 * @testdox A return to the extension leaves a pending built-in job of the hook $hook queued.
 	 *
-	 * @dataProvider unscheduled_retry_job_provider
+	 * @dataProvider retry_job_kept_on_return_provider
 	 *
 	 * @param string              $hook The retry job's hook.
 	 * @param array<string,mixed> $args The arguments the built-in schedules it with.
 	 */
-	public function test_rollback_unschedules_a_pending_built_in_retry_job( string $hook, array $args ): void {
-		$sut = $this->arrange_a_finished_switch();
-		$this->assertIsInt( as_schedule_single_action( time() + HOUR_IN_SECONDS, $hook, $args, WooPaymentsActionSchedulerService::GROUP_ID ) );
+	public function test_a_return_leaves_a_pending_built_in_retry_job_queued( string $hook, array $args ): void {
+		$sut       = $this->arrange_a_finished_switch();
+		$action_id = as_schedule_single_action( time() + HOUR_IN_SECONDS, $hook, $args, WooPaymentsActionSchedulerService::GROUP_ID );
+		$this->assertIsInt( $action_id );
+		$this->assertGreaterThan( 0, $action_id );
+		$this->assert_action_is_pending( $action_id, $hook, $args );
 
 		try {
 			$this->assertTrue( $sut->record_plugin_activation() );
 
-			$this->assertFalse( as_has_scheduled_action( $hook ), 'No retry job is left to fail on a store the built-in no longer owns.' );
+			$this->assert_action_is_pending( $action_id, $hook, $args );
 		} finally {
 			as_unschedule_all_actions( $hook );
 		}
 	}
 
 	/**
-	 * Retry jobs that have no callback on the extension's store.
+	 * Built-in retry jobs with the arguments they are scheduled with. A return keeps each one queued, so it still runs
+	 * when the store switches again before it falls due.
 	 *
 	 * @return array<string,array{string,array<string,mixed>}>
 	 */
-	public function unscheduled_retry_job_provider(): array {
+	public function retry_job_kept_on_return_provider(): array {
 		return array(
-			'Stripe Billing first-invoice job'     => array(
+			'Stripe Billing first-invoice job'      => array(
 				StripeBillingInvoiceService::FIRST_INVOICE_ACTION,
 				array(
 					'order_id'        => 101,
@@ -4889,14 +4893,14 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 					'retry'           => 1,
 				),
 			),
-			'Stripe Billing cancel retry'          => array(
+			'Stripe Billing cancel retry'           => array(
 				StripeBillingSubscriptionService::RETRY_CANCEL_ACTION,
 				array(
 					'subscription_id' => 102,
 					'retry'           => 1,
 				),
 			),
-			'renewal authentication failure retry' => array(
+			'renewal authentication failure retry'  => array(
 				SubscriptionsController::RETRY_AUTHENTICATION_FAILURE_ACTION,
 				array(
 					'order_id'  => 103,
@@ -4905,29 +4909,28 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 					'retry'     => 1,
 				),
 			),
+			'status-change capture or cancel retry' => array(
+				WooPaymentsOrderAdminActionsController::RETRY_STATUS_CHANGE_OPERATION_ACTION,
+				array(
+					'order_id'  => 104,
+					'operation' => 'capture',
+					'retry'     => 1,
+				),
+			),
 		);
 	}
 
 	/**
-	 * @testdox A rollback leaves a pending status-change retry queued, because the extension's store writes its failure note.
+	 * Assert that the action with this ID is pending, with this hook and these arguments in the built-in's group.
+	 *
+	 * @param int                 $action_id Action ID.
+	 * @param string              $hook      Expected hook.
+	 * @param array<string,mixed> $args      Expected arguments.
 	 */
-	public function test_rollback_leaves_a_pending_status_change_retry_queued(): void {
-		$sut  = $this->arrange_a_finished_switch();
-		$hook = WooPaymentsOrderAdminActionsController::RETRY_STATUS_CHANGE_OPERATION_ACTION;
-		$args = array(
-			'order_id'  => 104,
-			'operation' => 'capture',
-			'retry'     => 1,
-		);
-		$this->assertIsInt( as_schedule_single_action( time() + HOUR_IN_SECONDS, $hook, $args, WooPaymentsActionSchedulerService::GROUP_ID ) );
-
-		try {
-			$this->assertTrue( $sut->record_plugin_activation() );
-
-			$this->assertTrue( as_has_scheduled_action( $hook, $args, WooPaymentsActionSchedulerService::GROUP_ID ) );
-		} finally {
-			as_unschedule_all_actions( $hook );
-		}
+	private function assert_action_is_pending( int $action_id, string $hook, array $args ): void {
+		$this->assertSame( ActionScheduler_Store::STATUS_PENDING, ActionScheduler::store()->get_status( (string) $action_id ) );
+		$action = ActionScheduler::store()->fetch_action( (string) $action_id );
+		$this->assertSame( array( $hook, $args, WooPaymentsActionSchedulerService::GROUP_ID ), array( $action->get_hook(), $action->get_args(), $action->get_group() ) );
 	}
 
 	/**
