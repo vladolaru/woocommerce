@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventOrderResolver;
 use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use WC_Order;
 use WP_Error;
@@ -820,7 +821,7 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Refund a charge that has no WooCommerce order.
+	 * Refund a charge directly when the request supplies no WooPayments order.
 	 *
 	 * The charge must be a `ch_` or `py_` ID and the amount a positive integer, and nothing is written locally
 	 * (client 11.1.0 `includes/admin/class-wc-rest-payments-refunds-controller.php:107-114` and its `Refund_Charge` request).
@@ -854,16 +855,47 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 			);
 		}
 
+		$refund = $this->refund_charge_without_order( $charge_id, $amount, $reason, 'transaction_details_no_order' );
+		return is_wp_error( $refund ) ? $refund : new WP_REST_Response( $refund );
+	}
+
+	/**
+	 * Refund a charge directly, holding its WooPayments order's lock until the request ends.
+	 *
+	 * @since 11.4.0
+	 * @internal
+	 *
+	 * @param string      $charge_id Charge to refund.
+	 * @param int|null    $amount    Amount in minor units, or null for a full refund.
+	 * @param string|null $reason    Merchant's reason.
+	 * @param string      $source    Refund source for platform metadata.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	public function refund_charge_without_order( string $charge_id, ?int $amount, ?string $reason, string $source ) {
+		$order      = wc_get_container()->get( EventOrderResolver::class )->find_order_by_charge_id( $charge_id );
+		$lock       = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		$token      = null;
+		if ( null !== $order && WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( $order->get_payment_method() ) ) {
+			$token = $lock->claim( $order, $vocabulary, null, 'refund' );
+			if ( null === $token ) {
+				$lock->log_refusal( $order, $vocabulary, 'refund' );
+				return new WP_Error( 'order_payment_refund_locked', __( 'A payment operation is already in progress for this order.', 'woocommerce' ), array( 'status' => 409 ) );
+			}
+		}
+
 		try {
-			// No idempotency key is set, as in client 11.1.0 (`includes/admin/class-wc-rest-payments-refunds-controller.php:107-114`),
-			// so the transport mints a fresh one per request.
-			return new WP_REST_Response( $this->api_client->refund_charge( $charge_id, $amount, $reason, 'transaction_details_no_order', '' ) );
+			return $this->api_client->refund_charge( $charge_id, $amount, $reason, $source, '' );
 		} catch ( ApiException $exception ) {
 			return new WP_Error(
 				'wcpay_refund_payment',
 				$exception->getMessage(),
 				array( 'status' => 500 )
 			);
+		} finally {
+			if ( null !== $token && null !== $order ) {
+				$lock->release( $order, $vocabulary, $token );
+			}
 		}
 	}
 
