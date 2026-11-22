@@ -20,6 +20,9 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransactionsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTransactionsRestController;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\PaymentIntentEventHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use WC_Order;
 use WC_REST_Unit_Test_Case;
 use WP_REST_Request;
@@ -489,15 +492,14 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$order       = $this->create_order_for_payment_intent();
 		$http_client = new FakeHttpClient();
 
-		// The same create answer, Stripe's PaymentIntent through the platform proxy (wpcom `wcpay/class-intentions-controller.php:389-487`),
-		// as the HTTP response the transport returns; fields the route does not read are left out.
+		// A nonterminal answer leaves this order payable for the next request.
 		$http_client->response = array(
 			'response' => array( 'code' => 200 ),
 			'headers'  => array( 'content-type' => 'application/json' ),
 			'body'     => (string) wp_json_encode(
 				array(
 					'id'      => 'pi_created',
-					'status'  => 'succeeded',
+					'status'  => 'processing',
 					'amount'  => 1234,
 					'charges' => array( 'data' => array() ),
 				)
@@ -847,6 +849,8 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 
 	/**
 	 * Skipping checkout's prevention gives the wrong refusal. Skipping the final paid-status check can replace an earlier payment.
+	 * R6's zero-call expectation applies only when no intent is attached. With an attached intent, checkout makes one GET.
+	 * Both cases return 409 without sending a charge, and the attached intent and charge IDs are preserved.
 	 *
 	 * @testWith [true, false]
 	 *           [false, false]
@@ -1233,6 +1237,539 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		);
 
 		return $request;
+	}
+
+	/**
+	 * A charge sent before the card gateway is saved leaves its order with the wrong method during the call.
+	 * Saving an already selected gateway delays the send without changing the order.
+	 *
+	 * @testWith [""]
+	 *           ["bacs"]
+	 *           ["woocommerce_payments_sepa"]
+	 *           ["woocommerce_payments"]
+	 *           ["woocommerce_payments", "failed"]
+	 *
+	 * @param string $method Previous method.
+	 * @param string $status Payable order status.
+	 */
+	public function test_create_answer_records_the_payment_under_the_selected_gateway( string $method, string $status = 'pending' ): void {
+		$order = $this->order_for_card_answer( $method );
+		$order->update_status( $status );
+		$saves = 0;
+		$count = static function ( $saving ) use ( $order, &$saves ): void {
+			if ( $order->get_id() === $saving->get_id() ) {
+				++$saves;
+			}
+		};
+		add_action( 'woocommerce_before_order_object_save', $count );
+		$seen = array();
+		try {
+			$response = $this->dispatch_card_answer(
+				$order,
+				$this->card_answer( $order ),
+				function () use ( $order, &$seen, &$saves ): void {
+					$fresh = $this->stored_card_order( $order );
+					$seen  = array( $fresh->get_payment_method(), $fresh->get_payment_method_title(), $saves );
+				}
+			);
+		} finally {
+			remove_action( 'woocommerce_before_order_object_save', $count );
+		}
+		$this->assertSame( array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'WooPayments card', WooPaymentsPersistenceVocabulary::GATEWAY_ID === $method ? 0 : 1 ), $seen );
+		$this->assertSame( 200, $response->get_status() );
+		$fresh = $this->stored_card_order( $order );
+		$this->assertSame( 'processing', $fresh->get_status() );
+		$this->assertSame( 'pi_answer', $fresh->get_transaction_id() );
+		$this->assertSame( 'pi_answer', $fresh->get_meta( '_intent_id' ) );
+		$this->assertSame( 'ch_answer', $fresh->get_meta( '_charge_id' ) );
+		$this->assertCount( 1, array_filter( $this->card_notes( $order ), static fn( $note ) => false !== strpos( $note, 'successfully charged' ) ) );
+		$this->assertSame( '0.59', $fresh->get_meta( '_wcpay_transaction_fee' ) );
+		$this->assertSame( '11.75', $fresh->get_meta( '_wcpay_net' ) );
+		$repeat = $this->server->dispatch( $this->create_payment_intent_request( $fresh ) );
+		$this->assertSame( 409, $repeat->get_status() );
+		$this->assertSame( 'wcpay_order_already_paid', $repeat->get_data()['code'] );
+	}
+
+	/**
+	 * Selecting the gateway before checking eligibility changes the method on an order the route refuses.
+	 *
+	 * @testWith ["on-hold"]
+	 *           ["processing"]
+	 *           ["refunded"]
+	 *
+	 * @param string $status Order status.
+	 */
+	public function test_create_refusal_keeps_the_bank_transfer_method( string $status ): void {
+		$order = $this->order_for_card_answer( 'bacs' );
+		$order->set_status( $status );
+		$order->save();
+		$this->create_payment_details_controller()->register_routes();
+		$methods = array();
+		$observe = static function ( $saving ) use ( $order, &$methods ): void {
+			if ( $saving->get_id() === $order->get_id() ) {
+				$methods[] = $saving->get_payment_method( 'edit' );
+			}
+		};
+		add_action( 'woocommerce_before_order_object_save', $observe );
+		try {
+			$response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
+		} finally {
+			remove_action( 'woocommerce_before_order_object_save', $observe );
+		}
+		$this->assertSame( array(), $methods );
+		$this->assertSame( 409, $response->get_status() );
+		$this->assertSame( 'bacs', $this->stored_card_order( $order )->get_payment_method() );
+		$this->assertSame( array(), $this->api_client->calls );
+	}
+
+	/** Sending without a registered gateway leaves the payment without its card title. */
+	public function test_create_without_a_card_gateway_stops_before_the_send(): void {
+		$order                                     = $this->order_for_card_answer( 'bacs' );
+		WC()->payment_gateways()->payment_gateways = array();
+		$this->create_payment_details_controller()->register_routes();
+		$response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
+		$this->assertSame( 500, $response->get_status() );
+		$this->assertSame( 'wcpay_server_error', $response->get_data()['code'] );
+		$this->assertSame( 'bacs', $this->stored_card_order( $order )->get_payment_method() );
+		$this->assertSame( array(), $this->api_client->calls );
+	}
+
+	/**
+	 * Checking the event's paid flag refuses a payable order. Clearing its earlier paid date changes its payment history.
+	 *
+	 * @testWith [true]
+	 *           [false]
+	 *
+	 * @param bool $reopened Whether the order was previously in a paid status.
+	 */
+	public function test_create_records_a_payable_order_with_an_earlier_paid_date_or_paid_filter( bool $reopened ): void {
+		$order = $this->order_for_card_answer( '' );
+		if ( $reopened ) {
+			$order->update_status( 'processing' );
+			$order->set_date_paid( 1600000000 );
+			$order->update_status( 'pending' );
+		} else {
+			add_filter( 'woocommerce_order_is_paid', '__return_true' );
+		}
+		try {
+			$response = $this->dispatch_card_answer( $order, $this->card_answer( $order ) );
+		} finally {
+			remove_filter( 'woocommerce_order_is_paid', '__return_true' );
+		}
+		$this->assertSame( 200, $response->get_status() );
+		$fresh = $this->stored_card_order( $order );
+		$this->assertSame( 'processing', $fresh->get_status() );
+		$this->assertSame( 'pi_answer', $fresh->get_transaction_id() );
+		if ( $reopened ) {
+			$this->assertNotNull( $fresh->get_date_paid() );
+			$this->assertSame( 1600000000, $fresh->get_date_paid()->getTimestamp() );
+		}
+	}
+
+	/**
+	 * A second application sends another notification, adds another note or schedules another fee job.
+	 * An event accepted during the charge changes the order before the route records its answer.
+	 *
+	 * @testWith [false]
+	 *           [true]
+	 *
+	 * @param bool $during Whether the event also arrives while the route holds the order.
+	 */
+	public function test_richer_success_event_fills_fees_once_the_create_lock_is_free( bool $during ): void {
+		$order  = $this->order_for_card_answer( 'bacs' );
+		$answer = $this->card_answer( $order );
+		unset( $answer['charges']['data'][0]['application_fee_amount'] );
+		$event                   = $answer;
+		$event['payment_method'] = array( 'id' => 'pm_card' );
+		$event['charges']['data'][0]['payment_method_details']['card']['mandate'] = 'mandate_card';
+		$event['charges']['data'][0]['fee_breakdown_v1']['totals']                = array(
+			'fee' => array(
+				'currency' => 'usd',
+				'amount'   => 59,
+			),
+			'net' => array(
+				'currency' => 'usd',
+				'amount'   => 1175,
+			),
+		);
+		$writer = wc_get_container()->get( PaymentIntentEventHandler::class );
+		$mail   = array();
+		$record = static function ( $sent, $message ) use ( &$mail ) {
+			$mail[] = $message;
+			return true;
+		};
+		add_filter( 'pre_wp_mail', $record, 10, 2 );
+		try {
+			$refused  = false;
+			$response = $this->dispatch_card_answer(
+				$order,
+				$answer,
+				function () use ( $during, $writer, $event, $order, &$refused, &$mail ): void {
+					if ( $during ) {
+						$before = $this->card_snapshot( $order, $mail );
+						try {
+							$writer->process( 'payment_intent.succeeded', $event );
+						} catch ( OrderPaymentLockRefusedException $exception ) {
+							$refused = true;
+						}
+						$this->assertSame( $before, $this->card_snapshot( $order, $mail ) );
+					}
+				}
+			);
+			$this->assertSame( $during, $refused );
+			$this->assertSame( 200, $response->get_status() );
+			$before = $this->card_snapshot( $order, $mail );
+			$this->assertSame( 'processing', $before['status'] );
+			$this->assertCount( 1, $before['jobs'] );
+			$this->assertSame( '', $this->stored_card_order( $order )->get_meta( '_wcpay_transaction_fee' ) );
+			$writer->process( 'payment_intent.succeeded', $event );
+			$this->assertSame( $before, $this->card_snapshot( $order, $mail ) );
+			$fresh = $this->stored_card_order( $order );
+			$this->assertSame( '0.59', $fresh->get_meta( '_wcpay_transaction_fee' ) );
+			$this->assertSame( '11.75', $fresh->get_meta( '_wcpay_net' ) );
+		} finally {
+			remove_filter( 'pre_wp_mail', $record );
+		}
+	}
+
+	/**
+	 * Applying an authorization to the original order object reopens a cancellation made during the call.
+	 */
+	public function test_authorization_answer_rereads_a_concurrent_cancellation(): void {
+		$order    = $this->order_for_card_answer( 'bacs' );
+		$response = $this->dispatch_card_answer(
+			$order,
+			$this->card_answer( $order, 'requires_capture' ),
+			function () use ( $order ): void {
+				$this->stored_card_order( $order )->update_status( 'cancelled' );
+			}
+		);
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( 'cancelled', $this->stored_card_order( $order )->get_status() );
+		$this->assertSame( array(), array_filter( $this->card_notes( $order ), static fn( $note ) => false !== stripos( $note, 'authoriz' ) ) );
+	}
+
+	/** Reporting a writer error as a failed payment invites another charge. */
+	public function test_writer_failure_returns_the_intent_and_logs_one_error(): void {
+		$order  = $this->order_for_card_answer( 'bacs' );
+		$writer = $this->getMockBuilder( PaymentIntentEventHandler::class )->disableOriginalConstructor()->onlyMethods( array( 'apply_succeeded_payment_intent_under_lock' ) )->getMock();
+		$writer->expects( $this->once() )->method( 'apply_succeeded_payment_intent_under_lock' )->willThrowException( new \RuntimeException( 'Order write failed.' ) );
+		$GLOBALS['wc_container']->replace( PaymentIntentEventHandler::class, $writer );
+		$logger   = RecordingWcLogger::install();
+		$response = $this->dispatch_card_answer( $order, $this->card_answer( $order ) );
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( 'pi_answer', $response->get_data()['id'] );
+		$this->assertSame( array( array( 'error', 'Failed to record the payment intent from the REST API.', 'woopayments' ) ), $logger->get_errors() );
+		$this->assert_card_lock_free( $order );
+	}
+
+	/** A missing marker or one cleared before the write releases the order while the payment is unsettled. */
+	public function test_marker_keeps_the_claim_through_the_send_and_the_writer(): void {
+		$order      = $this->order_for_card_answer( 'bacs' );
+		$lock       = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		$held       = array();
+		$check      = static function () use ( $order, $lock, $vocabulary, &$held ): void {
+			$lock->release_held_claims();
+			$held[] = $lock->is_held( $order, $vocabulary );
+		};
+		$writer     = $this->getMockBuilder( PaymentIntentEventHandler::class )->disableOriginalConstructor()->onlyMethods( array( 'apply_succeeded_payment_intent_under_lock' ) )->getMock();
+		$writer->method( 'apply_succeeded_payment_intent_under_lock' )->willReturnCallback( $check );
+		$GLOBALS['wc_container']->replace( PaymentIntentEventHandler::class, $writer );
+		$response = $this->dispatch_card_answer( $order, $this->card_answer( $order ), $check );
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( array( true, true ), $held );
+		$this->assert_card_lock_free( $order );
+	}
+
+	/**
+	 * Leaving the authorization to its event misses the hold at the answer. Ignoring an earlier stored intent puts the wrong payment on hold.
+	 *
+	 * @testWith ["bank"]
+	 *           ["old date"]
+	 *           ["another intent"]
+	 *
+	 * @param string $state Earlier order state.
+	 */
+	public function test_authorization_answer_and_later_event_share_the_same_decision( string $state ): void {
+		$order = $this->order_for_card_answer( 'bacs' );
+		if ( 'old date' === $state ) {
+			$order->set_date_paid( 1600000000 );
+		} elseif ( 'another intent' === $state ) {
+			$order->update_meta_data( '_intent_id', 'pi_other' );
+		}
+		$order->save();
+		$answer = $this->card_answer( $order, 'requires_capture' );
+		if ( 'another intent' === $state ) {
+			$reader = $this->getMockBuilder( RecordingMoneyMovementApiClient::class )->onlyMethods( array( 'get_payment_intention' ) )->getMock();
+			$reader->expects( $this->once() )->method( 'get_payment_intention' )->with( 'pi_other' )->willThrowException( new ApiException( 'No such payment intent.', 'resource_missing', 404, 'invalid_request_error' ) );
+			$this->api_client = $reader;
+		}
+		$this->api_client->response = $answer;
+		$this->create_payment_details_controller()->register_routes();
+		$response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
+		$this->assertSame( 200, $response->get_status() );
+		$fresh = $this->stored_card_order( $order );
+		if ( 'another intent' === $state ) {
+			$this->assertSame( 'pending', $fresh->get_status() );
+			$this->assertCount( 1, array_filter( $this->card_notes( $order ), static fn( $note ) => 1 === preg_match( '/pi_answer.*was authorized, but this order is waiting on payment.*pi_other/', $note ) ) );
+			return;
+		}
+		$this->assertSame( 'on-hold', $fresh->get_status() );
+		$this->assertSame( 'pi_answer', $fresh->get_transaction_id() );
+		$before = $this->card_snapshot( $order, array() );
+		wc_get_container()->get( PaymentIntentEventHandler::class )->process( 'payment_intent.amount_capturable_updated', $answer );
+		$this->assertSame( $before, $this->card_snapshot( $order, array() ) );
+	}
+
+	/** Treating a processing answer as success pays an order before the payment has settled. */
+	public function test_processing_answer_leaves_the_order_pending(): void {
+		$order    = $this->order_for_card_answer( 'bacs' );
+		$response = $this->dispatch_card_answer( $order, $this->card_answer( $order, 'processing' ) );
+		$this->assertSame( 200, $response->get_status() );
+		$fresh = $this->stored_card_order( $order );
+		$this->assertSame( 'pending', $fresh->get_status() );
+		$this->assertSame( '', $fresh->get_transaction_id() );
+		$this->assertSame( '', $fresh->get_meta( '_intent_id' ) );
+	}
+
+	/**
+	 * Leaving the card selected after a definite decline discards the order's previous payment method and title.
+	 *
+	 * @testWith [""]
+	 *           ["bacs"]
+	 *
+	 * @param string $method Earlier method.
+	 */
+	public function test_definite_decline_restores_the_method_and_title( string $method ): void {
+		$order                       = $this->order_for_card_answer( $method );
+		$title                       = $order->get_payment_method_title( 'edit' );
+		$this->api_client->exception = new ApiException( 'Declined.', 'card_declined', 402 );
+		$this->create_payment_details_controller()->register_routes();
+		$response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
+		$this->assertSame( 500, $response->get_status() );
+		$fresh = $this->stored_card_order( $order );
+		$this->assertSame( $method, $fresh->get_payment_method( 'edit' ) );
+		$this->assertSame( $title, $fresh->get_payment_method_title( 'edit' ) );
+		$this->assertSame( 'pending', $fresh->get_status() );
+		$this->assertNull( $fresh->get_date_paid() );
+		$this->assertSame( '', $fresh->get_meta( '_intent_id' ) );
+		$this->assert_card_lock_free( $order );
+	}
+
+	/**
+	 * Restoring the bank gateway after an uncertain answer prevents the event from recording the charge.
+	 *
+	 * @testWith [0, "http_request_failed"]
+	 *           [500, "api_error"]
+	 *           [200, "invalid_response"]
+	 *
+	 * @param int    $code HTTP status.
+	 * @param string $reason Error code.
+	 */
+	public function test_uncertain_create_keeps_the_card_method_for_the_event( int $code, string $reason ): void {
+		$order = $this->order_for_card_answer( 'bacs' );
+		if ( 200 === $code ) {
+			$response = $this->dispatch_card_answer( $order, 'unreadable JSON' );
+		} else {
+			$this->api_client->exception = new ApiException( 'No usable answer.', $reason, $code );
+			$this->create_payment_details_controller()->register_routes();
+			$response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
+		}
+		$this->assertSame( 500, $response->get_status() );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $this->stored_card_order( $order )->get_payment_method( 'edit' ) );
+		$this->assert_card_lock_free( $order );
+	}
+
+	/** Keeping the card method when the builder fails changes the gateway without sending a payment. */
+	public function test_before_send_failure_restores_the_bank_method(): void {
+		$order   = $this->order_for_card_answer( 'bacs' );
+		$builder = $this->getMockBuilder( WooPaymentsOrderDetailsService::class )->onlyMethods( array( 'build_create_payment_intent_request_from_order' ) )->getMock();
+		$builder->expects( $this->once() )->method( 'build_create_payment_intent_request_from_order' )->willThrowException( new \RuntimeException( 'Request construction failed.' ) );
+		$controller = new WooPaymentsPaymentDetailsRestController();
+		$controller->init( $this->api_client, $builder, wc_get_container()->get( WooPaymentsAccountService::class ) );
+		$controller->register_routes();
+		$response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
+		$this->assertSame( 500, $response->get_status() );
+		$this->assertSame( array(), $this->api_client->calls );
+		$fresh = $this->stored_card_order( $order );
+		$this->assertSame( 'bacs', $fresh->get_payment_method() );
+		$this->assertSame( 'Bank transfer', $fresh->get_payment_method_title() );
+		$this->assert_card_lock_free( $order );
+	}
+
+	/**
+	 * Ignoring the first failed save sends a charge without its gateway. Ignoring a failed restore hides the change from the merchant.
+	 *
+	 * @testWith [1]
+	 *           [2]
+	 *
+	 * @param int $failed_save Which method save fails.
+	 */
+	public function test_method_save_errors_stop_the_charge_or_report_the_failed_restore( int $failed_save ): void {
+		$order                       = $this->order_for_card_answer( 'bacs' );
+		$this->api_client->exception = new ApiException( 'Declined.', 'card_declined', 402 );
+		$this->create_payment_details_controller()->register_routes();
+		$logger = RecordingWcLogger::install();
+		$saves  = 0;
+		$fail   = static function ( $saving ) use ( $order, $failed_save, &$saves ): void {
+			if ( $order->get_id() === $saving->get_id() && ++$saves === $failed_save ) {
+				throw new \RuntimeException( 'Failed method save.' );
+			}
+		};
+		add_action( 'woocommerce_before_order_object_save', $fail );
+		try {
+			$response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
+		} finally {
+			remove_action( 'woocommerce_before_order_object_save', $fail );
+		}
+		$this->assertSame( 500, $response->get_status() );
+		$this->assertCount( $failed_save - 1, $this->api_client->calls );
+		$this->assert_card_lock_free( $order );
+		if ( 2 === $failed_save ) {
+			$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $this->stored_card_order( $order )->get_payment_method() );
+			$warnings = array_values( array_filter( $logger->lines, static fn( $line ) => 'warning' === $line[0] ) );
+			$this->assertSame( array( array( 'warning', sprintf( 'payment method not restored: order %d keeps woocommerce_payments, was "bacs"', $order->get_id() ), 'woopayments' ) ), $warnings );
+		}
+	}
+
+	/**
+	 * Create a shippable order with the given payment method.
+	 *
+	 * @param string $method Previous method.
+	 * @return WC_Order
+	 */
+	private function order_for_card_answer( string $method ): WC_Order {
+		$order = $this->create_order_for_payment_intent();
+		$order->add_product( \WC_Helper_Product::create_simple_product() );
+		$order->set_total( '12.34' );
+		$order->set_payment_method( $method );
+		if ( '' !== $method ) {
+			$order->set_payment_method_title( WooPaymentsPersistenceVocabulary::GATEWAY_ID === $method ? 'WooPayments card' : 'Bank transfer' );
+		}
+		$order->save();
+		return $order;
+	}
+
+	/**
+	 * Build the raw intent that the create route receives before preparing its REST response.
+	 *
+	 * @param WC_Order $order Order named by the payment.
+	 * @param string   $status Intent status.
+	 * @return array<string,mixed>
+	 */
+	private function card_answer( WC_Order $order, string $status = 'succeeded' ): array {
+		return array(
+			'id'             => 'pi_answer',
+			'status'         => $status,
+			'amount'         => 1234,
+			'currency'       => 'usd',
+			'customer'       => 'cus_test',
+			'payment_method' => 'pm_card',
+			'metadata'       => array(
+				'order_id'  => (string) $order->get_id(),
+				'order_key' => $order->get_order_key(),
+			),
+			'charges'        => array(
+				'data' => array(
+					array(
+						'id'                     => 'ch_answer',
+						'application_fee_amount' => 59,
+						'payment_method_details' => array( 'type' => 'card' ),
+					),
+				),
+			),
+		);
+	}
+
+	/**
+	 * Dispatch through the API client and run a callback inside its fake HTTP request.
+	 *
+	 * @param WC_Order      $order  Order being charged.
+	 * @param array|string  $answer JSON data or an undecodable response body.
+	 * @param callable|null $during Work during the send.
+	 * @return \WP_REST_Response
+	 */
+	private function dispatch_card_answer( WC_Order $order, $answer, ?callable $during = null ): \WP_REST_Response {
+		$http = $this->getMockBuilder( FakeHttpClient::class )->onlyMethods( array( 'request' ) )->getMock();
+		$http->expects( $this->once() )->method( 'request' )->willReturnCallback(
+			static function () use ( $answer, $during ): array {
+				if ( null !== $during ) {
+					$during();
+				}
+				return array(
+					'response' => array( 'code' => 200 ),
+					'headers'  => array( 'content-type' => 'application/json' ),
+					'body'     => is_string( $answer ) ? $answer : wp_json_encode( $answer ),
+				);
+			}
+		);
+		$account = wc_get_container()->get( WooPaymentsAccountService::class );
+		$client  = new Client();
+		$client->init( $http, $account, wc_get_container()->get( TransportLog::class ) );
+		$controller = new WooPaymentsPaymentDetailsRestController();
+		$controller->init( $client, $this->create_order_service(), $account );
+		$controller->register_routes();
+		return $this->server->dispatch( $this->create_payment_intent_request( $order ) );
+	}
+
+	/**
+	 * Read the order as another caller would see it.
+	 *
+	 * @param WC_Order $order Order to reload.
+	 * @return WC_Order
+	 */
+	private function stored_card_order( WC_Order $order ): WC_Order {
+		$fresh = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $fresh );
+		return $fresh;
+	}
+
+	/**
+	 * Read every note for the payment.
+	 *
+	 * @param WC_Order $order Order being checked.
+	 * @return string[]
+	 */
+	private function card_notes( WC_Order $order ): array {
+		return wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' );
+	}
+
+	/**
+	 * Snapshot the order, fee jobs and observed mail before another event delivery.
+	 *
+	 * @param WC_Order $order Order to check.
+	 * @param array    $mail  Observed emails.
+	 * @return array<string,mixed>
+	 */
+	private function card_snapshot( WC_Order $order, array $mail ): array {
+		$fresh = $this->stored_card_order( $order );
+		$date  = $fresh->get_date_paid();
+		return array(
+			'status' => $fresh->get_status(),
+			'txn'    => $fresh->get_transaction_id(),
+			'date'   => $date ? $date->getTimestamp() : null,
+			'intent' => $fresh->get_meta( '_intent_id' ),
+			'charge' => $fresh->get_meta( '_charge_id' ),
+			'notes'  => $this->card_notes( $fresh ),
+			'jobs'   => as_get_scheduled_actions(
+				array(
+					'hook'     => WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
+					'per_page' => -1,
+				),
+				'ids'
+			),
+			'mail'   => $mail,
+		);
+	}
+
+	/**
+	 * Check that the route released the order.
+	 *
+	 * @param WC_Order $order Order being checked.
+	 */
+	private function assert_card_lock_free( WC_Order $order ): void {
+		$this->assertFalse( wc_get_container()->get( OrderPaymentLock::class )->is_held( $order, new WooPaymentsPersistenceVocabulary() ) );
 	}
 
 	/**
@@ -2599,6 +3136,11 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	 * @return WC_Order
 	 */
 	private function create_order_for_payment_intent(): WC_Order {
+		$gateway        = new class() extends \WC_Payment_Gateway {};
+		$gateway->id    = WooPaymentsPersistenceVocabulary::GATEWAY_ID;
+		$gateway->title = 'WooPayments card';
+		WC()->payment_gateways()->payment_gateways[ $gateway->id ] = $gateway;
+
 		$order = $this->create_order_for_generated_charge();
 		$order->delete_meta_data( '_intent_id' );
 		$order->delete_meta_data( '_intent_status' );

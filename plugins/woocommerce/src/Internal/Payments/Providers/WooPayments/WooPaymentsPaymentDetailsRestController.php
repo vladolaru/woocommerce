@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\PaymentIntentEventHandler;
 use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use WC_Order;
 use WP_Error;
@@ -207,34 +208,95 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 			return new WP_Error( 'wcpay_order_payment_locked', __( 'A payment operation is already in progress for this order.', 'woocommerce' ), array( 'status' => 409 ) );
 		}
 
+		$old_method = null;
+		$old_title  = '';
+		$sent       = false;
+		$declined   = false;
 		try {
-			$order   = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
-			$refusal = $this->get_order_payment_refusal( $order );
+			$lifecycle = wc_get_container()->get( OrderPaymentLifecycleService::class );
+			$order     = $lifecycle->get_fresh_order_from_data_store( $order );
+			$refusal   = $this->get_order_payment_refusal( $order );
 			if ( null !== $refusal ) {
 				return $refusal;
 			}
 
-			$intent = $this->api_client->create_and_confirm_payment_intention(
-				$this->order_service->build_create_payment_intent_request_from_order(
-					$order,
-					(string) $request->get_param( 'customer' ),
-					(string) $request->get_param( 'payment_method' ),
-					$this->account_service->is_manual_capture_enabled()
-				),
-				// No caller key: the transport mints one per request, so a new attempt for the same order is not a replay
-				// (client 11.1.0 sets none either, includes/wc-payment-api/class-wc-payments-api-client.php:2660-2690).
-				''
+			$gateway = WC()->payment_gateways()->payment_gateways()[ WooPaymentsPersistenceVocabulary::GATEWAY_ID ] ?? null;
+			if ( null === $gateway ) {
+				return new WP_Error( 'wcpay_server_error', __( 'The WooPayments card gateway is unavailable.', 'woocommerce' ), array( 'status' => 500 ) );
+			}
+			if ( WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $order->get_payment_method( 'edit' ) ) {
+				$old_method = $order->get_payment_method( 'edit' );
+				$old_title  = $order->get_payment_method_title( 'edit' );
+				$order->set_payment_method( $gateway );
+				$order->save();
+				$save_error = $order->get_last_save_error();
+				if ( null !== $save_error ) {
+					return $this->get_create_payment_error( $order, $save_error );
+				}
+			}
+
+			$order_payment_lock->mark_money_request_unsaved( $lock_token, true );
+			$request_data = $this->order_service->build_create_payment_intent_request_from_order(
+				$order,
+				(string) $request->get_param( 'customer' ),
+				(string) $request->get_param( 'payment_method' ),
+				$this->account_service->is_manual_capture_enabled()
 			);
+			$sent         = true;
+			$intent       = $this->api_client->create_and_confirm_payment_intention( $request_data, '' );
+			try {
+				wc_get_container()->get( WooPaymentsCompositionDataSettler::class )->run_settled(
+					static function () use ( $lifecycle, $order, $intent ): void {
+						$lifecycle->reread_order_from_data_store( $order );
+						$writer = wc_get_container()->get( PaymentIntentEventHandler::class );
+						$status = $intent['status'] ?? '';
+						if ( 'succeeded' === $status ) {
+							$writer->apply_succeeded_payment_intent_under_lock( $order, $intent );
+						} elseif ( 'requires_capture' === $status ) {
+							$writer->apply_authorization_under_lock_for_answer( $order, $intent );
+						}
+					}
+				);
+			} catch ( Throwable $failure ) {
+				wc_get_container()->get( WooPaymentsLogger::class )->log_throwable_always( 'Failed to record the payment intent from the REST API.', $failure, array( 'order_id' => $order->get_id() ) );
+			}
 
 			return new WP_REST_Response( $this->prepare_payment_intent_for_response( $intent, $request ) );
 		} catch ( Throwable $exception ) {
-			// The client logs any failure and answers its generic error with the message (class-wc-rest-payments-payment-intents-controller.php:149-152).
-			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Failed to create an intention via the REST API.', $exception, array( 'order_id' => $order->get_id() ) );
-
-			return new WP_Error( 'wcpay_server_error', $exception->getMessage(), array( 'status' => 500 ) );
+			$declined = ! isset( $intent ) && $exception instanceof ApiException && 400 <= $exception->get_http_code() && $exception->get_http_code() < 500 && ! $exception->has_ambiguous_outcome();
+			return $this->get_create_payment_error( $order, $exception );
 		} finally {
-			$order_payment_lock->release( $order, $vocabulary, $lock_token );
+			try {
+				if ( null !== $old_method && ( ! $sent || $declined ) ) {
+					$order->set_payment_method( $old_method );
+					$order->set_payment_method_title( $old_title );
+					$order->save();
+					if ( null !== $order->get_last_save_error() ) {
+						wc_get_container()->get( WooPaymentsLogger::class )->log_always(
+							sprintf( 'payment method not restored: order %d keeps %s, was "%s"', $order->get_id(), WooPaymentsPersistenceVocabulary::GATEWAY_ID, WooPaymentsLogger::get_loggable_payment_method( $old_method ) ),
+							'warning'
+						);
+					}
+				}
+			} finally {
+				$order_payment_lock->mark_money_request_unsaved( $lock_token, false );
+				$order_payment_lock->release( $order, $vocabulary, $lock_token );
+			}
 		}
+	}
+
+	/**
+	 * Log a failed create request and prepare the client's error response.
+	 *
+	 * @since 11.4.0
+	 * @param WC_Order  $order     Order being charged.
+	 * @param Throwable $exception Failure that stopped the request.
+	 * @return WP_Error
+	 */
+	private function get_create_payment_error( WC_Order $order, Throwable $exception ): WP_Error {
+		wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Failed to create an intention via the REST API.', $exception, array( 'order_id' => $order->get_id() ) );
+
+		return new WP_Error( 'wcpay_server_error', $exception->getMessage(), array( 'status' => 500 ) );
 	}
 
 	/**

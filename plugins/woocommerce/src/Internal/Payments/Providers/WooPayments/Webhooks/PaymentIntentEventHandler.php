@@ -744,6 +744,17 @@ class PaymentIntentEventHandler {
 	}
 
 	/**
+	 * Record the create route's authorization while it holds the order lock.
+	 *
+	 * @since 11.4.0
+	 * @param WC_Order            $order          Freshly read order.
+	 * @param array<string,mixed> $payment_intent Authorized intent from the platform.
+	 */
+	public function apply_authorization_under_lock_for_answer( WC_Order $order, array $payment_intent ): void {
+		$this->apply_authorization_under_lock( $order, $payment_intent );
+	}
+
+	/**
 	 * Put an order on hold for its authorized payment, on the order read under the order payment lock the caller holds.
 	 *
 	 * An authorization moves a pending or failed order on hold only when it is the payment the order waits on: the intent
