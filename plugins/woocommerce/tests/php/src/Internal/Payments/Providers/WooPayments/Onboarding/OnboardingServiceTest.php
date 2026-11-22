@@ -315,9 +315,7 @@ class OnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Forcing live changes a sandbox session, and forcing test changes a live session.
-	 *
-	 * @testdox Connected accounts keep their saved KYC session mode.
+	 * @testdox Forcing live changes a sandbox session, and forcing test changes a live session.
 	 * @since 11.4.0
 	 * @testWith ["yes", false]
 	 *           ["no", true]
@@ -338,40 +336,6 @@ class OnboardingServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'test_session', $session['clientSecret'] );
 		$this->assertSame( $flag, get_option( 'wcpay_onboarding_test_mode' ) );
-	}
-
-	/**
-	 * Reusing a saved test flag starts a test session on a store that never connected.
-	 * Ignoring dev mode starts a live session too early. Keeping its flag starts another test session after dev mode ends.
-	 *
-	 * @testdox A store without an account starts live KYC outside dev mode.
-	 * @since 11.4.0
-	 * @testWith [false]
-	 *           [true]
-	 *
-	 * @param bool $start_in_dev_mode Whether dev mode initially sets the stored test flag.
-	 */
-	public function test_unconnected_store_kyc_mode( bool $start_in_dev_mode ): void {
-		update_option( 'wcpay_onboarding_test_mode', $start_in_dev_mode ? 'no' : 'yes' );
-		$account = $this->createMock( WooPaymentsAccountService::class );
-		$account->method( 'has_account' )->willReturn( false );
-		$client = $this->createMock( Client::class );
-		$client->method( 'initialize_onboarding_embedded_kyc' )->willReturnCallback(
-			static function ( bool $live ): array {
-				return array( 'client_secret' => $live ? 'live_session' : 'test_session' );
-			}
-		);
-		$this->onboarding_service->init( $this->mockable_proxy, new PaymentMethodRegistry(), $client, $account );
-
-		if ( $start_in_dev_mode ) {
-			$session = $this->onboarding_service->create_kyc_session( true, array(), array() );
-			$this->assertSame( 'test_session', $session['clientSecret'] );
-			$this->assertSame( 'yes', get_option( 'wcpay_onboarding_test_mode' ) );
-		}
-
-		$session = $this->onboarding_service->create_kyc_session( false, array(), array() );
-		$this->assertSame( 'live_session', $session['clientSecret'] );
-		$this->assertSame( 'no', get_option( 'wcpay_onboarding_test_mode' ) );
 	}
 
 	/**

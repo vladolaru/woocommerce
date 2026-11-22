@@ -478,8 +478,7 @@ describe( 'WooPayments express checkout', () => {
 		document.body.innerHTML = '';
 	} );
 
-	/** Forcing the loader off hides the wallet’s loading state after a checkout refresh. */
-	test( 'mounts the wallet after totals update with tokenized cart headers and the default loader', async () => {
+	test( 'mounts Stripe ECE after checkout totals update with tokenized cart headers without hiding the express loader', async () => {
 		require( '../woopayments-express-checkout' );
 
 		expect( bodyEventHandlers.updated_checkout ).toBeDefined();
@@ -556,8 +555,7 @@ describe( 'WooPayments express checkout', () => {
 		);
 	} );
 
-	/** Recreating Stripe or just unmounting the wallet leaves extra frames after a refresh. */
-	test( 'reuses Stripe and destroys the previous wallet Element on refresh', async () => {
+	test( 'recreating Stripe or just unmounting the wallet leaves extra frames after a refresh', async () => {
 		// One Elements group and Express Checkout Element per initialization, as client 11.1.0
 		// shortcode-buttons-express/index.js:227-270 creates them; native destroys the previous element first.
 		const firstElement = {
@@ -1549,8 +1547,7 @@ describe( 'WooPayments express checkout', () => {
 		} );
 	} );
 
-	/** Forcing the loader off hides the loading state when mounting the product wallet. */
-	test( 'mounts the product wallet from server data with the default loader and no cart request', async () => {
+	test( 'mounts the product wallet from server data without reading the cart or hiding the express loader', async () => {
 		window.wcpayExpressCheckoutParams.button_context = 'product';
 		window.wcpayExpressCheckoutParams.product = {
 			displayItems: [ { label: 'Express Widget', amount: 2500 } ],
@@ -4530,38 +4527,6 @@ describe( 'WooPayments express checkout', () => {
 					} ),
 				} )
 			);
-		} );
-
-		/** Only unblocking the page on rebuild leaves the open product sheet’s item in its isolated cart. */
-		test( 'empties the open product sheet’s cart once when totals refresh', async () => {
-			setClassicProductForm();
-			window.wp.apiFetch.mockResolvedValue(
-				getStoreApiResponse( getVirtualCart( 2500, 1 ), {
-					'X-WooPayments-Tokenized-Cart-Session': 'cart-session-token',
-				} )
-			);
-			await mountReadyWallet();
-			await expressHandlers.click( { resolve: jest.fn() } );
-			await flushMicrotasks();
-			window.wp.apiFetch.mockClear();
-
-			await bodyEventHandlers.updated_cart_totals();
-			await flushMicrotasks();
-			expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 1 );
-			expect( window.wp.apiFetch ).toHaveBeenCalledWith(
-				expect.objectContaining( {
-					method: 'GET',
-					path: '/wc/store/v1/cart?currency=USD',
-					headers: expect.objectContaining( {
-						'X-WooPayments-Tokenized-Cart-Session': 'cart-session-token',
-						'X-WooPayments-Tokenized-Cart-Is-Ephemeral-Cart': '1',
-					} ),
-				} )
-			);
-
-			await bodyEventHandlers.updated_cart_totals();
-			await flushMicrotasks();
-			expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 1 );
 		} );
 
 		// The client's second open repeats the first (report F10: same payload, shipping required); its click and

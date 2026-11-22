@@ -2742,9 +2742,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	);
 
 	/**
-	 * Using the initial currency for registration loses Amazon Pay when it is the only enabled wallet.
-	 *
-	 * @testdox Blocks registers the merchant’s enabled wallet across currencies.
+	 * @testdox Using the initial currency for registration loses Amazon Pay when it is the only enabled wallet.
 	 * @since 11.4.0
 	 */
 	public function test_blocks_registration_survives_currency(): void {
@@ -2776,12 +2774,10 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Using the account capability for registration drops the merchant’s enabled Amazon Pay button.
-	 *
-	 * @testdox Blocks uses the merchant setting for Amazon Pay registration.
+	 * @testdox Using the account capability for registration drops the merchant’s enabled Amazon Pay button.
 	 * @since 11.4.0
 	 */
-	public function test_blocks_data_amazon_pay_switch_uses_merchant_setting(): void {
+	public function test_blocks_data_amazon_pay_switch_uses_amazon_pay_availability(): void {
 		$this->replace_page_surface( false, true );
 
 		$toggled_off = $this->create_assets_for_express_handlers( array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) )->get_blocks_payment_method_data( self::CARD_SUPPORTS );

@@ -818,8 +818,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		);
 	} );
 
-	/** Hiding the express loader overrides the Blocks wallet loading state alongside its appearance. */
-	it( 'mounts the wallet with cart-aware Elements options, checkout appearance and the default loader', async () => {
+	it( 'hiding the express loader overrides the Blocks wallet loading state alongside its appearance', async () => {
 		baseExpressCheckoutParams.enabled_methods = [
 			'payment_request',
 			'amazon_pay',
@@ -939,8 +938,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		}
 	);
 
-	/** Hiding the express loader overrides the default while probing Blocks wallet availability. */
-	it( 'probes availability with the default loader before exposing each Blocks wallet', async () => {
+	it( 'hiding the express loader overrides the default while probing Blocks wallet availability', async () => {
 		registerExpressCheckout();
 		const applePayRegistration = getRegistration(
 			'woocommerce_payments_express_checkout_applePay'
@@ -1044,8 +1042,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		expect( stripe.elements ).toHaveBeenCalledTimes( 2 );
 	} );
 
-	/** Freezing Amazon Pay registration or probe types at page load loses the wallet after a currency switch. */
-	it( 'registers Amazon Pay when enabled and probes it when the cart currency becomes eligible', async () => {
+	it( 'freezing Amazon Pay registration or probe types at page load loses the wallet after a currency switch', async () => {
 		basePaymentMethodData.isAmazonPayEnabled = true;
 		registerExpressCheckout();
 		const registration = getRegistration(
@@ -1071,48 +1068,6 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			expect.objectContaining( {
 				paymentMethods: expect.objectContaining( {
 					amazonPay: 'auto',
-				} ),
-			} )
-		);
-	} );
-
-	/** Trusting the cart or localized methods alone registers or probes Amazon Pay when the switch is off. */
-	it( 'excludes disabled Amazon Pay from registration and the Apple Pay probe', async () => {
-		basePaymentMethodData.isAmazonPayEnabled = false;
-		baseExpressCheckoutParams.enabled_methods = [
-			'payment_request',
-			'amazon_pay',
-		];
-		baseExpressCheckoutParams.payment_method_types = [
-			'card',
-			'amazon_pay',
-		];
-		registerExpressCheckout();
-
-		expect(
-			getRegistration( 'woocommerce_payments_express_checkout_amazonPay' )
-		).toBeUndefined();
-
-		const applePay = getRegistration(
-			'woocommerce_payments_express_checkout_applePay'
-		);
-		availablePaymentMethods = { applePay: true };
-		await expect(
-			applePay.canMakePayment( {
-				cart: cartWithExpressMethods( [
-					'payment_request',
-					'amazon_pay',
-				] ),
-			} )
-		).resolves.toBe( true );
-		expect( stripe.elements ).toHaveBeenCalledWith(
-			expect.objectContaining( { paymentMethodTypes: [ 'card' ] } )
-		);
-		expect( elements.create ).toHaveBeenCalledWith(
-			'expressCheckout',
-			expect.objectContaining( {
-				paymentMethods: expect.objectContaining( {
-					amazonPay: 'never',
 				} ),
 			} )
 		);

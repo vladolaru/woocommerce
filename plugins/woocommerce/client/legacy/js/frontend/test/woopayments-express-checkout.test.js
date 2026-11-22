@@ -226,8 +226,7 @@ describe( 'woopayments-express-checkout', () => {
 			expect( locked ).toBe( true );
 		};
 
-		/** Just unmounting an open sheet leaves checkout locked. */
-		it( 'unlocks checkout when a rebuild closes an open sheet', async () => {
+		it( 'just unmounting an open sheet leaves checkout locked', async () => {
 			await rebuild();
 			await open();
 			await rebuild();
@@ -237,16 +236,14 @@ describe( 'woopayments-express-checkout', () => {
 			expect( mounted[ 1 ].mount ).toHaveBeenCalledTimes( 1 );
 		} );
 
-		/** Unconditional cleanup cancels a sheet that never opened. */
-		it( 'rebuilds an unopened wallet without canceling', async () => {
+		it( 'unconditional cleanup cancels a sheet that never opened', async () => {
 			await rebuild();
 			await rebuild();
 			expect( global.jQuery.unblockUI ).not.toHaveBeenCalled();
 			expect( mounted[ 0 ].destroy ).toHaveBeenCalledTimes( 1 );
 		} );
 
-		/** Keeping the open flag after confirm unlocks a payment in progress. */
-		it( 'keeps checkout locked when rebuilding after confirmation', async () => {
+		it( 'keeping the open flag after confirm unlocks a payment in progress', async () => {
 			await rebuild();
 			await open();
 			let finishSubmit;
@@ -261,8 +258,7 @@ describe( 'woopayments-express-checkout', () => {
 			await confirmation;
 		} );
 
-		/** Keeping the open flag after cancel repeats cleanup on rebuild. */
-		it( 'skips a second cancellation when rebuilding after cancel', async () => {
+		it( 'keeping the open flag after cancel repeats cleanup on rebuild', async () => {
 			await rebuild();
 			await open();
 			mounted[ 0 ].handlers.cancel();
@@ -272,8 +268,7 @@ describe( 'woopayments-express-checkout', () => {
 			expect( global.jQuery.unblockUI ).toHaveBeenCalledTimes( 1 );
 		} );
 
-		/** Carrying the previous open flag into the next mount cancels twice. */
-		it( 'cancels an open sheet once across two rebuilds', async () => {
+		it( 'carrying the previous open flag into the next mount cancels twice', async () => {
 			await rebuild();
 			await open();
 			await rebuild();
@@ -284,12 +279,9 @@ describe( 'woopayments-express-checkout', () => {
 			expect( mounted[ 2 ].mount ).toHaveBeenCalledTimes( 1 );
 		} );
 
-		/**
-		 * Returning when destroy throws leaves an open sheet locked. Canceling unconditionally releases an unopened sheet.
-		 */
 		it.each( [
-			[ 'cancels the open sheet and remounts after a load error', true, 1 ],
-			[ 'remounts after a load error without canceling an unopened sheet', false, 0 ],
+			[ 'a second destroy after loaderror can skip open-sheet cleanup and remount', true, 1 ],
+			[ 'always canceling after loaderror releases a page when no sheet opened', false, 0 ],
 		] )( '%s', async ( description, sheetOpen, cancels ) => {
 			await rebuild();
 			if ( sheetOpen ) {
@@ -312,8 +304,7 @@ describe( 'woopayments-express-checkout', () => {
 		} );
 	} );
 
-	/** Hiding the express loader removes the default loading state from the classic wallet. */
-	it( 'keeps the default loader for the classic wallet', () => {
+	it( 'hiding the express loader removes the default loading state from the classic wallet', () => {
 		const { getStripeElementsOptions } = loadModule( baseParams() );
 		expect( getStripeElementsOptions( cartResponse() ) ).not.toHaveProperty( 'loader' );
 	} );
