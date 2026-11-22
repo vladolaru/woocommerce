@@ -7,13 +7,21 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Abilities\Domain;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Abilities\Domain\GetAuthorizations;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Abilities\Domain;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Abilities\AbilityTestCase;
 
 /** Exercise the callbacks with no network or payment dependencies. */
 class AbstractAbilityTest extends AbilityTestCase {
 	private const API    = '/wc/v3/payments/';
 	private const ROUTES = array(
+		'get-disputes'               => 'disputes',
+		'get-disputes-summary'       => 'disputes/summary',
+		'get-deposits'               => 'deposits',
+		'get-deposits-summary'       => 'deposits/summary',
+		'get-dispute'                => 'disputes/future_case',
+		'get-charge'                 => 'charges/ch_sample',
+		'get-payment-intent'         => 'payment_intents/pi_detail',
+		'get-timeline'               => 'timeline/pi_history',
 		'get-transactions'           => 'transactions',
 		'get-transactions-summary'   => 'transactions/summary',
 		'get-fraud-outcomes'         => 'transactions/fraud-outcomes',
@@ -27,6 +35,8 @@ class AbstractAbilityTest extends AbilityTestCase {
 	);
 
 	private const COLLECTION_KEYS = array(
+		'get-disputes'       => 'disputes',
+		'get-deposits'       => 'deposits',
 		'get-authorizations' => 'authorizations',
 		'get-transactions'   => 'transactions',
 		'get-fraud-outcomes' => 'fraud_outcomes',
@@ -36,7 +46,31 @@ class AbstractAbilityTest extends AbilityTestCase {
 		'date_end'   => '2026-10-31T23:59:59Z',
 		'currency'   => 'USD',
 	);
-	private const INPUTS          = array(
+	private const PAYOUT_FILTERS  = array(
+		'match'             => 'all',
+		'store_currency_is' => 'usd',
+		'date_before'       => '2026-10-31',
+		'date_after'        => '2026-10-01',
+		'date_between'      => array( '2026-10-01', '2026-10-31' ),
+		'status_is'         => 'paid',
+		'status_is_not'     => 'failed',
+	);
+	private const DISPUTE_FILTERS = array(
+		'status_is'     => 'needs_response',
+		'status_is_not' => 'won',
+		'search'        => array( 'case', 'sample' ),
+	) + self::PAYOUT_FILTERS;
+
+	private const ID_INPUTS = array(
+		'get-dispute'        => array( 'dispute_id' => 'future_case' ),
+		'get-charge'         => array( 'charge_id' => 'ch_sample' ),
+		'get-payment-intent' => array( 'payment_intent_id' => 'pi_detail' ),
+		'get-timeline'       => array( 'intention_id' => 'pi_history' ),
+	);
+
+	private const INPUTS = array(
+		'get-disputes-summary'     => self::DISPUTE_FILTERS,
+		'get-deposits-summary'     => self::PAYOUT_FILTERS,
 		'get-balance'              => self::BALANCE,
 		'get-fraud-outcomes'       => array( 'status' => 'block' ),
 		'get-transactions-summary' => array(
@@ -52,7 +86,7 @@ class AbstractAbilityTest extends AbilityTestCase {
 			'deposit_id'          => 'po_sample',
 			'payment_method_type' => 'card',
 		),
-	);
+	) + self::ID_INPUTS;
 
 	/**
 	 * REST server active before this test.
@@ -66,6 +100,12 @@ class AbstractAbilityTest extends AbilityTestCase {
 	 * @var array
 	 */
 	private $calls = array();
+	/**
+	 * URL parameters captured by the last route.
+	 *
+	 * @var array
+	 */
+	private $captures;
 	/**
 	 * Response to return for each registered route.
 	 *
@@ -87,21 +127,26 @@ class AbstractAbilityTest extends AbilityTestCase {
 		$this->original_server     = $GLOBALS['wp_rest_server'] ?? null;
 		$server                    = new \WP_REST_Server();
 		$GLOBALS['wp_rest_server'] = $server;
-		foreach ( array_merge( self::ROUTES, array( 'transactions/fraud-outcomes/summary' ) ) as $suffix ) {
+		foreach ( array_merge( self::ROUTES, array( 'transactions/fraud-outcomes/summary' ) ) as $slug => $suffix ) {
+			$route = $suffix;
+			if ( isset( self::ID_INPUTS[ $slug ] ) ) {
+				$route = dirname( $suffix ) . '/(?P<' . key( self::ID_INPUTS[ $slug ] ) . '>\w+)';
+			}
 			$this->bodies[ $suffix ] = array( 'source' => $suffix );
 			$server->register_route(
 				'wc/v3',
-				self::API . $suffix,
+				self::API . $route,
 				array(
 					array(
 						'methods'             => 'GET',
 						'permission_callback' => fn() => $this->route_allowed,
 						'callback'            => function ( $request ) use ( $suffix ) {
-							$this->calls[] = array( $request->get_method(), $request->get_route(), $request->get_params() );
+							$this->calls[] = array( $request->get_method(), $request->get_route(), $request->get_query_params() );
+							$this->captures = $request->get_url_params();
 							if ( 'transactions/fraud-outcomes/summary' === $suffix && ! $request->has_param( 'status' ) ) {
 								return new \WP_Error( 'missing_status', 'Missing status', array( 'status' => 400 ) );
 							}
-							if ( 'transactions/summary' === $suffix && ! $request->get_params() && isset( $this->bodies['unfiltered'] ) ) {
+							if ( in_array( $suffix, array( 'transactions/summary', 'disputes/summary' ), true ) && ! $request->get_params() && isset( $this->bodies['unfiltered'] ) ) {
 								return $this->bodies['unfiltered'];
 							}
 							return $this->bodies[ $suffix ];
@@ -113,6 +158,28 @@ class AbstractAbilityTest extends AbilityTestCase {
 		foreach ( self::COLLECTION_KEYS as $slug => $key ) {
 			$this->bodies[ self::ROUTES[ $slug ] ] = array( 'data' => array() );
 		}
+		$this->bodies['deposits']['total_count']             = 0;
+		$this->bodies['disputes/summary']                    = array(
+			'count'          => 5,
+			'needs_response' => 2,
+		);
+		$this->bodies['deposits/summary']                    = array(
+			'count'   => 5,
+			'amounts' => array( 'usd' => 300 ),
+		);
+		$this->bodies['disputes/future_case']                = array(
+			'order'  => 7,
+			'charge' => 'ch_case',
+		);
+		$this->bodies['charges/ch_sample']                   = array(
+			'order' => 8,
+			'id'    => 'ch_sample',
+		);
+		$this->bodies['payment_intents/pi_detail']           = array(
+			'charges' => array( array( 'order' => 9 ) ),
+			'status'  => 'succeeded',
+		);
+		$this->bodies['timeline/pi_history']                 = array( array( 'type' => 'created' ), array( 'type' => 'manual_review' ), array( 'type' => 'succeeded' ) );
 		$this->bodies['authorizations/summary']              = array(
 			'count' => 5,
 			'total' => 9400,
@@ -150,9 +217,7 @@ class AbstractAbilityTest extends AbilityTestCase {
 	}
 
 	/**
-	 * Requiring manage_options prevents shop managers from executing reads.
-	 *
-	 * @testdox Administrators and shop managers can execute all ten reads.
+	 * @testdox Requiring site administration privileges keeps shop managers from reading payment records.
 	 */
 	public function test_manager_permissions(): void {
 		foreach ( array( 'administrator', 'shop_manager' ) as $role ) {
@@ -168,30 +233,32 @@ class AbstractAbilityTest extends AbilityTestCase {
 	}
 
 	/**
-	 * Allowing signed-in customers or guests dispatches private reads.
+	 * @testdox Letting a customer or guest read payment records sends a private request to the route.
+	 * @testWith ["customer"]
+	 *           ["guest"]
 	 *
-	 * @testdox Customers and guests are refused before a read reaches its route.
+	 * @param string $role Caller role.
 	 */
-	public function test_customer_and_guest(): void {
-		foreach ( array( self::factory()->user->create( array( 'role' => 'customer' ) ), 0 ) as $user_id ) {
-			wp_set_current_user( $user_id );
-			foreach ( self::ROUTES as $name => $suffix ) {
-				$ability = $this->ability( $name );
-				$this->assertFalse( $ability->check_permissions( self::INPUTS[ $name ] ?? array() ) );
-				$this->assertSame( 'ability_invalid_permissions', $ability->execute( self::INPUTS[ $name ] ?? array() )->get_error_code() );
-			}
+	public function test_customer_and_guest( string $role ): void {
+		wp_set_current_user( 'guest' === $role ? 0 : self::factory()->user->create( array( 'role' => $role ) ) );
+		foreach ( self::ROUTES as $name => $suffix ) {
+			$ability = $this->ability( $name );
+			$this->assertFalse( $ability->check_permissions( self::INPUTS[ $name ] ?? array() ) );
+			$this->assertSame( 'ability_invalid_permissions', $ability->execute( self::INPUTS[ $name ] ?? array() )->get_error_code() );
 		}
 		$this->assertSame( array(), $this->calls );
 	}
 
 	/**
-	 * Calling the controller directly skips the backing route permission check.
+	 * @testdox Calling a read handler directly skips its own permission check.
+	 * @testWith ["get-fees-summary"]
+	 *           ["get-disputes"]
 	 *
-	 * @testdox A backing route can refuse a caller who passes the ability permission check.
+	 * @param string $slug Ability slug.
 	 */
-	public function test_route_permission(): void {
+	public function test_route_permission( string $slug ): void {
 		$this->route_allowed = false;
-		$ability             = $this->ability( 'get-fees-summary' );
+		$ability             = $this->ability( $slug );
 		$this->assertTrue( $ability->check_permissions() );
 		$error = $ability->execute();
 		$this->assertWPError( $error );
@@ -201,9 +268,10 @@ class AbstractAbilityTest extends AbilityTestCase {
 	}
 
 	/**
-	 * Routing fees to the transactions summary, renaming a balance field or returning only a summary count loses report data.
+	 * Rejecting unfamiliar IDs or reading a charge from its order misses the requested record.
+	 * Trimming nested intent fields or removing a review event loses details supplied by the route.
 	 *
-	 * @testdox Each single read returns its own complete route body after one GET.
+	 * @testdox Using the payout overview, sending an ID in the query or returning just a summary count changes the response.
 	 * @dataProvider single_reads
 	 *
 	 * @param string $name   Ability slug.
@@ -212,6 +280,10 @@ class AbstractAbilityTest extends AbilityTestCase {
 	public function test_single_routes( string $name, string $suffix ): void {
 		$input = self::INPUTS[ $name ] ?? array();
 		$this->assertSame( $this->bodies[ $suffix ], $this->ability( $name )->execute( $input ) );
+		if ( isset( self::ID_INPUTS[ $name ] ) ) {
+			$this->assertSame( $input, $this->captures );
+			$input = array();
+		}
 		$this->assertSame( array( array( 'GET', self::API . $suffix, $input ) ), $this->calls );
 	}
 
@@ -335,7 +407,7 @@ class AbstractAbilityTest extends AbilityTestCase {
 			'sort'      => 'created',
 			'direction' => 'asc',
 		);
-		$result    = GetAuthorizations::execute(
+		$result    = Domain\GetAuthorizations::execute(
 			$canonical + array(
 				'per_page' => 5,
 				'orderby'  => 'amount',
@@ -400,38 +472,54 @@ class AbstractAbilityTest extends AbilityTestCase {
 	}
 
 	/**
+	 * Set the count on the list or its companion summary.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param string $route List route suffix.
+	 * @param mixed  $count Count value, or null for an omitted count.
+	 */
+	private function set_count( string $route, $count ): void {
+		$field = 'deposits' === $route ? 'total_count' : 'count';
+		$key   = 'deposits' === $route ? $route : $route . '/summary';
+		unset( $this->bodies[ $key ][ $field ] );
+		if ( null !== $count ) {
+			$this->bodies[ $key ][ $field ] = $count;
+		}
+	}
+
+	/**
 	 * A truthiness check treats a genuine zero record count as missing.
 	 *
-	 * @testdox A summary with zero records gives zero pages.
+	 * @testdox Treating a zero count as missing discards a valid empty collection.
 	 * @dataProvider collection_abilities
 	 *
 	 * @param string $slug Ability slug.
 	 */
 	public function test_zero_count( string $slug ): void {
-		$route                               = self::ROUTES[ $slug ];
-		$input                               = self::INPUTS[ $slug ] ?? array();
-		$this->bodies[ $route . '/summary' ] = array(
-			'count' => 0,
-			'total' => 0,
-		);
-		$result                              = $this->ability( $slug )->execute( $input );
+		$route = self::ROUTES[ $slug ];
+		$input = self::INPUTS[ $slug ] ?? array();
+		$this->set_count( $route, 0 );
+		$result = $this->ability( $slug )->execute( $input );
+		$this->assertIsArray( $result );
 		$this->assertSame( array(), $result[ self::COLLECTION_KEYS[ $slug ] ] );
 		$this->assertSame( 0, $result['total_pages'] );
+		$this->assertCount( 'deposits' === $route ? 1 : 2, $this->calls );
 	}
 
 	/**
 	 * An empty page beyond the end must not reset the total or requested page.
 	 *
-	 * @testdox A request beyond the last page keeps its page number and the summary page count.
+	 * @testdox Counting the empty slice loses the total on a later page.
 	 * @dataProvider collection_abilities
 	 *
 	 * @param string $slug Ability slug.
 	 */
 	public function test_page_beyond_end( string $slug ): void {
-		$route                               = self::ROUTES[ $slug ];
-		$input                               = self::INPUTS[ $slug ] ?? array();
-		$this->bodies[ $route . '/summary' ] = array( 'count' => 5 );
-		$result                              = $this->ability( $slug )->execute(
+		$route = self::ROUTES[ $slug ];
+		$input = self::INPUTS[ $slug ] ?? array();
+		$this->set_count( $route, 5 );
+		$result = $this->ability( $slug )->execute(
 			$input + array(
 				'page'     => 4,
 				'per_page' => 2,
@@ -443,9 +531,7 @@ class AbstractAbilityTest extends AbilityTestCase {
 	}
 
 	/**
-	 * Reading a summary after a list error masks the failure or spends another request.
-	 *
-	 * @testdox A failed list read returns the route error without requesting the summary.
+	 * @testdox Reading the summary after a failed list adds a request and can hide the original route error.
 	 * @dataProvider collection_abilities
 	 *
 	 * @param string $slug Ability slug.
@@ -455,16 +541,15 @@ class AbstractAbilityTest extends AbilityTestCase {
 		$input                  = self::INPUTS[ $slug ] ?? array();
 		$this->bodies[ $route ] = new \WP_Error( 'list_failed', 'List unavailable', array( 'status' => 503 ) );
 		$error                  = $this->ability( $slug )->execute( $input );
-		$this->assertSame( 503, $error->get_error_data()['status'] );
+		$this->assertSame( 'List unavailable', $error->get_error_message() );
+		$this->assertSame( array( 'status' => 503 ), $error->get_error_data() );
 		$this->assertSame( 'list_failed', $error->get_error_code() );
 		$this->assertSame( array( self::API . $route ), array_column( $this->calls, 1 ) );
 	}
 
 	/**
-	 * Falling back to one page hides the original summary error and its data.
-	 *
-	 * @testdox A failed summary read returns the original route error and its data.
-	 * @dataProvider collection_abilities
+	 * @testdox Replacing a summary failure with a count error loses the original message and details.
+	 * @dataProvider summary_backed_abilities
 	 *
 	 * @param string $slug Ability slug.
 	 */
@@ -485,9 +570,7 @@ class AbstractAbilityTest extends AbilityTestCase {
 	}
 
 	/**
-	 * Casting an unreadable or fractional count to an integer silently guesses the total.
-	 *
-	 * @testdox Only a non-negative integral record count can supply the total pages.
+	 * @testdox Casting an unreadable record count to an integer silently guesses the number of pages.
 	 * @dataProvider collection_abilities
 	 *
 	 * @param string $slug Ability slug.
@@ -495,24 +578,36 @@ class AbstractAbilityTest extends AbilityTestCase {
 	public function test_count_contract( string $slug ): void {
 		$route = self::ROUTES[ $slug ];
 		$input = self::INPUTS[ $slug ] ?? array();
-		foreach ( array( null, -1, 'unknown', 2.5, '1.5', false, array(), '' ) as $count ) {
-			$this->bodies[ $route . '/summary' ] = array( 'total' => 9400 );
-			if ( null !== $count ) {
-				$this->bodies[ $route . '/summary' ]['count'] = $count;
-			}
+		foreach ( array( null, -1, (string) PHP_INT_MAX . '0', 'unknown', 2.5, '1.5', false, array(), '' ) as $count ) {
+			$this->calls = array();
+			$this->set_count( $route, $count );
 			$error = $this->ability( $slug )->execute( $input );
 			$this->assertWPError( $error );
+			$this->assertCount( 'deposits' === $route ? 1 : 2, $this->calls );
 			$this->assertSame( 'woopayments_ability_count_unavailable', $error->get_error_code() );
 			$this->assertSame( 502, $error->get_error_data()['status'] );
 			$this->assertSame( 'The record count is unavailable.', $error->get_error_message() );
 		}
 		foreach ( array( 5, '5', 5.0 ) as $count ) {
-			$this->bodies[ $route . '/summary' ] = array( 'count' => $count );
+			$this->set_count( $route, $count );
 			$this->assertSame( 3, $this->ability( $slug )->execute( $input + array( 'per_page' => 2 ) )['total_pages'] );
 		}
 	}
 
-	/** Collections that read their total from a companion summary. */
+	/**
+	 * Collections that read their total from a companion summary.
+	 *
+	 * @since 11.4.0
+	 */
+	public static function summary_backed_abilities(): iterable {
+		foreach ( self::collection_abilities() as $key => $args ) {
+			if ( 'deposits' !== $key ) {
+				yield $key => $args;
+			}
+		}
+	}
+
+	/** All paginated reads. */
 	public static function collection_abilities(): iterable {
 		foreach ( self::COLLECTION_KEYS as $slug => $key ) {
 			yield $key => array( $slug );
@@ -668,5 +763,176 @@ class AbstractAbilityTest extends AbilityTestCase {
 		$input = array( 'deposit_id' => 'po_sample' );
 		$this->assertSame( $this->bodies['transactions/summary'], $this->ability( 'get-transactions-summary' )->execute( (object) $input ) );
 		$this->assertSame( array( array( 'GET', self::API . 'transactions/summary', $input ) ), $this->calls );
+	}
+
+	/**
+	 * Sending list ordering to the dispute summary can change its count. Dropping order details loses enriched rows.
+	 * Reading a second payout route adds a request, and naming the collection payouts changes the response keys.
+	 *
+	 * @testdox Counting the current slice, dropping a selector or choosing the wrong count changes the filtered page.
+	 * @testWith ["disputes"]
+	 *           ["deposits"]
+	 *
+	 * @param string $route List route.
+	 *
+	 * @since 11.4.0
+	 */
+	public function test_filtered_pages( string $route ): void {
+		$disputes                         = 'disputes' === $route;
+		$filters                          = $disputes ? self::DISPUTE_FILTERS : self::PAYOUT_FILTERS;
+		$rows                             = array( array( 'order' => array( 'number' => 12 ) ), array( 'order' => array( 'number' => 10 ) ) );
+		$this->bodies[ $route ]           = array(
+			'data'        => $rows,
+			'total_count' => $disputes ? 80 : 5,
+		);
+		$this->bodies['unfiltered']       = array( 'count' => 40 );
+		$this->bodies['deposits/summary'] = new \WP_Error( 'unexpected_summary', 'Unexpected summary request' );
+
+		$result         = $this->ability( 'get-' . $route )->execute(
+			$filters + array(
+				'page'     => 2,
+				'per_page' => 2,
+				'orderby'  => 'date',
+				'order'    => 'asc',
+			)
+		);
+		$expected_calls = array(
+			array(
+				'GET',
+				self::API . $route,
+				$filters + array(
+					'page'      => 2,
+					'pagesize'  => 2,
+					'sort'      => 'date',
+					'direction' => 'asc',
+				),
+			),
+		);
+		if ( $disputes ) {
+			$expected_calls[] = array( 'GET', self::API . 'disputes/summary', $filters );
+		}
+		$this->assertSame( $expected_calls, $this->calls );
+		$this->assertSame(
+			array(
+				$route        => $rows,
+				'total_pages' => 3,
+				'page'        => 2,
+				'per_page'    => 2,
+			),
+			$result
+		);
+	}
+
+	/**
+	 * @testdox Adding a page for an exact multiple turns four payouts at two per page into three pages.
+	 *
+	 * @since 11.4.0
+	 */
+	public function test_payout_exact_multiple(): void {
+		$this->set_count( 'deposits', 4 );
+		$this->assertSame( 2, $this->ability( 'get-deposits' )->execute( array( 'per_page' => 2 ) )['total_pages'] );
+	}
+
+	/**
+	 * Detail reads and their direct PHP callbacks.
+	 *
+	 * @since 11.4.0
+	 */
+	public static function detail_reads(): array {
+		return array(
+			'dispute sends an empty ID'          => array( 'get-dispute', Domain\GetDispute::class ),
+			'charge sends string zero'           => array( 'get-charge', Domain\GetCharge::class ),
+			'intent turns an integer into an ID' => array( 'get-payment-intent', Domain\GetPaymentIntent::class ),
+			'timeline accepts an absent ID'      => array( 'get-timeline', Domain\GetTimeline::class ),
+		);
+	}
+
+	/**
+	 * @testdox An optional ID reaches the callback, while accepting an empty string, string zero or integer sends an invalid lookup.
+	 * @dataProvider detail_reads
+	 *
+	 * @param string $slug       Ability slug.
+	 * @param string $definition Concrete definition.
+	 *
+	 * @since 11.4.0
+	 */
+	public function test_missing_detail_id( string $slug, string $definition ): void {
+		$ability = $this->ability( $slug );
+		$field   = key( self::ID_INPUTS[ $slug ] );
+		$this->assertSame( 'ability_invalid_input', $ability->execute( array() )->get_error_code() );
+		foreach ( array( '', '0', 12 ) as $value ) {
+			$input = array( $field => $value );
+			$error = is_int( $value ) ? $definition::execute( $input ) : $ability->execute( $input );
+			$this->assertWPError( $error );
+			$this->assertSame( 'wcpay_missing_' . $field, $error->get_error_code() );
+			$this->assertSame( "A non-empty `$field` is required.", $error->get_error_message() );
+		}
+		$this->assertSame( array(), $this->calls );
+	}
+
+	/**
+	 * @testdox Sharing the detail field with the timeline sends the wrong input to its route.
+	 *
+	 * @since 11.4.0
+	 */
+	public function test_timeline_field(): void {
+		$ability = $this->ability( 'get-timeline' );
+		$error   = $ability->execute( array( 'payment_intent_id' => 'pi_history' ) );
+		$this->assertWPError( $error );
+		$this->assertSame( 'ability_invalid_input', $error->get_error_code() );
+		$this->assertSame( array(), $this->calls );
+		$this->assertSame( $this->bodies['timeline/pi_history'], $ability->execute( self::ID_INPUTS['get-timeline'] ) );
+	}
+
+	/**
+	 * @testdox Appending the raw ID or encoding it twice changes the request path before matching.
+	 *
+	 * @since 11.4.0
+	 */
+	public function test_id_encoding(): void {
+		$paths = array();
+		add_filter(
+			'rest_pre_dispatch',
+			static function ( $result, $server, $request ) use ( &$paths ) {
+				$paths[] = $request->get_route();
+				return $result;
+			},
+			10,
+			3
+		);
+		$error = $this->ability( 'get-dispute' )->execute( array( 'dispute_id' => 'two words' ) );
+		$this->assertSame( array( self::API . 'disputes/two%20words' ), $paths );
+		$this->assertSame( 'rest_no_route', $error->get_error_code() );
+	}
+
+	/**
+	 * @testdox Treating an unknown dispute as a missing ID loses the route error and its status.
+	 *
+	 * @since 11.4.0
+	 */
+	public function test_unknown_dispute(): void {
+		$data                                 = array(
+			'status' => 404,
+			'detail' => 'lookup',
+		);
+		$this->bodies['disputes/future_case'] = new \WP_Error( 'unknown_case', 'Unknown case', $data );
+		$error                                = $this->ability( 'get-dispute' )->execute( self::ID_INPUTS['get-dispute'] );
+		$this->assertSame( 'unknown_case', $error->get_error_code() );
+		$this->assertSame( 'Unknown case', $error->get_error_message() );
+		$this->assertSame( $data, $error->get_error_data() );
+	}
+
+	/**
+	 * @testdox Discarding PHP object input loses the payment intent ID or makes a filtered dispute summary unfiltered.
+	 *
+	 * @since 11.4.0
+	 */
+	public function test_detail_and_summary_object_inputs(): void {
+		$input = self::ID_INPUTS['get-payment-intent'];
+		$this->assertSame( $this->bodies['payment_intents/pi_detail'], $this->ability( 'get-payment-intent' )->execute( (object) $input ) );
+		$this->assertSame( $input, $this->captures );
+		$filter = array( 'status_is' => 'lost' );
+		$this->assertSame( $this->bodies['disputes/summary'], $this->ability( 'get-disputes-summary' )->execute( (object) $filter ) );
+		$this->assertSame( array( 'GET', self::API . 'disputes/summary', $filter ), $this->calls[1] );
 	}
 }

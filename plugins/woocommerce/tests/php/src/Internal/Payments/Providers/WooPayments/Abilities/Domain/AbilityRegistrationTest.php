@@ -13,14 +13,6 @@ use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Abiliti
 class AbilityRegistrationTest extends AbilityTestCase {
 	private const NOT_YET_PORTED = array(
 		'accept-dispute',
-		'get-charge',
-		'get-deposits',
-		'get-deposits-summary',
-		'get-dispute',
-		'get-disputes',
-		'get-disputes-summary',
-		'get-payment-intent',
-		'get-timeline',
 		'refund-charge',
 		'submit-dispute-evidence',
 		'upload-dispute-evidence-file',
@@ -54,9 +46,7 @@ class AbilityRegistrationTest extends AbilityTestCase {
 	}
 
 	/**
-	 * Leaving the fees summary pending after registration makes the registered and pending sets overlap.
-	 *
-	 * @testdox Registered and pending names together account for the complete extension inventory.
+	 * @testdox Leaving the registered payout list pending counts it twice.
 	 */
 	public function test_inventory_partition(): void {
 		$this->install_root();
@@ -75,9 +65,7 @@ class AbilityRegistrationTest extends AbilityTestCase {
 	}
 
 	/**
-	 * Omitting the Capital loan definition loses a name from the registry.
-	 *
-	 * @testdox The registry exposes exactly the ten implemented WooPayments reads.
+	 * @testdox Registering the dispute write in place of the dispute read changes which names are available.
 	 */
 	public function test_registered_names(): void {
 		$this->install_root();
@@ -89,10 +77,7 @@ class AbilityRegistrationTest extends AbilityTestCase {
 	}
 
 	/**
-	 * Catches a shortened fraud label, an array default for the transactions summary, a declared fees output schema,
-	 * non-idempotent reads, hidden loan summaries, and an extra MCP tool type.
-	 *
-	 * @testdox The registration of $_dataName matches its status and settings in the extension inventory.
+	 * @testdox Shortening the timeline description, adding a charge prefix rule, declaring a dispute output schema or adding an MCP type changes the registration of $_dataName.
 	 * @dataProvider inventory_records
 	 *
 	 * @param \stdClass $record Reference registration from the extension.
@@ -125,15 +110,13 @@ class AbilityRegistrationTest extends AbilityTestCase {
 	}
 
 	/**
-	 * A hard-coded public default is indistinguishable after WordPress prepares metadata.
-	 *
-	 * @testdox The definitions leave the public metadata default to WordPress.
+	 * @testdox Hard-coding the public default hides whether WordPress supplied it.
 	 */
 	public function test_raw_meta_omits_public(): void {
 		$this->install_root();
 		add_filter( self::GATE, '__return_true' );
 		$classes = apply_filters( 'woocommerce_ability_definition_classes', array() );
-		$this->assertCount( 10, $classes );
+		$this->assertCount( 18, $classes );
 		foreach ( $classes as $class ) {
 			$this->assertArrayNotHasKey( 'public', $class::get_registration_args()['meta'], $class );
 		}

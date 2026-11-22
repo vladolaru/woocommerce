@@ -13,7 +13,26 @@ abstract class AbilityTestCase extends \WC_Unit_Test_Case {
 
 	protected const PREFIX = 'woocommerce-payments/';
 	protected const GATE   = 'woocommerce_payments_abilities_enabled';
-	protected const NAMES  = array( 'get-account', 'get-active-loan-summary', 'get-authorizations', 'get-authorizations-summary', 'get-balance', 'get-deposits-overview', 'get-fees-summary', 'get-fraud-outcomes', 'get-transactions', 'get-transactions-summary' );
+	protected const NAMES  = array(
+		'get-account',
+		'get-active-loan-summary',
+		'get-authorizations',
+		'get-authorizations-summary',
+		'get-balance',
+		'get-charge',
+		'get-deposits',
+		'get-deposits-overview',
+		'get-deposits-summary',
+		'get-dispute',
+		'get-disputes',
+		'get-disputes-summary',
+		'get-fees-summary',
+		'get-fraud-outcomes',
+		'get-payment-intent',
+		'get-timeline',
+		'get-transactions',
+		'get-transactions-summary',
+	);
 
 	/** Start a fresh request before discovering abilities. */
 	public function setUp(): void {

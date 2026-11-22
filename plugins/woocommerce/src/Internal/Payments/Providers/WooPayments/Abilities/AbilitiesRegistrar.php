@@ -27,6 +27,14 @@ final class AbilitiesRegistrar implements RegisterHooksInterface {
 		Domain\GetFraudOutcomes::class,
 		Domain\GetBalance::class,
 		Domain\GetFeesSummary::class,
+		Domain\GetDisputes::class,
+		Domain\GetDisputesSummary::class,
+		Domain\GetDispute::class,
+		Domain\GetCharge::class,
+		Domain\GetPaymentIntent::class,
+		Domain\GetTimeline::class,
+		Domain\GetDeposits::class,
+		Domain\GetDepositsSummary::class,
 	);
 
 	/**

@@ -19,6 +19,8 @@ use WP_REST_Response;
  * @since 11.4.0
  */
 abstract class AbstractAbility extends AbstractDomainAbility implements AbilityDefinition {
+	protected const ID_FIELD         = '';
+	protected const LIST_COUNT_FIELD = '';
 	protected const ROUTE            = '';
 	protected const COLLECTION_KEY   = '';
 	protected const DEFAULT_PER_PAGE = 25;
@@ -82,6 +84,28 @@ abstract class AbstractAbility extends AbstractDomainAbility implements AbilityD
 	}
 
 	/**
+	 * Describe the required string used in a detail route.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param string $description Public description of the ID.
+	 */
+	protected static function get_id_input_schema( string $description ): array {
+		return array(
+			'type'                 => 'object',
+			'default'              => new \stdClass(),
+			'properties'           => array(
+				static::ID_FIELD => array(
+					'type'        => 'string',
+					'description' => $description,
+				),
+			),
+			'required'             => array( static::ID_FIELD ),
+			'additionalProperties' => false,
+		);
+	}
+
+	/**
 	 * Paging fields shared by WooPayments collection schemas.
 	 *
 	 * @since 11.4.0
@@ -129,6 +153,18 @@ abstract class AbstractAbility extends AbstractDomainAbility implements AbilityD
 	 */
 	public static function execute( $input = null ) {
 		$params = (array) $input;
+		if ( '' !== static::ID_FIELD ) {
+			$id = $params[ static::ID_FIELD ] ?? null;
+			if ( empty( $id ) || ! is_string( $id ) ) {
+				return new WP_Error(
+					'wcpay_missing_' . static::ID_FIELD,
+					/* translators: %s: Required identifier field. */
+					sprintf( __( 'A non-empty `%s` is required.', 'woocommerce' ), static::ID_FIELD )
+				);
+			}
+			return self::delegate_to_rest_controller( 'GET', static::ROUTE . '/' . rawurlencode( $id ) );
+		}
+
 		if ( '' === static::COLLECTION_KEY ) {
 			return self::delegate_to_rest_controller( 'GET', static::ROUTE, $params );
 		}
@@ -160,7 +196,7 @@ abstract class AbstractAbility extends AbstractDomainAbility implements AbilityD
 	}
 
 	/**
-	 * Count records through the matching summary, including when the requested page is empty.
+	 * Use the total from the list or its matching summary, including when the requested page is empty.
 	 *
 	 * @since 11.4.0
 	 *
@@ -171,12 +207,16 @@ abstract class AbstractAbility extends AbstractDomainAbility implements AbilityD
 	 * @return array|WP_Error Page of records or an error reading the total.
 	 */
 	protected static function wrap_paginated_response( array $collection, int $page, int $per_page, array $selectors = array() ) {
-		$summary = self::delegate_to_rest_controller( 'GET', static::ROUTE . '/summary', $selectors );
-		if ( is_wp_error( $summary ) ) {
-			return $summary;
+		if ( '' !== static::LIST_COUNT_FIELD ) {
+			$count = $collection[ static::LIST_COUNT_FIELD ] ?? null;
+		} else {
+			$summary = self::delegate_to_rest_controller( 'GET', static::ROUTE . '/summary', $selectors );
+			if ( is_wp_error( $summary ) ) {
+				return $summary;
+			}
+			$count = $summary['count'] ?? null;
 		}
 
-		$count = $summary['count'] ?? null;
 		if ( is_string( $count ) && ctype_digit( $count ) ) {
 			$digits = ltrim( $count, '0' );
 			$count  = '' === $digits ? 0 : filter_var( $digits, FILTER_VALIDATE_INT );

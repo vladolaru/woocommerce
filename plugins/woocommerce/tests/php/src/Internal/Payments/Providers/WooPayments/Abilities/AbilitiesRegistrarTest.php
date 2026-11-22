@@ -18,9 +18,7 @@ class AbilitiesRegistrarTest extends AbilityTestCase {
 	private const CLASS_FILTER = 'woocommerce_ability_definition_classes';
 
 	/**
-	 * Reading the opt-in during register misses a late opt-in. A misspelled hook or changed default breaks existing opt-ins.
-	 *
-	 * @testdox An opt-in added after WooPayments boots takes effect when the registry builds.
+	 * @testdox Reading the opt-in at boot misses a later opt-in, and limiting registration to web requests hides all reads from CLI.
 	 */
 	public function test_late_opt_in(): void {
 		$calls = 0;
@@ -40,9 +38,7 @@ class AbilitiesRegistrarTest extends AbilityTestCase {
 	}
 
 	/**
-	 * A true default exposes all ten reads without opt-in.
-	 *
-	 * @testdox WooPayments leaves existing definitions alone until a store opts in.
+	 * @testdox Enabling the filter by default exposes payment reads before the store opts in.
 	 */
 	public function test_default_gate(): void {
 		$this->install_root();
@@ -52,9 +48,7 @@ class AbilitiesRegistrarTest extends AbilityTestCase {
 	}
 
 	/**
-	 * A truthiness check loses the zero opt-in, and replacing the list loses earlier providers.
-	 *
-	 * @testdox Each opt-in value except literal false appends the ten reads after existing definitions.
+	 * @testdox Treating zero as false hides the reads, and replacing the class list removes an earlier definition.
 	 * @testWith [true]
 	 *           [1]
 	 *           ["yes"]
@@ -77,15 +71,21 @@ class AbilitiesRegistrarTest extends AbilityTestCase {
 			Domain\GetFraudOutcomes::class,
 			Domain\GetBalance::class,
 			Domain\GetFeesSummary::class,
+			Domain\GetDisputes::class,
+			Domain\GetDisputesSummary::class,
+			Domain\GetDispute::class,
+			Domain\GetCharge::class,
+			Domain\GetPaymentIntent::class,
+			Domain\GetTimeline::class,
+			Domain\GetDeposits::class,
+			Domain\GetDepositsSummary::class,
 		);
 		add_filter( self::GATE, static fn() => $value );
 		$this->assertSame( $expected, apply_filters( self::CLASS_FILTER, $prior ) );
 	}
 
 	/**
-	 * Merging a non-array sentinel loses the earlier filter's result.
-	 *
-	 * @testdox The registrar preserves a non-array value from an earlier filter.
+	 * @testdox Merging a non-array value loses the earlier filter’s result.
 	 */
 	public function test_non_array_filter(): void {
 		$this->install_root();
@@ -96,36 +96,28 @@ class AbilitiesRegistrarTest extends AbilityTestCase {
 	}
 
 	/**
-	 * The all-tier cutover loop leaks reads onto an available store.
-	 *
-	 * @testdox An available store exposes no built-in WooPayments abilities.
+	 * @testdox Loading the registrar on an available store publishes reads without their routes.
 	 */
 	public function test_available_store(): void {
 		$this->assert_registry_absent( WooPaymentsSetupTier::AVAILABLE );
 	}
 
 	/**
-	 * Registering the root unconditionally exposes reads on a disabled store.
-	 *
-	 * @testdox A disabled store exposes no built-in WooPayments abilities.
+	 * @testdox Loading the registrar on a disabled store publishes reads without their routes.
 	 */
 	public function test_disabled_store(): void {
 		$this->assert_registry_absent( WooPaymentsSetupTier::DISABLED );
 	}
 
 	/**
-	 * Selecting the stored active tier ignores extension ownership.
-	 *
-	 * @testdox An extension-owned store with a stored active tier exposes no built-in WooPayments abilities.
+	 * @testdox Using the stored active tier publishes built-in reads on an extension-owned store.
 	 */
 	public function test_extension_owner(): void {
 		$this->assert_registry_absent( WooPaymentsSetupTier::ACTIVE, true );
 	}
 
 	/**
-	 * Reading the main site's tier can expose abilities on an unconnected subsite or hide them on a connected one.
-	 *
-	 * @testdox Discovery follows the subsite's own connection state on a network.
+	 * @testdox Reading the main site’s connection state hides reads on connected subsites or exposes them on unconnected ones.
 	 * @group multisite
 	 * @testWith [true]
 	 *           [false]
@@ -151,9 +143,7 @@ class AbilitiesRegistrarTest extends AbilityTestCase {
 	}
 
 	/**
-	 * Using the bootstrap site's eligibility for every site lists abilities on unconnected or extension-owned subsites.
-	 *
-	 * @testdox A filter installed on a connected site uses the discovery site's effective tier and opt-in.
+	 * @testdox Keeping the bootstrap site’s tier or opt-in gives the wrong abilities after switching sites.
 	 * @group multisite
 	 * @dataProvider switched_discovery_sites
 	 *
