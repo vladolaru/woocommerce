@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Admin\WCAdminHelper;
 use Automattic\WooCommerce\Internal\Admin\Notes\WooCommercePayments;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use WC_Unit_Test_Case;
 
 /**
@@ -72,6 +73,41 @@ class WooCommercePaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Does not add the note while the feature is on and no runtime owns payments.
+	 *
+	 * Catches the note reading the runtime owner instead of the feature setting: here the extension has run before and
+	 * is inactive, so nothing owns payments, yet the setting is on and the built-in WooPayments is offered.
+	 */
+	public function test_skips_note_while_feature_is_on_and_no_runtime_owns_payments(): void {
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		update_option( WooPaymentsRuntimeArbiter::EXTENSION_VERSION_OPTION, '11.3.0' );
+		$arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
+		$arbiter->invalidate();
+
+		try {
+			$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $arbiter->get_runtime_owner() );
+
+			WooCommercePayments::possibly_add_note();
+
+			$this->assertFalse( Notes::get_note_by_name( WooCommercePayments::NOTE_NAME ) );
+		} finally {
+			delete_option( WooPaymentsRuntimeArbiter::EXTENSION_VERSION_OPTION );
+			$arbiter->invalidate();
+		}
+	}
+
+	/**
+	 * @testdox The note's install action and its scheduled add are hooked when WooCommerce loads.
+	 *
+	 * Catches the note's provider dropped from the admin load, which would leave its Get started link and the scheduled
+	 * add with nothing to run them.
+	 */
+	public function test_note_hooks_are_registered_at_load(): void {
+		$this->assertTrue( $this->has_note_callback( 'init', 'install_on_action' ) );
+		$this->assertTrue( $this->has_note_callback( 'wc-admin-woocommerce-payments_add_note', 'add_note' ) );
+	}
+
+	/**
 	 * @testdox Sends the note's install action to the Payments settings page, with no install, while the WooPayments feature is on.
 	 */
 	public function test_sends_install_action_to_payments_settings_while_feature_is_on(): void {
@@ -124,6 +160,29 @@ class WooCommercePaymentsTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( WooCommercePayments::PLUGIN_SLUG ), $lookups );
 		$this->assertCount( 1, $this->redirects );
 		$this->assertStringContainsString( 'wcpay-connect=1', $this->redirects[0] );
+	}
+
+	/**
+	 * Tell whether a note provider's method is hooked to an action.
+	 *
+	 * @param string $hook_name Action name.
+	 * @param string $method    Method of the note provider.
+	 * @return bool
+	 */
+	private function has_note_callback( string $hook_name, string $method ): bool {
+		global $wp_filter;
+		if ( ! isset( $wp_filter[ $hook_name ] ) ) {
+			return false;
+		}
+		foreach ( $wp_filter[ $hook_name ]->callbacks as $callbacks ) {
+			foreach ( $callbacks as $callback ) {
+				$function = $callback['function'];
+				if ( is_array( $function ) && $function[0] instanceof WooCommercePayments && $method === $function[1] ) {
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	/**

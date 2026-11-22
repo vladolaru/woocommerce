@@ -8,6 +8,7 @@
 use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Internal\Admin\Notes\WooCommercePayments;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 
 /**
  * Class WC_Admin_Tests_Marketing_Notes
@@ -53,9 +54,13 @@ class WC_Admin_Tests_Marketing_Notes extends WC_Unit_Test_Case {
 
 	/**
 	 * Tests to see if marketing notes are prevented when marketing is opted out.
+	 *
+	 * The WooPayments feature is set off: with it on, the note returns before the opt-out check, so this test would pass
+	 * without testing the opt-out, as it would once the feature is on by default.
 	 */
 	public function test_prevent_add_marketing_note() {
 		// Update settings so that note should be added.
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 		update_option( 'woocommerce_default_country', 'US:GA' );
 		update_option( 'woocommerce_admin_install_timestamp', time() - WEEK_IN_SECONDS );
 		// Set user preferences to disallow marketing suggestions.
