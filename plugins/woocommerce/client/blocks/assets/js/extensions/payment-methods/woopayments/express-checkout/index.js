@@ -396,6 +396,7 @@ const getCartTotal = ( billing ) => {
 
 	if ( Number.isFinite( cartTotal ) && cartTotal > 0 ) {
 		return transformPrice( cartTotal, {
+			currency_code: billing?.currency?.code,
 			currency_minor_unit: billing?.currency?.minorUnit,
 		} );
 	}

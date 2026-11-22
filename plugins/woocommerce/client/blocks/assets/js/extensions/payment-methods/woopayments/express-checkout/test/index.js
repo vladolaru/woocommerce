@@ -102,6 +102,7 @@ const baseExpressCheckoutParams = {
 		currency_code: 'usd',
 		currency_decimals: 2,
 		stripe_minor_unit: 2,
+		zero_decimal_currencies: [ 'jpy' ],
 		country_code: 'US',
 		needs_payer_phone: true,
 		allowed_shipping_countries: [ 'US' ],
@@ -788,6 +789,34 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 				paymentMethodTypes: [ 'card' ],
 			} )
 		);
+	} );
+
+	it( 'mounts Amazon Pay with the USD cart amount after a JPY page load', async () => {
+		basePaymentMethodData.isAmazonPayEnabled = true;
+		baseExpressCheckoutParams.checkout.currency_code = 'jpy';
+		baseExpressCheckoutParams.checkout.currency_decimals = 0;
+		baseExpressCheckoutParams.checkout.stripe_minor_unit = 0;
+		billing.cartTotal.value = 10000;
+		registerExpressCheckout();
+
+		const registration = getRegistration(
+			'woocommerce_payments_express_checkout_amazonPay'
+		);
+		renderExpressPaymentMethod( registration, {
+			...getPaymentMethodInterfaceProps(
+				cartWithExpressMethods( [ 'amazon_pay' ] )
+			),
+		} );
+
+		await waitFor( () => {
+			expect( stripe.elements ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					currency: 'usd',
+					amount: 10000,
+					paymentMethodTypes: [ 'amazon_pay' ],
+				} )
+			);
+		} );
 	} );
 
 	it( 'mounts Stripe ECE with special-case currency amount conversion', async () => {
