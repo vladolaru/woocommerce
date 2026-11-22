@@ -253,14 +253,16 @@ class AbstractAbilityTest extends AbilityTestCase {
 	 * @testdox Calling a read handler directly skips its own permission check.
 	 * @testWith ["get-fees-summary"]
 	 *           ["get-disputes"]
+	 *           ["get-charge"]
 	 *
 	 * @param string $slug Ability slug.
 	 */
 	public function test_route_permission( string $slug ): void {
 		$this->route_allowed = false;
 		$ability             = $this->ability( $slug );
-		$this->assertTrue( $ability->check_permissions() );
-		$error = $ability->execute();
+		$input               = self::INPUTS[ $slug ] ?? array();
+		$this->assertTrue( $ability->check_permissions( $input ) );
+		$error = $ability->execute( $input );
 		$this->assertWPError( $error );
 		$this->assertSame( 'rest_forbidden', $error->get_error_code() );
 		$this->assertSame( 403, $error->get_error_data()['status'] );
