@@ -344,6 +344,21 @@ class WooPaymentsPaymentDetailsOrderlessRefundTest extends WC_REST_Unit_Test_Cas
 	}
 
 	/**
+	 * @testdox A refund request that dies after sending would release the order lock at shutdown if the request were unmarked.
+	 */
+	public function test_shutdown_keeps_the_order_lock_while_the_refund_is_in_flight(): void {
+		$order                       = $this->create_charge_order();
+		$this->http_client->response = function () use ( $order ) {
+			wc_get_container()->get( OrderPaymentLock::class )->release_held_claims();
+			$this->assertTrue( $this->is_locked( $order ), 'Shutdown must keep the order locked while its refund awaits an answer.' );
+			return $this->get_recorded_refund_response();
+		};
+
+		$this->assertSame( 200, $this->dispatch_charge_refund()->get_status() );
+		$this->assertFalse( $this->is_locked( $order ) );
+	}
+
+	/**
 	 * @testdox A thrown error cannot strand the refund lock.
 	 */
 	public function test_refund_releases_claim_on_thrown_error(): void {

@@ -882,6 +882,7 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 				$lock->log_refusal( $order, $vocabulary, 'refund' );
 				return new WP_Error( 'order_payment_refund_locked', __( 'A payment operation is already in progress for this order.', 'woocommerce' ), array( 'status' => 409 ) );
 			}
+			$lock->mark_money_request_unsaved( $token, true );
 		}
 
 		try {
@@ -894,6 +895,7 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 			);
 		} finally {
 			if ( null !== $token && null !== $order ) {
+				$lock->mark_money_request_unsaved( $token, false );
 				$lock->release( $order, $vocabulary, $token );
 			}
 		}
