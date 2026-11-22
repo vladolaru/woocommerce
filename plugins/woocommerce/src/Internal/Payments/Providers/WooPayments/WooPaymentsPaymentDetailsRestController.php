@@ -7,6 +7,10 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\RestApiControllerBase;
@@ -178,6 +182,8 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 	/**
 	 * Create and confirm a payment intent from an order.
 	 *
+	 * Check payment eligibility on the freshly read order under the checkout lock. The transport mints a key per request.
+	 *
 	 * @param WP_REST_Request $request Request.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
 	 * @return WP_REST_Response|WP_Error
@@ -192,7 +198,22 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 			);
 		}
 
+		$order_payment_lock = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary         = new WooPaymentsPersistenceVocabulary();
+		$lock_token         = $order_payment_lock->claim( $order, $vocabulary, null, 'payment intent creation' );
+		if ( null === $lock_token ) {
+			$order_payment_lock->log_refusal( $order, $vocabulary, 'payment intent creation' );
+
+			return new WP_Error( 'wcpay_order_payment_locked', __( 'A payment operation is already in progress for this order.', 'woocommerce' ), array( 'status' => 409 ) );
+		}
+
 		try {
+			$order   = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
+			$refusal = $this->get_order_payment_refusal( $order );
+			if ( null !== $refusal ) {
+				return $refusal;
+			}
+
 			$intent = $this->api_client->create_and_confirm_payment_intention(
 				$this->order_service->build_create_payment_intent_request_from_order(
 					$order,
@@ -211,7 +232,63 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Failed to create an intention via the REST API.', $exception, array( 'order_id' => $order->get_id() ) );
 
 			return new WP_Error( 'wcpay_server_error', $exception->getMessage(), array( 'status' => 500 ) );
+		} finally {
+			$order_payment_lock->release( $order, $vocabulary, $lock_token );
 		}
+	}
+
+	/**
+	 * Apply checkout's rules under the order lock. Only checkout can replay its earlier request under a kept key.
+	 *
+	 * @since 11.4.0
+	 * @param WC_Order $order Order as read again under the order payment lock.
+	 * @return WP_Error|null The 409 to answer, or null when the charge goes on.
+	 */
+	private function get_order_payment_refusal( WC_Order $order ): ?WP_Error {
+		if ( ! $order->needs_payment() ) {
+			if ( $order->has_status( OrderStatus::REFUNDED ) ) {
+				return new WP_Error( 'wcpay_order_refunded', __( "This order's payment was refunded, so it can't be paid again. Please place a new order.", 'woocommerce' ), array( 'status' => 409 ) );
+			}
+			if ( $order->is_paid() ) {
+				return new WP_Error( 'wcpay_order_already_paid', __( 'This order is already paid.', 'woocommerce' ), array( 'status' => 409 ) );
+			}
+			return new WP_Error( 'wcpay_order_not_payable', __( 'This order does not need payment.', 'woocommerce' ), array( 'status' => 409 ) );
+		}
+		if ( SubscriptionMethodPolicy::only_saves_the_card( $order ) ) {
+			return new WP_Error( 'wcpay_order_is_subscription', __( "A subscription can't be charged directly. Charge one of its orders instead.", 'woocommerce' ), array( 'status' => 409 ) );
+		}
+		if ( '' !== WooPaymentsPaymentOperationService::get_own_charge_idempotency_key( $order ) ) {
+			return new WP_Error( 'wcpay_order_payment_unresolved', __( "This order's last payment attempt is not resolved yet. Try again later.", 'woocommerce' ), array( 'status' => 409 ) );
+		}
+
+		$intent_id    = (string) $order->get_meta( '_intent_id', true );
+		$failed_read  = null;
+		$intent       = WooPaymentsDuplicatePaymentPreventionService::get_attached_payment_that_holds_money( $order, $intent_id, $this->api_client, $failed_read );
+		$refusal_tier = null === $failed_read ? null : wc_get_container()->get( WooPaymentsPaymentOperationService::class )->get_unread_payment_refusal_tier_for_order(
+			$order,
+			$failed_read['intent_id'],
+			$failed_read['unknown']
+		);
+		if ( is_wp_error( $intent ) || null !== $refusal_tier ) {
+			return new WP_Error( 'wcpay_order_payment_unreadable', __( "This order's attached payment could not be checked. Try again later.", 'woocommerce' ), array( 'status' => 409 ) );
+		}
+		if ( null !== $intent ) {
+			return new WP_Error(
+				'wcpay_order_payment_holds_money',
+				__( 'This order already has a payment that holds money.', 'woocommerce' ),
+				array(
+					'status'    => 409,
+					'intent_id' => $intent_id,
+				)
+			);
+		}
+		if ( WooPaymentsDuplicatePaymentPreventionService::should_prevent_payment_for_paid_status( $order, $order->get_status( 'edit' ) ) ) {
+			return new WP_Error( 'wcpay_order_already_paid', __( 'This order is already paid.', 'woocommerce' ), array( 'status' => 409 ) );
+		}
+		if ( wc_get_container()->get( OrderPaymentLifecycleService::class )->has_paid_status( $order ) ) {
+			return new WP_Error( 'wcpay_order_paid_status_payable', __( 'This order is already paid.', 'woocommerce' ), array( 'status' => 409 ) );
+		}
+		return null;
 	}
 
 	/**

@@ -3,16 +3,20 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
+use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockWithClaimHook;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\FraudOutcomeTransactionsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLevel3Service;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentDetailsRestController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransactionsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTransactionsRestController;
@@ -352,7 +356,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	 * @testdox Payment detail create-intent route requires manage_woocommerce.
 	 */
 	public function test_payment_detail_create_intent_route_requires_manage_woocommerce(): void {
-		$order = $this->create_order_for_generated_charge();
+		$order = $this->create_order_for_payment_intent();
 		$this->create_payment_details_controller()->register_routes();
 		wp_set_current_user( 0 );
 
@@ -375,7 +379,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	 */
 	public function test_payment_detail_create_intent_route_creates_order_intent(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'manual_capture' => 'yes' ) );
-		$order = $this->create_order_for_generated_charge();
+		$order = $this->create_order_for_payment_intent();
 
 		$this->api_client->response = array(
 			'id'      => 'pi_created',
@@ -427,7 +431,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	 * @param bool   $sent    Whether the request carries Level 3 data.
 	 */
 	public function test_payment_detail_create_intent_route_sends_level3_data_for_us_accounts( string $country, bool $sent ): void {
-		$order = $this->create_order_for_generated_charge();
+		$order = $this->create_order_for_payment_intent();
 		$order->add_product( \WC_Helper_Product::create_simple_product(), 2 );
 		// Level 3 data is sent only when its lines add up to the order total: two units at 10.00.
 		$order->set_total( '20.00' );
@@ -482,7 +486,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	 * would replay the first answer, or refuse another payment method, under a fixed key.
 	 */
 	public function test_payment_detail_create_intent_route_sends_a_fresh_idempotency_key_per_request(): void {
-		$order       = $this->create_order_for_generated_charge();
+		$order       = $this->create_order_for_payment_intent();
 		$http_client = new FakeHttpClient();
 
 		// The same create answer, Stripe's PaymentIntent through the platform proxy (wpcom `wcpay/class-intentions-controller.php:389-487`),
@@ -539,7 +543,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	 * @testdox Payment detail create intent route answers a platform failure with the logged 500 wcpay_server_error.
 	 */
 	public function test_payment_detail_create_intent_route_answers_a_platform_failure_with_the_generic_error(): void {
-		$order                       = $this->create_order_for_generated_charge();
+		$order                       = $this->create_order_for_payment_intent();
 		$this->api_client->exception = new ApiException( 'Your card was declined.', 'card_declined', 402 );
 		$logger                      = RecordingWcLogger::install();
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
@@ -566,7 +570,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	 * recorded REC-3 intent, the client's own output is in `Fixtures/payment-intent-rest-response.json`.
 	 */
 	public function test_payment_detail_create_intent_route_answers_with_the_client_projection(): void {
-		$order    = $this->create_order_for_generated_charge();
+		$order    = $this->create_order_for_payment_intent();
 		$fixtures = __DIR__ . '/Fixtures/';
 		// phpcs:disable WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads local immutable test fixtures.
 		$this->api_client->response = json_decode( (string) file_get_contents( $fixtures . 'platform-eur-charge.json' ), true )['entries'][0]['response']['body'];
@@ -609,6 +613,626 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$this->assertSame( 'wcpay_server_error', $data['code'] );
 		$this->assertSame( 'Order not found', $data['message'] );
 		$this->assertSame( array(), $this->api_client->last_call );
+	}
+
+	/**
+	 * A payment status update holds the order, as a webhook or a shopper's confirmation does while it applies an event.
+	 *
+	 * @testdox Payment detail create-intent route answers 409 and sends nothing while another payment operation holds the order.
+	 */
+	public function test_payment_detail_create_intent_route_is_refused_while_the_order_payment_lock_is_held(): void {
+		$order        = $this->create_order_for_payment_intent();
+		$lock         = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary   = new WooPaymentsPersistenceVocabulary();
+		$holder_token = $lock->claim( $order, $vocabulary, 'pi_order', 'payment status update' );
+		$this->assertNotNull( $holder_token );
+		$logger = RecordingWcLogger::install();
+		$this->create_payment_details_controller()->register_routes();
+
+		$response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
+
+		$this->assertSame( 409, $response->get_status() );
+		$this->assertSame( 'wcpay_order_payment_locked', $response->get_data()['code'] );
+		$this->assertSame( 'A payment operation is already in progress for this order.', $response->get_data()['message'] );
+		$this->assertSame( array(), $this->api_client->calls, 'Nothing is sent to the platform.' );
+		$this->assertCount( 1, $logger->lines );
+		$this->assertMatchesRegularExpression( '/^order payment lock refused: order ' . $order->get_id() . ', refused payment intent creation, held by payment status update for \d+s$/', $logger->lines[0][1] );
+		$this->assertTrue( $lock->is_held( $order, $vocabulary ), 'The refused call leaves the holder its lock.' );
+
+		$lock->release( $order, $vocabulary, $holder_token );
+	}
+
+	/**
+	 * The second call arrives while the first one's platform request is still running.
+	 *
+	 * @testdox Payment detail create-intent route refuses a second call for the order while the first is in flight.
+	 */
+	public function test_payment_detail_create_intent_route_refuses_a_second_call_while_the_first_is_in_flight(): void {
+		$order = $this->create_order_for_payment_intent();
+
+		$this->api_client = new class() extends RecordingMoneyMovementApiClient {
+			/**
+			 * Run once inside the next create request, before it answers.
+			 *
+			 * @var callable|null
+			 */
+			public $during_create = null;
+
+			/**
+			 * Record the create request, run the callback, then answer.
+			 *
+			 * @param array<string,mixed> $request_data    Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
+				$answer   = parent::create_and_confirm_payment_intention( $request_data, $idempotency_key );
+				$callback = $this->during_create;
+				if ( null !== $callback ) {
+					$this->during_create = null;
+					$callback();
+				}
+
+				return $answer;
+			}
+		};
+
+		$this->api_client->response = array(
+			'id'      => 'pi_created',
+			'amount'  => 1234,
+			'charges' => array( 'data' => array() ),
+		);
+		$this->create_payment_details_controller()->register_routes();
+		$second_response                 = null;
+		$this->api_client->during_create = function () use ( $order, &$second_response ): void {
+			$second_response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
+		};
+
+		$first_response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
+
+		$this->assertSame( 200, $first_response->get_status() );
+		$this->assertNotNull( $second_response );
+		$this->assertSame( 409, $second_response->get_status() );
+		$this->assertSame( 'wcpay_order_payment_locked', $second_response->get_data()['code'] );
+		$this->assertCount( 1, $this->api_client->calls, 'Only the first call reaches the platform.' );
+		$this->assertFalse( wc_get_container()->get( OrderPaymentLock::class )->is_held( $order, new WooPaymentsPersistenceVocabulary() ), 'The first call releases the order.' );
+	}
+
+	/**
+	 * With no other payment operation on the order, the call sends the same request and gives the same answer as before
+	 * the route held the lock, and leaves the order free whether the platform answers or fails.
+	 *
+	 * @testdox Payment detail create-intent route on a free order: $label.
+	 *
+	 * @testWith ["platform answers", false]
+	 *           ["platform fails", true]
+	 *
+	 * @param string $label          Case label.
+	 * @param bool   $platform_fails Whether the platform request fails.
+	 */
+	public function test_payment_detail_create_intent_route_on_a_free_order_is_unchanged( string $label, bool $platform_fails ): void {
+		$order    = $this->create_order_for_payment_intent();
+		$fixtures = __DIR__ . '/Fixtures/';
+		// phpcs:disable WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads local immutable test fixtures.
+		$this->api_client->response = json_decode( (string) file_get_contents( $fixtures . 'platform-eur-charge.json' ), true )['entries'][0]['response']['body'];
+		$projection                 = json_decode( (string) file_get_contents( $fixtures . 'payment-intent-rest-response.json' ), true )['client_projection'];
+		// phpcs:enable WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+		if ( $platform_fails ) {
+			$this->api_client->exception = new ApiException( 'Your card was declined.', 'card_declined', 402 );
+		}
+		$logger = RecordingWcLogger::install();
+		$this->create_payment_details_controller()->register_routes();
+
+		$response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
+
+		$this->assertCount( 1, $this->api_client->calls );
+		$this->assertSame( 'create_and_confirm_payment_intention', $this->api_client->calls[0]['method'] );
+		$this->assertSame( '', $this->api_client->calls[0]['idempotency_key'] );
+		$this->assertEquals( $this->create_order_service()->build_create_payment_intent_request_from_order( $order, 'cus_test', 'pm_test', false ), $this->api_client->calls[0]['request_data'] );
+		if ( $platform_fails ) {
+			$this->assertSame( 500, $response->get_status() );
+			$this->assertSame( array( 'code', 'message', 'data' ), array_keys( $response->get_data() ) );
+			$this->assertSame( 'wcpay_server_error', $response->get_data()['code'] );
+			$this->assertSame( 'Your card was declined.', $response->get_data()['message'] );
+		} else {
+			$this->assertSame( 200, $response->get_status() );
+			$this->assertSame( $projection, $response->get_data() );
+			$this->assertSame( array(), $logger->lines, 'Nothing is logged.' );
+		}
+		$this->assertFalse( wc_get_container()->get( OrderPaymentLock::class )->is_held( $order, new WooPaymentsPersistenceVocabulary() ), 'The order is free again.' );
+	}
+
+	/**
+	 * Catches a route that reads the attached intent before deciding whether checkout accepts payment.
+	 *
+	 * @testWith ["processing"]
+	 *           ["completed"]
+	 *
+	 * @param string $status Paid order status.
+	 */
+	public function test_payment_detail_create_intent_route_refuses_paid_status_before_reading_the_intent( string $status ): void {
+		$order = $this->create_order_for_payment_intent();
+		$order->set_status( $status );
+		$order->update_meta_data( '_intent_id', 'pi_attached' );
+		$order->save();
+		$this->api_client->responses['get_payment_intention'] = $this->create_intent_answer( $order, 'succeeded' );
+		$this->create_payment_details_controller()->register_routes();
+
+		$response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
+
+		$this->assert_refused_with_the_order_free( $response, 'wcpay_order_already_paid', $order );
+		$this->assertSame( array(), $this->api_client->calls, 'Nothing is read or sent.' );
+	}
+
+	/**
+	 * A route that treats a paid date as proof of payment skips the attached intent read.
+	 */
+	public function test_payment_detail_create_intent_route_reads_succeeded_intent_on_a_pending_order_with_a_paid_date(): void {
+		$order = $this->create_order_for_payment_intent();
+		$order->set_date_paid( time() );
+		$order->update_meta_data( '_intent_id', 'pi_attached' );
+		$order->save();
+		$this->api_client->responses['get_payment_intention'] = $this->create_intent_answer( $order, 'succeeded' );
+		$this->create_payment_details_controller()->register_routes();
+
+		$response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
+
+		$this->assert_refused_with_the_order_free( $response, 'wcpay_order_payment_holds_money', $order );
+		$this->assertSame( array( 'get_payment_intention' ), array_column( $this->api_client->calls, 'method' ) );
+	}
+
+	/**
+	 * A route that treats a paid date as proof of payment refuses the first card charge.
+	 */
+	public function test_payment_detail_create_intent_route_charges_a_payable_order_with_a_stale_paid_date(): void {
+		$order = $this->create_order_for_payment_intent();
+		$order->set_date_paid( time() );
+		$order->save();
+		$this->create_payment_details_controller()->register_routes();
+
+		$response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( array( 'create_and_confirm_payment_intention' ), array_column( $this->api_client->calls, 'method' ) );
+	}
+
+	/**
+	 * A route using checkout's message asks the caller to retry. Checking subscription type first hides an order that does not need payment.
+	 *
+	 * @testWith [true]
+	 *           [false]
+	 *
+	 * @param bool $payable Whether the subscription needs payment.
+	 *
+	 * @testdox Create-and-confirm refuses a subscription passed as the order without sending a payment.
+	 */
+	public function test_payment_detail_create_intent_route_refuses_a_subscription_passed_as_the_order( bool $payable ): void {
+		$order = $this->create_order_for_payment_intent();
+		if ( ! $payable ) {
+			$order->set_status( 'on-hold' );
+			$order->save();
+		}
+		$this->create_payment_details_controller()->register_routes();
+		WooCommerceSubscriptionsDoubles::load_subscription_detector();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] = array( $order->get_id() );
+		try {
+			$response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
+		} finally {
+			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] );
+		}
+
+		$this->assert_refused_with_the_order_free( $response, $payable ? 'wcpay_order_is_subscription' : 'wcpay_order_not_payable', $order );
+		$this->assertSame( $payable ? "A subscription can't be charged directly. Charge one of its orders instead." : 'This order does not need payment.', $response->get_data()['message'] );
+		$this->assertSame( array(), $this->api_client->calls );
+	}
+
+	/**
+	 * A route that skips needs_payment() charges an on-hold order while its voucher is payable.
+	 */
+	public function test_payment_detail_create_intent_route_refuses_an_on_hold_voucher_before_reading_it(): void {
+		$order = $this->create_order_for_payment_intent();
+		$order->set_status( 'on-hold' );
+		$order->update_meta_data( '_intent_id', 'pi_attached' );
+		$order->save();
+		$intent                           = $this->create_intent_answer( $order, 'requires_action' );
+		$intent['payment_method_options'] = array( 'multibanco' => array() );
+		$this->api_client->responses['get_payment_intention'] = $intent;
+		$this->create_payment_details_controller()->register_routes();
+
+		$response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
+
+		$this->assert_refused_with_the_order_free( $response, 'wcpay_order_not_payable', $order );
+		$this->assertSame( array(), $this->api_client->calls );
+	}
+
+	/**
+	 * Skipping checkout's prevention gives the wrong refusal. Skipping the final paid-status check can replace an earlier payment.
+	 *
+	 * @testWith [true, false]
+	 *           [false, false]
+	 *           [false, true]
+	 *
+	 * @param bool $prevent  Whether checkout should prevent payment for the paid status.
+	 * @param bool $attached Whether an earlier payment intent is attached.
+	 */
+	public function test_payment_detail_create_intent_route_respects_checkout_for_a_paid_order_made_payable( bool $prevent, bool $attached ): void {
+		$order = $this->create_order_for_payment_intent();
+		$order->set_status( 'processing' );
+		if ( $attached ) {
+			$order->update_meta_data( '_intent_id', 'pi_earlier' );
+			$order->update_meta_data( '_charge_id', 'ch_earlier' );
+			$this->api_client->responses['get_payment_intention'] = array(
+				'id'     => 'pi_earlier',
+				'status' => 'requires_payment_method',
+			);
+		}
+		$order->save();
+		$this->create_payment_details_controller()->register_routes();
+		$paid_filter = $prevent ? '__return_true' : '__return_false';
+		add_filter( 'woocommerce_order_needs_payment', '__return_true' );
+		add_filter( 'wcpay_should_prevent_payment_for_paid_order', $paid_filter );
+		try {
+			$response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
+		} finally {
+			remove_filter( 'wcpay_should_prevent_payment_for_paid_order', $paid_filter );
+			remove_filter( 'woocommerce_order_needs_payment', '__return_true' );
+		}
+
+		$this->assert_refused_with_the_order_free( $response, $prevent ? 'wcpay_order_already_paid' : 'wcpay_order_paid_status_payable', $order );
+		if ( $attached ) {
+			$fresh = wc_get_order( $order->get_id() );
+			$this->assertInstanceOf( WC_Order::class, $fresh );
+			$this->assertSame( 'pi_earlier', $fresh->get_meta( '_intent_id' ) );
+			$this->assertSame( 'ch_earlier', $fresh->get_meta( '_charge_id' ) );
+		}
+		$this->assertSame( $attached ? array( 'get_payment_intention' ) : array(), array_column( $this->api_client->calls, 'method' ) );
+	}
+
+	/**
+	 * A route that trusts every stored key refuses an order carrying a copy of another order's attempt.
+	 */
+	public function test_payment_detail_create_intent_route_ignores_a_copied_charge_key(): void {
+		$source = $this->create_order_for_payment_intent();
+		$order  = $this->create_order_for_payment_intent();
+		$order->update_meta_data( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, 'wc-charge-source' );
+		$order->update_meta_data( WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META, array( 'order_id' => $source->get_id() ) );
+		$order->save();
+		$this->create_payment_details_controller()->register_routes();
+
+		$response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( array( 'create_and_confirm_payment_intention' ), array_column( $this->api_client->calls, 'method' ) );
+		$this->assertSame( '', $this->api_client->calls[0]['idempotency_key'] );
+	}
+
+	/**
+	 * An attached intent that holds money and names the order, on a live read, is refused. Catches a version that narrows
+	 * which statuses hold money, or decides on the stored status, which is a failed attempt here.
+	 *
+	 * @testdox Payment detail create-intent route refuses an order whose attached intent is $live_status on a live read.
+	 *
+	 * @testWith ["succeeded"]
+	 *           ["succeeded", "refunded"]
+	 *           ["succeeded", "disputed"]
+	 *           ["succeeded", "amount differs"]
+	 *           ["requires_capture"]
+	 *           ["processing"]
+	 *
+	 * @param string $live_status Intent status the read answers.
+	 * @param string $condition   Condition on the attached payment.
+	 */
+	public function test_payment_detail_create_intent_route_refuses_an_attached_payment_that_holds_money( string $live_status, string $condition = '' ): void {
+		$order = $this->create_order_for_payment_intent();
+		$order->update_meta_data( '_intent_id', 'pi_attached' );
+		$order->update_meta_data( '_intention_status', 'requires_payment_method' );
+		$order->save();
+		$intent = $this->create_intent_answer( $order, $live_status );
+		if ( 'amount differs' === $condition ) {
+			$intent['amount'] = 100;
+		} elseif ( '' !== $condition ) {
+			$intent['charges']['data'][] = array( $condition => true );
+		}
+		$this->api_client->responses['get_payment_intention'] = $intent;
+		$this->create_payment_details_controller()->register_routes();
+
+		$response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
+
+		$this->assert_refused_with_the_order_free( $response, 'wcpay_order_payment_holds_money', $order );
+		$this->assertSame( 'pi_attached', $response->get_data()['data']['intent_id'] );
+		$this->assertSame( array( 'get_payment_intention' ), array_column( $this->api_client->calls, 'method' ), 'One read and no charge.' );
+	}
+
+	/**
+	 * Control: an attached intent that holds no money, or that names another order, lets the charge go through. The order
+	 * stores `requires_capture`, so a version that decides on the stored status refuses; a version that drops the order
+	 * check refuses the intent of another order.
+	 *
+	 * @testdox Payment detail create-intent route charges an order whose attached intent is $label.
+	 *
+	 * @testWith ["requires_payment_method", "requires_payment_method", false]
+	 *           ["canceled", "canceled", false]
+	 *           ["succeeded for another order", "succeeded", true]
+	 *
+	 * @param string $label         Case label.
+	 * @param string $live_status   Intent status the read answers.
+	 * @param bool   $another_order Whether the intent names another order.
+	 */
+	public function test_payment_detail_create_intent_route_charges_over_an_attached_payment_that_holds_no_money( string $label, string $live_status, bool $another_order ): void {
+		$order = $this->create_order_for_payment_intent();
+		$order->update_meta_data( '_intent_id', 'pi_attached' );
+		$order->update_meta_data( '_intention_status', 'requires_capture' );
+		$order->save();
+		$this->api_client->responses['get_payment_intention'] = $this->create_intent_answer( $another_order ? $this->create_order_for_payment_intent() : $order, $live_status );
+		$this->api_client->response                           = array(
+			'id'      => 'pi_created',
+			'amount'  => 1234,
+			'charges' => array( 'data' => array() ),
+		);
+		$this->create_payment_details_controller()->register_routes();
+
+		$response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( array( 'get_payment_intention', 'create_and_confirm_payment_intention' ), array_column( $this->api_client->calls, 'method' ) );
+	}
+
+	/**
+	 * The live read decides, not the stored status. Catches a version that decides on the stored status.
+	 *
+	 * @testdox Payment detail create-intent route decides on the live read: stored $stored_status, live $live_status, $expected.
+	 *
+	 * @testWith ["requires_payment_method", "succeeded", "refused"]
+	 *           ["succeeded", "canceled", "charged"]
+	 *
+	 * @param string $stored_status The order's stored `_intention_status`.
+	 * @param string $live_status   Intent status the read answers.
+	 * @param string $expected      "refused" or "charged".
+	 */
+	public function test_payment_detail_create_intent_route_decides_on_the_live_read( string $stored_status, string $live_status, string $expected ): void {
+		$order = $this->create_order_for_payment_intent();
+		$order->update_meta_data( '_intent_id', 'pi_attached' );
+		$order->update_meta_data( '_intention_status', $stored_status );
+		$order->save();
+		$this->api_client->responses['get_payment_intention'] = $this->create_intent_answer( $order, $live_status );
+		$this->create_payment_details_controller()->register_routes();
+
+		$response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
+
+		if ( 'refused' === $expected ) {
+			$this->assert_refused_with_the_order_free( $response, 'wcpay_order_payment_holds_money', $order );
+			return;
+		}
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( array( 'get_payment_intention', 'create_and_confirm_payment_intention' ), array_column( $this->api_client->calls, 'method' ) );
+	}
+
+	/**
+	 * An attached intent that cannot be read is decided by the checkout's own rules: a PHP Error or a stored `succeeded`
+	 * refuses in any mode. A started bank step refuses when its outcome is unknown. A version that treats a definite
+	 * missing payment as unknown refuses a fresh charge (case e). Catches a version that skips the outright refusal (cases a, b), and one that
+	 * skips the stored-record tiers or their mode check (cases d, e, g, h).
+	 *
+	 * @testdox Payment detail create-intent route over an unreadable attached intent, $label: $expected.
+	 *
+	 * @testWith ["(a) a PHP error, stored requires_payment_method", "a PHP error", "requires_payment_method", true, "refused"]
+	 *           ["(b) a server error, stored succeeded, another mode", "a server error", "succeeded", false, "refused"]
+	 *           ["(c) a not-found, stored succeeded, same mode", "a not-found", "succeeded", true, "refused"]
+	 *           ["(i) a timeout, stored requires_action, same mode", "a timeout", "requires_action", true, "refused"]
+	 *           ["(d) a server error, stored requires_action, same mode", "a server error", "requires_action", true, "refused"]
+	 *           ["(e) charges after a definite missing intent for a started bank step", "a not-found", "requires_action", true, "charged"]
+	 *           ["(f) a server error, stored requires_payment_method", "a server error", "requires_payment_method", true, "charged"]
+	 *           ["(g) an empty answer, stored requires_capture, another mode", "an empty answer", "requires_capture", false, "charged"]
+	 *           ["(h) an empty answer, stored processing, same mode", "an empty answer", "processing", true, "refused"]
+	 *
+	 * @param string $label         Case label.
+	 * @param string $failure       How the read fails.
+	 * @param string $stored_status The order's stored `_intention_status`.
+	 * @param bool   $same_mode     Whether the order stores this store's mode.
+	 * @param string $expected      "refused" or "charged".
+	 */
+	public function test_payment_detail_create_intent_route_over_an_unreadable_attached_payment( string $label, string $failure, string $stored_status, bool $same_mode, string $expected ): void {
+		$store_mode = wc_get_container()->get( WooPaymentsAccountService::class )->get_order_mode();
+		$order      = $this->create_order_for_payment_intent();
+		$order->update_meta_data( '_intent_id', 'pi_attached' );
+		$order->update_meta_data( '_intention_status', $stored_status );
+		$order->update_meta_data( '_wcpay_mode', $same_mode ? $store_mode : ( 'test' === $store_mode ? 'prod' : 'test' ) );
+		$order->save();
+
+		$this->api_client = new class() extends RecordingMoneyMovementApiClient {
+			/**
+			 * Failure the next intent read throws, if any.
+			 *
+			 * @var \Throwable|null
+			 */
+			public ?\Throwable $read_failure = null;
+
+			/**
+			 * Record the read, then fail it when told to.
+			 *
+			 * @param string $intent_id Intent ID.
+			 * @return array<string,mixed>
+			 * @throws \Throwable When told to.
+			 */
+			public function get_payment_intention( string $intent_id ): array {
+				$answer = parent::get_payment_intention( $intent_id );
+				if ( null !== $this->read_failure ) {
+					throw $this->read_failure;
+				}
+
+				return $answer;
+			}
+		};
+
+		$failures                       = array(
+			'a PHP error'    => new \TypeError( 'A callback on the request failed.' ),
+			'a timeout'      => new \RuntimeException( 'The read timed out.' ),
+			'a server error' => new ApiException( 'Internal server error.', 'api_error', 500 ),
+			'a not-found'    => new ApiException( 'No such payment_intent.', 'resource_missing', 404, 'invalid_request_error' ),
+		);
+		$this->api_client->read_failure = $failures[ $failure ] ?? null;
+		$this->api_client->responses['get_payment_intention'] = array();
+		$this->api_client->response                           = array(
+			'id'      => 'pi_created',
+			'amount'  => 1234,
+			'charges' => array( 'data' => array() ),
+		);
+		$this->create_payment_details_controller()->register_routes();
+
+		$response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
+
+		if ( 'refused' === $expected ) {
+			$this->assert_refused_with_the_order_free( $response, 'wcpay_order_payment_unreadable', $order );
+			$this->assertSame( array( 'get_payment_intention' ), array_column( $this->api_client->calls, 'method' ), 'One read and no charge.' );
+			return;
+		}
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( array( 'get_payment_intention', 'create_and_confirm_payment_intention' ), array_column( $this->api_client->calls, 'method' ) );
+	}
+
+	/**
+	 * A checkout charge whose key the order keeps is unresolved, so the route sends nothing. Catches a version with no
+	 * check on the kept key.
+	 *
+	 * @testdox Payment detail create-intent route refuses an order with an unresolved checkout charge and sends nothing.
+	 */
+	public function test_payment_detail_create_intent_route_refuses_an_unresolved_checkout_charge(): void {
+		$order = $this->create_order_for_payment_intent();
+		$order->update_meta_data( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, 'wc-charge-kept' );
+		$order->save();
+		$this->create_payment_details_controller()->register_routes();
+
+		$response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
+
+		$this->assert_refused_with_the_order_free( $response, 'wcpay_order_payment_unresolved', $order );
+		$this->assertSame( array(), $this->api_client->calls, 'Nothing is read or sent.' );
+	}
+
+	/**
+	 * Another request pays the order just before the route claims it. The route decides on the order as read again under
+	 * the lock, so a version that keeps the order it loaded first charges a paid order.
+	 *
+	 * @testdox Payment detail create-intent route decides on the order as read again under the order payment lock.
+	 */
+	public function test_payment_detail_create_intent_route_decides_on_the_order_read_under_the_lock(): void {
+		$order = $this->create_order_for_payment_intent();
+		$lock  = new OrderPaymentLockWithClaimHook(
+			function ( WC_Order $locked_order ): void {
+				$stored = wc_get_order( $locked_order->get_id() );
+				$this->assertInstanceOf( WC_Order::class, $stored );
+				$stored->set_status( 'processing' );
+				$stored->save();
+			}
+		);
+		$GLOBALS['wc_container']->replace( OrderPaymentLock::class, $lock );
+		$this->create_payment_details_controller()->register_routes();
+
+		$response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
+
+		$this->assertTrue( $lock->hook_ran );
+		$this->assertSame( 409, $response->get_status() );
+		$this->assertSame( 'wcpay_order_already_paid', $response->get_data()['code'] );
+		$this->assertSame( array(), $this->api_client->calls, 'Nothing is sent.' );
+	}
+
+	/**
+	 * A refunded order that does not need payment is refused, as the pay page refuses it, with the page path's text. When
+	 * a store makes refunded orders payable, the same order charges. Catches a version with no refunded check, and one
+	 * that ignores whether the order needs payment.
+	 *
+	 * @testdox Payment detail create-intent route on a refunded order with no paid date and no attached intent: $label.
+	 *
+	 * @testWith ["refused", false]
+	 *           ["charged when the store makes refunded orders payable", true]
+	 *
+	 * @param string $label   Case label.
+	 * @param bool   $payable Whether a filter adds refunded to the statuses valid for payment.
+	 */
+	public function test_payment_detail_create_intent_route_on_a_refunded_order( string $label, bool $payable ): void {
+		$order = $this->create_order_for_payment_intent();
+		$order->set_status( 'refunded' );
+		$order->save();
+		$this->assertNull( $order->get_date_paid() );
+		if ( $payable ) {
+			add_filter( 'woocommerce_valid_order_statuses_for_payment', array( $this, 'add_refunded_to_statuses' ) );
+		}
+		$this->api_client->response = array(
+			'id'      => 'pi_created',
+			'amount'  => 1234,
+			'charges' => array( 'data' => array() ),
+		);
+		$this->create_payment_details_controller()->register_routes();
+
+		$response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
+
+		remove_filter( 'woocommerce_valid_order_statuses_for_payment', array( $this, 'add_refunded_to_statuses' ) );
+		if ( $payable ) {
+			$this->assertSame( 200, $response->get_status() );
+			$this->assertSame( array( 'create_and_confirm_payment_intention' ), array_column( $this->api_client->calls, 'method' ) );
+			return;
+		}
+		$this->assert_refused_with_the_order_free( $response, 'wcpay_order_refunded', $order );
+		$this->assertSame( "This order's payment was refunded, so it can't be paid again. Please place a new order.", $response->get_data()['message'] );
+		$this->assertSame( array(), $this->api_client->calls, 'Nothing is read or sent.' );
+	}
+
+	/**
+	 * Add refunded to the order statuses valid for payment.
+	 *
+	 * @param string[] $statuses Statuses.
+	 * @return string[]
+	 */
+	public function add_refunded_to_statuses( $statuses ): array {
+		return array_merge( (array) $statuses, array( 'refunded' ) );
+	}
+
+	/**
+	 * Assert a 409 refusal with the given code, and that the refusal left the order payment lock free.
+	 *
+	 * @param \WP_REST_Response $response Response.
+	 * @param string            $code     Expected error code.
+	 * @param WC_Order          $order    Order.
+	 */
+	private function assert_refused_with_the_order_free( \WP_REST_Response $response, string $code, WC_Order $order ): void {
+		$this->assertSame( 409, $response->get_status() );
+		$this->assertSame( $code, $response->get_data()['code'] );
+		$this->assertFalse( wc_get_container()->get( OrderPaymentLock::class )->is_held( $order, new WooPaymentsPersistenceVocabulary() ), 'The refusal leaves the order free.' );
+	}
+
+	/**
+	 * Build the platform's answer for an intent naming an order.
+	 *
+	 * @param WC_Order $order  Order the intent names.
+	 * @param string   $status Intent status.
+	 * @return array<string,mixed>
+	 */
+	private function create_intent_answer( WC_Order $order, string $status ): array {
+		return array(
+			'id'       => 'pi_attached',
+			'status'   => $status,
+			'amount'   => 1234,
+			'metadata' => array( 'order_id' => (string) $order->get_id() ),
+		);
+	}
+
+	/**
+	 * Build a create-intent request for an order.
+	 *
+	 * @param WC_Order $order Order.
+	 * @return WP_REST_Request<array<string,mixed>>
+	 */
+	private function create_payment_intent_request( WC_Order $order ): WP_REST_Request {
+		/** @var WP_REST_Request<array<string,mixed>> $request */
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/payment_intents' );
+		$request->set_body_params(
+			array(
+				'order_id'       => $order->get_id(),
+				'customer'       => 'cus_test',
+				'payment_method' => 'pm_test',
+			)
+		);
+
+		return $request;
 	}
 
 	/**
@@ -1964,6 +2588,20 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$order->set_customer_ip_address( '127.0.0.1' );
 		$order->update_meta_data( '_intent_id', 'pi_order' );
 		$order->update_meta_data( '_intent_status', 'requires_capture' );
+		$order->save();
+
+		return $order;
+	}
+
+	/**
+	 * Create an unpaid order for create-intent route tests, with no attached intent.
+	 *
+	 * @return WC_Order
+	 */
+	private function create_order_for_payment_intent(): WC_Order {
+		$order = $this->create_order_for_generated_charge();
+		$order->delete_meta_data( '_intent_id' );
+		$order->delete_meta_data( '_intent_status' );
 		$order->save();
 
 		return $order;
