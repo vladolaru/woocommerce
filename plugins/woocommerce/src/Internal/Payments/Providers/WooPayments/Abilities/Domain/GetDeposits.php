@@ -13,9 +13,8 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Abiliti
  * @since 11.4.0
  */
 final class GetDeposits extends AbstractAbility {
-	protected const ROUTE            = '/wc/v3/payments/deposits';
-	protected const COLLECTION_KEY   = 'deposits';
-	protected const LIST_COUNT_FIELD = 'total_count';
+	protected const ROUTE          = '/wc/v3/payments/deposits';
+	protected const COLLECTION_KEY = 'deposits';
 
 	/**
 	 * Get the public WordPress ability name.

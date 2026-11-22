@@ -146,7 +146,7 @@ class AbstractAbilityTest extends AbilityTestCase {
 							if ( 'transactions/fraud-outcomes/summary' === $suffix && ! $request->has_param( 'status' ) ) {
 								return new \WP_Error( 'missing_status', 'Missing status', array( 'status' => 400 ) );
 							}
-							if ( in_array( $suffix, array( 'transactions/summary', 'disputes/summary' ), true ) && ! $request->get_params() && isset( $this->bodies['unfiltered'] ) ) {
+							if ( in_array( $suffix, array( 'transactions/summary', 'disputes/summary', 'deposits/summary' ), true ) && ! $request->get_params() && isset( $this->bodies['unfiltered'] ) ) {
 								return $this->bodies['unfiltered'];
 							}
 							return $this->bodies[ $suffix ];
@@ -474,7 +474,7 @@ class AbstractAbilityTest extends AbilityTestCase {
 	}
 
 	/**
-	 * Set the count on the list or its companion summary.
+	 * Set the filtered record count returned by the companion summary.
 	 *
 	 * @since 11.4.0
 	 *
@@ -482,11 +482,10 @@ class AbstractAbilityTest extends AbilityTestCase {
 	 * @param mixed  $count Count value, or null for an omitted count.
 	 */
 	private function set_count( string $route, $count ): void {
-		$field = 'deposits' === $route ? 'total_count' : 'count';
-		$key   = 'deposits' === $route ? $route : $route . '/summary';
-		unset( $this->bodies[ $key ][ $field ] );
+		$key = $route . '/summary';
+		unset( $this->bodies[ $key ]['count'] );
 		if ( null !== $count ) {
-			$this->bodies[ $key ][ $field ] = $count;
+			$this->bodies[ $key ]['count'] = $count;
 		}
 	}
 
@@ -506,7 +505,7 @@ class AbstractAbilityTest extends AbilityTestCase {
 		$this->assertIsArray( $result );
 		$this->assertSame( array(), $result[ self::COLLECTION_KEYS[ $slug ] ] );
 		$this->assertSame( 0, $result['total_pages'] );
-		$this->assertCount( 'deposits' === $route ? 1 : 2, $this->calls );
+		$this->assertCount( 2, $this->calls );
 	}
 
 	/**
@@ -551,7 +550,7 @@ class AbstractAbilityTest extends AbilityTestCase {
 
 	/**
 	 * @testdox Replacing a summary failure with a count error loses the original message and details.
-	 * @dataProvider summary_backed_abilities
+	 * @dataProvider collection_abilities
 	 *
 	 * @param string $slug Ability slug.
 	 */
@@ -585,7 +584,7 @@ class AbstractAbilityTest extends AbilityTestCase {
 			$this->set_count( $route, $count );
 			$error = $this->ability( $slug )->execute( $input );
 			$this->assertWPError( $error );
-			$this->assertCount( 'deposits' === $route ? 1 : 2, $this->calls );
+			$this->assertCount( 2, $this->calls );
 			$this->assertSame( 'woopayments_ability_count_unavailable', $error->get_error_code() );
 			$this->assertSame( 502, $error->get_error_data()['status'] );
 			$this->assertSame( 'The record count is unavailable.', $error->get_error_message() );
@@ -593,19 +592,6 @@ class AbstractAbilityTest extends AbilityTestCase {
 		foreach ( array( 5, '5', 5.0 ) as $count ) {
 			$this->set_count( $route, $count );
 			$this->assertSame( 3, $this->ability( $slug )->execute( $input + array( 'per_page' => 2 ) )['total_pages'] );
-		}
-	}
-
-	/**
-	 * Collections that read their total from a companion summary.
-	 *
-	 * @since 11.4.0
-	 */
-	public static function summary_backed_abilities(): iterable {
-		foreach ( self::collection_abilities() as $key => $args ) {
-			if ( 'deposits' !== $key ) {
-				yield $key => $args;
-			}
 		}
 	}
 
@@ -768,8 +754,8 @@ class AbstractAbilityTest extends AbilityTestCase {
 	}
 
 	/**
-	 * Sending list ordering to the dispute summary can change its count. Dropping order details loses enriched rows.
-	 * Reading a second payout route adds a request, and naming the collection payouts changes the response keys.
+	 * Sending list ordering to a summary can change its count. Dropping order details loses enriched rows.
+	 * Naming the payout collection payouts changes the response keys.
 	 *
 	 * @testdox Counting the current slice, dropping a selector or choosing the wrong count changes the filtered page.
 	 * @testWith ["disputes"]
@@ -780,15 +766,13 @@ class AbstractAbilityTest extends AbilityTestCase {
 	 * @since 11.4.0
 	 */
 	public function test_filtered_pages( string $route ): void {
-		$disputes                         = 'disputes' === $route;
-		$filters                          = $disputes ? self::DISPUTE_FILTERS : self::PAYOUT_FILTERS;
-		$rows                             = array( array( 'order' => array( 'number' => 12 ) ), array( 'order' => array( 'number' => 10 ) ) );
-		$this->bodies[ $route ]           = array(
+		$filters                    = 'disputes' === $route ? self::DISPUTE_FILTERS : self::PAYOUT_FILTERS;
+		$rows                       = array( array( 'order' => array( 'number' => 12 ) ), array( 'order' => array( 'number' => 10 ) ) );
+		$this->bodies[ $route ]     = array(
 			'data'        => $rows,
-			'total_count' => $disputes ? 80 : 5,
+			'total_count' => 'disputes' === $route ? 80 : count( $rows ),
 		);
-		$this->bodies['unfiltered']       = array( 'count' => 40 );
-		$this->bodies['deposits/summary'] = new \WP_Error( 'unexpected_summary', 'Unexpected summary request' );
+		$this->bodies['unfiltered'] = array( 'count' => 40 );
 
 		$result         = $this->ability( 'get-' . $route )->execute(
 			$filters + array(
@@ -809,10 +793,8 @@ class AbstractAbilityTest extends AbilityTestCase {
 					'direction' => 'asc',
 				),
 			),
+			array( 'GET', self::API . $route . '/summary', $filters ),
 		);
-		if ( $disputes ) {
-			$expected_calls[] = array( 'GET', self::API . 'disputes/summary', $filters );
-		}
 		$this->assertSame( $expected_calls, $this->calls );
 		$this->assertSame(
 			array(
@@ -823,6 +805,26 @@ class AbstractAbilityTest extends AbilityTestCase {
 			),
 			$result
 		);
+	}
+
+	/**
+	 * @testdox Taking the page count from the payout list's per-page total reports one page for forty matching payouts.
+	 *
+	 * @since 11.4.0
+	 */
+	public function test_payout_list_counts_only_the_current_page(): void {
+		$filters                  = array( 'status_is' => 'paid' );
+		$this->bodies['deposits'] = array(
+			'data'        => array( array( 'id' => 'po_sample' ) ),
+			'total_count' => 1,
+		);
+		$this->set_count( 'deposits', 40 );
+
+		$result = $this->ability( 'get-deposits' )->execute( $filters + array( 'per_page' => 1 ) );
+
+		$this->assertSame( 40, $result['total_pages'] );
+		$this->assertSame( array( self::API . 'deposits', self::API . 'deposits/summary' ), array_column( $this->calls, 1 ) );
+		$this->assertSame( array( 'GET', self::API . 'deposits/summary', $filters ), $this->calls[1] );
 	}
 
 	/**
