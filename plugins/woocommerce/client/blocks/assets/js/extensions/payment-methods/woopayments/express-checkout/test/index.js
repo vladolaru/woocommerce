@@ -818,7 +818,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		);
 	} );
 
-	it( 'mounts Stripe ECE with cart-aware Elements options and checkout appearance', async () => {
+	it( 'hiding the express loader overrides the Blocks wallet loading state alongside its appearance', async () => {
 		baseExpressCheckoutParams.enabled_methods = [
 			'payment_request',
 			'amazon_pay',
@@ -844,13 +844,16 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			expect( expressElement.mount ).toHaveBeenCalled();
 		} );
 
+		expect( stripe.elements.mock.calls[ 0 ][ 0 ] ).not.toHaveProperty(
+			'loader'
+		);
+
 		expect( stripe.elements ).toHaveBeenCalledWith(
 			expect.objectContaining( {
 				mode: 'payment',
 				amount: 5000,
 				currency: 'usd',
 				paymentMethodTypes: [ 'amazon_pay' ],
-				loader: 'never',
 				captureMethod: 'manual',
 				setupFutureUsage: 'off_session',
 				locale: 'en',
@@ -935,7 +938,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		}
 	);
 
-	it( 'probes Stripe wallet availability before exposing each Blocks express method', async () => {
+	it( 'hiding the express loader overrides the default while probing Blocks wallet availability', async () => {
 		registerExpressCheckout();
 		const applePayRegistration = getRegistration(
 			'woocommerce_payments_express_checkout_applePay'
@@ -963,6 +966,10 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		await expect(
 			googlePayRegistration.canMakePayment( { cart: blocksCart } )
 		).resolves.toBe( false );
+
+		expect( stripe.elements.mock.calls[ 0 ][ 0 ] ).not.toHaveProperty(
+			'loader'
+		);
 
 		expect( elements.create ).toHaveBeenCalledWith(
 			'expressCheckout',

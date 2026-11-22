@@ -2,6 +2,7 @@
  * Tests for the classic (shortcode) WooPayments express checkout script.
  */
 
+const jquery = require( 'jquery' );
 const { server, http, HttpResponse } = require( './msw-setup' );
 
 // Stand-in for the wp-i18n script the page loads (@wordpress/i18n __, _n and sprintf). It returns the English source
@@ -163,6 +164,149 @@ describe( 'woopayments-express-checkout', () => {
 		delete window.wp;
 		delete global.jQuery;
 		delete window.Stripe;
+	} );
+
+	describe( 'wallet rebuild', () => {
+		let rebuild;
+		let mounted;
+		let locked;
+		let submit;
+
+		beforeEach( () => {
+			const page = jquery( document.body );
+			document.body.innerHTML = '<div id="wcpay-express-checkout-element"></div>';
+			global.jQuery = ( input ) => {
+				if ( typeof input === 'function' ) {
+					input();
+					return;
+				}
+				return jquery( input );
+			};
+			locked = false;
+			global.jQuery.blockUI = () => {
+				locked = true;
+			};
+			global.jQuery.unblockUI = jest.fn( () => {
+				locked = false;
+			} );
+			mounted = [];
+			submit = jest.fn();
+			apiFetch.mockResolvedValue( cartResponse() );
+			window.Stripe = () => ( {
+				elements: () => ( {
+					submit,
+					create: () => {
+						const handlers = {};
+						const element = {
+							handlers,
+							on: ( name, handler ) => {
+								handlers[ name ] = handler;
+							},
+							mount: jest.fn(),
+							destroy: jest.fn(),
+						};
+						mounted.push( element );
+						return element;
+					},
+				} ),
+			} );
+			loadModule( baseParams( { ...stripeParams, enabled_methods: [ 'payment_request' ] } ) );
+			rebuild = () => page.triggerHandler( 'updated_checkout' );
+		} );
+
+		afterEach( () => {
+			jquery( document.body ).off( 'updated_checkout updated_cart_totals' );
+			document.body.innerHTML = '';
+		} );
+
+		const open = async () => {
+			const resolve = jest.fn();
+			await mounted[ 0 ].handlers.click( { resolve } );
+			expect( resolve ).toHaveBeenCalledTimes( 1 );
+			expect( locked ).toBe( true );
+		};
+
+		it( 'just unmounting an open sheet leaves checkout locked', async () => {
+			await rebuild();
+			await open();
+			await rebuild();
+			expect( locked ).toBe( false );
+			expect( global.jQuery.unblockUI ).toHaveBeenCalledTimes( 1 );
+			expect( mounted[ 0 ].destroy ).toHaveBeenCalledTimes( 1 );
+			expect( mounted[ 1 ].mount ).toHaveBeenCalledTimes( 1 );
+		} );
+
+		it( 'unconditional cleanup cancels a sheet that never opened', async () => {
+			await rebuild();
+			await rebuild();
+			expect( global.jQuery.unblockUI ).not.toHaveBeenCalled();
+			expect( mounted[ 0 ].destroy ).toHaveBeenCalledTimes( 1 );
+		} );
+
+		it( 'keeping the open flag after confirm unlocks a payment in progress', async () => {
+			await rebuild();
+			await open();
+			let finishSubmit;
+			submit.mockReturnValue( new Promise( ( resolve ) => {
+				finishSubmit = resolve;
+			} ) );
+			const confirmation = mounted[ 0 ].handlers.confirm( {} );
+			await rebuild();
+			expect( locked ).toBe( true );
+			expect( global.jQuery.unblockUI ).not.toHaveBeenCalled();
+			finishSubmit( { error: { message: 'Payment stopped.' } } );
+			await confirmation;
+		} );
+
+		it( 'keeping the open flag after cancel repeats cleanup on rebuild', async () => {
+			await rebuild();
+			await open();
+			mounted[ 0 ].handlers.cancel();
+			expect( locked ).toBe( false );
+			expect( global.jQuery.unblockUI ).toHaveBeenCalledTimes( 1 );
+			await rebuild();
+			expect( global.jQuery.unblockUI ).toHaveBeenCalledTimes( 1 );
+		} );
+
+		it( 'carrying the previous open flag into the next mount cancels twice', async () => {
+			await rebuild();
+			await open();
+			await rebuild();
+			expect( global.jQuery.unblockUI ).toHaveBeenCalledTimes( 1 );
+			await rebuild();
+			expect( global.jQuery.unblockUI ).toHaveBeenCalledTimes( 1 );
+			expect( mounted[ 1 ].destroy ).toHaveBeenCalledTimes( 1 );
+			expect( mounted[ 2 ].mount ).toHaveBeenCalledTimes( 1 );
+		} );
+
+		it.each( [
+			[ 'a second destroy after loaderror can skip open-sheet cleanup and remount', true, 1 ],
+			[ 'always canceling after loaderror releases a page when no sheet opened', false, 0 ],
+		] )( '%s', async ( description, sheetOpen, cancels ) => {
+			await rebuild();
+			if ( sheetOpen ) {
+				await open();
+			}
+			// Stripe destroys its own Element on loaderror.
+			const first = mounted[ 0 ];
+			first.destroy();
+			if ( first.handlers.loaderror ) {
+				first.handlers.loaderror( { elementType: 'expressCheckout' } );
+			}
+			first.destroy.mockImplementation( () => {
+				throw new Error( 'Element already destroyed.' );
+			} );
+			await rebuild();
+			expect( first.destroy ).toHaveBeenCalledTimes( 2 );
+			expect( global.jQuery.unblockUI ).toHaveBeenCalledTimes( cancels );
+			expect( locked ).toBe( false );
+			expect( mounted[ 1 ].mount ).toHaveBeenCalledTimes( 1 );
+		} );
+	} );
+
+	it( 'hiding the express loader removes the default loading state from the classic wallet', () => {
+		const { getStripeElementsOptions } = loadModule( baseParams() );
+		expect( getStripeElementsOptions( cartResponse() ) ).not.toHaveProperty( 'loader' );
 	} );
 
 	describe( 'transformPrice', () => {

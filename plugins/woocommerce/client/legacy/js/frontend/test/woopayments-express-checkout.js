@@ -426,6 +426,7 @@ describe( 'WooPayments express checkout', () => {
 		window.wcpayExpressCheckoutParams = getBaseConfig();
 		originalFetch = window.fetch;
 		expressElement = {
+			destroy: jest.fn(),
 			mount: jest.fn(),
 			on: jest.fn( ( eventName, handler ) => {
 				expressHandlers[ eventName ] = handler;
@@ -477,7 +478,7 @@ describe( 'WooPayments express checkout', () => {
 		document.body.innerHTML = '';
 	} );
 
-	test( 'mounts Stripe ECE after checkout totals update with tokenized cart headers', async () => {
+	test( 'mounts Stripe ECE after checkout totals update with tokenized cart headers without hiding the express loader', async () => {
 		require( '../woopayments-express-checkout' );
 
 		expect( bodyEventHandlers.updated_checkout ).toBeDefined();
@@ -502,12 +503,13 @@ describe( 'WooPayments express checkout', () => {
 			stripeAccount: 'acct_123',
 			betas: [ 'card_country_event_beta_1' ],
 		} );
+		expect( stripe.elements.mock.calls[ 0 ][ 0 ] ).not.toHaveProperty( 'loader' );
+
 		expect( stripe.elements ).toHaveBeenCalledWith(
 			expect.objectContaining( {
 				mode: 'payment',
 				amount: 5000,
 				currency: 'usd',
-				loader: 'never',
 				paymentMethodTypes: [ 'card' ],
 			} )
 		);
@@ -553,18 +555,18 @@ describe( 'WooPayments express checkout', () => {
 		);
 	} );
 
-	test( 'keeps one Stripe instance across checkout refreshes and replaces the wallet element', async () => {
+	test( 'recreating Stripe or just unmounting the wallet leaves extra frames after a refresh', async () => {
 		// One Elements group and Express Checkout Element per initialization, as client 11.1.0
-		// shortcode-buttons-express/index.js:227-270 creates them; native unmounts the previous element first.
+		// shortcode-buttons-express/index.js:227-270 creates them; native destroys the previous element first.
 		const firstElement = {
 			mount: jest.fn(),
 			on: jest.fn(),
-			unmount: jest.fn(),
+			destroy: jest.fn(),
 		};
 		const secondElement = {
 			mount: jest.fn(),
 			on: jest.fn(),
-			unmount: jest.fn(),
+			destroy: jest.fn(),
 		};
 		stripe.elements
 			.mockReturnValueOnce(
@@ -586,7 +588,7 @@ describe( 'WooPayments express checkout', () => {
 
 		// Client 11.1.0 checkout/api/index.js:79-110 creates the instance once and returns it after that.
 		expect( window.Stripe ).toHaveBeenCalledTimes( 1 );
-		expect( firstElement.unmount ).toHaveBeenCalled();
+		expect( firstElement.destroy ).toHaveBeenCalled();
 		expect( secondElement.mount ).toHaveBeenCalledWith(
 			'#wcpay-express-checkout-element'
 		);
@@ -1545,7 +1547,7 @@ describe( 'WooPayments express checkout', () => {
 		} );
 	} );
 
-	test( 'mounts product page ECE from server product data without reading the current cart', async () => {
+	test( 'mounts the product wallet from server data without reading the cart or hiding the express loader', async () => {
 		window.wcpayExpressCheckoutParams.button_context = 'product';
 		window.wcpayExpressCheckoutParams.product = {
 			displayItems: [ { label: 'Express Widget', amount: 2500 } ],
@@ -1560,12 +1562,13 @@ describe( 'WooPayments express checkout', () => {
 		await flushPromises();
 
 		expect( window.wp.apiFetch ).not.toHaveBeenCalled();
+		expect( stripe.elements.mock.calls[ 0 ][ 0 ] ).not.toHaveProperty( 'loader' );
+
 		expect( stripe.elements ).toHaveBeenCalledWith(
 			expect.objectContaining( {
 				mode: 'payment',
 				amount: 2500,
 				currency: 'usd',
-				loader: 'never',
 				paymentMethodTypes: [ 'card' ],
 			} )
 		);

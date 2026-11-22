@@ -26,6 +26,7 @@
 	var cachedStripe = null;
 	var elements = null;
 	var expressElement = null;
+	var destroyMountedElement = null;
 	var tokenizedCartSession = null;
 	// An open Apple Pay / Google Pay sheet is locked to the currency it opened
 	// with; remember it to detect cart-currency drift mid-sheet.
@@ -630,7 +631,6 @@
 			mode: 'payment',
 			amount: amount,
 			currency: currency,
-			loader: 'never',
 		};
 
 		// Without confirmation tokens, the payment method is created manually
@@ -3199,6 +3199,8 @@
 		var initialProductSelection;
 		var previewRequestId;
 		var freshCartData;
+		var walletOpen = false;
+		var mountedElement;
 		// Client 11.2.0 shortcode-buttons-express/index.js:506-571: a refresh a newer one superseded publishes, mounts
 		// and lifts nothing.
 		var isSuperseded = function () {
@@ -3316,8 +3318,8 @@
 			return;
 		}
 
-		if ( expressElement && expressElement.unmount ) {
-			expressElement.unmount();
+		if ( destroyMountedElement ) {
+			destroyMountedElement();
 		}
 
 		expressButtonAvailable = false;
@@ -3328,6 +3330,8 @@
 			'expressCheckout',
 			getButtonOptions()
 		);
+
+		mountedElement = expressElement;
 
 		expressElement.on( 'ready', function ( event ) {
 			var availablePaymentMethods = event && event.availablePaymentMethods;
@@ -3412,8 +3416,10 @@
 
 				clickOptions = getClickOptions();
 				blockPage();
+				walletOpen = true;
 				event.resolve( clickOptions );
 			} catch ( error ) {
+				walletOpen = false;
 				setError(
 					( error && error.message ) ||
 						GENERIC_PAYMENT_ERROR_MESSAGE
@@ -3446,6 +3452,8 @@
 			var submitResult;
 			var paymentCredentialId;
 			var response;
+
+			walletOpen = false;
 
 			try {
 				if ( isProduct() ) {
@@ -3482,8 +3490,9 @@
 		// Client 11.1.0 (shortcode-buttons-express/index.js:432-446, event-handlers.js:320-326): once the product reached
 		// the cart, empty it, put the sheet's last address into the page form, and unblock the page; the button stays as
 		// it is.
-		expressElement.on( 'cancel', function () {
+		function handleWalletCancel() {
 			var generation = productCartGeneration;
+			walletOpen = false;
 
 			productAddToCartPromise
 				.catch( function () {} )
@@ -3496,7 +3505,22 @@
 			}
 			lastSelectedAddress = null;
 			unblockPage();
-		} );
+		}
+
+		expressElement.on( 'cancel', handleWalletCancel );
+		// Client 11.3.0 shortcode-buttons-express/index.js:484-519. Destroy closes the sheet without sending cancel.
+		destroyMountedElement = function () {
+			destroyMountedElement = null;
+			try {
+				mountedElement.destroy();
+			} catch ( error ) {
+				// Stripe may already have destroyed the Element after loaderror.
+				void error;
+			}
+			if ( walletOpen ) {
+				handleWalletCancel();
+			}
+		};
 
 		expressElement.mount( '#wcpay-express-checkout-element' );
 	}

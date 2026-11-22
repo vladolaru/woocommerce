@@ -504,7 +504,6 @@ const getStripeElementsOptions = ( billing, cart ) => {
 		{
 			mode: 'payment',
 			amount,
-			loader: 'never',
 			currency: getCartCurrency( billing ),
 			// Without confirmation tokens, the payment method is created
 			// manually at confirm time.
@@ -547,7 +546,6 @@ const getAvailabilityElementsOptions = ( cart ) => {
 		{
 			mode: 'payment',
 			amount: Math.max( amount, 1 ),
-			loader: 'never',
 			currency: getCartTotalsCurrency( cart ),
 			paymentMethodTypes: getPaymentMethodTypes( cart ),
 		},
