@@ -72,12 +72,24 @@ class WooCommercePaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Does nothing on the note's install action while the WooPayments feature is on.
+	 * @testdox Sends the note's install action to the Payments settings page, with no install, while the WooPayments feature is on.
 	 */
-	public function test_skips_install_action_while_feature_is_on(): void {
+	public function test_sends_install_action_to_payments_settings_while_feature_is_on(): void {
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 
 		$this->run_install_action();
+
+		$this->assertSame( array( admin_url( 'admin.php?page=wc-settings&tab=checkout&from=WCADMIN_PAYMENT_TASK' ) ), $this->redirects );
+		$this->assertCount( 0, $this->http_requests );
+	}
+
+	/**
+	 * @testdox Does nothing on the note's install action for a user who cannot manage WooCommerce while the feature is on.
+	 */
+	public function test_skips_install_action_for_user_without_capability_while_feature_is_on(): void {
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+
+		$this->run_install_action( 'editor' );
 
 		$this->assertSame( array(), $this->redirects );
 		$this->assertCount( 0, $this->http_requests );
@@ -115,11 +127,14 @@ class WooCommercePaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Visit a stored note's action as an administrator.
+	 * Visit a stored note's action as a user of the given role.
+	 *
+	 * @param string $role User role.
 	 */
-	private function run_install_action(): void {
-		$user_id = $this->factory->user->create( array( 'role' => 'administrator' ) );
-		if ( is_multisite() ) {
+	private function run_install_action( string $role = 'administrator' ): void {
+		$user_id        = $this->factory->user->create( array( 'role' => $role ) );
+		$is_super_admin = is_multisite() && 'administrator' === $role;
+		if ( $is_super_admin ) {
 			grant_super_admin( $user_id );
 		}
 		wp_set_current_user( $user_id );
@@ -141,7 +156,7 @@ class WooCommercePaymentsTest extends WC_Unit_Test_Case {
 			// The redirect filter stopped the handler before exit.
 			return;
 		} finally {
-			if ( is_multisite() ) {
+			if ( $is_super_admin ) {
 				revoke_super_admin( $user_id );
 			}
 		}

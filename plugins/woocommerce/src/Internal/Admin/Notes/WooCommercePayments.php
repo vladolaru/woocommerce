@@ -195,7 +195,12 @@ class WooCommercePayments {
 			return;
 		}
 
+		// While the feature is on, the built-in WooPayments is offered on the Payments settings page instead.
 		if ( ! self::is_applicable() ) {
+			if ( current_user_can( 'manage_woocommerce' ) ) {
+				wp_safe_redirect( admin_url( 'admin.php?page=wc-settings&tab=checkout&from=WCADMIN_PAYMENT_TASK' ) );
+				exit;
+			}
 			return;
 		}
 
