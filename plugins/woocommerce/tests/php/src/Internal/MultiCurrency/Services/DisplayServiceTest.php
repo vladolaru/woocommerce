@@ -126,7 +126,7 @@ class DisplayServiceTest extends WC_Unit_Test_Case {
 		$config = $sut->get_public_config();
 
 		$this->assertSame(
-			array( 'default_currency', 'selected_currency', 'charm_only_products', 'currencies' ),
+			array( 'default_currency', 'selected_currency', 'charm_only_products', 'currencies', 'geolocation_notice' ),
 			array_keys( $config )
 		);
 		$this->assertSame( 'USD', $config['default_currency'] );
@@ -175,6 +175,43 @@ class DisplayServiceTest extends WC_Unit_Test_Case {
 		$config = $sut->get_public_config();
 
 		$this->assertSame( 'GBP', $config['selected_currency'] );
+	}
+
+	/**
+	 * @testdox Should return decoded notice names for a matching location with or without a stored selection.
+	 * @testWith [true]
+	 *           [false]
+	 * @param bool $stored Whether GBP is already stored.
+	 */
+	public function test_matching_selection_receives_geolocation_notice( bool $stored ): void {
+		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
+		add_filter( 'wcpay_multi_currency_override_notice_country', static fn( $name ) => $name . ' &amp; islands' );
+		add_filter( 'wcpay_multi_currency_override_notice_currency_name', static fn( $name ) => $name . ' &#163;' );
+		WC()->session = $this->create_session( $stored, $stored ? 'GBP' : null );
+		$config       = $this->create_service( $this->create_state( 'GBP' ), 'GB' )->get_public_config();
+
+		$this->assertArrayHasKey( 'geolocation_notice', $config );
+		$this->assertSame( WC()->countries->get_countries()['GB'] . ' & islands', $config['geolocation_notice']['country_name'] );
+		$this->assertSame( get_woocommerce_currencies()['GBP'] . ' £', $config['geolocation_notice']['currency_name'] );
+		$this->assertMatchesRegularExpression( '/^[a-f0-9]{32}2$/', $config['geolocation_notice']['id'] );
+	}
+
+	/**
+	 * @testdox Should return a null notice when auto-switching is off, the selection is the default, or geolocation differs.
+	 * @testWith ["no", "GBP", "GB"]
+	 *           ["yes", "USD", "US"]
+	 *           ["yes", "JPY", "GB"]
+	 * @param string $auto    Automatic switching option.
+	 * @param string $stored  Stored currency.
+	 * @param string $country Visitor country.
+	 */
+	public function test_ineligible_selection_receives_null_notice( string $auto, string $stored, string $country ): void {
+		update_option( 'wcpay_multi_currency_enable_auto_currency', $auto );
+		WC()->session = $this->create_session( true, $stored );
+		$config       = $this->create_service( $this->create_state( $stored ), $country )->get_public_config();
+
+		$this->assertArrayHasKey( 'geolocation_notice', $config );
+		$this->assertNull( $config['geolocation_notice'] );
 	}
 
 	/**

@@ -312,11 +312,19 @@ class DisplayService {
 		 */
 		$charm_only_products = (bool) apply_filters( self::APPLY_CHARM_PRODUCTS_HOOK, true );
 
+		$notice = $this->is_using_auto_currency_switching()
+			? GeolocationNotice::get_notice( $this->geolocation_service, $selected_code, $default_code )
+			: null;
+		if ( null !== $notice ) {
+			unset( $notice['message'] );
+		}
+
 		return array(
 			'default_currency'    => $default_code,
 			'selected_currency'   => $selected_code,
 			'charm_only_products' => $charm_only_products,
 			'currencies'          => $currencies_data,
+			'geolocation_notice'  => $notice,
 		);
 	}
 

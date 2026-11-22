@@ -130,6 +130,7 @@
 					this.config = config;
 					this.convertAllPrices();
 					this.syncCurrencySwitchers();
+					this.showGeolocationNotice();
 					this.observeDynamicContent();
 					this.listenToWooCommerceEvents();
 				} )
@@ -520,6 +521,51 @@
 					select.value = selectedCode;
 				}
 			} );
+		}
+
+		showGeolocationNotice() {
+			var notice = this.config.geolocation_notice;
+			if ( ! notice ) {
+				return;
+			}
+
+			var template = document.getElementById( 'wcpay-geolocation-notice' );
+			var cookieName = 'store_notice' + notice.id;
+			if (
+				! ( template instanceof HTMLTemplateElement ) ||
+				! template.content.firstElementChild ||
+				document.cookie.split( ';' ).some( ( cookie ) => cookie.trim() === cookieName + '=hidden' )
+			) {
+				return;
+			}
+
+			var element = template.content.firstElementChild.cloneNode( true );
+			element.dataset.noticeId = notice.id;
+			forEachElement( element.querySelectorAll( '[data-wcpay-notice-country]' ), ( slot ) => {
+				slot.textContent = notice.country_name;
+			} );
+			forEachElement( element.querySelectorAll( '[data-wcpay-notice-currency]' ), ( slot ) => {
+				slot.textContent = notice.currency_name;
+			} );
+
+			// The store notice script binds on DOM ready, before this notice exists.
+			var dismiss = ( event ) => {
+				event.preventDefault();
+				document.cookie = cookieName + '=hidden; path=/';
+				element.style.display = 'none';
+			};
+			var link = element.querySelector( '.woocommerce-store-notice__dismiss-link' );
+			if ( link ) {
+				link.addEventListener( 'click', dismiss );
+				link.addEventListener( 'keydown', ( event ) => {
+					if ( event.key === 'Enter' || event.key === ' ' ) {
+						dismiss( event );
+					}
+				} );
+			}
+
+			document.body.appendChild( element );
+			element.style.display = 'block';
 		}
 
 		observeDynamicContent() {

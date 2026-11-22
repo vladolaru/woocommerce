@@ -563,6 +563,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 		$sut->handle_geolocation_init();
 
 		$this->assertSame( array(), $service->updated_currencies );
+		$this->assertFalse( has_action( 'wp_footer', array( $sut, 'handle_wp_footer' ) ) );
 	}
 
 	/**
@@ -624,16 +625,31 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_multi_currency_rendering_mode', 'cache' );
 		WC()->session = $this->create_session( false );
 		$service      = $this->create_persistence_service();
-		$sut          = $this->create_controller(
+		$geolocation  = $this->createMock( GeolocationService::class );
+		$geolocation->expects( $this->never() )->method( 'get_currency_by_customer_location' );
+		$geolocation->expects( $this->never() )->method( 'get_country_by_customer_location' );
+		$sut = $this->create_controller(
 			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			$service,
 			$this->create_request_context( true, false ),
-			$this->create_geolocation_service( 'CAD' )
+			$geolocation
 		);
 
 		$sut->handle_geolocation_init();
 
 		$this->assertSame( array(), $service->updated_currencies );
+		$this->assertSame( 10, has_action( 'wp_footer', array( $sut, 'handle_wp_footer' ) ) );
+
+		ob_start();
+		$sut->handle_wp_footer();
+		$markup = ob_get_clean();
+		$this->assertStringStartsWith( '<template id="wcpay-geolocation-notice"><p ', $markup );
+		$this->assertStringEndsWith( '</p></template>', $markup );
+		$this->assertStringContainsString( 'data-notice-id=""', $markup );
+		$this->assertStringContainsString( '<span data-wcpay-notice-country></span>', $markup );
+		$this->assertStringContainsString( '<span data-wcpay-notice-currency></span>', $markup );
+		$this->assertStringNotContainsString( 'Canada', $markup );
+		$this->assertStringNotContainsString( 'Canadian dollar', $markup );
 	}
 
 	/**
@@ -758,6 +774,35 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 			'guards pass'        => array( array(), 10 ),
 			'switching disabled' => array( array( 'pay_for_order' => '1' ), false ),
 		);
+	}
+
+	/**
+	 * @testdox Should keep the server notice dismissal ID when the same shopper receives async config.
+	 */
+	public function test_server_notice_id_matches_the_async_config(): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
+		update_option( 'wcpay_multi_currency_rendering_mode', 'cache' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'CAD' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_cad', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_cad', '1.37' );
+		add_filter( 'woocommerce_geolocate_ip', static fn() => 'CA' );
+		WC()->session = $this->create_session( true );
+		$sut          = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $this->create_persistence_service( true, 'CAD' ), null, $this->create_geolocation_service( 'CAD' ) );
+
+		ob_start();
+		$sut->handle_wp_footer();
+		$markup = ob_get_clean();
+		$this->assertStringContainsString( 'visiting from Canada', $markup );
+		$this->assertStringNotContainsString( '<template', $markup );
+		$this->assertSame( 1, preg_match( '/data-notice-id="([^"]+)" style="display:none;">(.*) <a href="#"/', $markup, $match ) );
+		$this->assertSame( md5( $match[2] ) . '2', $match[1], 'Existing server dismissal cookies use the hash of the notice sentence.' );
+
+		WC()->session = null;
+		$config       = wc_get_container()->get( ServiceFactory::class )->create_display_service()->get_public_config();
+		$this->assertSame( 'CAD', $config['selected_currency'] );
+		$this->assertArrayHasKey( 'geolocation_notice', $config );
+		$this->assertSame( $match[1], $config['geolocation_notice']['id'] );
 	}
 
 	/**

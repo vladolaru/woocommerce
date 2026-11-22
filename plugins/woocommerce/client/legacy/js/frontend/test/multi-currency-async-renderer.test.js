@@ -56,6 +56,67 @@ describe( 'MultiCurrencyAsyncPriceRenderer', () => {
 		delete window.wcpayAsyncPriceConfig;
 	} );
 
+	describe( 'cached geolocation notice', () => {
+		const notice = {
+			id: 'cad2',
+			country_name: 'Canada & <islands>',
+			currency_name: 'Canadian dollar',
+		};
+		const selector = '.woocommerce-store-notice';
+		const markup = `<p class="woocommerce-store-notice demo_store" data-notice-id="" style="display:none;">
+			<span data-wcpay-notice-country></span><span data-wcpay-notice-currency></span>
+			<a href="#" class="woocommerce-store-notice__dismiss-link">Dismiss</a></p>`;
+
+		async function loadPage( config = notice, template = true ) {
+			renderer.destroy();
+			document.body.innerHTML = template
+				? `<template id="wcpay-geolocation-notice">${ markup }</template>`
+				: '';
+			renderer.fetchConfig = jest.fn().mockResolvedValue( {
+				...mockConfig,
+				geolocation_notice: config,
+			} );
+			await renderer.init();
+			return document.querySelector( selector );
+		}
+
+		afterEach( () => {
+			document.cookie = 'store_noticecad2=; Max-Age=0; path=/';
+			window.history.replaceState( {}, '', '/' );
+		} );
+
+		test.each( [ 'click', 'Enter', ' ' ] )(
+			'shows localized text and remembers dismissal by %p on reload',
+			async ( key ) => {
+				window.history.pushState( {}, '', '/shop/products/' );
+				const element = await loadPage();
+				expect( element ).not.toBeNull();
+				expect( element.style.display ).toBe( 'block' );
+				expect( element.dataset.noticeId ).toBe( notice.id );
+				expect( element.querySelector( '[data-wcpay-notice-country]' ).textContent ).toBe( notice.country_name );
+				expect( element.querySelector( '[data-wcpay-notice-currency]' ).textContent ).toBe( notice.currency_name );
+				const event = key === 'click'
+					? new MouseEvent( 'click', { cancelable: true } )
+					: new KeyboardEvent( 'keydown', { key, cancelable: true } );
+				element.querySelector( 'a' ).dispatchEvent( event );
+				expect( event.defaultPrevented ).toBe( true );
+				expect( element.style.display ).toBe( 'none' );
+				window.history.pushState( {}, '', '/cart/' );
+				expect( document.cookie ).toContain( 'store_noticecad2=hidden' );
+				expect( await loadPage() ).toBeNull();
+			}
+		);
+
+		test( 'only appends a notice with config, a template and a clear matching cookie', async () => {
+			expect( await loadPage() ).not.toBeNull();
+			expect( await loadPage( null ) ).toBeNull();
+			expect( await loadPage( notice, false ) ).toBeNull();
+			document.cookie = 'store_noticecad2=hidden; path=/';
+			expect( await loadPage() ).toBeNull();
+			expect( await loadPage( { ...notice, id: 'gbp2' } ) ).not.toBeNull();
+		} );
+	} );
+
 	test( 'converts skeleton prices into WooCommerce price markup', () => {
 		const wrapper = document.createElement( 'span' );
 		wrapper.className = 'woocommerce-Price-amount amount wcpay-async-price';

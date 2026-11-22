@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\CartTotalsCurrencyService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\DisplayService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\GeolocationNotice;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\GeolocationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
@@ -25,9 +26,6 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\IntegrationsContr
  * @internal
  */
 class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface {
-
-	private const FILTER_OVERRIDE_NOTICE_COUNTRY       = 'wcpay_multi_currency_override_notice_country';
-	private const FILTER_OVERRIDE_NOTICE_CURRENCY_NAME = 'wcpay_multi_currency_override_notice_currency_name';
 
 	private const ACCOUNT_CURRENCY_FIELD = 'wcpay_selected_currency';
 
@@ -283,14 +281,13 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 		if (
 			! $this->is_using_auto_currency_switching()
 			|| $this->integrations_controller->should_disable_currency_switching()
-			|| $this->should_use_async_rendering()
 		) {
 			return;
 		}
 
 		add_action( 'wp_footer', array( $this, 'handle_wp_footer' ) );
 
-		if ( $this->get_persistence_service()->has_stored_currency_code() ) {
+		if ( $this->should_use_async_rendering() || $this->get_persistence_service()->has_stored_currency_code() ) {
 			return;
 		}
 
@@ -308,61 +305,35 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	 * @internal
 	 */
 	public function handle_wp_footer(): void {
-		// The store's own currency is the option: on the storefront get_woocommerce_currency() returns the converted one (client 11.1.0 MultiCurrency.php:1064).
-		$current_currency_code    = strtoupper( $this->get_persistence_service()->get_selected_currency_code() );
-		$store_currency_code      = strtoupper( (string) get_option( 'woocommerce_currency', 'USD' ) );
-		$geolocated_currency_code = $this->get_geolocation_service()->get_currency_by_customer_location();
+		$store_currency_code = strtoupper( (string) get_option( 'woocommerce_currency', 'USD' ) );
+		$async               = $this->should_use_async_rendering();
 
-		// The settings Preview always shows the notice, like client 11.1.0 MultiCurrency.php:1070-1081.
-		if (
-			empty( $this->simulation_params )
-			&& (
-				$store_currency_code === $current_currency_code
-				|| ! is_string( $geolocated_currency_code )
-				|| strtoupper( $geolocated_currency_code ) !== $current_currency_code
-			)
-		) {
-			return;
+		if ( $async ) {
+			// The shared page carries only the store currency. The renderer fills the visitor's slots.
+			$message   = GeolocationNotice::get_message( '<span data-wcpay-notice-country></span>', '<span data-wcpay-notice-currency></span>', $store_currency_code );
+			$notice_id = '';
+			echo '<template id="wcpay-geolocation-notice">';
+		} else {
+			$notice = GeolocationNotice::get_notice(
+				$this->get_geolocation_service(),
+				strtoupper( $this->get_persistence_service()->get_selected_currency_code() ),
+				$store_currency_code,
+				! empty( $this->simulation_params )
+			);
+			if ( null === $notice ) {
+				return;
+			}
+			$message   = $notice['message'];
+			$notice_id = $notice['id'];
 		}
 
-		$country_code          = $this->get_geolocation_service()->get_country_by_customer_location();
-		$countries             = WC()->countries->get_countries();
-		$currencies            = get_woocommerce_currencies();
-		$country_name          = $countries[ $country_code ] ?? $country_code;
-		$current_currency_name = $currencies[ $current_currency_code ] ?? $current_currency_code;
-		$store_currency_name   = $currencies[ $store_currency_code ] ?? $store_currency_code;
-
-		/**
-		 * Filters the country name shown in the geolocation currency notice.
-		 *
-		 * @param string $country_name Country name.
-		 *
-		 * @since 11.0.0
-		 */
-		$country_name = apply_filters( self::FILTER_OVERRIDE_NOTICE_COUNTRY, $country_name );
-
-		/**
-		 * Filters the currency name shown in the geolocation currency notice.
-		 *
-		 * @param string $current_currency_name Current currency name.
-		 *
-		 * @since 11.0.0
-		 */
-		$current_currency_name = apply_filters( self::FILTER_OVERRIDE_NOTICE_CURRENCY_NAME, $current_currency_name );
-
-		$message = sprintf(
-			/* translators: %1$s: User country. %2$s: Selected currency name. %3$s: Store currency name. %4$s: Link to switch currency. */
-			__( 'We noticed you\'re visiting from %1$s. We\'ve updated our prices to %2$s for your shopping convenience. <a href="%4$s">Use %3$s instead.</a>', 'woocommerce' ),
-			esc_html( (string) $country_name ),
-			esc_html( (string) $current_currency_name ),
-			esc_html( $store_currency_name ),
-			esc_url( '?currency=' . $store_currency_code )
-		);
-		$notice_id = md5( $message );
-
-		echo '<p class="woocommerce-store-notice demo_store" data-notice-id="' . esc_attr( $notice_id . 2 ) . '" style="display:none;">';
+		echo '<p class="woocommerce-store-notice demo_store" data-notice-id="' . esc_attr( $notice_id ) . '" style="display:none;">';
 		echo wp_kses_post( $message );
 		echo ' <a href="#" class="woocommerce-store-notice__dismiss-link">' . esc_html__( 'Dismiss', 'woocommerce' ) . '</a></p>';
+
+		if ( $async ) {
+			echo '</template>';
+		}
 	}
 
 	/**
@@ -392,13 +363,13 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 		$currency_name       = (string) ( get_woocommerce_currencies()[ $simulation_currency ] ?? $simulation_currency );
 
 		add_filter(
-			self::FILTER_OVERRIDE_NOTICE_CURRENCY_NAME,
+			GeolocationNotice::FILTER_OVERRIDE_NOTICE_CURRENCY_NAME,
 			static function () use ( $currency_name ) {
 				return $currency_name;
 			}
 		);
 		add_filter(
-			self::FILTER_OVERRIDE_NOTICE_COUNTRY,
+			GeolocationNotice::FILTER_OVERRIDE_NOTICE_COUNTRY,
 			static function () use ( $country_name ) {
 				return $country_name;
 			}
