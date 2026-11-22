@@ -9,7 +9,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiExcept
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockWithClaimHook;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\FraudOutcomeTransactionsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLevel3Service;
@@ -794,28 +793,6 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( array( 'create_and_confirm_payment_intention' ), array_column( $this->api_client->calls, 'method' ) );
-	}
-
-	/**
-	 * A route that skips checkout's subscription policy charges a payable subscription as an ordinary order.
-	 *
-	 * @testdox Create-and-confirm refuses a subscription passed as the order without sending a payment.
-	 */
-	public function test_payment_detail_create_intent_route_refuses_a_subscription_passed_as_the_order(): void {
-		$order = $this->create_order_for_payment_intent();
-		$this->assertTrue( $order->needs_payment() );
-		$this->create_payment_details_controller()->register_routes();
-		WooCommerceSubscriptionsDoubles::load_subscription_detector();
-		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] = array( $order->get_id() );
-		try {
-			$response = $this->server->dispatch( $this->create_payment_intent_request( $order ) );
-		} finally {
-			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] );
-		}
-
-		$this->assert_refused_with_the_order_free( $response, 'subscription_outside_payment_method_change', $order );
-		$this->assertSame( "We're not able to process this payment. Please try again later.", $response->get_data()['message'] );
-		$this->assertSame( array(), $this->api_client->calls );
 	}
 
 	/**

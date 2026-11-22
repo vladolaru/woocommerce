@@ -12,7 +12,6 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use WC_Order;
 use WP_Error;
@@ -252,9 +251,6 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 				return new WP_Error( 'wcpay_order_already_paid', __( 'This order is already paid.', 'woocommerce' ), array( 'status' => 409 ) );
 			}
 			return new WP_Error( 'wcpay_order_not_payable', __( 'This order does not need payment.', 'woocommerce' ), array( 'status' => 409 ) );
-		}
-		if ( SubscriptionMethodPolicy::only_saves_the_card( $order ) ) {
-			return new WP_Error( 'subscription_outside_payment_method_change', __( "We're not able to process this payment. Please try again later.", 'woocommerce' ), array( 'status' => 409 ) );
 		}
 		if ( '' !== WooPaymentsPaymentOperationService::get_own_charge_idempotency_key( $order ) ) {
 			return new WP_Error( 'wcpay_order_payment_unresolved', __( "This order's last payment attempt is not resolved yet. Try again later.", 'woocommerce' ), array( 'status' => 409 ) );
