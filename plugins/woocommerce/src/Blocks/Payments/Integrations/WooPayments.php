@@ -416,14 +416,12 @@ final class WooPayments extends AbstractPaymentMethodType {
 	/**
 	 * Tell whether the Apple Pay, Google Pay and Amazon Pay Blocks assets should be loaded.
 	 *
-	 * @since 11.4.0
-	 *
 	 * @return bool
 	 */
 	private function should_enqueue_express_checkout_assets(): bool {
 		return $this->is_active() &&
 			$this->is_cart_checkout_or_admin() &&
-			$this->express_checkout_service->should_load_express_checkout_scripts( $this->get_button_context() );
+			$this->express_checkout_service->should_show_payment_request_button( $this->get_button_context() );
 	}
 
 	/**

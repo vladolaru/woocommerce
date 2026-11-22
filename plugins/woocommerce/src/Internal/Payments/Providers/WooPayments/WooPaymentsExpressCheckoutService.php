@@ -82,32 +82,6 @@ class WooPaymentsExpressCheckoutService {
 	 * @return bool
 	 */
 	public function should_show_payment_request_button( string $context = 'checkout' ): bool {
-		return $this->is_button_available( $context, false );
-	}
-
-	/**
-	 * Cart and checkout blocks can gain a payable cart or a supported currency without a page load.
-	 * Client 11.3.0 class-wc-payments-express-checkout-button-helper.php:715-725.
-	 *
-	 * @since 11.4.0
-	 * @param string $context Button location.
-	 * @return bool
-	 */
-	public function should_load_express_checkout_scripts( string $context ): bool {
-		$cart_block = in_array( $context, array( 'cart', 'checkout' ), true ) && ( has_block( 'woocommerce/cart' ) || has_block( 'woocommerce/checkout' ) );
-
-		return $this->is_button_available( $context, $cart_block );
-	}
-
-	/**
-	 * Check the page and its configured wallets, allowing cart state to change on block pages.
-	 *
-	 * @since 11.4.0
-	 * @param string $context    Button location.
-	 * @param bool   $cart_block Whether checking scripts for a cart or checkout block.
-	 * @return bool
-	 */
-	private function is_button_available( string $context, bool $cart_block ): bool {
 		$context = WooPaymentsExpressPaymentMethodTypes::normalize_context( $context );
 
 		// Express methods listed among the checkout payment methods are not shown again as buttons (client 11.1.0 button helper :582-586).
@@ -131,16 +105,15 @@ class WooPaymentsExpressCheckoutService {
 			return false;
 		}
 
-		if ( 'pay_for_order' !== $context && $this->would_add_unshown_billing_address_tax( $context ) && ! ( $cart_block && WC()->cart->is_empty() ) ) {
+		if ( 'pay_for_order' !== $context && $this->would_add_unshown_billing_address_tax( $context ) ) {
 			return false;
 		}
 
-		if ( ! $cart_block && 'pay_for_order' !== $context && $this->is_zero_amount( $context ) ) {
+		if ( 'pay_for_order' !== $context && $this->is_zero_amount( $context ) ) {
 			return false;
 		}
 
-		return ! empty( $this->get_allowed_payment_method_types_for_context( $context, $this->get_context_currency( $context ) ) )
-			|| ( $cart_block && WooPaymentsExpressPaymentMethodTypes::can_register_amazon_pay( $this->account_service, $context ) );
+		return ! empty( $this->get_allowed_payment_method_types_for_context( $context, $this->get_context_currency( $context ) ) );
 	}
 
 	/**

@@ -2027,21 +2027,6 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Using current currency for both decisions drops the scripts or offers an unusable Amazon Pay button.
-	 * @since 11.4.0
-	 */
-	public function test_unusable_amazon_pay_keeps_block_assets(): void {
-		$this->set_up_virtual_product_context( 'checkout' );
-		update_option( 'woocommerce_currency', 'JPY' );
-		$page_id = self::factory()->post->create( array( 'post_content' => '<!-- wp:woocommerce/checkout /-->' ) );
-		$this->go_to( get_permalink( $page_id ) );
-		$sut = $this->create_service( array( 'express_checkout_checkout_methods' => array( 'amazon_pay' ) ) );
-
-		$this->assertFalse( $sut->should_show_payment_request_button( 'checkout' ) );
-		$this->assertTrue( $sut->should_load_express_checkout_scripts( 'checkout' ) );
-	}
-
-	/**
 	 * @testdox Should tell Amazon Pay usable whichever locations list it, like the client's can_use_amazon_pay().
 	 */
 	public function test_is_amazon_pay_usable_ignores_location_settings(): void {
