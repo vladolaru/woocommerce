@@ -923,6 +923,7 @@ class AbstractAbilityTest extends AbilityTestCase {
 		$error = $this->ability( 'get-dispute' )->execute( array( 'dispute_id' => $id ) );
 		$this->assertWPError( $error );
 		$this->assertSame( 'wcpay_invalid_dispute_id', $error->get_error_code() );
+		$this->assertSame( 400, $error->get_error_data()['status'] ?? null, 'A caller input error must answer 400, not the 500 a missing status becomes.' );
 	}
 
 	/**

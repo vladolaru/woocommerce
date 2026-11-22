@@ -50,7 +50,7 @@ final class GetDispute extends AbstractAbility {
 		$params = (array) $input;
 		$id     = $params[ self::ID_FIELD ] ?? null;
 		if ( is_string( $id ) && '' !== $id && ! preg_match( '/\A(?!summary\z)\w+\z/i', $id ) ) {
-			return new \WP_Error( 'wcpay_invalid_dispute_id', __( 'Enter a valid dispute ID.', 'woocommerce' ) );
+			return new \WP_Error( 'wcpay_invalid_dispute_id', __( 'Enter a valid dispute ID.', 'woocommerce' ), array( 'status' => 400 ) );
 		}
 		return parent::execute( $params );
 	}
