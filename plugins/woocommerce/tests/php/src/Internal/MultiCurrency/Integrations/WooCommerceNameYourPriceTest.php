@@ -444,6 +444,36 @@ class WooCommerceNameYourPriceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox NYP 4.0.1 applies the converted cart price on the first session load after a currency switch.
+	 *
+	 * The old cart check missed the extension's magic getter and left the product at 15 after the switch to USD.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_currency_switch_updates_the_nyp_cart_product_price(): void {
+		require_once __DIR__ . '/Fixtures/name-your-price-cart.inc';
+		$GLOBALS['wc_name_your_price'] = new \WC_Name_Your_Price();
+		$sut                           = new WooCommerceNameYourPrice();
+		$this->init_controller( $sut, MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
+		$sut->register();
+		$this->select_currency( 'USD' );
+
+		// NYP has already applied the saved EUR price when our session filter runs.
+		$product = $this->create_product();
+		$product->set_price( '15.00' );
+		$values = array(
+			'nyp'          => '15.00',
+			'nyp_original' => '15.00',
+			'nyp_currency' => 'EUR',
+		);
+		$line   = apply_filters( 'woocommerce_get_cart_item_from_session', array( 'data' => $product ) + $values, $values, 'nyp-item' );
+
+		$this->assertSame( 18.75, $line['nyp'] );
+		$this->assertSame( 18.75, (float) $line['data']->get_price() );
+	}
+
+	/**
 	 * @testdox NYP 4.0.1 converts every suggested button once with product rounding and preserves its metadata.
 	 */
 	public function test_suggested_buttons_use_product_prices(): void {
@@ -830,13 +860,22 @@ class WooCommerceNameYourPriceTest extends WC_Unit_Test_Case {
 			}
 		};
 
+		$this->init_controller( $controller, $owner );
+		return $controller;
+	}
+
+	/**
+	 * Initialize a controller with the test currencies and pricing services.
+	 *
+	 * @param WooCommerceNameYourPrice $controller Controller under test.
+	 * @param string                   $owner      Runtime owner.
+	 */
+	private function init_controller( WooCommerceNameYourPrice $controller, string $owner ): void {
 		$controller->init(
 			$this->create_arbiter( $owner ),
 			ServiceFactories::state_builder( $this, $this->create_state_builder( $this->create_state() ) ),
 			ServiceFactories::with( $this, array( 'create_price_converter' => $this->create_price_converter() ) )
 		);
-
-		return $controller;
 	}
 
 	/**
