@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Abiliti
 
 use Automattic\WooCommerce\Abilities\AbilityDefinition;
 use Automattic\WooCommerce\Internal\Abilities\Domain\AbstractDomainAbility;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Abilities\AbilitiesRegistrar;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -58,12 +59,12 @@ abstract class AbstractAbility extends AbstractDomainAbility implements AbilityD
 	}
 
 	/**
-	 * Require the same merchant capability as the WooPayments routes.
+	 * Require the merchant capability and the current site's opt-in and eligibility.
 	 *
 	 * @since 11.4.0
 	 */
 	public static function current_user_can_manage_woocommerce(): bool {
-		return current_user_can( 'manage_woocommerce' );
+		return current_user_can( 'manage_woocommerce' ) && wc_get_container()->get( AbilitiesRegistrar::class )->is_enabled_for_current_site();
 	}
 
 	/**

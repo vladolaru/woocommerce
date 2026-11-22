@@ -180,6 +180,42 @@ class AbilitiesRegistrarTest extends AbilityTestCase {
 		}
 	}
 
+	/**
+	 * @testdox Execution trusts a registry built on another site when it skips the current site's opt-in or setup tier.
+	 * @group multisite
+	 * @testWith [false]
+	 *           [true]
+	 *
+	 * @param bool $opt_in Whether the second site opts in despite being unconnected.
+	 */
+	public function test_execution_after_switch( bool $opt_in ): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Requires two sites on a network.' );
+		}
+
+		$blog_id = self::factory()->blog->create();
+		add_filter( self::GATE, static fn() => get_current_blog_id() !== $blog_id || $opt_in );
+		$this->install_root();
+		$ability = wp_get_ability( self::PREFIX . 'get-account' );
+		$this->assertTrue( $ability->check_permissions() );
+
+		add_user_to_blog( $blog_id, get_current_user_id(), 'administrator' );
+		switch_to_blog( $blog_id );
+		try {
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+			update_option( WooPaymentsSetupTier::OPTION_NAME, $opt_in ? WooPaymentsSetupTier::AVAILABLE : WooPaymentsSetupTier::CONNECTED );
+			wp_get_current_user()->add_cap( 'manage_woocommerce' );
+			$this->assertTrue( current_user_can( 'manage_woocommerce' ) );
+			add_filter( 'rest_pre_dispatch', static fn() => new \WP_Error( 'unexpected_dispatch', 'A retained ability reached REST.' ) );
+			$error = $ability->execute( array() );
+			$this->assertWPError( $error );
+			$this->assertSame( 'ability_invalid_permissions', $error->get_error_code() );
+		} finally {
+			restore_current_blog();
+			wpmu_delete_blog( $blog_id, true );
+		}
+	}
+
 	/** Destination site configurations for first registry discovery after switching blogs. */
 	public static function switched_discovery_sites(): array {
 		return array(

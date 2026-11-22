@@ -76,10 +76,20 @@ final class AbilitiesRegistrar implements RegisterHooksInterface {
 	 * @return mixed Filtered definitions, or the original non-array value.
 	 */
 	public function append_classes( $classes ) {
-		if ( ! is_array( $classes ) ) {
+		if ( ! is_array( $classes ) || ! $this->is_enabled_for_current_site() ) {
 			return $classes;
 		}
 
+		return array_merge( $classes, self::ABILITY_CLASSES );
+	}
+
+	/**
+	 * Check the current site's opt-in and, on multisite, its effective setup tier.
+	 *
+	 * @since 11.4.0
+	 * @internal
+	 */
+	public function is_enabled_for_current_site(): bool {
 		/**
 		 * Filters whether WooPayments registers its abilities. Only literal false disables registration.
 		 *
@@ -88,14 +98,9 @@ final class AbilitiesRegistrar implements RegisterHooksInterface {
 		 * @param bool $enabled Whether to register the WooPayments abilities. Default false.
 		 */
 		if ( false === apply_filters( 'woocommerce_payments_abilities_enabled', false ) ) {
-			return $classes;
+			return false;
 		}
 
-		// A network job can switch sites between installing this filter and first opening the registry.
-		if ( is_multisite() && ! in_array( $this->setup_tier->get_effective_tier(), array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true ) ) {
-			return $classes;
-		}
-
-		return array_merge( $classes, self::ABILITY_CLASSES );
+		return ! is_multisite() || in_array( $this->setup_tier->get_effective_tier(), array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true );
 	}
 }
