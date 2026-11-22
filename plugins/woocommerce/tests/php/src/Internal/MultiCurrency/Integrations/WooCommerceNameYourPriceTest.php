@@ -53,11 +53,21 @@ class WooCommerceNameYourPriceTest extends WC_Unit_Test_Case {
 	private array $original_request = array();
 
 	/**
+	 * Original request cookies.
+	 *
+	 * @var array<mixed>
+	 */
+	private array $original_cookies = array();
+
+	/**
 	 * Set up test fixtures.
 	 */
 	public function set_up(): void {
 		parent::set_up();
 		$this->original_request = $_REQUEST; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Captures request fixture state for restoration.
+		$this->original_cookies = $_COOKIE;
+		// Start each case as a fresh browser: an earlier test can leave another customer's session cookie.
+		unset( $_COOKIE[ 'wp_woocommerce_session_' . COOKIEHASH ] );
 	}
 
 	/**
@@ -69,6 +79,7 @@ class WooCommerceNameYourPriceTest extends WC_Unit_Test_Case {
 		}
 
 		$_REQUEST = $this->original_request; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Restores request fixture state.
+		$_COOKIE  = $this->original_cookies;
 
 		parent::tear_down();
 	}
