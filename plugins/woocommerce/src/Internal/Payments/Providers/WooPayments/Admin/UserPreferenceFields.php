@@ -49,6 +49,7 @@ class UserPreferenceFields implements RegisterHooksInterface {
 				'wc_payments_payouts_hidden_columns',
 				'wc_payments_disputes_hidden_columns',
 				'wc_payments_documents_hidden_columns',
+				'wc_payments_capital_loans_hidden_columns',
 				// The Fees report's saved view, `{ fields, perPage, layout }` (client 11.3.0 includes/class-wc-payments.php:1074); only its `perPage` is read.
 				'wc_payments_reports_fees_view',
 			)

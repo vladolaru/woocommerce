@@ -38,6 +38,12 @@
 		padding: 6px 10px;
 	}
 
+	&__table-heading {
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
+	}
+
 	&__table {
 		border-collapse: collapse;
 		width: 100%;
@@ -51,8 +57,7 @@
 		vertical-align: top;
 	}
 
-	&__table th:nth-child(n + 3),
-	&__table td:nth-child(n + 3) {
+	&__table [data-column]:not([data-column="paid_out_at"], [data-column="status"]) {
 		text-align: end;
 	}
 

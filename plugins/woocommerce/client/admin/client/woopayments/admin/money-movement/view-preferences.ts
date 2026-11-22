@@ -13,7 +13,8 @@ export type WooPaymentsHiddenColumnsKey =
 	| 'wc_payments_transactions_uncaptured_hidden_columns'
 	| 'wc_payments_payouts_hidden_columns'
 	| 'wc_payments_disputes_hidden_columns'
-	| 'wc_payments_documents_hidden_columns';
+	| 'wc_payments_documents_hidden_columns'
+	| 'wc_payments_capital_loans_hidden_columns';
 
 const SAME_COLUMN_KEYS: Record< string, string > = {};
 const NO_DEFAULT_HIDDEN_COLUMNS: string[] = [];

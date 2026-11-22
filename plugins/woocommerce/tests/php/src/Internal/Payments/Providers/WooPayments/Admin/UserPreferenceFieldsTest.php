@@ -26,6 +26,7 @@ class UserPreferenceFieldsTest extends WC_Unit_Test_Case {
 		'wc_payments_payouts_hidden_columns',
 		'wc_payments_disputes_hidden_columns',
 		'wc_payments_documents_hidden_columns',
+		'wc_payments_capital_loans_hidden_columns',
 		'wc_payments_reports_fees_view',
 	);
 

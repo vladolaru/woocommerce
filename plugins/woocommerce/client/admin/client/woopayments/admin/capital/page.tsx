@@ -1,6 +1,7 @@
 /**
  * External dependencies
  */
+import { EllipsisMenu, MenuItem, MenuTitle } from '@woocommerce/components';
 import { useEffect, useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 
@@ -26,6 +27,7 @@ import {
 	formatSiteDateTime,
 	getErrorMessage,
 } from '../money-movement/utils';
+import { usePersistedHiddenFields } from '../money-movement/view-preferences';
 import { handleSettingsPaymentsProviderRouteClick } from '../utils';
 import { WooPaymentsTestModeNotice } from '../test-mode-notice';
 import { StatusChip } from '../overview/components/status-chip';
@@ -94,6 +96,59 @@ const LoanActionLink = ( { loan }: { loan: WooPaymentsCapitalLoan } ) => (
 	</a>
 );
 
+// Client 11.3.0 capital/index.tsx:34-77,212-237.
+const loanColumns = [
+	{
+		key: 'paid_out_at',
+		label: __( 'Disbursed', 'woocommerce' ),
+		required: true,
+		cell: ( loan: WooPaymentsCapitalLoan ) =>
+			formatSiteDateTime( loan.paid_out_at, false ),
+	},
+	{
+		key: 'status',
+		label: __( 'Status', 'woocommerce' ),
+		cell: ( loan: WooPaymentsCapitalLoan ) => (
+			<LoanStatusChip loan={ loan } />
+		),
+	},
+	{
+		key: 'amount',
+		label: __( 'Amount', 'woocommerce' ),
+		required: true,
+		cell: ( loan: WooPaymentsCapitalLoan ) =>
+			formatExplicitCurrency( loan.amount, loan.currency ),
+	},
+	{
+		key: 'fee_amount',
+		label: __( 'Fixed fee', 'woocommerce' ),
+		cell: ( loan: WooPaymentsCapitalLoan ) =>
+			formatExplicitCurrency( loan.fee_amount, loan.currency ),
+	},
+	{
+		key: 'withhold_rate',
+		label: __( 'Withhold rate', 'woocommerce' ),
+		cell: ( loan: WooPaymentsCapitalLoan ) =>
+			formatCapitalPercent( loan.withhold_rate ),
+	},
+	{
+		key: 'first_paydown_at',
+		label: __( 'First paydown', 'woocommerce' ),
+		cell: ( loan: WooPaymentsCapitalLoan ) =>
+			formatSiteDateTime( loan.first_paydown_at, false ),
+	},
+	{
+		key: 'actions',
+		label: __( 'Actions', 'woocommerce' ),
+		required: true,
+		cell: ( loan: WooPaymentsCapitalLoan ) => (
+			<LoanActionLink loan={ loan } />
+		),
+	},
+];
+const optionalColumns = loanColumns.filter( ( column ) => ! column.required );
+const optionalKeys = optionalColumns.map( ( column ) => column.key );
+
 const LoanListSummary = ( { loans }: { loans: WooPaymentsCapitalLoan[] } ) => {
 	if ( loans.length === 0 ) {
 		return null;
@@ -158,6 +213,22 @@ export const WooPaymentsCapitalPage = () => {
 	const [ loans, setLoans ] = useState< WooPaymentsCapitalLoan[] >( [] );
 	const [ isLoading, setIsLoading ] = useState( true );
 	const [ errorMessage, setErrorMessage ] = useState< string | null >( null );
+
+	const { visibleFields, saveFields } = usePersistedHiddenFields(
+		'wc_payments_capital_loans_hidden_columns',
+		optionalKeys
+	);
+	const visibleColumns = loanColumns.filter(
+		( column ) => column.required || visibleFields.includes( column.key )
+	);
+
+	const toggleColumn = ( key: string ) => {
+		saveFields(
+			visibleFields.includes( key )
+				? visibleFields.filter( ( field ) => field !== key )
+				: [ ...visibleFields, key ]
+		);
+	};
 
 	useEffect( () => {
 		let isMounted = true;
@@ -246,72 +317,63 @@ export const WooPaymentsCapitalPage = () => {
 			) }
 			{ hasLoans && (
 				<section className="woocommerce-woopayments-capital__section">
-					<h3>{ __( 'All loans', 'woocommerce' ) }</h3>
+					<div className="woocommerce-woopayments-capital__table-heading">
+						<h3>{ __( 'All loans', 'woocommerce' ) }</h3>
+						<EllipsisMenu
+							label={ __(
+								'Choose which values to display',
+								'woocommerce'
+							) }
+							placement="bottom-end"
+							renderContent={ () => (
+								<>
+									<MenuTitle>
+										{ __( 'Columns:', 'woocommerce' ) }
+									</MenuTitle>
+									{ optionalColumns.map(
+										( { key, label } ) => (
+											<MenuItem
+												key={ key }
+												checked={ visibleFields.includes(
+													key
+												) }
+												isCheckbox
+												isClickable
+												onInvoke={ () =>
+													toggleColumn( key )
+												}
+											>
+												{ label }
+											</MenuItem>
+										)
+									) }
+								</>
+							) }
+						/>
+					</div>
 					<LoanListSummary loans={ loans } />
 					<table className="woocommerce-woopayments-capital__table">
 						<thead>
 							<tr>
-								<th scope="col">
-									{ __( 'Disbursed', 'woocommerce' ) }
-								</th>
-								<th scope="col">
-									{ __( 'Status', 'woocommerce' ) }
-								</th>
-								<th scope="col">
-									{ __( 'Amount', 'woocommerce' ) }
-								</th>
-								<th scope="col">
-									{ __( 'Fixed fee', 'woocommerce' ) }
-								</th>
-								<th scope="col">
-									{ __( 'Withhold rate', 'woocommerce' ) }
-								</th>
-								<th scope="col">
-									{ __( 'First paydown', 'woocommerce' ) }
-								</th>
-								<th scope="col">
-									{ __( 'Actions', 'woocommerce' ) }
-								</th>
+								{ visibleColumns.map( ( { key, label } ) => (
+									<th
+										key={ key }
+										scope="col"
+										data-column={ key }
+									>
+										{ label }
+									</th>
+								) ) }
 							</tr>
 						</thead>
 						<tbody>
 							{ loans.map( ( loan ) => (
 								<tr key={ loan.stripe_loan_id }>
-									<td>
-										{ formatSiteDateTime(
-											loan.paid_out_at,
-											false
-										) }
-									</td>
-									<td>
-										<LoanStatusChip loan={ loan } />
-									</td>
-									<td>
-										{ formatExplicitCurrency(
-											loan.amount,
-											loan.currency
-										) }
-									</td>
-									<td>
-										{ formatExplicitCurrency(
-											loan.fee_amount,
-											loan.currency
-										) }
-									</td>
-									<td>
-										{ formatCapitalPercent(
-											loan.withhold_rate
-										) }
-									</td>
-									<td>
-										{ formatSiteDateTime(
-											loan.first_paydown_at,
-											false
-										) }
-									</td>
-									<td>
-										<LoanActionLink loan={ loan } />
-									</td>
+									{ visibleColumns.map( ( { key, cell } ) => (
+										<td key={ key } data-column={ key }>
+											{ cell( loan ) }
+										</td>
+									) ) }
 								</tr>
 							) ) }
 						</tbody>

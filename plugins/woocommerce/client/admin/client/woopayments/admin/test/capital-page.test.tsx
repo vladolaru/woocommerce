@@ -2,6 +2,9 @@
  * External dependencies
  */
 import { act, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { dispatch } from '@wordpress/data';
+import { userStore } from '@woocommerce/data';
 import apiFetch from '@wordpress/api-fetch';
 
 /**
@@ -132,6 +135,96 @@ describe( 'WooPaymentsCapitalPage', () => {
 		};
 		mockApiFetch.mockReset();
 		mockCreateErrorNotice.mockReset();
+	} );
+
+	it( 'restores the selected loan columns for the same user only', async () => {
+		mockCapitalApi();
+		const preference = 'wc_payments_capital_loans_hidden_columns';
+		const saved: Record< number, Record< string, string > > = {};
+		const hydrateUser = ( id: number ) => {
+			const store = dispatch( userStore ) as unknown as Record<
+				string,
+				( ...args: unknown[] ) => void
+			>;
+			store.startResolution( 'getCurrentUser', [] );
+			store.receiveCurrentUser( {
+				id,
+				woocommerce_meta: saved[ id ] ?? {},
+			} );
+			store.finishResolution( 'getCurrentUser', [] );
+		};
+		const originalFetch = globalThis.fetch;
+		globalThis.fetch = jest.fn( async ( url, options ) => {
+			const id = Number( String( url ).match( /users\/(\d+)/ )?.[ 1 ] );
+			if ( options?.method === 'POST' ) {
+				saved[ id ] = JSON.parse(
+					String( options.body )
+				).woocommerce_meta;
+			}
+			return {
+				ok: true,
+				status: 200,
+				headers: new Headers(),
+				json: async () => ( {
+					id,
+					woocommerce_meta: saved[ id ] ?? {},
+				} ),
+			} as Response;
+		} );
+		try {
+			hydrateUser( 7 );
+			const first = render( <WooPaymentsCapitalPage /> );
+			await userEvent.click(
+				await screen.findByRole( 'button', {
+					name: 'Choose which values to display',
+				} )
+			);
+			expect(
+				screen
+					.getAllByRole( 'menuitemcheckbox' )
+					.map( ( choice ) => choice.textContent )
+			).toEqual( [
+				'Status',
+				'Fixed fee',
+				'Withhold rate',
+				'First paydown',
+			] );
+			await userEvent.click(
+				screen.getByRole( 'menuitemcheckbox', { name: 'Fixed fee' } )
+			);
+			await waitFor( () =>
+				expect( saved[ 7 ]?.[ preference ] ).toBe( '["fee_amount"]' )
+			);
+			expect(
+				screen.queryByRole( 'columnheader', { name: 'Fixed fee' } )
+			).not.toBeInTheDocument();
+			first.unmount();
+
+			hydrateUser( 7 );
+			const reload = render( <WooPaymentsCapitalPage /> );
+			await screen.findByRole( 'columnheader', { name: 'Amount' } );
+			expect(
+				screen.queryByRole( 'columnheader', { name: 'Fixed fee' } )
+			).not.toBeInTheDocument();
+			expect(
+				screen.queryByRole( 'cell', { name: '$100.00' } )
+			).not.toBeInTheDocument();
+			expect(
+				screen.getByRole( 'columnheader', { name: 'Actions' } )
+			).toBeInTheDocument();
+			reload.unmount();
+
+			hydrateUser( 8 );
+			render( <WooPaymentsCapitalPage /> );
+			expect(
+				await screen.findByRole( 'columnheader', { name: 'Fixed fee' } )
+			).toBeInTheDocument();
+			expect(
+				screen.getByRole( 'cell', { name: '$100.00' } )
+			).toBeInTheDocument();
+		} finally {
+			globalThis.fetch = originalFetch;
+		}
 	} );
 
 	it( 'loads Capital loans and active loan summary from preserved endpoints', async () => {
