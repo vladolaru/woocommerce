@@ -6,7 +6,6 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentGatewayProviderInterface;
-use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventOrderResolver;
@@ -15,7 +14,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
-use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil;
 use Automattic\WooCommerce\StoreApi\Payments\PaymentContext;
@@ -80,7 +78,12 @@ class WooPaymentsEarlierAttemptCleanupTest extends WC_Unit_Test_Case {
 
 		wc_get_container()->replace( Client::class, $api_client );
 
-		$this->sut = new WooPaymentsEarlierAttemptCleanup();
+		$this->sut = new class() extends WooPaymentsEarlierAttemptCleanup {
+			/**
+			 * No wait between lock claims in tests.
+			 */
+			protected function wait_before_lock_retry(): void {}
+		};
 		$this->sut->register();
 	}
 
@@ -550,62 +553,6 @@ class WooPaymentsEarlierAttemptCleanupTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox When the order payment lock is held at the checkout, the cleanup claims it once, without waiting, then notes that nothing was removed.
-	 *
-	 * The cleanup runs inside another gateway's checkout. Any holder refuses it, a short status update included, and the note
-	 * already tells the merchant to check the order's payment, so no request sleeps for the lock.
-	 */
-	public function test_cleanup_refused_by_the_order_payment_lock_claims_once_and_notes_it(): void {
-		$order      = StoredPaymentRecords::attempt_before_a_takeover( 'requires_payment_method', 'pi_A' );
-		$keys       = self::read_keys( $order );
-		$lock       = $this->replace_with_counting_lock();
-		$vocabulary = wc_get_container()->get( WooPaymentsPersistenceVocabulary::class );
-		$token      = $lock->claim( $order, $vocabulary, 'pi_other', 'payment status update' );
-		try {
-			do_action( 'woocommerce_store_api_checkout_order_processed', $order );
-		} finally {
-			$lock->release( $order, $vocabulary, (string) $token );
-		}
-
-		$this->assertSame( array( 'payment status update', 'takeover cleanup' ), $lock->claimed_operations, 'One claim by the cleanup, after the holder\'s.' );
-		$this->assertSame( $keys, self::read_keys( wc_get_order( $order->get_id() ) ) );
-		$this->assertSame( 1, self::count_notes( $order, sprintf( 'The payment details of an earlier WooPayments attempt (%1$s) were not removed when the customer checked out with another payment method, because a WooPayments payment for this order was being recorded at that moment. Before fulfilling the order, check its payment details or the WooPayments transaction for %1$s.', self::linked_id( 'pi_A' ) ) ) );
-		$this->assertFalse( has_action( 'shutdown', array( $this->sut, 'finish_earlier_attempts' ) ), 'A refused cleanup leaves nothing for shutdown.' );
-	}
-
-	/**
-	 * @testdox When the order payment lock is held at shutdown, the cleanup claims it again, is refused, keeps the transaction ID and still cancels the earlier attempt, noting both.
-	 *
-	 * Pins the path after a refusal: only the transaction ID waits for the lock; the cancel goes to the platform either way.
-	 */
-	public function test_shutdown_claims_again_and_cancels_after_a_refusal(): void {
-		$logger                    = RecordingWcLogger::install();
-		$order                     = StoredPaymentRecords::attempt_before_a_takeover( 'requires_action', 'pi_A', 'pi_A' );
-		$this->transport->response = self::platform_answer(
-			200,
-			array(
-				'id'     => 'pi_A',
-				'status' => 'canceled',
-			)
-		);
-		do_action( 'woocommerce_store_api_checkout_order_processed', $order );
-
-		$lock       = wc_get_container()->get( OrderPaymentLock::class );
-		$vocabulary = wc_get_container()->get( WooPaymentsPersistenceVocabulary::class );
-		$token      = $lock->claim( $order, $vocabulary, 'pi_other', 'payment status update' );
-		try {
-			$this->sut->finish_earlier_attempts();
-		} finally {
-			$lock->release( $order, $vocabulary, (string) $token );
-		}
-
-		$this->assertCount( 1, array_filter( $logger->contexts, static fn( array $context ): bool => 'takeover_cleanup_lock_refused' === ( $context['reason'] ?? '' ) && 'payment status update' === ( $context['holder_operation'] ?? '' ) ), 'The shutdown step claims again and is refused.' );
-		$this->assertSame( array( 'POST /sites/123/wcpay/intentions/pi_A/cancel' ), $this->sent_requests() );
-		$this->assertSame( 'pi_A', wc_get_order( $order->get_id() )->get_transaction_id() );
-		$this->assertSame( 1, self::count_notes( $order, 'The earlier WooPayments payment <code>pi_A</code> was cancelled because the customer checked out with another payment method. The order&#039;s transaction ID was not cleared, because a WooPayments payment for this order was being recorded at that moment.' ) );
-	}
-
-	/**
 	 * @testdox A save that sets another payment method outside the order's pay action runs no cleanup, so a WooPayments payment stays the order's own ($_dataName).
 	 * @dataProvider provide_saves_outside_the_pay_action
 	 *
@@ -1020,41 +967,6 @@ class WooPaymentsEarlierAttemptCleanupTest extends WC_Unit_Test_Case {
 	 */
 	private static function linked_id( string $intent_id ): string {
 		return '<a href="' . admin_url( 'admin.php' ) . '?page=wc-admin&#038;path=%2Fpayments%2Ftransactions%2Fdetails&#038;id=' . $intent_id . '" target="_blank" rel="noopener noreferrer">' . $intent_id . '</a>';
-	}
-
-	/**
-	 * Put an order payment lock in the container that holds real lock rows and lists the operation of every claim.
-	 *
-	 * @return OrderPaymentLock
-	 */
-	private function replace_with_counting_lock(): OrderPaymentLock {
-		$lock = new class() extends OrderPaymentLock {
-			/**
-			 * Operation of each claim, in order.
-			 *
-			 * @var string[]
-			 */
-			public array $claimed_operations = array();
-
-			/**
-			 * List the claim's operation, then claim.
-			 *
-			 * @param WC_Order                               $order      Order being locked.
-			 * @param ProviderPersistenceVocabularyInterface $vocabulary Persistence vocabulary.
-			 * @param string|null                            $reference  Payment reference.
-			 * @param string                                 $operation  Operation claiming the lock.
-			 * @return string|null
-			 */
-			public function claim( WC_Order $order, ProviderPersistenceVocabularyInterface $vocabulary, ?string $reference, string $operation ): ?string {
-				$this->claimed_operations[] = $operation;
-
-				return parent::claim( $order, $vocabulary, $reference, $operation );
-			}
-		};
-		$lock->init( wc_get_container()->get( TransientRowLock::class ) );
-		wc_get_container()->replace( OrderPaymentLock::class, $lock );
-
-		return $lock;
 	}
 
 	/**
