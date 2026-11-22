@@ -349,6 +349,10 @@ const getOutcomeNoticeText = (
 			);
 };
 
+const confirmEvidenceAction = ( message: string ) =>
+	// eslint-disable-next-line no-alert -- The reference dispute flow asks for browser confirmation.
+	window.confirm( message );
+
 // Client 11.1.0 new-evidence/index.tsx:473-479: the stepper labels.
 const getStepTabLabel = ( step: EvidenceStep ) => {
 	switch ( step ) {
@@ -437,10 +441,10 @@ export const DisputeEvidenceForm = ( {
 	useEffect( () => {
 		setIsSummaryOpen( currentStep === 'basics' );
 	}, [ currentStep ] );
-	const [ isCoverLetterManuallyEdited, setIsCoverLetterManuallyEdited ] =
-		useState(
-			() => !! getStringEvidenceValue( dispute, 'uncategorized_text' )
-		);
+	// A fresh visit generates an empty saved letter. During this visit, an empty edit is intentional.
+	const [ editedCoverLetter, setEditedCoverLetter ] = useState<
+		string | null
+	>( () => getStringEvidenceValue( dispute, 'uncategorized_text' ) || null );
 	const [ notice, setNotice ] = useState< NoticeState >( null );
 	const [ saveInProgress, setSaveInProgress ] = useState<
 		'draft' | 'submit' | null
@@ -567,6 +571,9 @@ export const DisputeEvidenceForm = ( {
 		refundStatus,
 		settings,
 	] );
+	const coverLetter = isVisaCompliance
+		? evidence.uncategorized_text
+		: ( editedCoverLetter ?? generatedCoverLetter );
 	const disputeTracksProperties = useMemo(
 		() => ( {
 			dispute_id: disputeId,
@@ -579,41 +586,13 @@ export const DisputeEvidenceForm = ( {
 	useEffect( () => {
 		setEvidence( getInitialEvidenceState( dispute ) );
 		setProductType( getInitialProductType( dispute ) );
-		setIsCoverLetterManuallyEdited(
-			!! getStringEvidenceValue( dispute, 'uncategorized_text' )
-		);
 	}, [ dispute ] );
 
 	useEffect( () => {
-		if ( isVisaCompliance ) {
-			return;
+		if ( editedCoverLetter === generatedCoverLetter ) {
+			setEditedCoverLetter( null );
 		}
-
-		// Client 11.1.0 new-evidence/index.tsx:446-452: a letter that matches the generated one is no longer an edit.
-		if ( isCoverLetterManuallyEdited ) {
-			if ( evidence.uncategorized_text === generatedCoverLetter ) {
-				setIsCoverLetterManuallyEdited( false );
-			}
-
-			return;
-		}
-
-		setEvidence( ( currentEvidence ) => {
-			if ( currentEvidence.uncategorized_text === generatedCoverLetter ) {
-				return currentEvidence;
-			}
-
-			return {
-				...currentEvidence,
-				uncategorized_text: generatedCoverLetter,
-			};
-		} );
-	}, [
-		evidence.uncategorized_text,
-		generatedCoverLetter,
-		isCoverLetterManuallyEdited,
-		isVisaCompliance,
-	] );
+	}, [ editedCoverLetter, generatedCoverLetter ] );
 
 	useEffect( () => {
 		const previousFileDetails = previousFileDetailsRef.current;
@@ -736,7 +715,7 @@ export const DisputeEvidenceForm = ( {
 			selection: nextProductType,
 		} );
 		setProductType( nextProductType );
-		setIsCoverLetterManuallyEdited( false );
+		setEditedCoverLetter( null );
 	};
 
 	// Client 11.1.0 new-evidence/index.tsx:1170-1188: a status change keeps a manually edited letter; the letter only
@@ -777,15 +756,26 @@ export const DisputeEvidenceForm = ( {
 		}
 
 		if ( submit ) {
-			// eslint-disable-next-line no-alert -- The reference dispute flow confirms final submission with a browser confirmation.
-			const confirmed = window.confirm(
-				__(
+			let message: string;
+			if ( isVisaCompliance ) {
+				message = __(
 					'Are you sure you’re ready to submit this evidence? Evidence submissions are final.',
 					'woocommerce'
-				)
-			);
+				);
+			} else {
+				message =
+					coverLetter.trim() === ''
+						? __(
+								"Your cover letter is empty. Are you sure you're ready to submit this evidence? Evidence submissions are final.",
+								'woocommerce'
+							)
+						: __(
+								"Are you sure you're ready to submit this evidence? Evidence submissions are final.",
+								'woocommerce'
+							);
+			}
 
-			if ( ! confirmed ) {
+			if ( ! confirmEvidenceAction( message ) ) {
 				return null;
 			}
 		}
@@ -799,12 +789,6 @@ export const DisputeEvidenceForm = ( {
 		setSaveInProgress( submit ? 'submit' : 'draft' );
 
 		try {
-			const nextEvidence = {
-				...evidence,
-				uncategorized_text:
-					evidence.uncategorized_text ||
-					( isVisaCompliance ? '' : generatedCoverLetter ),
-			};
 			const updatedDispute = await updateWooPaymentsDispute(
 				disputeId,
 				buildEvidencePayload(
@@ -813,7 +797,10 @@ export const DisputeEvidenceForm = ( {
 						productType,
 						refundStatus,
 						duplicateStatus,
-						evidence: nextEvidence,
+						evidence: {
+							...evidence,
+							uncategorized_text: coverLetter,
+						},
 						existingEvidence: dispute.evidence,
 						metadata: dispute.metadata,
 					},
@@ -892,22 +879,18 @@ export const DisputeEvidenceForm = ( {
 		setCurrentStep( getPreviousStep( currentStep, includeShippingStep ) );
 	};
 
-	const handleCoverLetterChange = ( value: string ) => {
-		setIsCoverLetterManuallyEdited( true );
-		updateEvidenceField( 'uncategorized_text', value );
-	};
-
-	// Client 11.1.0 new-evidence/index.tsx:1266-1335: clearing the letter regenerates it; an edit only counts when the
-	// letter no longer matches the generated one.
-	const handleReviewCoverLetterChange = ( value: string ) => {
-		if ( value.trim() === '' ) {
-			setIsCoverLetterManuallyEdited( false );
-			updateEvidenceField( 'uncategorized_text', generatedCoverLetter );
-			return;
+	const handleRestoreCoverLetter = () => {
+		if (
+			coverLetter.trim() === '' ||
+			confirmEvidenceAction(
+				__(
+					'Replace your cover letter with the generated one? Your edits will be lost.',
+					'woocommerce'
+				)
+			)
+		) {
+			setEditedCoverLetter( null );
 		}
-
-		setIsCoverLetterManuallyEdited( value !== generatedCoverLetter );
-		updateEvidenceField( 'uncategorized_text', value );
 	};
 
 	const handleVisaComplianceDetailsChange = ( value: string ) => {
@@ -915,7 +898,7 @@ export const DisputeEvidenceForm = ( {
 			return;
 		}
 
-		handleCoverLetterChange( value );
+		updateEvidenceField( 'uncategorized_text', value );
 	};
 
 	// Each step labels its documents from its own list: one field can be named differently on two steps.
@@ -1522,38 +1505,43 @@ export const DisputeEvidenceForm = ( {
 							{ ! isVisaCompliance &&
 								currentStep === 'review' && (
 									<section className="woocommerce-woopayments-dispute-evidence__cover-letter">
-										{ /* Client 11.1.0 new-evidence/index.tsx:1251-1264. */ }
-										{ isCoverLetterManuallyEdited && (
-											<Notice
-												status="warning"
-												isDismissible={ false }
-												className="woocommerce-woopayments-dispute-evidence__cover-letter-warning"
-											>
-												<WarningIcon className="woocommerce-woopayments-dispute-evidence__outcome-icon" />
-												<span>
-													{ __(
-														"You've made some manual edits to your cover letter. If you update your evidence again, those changes won't be reflected here automatically — but you can always make further edits yourself.",
-														'woocommerce'
-													) }
-												</span>
-											</Notice>
-										) }
+										{ editedCoverLetter !== null &&
+											! readOnly && (
+												<Notice
+													status="warning"
+													isDismissible={ false }
+													actions={ [
+														{
+															label: __(
+																'Restore generated letter',
+																'woocommerce'
+															),
+															onClick:
+																handleRestoreCoverLetter,
+														},
+													] }
+													className="woocommerce-woopayments-dispute-evidence__cover-letter-warning"
+												>
+													<WarningIcon className="woocommerce-woopayments-dispute-evidence__outcome-icon" />
+													<span>
+														{ __(
+															"You've made some manual edits to your cover letter. If you update your evidence again, those changes won't be reflected here automatically — but you can always make further edits yourself.",
+															'woocommerce'
+														) }
+													</span>
+												</Notice>
+											) }
 										{ /* Client 11.1.0 new-evidence/cover-letter.tsx:112-133. */ }
 										<TextareaControl
 											label={ __(
 												'Cover letter',
 												'woocommerce'
 											) }
-											value={
-												evidence.uncategorized_text ||
-												generatedCoverLetter
-											}
+											value={ coverLetter }
 											rows={ 30 }
 											readOnly={ formLocked }
 											__nextHasNoMarginBottom
-											onChange={
-												handleReviewCoverLetterChange
-											}
+											onChange={ setEditedCoverLetter }
 										/>
 										<Button
 											variant="primary"
@@ -1561,8 +1549,7 @@ export const DisputeEvidenceForm = ( {
 											__next40pxDefaultSize
 											onClick={ () =>
 												openCoverLetterPreview(
-													evidence.uncategorized_text ||
-														generatedCoverLetter
+													coverLetter
 												)
 											}
 										>

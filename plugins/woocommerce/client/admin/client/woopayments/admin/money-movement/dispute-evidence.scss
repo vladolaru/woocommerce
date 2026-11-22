@@ -83,6 +83,8 @@
 }
 
 .woocommerce-woopayments-dispute-evidence__cover-letter-warning.components-notice {
+	// stylelint-disable-next-line color-no-hex -- Client warning icon and action colour; no upstream token.
+	--wp-components-color-accent: #614200;
 	// stylelint-disable-next-line color-no-hex -- client 11.1.0 cover letter warning background; no upstream token.
 	background-color: #fcf9e8;
 	border-inline-start: 4px solid $woopayments-warning-yellow;
@@ -90,14 +92,22 @@
 	margin: 0;
 
 	.components-notice__content {
-		align-items: flex-start;
-		display: flex;
-		gap: $woopayments-notice-icon-gap;
+		align-items: start;
+		display: grid;
+		gap: $gap-small $woopayments-notice-icon-gap;
+		grid-template-columns: auto minmax(0, 1fr);
+	}
+
+	.components-notice__actions {
+		grid-column: 2;
+	}
+
+	.components-notice__action {
+		margin-inline: 0;
 	}
 
 	.woocommerce-woopayments-dispute-evidence__outcome-icon {
-		// stylelint-disable-next-line color-no-hex -- client 11.1.0 cover letter warning icon colour; no upstream token.
-		fill: #614200;
+		fill: var(--wp-components-color-accent);
 	}
 }
 

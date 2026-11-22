@@ -22,7 +22,7 @@ import {
 	extractSavedEvidenceFileIds,
 } from './dispute-evidence-fields';
 import type { WooPaymentsDispute } from './types';
-import { getErrorMessage } from './utils';
+import { getDisputeId, getErrorMessage } from './utils';
 import { LiveStatusMessage, StatusMessage } from './table';
 import { WooPaymentsTestModeNotice } from '../test-mode-notice';
 import '../style.scss';
@@ -215,6 +215,7 @@ export const WooPaymentsDisputeChallengePage = () => {
 			) }
 			{ dispute && ! errorMessage && (
 				<DisputeEvidenceForm
+					key={ getDisputeId( dispute ) }
 					dispute={ dispute }
 					fileDetails={ fileDetails }
 					onDisputeUpdated={ setDispute }

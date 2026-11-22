@@ -1,7 +1,14 @@
 /**
  * External dependencies
  */
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import {
+	act,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+	within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import apiFetch from '@wordpress/api-fetch';
 import { speak } from '@wordpress/a11y';
@@ -139,7 +146,15 @@ const uploadFile = async (
 	} );
 };
 
-const clickButton = async ( name: string ) => {
+const getLetter = () =>
+	screen.getByRole( 'textbox', {
+		name: 'Cover letter',
+	} ) as globalThis.HTMLTextAreaElement;
+
+const changeLetter = ( value: string ) =>
+	fireEvent.change( getLetter(), { target: { value } } );
+
+const clickButton = async ( name: string | RegExp ) => {
 	await act( async () => {
 		await userEvent.click( screen.getByRole( 'button', { name } ) );
 	} );
@@ -631,9 +646,7 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 			} );
 
 			return {
-				coverLetter: screen.getByRole( 'textbox', {
-					name: 'Cover letter',
-				} ) as HTMLTextAreaElement,
+				coverLetter: getLetter(),
 				unmount,
 			};
 		};
@@ -650,7 +663,7 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 			).not.toBeInTheDocument();
 		} );
 
-		it( 'previews the cover letter in a new window', async () => {
+		it( 'previews generated, edited, cleared and whitespace letters verbatim', async () => {
 			const { coverLetter } = await goToReview();
 			const pre = { textContent: '' };
 			let onLoad: ( () => void ) | undefined;
@@ -707,79 +720,241 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 			).toHaveBeenCalledWith( 'cover-letter-content' );
 			expect( pre.textContent ).toBe( coverLetter.value );
 			expect( pre.textContent ).toContain( 'Dear' );
+			for ( const value of [ 'My preview.', '', '  \n ' ] ) {
+				changeLetter( value );
+				await clickButton(
+					'Preview cover letter (opens in a new tab)'
+				);
+				onLoad?.();
+				expect( pre.textContent ).toBe( value );
+			}
 			expect( revokeObjectURL ).toHaveBeenCalledWith(
 				'blob:cover-letter'
 			);
 		} );
 
-		it( 'warns about manual edits, and regenerates the letter when it is cleared', async () => {
+		const restoreLabel = 'Restore generated letter';
+		const restorePrompt =
+			'Replace your cover letter with the generated one? Your edits will be lost.';
+		const emptyPrompt =
+			"Your cover letter is empty. Are you sure you're ready to submit this evidence? Evidence submissions are final.";
+		const standardPrompt =
+			"Are you sure you're ready to submit this evidence? Evidence submissions are final.";
+		const savedLetter = 'Earlier saved letter.';
+		const withSavedLetter = () =>
+			makeDispute( { evidence: { uncategorized_text: savedLetter } } );
+		const expectLetterSent = ( value: string, submit: boolean ) =>
+			expect( mockUpdateDispute ).toHaveBeenLastCalledWith(
+				'dp_test',
+				expect.objectContaining( {
+					submit,
+					evidence: expect.objectContaining( {
+						uncategorized_text: value,
+					} ),
+				} )
+			);
+
+		it( 'classifies raw edits and restores only from inside the editable warning', async () => {
 			const { coverLetter } = await goToReview();
 			const generated = coverLetter.value;
+			const restore = () =>
+				screen.queryByRole( 'button', { name: restoreLabel } );
+			expect( generated ).toContain( 'Dear' );
+			for ( const initial of [ generated, 'Edited letter.', '' ] ) {
+				for ( const next of [ 'New text.', generated, '' ] ) {
+					changeLetter( initial );
+					changeLetter( next );
+					expect( coverLetter ).toHaveValue( next );
+					expect( Boolean( restore() ) ).toBe( next !== generated );
+				}
+			}
+			changeLetter( 'Keep my edit.' );
+			const warning = screen
+				.getByText( MANUAL_EDITS_WARNING, IGNORE_SPEAK )
+				.closest( '.components-notice' );
+			expect( warning ).toHaveClass( 'is-warning' );
+			expect( warning ).toContainElement( restore() );
+			const confirm = jest
+				.spyOn( window, 'confirm' )
+				.mockReturnValueOnce( false );
+			await clickButton( restoreLabel );
+			expect( confirm ).toHaveBeenCalledWith( restorePrompt );
+			expect( coverLetter ).toHaveValue( 'Keep my edit.' );
+			await clickButton( restoreLabel );
+			expect( confirm ).toHaveBeenCalledTimes( 2 );
+			expect( coverLetter ).toHaveValue( generated );
+			for ( const blank of [ '', '  \n ' ] ) {
+				changeLetter( blank );
+				await clickButton( restoreLabel );
+				expect( confirm ).toHaveBeenCalledTimes( 2 );
+				expect( coverLetter ).toHaveValue( generated );
+				expect(
+					screen.queryByText( MANUAL_EDITS_WARNING, IGNORE_SPEAK )
+				).not.toBeInTheDocument();
+			}
+		} );
 
-			await userEvent.type( coverLetter, ' Thanks.' );
-
-			expect(
-				screen
-					.getByText( MANUAL_EDITS_WARNING, IGNORE_SPEAK )
-					.closest( '.components-notice' )
-			).toHaveClass( 'is-warning' );
-
-			await userEvent.clear( coverLetter );
-
+		it( 'hides the whole manual warning on a read-only edited letter', async () => {
+			const { coverLetter } = await goToReview( {
+				...withSavedLetter(),
+				status: 'won',
+			} );
+			expect( coverLetter ).toHaveValue( savedLetter );
+			expect( coverLetter ).toHaveAttribute( 'readonly' );
 			expect(
 				screen.queryByText( MANUAL_EDITS_WARNING, IGNORE_SPEAK )
 			).not.toBeInTheDocument();
-			expect( coverLetter.value ).toBe( generated );
+			expect(
+				screen.queryByRole( 'button', { name: restoreLabel } )
+			).not.toBeInTheDocument();
 		} );
 
-		// Client 11.1.0 new-evidence/index.tsx:1170-1188 passes `setRefundStatus` and `setDuplicateStatus` straight through,
-		// so the regeneration effect (index.tsx:446-452) keeps an edited letter; only a product type change resets it
-		// (index.tsx:830-838).
-		it.each( [
-			[ 'credit_not_processed', /Refund was not owed/i ],
-			[ 'duplicate', /It was not a duplicate/i ],
-		] )(
-			'keeps a manually edited letter when the %s status changes',
-			async ( reason, statusOption ) => {
-				const order = {
-					id: 123,
-					number: '123',
-					suggested_product_type: 'digital_product_or_service',
-				};
-				mockUpdateDispute.mockImplementation( async ( _id, data ) =>
-					makeDispute( {
-						reason,
-						order,
-						evidence: data.evidence,
-						metadata: data.metadata,
-					} )
+		it( 'saves the displayed letter and regenerates an empty draft only on reopen', async () => {
+			let visit = await goToReview( withSavedLetter() );
+			expect( visit.coverLetter ).toHaveValue( savedLetter );
+			for ( const value of [
+				'',
+				undefined,
+				'Merchant draft.',
+				'  \n ',
+			] ) {
+				const expected = value ?? visit.coverLetter.value;
+				changeLetter( expected );
+				await clickButton( 'Save for later' );
+				expectLetterSent( expected, false );
+				expect( visit.coverLetter ).toHaveValue( expected );
+				const response =
+					await mockUpdateDispute.mock.results.slice( -1 )[ 0 ].value;
+				visit.unmount();
+				visit = await goToReview( response );
+				const generated = expect.stringContaining( 'Dear' );
+				expect( visit.coverLetter.value ).toEqual(
+					expected || generated
 				);
-				const { coverLetter } = await goToReview(
-					makeDispute( { reason } )
-				);
-				await userEvent.type( coverLetter, ' Edited by the merchant.' );
-				const edited = coverLetter.value;
+				expect(
+					!! screen.queryByText( MANUAL_EDITS_WARNING, IGNORE_SPEAK )
+				).toBe( !! value );
+			}
+		} );
 
-				await clickButton( 'Back' );
-				await act( async () => {
+		it.each( [
+			[ 'generated', undefined, standardPrompt ],
+			[ 'edited', 'New merchant letter.', standardPrompt ],
+			[ 'cleared', '', emptyPrompt ],
+			[ 'whitespace', '  \n ', emptyPrompt ],
+		] as const )(
+			'confirms the %s letter and sends exactly what the merchant reviewed',
+			async ( state, value, prompt ) => {
+				const { coverLetter } = await goToReview(
+					state === 'generated' ? makeDispute() : withSavedLetter()
+				);
+				const expected = value ?? coverLetter.value;
+				const draft = mockUpdateDispute.mock.calls[ 0 ][ 1 ];
+				changeLetter( expected );
+				mockUpdateDispute.mockClear();
+				const confirm = jest
+					.spyOn( window, 'confirm' )
+					.mockReturnValueOnce( false );
+				await clickButton( 'Submit' );
+				expect( confirm ).toHaveBeenCalledWith( prompt );
+				expect( mockUpdateDispute ).not.toHaveBeenCalled();
+				expect( coverLetter ).toHaveValue( expected );
+				await clickButton( 'Submit' );
+				expect( confirm ).toHaveBeenCalledTimes( 2 );
+				expect( mockUpdateDispute ).toHaveBeenCalledTimes( 1 );
+				expect( mockUpdateDispute ).toHaveBeenCalledWith( 'dp_test', {
+					...draft,
+					evidence: {
+						...draft.evidence,
+						uncategorized_text: expected,
+					},
+					submit: true,
+				} );
+			}
+		);
+
+		it.each( [
+			[
+				'credit_not_processed',
+				/Refund was not owed/i,
+				'outside of the eligible window',
+			],
+			[ 'duplicate', /It was not a duplicate/i, 'two distinct orders' ],
+		] as const )(
+			'keeps the reviewed letter across navigation and %s status changes',
+			async ( reason, statusOption, statusText ) => {
+				for ( const edit of [ undefined, 'Merchant text.', '' ] ) {
+					const { coverLetter, unmount } = await goToReview(
+						makeDispute( { reason } )
+					);
+					const generated = coverLetter.value;
+					const initial = edit ?? generated;
+					changeLetter( initial );
+					mockUpdateDispute.mockClear();
+					await clickButton( 'Back' );
+					expect( mockUpdateDispute ).not.toHaveBeenCalled();
+					await clickButton( 'Next' );
+					expectLetterSent( initial, false );
+					expect( getLetter() ).toHaveValue( initial );
+
+					mockUpdateDispute.mockClear();
+					await clickButton( /Purchase info/ );
+					expectLetterSent( initial, false );
 					await userEvent.click(
 						screen.getByRole( 'radio', { name: statusOption } )
 					);
-				} );
-				await clickButton( 'Next' );
+					await clickButton( 'Next' );
+					const updated = expect.stringContaining( statusText );
+					expect( getLetter().value ).toEqual( edit ?? updated );
+					expectLetterSent( getLetter().value, false );
 
-				expect(
-					(
-						( await screen.findByRole( 'textbox', {
-							name: 'Cover letter',
-						} ) ) as HTMLTextAreaElement
-					 ).value
-				).toBe( edited );
-				expect(
-					screen.getByText( MANUAL_EDITS_WARNING, IGNORE_SPEAK )
-				).toBeInTheDocument();
+					unmount();
+				}
 			}
 		);
+
+		it( 'regenerates after a product type change even for an edited or cleared letter', async () => {
+			for ( const edit of [ undefined, 'My own text.', '' ] ) {
+				const { coverLetter, unmount } = await goToReview(
+					makeDispute( {
+						evidence: { service_documentation: 'file_service' },
+					} )
+				);
+				expect( coverLetter.value ).toContain(
+					'Prior undisputed transaction history'
+				);
+				const initial = edit ?? coverLetter.value;
+				changeLetter( initial );
+				expect( coverLetter ).toHaveValue( initial );
+				await clickButton( 'Back' );
+				fireEvent.change(
+					screen.getByRole( 'textbox', {
+						name: 'Product or service description',
+					} ),
+					{ target: { value: 'Download description.' } }
+				);
+				await clickButton( /Review/ );
+				const updated = expect.stringContaining(
+					'Download description.'
+				);
+				expect( getLetter().value ).toEqual( edit ?? updated );
+				expectLetterSent( getLetter().value, false );
+				await clickButton( 'Back' );
+				await userEvent.selectOptions(
+					screen.getByRole( 'combobox', {
+						name: 'Product or service type',
+					} ),
+					'offline_service'
+				);
+				await clickButton( 'Next' );
+				expect( getLetter().value ).toContain( 'Item condition' );
+				expect(
+					screen.queryByText( MANUAL_EDITS_WARNING, IGNORE_SPEAK )
+				).not.toBeInTheDocument();
+				expect( window.confirm ).not.toHaveBeenCalled();
+				unmount();
+			}
+		} );
 
 		it( 'does not warn about a saved cover letter that matches the generated one', async () => {
 			const firstVisit = await goToReview();
@@ -936,6 +1111,12 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 		} );
 
 		expect( details ).toHaveAttribute( 'maxlength', '20000' );
+		jest.spyOn( window, 'confirm' ).mockReturnValueOnce( false );
+		await clickButton( 'Submit' );
+		expect( window.confirm ).toHaveBeenCalledWith(
+			'Are you sure you’re ready to submit this evidence? Evidence submissions are final.'
+		);
+		expect( mockUpdateDispute ).not.toHaveBeenCalled();
 		mockUpdateDispute.mockResolvedValueOnce(
 			makeDispute( {
 				reason: 'noncompliant',
@@ -1534,7 +1715,7 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 		await clickButton( 'Submit' );
 
 		expect( window.confirm ).toHaveBeenCalledWith(
-			'Are you sure you’re ready to submit this evidence? Evidence submissions are final.'
+			"Are you sure you're ready to submit this evidence? Evidence submissions are final."
 		);
 		await waitFor( () =>
 			expect( mockUpdateDispute ).toHaveBeenLastCalledWith(
