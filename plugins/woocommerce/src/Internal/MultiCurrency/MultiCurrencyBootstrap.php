@@ -226,6 +226,17 @@ final class MultiCurrencyBootstrap {
 			return;
 		}
 
+		add_action(
+			'update_option_' . MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION,
+			static function ( $old_value, $value ) use ( $arbiter ) {
+				if ( 'yes' === $old_value && 'no' === $value && ! $arbiter->is_payments_extension_owner() ) {
+					MultiCurrencyAdminNoteController::remove_builtin_notes();
+				}
+			},
+			10,
+			2
+		);
+
 		$this->order_container = $container;
 		// Refunds get the order's exchange rates, the customer currency is recorded and Analytics order stats are converted
 		// on every request (client 11.1.0 `includes/multi-currency/MultiCurrency.php:371`, `:384`, `Analytics.php:79-80`), so an

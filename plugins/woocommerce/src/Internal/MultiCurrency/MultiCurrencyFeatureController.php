@@ -162,7 +162,13 @@ class MultiCurrencyFeatureController {
 		$last_owner = get_option( self::LAST_PAYMENTS_OWNER_OPTION );
 		if ( $extension_owns_payments ) {
 			if ( self::LAST_PAYMENTS_OWNER_EXTENSION !== $last_owner ) {
-				update_option( self::LAST_PAYMENTS_OWNER_OPTION, self::LAST_PAYMENTS_OWNER_EXTENSION, true );
+				MultiCurrencyAdminNoteController::remove_builtin_notes(
+					static function () use ( $last_owner ): bool {
+						return false === $last_owner
+							? self::add_option_if_absent( self::LAST_PAYMENTS_OWNER_OPTION, self::LAST_PAYMENTS_OWNER_EXTENSION )
+							: self::claim_handover( $last_owner, self::LAST_PAYMENTS_OWNER_EXTENSION );
+					}
+				);
 			}
 			return;
 		}
@@ -178,29 +184,28 @@ class MultiCurrencyFeatureController {
 			update_option( self::LAST_PAYMENTS_OWNER_OPTION, self::LAST_PAYMENTS_OWNER_BUILTIN, true );
 			return;
 		}
-		if ( self::LAST_PAYMENTS_OWNER_EXTENSION === $last_owner && self::claim_handover() ) {
+		if ( self::LAST_PAYMENTS_OWNER_EXTENSION === $last_owner && self::claim_handover( self::LAST_PAYMENTS_OWNER_EXTENSION, self::LAST_PAYMENTS_OWNER_BUILTIN ) ) {
 			self::hand_over_extension_state();
 		}
 	}
 
 	/**
-	 * Claim the transition away from the extension with one conditional update of the marker row.
+	 * Claim a transition with one conditional update so only the winning request hands state over.
 	 *
-	 * Two first requests without the extension can both read 'extension'; only the one whose update changes the row hands over, so a choice
-	 * the merchant saves after the first handover is never overwritten by the second.
-	 *
-	 * @return bool True when this request moved the marker from 'extension' to 'builtin'.
+	 * @param string $previous Previously recorded owner.
+	 * @param string $next     Incoming owner.
+	 * @return bool Whether this request changed the marker.
 	 */
-	private static function claim_handover(): bool {
+	private static function claim_handover( string $previous, string $next ): bool {
 		global $wpdb;
 
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- An atomic compare-and-set; the caches are cleared below.
 		$claimed = $wpdb->update(
 			$wpdb->options,
-			array( 'option_value' => self::LAST_PAYMENTS_OWNER_BUILTIN ),
+			array( 'option_value' => $next ),
 			array(
 				'option_name'  => self::LAST_PAYMENTS_OWNER_OPTION,
-				'option_value' => self::LAST_PAYMENTS_OWNER_EXTENSION,
+				'option_value' => $previous,
 			)
 		);
 		wp_cache_delete( self::LAST_PAYMENTS_OWNER_OPTION, 'options' );

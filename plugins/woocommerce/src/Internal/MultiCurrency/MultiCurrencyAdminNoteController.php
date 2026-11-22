@@ -7,8 +7,10 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
+use Automattic\WooCommerce\Admin\Notes\DataStore;
 use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Admin\Notes\Notes;
+use Automattic\WooCommerce\Admin\Notes\NotesUnavailableException;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\RateService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
@@ -68,13 +70,85 @@ class MultiCurrencyAdminNoteController implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Remove WooCommerce's copies of the shared note. The extension uses the same name but links to its setup wizard.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param callable|null $claim On takeover, claim the per-site transition after capturing the outgoing notes.
+	 * @phpstan-param (callable(): bool)|null $claim
+	 */
+	public static function remove_builtin_notes( ?callable $claim = null ): void {
+		// Bootstrap runs before WC Admin registers its data store. Even on a new site the tables exist by wp_loaded, before admin_init.
+		if ( ! did_action( 'wp_loaded' ) ) {
+			$blog_id = get_current_blog_id();
+			add_action(
+				'wp_loaded',
+				static function () use ( $claim, $blog_id ) {
+					if ( get_current_blog_id() === $blog_id ) {
+						self::remove_builtin_notes( $claim );
+						return;
+					}
+					switch_to_blog( $blog_id );
+					try {
+						self::remove_builtin_notes( $claim );
+					} finally {
+						restore_current_blog();
+					}
+				}
+			);
+			return;
+		}
+
+		$notes = self::get_builtin_notes();
+		if ( null !== $claim && ! $claim() ) {
+			return;
+		}
+		foreach ( $notes as $note ) {
+			$note->delete();
+		}
+	}
+
+	/**
+	 * Find outgoing copies by their settings button, including copies saved before a change of site URL.
+	 *
+	 * @return Note[]
+	 */
+	private static function get_builtin_notes(): array {
+		try {
+			/**
+			 * Admin-note data store behind the WC_Data_Store proxy.
+			 *
+			 * @var DataStore $data_store
+			 */
+			$data_store = Notes::load_data_store();
+		} catch ( NotesUnavailableException $e ) {
+			// An unavailable inbox must not prevent the payments owner from handing Multi-Currency over.
+			return array();
+		}
+
+		$notes       = array();
+		$setup_query = 'page=wc-settings&tab=' . MultiCurrencySettingsController::TAB_ID;
+		foreach ( $data_store->get_notes_with_name( self::NOTE_NAME ) as $id ) {
+			$note = Notes::get_note( $id );
+			if ( ! $note instanceof Note ) {
+				continue;
+			}
+			$url = $note->get_action( self::NOTE_NAME, 'edit' )->query ?? '';
+			if ( wp_parse_url( $url, PHP_URL_QUERY ) === $setup_query && 'admin.php' === wp_basename( (string) wp_parse_url( $url, PHP_URL_PATH ) ) ) {
+				$notes[] = $note;
+			}
+		}
+		return $notes;
+	}
+
+	/**
 	 * Handle WC Admin note creation.
 	 *
 	 * @internal
 	 */
 	public function handle_admin_init(): void {
 		// Like the client, look up the stored note only for a connected provider (NoteMultiCurrencyAvailable.php:64-72).
-		if ( wp_doing_ajax() || ! $this->rate_service->is_provider_connected() || false !== Notes::get_note_by_name( self::NOTE_NAME ) ) {
+		if ( wp_doing_ajax() || ! $this->arbiter->is_builtin_owner() || ! $this->rate_service->is_provider_connected() || false !== Notes::get_note_by_name( self::NOTE_NAME ) ) {
 			return;
 		}
 
