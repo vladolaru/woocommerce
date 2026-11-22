@@ -1139,12 +1139,13 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Prepare the account and the full settings request for a store turning on its gateway.
 	 *
+	 * @param array<string,mixed> $stored_settings Initial gateway settings that differ from the fixture defaults.
 	 * @return array<string,mixed>
 	 */
-	private function prepare_full_gateway_settings_save(): array {
+	private function prepare_full_gateway_settings_save( array $stored_settings = array() ): array {
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
-			array(
+			$stored_settings + array(
 				'enabled'                        => 'no',
 				'test_mode'                      => 'no',
 				'manual_capture'                 => 'no',
@@ -1204,7 +1205,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should persist active gateway settings and refresh the settings response.
 	 */
 	public function test_update_settings_persists_active_gateway_settings_and_returns_refreshed_contract(): void {
-		$params                 = $this->prepare_full_gateway_settings_save();
+		$params                 = $this->prepare_full_gateway_settings_save( array( 'platform_checkout' => 'yes' ) );
 		$store_setup_sync_count = did_action( 'wcpay_store_setup_sync' );
 		$result                 = $this->sut->update_settings( $params );
 

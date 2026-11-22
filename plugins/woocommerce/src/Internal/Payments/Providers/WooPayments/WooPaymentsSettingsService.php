@@ -439,7 +439,9 @@ class WooPaymentsSettingsService {
 			return $enabled_methods_update;
 		}
 
-		// WooPay eligibility can return after a save. Check the stored choices even while WooPay is unavailable.
+		// Use the submitted choices and keep the stored value for each omitted field. Refuse a new WooPay and Link
+		// combination even while WooPay is ineligible, since eligibility can return. Stores with both already enabled
+		// can still save unrelated settings.
 		$is_link_woopay_conflict = fn( array $method_ids, bool $is_woopay_on ): bool => $is_woopay_on
 			&& in_array( 'card', $method_ids, true )
 			&& in_array( 'link', $method_ids, true );
