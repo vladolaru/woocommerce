@@ -164,9 +164,11 @@ class MultiCurrencyFeatureController {
 			if ( self::LAST_PAYMENTS_OWNER_EXTENSION !== $last_owner ) {
 				MultiCurrencyAdminNoteController::remove_builtin_notes(
 					static function () use ( $last_owner ): bool {
-						return false === $last_owner
-							? self::add_option_if_absent( self::LAST_PAYMENTS_OWNER_OPTION, self::LAST_PAYMENTS_OWNER_EXTENSION )
-							: self::claim_handover( $last_owner, self::LAST_PAYMENTS_OWNER_EXTENSION );
+						if ( false === $last_owner ) {
+							return self::add_option_if_absent( self::LAST_PAYMENTS_OWNER_OPTION, self::LAST_PAYMENTS_OWNER_EXTENSION );
+						}
+						$previous = self::LAST_PAYMENTS_OWNER_BUILTIN === $last_owner ? self::LAST_PAYMENTS_OWNER_BUILTIN : '';
+						return self::claim_handover( $previous, self::LAST_PAYMENTS_OWNER_EXTENSION );
 					}
 				);
 			}
@@ -192,7 +194,7 @@ class MultiCurrencyFeatureController {
 	/**
 	 * Claim a transition with one conditional update so only the winning request hands state over.
 	 *
-	 * @param string $previous Previously recorded owner.
+	 * @param string $previous Previously recorded owner, or an empty string for an unrecognized stored value.
 	 * @param string $next     Incoming owner.
 	 * @return bool Whether this request changed the marker.
 	 */
@@ -200,12 +202,15 @@ class MultiCurrencyFeatureController {
 		global $wpdb;
 
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- An atomic compare-and-set; the caches are cleared below.
-		$claimed = $wpdb->update(
-			$wpdb->options,
-			array( 'option_value' => $next ),
-			array(
-				'option_name'  => self::LAST_PAYMENTS_OWNER_OPTION,
-				'option_value' => $previous,
+		$claimed = $wpdb->query(
+			$wpdb->prepare(
+				"UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s
+				AND IF( CAST( option_value AS BINARY ) IN ( %s, %s ), option_value, '' ) = %s",
+				$next,
+				self::LAST_PAYMENTS_OWNER_OPTION,
+				self::LAST_PAYMENTS_OWNER_BUILTIN,
+				self::LAST_PAYMENTS_OWNER_EXTENSION,
+				$previous
 			)
 		);
 		wp_cache_delete( self::LAST_PAYMENTS_OWNER_OPTION, 'options' );

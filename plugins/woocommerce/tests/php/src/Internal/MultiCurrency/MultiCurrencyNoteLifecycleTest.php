@@ -167,6 +167,27 @@ class MultiCurrencyNoteLifecycleTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The extension can claim an unrecognized stored marker and remove the outgoing note.
+	 * At b7dca8d7fbd, a stored array or integer caused a TypeError in claim_handover().
+	 *
+	 * @testWith [["unknown"]]
+	 *           [42]
+	 *           ["BUILTIN"]
+	 *
+	 * @param array|int|string $marker Stored option value.
+	 */
+	public function test_takeover_with_unknown_marker( $marker ): void {
+		update_option( Feature::LAST_PAYMENTS_OWNER_OPTION, $marker );
+		$this->assertSame( $marker, get_option( Feature::LAST_PAYMENTS_OWNER_OPTION ) );
+		$id = $this->starting_note( 'dismissed' );
+		$this->activate_extension();
+		$this->register_request();
+
+		$this->assertSame( 'extension', get_option( Feature::LAST_PAYMENTS_OWNER_OPTION ) );
+		$this->assert_note_absent( $id );
+	}
+
+	/**
 	 * @testdox Subsequent extension-owned requests and disabled sites do not read or write inbox notes.
 	 * @testWith [true]
 	 *           [false]
@@ -204,6 +225,21 @@ class MultiCurrencyNoteLifecycleTest extends WC_Unit_Test_Case {
 		$this->toggle_feature( false );
 		$this->assert_note_absent( $first );
 		$this->assertSame( 0, $this->count_stored_actions( $second ) );
+	}
+
+	/**
+	 * @testdox Disabling before wp_loaded keeps the note and its action until the deferred callback removes both.
+	 */
+	public function test_deferred_feature_off_removes_note(): void {
+		$id = $this->starting_note( 'present' );
+		remove_all_actions( 'wp_loaded' );
+		unset( $GLOBALS['wp_actions']['wp_loaded'] );
+		$this->register_request();
+		$this->toggle_feature( false );
+
+		$this->assertSame( $id, $this->assert_one_note( self::NAME, admin_url( self::CORE_LINK ), 'present' )->get_id() );
+		do_action( 'wp_loaded' );
+		$this->assert_note_absent( $id );
 	}
 
 	/**
