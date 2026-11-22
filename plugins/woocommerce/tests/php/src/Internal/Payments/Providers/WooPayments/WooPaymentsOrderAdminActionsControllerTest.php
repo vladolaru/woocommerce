@@ -5664,7 +5664,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$kept_at = time() - 4 * HOUR_IN_SECONDS;
 		$order   = $this->create_key_only_order( $kept_at );
 		$this->age_unpaid_order( $order, null, 4 * HOUR_IN_SECONDS - 80 * MINUTE_IN_SECONDS );
-		$retried    = $kept_at + 80 * MINUTE_IN_SECONDS;
+		$retried    = $this->reload( $order )->get_date_modified()->getTimestamp();
 		$intent     = self::key_only_intent( $order, 'succeeded' );
 		$transport  = $this->create_transport_answering(
 			static function ( string $path ) use ( $intent, $retried ): array {
