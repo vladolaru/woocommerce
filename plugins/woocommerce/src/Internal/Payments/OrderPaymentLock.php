@@ -14,7 +14,8 @@ use WC_Order;
  *
  * Its rule: every money start on an order claims it, and no platform call is made while it is held except the money
  * request. A provider that keeps another call under the claim, or a money start that claims nothing, says so in a
- * comment at that call, naming it a stated exception to this rule.
+ * comment at that call, naming it a stated exception to this rule. An operation that runs past the lock's expiry and
+ * is taken over can still clear records the newer claim relies on; that is a stated exception to this rule.
  *
  * @since 11.0.0
  * @internal

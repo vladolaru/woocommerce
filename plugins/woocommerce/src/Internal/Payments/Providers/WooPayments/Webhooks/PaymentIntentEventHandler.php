@@ -978,6 +978,7 @@ class PaymentIntentEventHandler {
 				// expiry (canceled), and a stale value keeps capture and cancel actions offered against a dead intent.
 				// A failed fetch fails the delivery, as client 11.1.0 does (class-wc-payments-webhook-processing-service.php:396-398),
 				// and charge.expired gets no retry after such a failure.
+				// A stated exception to the order payment lock's rule: this read of the expired intent runs under the claim.
 				$expired_intent = $this->api_client->get_payment_intention( $intent_id );
 
 				$meta = array(

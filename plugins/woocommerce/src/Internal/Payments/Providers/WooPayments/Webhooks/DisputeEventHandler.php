@@ -463,6 +463,7 @@ class DisputeEventHandler {
 	 * @return array<string,mixed> Summary with disputed_amount and currency, or empty when neither source has them.
 	 */
 	private function get_lost_dispute_amount( array $event_object, string $dispute_id, string $charge_id ): array {
+		// A stated exception to the order payment lock's rule: the lost dispute's summary is read under the claim.
 		$summary = $this->get_dispute_summary( $dispute_id, $charge_id );
 		if ( ! empty( $summary['disputed_amount'] ) ) {
 			return $summary;
