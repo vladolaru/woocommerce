@@ -96,11 +96,7 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 			return;
 		}
 
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- The merchant's Amazon Pay setting depends on the order-pay context.
-		$pay_for_order = isset( $_GET['pay_for_order'] ) && $this->get_page_surface()->is_checkout();
-		if ( $this->express_checkout_service->is_express_checkout_enabled( $pay_for_order ? 'pay_for_order' : 'checkout' ) ) {
-			add_filter( 'woocommerce_cart_needs_shipping_address', array( $this, 'filter_cart_needs_shipping_address' ), 11 );
-		}
+		add_filter( 'woocommerce_cart_needs_shipping_address', array( $this, 'filter_cart_needs_shipping_address' ), 11 );
 	}
 
 	/**
@@ -113,7 +109,12 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	public function filter_cart_needs_shipping_address( $needs_shipping_address ): bool {
-		if ( $this->express_checkout_service->has_subscription_product() && 0 === wc_get_shipping_method_count( true, true ) ) {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only order-pay context for Amazon Pay.
+		$pay_for_order = isset( $_GET['pay_for_order'] ) && $this->get_page_surface()->is_checkout();
+		if ( $this->express_checkout_service->is_express_checkout_enabled( $pay_for_order ? 'pay_for_order' : 'checkout' )
+			&& $this->express_checkout_service->has_subscription_product()
+			&& 0 === wc_get_shipping_method_count( true, true )
+		) {
 			return false;
 		}
 

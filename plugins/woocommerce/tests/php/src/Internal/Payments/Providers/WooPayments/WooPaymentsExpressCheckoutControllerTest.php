@@ -106,21 +106,23 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A physical cart with subscription=$subscription and flat rate enabled=$enabled needs a shipping address: $expected.
-	 * @testWith [true, false, false]
-	 *           [true, true, true]
-	 *           [false, false, true]
+	 * @testdox A physical cart with subscription=$subscription, flat rate enabled=$enabled and express enabled=$express needs a shipping address: $expected.
+	 * @testWith [true, false, true, false]
+	 *           [true, true, true, true]
+	 *           [false, false, true, true]
+	 *           [true, false, false, true]
 	 *
 	 * @param bool $subscription Whether Subscriptions reports a subscription cart.
 	 * @param bool $enabled      Whether the zone's flat rate is enabled.
+	 * @param bool $express      Whether Apple Pay is enabled when the cart asks about shipping.
 	 * @param bool $expected     Whether classic checkout needs a shipping address.
 	 */
-	public function test_express_cart_shipping_address( bool $subscription, bool $enabled, bool $expected ): void {
+	public function test_express_cart_shipping_address( bool $subscription, bool $enabled, bool $express, bool $expected ): void {
 		global $wpdb;
 		$this->set_checkout_shortcode_page();
 		$this->replace_page_surface( false, true );
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
-		update_option( 'woocommerce_woocommerce_payments_apple_pay_settings', array( 'enabled' => 'yes' ) );
+		update_option( 'woocommerce_woocommerce_payments_apple_pay_settings', array( 'enabled' => 'no' ) );
 		WooCommerceSubscriptionsDoubles::load_product();
 		WooCommerceSubscriptionsDoubles::load_cart();
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_SUBSCRIPTION ] = $subscription;
@@ -135,6 +137,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 
 			$this->sut = $this->create_controller( true, wc_get_container()->get( WooPaymentsExpressCheckoutService::class ) );
 			$this->sut->register();
+			update_option( 'woocommerce_woocommerce_payments_apple_pay_settings', array( 'enabled' => $express ? 'yes' : 'no' ) );
 
 			$this->assertSame( $expected, WC()->cart->needs_shipping_address() );
 			/** This filter is documented in includes/class-wc-cart.php. */
@@ -147,14 +150,9 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The shipping-address filter stays off when $reason.
-	 * @testWith ["all express methods are disabled", false]
-	 *           ["the shopper changes a payment method", true]
-	 *
-	 * @param string $reason                Excluded registration case.
-	 * @param bool   $change_payment_method Whether the change-payment-method flag is present.
+	 * @testdox The shipping-address filter stays off when the shopper changes a payment method.
 	 */
-	public function test_express_shipping_address_registration( string $reason, bool $change_payment_method ): void {
+	public function test_express_shipping_address_registration_skips_change_payment_method(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
 		update_option( 'woocommerce_woocommerce_payments_apple_pay_settings', array( 'enabled' => 'yes' ) );
 		$this->sut = $this->create_controller( true, wc_get_container()->get( WooPaymentsExpressCheckoutService::class ) );
@@ -164,13 +162,9 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 11, has_filter( $hook, $callback ), 'The eligible request must attach the filter.' );
 		remove_filter( $hook, $callback, 11 );
 
-		if ( $change_payment_method ) {
-			$_GET['change_payment_method'] = '';
-		} else {
-			update_option( 'woocommerce_woocommerce_payments_apple_pay_settings', array( 'enabled' => 'no' ) );
-		}
+		$_GET['change_payment_method'] = '';
 		$this->sut->register();
-		$this->assertFalse( has_filter( $hook, $callback ), $reason );
+		$this->assertFalse( has_filter( $hook, $callback ) );
 	}
 
 	/**
