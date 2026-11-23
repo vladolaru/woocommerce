@@ -466,6 +466,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 	} );
 
 	beforeEach( () => {
+		window.wcWooPaymentsTracks = [];
 		jest.isolateModules( () =>
 			jest.requireActual(
 				'../../../../../../../../legacy/js/frontend/utils/woopayments-express-cart'
@@ -582,12 +583,6 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 				setExpressPaymentError: jest.fn(),
 				...props,
 			} )
-		);
-
-	const getTracksRequests = () =>
-		( window.fetch?.mock?.calls || [] ).filter(
-			( [ url ] ) =>
-				url === 'https://example.test/wp-json/wc/v3/payments/tracks'
 		);
 
 	it( 'registers separate Apple Pay and Google Pay express methods', () => {
@@ -4836,7 +4831,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			expect( expressElement.mount ).toHaveBeenCalled();
 		} );
 
-		expect( getTracksRequests() ).toHaveLength( 0 );
+		expect( window.wcWooPaymentsTracks ).toHaveLength( 0 );
 	} );
 
 	it( 'records Google Pay load and click tracking events', async () => {
@@ -4860,30 +4855,10 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			expressHandlers.click( { resolve: jest.fn() } );
 		} );
 
-		const requests = getTracksRequests();
-
-		expect( requests ).toHaveLength( 2 );
-		expect(
-			requests.map( ( [ , options ] ) =>
-				options.body.get( 'tracksEventName' )
-			)
-		).toEqual( [ 'gpay_button_load', 'gpay_button_click' ] );
-		expect(
-			requests.map( ( [ , options ] ) =>
-				JSON.parse( options.body.get( 'tracksEventProp' ) )
-			)
-		).toEqual( [ { source: 'checkout' }, { source: 'checkout' } ] );
-		// `getTrackingSettings` maps `tracks_url` and `nonce.tracks_rest` onto the shared recorder.
-		requests.forEach( ( [ , options ] ) => {
-			expect( options ).toEqual(
-				expect.objectContaining( {
-					method: 'POST',
-					headers: { 'X-WP-Nonce': 'rest-nonce' },
-				} )
-			);
-			expect( options.body.get( 'tracksNonce' ) ).toBe( 'tracks-nonce' );
-			expect( options.body.has( 'action' ) ).toBe( false );
-		} );
+		expect( window.wcWooPaymentsTracks ).toEqual( [
+			{ event: 'gpay_button_load', properties: { source: 'checkout' } },
+			{ event: 'gpay_button_click', properties: { source: 'checkout' } },
+		] );
 		expect( onClick ).toHaveBeenCalled();
 	} );
 
@@ -4908,6 +4883,6 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			expressHandlers.click( { resolve: jest.fn() } );
 		} );
 
-		expect( getTracksRequests() ).toHaveLength( 0 );
+		expect( window.wcWooPaymentsTracks ).toHaveLength( 0 );
 	} );
 } );

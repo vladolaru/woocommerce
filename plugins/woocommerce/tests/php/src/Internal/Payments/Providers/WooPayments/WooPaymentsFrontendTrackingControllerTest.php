@@ -120,6 +120,119 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should apply each event's schema and eligibility within the first twenty entries on $route.
+	 * @testWith ["REST"]
+	 *           ["AJAX"]
+	 * @param string $route Shopper entry point.
+	 */
+	public function test_batch_schema_and_gates( string $route ): void {
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		$sut      = $this->create_controller( $this->create_account_service( true, true, false ) );
+		$events   = array(
+			array(
+				'event'      => 'cart_page_view',
+				'properties' => array(
+					'theme_type' => 'blocks',
+					'extra'      => true,
+				),
+			),
+			array(
+				'event'      => 'woopay_button_load',
+				'properties' => array( 'record_event_data' => array( 'track_on_all_stores' => true ) ),
+			),
+			array( 'event' => 'unknown' ),
+			array(
+				'event'      => 'gpay_button_click',
+				'properties' => 'none',
+			),
+		);
+		$events   = array_pad( $events, 19, null );
+		$events[] = array( 'event' => 'checkout_page_view' );
+		$events[] = array( 'event' => 'product_page_view' );
+		$params   = array(
+			'tracksNonce'  => wp_create_nonce( 'platform_tracks_nonce' ),
+			'tracksEvents' => wp_json_encode( $events ),
+		);
+		$pixels   = array();
+		add_filter(
+			'pre_http_request',
+			static function ( $preempt, $args, $url ) use ( &$pixels ) {
+				parse_str( wp_parse_url( $url, PHP_URL_QUERY ), $pixel );
+				$pixels[] = $pixel;
+				return array( 'response' => array( 'code' => 200 ) );
+			},
+			10,
+			3
+		);
+
+		if ( 'REST' === $route ) {
+			add_action( 'rest_api_init', array( $sut, 'register_rest_routes' ) );
+			$this->get_rest_routes_after_init();
+			remove_action( 'rest_api_init', array( $sut, 'register_rest_routes' ) );
+			$request = new \WP_REST_Request( 'POST', '/wc/v3/payments/tracks' );
+			$request->set_body_params( $params );
+			$this->assertSame( 200, rest_get_server()->dispatch( $request )->get_status() );
+		} else {
+			$previous = $_REQUEST; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Restore the test fixture after dispatch.
+			try {
+				$_REQUEST = wp_slash( $params );
+				$this->assertTrue( $this->capture_ajax_json( array( $sut, 'handle_tracks' ) )['success'] );
+			} finally {
+				$_REQUEST = $previous;
+			}
+		}
+		$this->assertSame( array( 'wcpay_cart_page_view', 'wcpay_gpay_button_click', 'wcpay_checkout_page_view' ), array_column( $pixels, '_en' ) );
+		$this->assertSame( 'blocks', $pixels[0]['theme_type'] );
+		$this->assertArrayNotHasKey( 'extra', $pixels[0] );
+		$this->assertSame( array_fill( 0, 3, 'woocommerce_core' ), array_column( $pixels, 'payments_runtime' ) );
+
+		$this->assertSame( 403, $sut->record_tracks_request( array_merge( $params, array( 'tracksNonce' => '' ) ) )['status_code'] );
+		foreach ( array( 'null', '{}', 'invalid' ) as $invalid_batch ) {
+			$this->assertSame( 400, $sut->record_tracks_request( array_merge( $params, array( 'tracksEvents' => $invalid_batch ) ) )['status_code'] );
+		}
+
+		update_option( 'woocommerce_default_country', 'CA:BC' );
+		$sut->record_tracks_request( $params );
+		$this->assertCount( 3, $pixels );
+	}
+
+	/**
+	 * @testdox Should stop only the current batch on a local send error and continue after an unobservable HTTP status.
+	 * @testWith [0, 1]
+	 *           [503, 2]
+	 *           [400, 2]
+	 * @param int $status HTTP status, or zero for a local error.
+	 * @param int $count  Expected sends in the first batch.
+	 */
+	public function test_batch_delivery_scope( int $status, int $count ): void {
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		$blocking = array();
+		add_filter(
+			'pre_http_request',
+			static function ( $preempt, $args ) use ( $status, &$blocking ) {
+				$blocking[] = $args['blocking'];
+				if ( 1 === count( $blocking ) && 0 === $status ) {
+					return new \WP_Error( 'http_request_failed' );
+				}
+				return array( 'response' => array( 'code' => $status ) );
+			},
+			10,
+			2
+		);
+		$sut    = $this->create_controller();
+		$params = array(
+			'tracksNonce'  => wp_create_nonce( 'platform_tracks_nonce' ),
+			'tracksEvents' => wp_json_encode( array_fill( 0, 2, array( 'event' => 'product_page_view' ) ) ),
+		);
+		$sut->record_tracks_request( $params );
+		$this->assertSame( array_fill( 0, $count, false ), $blocking );
+		$sut->record_tracks_request( $params );
+		$this->assertSame( array_fill( 0, $count + 2, false ), $blocking );
+	}
+
+	/**
 	 * The recorder takes only the shopper events native scripts send, each with its declared properties (the request
 	 * schema the owner decided on 2026-10-07; client 11.1.0 `class-woopay-tracker.php:93-120` forwards any name and any
 	 * property).

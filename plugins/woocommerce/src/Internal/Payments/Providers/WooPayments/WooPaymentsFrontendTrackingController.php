@@ -43,7 +43,7 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	 * Shopper events the browser may record, without the `wcpay_` prefix.
 	 *
 	 * Each declares whether it is recorded on every store or only while WooPay is on (client PR 6870 and PR 8821 for
-	 * the page views; the Apple Pay and Google Pay events get theirs from the `wcpay_tracks_event_properties` callback,
+	 * the page views; the Apple Pay and Google Pay events also run on every store,
 	 * client PR 9793) and its properties: `bool`, `string`, or the list of allowed values. Anything else is dropped.
 	 */
 	private const SHOPPER_EVENTS = array(
@@ -115,19 +115,19 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 			'properties' => array( 'source' => self::BUTTON_SOURCES ),
 		),
 		'applepay_button_load'                       => array(
-			'all_stores' => false,
+			'all_stores' => true,
 			'properties' => array( 'source' => self::BUTTON_SOURCES ),
 		),
 		'applepay_button_click'                      => array(
-			'all_stores' => false,
+			'all_stores' => true,
 			'properties' => array( 'source' => self::BUTTON_SOURCES ),
 		),
 		'gpay_button_load'                           => array(
-			'all_stores' => false,
+			'all_stores' => true,
 			'properties' => array( 'source' => self::BUTTON_SOURCES ),
 		),
 		'gpay_button_click'                          => array(
-			'all_stores' => false,
+			'all_stores' => true,
 			'properties' => array( 'source' => self::BUTTON_SOURCES ),
 		),
 	);
@@ -146,6 +146,9 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	 * Longest string property value the recorder keeps.
 	 */
 	private const MAX_PROPERTY_LENGTH = 100;
+
+	/** Maximum number of entries examined per browser batch. */
+	private const MAX_BATCH_SIZE = 20;
 
 	private const FRONTEND_EVENTS_SCRIPT_HANDLE = 'wc-woopayments-frontend-tracks';
 
@@ -171,6 +174,13 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	 * @var array<int,array{event:string,properties:array<string,mixed>}>
 	 */
 	private array $frontend_events = array();
+
+	/**
+	 * Whether a checkout script needs the queue even without a queued page view.
+	 *
+	 * @var bool
+	 */
+	private bool $checkout_needs_queue = false;
 
 	/**
 	 * Cart "Proceed to checkout" click tracking for the footer script, or null when not armed.
@@ -351,10 +361,10 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 						'required' => true,
 					),
 					'tracksEventName' => array(
-						'type'     => 'string',
-						'required' => true,
-						'enum'     => array_merge( array_keys( self::SHOPPER_EVENTS ), array_keys( self::SHOPPER_EVENT_ALIASES ) ),
+						'type' => 'string',
+						'enum' => array_merge( array_keys( self::SHOPPER_EVENTS ), array_keys( self::SHOPPER_EVENT_ALIASES ) ),
 					),
+					'tracksEvents'    => array( 'type' => 'string' ),
 					'tracksEventProp' => array(
 						'type'    => 'string',
 						'default' => '{}',
@@ -441,6 +451,44 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 			return $this->error_response( __( 'You aren’t authorized to do that.', 'woocommerce' ), 403 );
 		}
 
+		if ( ! array_key_exists( 'tracksEvents', $request ) ) {
+			return $this->record_single_tracks_request( $request );
+		}
+
+		$events = is_string( $request['tracksEvents'] ) ? json_decode( $request['tracksEvents'] ) : null;
+		if ( ! is_array( $events ) ) {
+			return $this->error_response( __( 'No valid event name or type.', 'woocommerce' ), 400 );
+		}
+
+		foreach ( array_slice( $events, 0, self::MAX_BATCH_SIZE ) as $item ) {
+			if ( ! is_string( $item->event ?? null ) ) {
+				continue;
+			}
+			$name = self::SHOPPER_EVENT_ALIASES[ $item->event ] ?? $item->event;
+			if ( ! isset( self::SHOPPER_EVENTS[ $name ] ) ) {
+				continue;
+			}
+			$properties = is_object( $item->properties ?? null ) ? (array) $item->properties : array();
+			$result     = $this->record_declared_event( $name, $properties, true );
+			if ( is_wp_error( $result ) ) {
+				break;
+			}
+		}
+
+		return array(
+			'success'     => true,
+			'status_code' => 200,
+			'data'        => array(),
+		);
+	}
+
+	/**
+	 * Read the single-event form used by cached pages.
+	 *
+	 * @param array<string,mixed> $request Request data.
+	 * @return array{success:bool,status_code:int,data:mixed}
+	 */
+	private function record_single_tracks_request( array $request ): array {
 		if ( empty( $request['tracksEventName'] ) || ! is_scalar( $request['tracksEventName'] ) ) {
 			return $this->error_response( __( 'No valid event name or type.', 'woocommerce' ), 403 );
 		}
@@ -462,19 +510,34 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 			}
 		}
 
-		$event      = self::SHOPPER_EVENTS[ $event_name ];
-		$properties = $this->get_declared_properties( $event['properties'], $properties );
-		if ( $event['all_stores'] ) {
-			$properties['record_event_data'] = array( 'track_on_all_stores' => true );
-		}
-
-		$this->record_user_event( $event_name, $properties );
+		$this->record_declared_event( $event_name, $properties, false );
 
 		return array(
 			'success'     => true,
 			'status_code' => 200,
 			'data'        => array(),
 		);
+	}
+
+	/**
+	 * Apply the event's declared properties and server-side classification.
+	 *
+	 * @param string $event_name Declared name.
+	 * @param array  $properties Browser properties.
+	 * @param bool   $batch      Whether to report local pixel delivery errors.
+	 * @return bool|WP_Error
+	 */
+	private function record_declared_event( string $event_name, array $properties, bool $batch ) {
+		$event      = self::SHOPPER_EVENTS[ $event_name ];
+		$properties = $this->get_declared_properties( $event['properties'], $properties );
+		if ( $event['all_stores'] ) {
+			$properties['record_event_data'] = array( 'track_on_all_stores' => true );
+		}
+
+		if ( $batch ) {
+			return $this->record_prefixed_event( self::USER_EVENT_PREFIX . '_' . $event_name, $properties, true );
+		}
+		return $this->record_user_event( $event_name, $properties );
 	}
 
 	/**
@@ -516,6 +579,26 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	 */
 	public function is_shopper_event_tracking_enabled(): bool {
 		return $this->is_store_tracking_enabled() && ! $this->has_tracking_opt_out_cookie() && $this->is_tracked_shopper_request();
+	}
+
+	/**
+	 * Schedule the shared queue when a checkout script can send shopper events.
+	 *
+	 * @since 11.4.0
+	 * @return bool Whether the checkout script should collect events.
+	 */
+	public function prepare_checkout_tracking(): bool {
+		if ( ! $this->is_shopper_event_tracking_enabled() ) {
+			return false;
+		}
+
+		$this->checkout_needs_queue = true;
+		if ( ! did_action( 'wp_footer' ) ) {
+			$this->add_frontend_events_script_hook();
+		} elseif ( ! wp_script_is( self::FRONTEND_EVENTS_SCRIPT_HANDLE, 'enqueued' ) ) {
+			$this->enqueue_frontend_events_script();
+		}
+		return true;
 	}
 
 	/**
@@ -616,7 +699,7 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	 * @internal
 	 */
 	public function enqueue_frontend_events_script(): void {
-		if ( empty( $this->frontend_events ) && null === $this->proceed_to_checkout ) {
+		if ( ! $this->checkout_needs_queue && empty( $this->frontend_events ) && null === $this->proceed_to_checkout ) {
 			return;
 		}
 
@@ -628,6 +711,7 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 			WC_VERSION,
 			true
 		);
+		$allowed_events = $this->is_woopay_tracking_enabled() ? self::SHOPPER_EVENTS : array_filter( self::SHOPPER_EVENTS, static fn( $event ) => $event['all_stores'] );
 		wp_localize_script(
 			self::FRONTEND_EVENTS_SCRIPT_HANDLE,
 			'wc_woopayments_frontend_tracks_params',
@@ -636,11 +720,13 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 				'tracksUrl'         => $this->get_tracks_rest_url(),
 				'restNonce'         => wp_create_nonce( 'wp_rest' ),
 				'events'            => $this->frontend_events,
+				'allowedEvents'     => array_keys( $allowed_events ),
 				'proceedToCheckout' => $this->proceed_to_checkout,
 			)
 		);
-		$this->frontend_events     = array();
-		$this->proceed_to_checkout = null;
+		$this->checkout_needs_queue = false;
+		$this->frontend_events      = array();
+		$this->proceed_to_checkout  = null;
 	}
 
 	/**
@@ -677,9 +763,10 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	 *
 	 * @param string              $event_name Full event name.
 	 * @param array<string,mixed> $properties Event properties.
+	 * @param bool                $batch      Whether to report local pixel delivery errors.
 	 * @return bool|\WP_Error
 	 */
-	private function record_prefixed_event( string $event_name, array $properties ) {
+	private function record_prefixed_event( string $event_name, array $properties, bool $batch = false ) {
 
 		/**
 		 * Filters WooPayments Tracks event properties.
@@ -720,6 +807,11 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 		}
 
 		$event = new WC_Tracks_Event( $this->build_event_properties( $event_name, $properties, $user ) );
+
+		if ( $batch ) {
+			$pixel = $event->build_pixel_url();
+			return '' === $pixel ? false : WC_Tracks_Client::send_pixel( $pixel );
+		}
 
 		if ( is_wp_error( $event->error ) ) {
 			return $event->error;

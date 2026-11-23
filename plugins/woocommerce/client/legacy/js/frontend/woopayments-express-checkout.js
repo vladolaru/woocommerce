@@ -629,40 +629,12 @@
 
 	// wcpayExpressCheckoutParams carries the client 11.1.0 snake_case keys (WooPaymentsExpressCheckoutService).
 	function recordUserEvent( eventName, eventProperties ) {
-		var tracksUrl = config.tracks_url;
-		var nonce = config.nonce && config.nonce.platform_tracker;
-		var restNonce = config.nonce && config.nonce.tracks_rest;
-		var body;
-
-		if (
-			! eventName ||
-			// wp_localize_script() sends a false flag as ''.
-			! config.is_shopper_tracking_enabled ||
-			! tracksUrl ||
-			! nonce ||
-			! window.fetch ||
-			! window.FormData
-		) {
-			return;
+		if ( config.is_shopper_tracking_enabled && eventName ) {
+			( window.wcWooPaymentsTracks = window.wcWooPaymentsTracks || [] ).push( {
+				event: eventName,
+				properties: eventProperties || {},
+			} );
 		}
-
-		body = new window.FormData();
-		body.append( 'tracksNonce', nonce );
-		body.append( 'tracksEventName', eventName );
-		body.append(
-			'tracksEventProp',
-			JSON.stringify( eventProperties || {} )
-		);
-
-		// The REST nonce keeps a logged-in shopper's session, which the Tracks nonce is tied to.
-		window
-			.fetch( tracksUrl, {
-				method: 'POST',
-				credentials: 'same-origin',
-				headers: restNonce ? { 'X-WP-Nonce': restNonce } : {},
-				body: body,
-			} )
-			.catch( function () {} );
 	}
 
 	function getExpressCheckoutLoadTrackingEvent( paymentMethod ) {

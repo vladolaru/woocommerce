@@ -46,6 +46,9 @@ const baseSettings = {
 // The tests run on Jest's fake timers: a tick of 0 ms settles the pending promise chains without waiting.
 const flushPromises = () => jest.advanceTimersByTimeAsync( 0 );
 
+const getTrackedEventNames = () =>
+	window.wcWooPaymentsTracks.map( ( item ) => item.event );
+
 describe( 'WooPay email input (blocks)', () => {
 	const nativeHistoryReplaceState = window.history.replaceState;
 	let fetchResponses;
@@ -75,11 +78,6 @@ describe( 'WooPay email input (blocks)', () => {
 			( [ , options ] ) => Object.fromEntries( options.body.entries() )
 		);
 
-	const getTrackedEventNames = () =>
-		window.fetch.mock.calls
-			.filter( ( [ url ] ) => url === baseSettings.tracksUrl )
-			.map( ( [ , options ] ) => options.body.get( 'tracksEventName' ) );
-
 	const typeEmail = async ( input, email ) => {
 		input.value = email;
 		input.dispatchEvent( new window.Event( 'input', { bubbles: true } ) );
@@ -102,6 +100,7 @@ describe( 'WooPay email input (blocks)', () => {
 	};
 
 	beforeEach( () => {
+		window.wcWooPaymentsTracks = [];
 		// Answer shapes, client 11.1.0 (the sender, then where client/checkout/woopay/email-input-iframe.js reads it):
 		fetchResponses = {
 			// wp_send_json_success( [ 'signature' ] ) (includes/class-wc-payments.php:1906-1911); read at :357-371.
@@ -389,14 +388,10 @@ describe( 'WooPay email input (blocks)', () => {
 			'checkout_woopay_save_my_info_offered',
 			'checkout_save_my_info_click',
 		] );
-		const clickEvent = window.fetch.mock.calls.find(
-			( [ , options ] ) =>
-				options?.body?.get( 'tracksEventName' ) ===
-				'checkout_save_my_info_click'
+		const clickEvent = window.wcWooPaymentsTracks.find(
+			( item ) => item.event === 'checkout_save_my_info_click'
 		);
-		expect(
-			JSON.parse( clickEvent[ 1 ].body.get( 'tracksEventProp' ) )
-		).toEqual( { status: 'checked' } );
+		expect( clickEvent.properties ).toEqual( { status: 'checked' } );
 	} );
 
 	test( 'sends the session data to the iframe on load when first-party auth is on', async () => {

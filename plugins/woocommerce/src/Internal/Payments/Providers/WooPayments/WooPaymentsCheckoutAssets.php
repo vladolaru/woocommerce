@@ -444,8 +444,8 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 			'platformTrackerNonce'     => $connection['platformTrackerNonce'],
 			'tracksUrl'                => $this->get_frontend_tracking_controller()->get_tracks_rest_url(),
 			'tracksRestNonce'          => wp_create_nonce( 'wp_rest' ),
-			// Store-level only, as client 11.2.0 sets it (class-woopay-tracker.php:663-665); WooPay events are checked when recorded.
-			'isShopperTrackingEnabled' => $this->get_frontend_tracking_controller()->is_shopper_event_tracking_enabled(),
+			// The shared queue applies the additional WooPay check per event.
+			'isShopperTrackingEnabled' => $this->get_frontend_tracking_controller()->prepare_checkout_tracking(),
 			'woopayHost'               => $connection['woopayHost'],
 			'testMode'                 => $connection['testMode'],
 			'wcpayVersionNumber'       => WooPaymentsClientVersion::VERSION,

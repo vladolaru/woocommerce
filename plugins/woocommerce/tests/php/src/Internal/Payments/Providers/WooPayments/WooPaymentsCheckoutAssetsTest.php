@@ -996,6 +996,23 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$config      = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 		$blocks_data = $assets->get_blocks_payment_method_data( self::CARD_SUPPORTS );
 
+		try {
+			$tracking_controller->enqueue_frontend_events_script();
+			$this->assertSame( $expected, wp_script_is( 'wc-woopayments-frontend-tracks', 'enqueued' ) );
+			if ( $expected ) {
+				$data = wp_scripts()->get_data( 'wc-woopayments-frontend-tracks', 'data' );
+				$this->assertSame( 1, preg_match( '/^var wc_woopayments_frontend_tracks_params = (\{.*\});$/s', $data, $matches ) );
+				$allowed = json_decode( $matches[1], true )['allowedEvents'];
+				$this->assertContains( 'cart_page_view', $allowed );
+				$this->assertContains( 'gpay_button_load', $allowed );
+				$this->assertNotContains( 'checkout_place_order_button_click', $allowed );
+			}
+		} finally {
+			remove_action( 'wp_footer', array( $tracking_controller, 'enqueue_frontend_events_script' ) );
+			wp_dequeue_script( 'wc-woopayments-frontend-tracks' );
+			wp_deregister_script( 'wc-woopayments-frontend-tracks' );
+		}
+
 		$this->assertFalse( $config['isWooPayEnabled'] );
 		$this->assertSame(
 			array(

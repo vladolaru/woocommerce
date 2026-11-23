@@ -355,17 +355,8 @@ describe( 'WooPayments express checkout', () => {
 		};
 	}
 
-	function getTracksRequests() {
-		return (
-			( window.fetch && window.fetch.mock && window.fetch.mock.calls ) ||
-			[]
-		).filter(
-			( [ url ] ) =>
-				url === 'https://example.test/wp-json/wc/v3/payments/tracks'
-		);
-	}
-
 	beforeEach( () => {
+		window.wcWooPaymentsTracks = [];
 		jest.isolateModules( () =>
 			require( '../utils/woopayments-express-cart' )
 		);
@@ -612,27 +603,7 @@ describe( 'WooPayments express checkout', () => {
 			},
 		} );
 
-		const requests = getTracksRequests();
-
-		expect( requests ).toHaveLength( 1 );
-		expect( requests[ 0 ][ 1 ] ).toEqual(
-			expect.objectContaining( {
-				method: 'POST',
-				headers: { 'X-WP-Nonce': 'rest-nonce' },
-			} )
-		);
-		expect( requests[ 0 ][ 1 ].body.get( 'tracksNonce' ) ).toBe(
-			'tracks-nonce'
-		);
-		expect( requests[ 0 ][ 1 ].body.has( 'action' ) ).toBe( false );
-		expect( requests[ 0 ][ 1 ].body.get( 'tracksEventName' ) ).toBe(
-			'applepay_button_load'
-		);
-		expect(
-			JSON.parse( requests[ 0 ][ 1 ].body.get( 'tracksEventProp' ) )
-		).toEqual( {
-			source: 'checkout',
-		} );
+		expect( window.wcWooPaymentsTracks ).toEqual( [ { event: 'applepay_button_load', properties: { source: 'checkout' } } ] );
 	} );
 
 	test( 'records only the selected Google Pay click tracking event', async () => {
@@ -648,17 +619,7 @@ describe( 'WooPayments express checkout', () => {
 			resolve: resolveClick,
 		} );
 
-		const requests = getTracksRequests();
-
-		expect( requests ).toHaveLength( 1 );
-		expect( requests[ 0 ][ 1 ].body.get( 'tracksEventName' ) ).toBe(
-			'gpay_button_click'
-		);
-		expect(
-			JSON.parse( requests[ 0 ][ 1 ].body.get( 'tracksEventProp' ) )
-		).toEqual( {
-			source: 'checkout',
-		} );
+		expect( window.wcWooPaymentsTracks ).toEqual( [ { event: 'gpay_button_click', properties: { source: 'checkout' } } ] );
 		expect( resolveClick ).toHaveBeenCalledWith(
 			expect.objectContaining( {
 				emailRequired: true,
@@ -686,7 +647,7 @@ describe( 'WooPayments express checkout', () => {
 			resolve: jest.fn(),
 		} );
 
-		expect( getTracksRequests() ).toHaveLength( 0 );
+		expect( window.wcWooPaymentsTracks ).toHaveLength( 0 );
 	} );
 
 	test.each( [

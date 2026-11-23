@@ -254,6 +254,7 @@ describe( 'wc-payment-method-woopayments', () => {
 	let validationErrors;
 
 	beforeEach( () => {
+		window.wcWooPaymentsTracks = [];
 		activePaymentMethod = 'woocommerce_payments';
 		storeListeners.clear();
 		validationErrors = {};
@@ -586,28 +587,10 @@ describe( 'wc-payment-method-woopayments', () => {
 		} );
 		await setupResult;
 
-		const trackingRequest = window.fetch.mock.calls.find(
-			( [ url ] ) =>
-				url === 'https://example.test/wp-json/wc/v3/payments/tracks'
-		);
-
-		expect( trackingRequest ).toBeDefined();
-		expect( trackingRequest[ 1 ] ).toEqual(
-			expect.objectContaining( {
-				method: 'POST',
-				headers: { 'X-WP-Nonce': 'rest-nonce' },
-			} )
-		);
-		expect( trackingRequest[ 1 ].body.has( 'action' ) ).toBe( false );
-		expect( trackingRequest[ 1 ].body.get( 'tracksNonce' ) ).toBe(
-			'tracks-nonce'
-		);
-		expect( trackingRequest[ 1 ].body.get( 'tracksEventName' ) ).toBe(
-			'checkout_place_order_button_click'
-		);
-		expect(
-			JSON.parse( trackingRequest[ 1 ].body.get( 'tracksEventProp' ) )
-		).toEqual( {} );
+		expect( window.wcWooPaymentsTracks ).toContainEqual( {
+			event: 'checkout_place_order_button_click',
+			properties: {},
+		} );
 	} );
 
 	it( 'does not record tracking events when shopper tracking is disabled', () => {
@@ -622,7 +605,7 @@ describe( 'wc-payment-method-woopayments', () => {
 			'checkout_place_order_button_click'
 		);
 
-		expect( window.fetch ).not.toHaveBeenCalled();
+		expect( window.wcWooPaymentsTracks ).toHaveLength( 0 );
 	} );
 
 	it( 'honors backend saved-payment controls', () => {
@@ -944,16 +927,12 @@ describe( 'wc-payment-method-woopayments', () => {
 		expect( saveMyInfo ).toBeChecked();
 
 		await waitFor( () => {
-			const events = window.fetch.mock.calls
-				.filter(
-					( [ url ] ) =>
-						url ===
-						'https://example.test/wp-json/wc/v3/payments/tracks'
-				)
-				.map( ( [ , options ] ) => ( {
-					name: options.body.get( 'tracksEventName' ),
-					props: JSON.parse( options.body.get( 'tracksEventProp' ) ),
-				} ) );
+			const events = window.wcWooPaymentsTracks.map(
+				( { event, properties } ) => ( {
+					name: event,
+					props: properties,
+				} )
+			);
 
 			// The offer is recorded by the WooPay email check (client 11.1.0 email-input-iframe.js:411-427), not here;
 			// mobile_enter follows each time the number becomes valid (checkout-page-save-user.js:169-174).
@@ -1546,15 +1525,7 @@ describe( 'wc-payment-method-woopayments', () => {
 		await act( () => user.click( privacyLink ) );
 
 		const trackedNames = () =>
-			window.fetch.mock.calls
-				.filter(
-					( [ url ] ) =>
-						url ===
-						'https://example.test/wp-json/wc/v3/payments/tracks'
-				)
-				.map( ( [ , options ] ) =>
-					options.body.get( 'tracksEventName' )
-				);
+			window.wcWooPaymentsTracks.map( ( item ) => item.event );
 
 		expect( trackedNames() ).toEqual(
 			expect.arrayContaining( [

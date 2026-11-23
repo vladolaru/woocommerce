@@ -2,44 +2,29 @@
 // truthiness, because a classic page's wp_localize_script() config sends a false flag as ''.
 
 /**
- * Record a WooPayments shopper event through the shopper Tracks REST route.
+ * Queue a WooPayments shopper event for the shared page recorder.
  *
  * @param {Object}  args                          Tracking values from the calling script's config.
  * @param {boolean} args.isShopperTrackingEnabled Whether the store records shopper events.
  * @param {string}  args.tracksUrl                Shopper Tracks REST route.
  * @param {string}  args.platformTrackerNonce     Nonce the Tracks route checks.
- * @param {string}  args.tracksRestNonce          REST nonce that keeps a logged-in shopper's session.
  * @param {string}  eventName                     Event name without the wcpay_ prefix.
  * @param {Object}  eventProperties               Event properties.
  */
 export const recordEvent = ( args, eventName, eventProperties ) => {
 	if (
-		! eventName ||
-		! args?.isShopperTrackingEnabled ||
-		! args.tracksUrl ||
-		! args.platformTrackerNonce ||
-		! window.fetch ||
-		! window.FormData
+		args?.isShopperTrackingEnabled &&
+		args.tracksUrl &&
+		args.platformTrackerNonce &&
+		eventName
 	) {
-		return;
+		( window.wcWooPaymentsTracks = window.wcWooPaymentsTracks || [] ).push(
+			{
+				event: eventName,
+				properties: eventProperties || {},
+			}
+		);
 	}
-
-	const body = new window.FormData();
-	body.append( 'tracksNonce', args.platformTrackerNonce );
-	body.append( 'tracksEventName', eventName );
-	body.append( 'tracksEventProp', JSON.stringify( eventProperties || {} ) );
-
-	window
-		.fetch( args.tracksUrl, {
-			method: 'POST',
-			credentials: 'same-origin',
-			// The REST nonce keeps a logged-in shopper's session, which the Tracks nonce is tied to.
-			headers: args.tracksRestNonce
-				? { 'X-WP-Nonce': args.tracksRestNonce }
-				: {},
-			body,
-		} )
-		.catch( () => {} );
 };
 
 const getIdentityCookieValue = () => {

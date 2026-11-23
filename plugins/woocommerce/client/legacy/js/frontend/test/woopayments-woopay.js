@@ -86,6 +86,7 @@ describe( 'WooPayments WooPay checkout', () => {
 	let documentAddEventListener;
 
 	beforeEach( () => {
+		window.wcWooPaymentsTracks = [];
 		visibilityListeners = [];
 		const add = document.addEventListener.bind( document );
 		documentAddEventListener = jest
@@ -145,16 +146,8 @@ describe( 'WooPayments WooPay checkout', () => {
 
 	const TRACKS_URL = 'https://example.test/wp-json/wc/v3/payments/tracks';
 
-	function getTrackingRequests() {
-		return window.fetch.mock.calls.filter( ( [ url ] ) => url === TRACKS_URL );
-	}
-
 	function getTrackingEvents() {
-		return getTrackingRequests()
-			.map( ( [ , options ] ) => ( {
-				name: options.body.get( 'tracksEventName' ),
-				props: JSON.parse( options.body.get( 'tracksEventProp' ) ),
-			} ) );
+		return window.wcWooPaymentsTracks.map( ( { event, properties } ) => ( { name: event, props: properties } ) );
 	}
 
 	function createJQueryMock() {
@@ -360,16 +353,6 @@ describe( 'WooPayments WooPay checkout', () => {
 				},
 			] )
 		);
-		getTrackingRequests().forEach( ( [ , options ] ) => {
-			expect( options ).toEqual(
-				expect.objectContaining( {
-					method: 'POST',
-					headers: { 'X-WP-Nonce': 'rest-nonce' },
-				} )
-			);
-			expect( options.body.get( 'tracksNonce' ) ).toBe( 'tracks-nonce' );
-			expect( options.body.has( 'action' ) ).toBe( false );
-		} );
 	} );
 
 	// wp_localize_script() turns the server's false into ''.

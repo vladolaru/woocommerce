@@ -36,6 +36,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PluginLifecycleListener;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use WC_Order;
 use WC_Order_Refund;
 use WC_Payment_Tokens;
@@ -272,6 +273,52 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 
 		// The client loads its SEPA token class on every request (client 11.1.0 `includes/class-wc-payments.php:468`).
 		$this->assertInstanceOf( SepaToken::class, WC_Payment_Tokens::get( $token->get_id() ), 'A renewal or subscription view must find the saved SEPA credential.' );
+	}
+
+	/**
+	 * @testdox Only an eligible built-in storefront loads the shopper batch queue.
+	 */
+	public function test_shopper_batch_asset_follows_ownership_and_country(): void {
+		$this->arrange_builtin_owner( WooPaymentsSetupTier::ACTIVE );
+		$plugins = (array) get_option( 'active_plugins', array() );
+		update_option( 'active_plugins', array_merge( $plugins, array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) ) );
+		$container = wc_get_container();
+		$container->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		$container->get( WooPaymentsSetupTier::class )->invalidate();
+		$account = $this->createMock( WooPaymentsAccountService::class );
+		$account->method( 'is_gateway_enabled' )->willReturn( true );
+		$account->method( 'get_cached_account_data' )->willReturn( array( 'country' => 'US' ) );
+		$container->replace( WooPaymentsAccountService::class, $account );
+		$handle     = 'wc-woopayments-frontend-tracks';
+		$controller = $container->get( WooPaymentsFrontendTrackingController::class );
+		$footer     = array( $controller, 'enqueue_frontend_events_script' );
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		update_option( 'woocommerce_default_country', 'US:CA' );
+
+		try {
+			$this->run_bootstrap( '__return_false' );
+			do_action( 'woocommerce_after_single_product' ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+			$this->assertFalse( has_action( 'wp_footer', $footer ) );
+			$this->assertFalse( wp_script_is( $handle, 'enqueued' ) );
+
+			$this->arrange_builtin_owner( WooPaymentsSetupTier::ACTIVE );
+			$this->run_bootstrap( '__return_false' );
+			update_option( 'woocommerce_default_country', 'CA:BC' );
+			do_action( 'woocommerce_after_single_product' ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+			$this->assertFalse( has_action( 'wp_footer', $footer ) );
+			$this->assertFalse( wp_script_is( $handle, 'enqueued' ) );
+
+			update_option( 'woocommerce_default_country', 'US:CA' );
+			do_action( 'woocommerce_after_single_product' ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+			$this->assertSame( 10, has_action( 'wp_footer', $footer ) );
+			$controller->enqueue_frontend_events_script();
+			$this->assertTrue( wp_script_is( $handle, 'enqueued' ) );
+			$this->assertStringContainsString( '"allowedEvents"', (string) wp_scripts()->get_data( $handle, 'data' ) );
+		} finally {
+			remove_action( 'wp_footer', $footer );
+			wp_dequeue_script( $handle );
+			wp_deregister_script( $handle );
+		}
 	}
 
 	/**

@@ -14,6 +14,7 @@ describe( 'tracks.recordEvent', () => {
 	const originalFetch = window.fetch;
 
 	beforeEach( () => {
+		window.wcWooPaymentsTracks = [];
 		window.fetch = jest.fn().mockResolvedValue( {} );
 	} );
 
@@ -21,26 +22,11 @@ describe( 'tracks.recordEvent', () => {
 		window.fetch = originalFetch;
 	} );
 
-	it( 'posts the event to the shopper Tracks route with the REST nonce', () => {
-		recordEvent( trackingArgs, 'checkout_place_order_button_click', {
-			source: 'checkout',
-		} );
-
-		expect( window.fetch ).toHaveBeenCalledTimes( 1 );
-		const [ url, options ] = window.fetch.mock.calls[ 0 ];
-		expect( url ).toBe( trackingArgs.tracksUrl );
-		expect( options ).toMatchObject( {
-			method: 'POST',
-			credentials: 'same-origin',
-			headers: { 'X-WP-Nonce': 'rest-nonce' },
-		} );
-		expect( options.body.get( 'tracksNonce' ) ).toBe( 'tracks-nonce' );
-		expect( options.body.get( 'tracksEventName' ) ).toBe(
-			'checkout_place_order_button_click'
-		);
-		expect( options.body.get( 'tracksEventProp' ) ).toBe(
-			'{"source":"checkout"}'
-		);
+	it( 'queues the event for the page recorder', () => {
+		recordEvent( trackingArgs, 'checkout_place_order_button_click' );
+		expect( window.wcWooPaymentsTracks ).toEqual( [
+			{ event: 'checkout_place_order_button_click', properties: {} },
+		] );
 	} );
 
 	// A classic page's wp_localize_script() config sends the store's false as ''.
@@ -52,7 +38,7 @@ describe( 'tracks.recordEvent', () => {
 				'checkout_place_order_button_click'
 			);
 
-			expect( window.fetch ).not.toHaveBeenCalled();
+			expect( window.wcWooPaymentsTracks ).toHaveLength( 0 );
 		}
 	);
 
@@ -60,13 +46,7 @@ describe( 'tracks.recordEvent', () => {
 		recordEvent( { ...trackingArgs, tracksUrl: '' }, 'event' );
 		recordEvent( { ...trackingArgs, platformTrackerNonce: '' }, 'event' );
 
-		expect( window.fetch ).not.toHaveBeenCalled();
-	} );
-
-	it( 'sends no X-WP-Nonce header when the REST nonce is empty', () => {
-		recordEvent( { ...trackingArgs, tracksRestNonce: '' }, 'event' );
-
-		expect( window.fetch.mock.calls[ 0 ][ 1 ].headers ).toEqual( {} );
+		expect( window.wcWooPaymentsTracks ).toHaveLength( 0 );
 	} );
 } );
 

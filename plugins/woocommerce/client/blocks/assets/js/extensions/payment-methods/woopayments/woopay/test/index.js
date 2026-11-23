@@ -146,6 +146,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 	} );
 
 	beforeEach( () => {
+		window.wcWooPaymentsTracks = [];
 		navigate.mockReset();
 		user = userEvent.setup();
 	} );
@@ -350,29 +351,21 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 
 		await waitFor( () => {
 			expect(
-				window.fetch.mock.calls.some(
-					( [ url, options ] ) =>
-						url ===
-							'https://example.test/wp-json/wc/v3/payments/tracks' &&
-						options.body.get( 'tracksEventName' ) ===
-							'woopay_button_load'
+				window.wcWooPaymentsTracks.some(
+					( item ) => item.event === 'woopay_button_load'
 				)
 			).toBe( true );
 		} );
 
 		await user.click( screen.getByRole( 'button', { name: 'WooPay' } ) );
 
-		const getTracksRequests = () =>
-			window.fetch.mock.calls.filter(
-				( [ url ] ) =>
-					url === 'https://example.test/wp-json/wc/v3/payments/tracks'
-			);
-
 		await waitFor( () => {
-			const events = getTracksRequests().map( ( [ , options ] ) => ( {
-				name: options.body.get( 'tracksEventName' ),
-				props: JSON.parse( options.body.get( 'tracksEventProp' ) ),
-			} ) );
+			const events = window.wcWooPaymentsTracks.map(
+				( { event, properties } ) => ( {
+					name: event,
+					props: properties,
+				} )
+			);
 
 			expect( events ).toEqual(
 				expect.arrayContaining( [
@@ -386,16 +379,6 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 					},
 				] )
 			);
-		} );
-		getTracksRequests().forEach( ( [ , options ] ) => {
-			expect( options ).toEqual(
-				expect.objectContaining( {
-					method: 'POST',
-					headers: { 'X-WP-Nonce': 'rest-nonce' },
-				} )
-			);
-			expect( options.body.get( 'tracksNonce' ) ).toBe( 'tracks-nonce' );
-			expect( options.body.has( 'action' ) ).toBe( false );
 		} );
 	} );
 
@@ -1668,12 +1651,8 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 
 		await waitFor( () => {
 			expect(
-				window.fetch.mock.calls.some(
-					( [ url, options ] ) =>
-						url ===
-							'https://example.test/wp-json/wc/v3/payments/tracks' &&
-						options.body.get( 'tracksEventName' ) ===
-							'woopay_button_load'
+				window.wcWooPaymentsTracks.some(
+					( item ) => item.event === 'woopay_button_load'
 				)
 			).toBe( true );
 		} );

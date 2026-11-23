@@ -106,16 +106,8 @@ describe( 'WooPayments checkout', () => {
 
 	const TRACKS_URL = 'https://example.test/wp-json/wc/v3/payments/tracks';
 
-	function getTrackingRequests() {
-		return window.fetch.mock.calls.filter( ( [ url ] ) => url === TRACKS_URL );
-	}
-
 	function getTrackingEvents() {
-		return getTrackingRequests()
-			.map( ( [ , options ] ) => ( {
-				name: options.body.get( 'tracksEventName' ),
-				props: JSON.parse( options.body.get( 'tracksEventProp' ) ),
-			} ) );
+		return window.wcWooPaymentsTracks.map( ( { event, properties } ) => ( { name: event, props: properties } ) );
 	}
 
 	function preparePaymentListWallets( selectedMethod = 'apple_pay' ) {
@@ -417,6 +409,7 @@ describe( 'WooPayments checkout', () => {
 	}
 
 	beforeEach( () => {
+		window.wcWooPaymentsTracks = [];
 		jest.resetModules();
 		// The script depends on wc-checkout, which loads wc-custom-place-order-button
 		// (includes/class-wc-frontend-scripts.php), so the API is always there; an
@@ -5092,16 +5085,6 @@ describe( 'WooPayments checkout', () => {
 				},
 			] )
 		);
-		getTrackingRequests().forEach( ( [ , options ] ) => {
-			expect( options ).toEqual(
-				expect.objectContaining( {
-					method: 'POST',
-					headers: { 'X-WP-Nonce': 'rest-nonce' },
-				} )
-			);
-			expect( options.body.get( 'tracksNonce' ) ).toBe( 'tracks-nonce' );
-			expect( options.body.has( 'action' ) ).toBe( false );
-		} );
 	} );
 
 	// Client 11.2.0 binds the event on form.checkout only (event-handlers.js:47, :97-106).
@@ -6414,10 +6397,7 @@ describe( 'WooPayments checkout', () => {
 		}
 
 		function getTrackedEventNames() {
-			return getTrackingRequests()
-				.map( ( [ , options ] ) =>
-					options.body.get( 'tracksEventName' )
-				);
+			return getTrackingEvents().map( ( item ) => item.name );
 		}
 
 		// The flow wires up once the Tracks identity resolves, like the plugin.
@@ -6792,16 +6772,8 @@ describe( 'WooPayments checkout', () => {
 				'checkout_woopay_save_my_info_offered',
 				'checkout_save_my_info_click',
 			] );
-			const clickEvent = window.fetch.mock.calls.find(
-				( [ , options ] ) =>
-					options &&
-					options.body &&
-					options.body.get( 'tracksEventName' ) ===
-						'checkout_save_my_info_click'
-			);
-			expect(
-				JSON.parse( clickEvent[ 1 ].body.get( 'tracksEventProp' ) )
-			).toEqual( { status: 'checked' } );
+			const clickEvent = getTrackingEvents().find( ( item ) => item.name === 'checkout_save_my_info_click' );
+			expect( clickEvent.props ).toEqual( { status: 'checked' } );
 			delete window.wc_woopayments_woopay_params;
 		} );
 
