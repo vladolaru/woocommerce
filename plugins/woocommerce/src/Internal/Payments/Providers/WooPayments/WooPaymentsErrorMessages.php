@@ -117,7 +117,7 @@ class WooPaymentsErrorMessages {
 	 * @return string
 	 */
 	public static function get_unavailable_saved_method_message(): string {
-		return __( 'This saved payment method is no longer available. Please choose another payment method or enter new card details.', 'woocommerce' );
+		return __( 'This saved payment method is no longer available. Please refresh the page, then choose another payment method or enter new card details.', 'woocommerce' );
 	}
 
 	/**

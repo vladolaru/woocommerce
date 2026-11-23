@@ -4434,7 +4434,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 
 		if ( 'saved' === $card ) {
 			$_POST['wc-woocommerce_payments-payment-token'] = (string) $this->create_card_token( $user_id, 'pm_card' )->get_id();
-			$message                                        = 'This saved payment method is no longer available. Please choose another payment method or enter new card details.';
+			$message                                        = 'This saved payment method is no longer available. Please refresh the page, then choose another payment method or enter new card details.';
 		} else {
 			$_POST['wcpay-payment-method']             = 'pm_card';
 			$_POST['wcpay-is-platform-payment-method'] = 'true';
