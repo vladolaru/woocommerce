@@ -58,6 +58,8 @@ class RenewalGatewayHandoverTest extends WC_Unit_Test_Case {
 
 	private const ROW = 'wcpay_account_data';
 
+	private const PUBLIC_FRAUD_CONFIG_TRANSIENT = 'woocommerce_woopayments_public_fraud_services';
+
 	/**
 	 * The ten Stripe Billing values a subscription can carry, written out so a missing one in the production list fails.
 	 */
@@ -190,7 +192,7 @@ class RenewalGatewayHandoverTest extends WC_Unit_Test_Case {
 		wc_get_container()->replace( Client::class, $client );
 		wc_get_container()->reset_all_resolved();
 		$client->init( $this->transport, wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( TransportLog::class ) );
-		$this->intent_answer = fn( array $body ): array => self::platform_answer( 200, $this->recorded_renewal_intent( $body ) );
+		$this->intent_answer = fn( array $body ): array => self::platform_answer( 200, 'pm_amazon_pay_renewal' === ( $body['payment_method'] ?? '' ) ? $this->amazon_pay_renewal_intent( $body ) : $this->recorded_renewal_intent( $body ) );
 
 		wc_get_container()->get( WooPaymentsAccountService::class )->overwrite_cache_with_no_account();
 		$this->next_request();
@@ -428,7 +430,6 @@ class RenewalGatewayHandoverTest extends WC_Unit_Test_Case {
 	 * @testdox N9a: an Amazon Pay subscription on a store whose account row holds the empty account is charged with its Amazon Pay token, the Amazon Pay gateway listed in that request.
 	 */
 	public function test_n9a_an_amazon_pay_subscription_is_charged_with_an_empty_row(): void {
-		$this->warm_public_fraud_config();
 		$subscription = $this->create_subscription( self::AMAZON_PAY, array(), $this->amazon_pay_token() );
 		$this->bootstrap( RequestTypeUtil::CRON );
 
@@ -439,6 +440,40 @@ class RenewalGatewayHandoverTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( $renewal->get_id() ), $this->charged_order_ids() );
 		$this->assertSame( 'pm_amazon_pay_renewal', $this->intent_bodies()[0]['payment_method'] );
 		$this->assertFalse( $this->has_note( $renewal, ScheduledRenewalDoubles::MANUAL_NOTE ) );
+		$this->assertTrue( $renewal->is_paid() );
+		$this->assertSame( array( self::AMAZON_PAY, self::AMAZON_PAY ), array( $renewal->get_payment_method(), wc_get_order( $subscription->get_id() )->get_payment_method() ) );
+	}
+
+	/**
+	 * @testdox N9a cold: an Amazon Pay renewal handed over with the public fraud-services config not cached makes no fraud-services request, keeps its Amazon Pay gateway and schedules no Sift tracking.
+	 */
+	public function test_n9a_cold_an_amazon_pay_renewal_reads_no_fraud_services_config(): void {
+		delete_transient( self::PUBLIC_FRAUD_CONFIG_TRANSIENT );
+		$fraud_services_requests = 0;
+		add_filter(
+			'pre_http_request',
+			static function ( $response, $args, $url ) use ( &$fraud_services_requests ) {
+				unset( $args );
+				if ( false !== strpos( (string) $url, 'accounts/fraud_services' ) ) {
+					++$fraud_services_requests;
+				}
+				return $response;
+			},
+			9,
+			3
+		);
+		$subscription = $this->create_subscription( self::AMAZON_PAY, array(), $this->amazon_pay_token() );
+		$this->bootstrap( RequestTypeUtil::CRON );
+
+		$this->run_action( self::RENEWAL_ACTION, array( 'subscription_id' => $subscription->get_id() ) );
+
+		$renewal = $this->last_renewal( $subscription );
+		$this->assertSame( array( $renewal->get_id() ), $this->charged_order_ids() );
+		$this->assertSame( 'pm_amazon_pay_renewal', $this->intent_bodies()[0]['payment_method'] );
+		$this->assertTrue( $renewal->is_paid() );
+		$this->assertSame( 0, $fraud_services_requests + count( array_filter( $this->transport->requests, static fn( array $request ): bool => false !== strpos( $request['path'], 'fraud_services' ) ) ) );
+		$this->assertSame( array( self::AMAZON_PAY, self::AMAZON_PAY ), array( $renewal->get_payment_method(), wc_get_order( $subscription->get_id() )->get_payment_method() ) );
+		$this->assertSame( array(), $this->pending( 'wcpay_track_new_order' ) );
 	}
 
 	/**
@@ -730,7 +765,6 @@ class RenewalGatewayHandoverTest extends WC_Unit_Test_Case {
 		$this->bootstrap( RequestTypeUtil::CRON );
 		$this->assertSame( array( false, false ), $readers(), 'Lowest tier, no hand-over.' );
 
-		$this->warm_public_fraud_config();
 		$subscription = $this->create_subscription( self::AMAZON_PAY, array(), $this->amazon_pay_token() );
 		$this->run_action( self::RENEWAL_ACTION, array( 'subscription_id' => $subscription->get_id() ) );
 		$this->assertContains( self::AMAZON_PAY, $this->listed_gateway_ids(), 'The hand-over lists Amazon Pay.' );
@@ -934,16 +968,6 @@ class RenewalGatewayHandoverTest extends WC_Unit_Test_Case {
 		$instance->setAccessible( true );
 
 		return $instance;
-	}
-
-	/**
-	 * Store the public fraud-services config as read earlier the same day.
-	 *
-	 * With a cold cache, the Sift check of an Amazon Pay renewal's first save under the order lock fetches it, a request the
-	 * claim guard refuses. These rows test the hand-over, so they start from a warm cache.
-	 */
-	private function warm_public_fraud_config(): void {
-		set_transient( 'woocommerce_woopayments_public_fraud_services', array( 'stripe' => array() ), DAY_IN_SECONDS );
 	}
 
 	/**
@@ -1446,6 +1470,38 @@ class RenewalGatewayHandoverTest extends WC_Unit_Test_Case {
 		}
 
 		return array();
+	}
+
+	/**
+	 * The recorded renewal intent as an Amazon Pay charge answers it: the request's payment method, the `amazon_pay` type and
+	 * Stripe's `amazon_pay` payment method details, funded by a card.
+	 *
+	 * @param array<string,mixed> $body Decoded request body.
+	 * @return array<string,mixed>
+	 */
+	private function amazon_pay_renewal_intent( array $body ): array {
+		$intent                         = $this->recorded_renewal_intent( $body );
+		$intent['payment_method']       = $body['payment_method'];
+		$intent['payment_method_types'] = array( 'amazon_pay' );
+		foreach ( $intent['charges']['data'] as $index => $charge ) {
+			$intent['charges']['data'][ $index ]['payment_method']         = $body['payment_method'];
+			$intent['charges']['data'][ $index ]['payment_method_details'] = array(
+				'type'       => 'amazon_pay',
+				'amazon_pay' => array(
+					'funding' => array(
+						'type' => 'card',
+						'card' => array(
+							'brand'   => 'visa',
+							'country' => 'US',
+							'funding' => 'credit',
+							'last4'   => '4242',
+						),
+					),
+				),
+			);
+		}
+
+		return $intent;
 	}
 
 	/**
