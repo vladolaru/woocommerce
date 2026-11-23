@@ -190,6 +190,237 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * A refund failure is recorded only after the row, order status and refund status agree.
+	 *
+	 * @dataProvider failure_note_deliveries
+	 * @param string $status    Provider status.
+	 * @param string $reason    Failure reason.
+	 * @param bool   $interrupt Whether the first delivery stops just before inserting its note.
+	 */
+	public function test_failure_note_follows_the_saved_order( string $status, string $reason, bool $interrupt ): void {
+		$order                                  = $this->create_refundable_order();
+		$charge                                 = $this->get_successful_refund_charge();
+		$charge['refunds']['data'][0]['amount'] = 1000;
+		$this->sut->process( 'charge.refunded', $charge );
+		$order = wc_get_order( $order->get_id() );
+		$order->set_billing_email( 'buyer@example.test' );
+		$order->save();
+		$event = array(
+			'id'             => 're_123',
+			'charge'         => 'ch_123',
+			'amount'         => 1000,
+			'currency'       => 'usd',
+			'status'         => $status,
+			'failure_reason' => $reason,
+		);
+
+		$note_states   = array();
+		$before_note   = function ( $data ) use ( $order, &$note_states, $interrupt ) {
+			if ( false !== strpos( $data['comment_content'], '<strong>' ) ) {
+				$fresh         = wc_get_order( $order->get_id() );
+				$note_states[] = array( $fresh->get_status(), $fresh->get_meta( '_wcpay_refund_status' ), count( $fresh->get_refunds() ) );
+				if ( $interrupt && 1 === count( $note_states ) ) {
+					throw new \RuntimeException( 'Stopped before inserting the failure note.' );
+				}
+			}
+			return $data;
+		};
+		$deletions     = did_action( 'woocommerce_delete_order_refund' );
+		$transitions   = did_action( 'woocommerce_order_status_refunded_to_failed' );
+		$notifications = did_action( 'woocommerce_order_status_failed_notification' );
+
+		// PHPUnit restores actions between tests while the mailer keeps its email instances.
+		$email = WC()->mailer()->get_emails()['WC_Email_Customer_Failed_Order'];
+		add_action( 'woocommerce_order_status_failed_notification', array( $email, 'trigger' ), 10, 2 );
+
+		$recipients = array();
+		$mail       = static function () use ( &$recipients ) {
+			return static function ( $to ) use ( &$recipients ): bool {
+				$recipients[] = $to;
+				return true;
+			};
+		};
+		add_filter( 'woocommerce_mail_callback', $mail );
+		add_filter( 'woocommerce_new_order_note_data', $before_note );
+		try {
+			try {
+				$this->sut->process( 'charge.refund.updated', $event );
+				$this->assertFalse( $interrupt );
+			} catch ( \RuntimeException $e ) {
+				$this->assertTrue( $interrupt );
+				$this->assertSame( 'Stopped before inserting the failure note.', $e->getMessage() );
+			}
+
+			$this->assertSame( array( array( 'failed', 'failed', 0 ) ), $note_states );
+			$this->assertCount( $interrupt ? 0 : 1, $this->get_notes_containing( $order, '<strong>' ) );
+			$this->assertCount( 1, $this->get_notes_containing( $order, 'Refunded to Failed' ) );
+			$this->assertSame( 1, did_action( 'woocommerce_delete_order_refund' ) - $deletions );
+			$this->assertSame( 1, did_action( 'woocommerce_order_status_refunded_to_failed' ) - $transitions );
+			$this->assertSame( 1, did_action( 'woocommerce_order_status_failed_notification' ) - $notifications );
+			$this->assertSame( array( 'buyer@example.test' ), $recipients );
+
+			$added = did_action( 'woocommerce_order_note_added' );
+			$saves = did_action( 'woocommerce_after_order_object_save' );
+			$this->sut->process( 'charge.refund.updated', $event );
+
+			$this->assertSame( $interrupt ? 1 : 0, did_action( 'woocommerce_order_note_added' ) - $added );
+			$this->assertSame( 'insufficient_funds' === $reason ? 1 : 0, did_action( 'woocommerce_after_order_object_save' ) - $saves );
+			$this->assertSame( 1, did_action( 'woocommerce_delete_order_refund' ) - $deletions );
+			$this->assertSame( 1, did_action( 'woocommerce_order_status_refunded_to_failed' ) - $transitions );
+			$this->assertSame( 1, did_action( 'woocommerce_order_status_failed_notification' ) - $notifications );
+			$this->assertSame( array( 'buyer@example.test' ), $recipients );
+			$status_notes  = $this->get_notes_containing( $order, 'Refunded to Failed' );
+			$failure_notes = $this->get_notes_containing( $order, '<strong>' );
+			$this->assertCount( 1, $status_notes );
+			$this->assertCount( 1, $failure_notes );
+			$this->assertGreaterThan( $status_notes[0]->id, $failure_notes[0]->id );
+			$this->assertSame( array_fill( 0, $interrupt ? 2 : 1, array( 'failed', 'failed', 0 ) ), $note_states );
+		} finally {
+			remove_filter( 'woocommerce_mail_callback', $mail );
+			remove_filter( 'woocommerce_new_order_note_data', $before_note );
+		}
+	}
+
+	/** @return array<string,array{string,string,bool}> First deliveries and interrupted deliveries followed by replay. */
+	public static function failure_note_deliveries(): array {
+		return array(
+			'failed, then replayed'                   => array( 'failed', 'declined', false ),
+			'canceled, then replayed'                 => array( 'canceled', '', false ),
+			'failed, stopped before note'             => array( 'failed', 'declined', true ),
+			'canceled, stopped before note'           => array( 'canceled', '', true ),
+			'insufficient funds, stopped before note' => array( 'failed', 'insufficient_funds', true ),
+		);
+	}
+
+	/**
+	 * An exception caught by WC_Order::save() leaves the failure unfinished until redelivery.
+	 *
+	 * @testWith ["successful", "refunded"]
+	 *           ["failed", "failed"]
+	 * @param string $interrupt_status Refund status in memory when the interrupted save starts.
+	 * @param string $persisted_status Order status already committed at that point.
+	 */
+	public function test_failed_order_save_leaves_the_failure_note_for_redelivery( string $interrupt_status, string $persisted_status ): void {
+		$order                                  = $this->create_refundable_order();
+		$charge                                 = $this->get_successful_refund_charge();
+		$charge['refunds']['data'][0]['amount'] = 1000;
+		$this->sut->process( 'charge.refunded', $charge );
+		$event = array(
+			'id'       => 're_123',
+			'charge'   => 'ch_123',
+			'amount'   => 1000,
+			'currency' => 'usd',
+			'status'   => 'canceled',
+		);
+
+		$interrupt     = static function ( $saving ) use ( $order, $interrupt_status ) {
+			if ( $saving->get_id() === $order->get_id() && $saving->has_status( OrderStatus::FAILED ) && $interrupt_status === $saving->get_meta( '_wcpay_refund_status' ) ) {
+				throw new \RuntimeException( 'Stopped before persistence.' );
+			}
+		};
+		$notifications = did_action( 'woocommerce_order_status_failed_notification' );
+		add_action( 'woocommerce_before_order_object_save', $interrupt );
+		try {
+			$this->sut->process( 'charge.refund.updated', $event );
+			$this->fail( 'The delivery must report the unsuccessful save.' );
+		} catch ( \RuntimeException $e ) {
+			$this->assertSame( 'successful' === $interrupt_status ? 'Could not save the order status after the refund failed.' : 'Could not save the failed refund status.', $e->getMessage() );
+		} finally {
+			remove_action( 'woocommerce_before_order_object_save', $interrupt );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( $persisted_status, $order->get_status() );
+		$this->assertSame( 'successful', $order->get_meta( '_wcpay_refund_status' ) );
+		$this->assertCount( 0, $order->get_refunds() );
+		$this->assertCount( 0, $this->get_notes_containing( $order, '<strong>' ) );
+
+		$this->sut->process( 'charge.refund.updated', $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'failed', $order->get_status() );
+		$this->assertSame( 'failed', $order->get_meta( '_wcpay_refund_status' ) );
+		$this->assertCount( 1, $this->get_notes_containing( $order, '<strong>' ) );
+		$this->assertCount( 1, $this->get_notes_containing( $order, 'Refunded to Failed' ) );
+		$this->assertSame( 1, did_action( 'woocommerce_order_status_failed_notification' ) - $notifications );
+	}
+
+	/**
+	 * A later refund accounts for the stored status. A full refund is visible even without its success note.
+	 *
+	 * @testWith [1000, "refunded"]
+	 *           [400, "processing"]
+	 * @param int    $amount Refund in minor units.
+	 * @param string $status Order status established by the later refund.
+	 */
+	public function test_matched_failure_preserves_a_later_refund( int $amount, string $status ): void {
+		$order = $this->create_refundable_order();
+		$event = array(
+			'id'       => 're_failed',
+			'charge'   => 'ch_123',
+			'amount'   => 400,
+			'currency' => 'usd',
+			'status'   => 'canceled',
+		);
+		$this->sut->process( 'charge.refund.updated', $event );
+
+		$charge                                 = $this->get_successful_refund_charge();
+		$charge['refunds']['data'][0]['amount'] = $amount;
+		$this->sut->process( 'charge.refunded', $charge );
+		if ( OrderStatus::REFUNDED === $status ) {
+			$notes = $this->get_notes_containing( $order, '<code>re_123</code>' );
+			$this->assertCount( 1, $notes );
+			wc_delete_order_note( $notes[0]->id );
+		}
+
+		$this->sut->process( 'charge.refund.updated', $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( $status, $order->get_status() );
+		$this->assertSame( 'successful', $order->get_meta( '_wcpay_refund_status' ) );
+		$this->assertCount( 1, $order->get_refunds() );
+		$this->assertCount( 1, $this->get_notes_containing( $order, '<code>re_failed</code>' ) );
+	}
+
+	/**
+	 * A previously noted failure may have stopped before either of its two status writes.
+	 *
+	 * @testWith ["refunded", "successful", "failed"]
+	 *           ["refunded", "failed", "failed"]
+	 *           ["processing", "pending", "processing"]
+	 * @param string $status        Current order status.
+	 * @param string $refund_status Stale refund status.
+	 * @param string $expected      Expected order status.
+	 */
+	public function test_matched_failure_repairs_unfinished_status_writes( string $status, string $refund_status, string $expected ): void {
+		$order                              = $this->create_refundable_order();
+		$charge                             = $this->get_successful_refund_charge();
+		$charge['refunds']['data'][0]['id'] = 're_earlier';
+		$this->sut->process( 'charge.refunded', $charge );
+		$order = wc_get_order( $order->get_id() );
+		$order->set_status( $status );
+		$order->update_meta_data( '_wcpay_refund_status', $refund_status );
+		$order->save();
+		$order->add_order_note( sprintf( 'A refund of %s was <strong>cancelled</strong> using WooPayments (<code>re_123</code>).', wc_price( 4, array( 'currency' => 'USD' ) ) ) );
+
+		$this->sut->process(
+			'charge.refund.updated',
+			array(
+				'id'       => 're_123',
+				'charge'   => 'ch_123',
+				'amount'   => 400,
+				'currency' => 'usd',
+				'status'   => 'canceled',
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( $expected, $order->get_status() );
+		$this->assertSame( 'failed', $order->get_meta( '_wcpay_refund_status' ) );
+		$this->assertCount( 1, $this->get_notes_containing( $order, '<code>re_123</code>' ) );
+	}
+
+	/**
 	 * Equal amounts have identical wording. Only a note stamped for this refund can suppress its next note.
 	 *
 	 * @dataProvider insufficient_funds_histories

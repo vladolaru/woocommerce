@@ -420,7 +420,7 @@ class RefundEventHandler {
 	 * @param WC_Order_Refund|null $wc_refund      Matched local refund.
 	 * @param bool                 $is_cancelled   Whether the refund was canceled.
 	 * @param string               $failure_reason Provider failure reason.
-	 * @throws RuntimeException When WooCommerce cannot delete the local refund.
+	 * @throws RuntimeException When WooCommerce cannot delete the local refund or record its failure.
 	 */
 	private function handle_failed_refund( WC_Order $order, string $refund_id, int $amount, string $currency, ?WC_Order_Refund $wc_refund, bool $is_cancelled, string $failure_reason ): void {
 		if ( $wc_refund instanceof WC_Order_Refund ) {
@@ -431,13 +431,14 @@ class RefundEventHandler {
 			}
 		}
 
-		$notes    = wc_get_container()->get( OrderPaymentNotes::class );
-		$identity = 'refund:' . $refund_id . ( $is_cancelled ? ':canceled' : ':failed' );
-		if ( ! $is_cancelled && 'insufficient_funds' === $failure_reason ) {
+		$notes              = wc_get_container()->get( OrderPaymentNotes::class );
+		$identity           = 'refund:' . $refund_id . ( $is_cancelled ? ':canceled' : ':failed' );
+		$insufficient_funds = ! $is_cancelled && 'insufficient_funds' === $failure_reason;
+		$refund_status      = $order->get_meta( '_wcpay_refund_status', true );
+		if ( $insufficient_funds ) {
 			// Equal amounts yield identical wording even for different refunds.
-			if ( 0 === $notes->find_by_identity( $order, $identity, $this->persistence_vocabulary ) ) {
-				$notes->add( $order, $this->get_insufficient_balance_refund_note( $order, $amount ), $identity, $this->persistence_vocabulary );
-			}
+			$note_id = $notes->find_by_identity( $order, $identity, $this->persistence_vocabulary );
+			$note    = null;
 		} else {
 			$service     = wc_get_container()->get( WooPaymentsOrderNoteService::class );
 			$major_units = WooPaymentsCurrencyUtils::amount_from_minor_units( $amount, $currency );
@@ -447,21 +448,33 @@ class RefundEventHandler {
 			$note_id     = $service->find_note( $order, $note, $identity, $equivalents );
 			if ( $note_id > 0 ) {
 				$service->record_note_identity( $note_id, $identity );
-				// Removing a recreated refund row still requires repairing the order status.
-				if ( null === $wc_refund ) {
+				// A different refund can legitimately have changed the order since this failure.
+				if ( null === $wc_refund && in_array( $refund_status, array( 'pending', 'successful' ), true ) && $this->other_refund_accounts_for_status( $order, $note_id ) ) {
 					return;
 				}
-			} else {
-				$notes->add( $order, $note, $identity, $this->persistence_vocabulary );
 			}
 		}
 
 		if ( OrderStatus::REFUNDED === $order->get_status() ) {
-			$order->update_status( OrderStatus::FAILED );
+			if ( ! $order->update_status( OrderStatus::FAILED ) || null !== $order->get_last_save_error() ) {
+				throw new RuntimeException( 'Could not save the order status after the refund failed.' );
+			}
 		}
 
-		$order->update_meta_data( '_wcpay_refund_status', 'failed' );
-		$order->save();
+		if ( $insufficient_funds || null !== $wc_refund || 'failed' !== $refund_status ) {
+			$order->update_meta_data( '_wcpay_refund_status', 'failed' );
+			$order->save();
+			if ( null !== $order->get_last_save_error() ) {
+				throw new RuntimeException( 'Could not save the failed refund status.' );
+			}
+		}
+
+		if ( 0 === $note_id ) {
+			$note = $note ?? $this->get_insufficient_balance_refund_note( $order, $amount );
+			if ( 0 === $notes->add( $order, $note, $identity, $this->persistence_vocabulary ) ) {
+				throw new RuntimeException( 'Could not add the failed refund note.' );
+			}
+		}
 	}
 
 	/**
@@ -718,20 +731,47 @@ class RefundEventHandler {
 	}
 
 	/**
+	 * Check whether the remaining refunds account for the current status after a previously noted failure.
+	 *
+	 * @param WC_Order $order   Order with no row linked to the failed refund.
+	 * @param int      $note_id Failure note ID.
+	 * @return bool
+	 */
+	private function other_refund_accounts_for_status( WC_Order $order, int $note_id ): bool {
+		$linked_amount = 0;
+		$currency      = $order->get_currency();
+		foreach ( $order->get_refunds() as $refund ) {
+			$refund_id = (string) $refund->get_meta( '_wcpay_refund_id', true );
+			if ( '' === $refund_id ) {
+				continue;
+			}
+			if ( $this->has_created_refund_note( $order, $refund, $refund_id, $note_id ) ) {
+				return true;
+			}
+			$linked_amount += WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $refund->get_amount(), $currency );
+		}
+
+		// Setting Refunded can create an unlinked balancing row. Only provider refunds can account for this status.
+		return $order->has_status( OrderStatus::REFUNDED ) && $linked_amount > 0
+			&& $linked_amount >= WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $order->get_total(), $currency );
+	}
+
+	/**
 	 * Tell whether the order has the created note of a provider refund, pending or successful, by its identity or in any
 	 * wording that counts as the same note.
 	 *
 	 * @param WC_Order        $order     Order object.
 	 * @param WC_Order_Refund $wc_refund Local refund the provider refund is linked to.
 	 * @param string          $refund_id Provider refund ID.
+	 * @param int             $after_id  Only consider notes written after this comment ID.
 	 * @return bool
 	 */
-	private function has_created_refund_note( WC_Order $order, WC_Order_Refund $wc_refund, string $refund_id ): bool {
+	private function has_created_refund_note( WC_Order $order, WC_Order_Refund $wc_refund, string $refund_id, int $after_id = 0 ): bool {
 		$note_service = wc_get_container()->get( WooPaymentsOrderNoteService::class );
 		foreach ( array( false, true ) as $is_pending ) {
 			$note_candidates = $this->get_created_refund_note_candidates( $order, $wc_refund, $refund_id, $is_pending );
 			$identity        = 'refund:' . $refund_id . ':' . ( $is_pending ? 'created_pending' : 'created_successful' );
-			if ( 0 < $note_service->find_note( $order, $note_candidates[0], $identity, $note_candidates ) ) {
+			if ( $after_id < $note_service->find_note( $order, $note_candidates[0], $identity, $note_candidates ) ) {
 				return true;
 			}
 		}
