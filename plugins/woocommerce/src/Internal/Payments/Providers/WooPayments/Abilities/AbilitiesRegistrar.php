@@ -66,7 +66,7 @@ final class AbilitiesRegistrar implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Append provider reads after earlier definitions when the store opts in.
+	 * Append provider abilities after earlier definitions when the store opts in.
 	 *
 	 * @since 11.4.0
 	 *
@@ -84,7 +84,7 @@ final class AbilitiesRegistrar implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Check the current site's opt-in and, on multisite, its effective setup tier.
+	 * Check the current site's opt-in and effective setup tier.
 	 *
 	 * @since 11.4.0
 	 * @internal
@@ -101,6 +101,6 @@ final class AbilitiesRegistrar implements RegisterHooksInterface {
 			return false;
 		}
 
-		return ! is_multisite() || in_array( $this->setup_tier->get_effective_tier(), array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true );
+		return in_array( $this->setup_tier->get_effective_tier(), array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true );
 	}
 }

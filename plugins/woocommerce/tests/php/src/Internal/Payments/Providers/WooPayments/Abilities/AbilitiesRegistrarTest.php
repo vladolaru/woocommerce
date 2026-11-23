@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\A
 
 use Automattic\WooCommerce\Internal\Abilities\Domain\ProductsQuery;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Abilities\Domain;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
@@ -214,6 +215,67 @@ class AbilitiesRegistrarTest extends AbilityTestCase {
 			restore_current_blog();
 			wpmu_delete_blog( $blog_id, true );
 		}
+	}
+
+	/**
+	 * @testdox A read discovered on a connected single site refuses to run after the account disconnects.
+	 */
+	public function test_retained_read_after_disconnect(): void {
+		if ( is_multisite() ) {
+			$this->markTestSkipped( 'Requires a single site.' );
+		}
+
+		add_filter( self::GATE, '__return_true' );
+		$this->install_root();
+		$ability = wp_get_ability( self::PREFIX . 'get-account' );
+		$this->assertInstanceOf( \WP_Ability::class, $ability );
+		$this->assertTrue( $ability->check_permissions() );
+
+		$tier = wc_get_container()->get( WooPaymentsSetupTier::class );
+		try {
+			wc_get_container()->get( WooPaymentsAccountService::class )->overwrite_cache_with_no_account();
+			$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $tier->get_effective_tier() );
+			add_filter( 'rest_pre_dispatch', static fn() => new \WP_Error( 'unexpected_dispatch', 'A disconnected read reached REST.' ) );
+			$error = $ability->execute( array() );
+			$this->assertWPError( $error );
+			$this->assertSame( 'ability_invalid_permissions', $error->get_error_code() );
+		} finally {
+			$tier->invalidate();
+		}
+	}
+
+	/**
+	 * @testdox A retained read refuses on a disconnected subsite and runs again when the connected site is restored.
+	 * @group multisite
+	 */
+	public function test_retained_read_after_restoring_connected_site(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Requires two sites on a network.' );
+		}
+
+		add_filter( self::GATE, '__return_true' );
+		$this->install_root();
+		$ability = wp_get_ability( self::PREFIX . 'get-account' );
+		$this->assertInstanceOf( \WP_Ability::class, $ability );
+		$blog_id = self::factory()->blog->create();
+		$this->assertIsInt( $blog_id );
+		add_user_to_blog( $blog_id, get_current_user_id(), 'administrator' );
+		add_filter( 'rest_pre_dispatch', static fn() => new \WP_REST_Response( array( 'blog_id' => get_current_blog_id() ) ) );
+		switch_to_blog( $blog_id );
+		try {
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+			$this->assertTrue( wc_get_container()->get( WooPaymentsSetupTier::class )->write_tier( WooPaymentsSetupTier::AVAILABLE ) );
+			wp_get_current_user()->add_cap( 'manage_woocommerce' );
+			$this->assertTrue( current_user_can( 'manage_woocommerce' ) );
+			$error = $ability->execute( array() );
+			$this->assertWPError( $error );
+			$this->assertSame( 'ability_invalid_permissions', $error->get_error_code() );
+		} finally {
+			restore_current_blog();
+			wpmu_delete_blog( $blog_id, true );
+		}
+
+		$this->assertSame( array( 'blog_id' => get_current_blog_id() ), $ability->execute( array() ) );
 	}
 
 	/** Destination site configurations for first registry discovery after switching blogs. */
