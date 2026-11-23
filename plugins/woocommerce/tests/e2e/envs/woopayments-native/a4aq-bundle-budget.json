@@ -9,7 +9,7 @@
 			"allow_new": true,
 			"raw_bytes": 26103,
 			"gzip_bytes": 8729,
-			"reason": "B-977 added empty-cart and live-currency wallet eligibility checks without a new dependency. Full Blocks cart and checkout captures remain below WooPayments 11.1.0."
+			"reason": "Express checkout checks whether the cart is empty and whether the wallet supports the current currency. These checks add no dependencies, and the full Cart and Checkout block bundles are still smaller than in WooPayments 11.1.0."
 		},
 		"multi-currency-analytics.js": {
 			"allow_missing": true
