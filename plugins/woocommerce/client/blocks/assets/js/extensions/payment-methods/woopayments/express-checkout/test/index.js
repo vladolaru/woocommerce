@@ -325,13 +325,13 @@ const cartWithSubscriptionSchedule = (
 	} );
 
 // A WooCommerce Subscriptions free trial, shaped like the client 11.1.0 compatibility tests' fixtures.
-const trialSubscriptionItem = {
+const trialSubscriptionItem = ( fee ) => ( {
 	name: 'Premium Plan',
 	quantity: 1,
 	totals: {
-		line_subtotal: '0',
+		line_subtotal: fee,
 		line_subtotal_tax: '0',
-		line_total: '0',
+		line_total: fee,
 		currency_minor_unit: 2,
 	},
 	variation: [],
@@ -341,10 +341,10 @@ const trialSubscriptionItem = {
 			billing_period: 'month',
 			billing_interval: 1,
 			trial_length: 14,
-			sign_up_fees: '0',
+			sign_up_fees: fee,
 		},
 	},
-};
+} );
 
 const trialSubscriptionSchedule = {
 	billing_period: 'month',
@@ -365,18 +365,18 @@ const trialSubscriptionSchedule = {
 	},
 };
 
-const freeTrialCart = cartWithExpressMethods( [ 'payment_request' ], {
-	items: [ trialSubscriptionItem ],
-	cartItems: [ trialSubscriptionItem ],
+const signUpFeeCart = cartWithExpressMethods( [ 'payment_request' ], {
+	items: [ trialSubscriptionItem( '500' ) ],
+	cartItems: [ trialSubscriptionItem( '500' ) ],
 	totals: {
 		...blocksCart.totals,
-		total_price: '0',
+		total_price: '500',
 		total_shipping: '0',
 		total_tax: '0',
 	},
 	cartTotals: {
 		...blocksCart.cartTotals,
-		total_price: '0',
+		total_price: '500',
 		total_shipping: '0',
 		total_tax: '0',
 	},
@@ -386,11 +386,11 @@ const freeTrialCart = cartWithExpressMethods( [ 'payment_request' ], {
 	},
 } );
 
-const freeTrialBilling = {
+const signUpFeeBilling = {
 	...billing,
-	cartTotal: { value: 0 },
+	cartTotal: { value: 500 },
 	cartTotalItems: [
-		{ key: 'total_items', value: 0, valueWithTax: 0 },
+		{ key: 'total_items', value: 500, valueWithTax: 500 },
 		{ key: 'total_tax', value: 0, valueWithTax: 0 },
 	],
 };
@@ -2812,8 +2812,8 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		} );
 	} );
 
-	describe( 'a WooCommerce Subscriptions free trial with nothing to pay today', () => {
-		it( 'mounts the wallet for the recurring total', async () => {
+	describe( 'a WooCommerce Subscriptions trial', () => {
+		it( 'mounts the wallet for the sign-up fee', async () => {
 			registerExpressCheckout();
 
 			renderExpressPaymentMethod(
@@ -2821,8 +2821,8 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 					'woocommerce_payments_express_checkout_applePay'
 				),
 				{
-					billing: freeTrialBilling,
-					...getPaymentMethodInterfaceProps( freeTrialCart ),
+					billing: signUpFeeBilling,
+					...getPaymentMethodInterfaceProps( signUpFeeCart ),
 				}
 			);
 
@@ -2832,25 +2832,75 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			expect( stripe.elements ).toHaveBeenCalledWith(
 				expect.objectContaining( {
 					mode: 'payment',
-					amount: 1999,
+					amount: 500,
 					setupFutureUsage: 'off_session',
 				} )
 			);
 		} );
 
-		it( 'probes wallet availability with the recurring total', async () => {
-			availablePaymentMethods = { applePay: true };
-			registerExpressCheckout();
+		it.each( [ 'applePay', 'googlePay', 'amazonPay' ] )(
+			'withholds %s on first add and after a payable cart becomes free',
+			async ( method ) => {
+				enableAmazonPayAtLocation();
+				baseExpressCheckoutParams.initially_empty_cart = true;
+				availablePaymentMethods = { [ method ]: true };
+				registerExpressCheckout();
+				const { canMakePayment } = getRegistration(
+					`woocommerce_payments_express_checkout_${ method }`
+				);
+				const cart = {
+					cartItems: [ trialSubscriptionItem( '0' ) ],
+					cartTotals: { total_price: '0', currency_code: 'USD' },
+					extensions: {
+						subscriptions: [ trialSubscriptionSchedule ],
+						wcpay: {
+							setup_future_usage: 'off_session',
+							express_checkout_methods: [
+								'payment_request',
+								'amazon_pay',
+							],
+						},
+					},
+				};
 
-			await expect(
-				getRegistration(
-					'woocommerce_payments_express_checkout_applePay'
-				).canMakePayment( { cart: freeTrialCart } )
-			).resolves.toBe( true );
-			expect( stripe.elements ).toHaveBeenCalledWith(
-				expect.objectContaining( { mode: 'payment', amount: 1999 } )
-			);
-		} );
+				expect( await canMakePayment( { cart } ) ).toBe( false );
+				expect( stripe.elements ).not.toHaveBeenCalled();
+				const payableCart = {
+					...cart,
+					cartItems: [ trialSubscriptionItem( '1' ) ],
+					cartTotals: { ...cart.cartTotals, total_price: '1' },
+				};
+				expect( await canMakePayment( { cart: payableCart } ) ).toBe(
+					true
+				);
+				expect( await canMakePayment( { cart } ) ).toBe( false );
+			}
+		);
+
+		it.each( [
+			[ 'zero with nothing to save', '0', null, true ],
+			[ 'zero with confirmation tokens off', '0', 'off_session', false ],
+			[ 'a missing total', undefined, 'off_session', true ],
+			[ 'an invalid total', 'unknown', 'off_session', true ],
+			[ 'a partially numeric total', '0oops', 'off_session', true ],
+		] )(
+			'keeps Apple Pay available for %s',
+			async ( label, price, usage, tokens ) => {
+				baseExpressCheckoutParams.flags.isEceUsingConfirmationTokens =
+					tokens;
+				availablePaymentMethods = { applePay: true };
+				registerExpressCheckout();
+				const cart = cartWithExpressMethods( [ 'payment_request' ], {
+					totals: { total_price: price },
+					extensions: { wcpay: { setup_future_usage: usage } },
+				} );
+				expect(
+					await getRegistration(
+						'woocommerce_payments_express_checkout_applePay'
+					).canMakePayment( { cart } )
+				).toBe( true );
+			}
+		);
 
 		it( 'shows the recurring price and date in the wallet line items', async () => {
 			const resolve = jest.fn();
@@ -2861,8 +2911,8 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 					'woocommerce_payments_express_checkout_applePay'
 				),
 				{
-					billing: freeTrialBilling,
-					...getPaymentMethodInterfaceProps( freeTrialCart ),
+					billing: signUpFeeBilling,
+					...getPaymentMethodInterfaceProps( signUpFeeCart ),
 				}
 			);
 			await waitFor( () => {
@@ -2878,7 +2928,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 					lineItems: [
 						{
 							name: 'Premium Plan (recurring) - Recurring total: $19.99 / month on 2026-03-19',
-							amount: 1999,
+							amount: 500,
 						},
 					],
 				} )
@@ -3051,7 +3101,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		const subscriptionCart = cartWithExpressMethods(
 			[ 'payment_request' ],
 			{
-				items: [ trialSubscriptionItem ],
+				items: [ trialSubscriptionItem( '500' ) ],
 				shipping_rates: [
 					{
 						package_id: 0,

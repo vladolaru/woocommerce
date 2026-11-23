@@ -437,6 +437,17 @@ const resolveSetupFutureUsage = ( cartData ) => {
 	return null;
 };
 
+// Use today's Store API total before conversion or subscription filters can change it.
+const isNothingDueAndSaving = ( cart ) => {
+	const price = getCartTotals( cart ).total_price;
+
+	return (
+		shouldUseConfirmationTokens() &&
+		resolveSetupFutureUsage( cart ) === 'off_session' &&
+		( price === 0 || ( typeof price === 'string' && /^0+$/.test( price ) ) )
+	);
+};
+
 const addReferenceElementOptions = ( options, cartData ) => {
 	if ( shouldUseConfirmationTokens() && params?.is_manual_capture ) {
 		options.captureMethod = 'manual';
@@ -1716,7 +1727,8 @@ const getExpressPaymentMethod = ( method ) => {
 			if (
 				! getEnabledMethodsForCart( cart ).includes(
 					methodConfig.enabledMethod
-				)
+				) ||
+				isNothingDueAndSaving( cart )
 			) {
 				return false;
 			}

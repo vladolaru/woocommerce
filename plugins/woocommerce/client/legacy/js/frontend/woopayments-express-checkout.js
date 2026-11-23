@@ -394,6 +394,18 @@
 		return null;
 	}
 
+	// Use today's Store API total before conversion or subscription filters can change it.
+	function isNothingDueAndSaving( cartData ) {
+		var price = cartData && cartData.totals && cartData.totals.total_price;
+
+		return (
+			! isPayForOrder() &&
+			shouldUseConfirmationTokens() &&
+			resolveSetupFutureUsage( cartData ) === 'off_session' &&
+			( price === 0 || ( typeof price === 'string' && /^0+$/.test( price ) ) )
+		);
+	}
+
 	function cartCurrencyDriftedFromElement( cartData ) {
 		var cartCurrency =
 			cartData && cartData.totals && cartData.totals.currency_code
@@ -721,6 +733,10 @@
 	}
 
 	function showExpressButton() {
+		// A mounted Element can report ready after a refresh has hidden it.
+		if ( isNothingDueAndSaving( cachedCartData ) ) {
+			return;
+		}
 		showExpressContainer();
 		setSeparatorHidden( false );
 	}
@@ -1778,9 +1794,13 @@
 	/**
 	 * The container shows only once the wallet reported a payment method, so a browser without one gets no empty button
 	 * area. Client 11.2.0 shortcode-buttons-express/button-ui.js:41-44 also shows the container.
+	 *
+	 * @param {Object|null} cartData The cart or preview the button would use.
 	 */
-	function unblockExpressButton() {
-		if ( expressButtonAvailable ) {
+	function unblockExpressButton( cartData ) {
+		if ( isNothingDueAndSaving( cartData ) ) {
+			hideExpressButton();
+		} else if ( expressButtonAvailable ) {
 			showExpressContainer();
 		}
 
@@ -1820,7 +1840,7 @@
 		var requestId;
 
 		if ( isAddToCartBlocked() ) {
-			unblockExpressButton();
+			unblockExpressButton( cachedCartData );
 			return Promise.resolve();
 		}
 
@@ -1862,7 +1882,7 @@
 					return updateButtonData();
 				}
 
-				unblockExpressButton();
+				unblockExpressButton( cartData );
 
 				return applyProductPreview( cartData ).then( function () {
 					// A first mount decides eligibility itself.
@@ -3179,7 +3199,8 @@
 				'wcpay.express-checkout.is-cart-eligible',
 				total > 0,
 				cachedCartData
-			)
+			) ||
+			isNothingDueAndSaving( cachedCartData )
 		) {
 			hideExpressButton();
 			return;

@@ -4917,6 +4917,34 @@ describe( 'WooPayments express checkout', () => {
 			expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 1 );
 		} );
 
+		test( 'hides the wallet when the selected variation needs only a saved method', async () => {
+			setClassicProductForm( { variable: true, size: 'small', variationId: '124' } );
+			window.wp.hooks = createWpHooks();
+			window.wp.hooks.addFilter(
+				'wcpay.express-checkout.is-cart-eligible',
+				'test/extension',
+				() => true
+			);
+			await mountReadyWallet();
+			const container = document.getElementById( 'wcpay-express-checkout-element' );
+			expect( container.classList.contains( 'is-ready' ) ).toBe( true );
+
+			document.querySelector( 'select[name=attribute_pa_size]' ).value = 'large';
+			document.querySelector( '.variation_id' ).value = '125';
+			const preview = getVirtualCart( 0, 1 );
+			preview.extensions = { wcpay: { setup_future_usage: 'off_session' } };
+			window.wp.apiFetch.mockResolvedValue( preview );
+			const update = createDeferred();
+			elements.update.mockReturnValueOnce( update.promise );
+			bodyEventHandlers.woocommerce_variation_has_changed();
+			await flushMicrotasks();
+
+			expect( container.style.display ).toBe( 'none' );
+			update.resolve();
+			await flushMicrotasks();
+			expect( container.style.display ).toBe( 'none' );
+		} );
+
 		// Client 11.1.0 button-ui.js:39-45: hiding removes `is-ready` and sets `display: none` (jQuery `.hide()`), so a
 		// hidden wallet takes no space and no click (recorded on a local client 11.1.0 store: `display: none`, height
 		// 0); showing reverses both. The first
@@ -5097,8 +5125,8 @@ describe( 'WooPayments express checkout', () => {
 		} );
 	} );
 
-	describe( 'a WooCommerce Subscriptions free trial with nothing to pay today', () => {
-		function getFreeTrialCart( overrides = {} ) {
+	describe( 'a WooCommerce Subscriptions trial', () => {
+		function getTrialCart( { fee = '0', ...overrides } = {} ) {
 			return Object.assign(
 				{
 					needs_shipping: false,
@@ -5107,9 +5135,9 @@ describe( 'WooPayments express checkout', () => {
 							name: 'Premium Plan',
 							quantity: 1,
 							totals: {
-								line_subtotal: '0',
+								line_subtotal: fee,
 								line_subtotal_tax: '0',
-								line_total: '0',
+								line_total: fee,
 								currency_minor_unit: 2,
 							},
 							extensions: {
@@ -5117,14 +5145,14 @@ describe( 'WooPayments express checkout', () => {
 									billing_period: 'month',
 									billing_interval: 1,
 									trial_length: 14,
-									sign_up_fees: '0',
+									sign_up_fees: fee,
 								},
 							},
 						},
 					],
 					totals: {
-						total_price: '0',
-						total_items: '0',
+						total_price: fee,
+						total_items: fee,
 						total_tax: '0',
 						total_shipping: '0',
 						total_shipping_tax: '0',
@@ -5165,9 +5193,70 @@ describe( 'WooPayments express checkout', () => {
 			window.wp.hooks = createWpHooks();
 		} );
 
-		test( 'mounts the wallet for the recurring total and shows it in the line items', async () => {
+		test.each( [ false, true ] )(
+			'hides a trial with zero due today (shipping required: %s)',
+			async ( needsShipping ) => {
+				window.wp.apiFetch.mockResolvedValue( getTrialCart( { needs_shipping: needsShipping } ) );
+				require( '../woopayments-express-checkout' );
+				await bodyEventHandlers.updated_checkout();
+
+				expect( expressElement.mount ).not.toHaveBeenCalled();
+				expect( document.getElementById( 'wcpay-express-checkout-element' ).style.display ).toBe( 'none' );
+			}
+		);
+
+		test.each( [
+			[ 'cart', 'updated_cart_totals' ],
+			[ 'checkout', 'updated_checkout' ],
+		] )(
+			'hides through a late ready event and recovers on the next payable %s refresh',
+			async ( context, event ) => {
+				window.wcpayExpressCheckoutParams.button_context = context;
+				const paid = getTrialCart( { fee: '1' } );
+				window.wp.apiFetch.mockResolvedValue( paid );
+				require( '../woopayments-express-checkout' );
+				await bodyEventHandlers[ event ]();
+				const available = { availablePaymentMethods: { applePay: true } };
+				const container = document.getElementById( 'wcpay-express-checkout-element' );
+				expressHandlers.ready( available );
+				expect( container.classList.contains( 'is-ready' ) ).toBe( true );
+
+				await bodyEventHandlers[ event ]();
+				const pendingReady = expressHandlers.ready;
+				window.wp.apiFetch.mockResolvedValueOnce( getTrialCart() );
+				await bodyEventHandlers[ event ]();
+				expect( container.style.display ).toBe( 'none' );
+
+				pendingReady( available );
+				expect( container.style.display ).toBe( 'none' );
+				await bodyEventHandlers[ event ]();
+				expressHandlers.ready( available );
+				expect( container.classList.contains( 'is-ready' ) ).toBe( true );
+			}
+		);
+
+		test.each( [
+			[ 'confirmation tokens are off', '0', 'off_session', false ],
+			[ 'nothing must be saved', '0', null, true ],
+			[ 'the total is missing', undefined, 'off_session', true ],
+			[ 'the total is invalid', 'unknown', 'off_session', true ],
+			[ 'only the start of the total is numeric', '0oops', 'off_session', true ],
+		] )( 'keeps an eligible wallet when %s', async ( label, price, usage, tokens ) => {
+			const cart = getTrialCart();
+			cart.totals.total_price = price;
+			cart.extensions.wcpay.setup_future_usage = usage;
+			window.wcpayExpressCheckoutParams.flags.isEceUsingConfirmationTokens = tokens;
+			window.wp.hooks.addFilter( 'wcpay.express-checkout.is-cart-eligible', 'test/extension', () => true );
+			window.wp.apiFetch.mockResolvedValue( cart );
+			require( '../woopayments-express-checkout' );
+			await bodyEventHandlers.updated_checkout();
+
+			expect( expressElement.mount ).toHaveBeenCalled();
+		} );
+
+		test( 'shows the sign-up fee and the recurring terms in the wallet line items', async () => {
 			const resolveClick = jest.fn();
-			window.wp.apiFetch.mockResolvedValue( getFreeTrialCart() );
+			window.wp.apiFetch.mockResolvedValue( getTrialCart( { fee: '500' } ) );
 
 			require( '../woopayments-express-checkout' );
 			await bodyEventHandlers.updated_checkout();
@@ -5177,7 +5266,7 @@ describe( 'WooPayments express checkout', () => {
 			expect( stripe.elements ).toHaveBeenCalledWith(
 				expect.objectContaining( {
 					mode: 'payment',
-					amount: 1999,
+					amount: 500,
 					setupFutureUsage: 'off_session',
 				} )
 			);
@@ -5186,7 +5275,7 @@ describe( 'WooPayments express checkout', () => {
 					lineItems: [
 						{
 							name: 'Premium Plan (recurring) - Recurring total: $19.99 / month on 2026-03-19',
-							amount: 1999,
+							amount: 500,
 						},
 					],
 				} )
@@ -5195,7 +5284,7 @@ describe( 'WooPayments express checkout', () => {
 
 		test( 'lets an extension make a $0 cart eligible through the is-cart-eligible filter', async () => {
 			window.wp.apiFetch.mockResolvedValue(
-				getFreeTrialCart( {
+				getTrialCart( {
 					items: [],
 					extensions: {},
 				} )
@@ -5215,9 +5304,9 @@ describe( 'WooPayments express checkout', () => {
 			);
 		} );
 
-		test( 'offers the shipping rates the subscription holds for a physical free trial', async () => {
+		test( 'offers the deferred shipping rates for a physical trial with a sign-up fee', async () => {
 			const resolveClick = jest.fn();
-			const cart = getFreeTrialCart( { needs_shipping: true } );
+			const cart = getTrialCart( { needs_shipping: true, fee: '500' } );
 			cart.extensions.subscriptions[ 0 ].shipping_rates = [
 				{
 					package_id: 'sub_month_0',
