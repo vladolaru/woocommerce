@@ -8,7 +8,8 @@
 		"blocks-express-checkout.js": {
 			"allow_new": true,
 			"raw_bytes": 26103,
-			"gzip_bytes": 8681
+			"gzip_bytes": 8729,
+			"reason": "B-977 added empty-cart and live-currency wallet eligibility checks without a new dependency. Full Blocks cart and checkout captures remain below WooPayments 11.1.0."
 		},
 		"multi-currency-analytics.js": {
 			"allow_missing": true
@@ -35,8 +36,9 @@
 			"gzip_growth_bytes": 3196
 		},
 		"admin-capital.js": {
-			"raw_bytes": 11018,
-			"gzip_bytes": 3527
+			"raw_bytes": 12124,
+			"gzip_bytes": 4243,
+			"reason": "DevModeMessage uses the extension’s WordPress-provided ExternalLink. These measured ceilings cover the built-in loan columns, saved preferences and development-mode notice ported from WooPayments 11.3.0, with no added third-party code or headroom."
 		},
 		"admin-fraud-protection.js": {
 			"raw_bytes": 29707,

@@ -1,9 +1,10 @@
 /**
  * External dependencies
  */
+// eslint-disable-next-line @wordpress/use-recommended-components -- Match the extension’s notice and avoid bundling UI Link in the admin routes.
+import { ExternalLink } from '@wordpress/components';
 import { createInterpolateElement } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
-import { Link } from '@wordpress/ui';
 
 /**
  * Internal dependencies
@@ -43,12 +44,12 @@ export const DevModeMessage = ( {
 					learnMoreLink: plainLink ? (
 						<TextLink href={ DEV_MODE_URL } />
 					) : (
-						<Link
-							openInNewTab
+						<ExternalLink
 							href={ DEV_MODE_URL }
-							rel="noopener noreferrer"
 							onClick={ onLearnMoreClick }
-						/>
+						>
+							{ null }
+						</ExternalLink>
 					),
 				}
 			) }

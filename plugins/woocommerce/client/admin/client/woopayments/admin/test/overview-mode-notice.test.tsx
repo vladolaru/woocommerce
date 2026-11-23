@@ -170,7 +170,7 @@ describe( 'OverviewModeNotice', () => {
 						'.woopayments-banner-notice__content'
 					)?.textContent
 				).toBe(
-					'Your store is in development mode, so payments are simulated. This site is set up as a staging site. Real payments only work on your live store. Learn more'
+					'Your store is in development mode, so payments are simulated. This site is set up as a staging site. Real payments only work on your live store. Learn more↗'
 				);
 				expect(
 					screen.queryByRole( 'button' )
