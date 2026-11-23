@@ -267,6 +267,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		$this->title              = $this->payment_method_definition->get_title();
 		$this->method_title       = $this->get_untranslated_method_title();
 		$this->method_description = self::METHOD_DESCRIPTION;
+		$this->description        = '';
 		$this->has_fields         = true;
 		$this->supports           = array( PaymentGatewayFeature::PRODUCTS );
 
@@ -498,6 +499,21 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		return parent::get_method_title();
+	}
+
+	/**
+	 * Return the split method's description for the current account country.
+	 *
+	 * @return string
+	 */
+	public function get_method_description() {
+		if ( 'card' !== $this->get_payment_method_id() ) {
+			$definition               = $this->payment_method_definition;
+			$country                  = $definition->has_country_specific_description() ? $this->get_account_country() : null;
+			$this->method_description = $definition->get_description( $country );
+		}
+
+		return parent::get_method_description();
 	}
 
 	/**

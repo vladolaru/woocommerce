@@ -122,6 +122,17 @@ final class PaymentMethodDefinition {
 	}
 
 	/**
+	 * Whether the description depends on the merchant's account country.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return bool
+	 */
+	public function has_country_specific_description(): bool {
+		return ! empty( $this->config['descriptions_by_country'] );
+	}
+
+	/**
 	 * Get supported currencies.
 	 *
 	 * An empty array means all currencies.

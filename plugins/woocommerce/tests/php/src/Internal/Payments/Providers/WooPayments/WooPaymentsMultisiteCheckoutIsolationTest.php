@@ -397,16 +397,19 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 			$gateway = new WooPaymentsGateway( $definition );
 			$this->assertSame( 'Afterpay', $gateway->get_title() );
 			$this->assertSame( 'WooPayments (Afterpay)', $gateway->get_method_title() );
+			$this->assertSame( 'Allow customers to pay over time with Afterpay.', $gateway->get_method_description() );
 
 			switch_to_blog( $secondary_blog_id );
 			update_option( 'wcpay_account_data', $this->account_cache( 'secondary', 'GB' ) );
 			$this->assertSame( 'Clearpay', $gateway->get_title() );
 			$this->assertSame( 'WooPayments (Clearpay)', $gateway->get_method_title() );
+			$this->assertSame( 'Allow customers to pay over time with Clearpay.', $gateway->get_method_description() );
 
 			restore_current_blog();
 			$this->assertSame( $original_blog_id, get_current_blog_id() );
 			$this->assertSame( 'Afterpay', $gateway->get_title() );
 			$this->assertSame( 'WooPayments (Afterpay)', $gateway->get_method_title() );
+			$this->assertSame( 'Allow customers to pay over time with Afterpay.', $gateway->get_method_description() );
 		} finally {
 			while ( ms_is_switched() ) {
 				restore_current_blog();

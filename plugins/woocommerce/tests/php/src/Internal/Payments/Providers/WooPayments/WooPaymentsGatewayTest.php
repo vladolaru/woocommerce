@@ -232,6 +232,47 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The gateway API returns the merchant method sentence and an empty checkout description for $method in $country.
+	 * @testWith ["affirm", "US", "Allow customers to pay over time with Affirm."]
+	 *           ["afterpay_clearpay", "US", "Allow customers to pay over time with Afterpay."]
+	 *           ["afterpay_clearpay", "GB", "Allow customers to pay over time with Clearpay."]
+	 *           ["alipay", "US", "A digital wallet for customers with mainland China Alipay accounts. Regional versions like AlipayHK are not supported."]
+	 *           ["au_becs_debit", "US", "Bulk Electronic Clearing System — Accept secure bank transfer from Australia."]
+	 *           ["bancontact", "US", "Bancontact is a bank redirect payment method offered by more than 80% of online businesses in Belgium."]
+	 *           ["eps", "US", "Accept your payment with EPS — a common payment method in Austria."]
+	 *           ["grabpay", "US", "A popular digital wallet for cashless payments in Singapore."]
+	 *           ["ideal", "US", "Expand your business with iDEAL | Wero — Netherlands's most popular payment method."]
+	 *           ["klarna", "US", "Offer flexible ways to pay with Klarna: in full, later, or over time."]
+	 *           ["multibanco", "US", "A voucher based payment method for your customers in Portugal."]
+	 *           ["p24", "US", "Accept payments with Przelewy24 (P24), the most popular payment method in Poland."]
+	 *           ["sepa_debit", "US", "Reach 500 million customers and over 20 million businesses across the European Union."]
+	 *           ["wechat_pay", "US", "A digital wallet for customers with mainland China WeChat Pay wallets. Regional versions like WeChat Pay HK are not supported."]
+	 *           ["apple_pay", "US", "Apple Pay is an easy and secure way for customers to pay on your store."]
+	 *           ["google_pay", "US", "Offer customers a fast, secure checkout experience with Google Pay."]
+	 *           ["amazon_pay", "US", "Offer customers a fast, secure checkout experience with Amazon Pay."]
+	 *
+	 * @param string $method   Published split payment method.
+	 * @param string $country  Merchant account country.
+	 * @param string $sentence Expected method description.
+	 */
+	public function test_registered_gateway_descriptions( string $method, string $country, string $sentence ): void {
+		$container = wc_get_container();
+		$account   = $this->create_account_service_for_country( $country );
+		$account->init( $container->get( LegacyProxy::class ), $container->get( WooPaymentsDatabaseCache::class ) );
+		$container->replace( WooPaymentsAccountService::class, $account );
+		$container->reset_all_resolved();
+
+		$gateways   = array_column( $container->get( WooPaymentsProvider::class )->get_payment_gateways(), null, 'id' );
+		$gateway    = $gateways[ 'woocommerce_payments_' . $method ];
+		$controller = new \WC_REST_Payment_Gateways_Controller();
+		$response   = $controller->prepare_item_for_response( $gateway, new \WP_REST_Request( 'GET', '/wc/v3/payment_gateways' ) );
+		$data       = $response->get_data();
+
+		$this->assertSame( array( $sentence, '' ), array( $data['method_description'], $data['description'] ) );
+		$this->assertSame( '', $gateway->get_description() );
+	}
+
+	/**
 	 * @testdox Should brand the Afterpay gateway titles by account country like the WooPayments extension: $_dataName.
 	 *
 	 * With empty account data, while the platform connection is down, client 11.1.0 titles the gateway for US, not the
