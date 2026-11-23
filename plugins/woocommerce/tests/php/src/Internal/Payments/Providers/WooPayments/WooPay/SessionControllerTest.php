@@ -526,12 +526,13 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * Pages holding the Cart Block that are not the store's cart page.
+	 * Pages holding the Cart block.
 	 *
 	 * @return array<string,array{0:string|null}>
 	 */
 	public function provide_cart_block_pages(): array {
 		return array(
+			'the cart page'     => array( 'woocommerce_cart_page_id' ),
 			'another page'      => array( null ),
 			'the checkout page' => array( 'woocommerce_checkout_page_id' ),
 		);
@@ -548,7 +549,7 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * @param string|null $page_option WooCommerce page option pointing at the page, or null for none.
 	 */
 	public function test_cart_block_page_keeps_the_full_config( ?string $page_option ): void {
-		$this->replace_page_surface( false, null !== $page_option );
+		$this->replace_page_surface( 'woocommerce_cart_page_id' === $page_option, 'woocommerce_checkout_page_id' === $page_option );
 		$service                                      = new RecordingWooPaySessionService();
 		$service->should_show_woopay_button           = false;
 		$service->should_load_woopay_save_user_assets = false;
@@ -574,6 +575,7 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->sut->enqueue_frontend_assets();
 
 		$this->assertTrue( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
+		$this->assertSame( 'woocommerce_checkout_page_id' === $page_option, wp_style_is( 'wc-woopayments-woopay', 'enqueued' ), 'Only the classic checkout form needs the stylesheet here.' );
 		$this->assertSame( 1, $service->frontend_config_calls );
 		$this->assertSame( 0, $service->direct_checkout_config_calls );
 		// The cart's button context, as client 11.1.0 get_button_context() gives a Cart block page, the checkout page
@@ -730,6 +732,7 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->sut->enqueue_frontend_assets();
 
 		$this->assertTrue( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ), 'The product button still loads the script.' );
+		$this->assertTrue( wp_style_is( 'wc-woopayments-woopay', 'enqueued' ) );
 		$localized_data = wp_scripts()->get_data( 'wc-woopayments-woopay', 'data' );
 		$this->assertIsString( $localized_data );
 		$this->assertStringContainsString( '"isWooPayDirectCheckoutEnabled":""', $localized_data );
@@ -1246,6 +1249,7 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertStringContainsString( 'id="wcpay-woopay-button"', $this->sut->get_express_checkout_button_html() );
 		$this->sut->enqueue_frontend_assets();
 		$this->assertTrue( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
+		$this->assertTrue( wp_style_is( 'wc-woopayments-woopay', 'enqueued' ) );
 		$config = $this->get_localized_woopay_config();
 		$this->assertSame( (string) $order->get_id(), $config['order_id'] );
 		$this->assertSame( $order->get_order_key(), $config['key'] );

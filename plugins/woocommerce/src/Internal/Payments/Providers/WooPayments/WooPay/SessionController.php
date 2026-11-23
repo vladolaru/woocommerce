@@ -520,7 +520,9 @@ class SessionController implements RegisterHooksInterface {
 
 		$this->register_classic_woopay_assets();
 		wp_localize_script( self::CLASSIC_WOOPAY_SCRIPT_HANDLE, 'wc_woopayments_woopay_params', $this->get_classic_woopay_config( $config ) );
-		wp_enqueue_style( self::CLASSIC_WOOPAY_STYLE_HANDLE );
+		if ( $supported_frontend_surface ) {
+			wp_enqueue_style( self::CLASSIC_WOOPAY_STYLE_HANDLE );
+		}
 		wp_enqueue_script( self::CLASSIC_WOOPAY_SCRIPT_HANDLE );
 		$this->has_enqueued_frontend_assets = true;
 	}
