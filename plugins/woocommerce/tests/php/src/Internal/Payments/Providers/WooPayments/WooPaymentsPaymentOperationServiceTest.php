@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Orders\PaymentInfo;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventIngestor;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPlatformEvents;
@@ -4538,6 +4539,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @testWith ["event after checkout"]
 	 *           ["event refused during checkout"]
 	 *           ["retry succeeds by event"]
+	 *           ["same intent succeeds by event"]
 	 *           ["retry declines on failed order"]
 	 * @param string $ordering Order of the checkout and the payment events.
 	 */
@@ -4593,19 +4595,26 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			$this->assertSame( 'event refused during checkout' === $ordering, $refused );
 			$ingestor->process( $event );
 		}
-		if ( 'retry succeeds by event' === $ordering ) {
+		$expected = $declined_card;
+		if ( in_array( $ordering, array( 'retry succeeds by event', 'same intent succeeds by event' ), true ) ) {
 			$success                               = RecordedPlatformEvents::body( 'platform-payment-intent-events.json', 'card_checkout_succeeded' );
 			$success['data']['object']['metadata'] = $event['data']['object']['metadata'];
+			if ( 'same intent succeeds by event' === $ordering ) {
+				$success['data']['object']['id'] = $intent['id'];
+			}
+			$expected = $success['data']['object']['charges']['data'][0]['payment_method_details'];
 			$order->update_meta_data( '_intent_id', $success['data']['object']['id'] );
 			$order->set_transaction_id( $success['data']['object']['id'] );
 			$order->update_meta_data( '_intention_status', 'requires_action' );
 			$order->save();
 			$ingestor->process( $success );
-			$this->assertTrue( ( new WC_Order( $order->get_id() ) )->is_paid() );
+			$paid_order = new WC_Order( $order->get_id() );
+			$this->assertTrue( $paid_order->is_paid() );
+			$this->assertSame( $expected['card']['last4'], PaymentInfo::get_card_info( $paid_order )['last4'] );
 		}
 		$final = new WC_Order( $order->get_id() );
 		$this->assertSame( 0, $render->fetches );
-		$this->assertEquals( $declined_card, json_decode( $final->get_meta( '_wcpay_payment_method_details', true ), true ) );
+		$this->assertEquals( $expected, json_decode( $final->get_meta( '_wcpay_payment_method_details', true ), true ) );
 	}
 
 	/**

@@ -3,6 +3,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
+use Automattic\WooCommerce\Testing\Tools\TestingContainer;
 use Automattic\WooCommerce\Internal\Orders\PaymentInfo;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
@@ -27,6 +29,28 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'wcpay_dev_mode' );
 		$this->reset_container_replacements();
 		parent::tearDown();
+	}
+
+	/**
+	 * @testWith ["woocommerce_payments", ""]
+	 *           ["bacs", "pm_other"]
+	 * @param string $gateway Payment gateway on the order.
+	 * @param string $method_id Payment method ID on the order.
+	 */
+	public function test_render_without_a_woopayments_method_skips_the_fresh_order_read( string $gateway, string $method_id ): void {
+		$order = $this->create_card_info_order( $method_id );
+		$order->set_payment_method( $gateway );
+		$order->save();
+		$client = $this->create_recording_payment_method_client( array() );
+		$this->register_card_info_service( $client );
+		$lifecycle = $this->createMock( OrderPaymentLifecycleService::class );
+		$lifecycle->expects( $this->never() )->method( 'get_fresh_order_from_data_store' );
+		$container = wc_get_container();
+		$this->assertInstanceOf( TestingContainer::class, $container );
+		$container->replace( OrderPaymentLifecycleService::class, $lifecycle );
+
+		$this->assertSame( '', PaymentInfo::get_card_info( $order )['last4'] );
+		$this->assertSame( array(), $client->requested_ids );
 	}
 
 	/**

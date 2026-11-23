@@ -896,16 +896,9 @@ class PaymentIntentEventHandler {
 					$captures_the_authorization ? 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ) : $order->has_status( OrderStatus::ON_HOLD ),
 					$captures_the_authorization
 				),
-				WooPaymentsOrderEffects::completed_charge_payment_method_backfill_meta(
-					$charge,
-					$this->order_has_placeholder_payment_method_details( $order ),
-					(string) $order->get_meta( '_wcpay_payment_transaction_id', true )
-				),
+				$this->get_succeeded_payment_method_meta( $order, $charge, '' !== $stored_intent_id && $stored_intent_id !== $this->get_object_id( $event_object ) ),
 				$captures_the_authorization ? WooPaymentsOrderEffects::attached_fee_meta( $charge ) : array()
 			);
-			if ( '' !== $stored_intent_id && $stored_intent_id !== $this->get_object_id( $event_object ) ) {
-				$meta += WooPaymentsOrderEffects::payment_method_details_meta( $charge['payment_method_details'] ?? array() );
-			}
 		}
 
 		return $meta;
@@ -1151,18 +1144,29 @@ class PaymentIntentEventHandler {
 	}
 
 	/**
-	 * Tell whether payment method details are still an empty placeholder.
+	 * An intent can already name the successful retry while the order still displays the declined card.
+	 * Use the successful charge for card details and keep checkout-time details for other methods on the same intent.
 	 *
-	 * @param WC_Order $order Order object.
-	 * @return bool
+	 * @param WC_Order            $order Order receiving the successful payment.
+	 * @param array<string,mixed> $charge Successful charge.
+	 * @param bool                $another_attempt Whether the order previously named a different intent.
+	 * @return array<string,string>
 	 */
-	private function order_has_placeholder_payment_method_details( WC_Order $order ): bool {
-		$details = $order->get_meta( '_wcpay_payment_method_details', true );
-		if ( '' === $details || null === $details || array() === $details ) {
-			return true;
+	private function get_succeeded_payment_method_meta( WC_Order $order, array $charge, bool $another_attempt ): array {
+		$stored  = $order->get_meta( '_wcpay_payment_method_details', true );
+		$details = is_string( $stored ) ? json_decode( $stored, true ) : $stored;
+		if ( '' === $stored || null === $stored || array() === $details ) {
+			return WooPaymentsOrderEffects::completed_charge_payment_method_backfill_meta( $charge, true, (string) $order->get_meta( '_wcpay_payment_transaction_id', true ) );
 		}
 
-		return is_string( $details ) && array() === json_decode( $details, true );
+		$card_types     = array( 'card', 'card_present', 'interac_present' );
+		$stored_type    = is_array( $details ) ? ( $details['type'] ?? '' ) : '';
+		$charge_details = $charge['payment_method_details'] ?? array();
+		$charge_type    = is_array( $charge_details ) ? ( $charge_details['type'] ?? '' ) : '';
+		if ( $another_attempt || in_array( $charge_type, $card_types, true ) || in_array( $stored_type, $card_types, true ) ) {
+			return WooPaymentsOrderEffects::payment_method_details_meta( $charge_details );
+		}
+		return array();
 	}
 
 	/**

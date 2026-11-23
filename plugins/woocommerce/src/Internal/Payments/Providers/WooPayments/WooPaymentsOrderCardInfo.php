@@ -85,6 +85,9 @@ class WooPaymentsOrderCardInfo implements RegisterHooksInterface {
 
 		$details = $this->get_stored_details( $order );
 		if ( array() === $details && $order->get_id() ) {
+			if ( '' === $order->get_meta( '_payment_method_id', true ) ) {
+				return $card_info;
+			}
 			// Another email or confirmation may have stored the card since this object was read.
 			$order   = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
 			$details = $this->get_stored_details( $order );
