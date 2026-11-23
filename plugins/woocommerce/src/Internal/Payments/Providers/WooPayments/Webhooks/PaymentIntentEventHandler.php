@@ -311,6 +311,7 @@ class PaymentIntentEventHandler {
 		}
 
 		try {
+			// A stated exception to the order payment lock's rule: settling the account before applying the event may read the platform under the claim.
 			list( $is_own_payment, $notify_repeated_terminal_failure ) = $this->composition_data_settler->run_settled(
 				fn(): array => $this->apply_order_payment_event_under_lock( $order, $event_type, $event_object, $record_only )
 			);

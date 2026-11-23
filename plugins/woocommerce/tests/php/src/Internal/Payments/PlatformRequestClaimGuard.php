@@ -21,8 +21,12 @@ final class PlatformRequestClaimGuard {
 	/**
 	 * The order lock's platform request permissions. Each row requires the holder operation, verb and route,
 	 * and every listed provider caller > callee pair. The money operations and their decision reads come first.
-	 * The named cache-only row requires zero sends. Other code on a hook that fires inside the claim can make
-	 * requests this guard cannot see if it uses another transport or never runs in the test.
+	 * The named checkout cache-only row requires zero sends. Capture can also fetch the account for Level 3 data.
+	 * That fetch is a violation until capture reads the Level 3 country from the stored account.
+	 *
+	 * Hook callbacks under the claim are outside coverage if they use another transport or never run in the test.
+	 * The guard also misses requests to other hosts, tests that mock the HTTP client below the guard,
+	 * and Payments tests that use a base class outside the WC_Unit_Test_Case hierarchy.
 	 */
 	private const RULES = array(
 		array( 'checkout', 'POST intentions', 'WooPaymentsPaymentOperationService::send_charge_request>create_and_confirm_payment_intention' ),
