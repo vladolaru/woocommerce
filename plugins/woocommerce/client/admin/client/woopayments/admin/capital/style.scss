@@ -50,20 +50,29 @@
 	}
 
 	&__table {
+		position: relative;
+	}
+
+	&__table table {
 		border-collapse: collapse;
-		width: 100%;
+		inline-size: 100%;
 	}
 
 	&__table th,
 	&__table td {
 		border-bottom: 1px solid $studio-gray-5;
 		padding: $gap-small;
-		text-align: start;
+		text-align: end;
 		vertical-align: top;
 	}
 
-	&__table [data-column]:not([data-column="paid_out_at"], [data-column="status"]) {
-		text-align: end;
+	&__table th {
+		background: transparent;
+		white-space: normal;
+	}
+
+	&__table .is-start-aligned {
+		text-align: start;
 	}
 
 	&__loan-action {

@@ -1,7 +1,12 @@
 /**
  * External dependencies
  */
-import { EllipsisMenu, MenuItem, MenuTitle } from '@woocommerce/components';
+import {
+	EllipsisMenu,
+	MenuItem,
+	MenuTitle,
+	Table,
+} from '@woocommerce/components';
 import { useEffect, useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 
@@ -100,6 +105,7 @@ const LoanActionLink = ( { loan }: { loan: WooPaymentsCapitalLoan } ) => (
 const loanColumns = [
 	{
 		key: 'paid_out_at',
+		cellClassName: 'is-start-aligned',
 		label: __( 'Disbursed', 'woocommerce' ),
 		required: true,
 		cell: ( loan: WooPaymentsCapitalLoan ) =>
@@ -107,6 +113,7 @@ const loanColumns = [
 	},
 	{
 		key: 'status',
+		cellClassName: 'is-start-aligned',
 		label: __( 'Status', 'woocommerce' ),
 		cell: ( loan: WooPaymentsCapitalLoan ) => (
 			<LoanStatusChip loan={ loan } />
@@ -354,45 +361,17 @@ export const WooPaymentsCapitalPage = () => {
 						/>
 					</div>
 					<LoanListSummary loans={ loans } />
-					<div
-						className="woocommerce-woopayments-capital__table-scroll"
-						role="region"
-						aria-labelledby="woocommerce-woopayments-all-loans-heading"
-						tabIndex={ 0 }
-					>
-						<table className="woocommerce-woopayments-capital__table">
-							<thead>
-								<tr>
-									{ visibleColumns.map(
-										( { key, label } ) => (
-											<th
-												key={ key }
-												scope="col"
-												data-column={ key }
-											>
-												{ label }
-											</th>
-										)
-									) }
-								</tr>
-							</thead>
-							<tbody>
-								{ loans.map( ( loan ) => (
-									<tr key={ loan.stripe_loan_id }>
-										{ visibleColumns.map(
-											( { key, cell } ) => (
-												<td
-													key={ key }
-													data-column={ key }
-												>
-													{ cell( loan ) }
-												</td>
-											)
-										) }
-									</tr>
-								) ) }
-							</tbody>
-						</table>
+					<div className="woocommerce-woopayments-capital__table">
+						<Table
+							className="woocommerce-woopayments-capital__table-scroll"
+							caption={ __( 'All loans', 'woocommerce' ) }
+							headers={ visibleColumns }
+							rows={ loans.map( ( loan ) =>
+								visibleColumns.map( ( { cell } ) => ( {
+									display: cell( loan ),
+								} ) )
+							) }
+						/>
 					</div>
 				</section>
 			) }

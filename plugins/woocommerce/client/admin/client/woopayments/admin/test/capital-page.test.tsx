@@ -296,9 +296,6 @@ describe( 'WooPaymentsCapitalPage', () => {
 		expect( screen.getByText( '2 loans' ) ).toBeInTheDocument();
 		expect( screen.getByText( '$1,500.00 total' ) ).toBeInTheDocument();
 		expect( screen.getByText( '$150.00 fixed fees' ) ).toBeInTheDocument();
-		const loansRegion = screen.getByRole( 'region', { name: 'All loans' } );
-		expect( loansRegion ).toHaveAttribute( 'tabindex', '0' );
-		expect( loansRegion ).toContainElement( screen.getByRole( 'table' ) );
 		expect( screen.getByText( 'Active' ) ).toBeInTheDocument();
 		expect( screen.getByText( /Paid off:/ ) ).toBeInTheDocument();
 		expect(
@@ -315,6 +312,40 @@ describe( 'WooPaymentsCapitalPage', () => {
 			} )
 		).not.toBeInTheDocument();
 	} );
+
+	it.each( [
+		{ scrollWidth: 600, tabIndex: null, name: 'All loans' },
+		{
+			scrollWidth: 601,
+			tabIndex: '0',
+			name: 'All loans (scroll to see more)',
+		},
+	] )(
+		'exposes scroll guidance when a $scrollWidth px table is in a 600 px container',
+		async ( { scrollWidth, tabIndex, name } ) => {
+			const client = jest
+				.spyOn( window.Element.prototype, 'clientWidth', 'get' )
+				.mockReturnValue( 600 );
+			const scroll = jest
+				.spyOn( window.Element.prototype, 'scrollWidth', 'get' )
+				.mockReturnValue( scrollWidth );
+			try {
+				mockCapitalApi();
+				render( <WooPaymentsCapitalPage /> );
+
+				const group = await screen.findByRole( 'group', { name } );
+				const table = screen.getByRole( 'table', { name } );
+				expect( group ).toContainElement( table );
+				expect( group.getAttribute( 'tabindex' ) ).toBe( tabIndex );
+				expect( table.querySelector( 'caption' ) ).toHaveClass(
+					'screen-reader-text'
+				);
+			} finally {
+				client.mockRestore();
+				scroll.mockRestore();
+			}
+		}
+	);
 
 	// Client 11.2.0 `capital/index.tsx:216-230` and `data/capital/resolvers.ts:31-40`: the summary fails alone, with a
 	// snackbar, and the loan list still loads.
