@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudOrderTrackingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderAdminActionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStoreSetupReportController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -90,6 +91,8 @@ class PreflightService {
 		'woocommerce_woopayments_retry_stripe_billing_cancel',
 		WooPaymentsOrderAdminActionsController::RETRY_STATUS_CHANGE_OPERATION_ACTION,
 		SubscriptionsController::RETRY_AUTHENTICATION_FAILURE_ACTION,
+		// A step left from a tier drop reads the owner and the tier itself when it runs.
+		WooPaymentsSetupTier::RECHECK_HOOK,
 		// Stripe Billing migration off Stripe, continued by the built-in WooPayments' migrator after the switch.
 		'wcpay_schedule_subscription_migrations',
 		'wcpay_migrate_subscription',

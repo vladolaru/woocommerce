@@ -46,6 +46,36 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 
 	private const INCENTIVES_USAGE_VERSION_OPTION = 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments_version';
 
+	/** Re-check outcome: the built-in WooPayments no longer owns payments. */
+	public const RECHECK_NOT_OWNER = 'not_owner';
+
+	/** Re-check outcome: the stored tier is no longer `available`. */
+	public const RECHECK_TIER_MOVED = 'tier_moved';
+
+	/** Re-check outcome: there is no account row to compare against, so no account was read. */
+	public const RECHECK_NO_ROW = 'no_row';
+
+	/** Re-check outcome: the account read failed. */
+	public const RECHECK_READ_FAILED = 'read_failed';
+
+	/** Re-check outcome: the platform reports no account. */
+	public const RECHECK_NO_ACCOUNT = 'no_account';
+
+	/** Re-check outcome: the account row changed during the read, so nothing was written. */
+	public const RECHECK_ROW_CHANGED = 'row_changed';
+
+	/** Re-check outcome: the account row and the tier were written, the tier as `active`. */
+	public const RECHECK_RAISED_ACTIVE = 'raised_active';
+
+	/** Re-check outcome: the account row and the tier were written, the tier as `connected`. */
+	public const RECHECK_RAISED_CONNECTED = 'raised_connected';
+
+	/** Re-check outcome: the account row was written; the tier had already moved. */
+	public const RECHECK_ROW_REFRESHED = 'row_refreshed';
+
+	/** Re-check outcome: the account row was written; the tier write failed. */
+	public const RECHECK_TIER_WRITE_FAILED = 'tier_write_failed';
+
 	private const DEV_MODE_ENVIRONMENTS = array(
 		'development',
 		'staging',
@@ -57,6 +87,13 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @var string[]|null
 	 */
 	private ?array $dev_mode_triggers = null;
+
+	/**
+	 * When this request dropped the tier and scheduled the re-check, so a restore that puts the tier back cancels it.
+	 *
+	 * @var int|null
+	 */
+	private ?int $recheck_drop_time = null;
 
 	/**
 	 * The LegacyProxy instance.
@@ -114,7 +151,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * The database cache stops refreshing while an Action Scheduler job runs.
 	 */
 	public function register() {
-		add_action( 'action_scheduler_before_execute', array( $this->database_cache, 'disable_refresh' ) );
+		add_action( 'action_scheduler_before_execute', array( $this, 'handle_action_scheduler_before_execute' ) );
 
 		add_filter( 'allowed_redirect_hosts', array( $this, 'allowed_redirect_hosts' ) );
 
@@ -122,6 +159,20 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		foreach ( array( 'jetpack_site_registered', 'jetpack_site_disconnected' ) as $hook_name ) {
 			add_action( $hook_name, array( $this, 'clear_cache' ) );
 		}
+	}
+
+	/**
+	 * Stop database cache refreshes for the rest of the request, and register the setup tier re-check, before Action
+	 * Scheduler runs an action.
+	 *
+	 * A step left from a drop finds its handler on a connected or active store, and removes itself; the hook is added
+	 * only in a request where Action Scheduler runs an action.
+	 *
+	 * @internal
+	 */
+	public function handle_action_scheduler_before_execute(): void {
+		$this->database_cache->disable_refresh();
+		WooPaymentsSetupTier::register_recheck_hook();
 	}
 
 	/**
@@ -294,23 +345,33 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	/**
 	 * Fetch the account from the platform.
 	 *
+	 * A plain fetch, the setup tier re-check's, stores nothing: it leaves the onboarding-disabled flag and the onboarding
+	 * test mode alone, and an error does not rotate the shopper's card-testing token.
+	 *
+	 * @param bool $plain Whether to fetch without those writes.
 	 * @return array<string,mixed>|false
 	 */
-	private function fetch_account_data() {
+	private function fetch_account_data( bool $plain = false ) {
 		$api_client = $this->get_api_client();
 		if ( ! $api_client->is_available() ) {
 			return false;
 		}
 
 		try {
-			$this->legacy_proxy->call_function( 'delete_transient', self::ONBOARDING_DISABLED_TRANSIENT );
-			$account_data = $api_client->get_account( $this->get_woocommerce_store_id() );
+			if ( $plain ) {
+				$account_data = $api_client->get_account_without_side_effects( $this->get_woocommerce_store_id() );
+			} else {
+				$this->legacy_proxy->call_function( 'delete_transient', self::ONBOARDING_DISABLED_TRANSIENT );
+				$account_data = $api_client->get_account( $this->get_woocommerce_store_id() );
+			}
 		} catch ( ApiException $e ) {
 			if ( 'wcpay_account_not_found' === $e->get_error_code() ) {
 				$account_data = array();
 			} elseif ( 'wcpay_on_boarding_disabled' === $e->get_error_code() ) {
 				$account_data = array();
-				$this->legacy_proxy->call_function( 'set_transient', self::ONBOARDING_DISABLED_TRANSIENT, true, 2 * HOUR_IN_SECONDS );
+				if ( ! $plain ) {
+					$this->legacy_proxy->call_function( 'set_transient', self::ONBOARDING_DISABLED_TRANSIENT, true, 2 * HOUR_IN_SECONDS );
+				}
 			} else {
 				return false;
 			}
@@ -318,7 +379,9 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 			return false;
 		}
 
-		$this->ensure_onboarding_test_mode_for_dev_mode( $account_data );
+		if ( ! $plain ) {
+			$this->ensure_onboarding_test_mode_for_dev_mode( $account_data );
+		}
 		if ( ! $this->is_valid_cached_account( $account_data ) ) {
 			return false;
 		}
@@ -403,7 +466,8 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * Put back the account cache row and the setup tier after the platform did not delete the account.
 	 *
 	 * The row comes back marked as never fetched, so the first reader outside cron and AJAX still fetches the account, and a
-	 * fetch that fails serves the restored account. A row that does not read back is deleted. The tier goes back as it was read.
+	 * fetch that fails serves the restored account. A row that does not read back is deleted. The tier goes back as it was read;
+	 * once it reads back, the re-check the drop scheduled in this request is cancelled, and otherwise it stays to heal the tier.
 	 *
 	 * @since 11.4.0
 	 *
@@ -420,8 +484,10 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 			$this->clear_cache();
 		}
 
-		if ( null !== $this->setup_tier && null !== $state['tier'] ) {
-			$this->setup_tier->write_tier( $state['tier'] );
+		$drop_time               = $this->recheck_drop_time;
+		$this->recheck_drop_time = null;
+		if ( null !== $this->setup_tier && null !== $state['tier'] && $this->setup_tier->write_tier( $state['tier'] ) && null !== $drop_time ) {
+			wc_get_container()->get( WooPaymentsSetupTierRecheck::class )->cancel( $drop_time );
 		}
 	}
 
@@ -579,7 +645,11 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		}
 
 		if ( $extension_owns_payments || array() === $account_data ) {
-			$this->setup_tier->write_tier( WooPaymentsSetupTier::AVAILABLE );
+			$setup_tier = $this->setup_tier;
+			if ( ! $extension_owns_payments ) {
+				$this->schedule_recheck_on_drop();
+			}
+			$setup_tier->write_tier( WooPaymentsSetupTier::AVAILABLE );
 			return;
 		}
 
@@ -596,6 +666,133 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		$this->setup_tier->write_tier(
 			'yes' === ( $settings['enabled'] ?? null ) ? WooPaymentsSetupTier::ACTIVE : WooPaymentsSetupTier::CONNECTED
 		);
+	}
+
+	/**
+	 * Schedule the setup tier re-check before the built-in drops a connected or active tier to available.
+	 *
+	 * The steps exist before the tier is written, so a request that dies after the drop still leaves them.
+	 */
+	private function schedule_recheck_on_drop(): void {
+		if (
+			null === $this->setup_tier
+			|| null === $this->runtime_arbiter
+			|| ! in_array( $this->setup_tier->get_stored_tier(), array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true )
+			|| ! $this->runtime_arbiter->is_builtin_owner()
+		) {
+			return;
+		}
+
+		$this->recheck_drop_time = time();
+		wc_get_container()->get( WooPaymentsSetupTierRecheck::class )->schedule( $this->recheck_drop_time );
+	}
+
+	/**
+	 * Read the account and raise a stored `available` tier from it, writing only over what this read saw.
+	 *
+	 * The owner and the stored tier are read fresh. The account row is read before the account fetch and replaced only if it
+	 * still holds those bytes, marked as never fetched so the first foreground reader refreshes it with its listeners
+	 * loaded; the tier is then raised only while it still reads `available`. No account, a failed read or a row with no
+	 * account to compare against writes nothing, and nothing here can lower a tier.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return string One of the RECHECK_* outcomes.
+	 */
+	public function recheck_low_tier(): string {
+		if ( null === $this->setup_tier || null === $this->runtime_arbiter ) {
+			return self::RECHECK_NOT_OWNER;
+		}
+
+		$this->runtime_arbiter->invalidate();
+		if ( ! $this->runtime_arbiter->is_builtin_owner() ) {
+			return self::RECHECK_NOT_OWNER;
+		}
+
+		$this->legacy_proxy->call_function( 'wp_cache_delete', 'alloptions', 'options' );
+		$this->legacy_proxy->call_function( 'wp_cache_delete', WooPaymentsSetupTier::OPTION_NAME, 'options' );
+		$this->setup_tier->invalidate();
+		if ( WooPaymentsSetupTier::AVAILABLE !== $this->setup_tier->get_stored_tier() ) {
+			return self::RECHECK_TIER_MOVED;
+		}
+
+		// An absent row cannot tell a deletion that lands during the read apart from no change, so nothing is read.
+		$seen_row = $this->read_account_row();
+		if ( null === $seen_row ) {
+			return self::RECHECK_NO_ROW;
+		}
+
+		$account_data = $this->fetch_account_data( true );
+		if ( false === $account_data ) {
+			return self::RECHECK_READ_FAILED;
+		}
+		if ( array() === $account_data ) {
+			return self::RECHECK_NO_ACCOUNT;
+		}
+
+		$this->runtime_arbiter->invalidate();
+		if ( ! $this->runtime_arbiter->is_builtin_owner() ) {
+			return self::RECHECK_NOT_OWNER;
+		}
+
+		$cache_contents            = $this->build_account_cache_contents( $account_data, false );
+		$cache_contents['fetched'] = 0;
+		if ( ! $this->replace_account_row( $seen_row, maybe_serialize( $cache_contents ) ) ) {
+			return self::RECHECK_ROW_CHANGED;
+		}
+
+		$this->legacy_proxy->call_function( 'wp_cache_delete', 'alloptions', 'options' );
+		$tier   = 'yes' === ( $this->get_stored_gateway_settings()['enabled'] ?? null ) ? WooPaymentsSetupTier::ACTIVE : WooPaymentsSetupTier::CONNECTED;
+		$raised = $this->setup_tier->raise_from_available( $tier );
+		if ( null === $raised ) {
+			return self::RECHECK_TIER_WRITE_FAILED;
+		}
+		if ( ! $raised ) {
+			return self::RECHECK_ROW_REFRESHED;
+		}
+
+		return WooPaymentsSetupTier::ACTIVE === $tier ? self::RECHECK_RAISED_ACTIVE : self::RECHECK_RAISED_CONNECTED;
+	}
+
+	/**
+	 * Read the account cache row's stored bytes from the database.
+	 *
+	 * @return string|null The serialized row, or null when there is none.
+	 */
+	private function read_account_row(): ?string {
+		global $wpdb;
+
+		$row = $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", WooPaymentsDatabaseCache::ACCOUNT_KEY ) );
+
+		return is_string( $row ) ? $row : null;
+	}
+
+	/**
+	 * Replace the account cache row only while it holds the bytes read before, compared byte for byte.
+	 *
+	 * @param string $seen_row Serialized row read before the account fetch.
+	 * @param string $new_row  Serialized row to store.
+	 * @return bool Whether the row now holds the new bytes in place of the ones read.
+	 */
+	private function replace_account_row( string $seen_row, string $new_row ): bool {
+		global $wpdb;
+
+		if ( $new_row === $seen_row ) {
+			// The database reports no row changed when the bytes are the same, so check the row still holds them.
+			return $seen_row === $this->read_account_row();
+		}
+
+		$updated = $wpdb->query(
+			$wpdb->prepare(
+				"UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s AND CAST( option_value AS BINARY ) = CAST( %s AS BINARY )",
+				$new_row,
+				WooPaymentsDatabaseCache::ACCOUNT_KEY,
+				$seen_row
+			)
+		);
+		$this->legacy_proxy->call_function( 'wp_cache_delete', WooPaymentsDatabaseCache::ACCOUNT_KEY, 'options' );
+
+		return 0 < (int) $updated;
 	}
 
 	/**

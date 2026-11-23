@@ -1911,7 +1911,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		try {
 			$this->assertSame( $stale_account, $sut->get_cached_account_data() );
 		} finally {
-			remove_action( 'action_scheduler_before_execute', array( $this->database_cache, 'disable_refresh' ) );
+			remove_action( 'action_scheduler_before_execute', array( $sut, 'handle_action_scheduler_before_execute' ) );
 		}
 
 		$this->assertSame( 0, $api_client->calls );

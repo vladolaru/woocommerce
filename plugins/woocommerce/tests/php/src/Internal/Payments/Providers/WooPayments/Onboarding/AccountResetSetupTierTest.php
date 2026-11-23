@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -93,6 +94,7 @@ class AccountResetSetupTierTest extends WC_Unit_Test_Case {
 		} finally {
 			wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 			$this->tier->invalidate();
+			wc_get_container()->reset_all_resolved();
 			parent::tearDown();
 		}
 	}
@@ -197,7 +199,7 @@ class AccountResetSetupTierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox After a refused reset, a failed account fetch serves the restored account, so the store can still take payments.
+	 * @testdox After a refused reset, a failed account fetch serves the restored account and keeps the active tier, so checkout still offers the card gateway.
 	 */
 	public function test_after_a_refused_reset_a_failed_fetch_serves_the_restored_account(): void {
 		$this->store_has_account( 'yes', WooPaymentsSetupTier::ACTIVE );
@@ -208,7 +210,13 @@ class AccountResetSetupTierTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( $this->account(), $this->account_service->get_cached_account_data(), 'The failed fetch serves the restored account.' );
 		$this->assertTrue( get_option( self::ACCOUNT_CACHE_OPTION )['errored'], 'The first reader did fetch the account.' );
-		$this->assertTrue( $this->account_service->can_process_payments(), 'The gateway keeps its account.' );
+		$this->assert_tier_is( WooPaymentsSetupTier::ACTIVE );
+		// The next request's checkout, with its services built from what is stored; a live account needs HTTPS there.
+		update_option( 'woocommerce_force_ssl_checkout', 'yes' );
+		wc_get_container()->reset_all_resolved();
+		$gateway = wc_get_container()->get( WooPaymentsProvider::class )->get_gateway_for_method( 'card' );
+		$this->assertNotNull( $gateway );
+		$this->assertTrue( $gateway->is_available(), 'Checkout still offers the card gateway.' );
 	}
 
 	/**
@@ -276,7 +284,9 @@ class AccountResetSetupTierTest extends WC_Unit_Test_Case {
 	 * @param string $prior_tier      The tier the store holds before the disable.
 	 */
 	public function test_f6_a_refused_test_account_disable_keeps_the_tier_and_the_saved_methods( string $gateway_enabled, string $prior_tier ): void {
-		$this->store_has_account( $gateway_enabled, $prior_tier );
+		// A test-drive account is a sandbox account, valid to store while onboarding is in test mode.
+		update_option( 'wcpay_onboarding_test_mode', 'yes' );
+		$this->store_has_account( $gateway_enabled, $prior_tier, false, array_merge( $this->account(), array( 'is_live' => false ) ) );
 		$this->client->expects( $this->once() )->method( 'delete_account' )->with( true )->willThrowException( new ApiException( 'Refused.', 'bad_request', 400 ) );
 
 		$row_before = get_option( self::ACCOUNT_CACHE_OPTION );
@@ -294,12 +304,13 @@ class AccountResetSetupTierTest extends WC_Unit_Test_Case {
 	/**
 	 * Put a connected account in the store, with the gateway on or off, check the tier it gives and get its cache row.
 	 *
-	 * @param string $gateway_enabled The gateway's enabled setting.
-	 * @param string $expected_tier   The tier the account write must give: active or connected.
-	 * @param bool   $errored_row     Whether the row then holds two errored reads that kept the account.
+	 * @param string                   $gateway_enabled The gateway's enabled setting.
+	 * @param string                   $expected_tier   The tier the account write must give: active or connected.
+	 * @param bool                     $errored_row     Whether the row then holds two errored reads that kept the account.
+	 * @param array<string,mixed>|null $account         The account to store, or null for the live account().
 	 * @return array<string,mixed> The account cache row.
 	 */
-	private function store_has_account( string $gateway_enabled, string $expected_tier, bool $errored_row = false ): array {
+	private function store_has_account( string $gateway_enabled, string $expected_tier, bool $errored_row = false, ?array $account = null ): array {
 		update_option(
 			WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION,
 			array(
@@ -307,7 +318,7 @@ class AccountResetSetupTierTest extends WC_Unit_Test_Case {
 				'upe_enabled_payment_method_ids' => array( 'card' ),
 			)
 		);
-		$this->account_service->cache_account_data( $this->account() );
+		$this->account_service->cache_account_data( $account ?? $this->account() );
 		$this->assert_tier_is( $expected_tier );
 		if ( $errored_row ) {
 			wc_get_container()->get( WooPaymentsDatabaseCache::class )->write(

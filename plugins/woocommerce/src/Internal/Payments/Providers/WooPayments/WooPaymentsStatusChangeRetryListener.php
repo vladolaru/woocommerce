@@ -22,6 +22,8 @@ use WC_Order;
  * cancel fails (class-wc-payments-order-service.php:1827-1831, :1880-1884), so the merchant knows the authorization is
  * still open. It changes no status and calls no platform.
  *
+ * As the low tiers' cron root, it also registers the setup tier re-check (WooPaymentsSetupTierRecheck).
+ *
  * @since 11.2.0
  * @internal
  */
@@ -46,10 +48,16 @@ class WooPaymentsStatusChangeRetryListener implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register the retry hook.
+	 * Register the retry hook and, on a stored `available` tier the built-in owns, the setup tier re-check.
+	 *
+	 * This class is the cron root of the low tiers, so the re-check registers here: one hook, with no class loaded, no
+	 * option read and no query.
 	 */
 	public function register() {
 		add_action( WooPaymentsOrderAdminActionsController::RETRY_STATUS_CHANGE_OPERATION_ACTION, array( $this, 'handle_retry_status_change_operation' ), 10, 4 );
+		if ( $this->setup_tier->should_register_recheck() ) {
+			WooPaymentsSetupTier::register_recheck_hook();
+		}
 	}
 
 	/**

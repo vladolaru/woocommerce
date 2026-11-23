@@ -44,6 +44,13 @@ final class WooPaymentsSetupTier {
 	public const ACTIVE = 'active';
 
 	/**
+	 * The Action Scheduler hook of the re-check that reads the account after the tier dropped from connected or active.
+	 *
+	 * It lives here, not on WooPaymentsSetupTierRecheck, so registering the hook loads no class.
+	 */
+	public const RECHECK_HOOK = 'woocommerce_woopayments_setup_tier_recheck';
+
+	/**
 	 * Runtime ownership arbiter.
 	 *
 	 * @var WooPaymentsRuntimeArbiter
@@ -63,6 +70,14 @@ final class WooPaymentsSetupTier {
 	 * @var array<string,array<string,array<int,class-string>>>|null
 	 */
 	private ?array $classes_by_setup_tier = null;
+
+	/**
+	 * Whether the cron class list included the re-check, keyed by blog ID. Neither invalidate() here nor the runtime
+	 * arbiter's clears it, so a memo dropped later in the request does not lose a step.
+	 *
+	 * @var array<int,bool>
+	 */
+	private array $recheck_listed = array();
 
 	/**
 	 * Initialize the class instance.
@@ -106,7 +121,8 @@ final class WooPaymentsSetupTier {
 	 * On a `disabled` or `available` tier, cron and WP-CLI requests also list the listener that notes a status-change
 	 * capture or cancel retry queued while the built-in WooPayments took payments, when the stored tier is not `disabled`:
 	 * it leaves `disabled` only through an account sync while the WooPayments feature was on, which every store that could
-	 * queue such a retry went through.
+	 * queue such a retry went through. On a stored `available` tier the built-in owns, it also registers the setup tier
+	 * re-check (should_register_recheck()).
 	 *
 	 * @since 11.2.0
 	 *
@@ -130,9 +146,39 @@ final class WooPaymentsSetupTier {
 			&& self::DISABLED !== $this->get_stored_tier()
 		) {
 			$classes[] = WooPaymentsStatusChangeRetryListener::class;
+			// Only memos filled above are read: the stored tier, and the owner get_effective_tier() resolved.
+			$this->recheck_listed[ get_current_blog_id() ] = self::AVAILABLE === $tier
+				&& self::AVAILABLE === $this->get_stored_tier()
+				&& WooPaymentsRuntimeArbiter::OWNER_BUILTIN === $this->runtime_arbiter->get_runtime_owner();
 		}
 
 		return $classes;
+	}
+
+	/**
+	 * Tell whether the status-change retry listener also registers the setup tier re-check: the cron class list was built
+	 * for a stored `available` tier while the built-in WooPayments owned payments.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return bool
+	 */
+	public function should_register_recheck(): bool {
+		return $this->recheck_listed[ get_current_blog_id() ] ?? false;
+	}
+
+	/**
+	 * Register the setup tier re-check on its Action Scheduler hook, once per request.
+	 *
+	 * The callback names WooPaymentsSetupTierRecheck only as a string, so nothing loads until a step runs.
+	 *
+	 * @since 11.4.0
+	 */
+	public static function register_recheck_hook(): void {
+		$callback = array( WooPaymentsSetupTierRecheck::class, 'run_step' );
+		if ( false === has_action( self::RECHECK_HOOK, $callback ) ) {
+			add_action( self::RECHECK_HOOK, $callback, 10, 2 );
+		}
 	}
 
 	/**
@@ -190,6 +236,44 @@ final class WooPaymentsSetupTier {
 
 		$this->tiers[ get_current_blog_id() ] = $tier;
 		return true;
+	}
+
+	/**
+	 * Raise a stored `available` tier to `connected` or `active`, only while the database still holds `available`.
+	 *
+	 * Another writer's tier stands: a tier raised or lowered since it was read is left as it is. The request memo and the
+	 * cached options are dropped either way, so the next read sees what is stored.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param string $tier Setup tier to write: connected or active.
+	 * @return bool|null True when written, false when the stored tier was no longer `available`, null when the write failed.
+	 */
+	public function raise_from_available( string $tier ): ?bool {
+		global $wpdb;
+
+		if ( ! in_array( $tier, array( self::CONNECTED, self::ACTIVE ), true ) ) {
+			return false;
+		}
+
+		$updated = $wpdb->query(
+			$wpdb->prepare(
+				"UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s AND option_value = %s",
+				$tier,
+				self::OPTION_NAME,
+				self::AVAILABLE
+			)
+		);
+		wp_cache_delete( 'alloptions', 'options' );
+		wp_cache_delete( self::OPTION_NAME, 'options' );
+		$this->invalidate();
+
+		if ( false === $updated ) {
+			$this->log_write_failure( $tier, get_option( self::OPTION_NAME, null ), array_key_exists( self::OPTION_NAME, wp_load_alloptions( true ) ) );
+			return null;
+		}
+
+		return 0 < $updated;
 	}
 
 	/**

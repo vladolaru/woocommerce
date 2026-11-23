@@ -2166,6 +2166,28 @@ class Client {
 	}
 
 	/**
+	 * Retrieve the connected WooPayments account, as get_account() does, without changing the shopper's session.
+	 *
+	 * A fraud-flagged error does not rotate the session's card-testing token, since this read is no shopper's payment.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param string $woocommerce_store_id WooCommerce store ID.
+	 * @return array<string,mixed>
+	 */
+	public function get_account_without_side_effects( string $woocommerce_store_id = '' ): array {
+		$params = array(
+			'test_mode' => $this->account_service->is_test_mode_onboarding_enabled(),
+		);
+
+		if ( '' !== $woocommerce_store_id ) {
+			$params['woocommerce_store_id'] = $woocommerce_store_id;
+		}
+
+		return $this->request( $params, self::ACCOUNTS_API, 'GET', true, false, true, true, false, false, null, false );
+	}
+
+	/**
 	 * Upload a file through the platform's files endpoint.
 	 *
 	 * @param WP_REST_Request $request Request object.
@@ -2418,11 +2440,12 @@ class Client {
 	 * @param bool                    $return_raw_response Whether to return the raw transport response.
 	 * @param bool                    $use_v2_api Whether to use the Transact API root.
 	 * @param int|null                $timeout_seconds Seconds the request may take, retries included, or null for the default.
+	 * @param bool                    $rotate_fraud_token_on_error Whether a fraud-flagged error rotates the shopper's card-testing token.
 	 * @return array<string,mixed>
 	 * @throws ApiException When the request fails.
 	 */
-	private function request( array $params, string $api, string $method, bool $is_site_scoped = true, bool $use_user_token = false, bool $blocking = true, bool $include_test_mode_param = true, bool $return_raw_response = false, bool $use_v2_api = false, ?int $timeout_seconds = null ): array {
-		$decoded_body = $this->request_decoded( $params, $api, $method, $is_site_scoped, $use_user_token, $blocking, $include_test_mode_param, $return_raw_response, $use_v2_api, $timeout_seconds );
+	private function request( array $params, string $api, string $method, bool $is_site_scoped = true, bool $use_user_token = false, bool $blocking = true, bool $include_test_mode_param = true, bool $return_raw_response = false, bool $use_v2_api = false, ?int $timeout_seconds = null, bool $rotate_fraud_token_on_error = true ): array {
+		$decoded_body = $this->request_decoded( $params, $api, $method, $is_site_scoped, $use_user_token, $blocking, $include_test_mode_param, $return_raw_response, $use_v2_api, $timeout_seconds, $rotate_fraud_token_on_error );
 
 		return is_array( $decoded_body ) ? $decoded_body : array();
 	}
@@ -2440,10 +2463,11 @@ class Client {
 	 * @param bool                    $return_raw_response Whether to return the raw transport response.
 	 * @param bool                    $use_v2_api Whether to use the Transact API root.
 	 * @param int|null                $timeout_seconds Seconds the request may take, retries included, or null for the default.
+	 * @param bool                    $rotate_fraud_token_on_error Whether a fraud-flagged error rotates the shopper's card-testing token.
 	 * @return mixed Decoded body; the raw transport response when asked for; an empty array for a non-blocking request.
 	 * @throws ApiException When the request fails.
 	 */
-	private function request_decoded( array $params, string $api, string $method, bool $is_site_scoped = true, bool $use_user_token = false, bool $blocking = true, bool $include_test_mode_param = true, bool $return_raw_response = false, bool $use_v2_api = false, ?int $timeout_seconds = null ) {
+	private function request_decoded( array $params, string $api, string $method, bool $is_site_scoped = true, bool $use_user_token = false, bool $blocking = true, bool $include_test_mode_param = true, bool $return_raw_response = false, bool $use_v2_api = false, ?int $timeout_seconds = null, bool $rotate_fraud_token_on_error = true ) {
 		$timeout_seconds = $timeout_seconds ?? self::REQUEST_TIMEOUT_SECONDS;
 
 		if ( ! $this->is_available() ) {
@@ -2638,7 +2662,7 @@ class Client {
 		}
 
 		if ( 400 <= $response_code ) {
-			$this->throw_api_error( is_array( $decoded_body ) ? $decoded_body : array(), $response_code );
+			$this->throw_api_error( is_array( $decoded_body ) ? $decoded_body : array(), $response_code, $rotate_fraud_token_on_error );
 		}
 
 		return $decoded_body;
@@ -2787,9 +2811,10 @@ class Client {
 	 *
 	 * @param array<string,mixed> $response_body Decoded response body.
 	 * @param int                 $response_code HTTP status code.
+	 * @param bool                $rotate_fraud_token_on_error Whether a fraud-flagged error rotates the shopper's card-testing token.
 	 * @throws ApiException Always.
 	 */
-	private function throw_api_error( array $response_body, int $response_code ): void {
+	private function throw_api_error( array $response_body, int $response_code, bool $rotate_fraud_token_on_error = true ): void {
 		$error_code        = 'wcpay_client_error_code_missing';
 		$error_message     = __( 'Server error. Please try again.', 'woocommerce' );
 		$error_type        = '';
@@ -2847,10 +2872,14 @@ class Client {
 		} elseif ( isset( $response_body['code'] ) ) {
 			$error_code    = (string) $response_body['code'];
 			$error_message = isset( $response_body['message'] ) ? (string) $response_body['message'] : $error_message;
-			$this->maybe_rotate_fraud_prevention_token( $error_code );
+			if ( $rotate_fraud_token_on_error ) {
+				$this->maybe_rotate_fraud_prevention_token( $error_code );
+			}
 		}
 
-		$this->maybe_rotate_fraud_prevention_token( $decline_code );
+		if ( $rotate_fraud_token_on_error ) {
+			$this->maybe_rotate_fraud_prevention_token( $decline_code );
+		}
 
 		$this->transport_log->error( $error_message, $error_code );
 
