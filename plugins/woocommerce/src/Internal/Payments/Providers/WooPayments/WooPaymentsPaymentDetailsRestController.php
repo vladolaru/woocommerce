@@ -105,14 +105,12 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 	public function register_routes(): void {
 		register_rest_route( $this->route_namespace, '/payments/charges/(?P<charge_id>\w+)', $this->get_readable_route( 'get_charge' ) );
 		register_rest_route( $this->route_namespace, '/payments/charges/order/(?P<order_id>\w+)', $this->get_readable_route( 'generate_charge_from_order' ) );
-		register_rest_route(
-			$this->route_namespace,
-			'/payments/payment_intents',
-			array_merge( $this->get_creatable_route( 'create_payment_intent' ), array( 'schema' => array( $this, 'get_payment_intent_schema' ) ) )
-		);
+		$intent_route           = $this->get_creatable_route( 'create_payment_intent', __( 'Optional. Any non-empty string. Send the same key with the same request again and no second charge is made: you get the first answer back, or a refusal that says the order is already paid. Empty means no key. A concurrent request with the same key gets HTTP 409. Retry the same request with the same key.', 'woocommerce' ) );
+		$intent_route['schema'] = array( $this, 'get_payment_intent_schema' );
+		register_rest_route( $this->route_namespace, '/payments/payment_intents', $intent_route );
 		register_rest_route( $this->route_namespace, '/payments/payment_intents/(?P<payment_intent_id>\w+)', $this->get_readable_route( 'get_payment_intent' ) );
 		register_rest_route( $this->route_namespace, '/payments/timeline/(?P<intention_id>\w+)', $this->get_readable_route( 'get_timeline' ) );
-		register_rest_route( $this->route_namespace, '/payments/refund', $this->get_creatable_route( 'process_refund' ) );
+		register_rest_route( $this->route_namespace, '/payments/refund', $this->get_creatable_route( 'process_refund', __( 'Optional. Any non-empty string. Honoured when this route refunds the charge directly: no order_id, an order_id that does not resolve, or the order_id of an order of another payment method. Not used when order_id names a WooPayments order: that refund goes through the order, which keeps its own protection. Send the same key with the same request again and no second refund is made: you get the first answer back, or a refusal that says why when the first refund is already recorded on the order. Empty means no key. Concurrent requests for the same charge can return HTTP 409 while the order is locked, or HTTP 500 if the payment provider refuses a concurrent request.', 'woocommerce' ) ) );
 	}
 
 	/**
@@ -186,7 +184,7 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 	/**
 	 * Create and confirm a payment intent from an order.
 	 *
-	 * Check payment eligibility on the freshly read order under the checkout lock. The transport mints a key per request.
+	 * Check payment eligibility on the freshly read order under the checkout lock.
 	 *
 	 * @param WP_REST_Request $request Request.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
@@ -239,8 +237,8 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 				(string) $request->get_param( 'payment_method' ),
 				$this->account_service->is_manual_capture_enabled()
 			);
-			// No caller key: the transport mints one per request, as in client 11.1.0 (includes/wc-payment-api/class-wc-payments-api-client.php:2660-2690).
-			$intent = $this->api_client->create_and_confirm_payment_intention( $request_data, '' );
+			$caller_key   = (string) ( $request->get_param( 'idempotency_key' ) ?? '' );
+			$intent       = $this->api_client->create_and_confirm_payment_intention( $request_data, WooPaymentsIdempotencyKey::for_platform( $caller_key, WooPaymentsIdempotencyKey::OPERATION_INTENT ) );
 			try {
 				wc_get_container()->get( WooPaymentsCompositionDataSettler::class )->run_settled(
 					static function () use ( $lifecycle, $order, $intent ): void {
@@ -278,6 +276,14 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 		// The client logs the failure and returns its message (class-wc-rest-payments-payment-intents-controller.php:149-152).
 		wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Failed to create an intention via the REST API.', $exception, array( 'order_id' => $order->get_id() ) );
 
+		if ( $exception instanceof ApiException ) {
+			if ( 'idempotency_key_in_use' === $exception->get_error_code() ) {
+				return new WP_Error( 'wcpay_idempotency_key_conflict', __( 'A request with this idempotency key is already in progress. Retry the same request with the same key.', 'woocommerce' ), array( 'status' => 409 ) );
+			}
+			if ( WooPaymentsPaymentOperationService::is_idempotency_key_conflict( $exception ) ) {
+				return new WP_Error( 'wcpay_idempotency_key_conflict', __( 'This idempotency key was already used for a different request.', 'woocommerce' ), array( 'status' => 409 ) );
+			}
+		}
 		return new WP_Error( 'wcpay_server_error', $exception->getMessage(), array( 'status' => 500 ) );
 	}
 
@@ -616,12 +622,20 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 	/**
 	 * Build a creatable REST route definition.
 	 *
-	 * @param string $callback Callback method.
+	 * @param string $callback        Callback method.
+	 * @param string $key_description How the route uses the caller's key.
 	 * @return array<string,mixed>
 	 */
-	private function get_creatable_route( string $callback ): array {
+	private function get_creatable_route( string $callback, string $key_description ): array {
 		return array(
 			'methods'             => WP_REST_Server::CREATABLE,
+			'args'                => array(
+				'idempotency_key' => array(
+					'type'        => 'string',
+					'required'    => false,
+					'description' => $key_description,
+				),
+			),
 			'callback'            => array( $this, $callback ),
 			'permission_callback' => array( $this, 'has_permission' ),
 		);
@@ -903,7 +917,8 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 			);
 		}
 
-		$refund = $this->refund_charge_without_order( $charge_id, $amount, $reason, 'transaction_details_no_order' );
+		$caller_key = (string) ( $request->get_param( 'idempotency_key' ) ?? '' );
+		$refund     = $this->refund_charge_without_order( $charge_id, $amount, $reason, 'transaction_details_no_order', $caller_key );
 		return is_wp_error( $refund ) ? $refund : new WP_REST_Response( $refund );
 	}
 
@@ -915,9 +930,12 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 	 * @param int|null    $amount    Amount in minor units, or null for the charge's remainder.
 	 * @param string|null $reason    Merchant's reason.
 	 * @param string      $source    Refund source sent in the metadata.
+	 * @param string      $caller_key Idempotency key supplied by the caller.
 	 * @return array<string,mixed>|WP_Error
 	 */
-	public function refund_charge_without_order( string $charge_id, ?int $amount, ?string $reason, string $source ) {
+	public function refund_charge_without_order( string $charge_id, ?int $amount, ?string $reason, string $source, string $caller_key ) {
+		$platform_key = WooPaymentsIdempotencyKey::for_platform( $caller_key, WooPaymentsIdempotencyKey::OPERATION_REFUND );
+
 		$resolver   = wc_get_container()->get( EventOrderResolver::class );
 		$order      = $resolver->find_order_by_charge_id( $charge_id );
 		$lock       = wc_get_container()->get( OrderPaymentLock::class );
@@ -925,7 +943,7 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 		$token      = null;
 		try {
 			if ( null === $order || ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( $order->get_payment_method() ) ) {
-				return $this->api_client->refund_charge( $charge_id, $amount, $reason, $source, '' );
+				return $this->api_client->refund_charge( $charge_id, $amount, $reason, $source, $platform_key );
 			}
 
 			$token = $lock->claim( $order, $vocabulary, null, 'refund' );
@@ -942,7 +960,7 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 			}
 
 			$lock->mark_money_request_unsaved( $token, true );
-			$answer = $this->api_client->refund_charge( $charge_id, $amount, $reason, $source, '' );
+			$answer = $this->api_client->refund_charge( $charge_id, $amount, $reason, $source, $platform_key );
 			try {
 				$charge = $answer['payment_intent']['charges']['data'][0] ?? null;
 				if ( WooPaymentsIntentCodec::outcome_from_refund_result( $answer )->is_successful() && is_array( $charge ) && ( $charge['id'] ?? null ) === $charge_id && $writer->is_recordable_refunded_charge( $charge ) ) {

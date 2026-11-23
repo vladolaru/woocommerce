@@ -23,6 +23,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTr
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\PaymentIntentEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
+use Automattic\WooCommerce\Testing\Tools\TestingContainer;
 use WC_Order;
 use WC_REST_Unit_Test_Case;
 use WP_REST_Request;
@@ -535,6 +536,186 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 			$this->assertMatchesRegularExpression( '/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/', $key );
 		}
 		$this->assertNotSame( $keys[0], $keys[1], 'Each request carries its own key.' );
+	}
+
+	/**
+	 * Register the real client and serve only its HTTP response locally.
+	 *
+	 * @param array<string,mixed> $body   Platform JSON body.
+	 * @param int                 $status Platform HTTP status.
+	 */
+	private function register_intent_transport( array $body, int $status = 200 ): FakeHttpClient {
+		$http           = new FakeHttpClient();
+		$http->response = array(
+			'response' => array( 'code' => $status ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode( $body ),
+		);
+
+		$account = wc_get_container()->get( WooPaymentsAccountService::class );
+		$client  = new Client();
+		$client->init( $http, $account, wc_get_container()->get( TransportLog::class ) );
+		$controller = new WooPaymentsPaymentDetailsRestController();
+		$controller->init( $client, $this->create_order_service(), $account );
+		$controller->register_routes();
+		return $http;
+	}
+
+	/**
+	 * @testdox The intent route reuses the header for an identical key and distinguishes strings that differ by one byte.
+	 */
+	public function test_caller_key_intent_headers(): void {
+		$order = $this->create_order_for_payment_intent();
+		$http  = $this->register_intent_transport( $this->card_answer( $order, 'processing' ) );
+		$keys  = array( 'a', 'a', ' a', "a\n", '0' );
+		foreach ( $keys as $key ) {
+			$request = $this->create_payment_intent_request( $order );
+			$request->set_param( 'idempotency_key', $key );
+			$this->assertSame( 200, $this->server->dispatch( $request )->get_status() );
+		}
+
+		$this->assertCount( count( $keys ), $http->requests );
+		foreach ( $keys as $i => $key ) {
+			$this->assertSame( 'wc-intent-' . hash( 'sha256', $key ), $http->requests[ $i ]['headers']['Idempotency-Key'] );
+		}
+	}
+
+	/**
+	 * @testdox The intent route mints a fresh UUID for both an omitted and an explicitly empty caller key.
+	 */
+	public function test_caller_key_empty_and_absent_intent_headers(): void {
+		$order = $this->create_order_for_payment_intent();
+		$http  = $this->register_intent_transport( $this->card_answer( $order, 'processing' ) );
+
+		$omitted = $this->create_payment_intent_request( $order );
+		$empty   = $this->create_payment_intent_request( $order );
+		$empty->set_param( 'idempotency_key', '' );
+		foreach ( array( $omitted, $empty ) as $request ) {
+			$this->assertSame( 200, $this->server->dispatch( $request )->get_status() );
+		}
+
+		$this->assertCount( 2, $http->requests );
+		foreach ( $http->requests as $sent ) {
+			$this->assertTrue( wp_is_uuid( $sent['headers']['Idempotency-Key'], 4 ), 'A keyless intent must use a UUIDv4.' );
+		}
+		$this->assertNotSame( $http->requests[0]['headers']['Idempotency-Key'], $http->requests[1]['headers']['Idempotency-Key'] );
+	}
+
+	/**
+	 * @testdox A non-string JSON key is refused before the intent route claims the order or sends a charge.
+	 *
+	 * @testWith [null]
+	 *           [5]
+	 *           [true]
+	 *           [false]
+	 *           [["a"]]
+	 *           [{"key":"a"}]
+	 *
+	 * @param mixed $key Non-string JSON value.
+	 */
+	public function test_caller_key_invalid_json_types( $key ): void {
+		$order = $this->create_order_for_payment_intent();
+		$http  = $this->register_intent_transport( $this->card_answer( $order, 'processing' ) );
+		$lock  = new OrderPaymentLockWithClaimHook( '__return_null' );
+
+		$container = $GLOBALS['wc_container'];
+		$this->assertInstanceOf( TestingContainer::class, $container );
+		$container->replace( OrderPaymentLock::class, $lock );
+
+		$request = $this->create_payment_intent_request( $order );
+		$request->set_header( 'Content-Type', 'application/json' );
+		$request->set_body( (string) wp_json_encode( array_merge( $request->get_body_params(), array( 'idempotency_key' => $key ) ) ) );
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( 'rest_invalid_param', $response->get_data()['code'] );
+		$this->assertStringContainsString( 'string', $response->get_data()['data']['params']['idempotency_key'] );
+		$this->assertFalse( $lock->hook_ran, 'Invalid keys cannot claim the order.' );
+		$this->assertCount( 0, $http->requests );
+	}
+
+	/**
+	 * @testdox Only structured intent conflict codes and types get a 409, with distinct instructions for a request in progress.
+	 *
+	 * @testWith ["idempotency_error", null, 409, "This idempotency key was already used for a different request."]
+	 *           ["invalid_request_error", "idempotency_error", 409, "This idempotency key was already used for a different request."]
+	 *           ["idempotency_error", "parameter_invalid", 409, "This idempotency key was already used for a different request."]
+	 *           ["invalid_request_error", "parameter_invalid", 500, null]
+	 *           ["invalid_request_error", "idempotency_key_in_use", 409, "A request with this idempotency key is already in progress. Retry the same request with the same key."]
+	 *           ["idempotency_error", "idempotency_key_in_use", 409, "A request with this idempotency key is already in progress. Retry the same request with the same key."]
+	 *
+	 * @param string      $type           Stripe error type.
+	 * @param string|null $code           Stripe error code, omitted for a different-request conflict.
+	 * @param int         $status         Expected REST response status.
+	 * @param string|null $mapped_message Expected translated error or null for the original platform message.
+	 */
+	public function test_caller_key_intent_conflict_response( string $type, ?string $code, int $status, ?string $mapped_message ): void {
+		$order   = $this->order_for_card_answer( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$before  = $this->card_snapshot( $order, array() );
+		$message = 'Keys for idempotent requests can only be used with the same parameters they were first used with.';
+		$error   = array(
+			'type'    => $type,
+			'message' => $message,
+		);
+		if ( null !== $code ) {
+			$error['code'] = $code;
+		}
+		$http    = $this->register_intent_transport( array( 'error' => $error ), 'idempotency_key_in_use' === $code ? 409 : 400 );
+		$request = $this->create_payment_intent_request( $order );
+		$request->set_param( 'idempotency_key', 'intent-first-attempt' );
+
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( $status, $response->get_status() );
+		$this->assertSame( 409 === $status ? 'wcpay_idempotency_key_conflict' : 'wcpay_server_error', $response->get_data()['code'] );
+		$this->assertSame( $mapped_message ?? 'Error: ' . $message, $response->get_data()['message'] );
+		$this->assertCount( 1, $http->requests, 'A provider refusal must not trigger a second send.' );
+		$this->assertSame( $before, $this->card_snapshot( $order, array() ), 'The refused attempt must leave the payment untouched.' );
+	}
+
+	/**
+	 * @testdox Repeating a keyed request after its successful charge is recorded returns the paid refusal before any platform request.
+	 */
+	public function test_caller_key_retry_after_recorded_intent(): void {
+		$order   = $this->order_for_card_answer( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$http    = $this->register_intent_transport( $this->card_answer( $order ) );
+		$request = $this->create_payment_intent_request( $order );
+		$request->set_param( 'idempotency_key', 'intent-first-attempt' );
+
+		$first = $this->server->dispatch( clone $request );
+		$this->assertSame( 200, $first->get_status() );
+		$this->assertSame( 'pi_answer', $this->stored_card_order( $order )->get_transaction_id() );
+
+		$repeat = $this->server->dispatch( $request );
+		$this->assertSame( 409, $repeat->get_status() );
+		$this->assertSame( 'wcpay_order_already_paid', $repeat->get_data()['code'] );
+		$this->assertCount( 1, $http->requests );
+	}
+
+	/**
+	 * @testdox The public REST index describes optional caller keys and the replay and concurrent-request outcomes for each route.
+	 */
+	public function test_caller_key_rest_index(): void {
+		$this->create_payment_details_controller()->register_routes();
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3' ) );
+		$this->assertSame( 200, $response->get_status() );
+		$routes       = $response->get_data()['routes'];
+		$descriptions = array(
+			'payment_intents' => 'Optional. Any non-empty string. Send the same key with the same request again and no second charge is made: you get the first answer back, or a refusal that says the order is already paid. Empty means no key. A concurrent request with the same key gets HTTP 409. Retry the same request with the same key.',
+			'refund'          => 'Optional. Any non-empty string. Honoured when this route refunds the charge directly: no order_id, an order_id that does not resolve, or the order_id of an order of another payment method. Not used when order_id names a WooPayments order: that refund goes through the order, which keeps its own protection. Send the same key with the same request again and no second refund is made: you get the first answer back, or a refusal that says why when the first refund is already recorded on the order. Empty means no key. Concurrent requests for the same charge can return HTTP 409 while the order is locked, or HTTP 500 if the payment provider refuses a concurrent request.',
+		);
+		foreach ( $descriptions as $route => $description ) {
+			$endpoint = $routes[ '/wc/v3/payments/' . $route ]['endpoints'][0];
+			$this->assertContains( 'POST', $endpoint['methods'] );
+			$this->assertArrayHasKey( 'idempotency_key', $endpoint['args'] );
+			$key = $endpoint['args']['idempotency_key'];
+			$this->assertSame( 'string', $key['type'] );
+			$this->assertFalse( $key['required'] );
+			$this->assertSame( $description, $key['description'] );
+			foreach ( array( 'pattern', 'minLength', 'maxLength' ) as $limit ) {
+				$this->assertArrayNotHasKey( $limit, $key );
+			}
+		}
 	}
 
 	/**

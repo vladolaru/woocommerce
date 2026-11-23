@@ -1349,7 +1349,7 @@ class WooPaymentsPaymentOperationService {
 	 * @param ApiException $exception Provider request failure.
 	 * @return bool
 	 */
-	private function is_idempotency_key_conflict( ApiException $exception ): bool {
+	public static function is_idempotency_key_conflict( ApiException $exception ): bool {
 		return 'idempotency_error' === $exception->get_error_type() || 'idempotency_error' === $exception->get_error_code();
 	}
 

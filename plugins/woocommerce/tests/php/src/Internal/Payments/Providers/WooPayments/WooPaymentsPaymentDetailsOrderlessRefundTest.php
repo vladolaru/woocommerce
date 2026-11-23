@@ -171,6 +171,230 @@ class WooPaymentsPaymentDetailsOrderlessRefundTest extends WC_REST_Unit_Test_Cas
 	}
 
 	/**
+	 * @testdox A direct charge refund sends each caller's digest in both the header and refund metadata.
+	 * @testWith [false]
+	 *           [true]
+	 *
+	 * @param bool $has_holder Whether a WooPayments order holds the charge.
+	 */
+	public function test_caller_key_reaches_both_direct_refund_sends( bool $has_holder ): void {
+		$order = $has_holder ? $this->create_charge_order() : null;
+		if ( $order ) {
+			$held_at_send                = array();
+			$this->http_client->response = function () use ( $order, &$held_at_send ) {
+				$held_at_send[] = $this->is_locked( $order );
+				return $this->get_recorded_refund_response();
+			};
+		}
+
+		foreach ( array( 'K1', 'K2', '0' ) as $key ) {
+			$response = $this->dispatch_keyed_refund( $key );
+			$this->assertSame( 200, $response->get_status() );
+			$expected = 'wc-refund-' . hash( 'sha256', $key );
+			$body     = json_decode( (string) $this->http_client->last_body, true );
+			$this->assertSame( $expected, $this->http_client->last_headers['Idempotency-Key'] );
+			$this->assertSame( $expected, $body['metadata']['refund_attempt'] );
+		}
+
+		$this->assertSame( 3, $this->http_client->request_count );
+		if ( $order ) {
+			$this->assertSame( array( true, true, true ), $held_at_send );
+			$this->assertFalse( $this->is_locked( $order ) );
+		}
+	}
+
+	/**
+	 * @testdox Two direct refunds with an empty key get fresh UUIDs and omit the refund attempt metadata.
+	 * @testWith [false]
+	 *           [true]
+	 *
+	 * @param bool $has_holder Whether a WooPayments order holds the charge.
+	 */
+	public function test_empty_key_keeps_direct_refunds_independent( bool $has_holder ): void {
+		if ( $has_holder ) {
+			$this->create_charge_order();
+		}
+		$first  = $this->dispatch_keyed_refund( '' );
+		$second = $this->dispatch_keyed_refund( '' );
+		$this->assertSame( array( 200, 200 ), array( $first->get_status(), $second->get_status() ) );
+
+		$this->assertCount( 2, $this->http_client->requests );
+		$keys = array();
+		foreach ( $this->http_client->requests as $request ) {
+			$key    = $request['headers']['Idempotency-Key'];
+			$keys[] = $key;
+			$this->assertTrue( wp_is_uuid( $key, 4 ), $key );
+			$body = json_decode( $request['body'], true );
+			$this->assertArrayNotHasKey( 'refund_attempt', $body['metadata'] );
+		}
+		$this->assertNotSame( $keys[0], $keys[1] );
+	}
+
+	/**
+	 * @testdox A refund through the order's gateway uses the gateway's private attempt key and links its refund row.
+	 */
+	public function test_order_refund_keeps_the_gateway_attempt_key(): void {
+		$this->reset_container_resolutions();
+		$order      = $this->create_charge_order();
+		$api_client = wc_get_container()->get( Client::class );
+		$api_client->init( $this->http_client, $this->create_test_mode_account_service(), wc_get_container()->get( TransportLog::class ) );
+		$lock_key                    = ( new WooPaymentsPersistenceVocabulary() )->get_order_lock_key( $order );
+		$attempt_at_send             = null;
+		$this->http_client->response = function () use ( $lock_key, $order, &$attempt_at_send ) {
+			$attempt_at_send = get_transient( $lock_key );
+			return $this->refund_response( $this->refund_answer( $order, 200 ) );
+		};
+
+		$response = $this->dispatch_keyed_refund( 'merchant-refund-1', 200, $order );
+		$this->assertSame( 200, $response->get_status(), (string) wp_json_encode( $response->get_data() ) );
+		$this->assertSame( $order->get_id(), $response->get_data()['order_id'] );
+		$this->assertSame( 1, $this->http_client->request_count );
+		$body = json_decode( (string) $this->http_client->last_body, true );
+		$key  = $this->http_client->last_headers['Idempotency-Key'];
+		$this->assertSame( 'woocommerce_core', $body['metadata']['refund_source'] );
+		$this->assertTrue( wp_is_uuid( $key, 4 ), $key );
+		$this->assertNotSame( 'wc-refund-' . hash( 'sha256', 'merchant-refund-1' ), $key );
+		$this->assertSame( $attempt_at_send, $key );
+		$this->assertSame( $key, $body['metadata']['refund_attempt'] );
+		$refund = wc_get_order( $response->get_data()['id'] );
+		$this->assertInstanceOf( \WC_Order_Refund::class, $refund );
+		$this->assertSame( 're_answer', $refund->get_meta( '_wcpay_refund_id' ) );
+	}
+
+	/**
+	 * @testdox The direct refund route preserves the platform error text when the platform only reports a bad request.
+	 * @testWith [false]
+	 *           [true]
+	 *
+	 * @param bool $concurrent Model a concurrent request using the platform's generic error envelope.
+	 */
+	public function test_keyed_refund_preserves_generic_platform_error( bool $concurrent ): void {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$fixture = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/platform-refund-errors.json' ), true );
+		$pair    = array_column( $fixture['entries'], null, 'pair' )['reused_key_different_amount'];
+		$error   = $pair['response'];
+		if ( $concurrent ) {
+			$error['body']['message'] = 'There is currently another request using this Idempotency Key. Please try again later.';
+		}
+		$this->http_client->response = array(
+			'response' => array( 'code' => $error['http_status'] ),
+			'headers'  => array( 'content-type' => $error['content_type'] ),
+			'body'     => $concurrent ? wp_json_encode( $error['body'] ) : $error['raw_body'],
+		);
+		$before                      = $this->count_local_orders_and_refunds();
+		$refund_actions              = did_action( 'woocommerce_create_refund' );
+
+		$response = $this->dispatch_keyed_refund( 'K1' );
+		$this->assertSame( 500, $response->get_status() );
+		$this->assertSame( 'wcpay_refund_payment', $response->get_data()['code'] );
+		$this->assertSame( 'Error: ' . $error['body']['message'], $response->get_data()['message'] );
+		$this->assertSame( 1, $this->http_client->request_count );
+		$this->assertSame( $before, $this->count_local_orders_and_refunds() );
+		$this->assertSame( $refund_actions, did_action( 'woocommerce_create_refund' ) );
+	}
+
+	/**
+	 * @testdox REST and the refund Ability share a platform key but identify their own source.
+	 */
+	public function test_shared_charge_refund_key_is_independent_of_source(): void {
+		foreach ( array( 'transaction_details_no_order', 'woopayments_ability' ) as $source ) {
+			$result = $this->sut->refund_charge_without_order( 'ch_refund', 200, null, $source, 'K1' );
+			$this->assertIsArray( $result );
+			$expected = 'wc-refund-' . hash( 'sha256', 'K1' );
+			$body     = json_decode( (string) $this->http_client->last_body, true );
+			$this->assertSame( $expected, $this->http_client->last_headers['Idempotency-Key'] );
+			$this->assertSame( $expected, $body['metadata']['refund_attempt'] );
+			$this->assertSame( $source, $body['metadata']['refund_source'] );
+		}
+		$this->assertSame( 2, $this->http_client->request_count );
+	}
+
+	/**
+	 * @testdox A replayed partial refund returns the same ID and creates only one refund on the order.
+	 */
+	public function test_replayed_keyed_partial_refund_records_one_row(): void {
+		$order                       = $this->create_charge_order();
+		$this->http_client->response = $this->refund_response( $this->refund_answer( $order, 200 ) );
+		foreach ( array( 1, 2 ) as $attempt ) {
+			$response = $this->dispatch_keyed_refund( 'K1' );
+			$this->assertSame( 200, $response->get_status() );
+			$this->assertSame( 're_answer', $response->get_data()['id'] );
+			$this->assertSame( $attempt, $this->http_client->request_count );
+		}
+		$this->assertSame( $this->http_client->requests[0]['headers']['Idempotency-Key'], $this->http_client->requests[1]['headers']['Idempotency-Key'] );
+		$rows = $order->get_refunds();
+		$this->assertCount( 1, $rows );
+		$this->assertSame( 're_answer', $rows[0]->get_meta( '_wcpay_refund_id' ) );
+		$this->assertSame( 2.0, (float) $rows[0]->get_amount() );
+	}
+
+	/**
+	 * @testdox A recorded full refund exhausts the order balance before the caller can send the same key again.
+	 */
+	public function test_repeated_keyed_full_refund_is_refused_before_send(): void {
+		$order                       = $this->create_charge_order();
+		$this->http_client->response = $this->refund_response( $this->refund_answer( $order ) );
+		$this->assertSame( 200, $this->dispatch_keyed_refund( 'K1', 1099 )->get_status() );
+
+		$response = $this->dispatch_keyed_refund( 'K1', 1099 );
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( 'wcpay_refund_invalid_amount', $response->get_data()['code'] );
+		$this->assertSame( 1, $this->http_client->request_count );
+		$this->assertCount( 1, $order->get_refunds() );
+	}
+
+	/**
+	 * @testdox Both refund branches reject every non-string JSON key before the order lock or any refund write.
+	 * @testWith [false]
+	 *           [true]
+	 *
+	 * @param bool $with_order_id Whether to request a gateway refund by order ID.
+	 */
+	public function test_non_string_refund_keys_are_refused_before_claim( bool $with_order_id ): void {
+		$order      = $this->create_charge_order();
+		$lock       = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		$token      = $lock->claim( $order, $vocabulary, null, 'checkout' );
+		$this->assertNotNull( $token );
+		$before = did_action( 'woocommerce_create_refund' );
+		try {
+			foreach ( array( null, 5, 1.25, true, false, array( 'key' ), (object) array( 'key' => 'value' ) ) as $invalid ) {
+				$response = $this->dispatch_keyed_refund( $invalid, 200, $with_order_id ? $order : null );
+				$data     = $response->get_data();
+				$this->assertSame( 400, $response->get_status(), (string) wp_json_encode( $invalid ) );
+				$this->assertSame( 'rest_invalid_param', $data['code'] );
+				$this->assertStringContainsString( 'string', $data['data']['params']['idempotency_key'] );
+			}
+			$this->assertSame( 0, $this->http_client->request_count );
+			$this->assertSame( $before, did_action( 'woocommerce_create_refund' ) );
+			$this->assertCount( 0, $order->get_refunds() );
+			$this->assertTrue( $this->is_locked( $order ) );
+		} finally {
+			$lock->release( $order, $vocabulary, $token );
+		}
+	}
+
+	/**
+	 * Dispatch a JSON refund with the caller's exact key value, including explicit null.
+	 *
+	 * @param mixed         $key    JSON key value.
+	 * @param int           $amount Refund amount in minor units.
+	 * @param WC_Order|null $order  Order selecting the gateway refund branch.
+	 * @return \WP_REST_Response
+	 */
+	private function dispatch_keyed_refund( $key, int $amount = 200, ?WC_Order $order = null ): \WP_REST_Response {
+		$params = array(
+			'charge_id'       => 'ch_refund',
+			'amount'          => $amount,
+			'idempotency_key' => $key,
+		);
+		if ( $order ) {
+			$params['order_id'] = $order->get_id();
+		}
+		return $this->server->dispatch( $this->create_refund_request( $params ) );
+	}
+
+	/**
 	 * @testdox Refund with an order ID that no longer resolves falls through to the charge refund.
 	 */
 	public function test_refund_with_unknown_order_refunds_the_charge(): void {
@@ -379,7 +603,7 @@ class WooPaymentsPaymentDetailsOrderlessRefundTest extends WC_REST_Unit_Test_Cas
 	 * @testdox The shared refund method preserves the Ability source and a null full-refund amount.
 	 */
 	public function test_full_refund_from_ability(): void {
-		$refund = $this->sut->refund_charge_without_order( 'ch_refund', null, null, 'woopayments_ability' );
+		$refund = $this->sut->refund_charge_without_order( 'ch_refund', null, null, 'woopayments_ability', '' );
 
 		if ( is_wp_error( $refund ) ) {
 			$this->fail( $refund->get_error_message() );
@@ -593,7 +817,7 @@ class WooPaymentsPaymentDetailsOrderlessRefundTest extends WC_REST_Unit_Test_Cas
 				$order->update_meta_data( WooPaymentsPaymentOperationService::REFUND_AMBIGUITY_META, $record );
 		}
 		$order->save_meta_data();
-		$result = $this->sut->refund_charge_without_order( 'ch_refund', $amount, null, 'transaction_details_no_order' );
+		$result = $this->sut->refund_charge_without_order( 'ch_refund', $amount, null, 'transaction_details_no_order', '' );
 		$this->assertWPError( $result );
 		$this->assertSame( $code, $result->get_error_code() );
 		$this->assertSame( $status, $result->get_error_data()['status'] );
@@ -863,7 +1087,7 @@ class WooPaymentsPaymentDetailsOrderlessRefundTest extends WC_REST_Unit_Test_Cas
 		$amount                      = 1099 - $prior;
 		$answer                      = $this->refund_answer( $order, $amount );
 		$this->http_client->response = $this->refund_response( $answer );
-		$this->assertSame( $answer, $this->sut->refund_charge_without_order( 'ch_refund', $amount, '', 'transaction_details_no_order' ) );
+		$this->assertSame( $answer, $this->sut->refund_charge_without_order( 'ch_refund', $amount, '', 'transaction_details_no_order', '' ) );
 		$order = wc_get_order( $order->get_id() );
 		$this->assertSame( 'refunded', $order->get_status() );
 		$linked = array_values( array_filter( $order->get_refunds(), static fn( $refund ) => 're_answer' === $refund->get_meta( '_wcpay_refund_id' ) ) );
@@ -1059,7 +1283,7 @@ class WooPaymentsPaymentDetailsOrderlessRefundTest extends WC_REST_Unit_Test_Cas
 			}
 			return $this->refund_response( $answer );
 		};
-		$this->assertSame( $answer, $this->sut->refund_charge_without_order( 'ch_refund', 200, null, 'transaction_details_no_order' ) );
+		$this->assertSame( $answer, $this->sut->refund_charge_without_order( 'ch_refund', 200, null, 'transaction_details_no_order', '' ) );
 		$rows = wc_get_order( $order->get_id() )->get_refunds();
 		$this->assertCount( 1, $rows );
 		$this->assertSame( 're_answer', $rows[0]->get_meta( '_wcpay_refund_id' ) );
@@ -1101,7 +1325,7 @@ class WooPaymentsPaymentDetailsOrderlessRefundTest extends WC_REST_Unit_Test_Cas
 			$this->assertSame( ! in_array( $history, array( 'no holder', 'other gateway' ), true ), $this->is_locked( $holder ) );
 			return $this->refund_response( $answer );
 		};
-		$this->assertSame( $answer, $this->sut->refund_charge_without_order( 'ch_refund', 200, null, 'transaction_details_no_order' ) );
+		$this->assertSame( $answer, $this->sut->refund_charge_without_order( 'ch_refund', 200, null, 'transaction_details_no_order', '' ) );
 		$this->assertCount( $at_answer, $holder->get_refunds() );
 		$orders = array_unique( array( $holder->get_id(), $metadata->get_id() ) );
 		if ( 0 === strpos( $history, 'copy ' ) ) {
@@ -1208,7 +1432,7 @@ class WooPaymentsPaymentDetailsOrderlessRefundTest extends WC_REST_Unit_Test_Cas
 			unset( $answer['payment_intent'] );
 			return $this->refund_response( $answer );
 		};
-		$result                      = $this->sut->refund_charge_without_order( 'ch_refund', $amount, null, 'transaction_details_no_order' );
+		$result                      = $this->sut->refund_charge_without_order( 'ch_refund', $amount, null, 'transaction_details_no_order', '' );
 		$this->assertSame( 're_answer', $result['id'] );
 		$residue = wc_create_refund(
 			array(
