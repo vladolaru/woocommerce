@@ -852,6 +852,45 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox R34: when a race leaves the cached options at available over a raised stored tier, the next account refresh's tier write logs its failed readback and drops the cached options, so the next read with a fresh memo gets the raised tier.
+	 */
+	public function test_r34_a_stale_low_cached_tier_clears_at_the_next_account_refresh(): void {
+		global $wpdb;
+
+		$this->store_has_account( 'yes' );
+		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::AVAILABLE );
+		// The race's end state: the database holds the raised tier, the cached options still hold available.
+		$wpdb->update( $wpdb->options, array( 'option_value' => WooPaymentsSetupTier::ACTIVE ), array( 'option_name' => WooPaymentsSetupTier::OPTION_NAME ) );
+		$this->tier->invalidate();
+		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->tier->get_stored_tier(), 'The cached options hold available.' );
+		$this->logger->lines = array();
+
+		$this->account_service->cache_account_data( $this->account() );
+
+		$errors = $this->logger->get_errors();
+		$this->assertCount( 1, $errors );
+		$this->assertStringContainsString( 'WooPayments setup tier write failed: requested active, stored available, autoloaded yes.', $errors[0][1] );
+		$this->tier->invalidate();
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $this->tier->get_stored_tier(), 'The next read gets the raised tier.' );
+	}
+
+	/**
+	 * @testdox R35: a tier write that reads back keeps the cached options, holding the written tier.
+	 */
+	public function test_r35_a_tier_write_that_reads_back_keeps_the_cached_options(): void {
+		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::AVAILABLE );
+		$this->tier->invalidate();
+		$this->logger->lines = array();
+
+		$this->assertTrue( $this->tier->write_tier( WooPaymentsSetupTier::CONNECTED ) );
+
+		$cached = wp_cache_get( 'alloptions', 'options' );
+		$this->assertIsArray( $cached, 'The cached options are kept.' );
+		$this->assertSame( WooPaymentsSetupTier::CONNECTED, $cached[ WooPaymentsSetupTier::OPTION_NAME ] );
+		$this->assertSame( array(), $this->logger->get_errors() );
+	}
+
+	/**
 	 * @return array<string,array{string,bool,array<int,string>}>
 	 */
 	public static function provide_lowest_tier_cron_registrations(): array {

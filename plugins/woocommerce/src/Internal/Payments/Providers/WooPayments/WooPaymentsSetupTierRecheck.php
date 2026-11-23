@@ -21,8 +21,9 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
  * runs at once or out of order can each log their line. A store with no account row at a step's start is not recovered,
  * such as after a refused reset whose tier restore failed on a store whose row was already gone, or whose row restore failed.
  * On a store with a persistent object cache, a request that loaded the options from the database just before a raise can
- * put the old tier back into the cache just after it: the database holds the raised tier, and the store stays at the
- * lowest tier until its options cache is next rebuilt.
+ * put them back into the cache just after it: the store then runs at the lowest tier until an admin request next refreshes
+ * the account, as a visit to the Payments pages does, whose tier write logs a failed write and drops the cached options,
+ * or until the cache is flushed.
  *
  * @since 11.4.0
  * @internal

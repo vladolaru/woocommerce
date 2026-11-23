@@ -205,7 +205,8 @@ final class WooPaymentsSetupTier {
 	 *
 	 * An unchanged autoloaded value is not written again. After a changed write, the option value and its autoload flag are
 	 * verified before the current-blog memo is updated, because the tier decides which classes the next request loads and
-	 * an option filter or a failed write would otherwise go unnoticed.
+	 * an option filter or a failed write would otherwise go unnoticed. A readback that does not match drops the cached
+	 * options, so the next read loads them from the database.
 	 *
 	 * @since 11.2.0
 	 *
@@ -231,6 +232,9 @@ final class WooPaymentsSetupTier {
 		$autoloaded  = array_key_exists( self::OPTION_NAME, wp_load_alloptions( true ) );
 		if ( $stored_tier !== $tier || ! $autoloaded ) {
 			$this->log_write_failure( $tier, $stored_tier, $autoloaded );
+			// A cache that disagrees with the database would otherwise outlast every later write of the same tier.
+			wp_cache_delete( 'alloptions', 'options' );
+			wp_cache_delete( self::OPTION_NAME, 'options' );
 			return false;
 		}
 
