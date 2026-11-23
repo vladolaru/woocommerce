@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
@@ -3289,6 +3290,133 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			$this->assertSame( $details['card']['last4'], $order->get_meta( 'last4', true ) );
 			$this->assertSame( $details['card']['brand'], $order->get_meta( '_card_brand', true ) );
 		}
+	}
+
+	/**
+	 * The failure event and shopper callback can each arrive while the other holds the order.
+	 *
+	 * @testWith [true, "after meta"]
+	 *           [true, "during meta"]
+	 *           [false, "callback first"]
+	 *           [false, "after meta"]
+	 *           [false, "during meta"]
+	 *           [false, "event refused"]
+	 *           [false, "retry on failed order"]
+	 * @param bool   $charged Whether the decline has a charge.
+	 * @param string $arrival When the second writer arrives.
+	 */
+	public function test_decline_callback_and_failure_event_show_the_same_card( bool $charged, string $arrival ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$intent = $this->load_recorded_manual_3ds_entry( $charged ? 'blocks_post_authentication_decline' : 'blocks_challenge_failed' )['body'];
+		$order  = $this->create_woopayments_order( '10.99' );
+		$order->update_meta_data( '_intent_id', $intent['id'] );
+		$order->update_meta_data( '_payment_method_id', $intent['last_payment_error']['payment_method']['id'] );
+		if ( 'retry on failed order' === $arrival ) {
+			$order->update_meta_data( '_wcpay_payment_method_details', '{"type":"card","card":{"last4":"0002"}}' );
+			$order->set_status( OrderStatus::FAILED );
+		}
+		$order->save();
+		$intent['metadata']      = array(
+			'order_id'  => (string) $order->get_id(),
+			'order_key' => $order->get_order_key(),
+		);
+		$event                   = RecordedPlatformEvents::body( 'platform-payment-intent-events.json', 'card_declined_failed' );
+		$event['data']['object'] = $intent;
+		$ingestor                = wc_get_container()->get( EventIngestor::class );
+		$render                  = $this->observe_failed_order_card();
+		$calls                   = 0;
+		$callback                = function () use ( $order, $intent, &$calls ) {
+			++$calls;
+			$this->get_update_order_status_response_for_intent( $order, $intent );
+		};
+		switch ( $arrival ) {
+			case 'after meta':
+				add_action( 'woocommerce_order_status_failed', $callback, 50 );
+				$ingestor->process( $event );
+				break;
+			case 'during meta':
+				add_action(
+					'added_order_meta',
+					static function ( $id, $order_id, $key ) use ( $callback, $order, &$calls ) {
+						if ( 0 === $calls && (int) $order_id === $order->get_id() && '_intention_status' === $key ) {
+							$callback();
+						}
+					},
+					10,
+					3
+				);
+				$ingestor->process( $event );
+				break;
+			case 'event refused':
+				$refused = false;
+				add_action(
+					'woocommerce_order_status_failed',
+					static function () use ( $ingestor, $event, &$refused ) {
+						try {
+							$ingestor->process( $event );
+						} catch ( OrderPaymentLockRefusedException $e ) {
+							$refused = true;
+						}
+					},
+					40
+				);
+				$callback();
+				$this->assertTrue( $refused );
+				$ingestor->process( $event );
+				break;
+			case 'callback first':
+				$callback();
+				$ingestor->process( $event );
+				break;
+			case 'retry on failed order':
+				$callback();
+				break;
+		}
+		$this->assertSame( 1, $calls );
+		$stored = new WC_Order( $order->get_id() );
+		$this->assertSame( OrderStatus::FAILED, $stored->get_status() );
+		$this->assertSame( $intent['id'], $stored->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'requires_payment_method', $stored->get_meta( '_intention_status', true ) );
+		$this->assertSame( $charged ? $intent['charges']['data'][0]['id'] : '', $stored->get_meta( '_charge_id', true ) );
+		$rows = $this->count_order_meta_rows( $order->get_id() );
+		$this->assertSame( 'during meta' === $arrival ? 2 : 1, $rows['_wcpay_payment_method_details'] ?? 0 );
+		foreach ( $stored->get_meta( '_wcpay_payment_method_details', false ) as $row ) {
+			$this->assertSame( $intent['last_payment_error']['payment_method']['card']['last4'], json_decode( $row->value, true )['card']['last4'] );
+		}
+		$this->assertSame( 0, $render->fetches );
+	}
+
+	/**
+	 * @testWith ["pending", "requires_action"]
+	 *           ["failed", "requires_payment_method"]
+	 *           ["on-hold", "requires_capture"]
+	 * @param string $status Order status stored by the newer attempt.
+	 * @param string $intent_status Intent status stored by the newer attempt.
+	 */
+	public function test_superseded_chargeless_decline_preserves_the_newer_card( string $status, string $intent_status ): void {
+		$intent = $this->load_recorded_manual_3ds_entry( 'blocks_challenge_failed' )['body'];
+		$order  = $this->create_woopayments_order( '10.99' );
+		$order->update_meta_data( '_intent_id', $intent['id'] );
+		$order->save();
+		$card     = '{"type":"card","card":{"last4":"4444"}}';
+		$retry    = static function () use ( $order, $card, $status, $intent_status ) {
+			$newer = new WC_Order( $order->get_id() );
+			$newer->set_transaction_id( 'pi_other' );
+			$newer->update_meta_data( '_intent_id', 'pi_other' );
+			$newer->update_meta_data( '_intention_status', $intent_status );
+			$newer->update_meta_data( '_wcpay_payment_method_details', $card );
+			$newer->set_status( $status );
+			$newer->save();
+		};
+		$response = $this->get_update_order_status_response_for_intent( $order, $intent, null, $retry );
+		$stored   = new WC_Order( $order->get_id() );
+		$this->assertSame( $card, $stored->get_meta( '_wcpay_payment_method_details', true ) );
+		$this->assertSame( 'pi_other', $stored->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'pi_other', $stored->get_transaction_id() );
+		$this->assertSame( $status, $stored->get_status() );
+		$this->assertSame( $intent_status, $stored->get_meta( '_intention_status', true ) );
+		$this->assertFalse( $stored->meta_exists( '_charge_id' ) );
+		$this->assertSame( 409, $response['status_code'] );
 	}
 
 	/**

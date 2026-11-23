@@ -3,6 +3,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventIngestor;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPlatformEvents;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
@@ -4530,6 +4533,82 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * A checkout decline supplies the card before an event, a retry or a second email reads it.
+	 *
+	 * @testWith ["event after checkout"]
+	 *           ["event refused during checkout"]
+	 *           ["retry succeeds by event"]
+	 *           ["retry declines on failed order"]
+	 * @param string $ordering Order of the checkout and the payment events.
+	 */
+	public function test_checkout_decline_card_across_payment_attempts( string $ordering ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$order = $this->create_woopayments_order( '10.99' );
+		if ( 'retry declines on failed order' === $ordering ) {
+			$order->set_status( OrderStatus::FAILED );
+			$order->update_meta_data( '_wcpay_payment_method_details', '{"type":"card","card":{"last4":"0002"}}' );
+			$order->save();
+		}
+		$error          = $this->load_recorded_decline_entry( 'expired_card' )['error'];
+		$intent         = $error['payment_intent'];
+		$http           = new FakeHttpClient();
+		$http->response = array(
+			'response' => array( 'code' => 402 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode( array( 'error' => $error ) ),
+		);
+		$customer       = $this->createMock( WooPaymentsCustomerService::class );
+		$customer->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_local' );
+		$provider                            = $this->create_provider_over_fake_transport( $http, $this->create_account_service( true ), $customer );
+		$event                               = RecordedPlatformEvents::body( 'platform-payment-intent-events.json', 'card_declined_failed' );
+		$event['data']['object']             = $intent;
+		$event['data']['object']['metadata'] = array(
+			'order_id'  => (string) $order->get_id(),
+			'order_key' => $order->get_order_key(),
+		);
+		$ingestor                            = wc_get_container()->get( EventIngestor::class );
+		$refused                             = false;
+		if ( 'event refused during checkout' === $ordering ) {
+			add_action(
+				'woocommerce_order_status_failed',
+				function () use ( $event, $ingestor, &$refused ) {
+					try {
+						$ingestor->process( $event );
+					} catch ( OrderPaymentLockRefusedException $e ) {
+						$refused = true;
+					}
+				}
+			);
+		}
+		$declined_card = $intent['charges']['data'][0]['payment_method_details'];
+		$render        = $this->observe_failed_order_card( 2, $declined_card );
+		wc_get_container()->get( PaymentProcessingService::class )->process_checkout_outcome(
+			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, $intent['last_payment_error']['payment_method']['id'] ),
+			$provider
+		);
+		$order = new WC_Order( $order->get_id() );
+		$this->assertSame( OrderStatus::FAILED, $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_charge_id', true ) );
+		if ( 'event after checkout' === $ordering || 'event refused during checkout' === $ordering ) {
+			$this->assertSame( 'event refused during checkout' === $ordering, $refused );
+			$ingestor->process( $event );
+		}
+		if ( 'retry succeeds by event' === $ordering ) {
+			$success                               = RecordedPlatformEvents::body( 'platform-payment-intent-events.json', 'card_checkout_succeeded' );
+			$success['data']['object']['metadata'] = $event['data']['object']['metadata'];
+			$order->update_meta_data( '_intent_id', $success['data']['object']['id'] );
+			$order->set_transaction_id( $success['data']['object']['id'] );
+			$order->update_meta_data( '_intention_status', 'requires_action' );
+			$order->save();
+			$ingestor->process( $success );
+			$this->assertTrue( ( new WC_Order( $order->get_id() ) )->is_paid() );
+		}
+		$final = new WC_Order( $order->get_id() );
+		$this->assertSame( 0, $render->fetches );
+		$this->assertEquals( $declined_card, json_decode( $final->get_meta( '_wcpay_payment_method_details', true ), true ) );
+	}
+
+	/**
 	 * @testdox A saved renewal card can retry only with another existing customer.
 	 *
 	 * @testWith ["cus_sent", "failed"]
@@ -4539,6 +4618,25 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @param string $status          Expected renewal order status.
 	 */
 	public function test_missing_customer_renewal_uses_only_an_existing_customer( string $stored_customer, string $status ): void {
+		$this->assert_missing_customer_renewal_outcome( $stored_customer, $status );
+	}
+
+	/** A renewal with a missing customer shares one card fetch across its two Failed emails. */
+	public function test_missing_customer_renewal_emails_share_the_card(): void {
+		$this->assert_renewal_emails_share_one_card_lookup(
+			function () {
+				$this->assert_missing_customer_renewal_outcome( 'cus_sent', OrderStatus::FAILED );
+			}
+		);
+	}
+
+	/**
+	 * Run the scheduled renewal against a recorded missing customer response.
+	 *
+	 * @param string $stored_customer Customer stored on the user.
+	 * @param string $status Expected renewal order status.
+	 */
+	private function assert_missing_customer_renewal_outcome( string $stored_customer, string $status ): void {
 		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
 		$this->assertIsInt( $user_id );
 		update_user_option( $user_id, '_wcpay_customer_id_live', $stored_customer );

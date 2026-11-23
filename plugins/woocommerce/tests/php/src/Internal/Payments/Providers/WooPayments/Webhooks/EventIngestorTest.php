@@ -1945,6 +1945,44 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		);
 	}
 
+	/** Redelivery after an interrupted failure finds the declined card before the Failed emails run. */
+	public function test_failure_redelivery_after_interrupted_meta_save_keeps_the_card(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$order  = $this->create_woopayments_order();
+		$event  = $this->recorded_payment_intent_event( 'card_declined_failed', $order );
+		$intent = $event['data']['object'];
+		$order->update_meta_data( '_payment_method_id', $intent['last_payment_error']['payment_method']['id'] );
+		$order->save();
+		$stop = static function ( $writing ) use ( $order ) {
+			if ( $writing->get_id() === $order->get_id() && $writing->has_status( 'failed' ) ) {
+				throw new \Error( 'interrupt before status write' );
+			}
+		};
+		add_action( 'woocommerce_before_order_object_save', $stop );
+		try {
+			$this->sut->process( $event );
+			$this->fail( 'Expected the status write to be interrupted.' );
+		} catch ( \Error $e ) {
+			$this->assertSame( 'interrupt before status write', $e->getMessage() );
+		} finally {
+			remove_action( 'woocommerce_before_order_object_save', $stop );
+		}
+		$interrupted = new WC_Order( $order->get_id() );
+		$this->assertSame( 'pending', $interrupted->get_status() );
+		$this->assertSame( 'requires_payment_method', $interrupted->get_meta( '_intention_status', true ) );
+		$vocab = new WooPaymentsPersistenceVocabulary();
+		$this->hold_order_payment_lock( $order, $vocab, $intent['id'] );
+		update_option( '_transient_timeout_' . $vocab->get_order_lock_key( $order ), time() - 1 );
+		$render = $this->observe_failed_order_card();
+		$this->sut->process( $event );
+		$final = new WC_Order( $order->get_id() );
+		$this->assertSame( 'failed', $final->get_status() );
+		$this->assertSame( '', $final->get_meta( '_charge_id', true ) );
+		$this->assertSame( 0, $render->fetches );
+		$this->assertSame( $intent['charges']['data'][0]['payment_method_details'], json_decode( $interrupted->get_meta( '_wcpay_payment_method_details', true ), true ) );
+		$this->assertCount( 1, $final->get_meta( '_wcpay_payment_method_details', false ) );
+	}
+
 	/**
 	 * @testdox Only an actionable, non-terminal decline stores its card before the Failed email.
 	 *

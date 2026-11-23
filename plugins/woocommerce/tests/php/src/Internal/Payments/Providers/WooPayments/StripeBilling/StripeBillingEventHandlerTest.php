@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling;
 
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\FailedOrderCardRender;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendCurrenciesController;
@@ -67,6 +68,7 @@ use WC_Unit_Test_Case;
  */
 class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 
+	use FailedOrderCardRender;
 	use ProviderTextLogAssertions;
 
 	private const EVENTS_FIXTURE  = __DIR__ . '/../Fixtures/platform-invoice-events.json';
@@ -2451,6 +2453,24 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	 */
 	private function get_renewal_intent(): array {
 		return $this->get_entry( self::EVENTS_FIXTURE, 'payment_intent_succeeded_with_invoice' )['body']['data']['object'];
+	}
+
+	/** The two failed-invoice emails share one card lookup for the renewal. */
+	public function test_failed_billing_renewal_emails_share_the_card(): void {
+		$subscription = $this->create_subscription( self::FAILING_SUBSCRIPTION_ID );
+		$renewal      = WooCommerceSubscriptionsDoubles::create_renewal_order( $subscription );
+		$this->assertInstanceOf( WC_Order::class, $renewal );
+		$renewal->set_payment_method( 'woocommerce_payments' );
+		$renewal->update_meta_data( '_payment_method_id', 'pm_renewal' );
+		$renewal->update_meta_data( '_wcpay_billing_invoice_id', self::FAILED_INVOICE_ID );
+		$renewal->save();
+		$this->queue_response( 200, $this->get_declined_charge() );
+		$this->queue_billing( 'update_invoice' );
+		$this->assert_renewal_emails_share_one_card_lookup(
+			function () {
+				$this->sut->handle_event( $this->get_event( 'invoice_payment_failed' ) );
+			}
+		);
 	}
 
 	/**
