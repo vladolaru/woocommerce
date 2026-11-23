@@ -29,7 +29,7 @@ const RECORDED_ONLY =
 const RECORDED = {
 	paymentIntent: 'pi_3ULNAtBzWlxcwgpP1j0Vug6y',
 	chargeId: 'ch_3ULNAtBzWlxcwgpP1mD5qOrD',
-	instantPayout: 'po_1TrYnABzWlxcwgpPhhdCrkEZ',
+	manualPayout: 'po_1TrYnABzWlxcwgpPhhdCrkEZ',
 	dispute: 'du_1UL1U2BzWlxcwgpPk8EypRUa',
 } as const;
 
@@ -249,7 +249,7 @@ test(
 );
 
 test(
-	'A merchant opens native details for an instant payout and sees the client payout overview',
+	'A merchant opens native details for a manual payout and sees the client payout overview',
 	{ tag: [ tags.WOOPAYMENTS_NATIVE ] },
 	async ( { page, baseURL } ) => {
 		test.skip( ! FIXTURE, RECORDED_ONLY );
@@ -257,18 +257,16 @@ test(
 
 		await page.goto(
 			adminPath( '/woopayments/payouts/details', {
-				id: RECORDED.instantPayout,
+				id: RECORDED.manualPayout,
 			} )
 		);
 
 		await expect( page.getByRole( 'status' ) ).toHaveText(
 			'Payout details loaded.'
 		);
-		// Client 11.1.0 `deposits/details/index.tsx:106-275` for the recorded
-		// payout: automatic false, 4825 usd, no fee, paid.
-		await expect(
-			page.getByText( /^Instant payout date: / )
-		).toBeVisible();
+		// Client 11.3.0 `deposits/details/index.tsx:48,115,349` for the recorded
+		// payout: automatic false, 4825 usd, no fee, paid, so a manual payout.
+		await expect( page.getByText( /^Manual payout date: / ) ).toBeVisible();
 		await expect(
 			page.getByText( 'Completed (paid)', { exact: true } )
 		).toBeVisible();
@@ -292,7 +290,7 @@ test(
 		).toBeVisible();
 		await expect(
 			page.getByText(
-				"We're unable to show transaction history on instant payouts."
+				"We're unable to show transaction history on manual payouts."
 			)
 		).toBeVisible();
 
