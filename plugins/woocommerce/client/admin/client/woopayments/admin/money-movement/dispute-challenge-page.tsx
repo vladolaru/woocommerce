@@ -2,6 +2,8 @@
  * External dependencies
  */
 import { Flex, FlexItem, Spinner } from '@wordpress/components';
+import { useDispatch } from '@wordpress/data';
+import { store as noticesStore } from '@wordpress/notices';
 import { useEffect, useState } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 import { useLocation } from 'react-router-dom';
@@ -22,28 +24,29 @@ import {
 	extractSavedEvidenceFileIds,
 } from './dispute-evidence-fields';
 import type { WooPaymentsDispute } from './types';
-import { getDisputeId, getErrorMessage } from './utils';
+import { getErrorMessage } from './utils';
 import { LiveStatusMessage, StatusMessage } from './table';
 import { WooPaymentsTestModeNotice } from '../test-mode-notice';
 import '../style.scss';
 
-export const WooPaymentsDisputeChallengePage = () => {
+const DisputeChallenge = ( { disputeId }: { disputeId: string } ) => {
+	const { createErrorNotice } = useDispatch( noticesStore );
 	const [ dispute, setDispute ] = useState< WooPaymentsDispute | null >(
 		null
 	);
 	const [ fileDetails, setFileDetails ] = useState< EvidenceFileMap >( {} );
-	const [ isLoading, setIsLoading ] = useState( true );
-	const [ errorMessage, setErrorMessage ] = useState< string | null >( null );
+	const [ isLoading, setIsLoading ] = useState( !! disputeId );
+	const missingIdMessage = disputeId
+		? ''
+		: __( 'A dispute ID is required.', 'woocommerce' );
 	const [ fileDetailsWarning, setFileDetailsWarning ] = useState<
 		string | null
 	>( null );
-	const location = useLocation();
-	const disputeId = new URLSearchParams( location.search ).get( 'id' ) || '';
 	const loadingMessage = __( 'Loading dispute…', 'woocommerce' );
 	let liveStatusMessage = '';
 
-	if ( errorMessage ) {
-		liveStatusMessage = errorMessage;
+	if ( missingIdMessage ) {
+		liveStatusMessage = missingIdMessage;
 	} else if ( isLoading ) {
 		liveStatusMessage = loadingMessage;
 	} else if ( fileDetailsWarning ) {
@@ -60,10 +63,6 @@ export const WooPaymentsDisputeChallengePage = () => {
 
 		const loadDispute = async () => {
 			if ( ! disputeId ) {
-				setErrorMessage(
-					__( 'A dispute ID is required.', 'woocommerce' )
-				);
-				setIsLoading( false );
 				return;
 			}
 
@@ -88,7 +87,6 @@ export const WooPaymentsDisputeChallengePage = () => {
 					setDispute( nextDispute );
 					setFileDetails( fallbackFileDetails );
 					setFileDetailsWarning( null );
-					setErrorMessage( null );
 					setIsLoading( false );
 				}
 
@@ -160,8 +158,10 @@ export const WooPaymentsDisputeChallengePage = () => {
 				);
 			} catch ( error ) {
 				if ( isMounted ) {
-					setErrorMessage(
-						getErrorMessage( error, String( error ) )
+					const message = ( error as { message?: unknown } | null )
+						?.message;
+					void createErrorNotice(
+						typeof message === 'string' ? message : String( error )
 					);
 					setIsLoading( false );
 				}
@@ -173,7 +173,7 @@ export const WooPaymentsDisputeChallengePage = () => {
 		return () => {
 			isMounted = false;
 		};
-	}, [ disputeId ] );
+	}, [ disputeId, createErrorNotice ] );
 
 	return (
 		<section
@@ -187,11 +187,13 @@ export const WooPaymentsDisputeChallengePage = () => {
 					isDetailsView
 				/>
 			) }
-			<LiveStatusMessage
-				isError={ !! errorMessage || !! fileDetailsWarning }
-			>
-				{ liveStatusMessage }
-			</LiveStatusMessage>
+			{ liveStatusMessage && (
+				<LiveStatusMessage
+					isError={ !! missingIdMessage || !! fileDetailsWarning }
+				>
+					{ liveStatusMessage }
+				</LiveStatusMessage>
+			) }
 			{ /* Client 11.1.0 disputes/new-evidence/index.tsx:780-806: a centred spinner. */ }
 			{ isLoading && (
 				<Flex
@@ -207,15 +209,14 @@ export const WooPaymentsDisputeChallengePage = () => {
 					<FlexItem>{ loadingMessage }</FlexItem>
 				</Flex>
 			) }
-			{ errorMessage && (
-				<StatusMessage isError>{ errorMessage }</StatusMessage>
+			{ missingIdMessage && (
+				<StatusMessage isError>{ missingIdMessage }</StatusMessage>
 			) }
-			{ fileDetailsWarning && ! errorMessage && (
+			{ fileDetailsWarning && (
 				<StatusMessage isError>{ fileDetailsWarning }</StatusMessage>
 			) }
-			{ dispute && ! errorMessage && (
+			{ ! isLoading && disputeId && (
 				<DisputeEvidenceForm
-					key={ getDisputeId( dispute ) }
 					dispute={ dispute }
 					fileDetails={ fileDetails }
 					onDisputeUpdated={ setDispute }
@@ -223,4 +224,10 @@ export const WooPaymentsDisputeChallengePage = () => {
 			) }
 		</section>
 	);
+};
+
+export const WooPaymentsDisputeChallengePage = () => {
+	const location = useLocation();
+	const disputeId = new URLSearchParams( location.search ).get( 'id' ) || '';
+	return <DisputeChallenge key={ disputeId } disputeId={ disputeId } />;
 };

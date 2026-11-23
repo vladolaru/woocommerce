@@ -12,12 +12,15 @@ import {
 import userEvent from '@testing-library/user-event';
 import apiFetch from '@wordpress/api-fetch';
 import { speak } from '@wordpress/a11y';
+import { createRegistry, RegistryProvider } from '@wordpress/data';
+import { store as noticesStore } from '@wordpress/notices';
 import { MemoryRouter } from 'react-router-dom';
 import { recordEvent } from '@woocommerce/tracks';
 
 /**
  * Internal dependencies
  */
+import { store as settingsStore } from '../../settings/data/store';
 import { WooPaymentsDisputeChallengePage } from '../money-movement/dispute-challenge-page';
 import {
 	getWooPaymentsDispute,
@@ -124,14 +127,23 @@ const makeDispute = (
 	...overrides,
 } );
 
-const renderChallengePage = () =>
-	render(
-		<MemoryRouter
-			initialEntries={ [ '/woopayments/disputes/challenge?id=dp_test' ] }
-		>
-			<WooPaymentsDisputeChallengePage />
-		</MemoryRouter>
+const renderChallengePage = () => {
+	const registry = createRegistry();
+	registry.register( noticesStore );
+	registry.register( settingsStore );
+	const page = render(
+		<RegistryProvider value={ registry }>
+			<MemoryRouter
+				initialEntries={ [
+					'/woopayments/disputes/challenge?id=dp_test',
+				] }
+			>
+				<WooPaymentsDisputeChallengePage />
+			</MemoryRouter>
+		</RegistryProvider>
 	);
+	return { ...page, registry };
+};
 
 const uploadFile = async (
 	label: string,
@@ -1884,17 +1896,81 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 		expect( mockUpdateDispute ).toHaveBeenCalledTimes( 1 );
 	} );
 
+	it( 'keeps purchase info editable without sending evidence when the dispute never loaded', async () => {
+		mockGetDispute.mockRejectedValue( { message: 'Case unavailable' } );
+		const { registry } = renderChallengePage();
+
+		const description = await screen.findByRole( 'textbox', {
+			name: 'Product or service description',
+		} );
+		fireEvent.change( description, { target: { value: 'A wool hat' } } );
+		expect( registry.select( noticesStore ).getNotices() ).toEqual( [
+			expect.objectContaining( {
+				content: 'Case unavailable',
+				status: 'error',
+			} ),
+		] );
+		expect( screen.queryByText( 'Case unavailable' ) ).toBeNull();
+		expect( screen.queryByText( 'Customer details' ) ).toBeNull();
+		expect( screen.queryByText( 'Shipping details' ) ).toBeNull();
+
+		const productType = screen.getByRole( 'combobox', {
+			name: 'Product or service type',
+		} );
+		expect( productType ).toBeEnabled();
+		fireEvent.change( productType, {
+			target: { value: 'offline_service' },
+		} );
+		expect( productType ).toHaveValue( 'physical_product' );
+		expect(
+			screen.getByRole( 'button', { name: 'Save for later' } )
+		).toBeEnabled();
+		await uploadFile( 'Upload order receipt' );
+		const oversized = new File(
+			[ new Uint8Array( 4500001 ) ],
+			'receipt.pdf',
+			{ type: 'application/pdf' }
+		);
+		await uploadFile( 'Upload order receipt', oversized );
+		expect( registry.select( noticesStore ).getNotices() ).toContainEqual(
+			expect.objectContaining( {
+				status: 'info',
+				content: expect.stringContaining(
+					'Try using smaller files as evidence.'
+				),
+			} )
+		);
+		await clickButton( 'Save for later' );
+		await clickButton( 'Next' );
+		await clickButton( '2 Review' );
+
+		expect( description ).toBeInTheDocument();
+		expect( description ).toHaveValue( 'A wool hat' );
+		expect( screen.queryByRole( 'button', { name: 'Submit' } ) ).toBeNull();
+		expect( mockGetDispute ).toHaveBeenCalledTimes( 1 );
+		expect( mockGetFileDetails ).not.toHaveBeenCalled();
+		expect( mockUploadFile ).not.toHaveBeenCalled();
+		expect( mockUpdateDispute ).not.toHaveBeenCalled();
+	} );
+
 	// Client 11.3.0 new-evidence/index.tsx:300.
 	it.each( [
-		[ { message: 'Case unavailable' }, 'Case unavailable' ],
 		[ 'Request timed out', 'Request timed out' ],
+		[ { message: 'Case A &amp; B' }, 'Case A &amp; B' ],
 	] )(
-		'shows the dispute load error in the alert: %p',
+		'sends the dispute load error to the notices store: %p',
 		async ( error, message ) => {
 			mockGetDispute.mockRejectedValue( error );
-			renderChallengePage();
-			expect( await screen.findByRole( 'alert' ) ).toHaveTextContent(
-				message
+			const { registry } = renderChallengePage();
+			await waitFor( () =>
+				expect(
+					registry.select( noticesStore ).getNotices()
+				).toContainEqual(
+					expect.objectContaining( {
+						status: 'error',
+						content: message,
+					} )
+				)
 			);
 		}
 	);

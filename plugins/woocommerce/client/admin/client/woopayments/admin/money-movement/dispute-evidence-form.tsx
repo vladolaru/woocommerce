@@ -62,6 +62,7 @@ import {
 	formatLabel,
 	getBankName,
 	getDisputeId,
+	getDisputeTracksProperties,
 	getErrorMessage,
 } from './utils';
 import { WC_ASSET_URL } from '~/utils/admin-settings';
@@ -81,7 +82,7 @@ import {
 import './dispute-evidence.scss';
 
 type DisputeEvidenceFormProps = {
-	dispute: WooPaymentsDispute;
+	dispute: WooPaymentsDispute | null;
 	fileDetails?: EvidenceFileMap;
 	onDisputeUpdated?: ( dispute: WooPaymentsDispute ) => void;
 };
@@ -94,15 +95,15 @@ type NoticeState = {
 type EvidenceStep = 'basics' | 'shipping' | 'review' | 'confirmation';
 
 const getStringEvidenceValue = (
-	dispute: WooPaymentsDispute,
+	dispute: WooPaymentsDispute | null,
 	field: EvidenceField
 ) => {
-	const value = dispute.evidence?.[ field ];
+	const value = dispute?.evidence?.[ field ];
 
 	return typeof value === 'string' ? value : '';
 };
 
-const getInitialEvidenceState = ( dispute: WooPaymentsDispute ) => {
+const getInitialEvidenceState = ( dispute: WooPaymentsDispute | null ) => {
 	const evidence = {} as Record< EvidenceField, string >;
 
 	[
@@ -114,7 +115,7 @@ const getInitialEvidenceState = ( dispute: WooPaymentsDispute ) => {
 	} );
 	// Client 11.1.0 `new-evidence/index.tsx:584`: the order's IP address is sent as the purchase IP.
 	evidence.customer_purchase_ip =
-		dispute.order?.ip_address || evidence.customer_purchase_ip;
+		dispute?.order?.ip_address || evidence.customer_purchase_ip;
 
 	return evidence;
 };
@@ -298,7 +299,11 @@ const CustomerDetails = ( { dispute }: { dispute: WooPaymentsDispute } ) => {
 
 // Client 11.1.0 `new-evidence/resolve-product-type.ts`: with the additional evidence types (on by default),
 // a saved "multiple" reads as Other.
-const getInitialProductType = ( dispute: WooPaymentsDispute ) => {
+const getInitialProductType = ( dispute: WooPaymentsDispute | null ) => {
+	if ( ! dispute ) {
+		return '';
+	}
+
 	const productType =
 		dispute.metadata?.__product_type ||
 		dispute.order?.suggested_product_type ||
@@ -457,17 +462,17 @@ export const DisputeEvidenceForm = ( {
 	const previousStepRef = useRef< EvidenceStep >( currentStep );
 	const noticeRef = useRef< HTMLDivElement | null >( null );
 	const previousFileDetailsRef = useRef< EvidenceFileMap >( fileDetails );
-	const disputeId = getDisputeId( dispute );
-	const disputeDetailsRoute = `/woopayments/disputes/details?id=${ encodeURIComponent(
-		disputeId
-	) }`;
+	const disputeId = dispute ? getDisputeId( dispute ) : '';
+	const disputeDetailsRoute = addQueryArgs( '/woopayments/disputes/details', {
+		id: disputeId || undefined,
+	} );
 	const refundIssuedControlId = `${ disputeId }-refund-status-issued`;
 	const refundNotOwedControlId = `${ disputeId }-refund-status-not-owed`;
 	const duplicateControlId = `${ disputeId }-duplicate-status-duplicate`;
 	const notDuplicateControlId = `${ disputeId }-duplicate-status-not-duplicate`;
-	const readOnly = ! isDisputeActionable( dispute );
+	const readOnly = !! dispute && ! isDisputeActionable( dispute );
 	const disputeCharge =
-		typeof dispute.charge === 'object' ? dispute.charge : undefined;
+		typeof dispute?.charge === 'object' ? dispute.charge : undefined;
 	const chargePaymentMethod = disputeCharge?.payment_method_details;
 	const bankName = getBankName( chargePaymentMethod );
 	const isUploadingEvidence =
@@ -478,24 +483,24 @@ export const DisputeEvidenceForm = ( {
 		[ filesByField ]
 	);
 	const isVisaCompliance = isVisaComplianceDispute(
-		dispute.reason,
-		dispute.enhanced_eligibility_types
+		dispute?.reason,
+		dispute?.enhanced_eligibility_types
 	);
-	const includeShippingStep = needsShipping( dispute.reason, productType );
+	const includeShippingStep = needsShipping( dispute?.reason, productType );
 	const recommendedDocuments = useMemo(
 		() =>
 			getRecommendedDocumentFields( {
-				reason: dispute.reason,
+				reason: dispute?.reason,
 				productType,
 				refundStatus,
 				duplicateStatus,
-				enhancedEligibilityTypes: dispute.enhanced_eligibility_types,
+				enhancedEligibilityTypes: dispute?.enhanced_eligibility_types,
 				evidence,
 			} ),
 		[
 			duplicateStatus,
-			dispute.enhanced_eligibility_types,
-			dispute.reason,
+			dispute?.enhanced_eligibility_types,
+			dispute?.reason,
 			evidence,
 			productType,
 			refundStatus,
@@ -505,11 +510,11 @@ export const DisputeEvidenceForm = ( {
 		() =>
 			includeShippingStep
 				? getRecommendedShippingDocumentFields(
-						dispute.reason,
+						dispute?.reason,
 						productType
 					)
 				: [],
-		[ dispute.reason, includeShippingStep, productType ]
+		[ dispute?.reason, includeShippingStep, productType ]
 	);
 	const documentFieldsToRender = useMemo( () => {
 		const fields = recommendedDocuments.map( ( document ) => document.key );
@@ -551,19 +556,21 @@ export const DisputeEvidenceForm = ( {
 	// The client's form is its own page load, so its settings read ends with the form, as a settings visit's does.
 	useResetSettingsOnLeave();
 	const generatedCoverLetter = useMemo( () => {
-		const charge =
-			typeof dispute.charge === 'object' ? dispute.charge : undefined;
+		if ( ! dispute ) {
+			return '';
+		}
 
 		return generateDisputeCoverLetter( {
 			...getCoverLetterMerchantDetails( settings ),
 			dispute,
-			bankName: getBankName( charge?.payment_method_details ),
+			bankName,
 			productType,
 			evidence,
 			refundStatus,
 			duplicateStatus,
 		} );
 	}, [
+		bankName,
 		dispute,
 		duplicateStatus,
 		evidence,
@@ -574,14 +581,6 @@ export const DisputeEvidenceForm = ( {
 	const coverLetter = isVisaCompliance
 		? evidence.uncategorized_text
 		: ( editedCoverLetter ?? generatedCoverLetter );
-	const disputeTracksProperties = useMemo(
-		() => ( {
-			dispute_id: disputeId,
-			dispute_status: dispute.status,
-			dispute_reason: dispute.reason,
-		} ),
-		[ disputeId, dispute.reason, dispute.status ]
-	);
 
 	useEffect( () => {
 		setEvidence( getInitialEvidenceState( dispute ) );
@@ -710,8 +709,12 @@ export const DisputeEvidenceForm = ( {
 
 	// Client 11.1.0 new-evidence/index.tsx:830-838: a new product type regenerates the letter, edits included.
 	const handleProductTypeChange = ( nextProductType: string ) => {
+		if ( ! dispute ) {
+			return;
+		}
+
 		recordEvent( 'wcpay_dispute_product_selected', {
-			...disputeTracksProperties,
+			...getDisputeTracksProperties( dispute ),
 			selection: nextProductType,
 		} );
 		setProductType( nextProductType );
@@ -740,7 +743,7 @@ export const DisputeEvidenceForm = ( {
 			trackSuccess?: boolean;
 		} = {}
 	) => {
-		if ( readOnly || saveInProgress ) {
+		if ( ! dispute || readOnly || saveInProgress ) {
 			return null;
 		}
 
@@ -780,6 +783,7 @@ export const DisputeEvidenceForm = ( {
 			}
 		}
 
+		const disputeTracksProperties = getDisputeTracksProperties( dispute );
 		const eventPrefix = submit
 			? 'wcpay_dispute_submit_evidence'
 			: 'wcpay_dispute_save_evidence';
@@ -942,7 +946,7 @@ export const DisputeEvidenceForm = ( {
 								( isUploadingEvidence &&
 									! uploadingFields[ field ] )
 							}
-							disputeTracksProperties={ disputeTracksProperties }
+							dispute={ dispute }
 							onUploaded={ handleUploaded }
 							onRemove={ handleRemoveFile }
 							onError={ handleError }
@@ -968,22 +972,28 @@ export const DisputeEvidenceForm = ( {
 						opened={ isSummaryOpen }
 						onToggle={ () => setIsSummaryOpen( ! isSummaryOpen ) }
 					>
-						<DisputeNotice
-							dispute={ dispute }
-							paymentMethod={ chargePaymentMethod?.type }
-							bankName={ bankName }
-						/>
-						<DisputeSummaryRow
-							dispute={ dispute }
-							extraItems={ [
-								{
-									title: __( 'Order', 'woocommerce' ),
-									content: (
-										<OrderLink order={ dispute.order } />
-									),
-								},
-							] }
-						/>
+						{ dispute && (
+							<>
+								<DisputeNotice
+									dispute={ dispute }
+									paymentMethod={ chargePaymentMethod?.type }
+									bankName={ bankName }
+								/>
+								<DisputeSummaryRow
+									dispute={ dispute }
+									extraItems={ [
+										{
+											title: __( 'Order', 'woocommerce' ),
+											content: (
+												<OrderLink
+													order={ dispute.order }
+												/>
+											),
+										},
+									] }
+								/>
+							</>
+						) }
 					</PanelBody>
 				</Panel>
 			) }
@@ -1247,7 +1257,11 @@ export const DisputeEvidenceForm = ( {
 							{ ! isVisaCompliance &&
 								currentStep === 'basics' && (
 									<>
-										<CustomerDetails dispute={ dispute } />
+										{ dispute && (
+											<CustomerDetails
+												dispute={ dispute }
+											/>
+										) }
 										<fieldset className="woocommerce-woopayments-dispute-evidence__section">
 											<legend>
 												{ __(
@@ -1293,7 +1307,7 @@ export const DisputeEvidenceForm = ( {
 												}
 											/>
 										</fieldset>
-										{ dispute.reason ===
+										{ dispute?.reason ===
 											'credit_not_processed' && (
 											<fieldset className="woocommerce-woopayments-dispute-evidence__section">
 												<legend>
@@ -1366,7 +1380,7 @@ export const DisputeEvidenceForm = ( {
 												</div>
 											</fieldset>
 										) }
-										{ dispute.reason === 'duplicate' && (
+										{ dispute?.reason === 'duplicate' && (
 											<fieldset className="woocommerce-woopayments-dispute-evidence__section">
 												<legend>
 													{ __(

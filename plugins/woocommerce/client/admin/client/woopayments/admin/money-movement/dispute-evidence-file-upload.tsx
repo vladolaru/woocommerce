@@ -3,6 +3,8 @@
  */
 import { speak } from '@wordpress/a11y';
 import { Button, Icon } from '@wordpress/components';
+import { useDispatch } from '@wordpress/data';
+import { store as noticesStore } from '@wordpress/notices';
 import { closeSmall, cloudUpload } from '@wordpress/icons';
 import clsx from 'clsx';
 import { useEffect, useRef, useState } from '@wordpress/element';
@@ -21,8 +23,8 @@ import {
 	getEvidenceFileName,
 	isAcceptedEvidenceFile,
 } from './dispute-evidence-fields';
-import type { WooPaymentsDisputeFile } from './types';
-import { getErrorMessage } from './utils';
+import type { WooPaymentsDispute, WooPaymentsDisputeFile } from './types';
+import { getDisputeTracksProperties, getErrorMessage } from './utils';
 
 type DisputeEvidenceFileUploadProps = {
 	field: DocumentEvidenceField;
@@ -32,7 +34,7 @@ type DisputeEvidenceFileUploadProps = {
 	file?: WooPaymentsDisputeFile;
 	totalFileBytes: number;
 	disabled?: boolean;
-	disputeTracksProperties: Record< string, string | undefined >;
+	dispute: WooPaymentsDispute | null;
 	onUploaded: (
 		field: DocumentEvidenceField,
 		file: WooPaymentsDisputeFile
@@ -52,12 +54,13 @@ export const DisputeEvidenceFileUpload = ( {
 	file,
 	totalFileBytes,
 	disabled = false,
-	disputeTracksProperties,
+	dispute,
 	onUploaded,
 	onRemove,
 	onError,
 	onUploadStateChange,
 }: DisputeEvidenceFileUploadProps ) => {
+	const { createInfoNotice } = useDispatch( noticesStore );
 	const [ isUploading, setIsUploading ] = useState( false );
 	const rowRef = useRef< HTMLDivElement | null >( null );
 	const inputRef = useRef< HTMLInputElement | null >( null );
@@ -103,6 +106,19 @@ export const DisputeEvidenceFileUpload = ( {
 			return;
 		}
 
+		if ( ! dispute ) {
+			// The client checks the size before an upload needs the loaded dispute.
+			if ( selectedFile.size > MAX_EVIDENCE_FILE_BYTES ) {
+				void createInfoNotice(
+					__(
+						"The files you've attached to this dispute as evidence will exceed the limit for a dispute's total size. Try using smaller files as evidence. Hint: if you've attached images, you might want to try providing them in lower resolutions.",
+						'woocommerce'
+					)
+				);
+			}
+			return;
+		}
+
 		if ( ! isAcceptedEvidenceFile( selectedFile ) ) {
 			onError(
 				__(
@@ -125,6 +141,7 @@ export const DisputeEvidenceFileUpload = ( {
 			return;
 		}
 
+		const disputeTracksProperties = getDisputeTracksProperties( dispute );
 		recordEvent( 'wcpay_dispute_file_upload_started', {
 			...disputeTracksProperties,
 			type: field,

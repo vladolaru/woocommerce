@@ -20,6 +20,7 @@ import { getWooPaymentsSettingsBootstrap } from '../../settings/bootstrap';
 export { formatAmount, formatExplicitCurrency } from '../currency';
 import { formatAmount } from '../currency';
 import type {
+	WooPaymentsDispute,
 	WooPaymentsPaymentMethodDetails,
 	WooPaymentsTransaction,
 } from './types';
@@ -120,6 +121,12 @@ export const getResourceId = ( item: {
 
 export const getDisputeId = ( item: { id?: string; dispute_id?: string } ) =>
 	item.dispute_id || item.id || '';
+
+export const getDisputeTracksProperties = ( dispute: WooPaymentsDispute ) => ( {
+	dispute_id: getDisputeId( dispute ),
+	dispute_status: dispute.status,
+	dispute_reason: dispute.reason,
+} );
 
 export const getTransactionDetailsRoute = ( item: {
 	id?: string;
