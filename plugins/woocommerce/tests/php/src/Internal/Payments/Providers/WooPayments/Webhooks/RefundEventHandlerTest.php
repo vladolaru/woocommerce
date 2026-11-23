@@ -109,6 +109,36 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The charge event takes its newest refund while a refund answer records the supplied refund.
+	 */
+	public function test_event_and_answer_select_their_own_refund(): void {
+		$order  = $this->create_refundable_order();
+		$charge = $this->get_successful_refund_charge();
+		$answer = array_merge( $charge['refunds']['data'][0], array( 'id' => 're_answer' ) );
+
+		$charge['refunds']['data'][] = $answer;
+
+		$this->assertTrue( $this->sut->is_recordable_refunded_charge( $charge ) );
+		$this->assertFalse( $this->sut->is_recordable_refunded_charge( array( 'status' => 'pending' ) ) );
+		$this->assertSame( 're_123', $this->sut->parse_refunded_charge( $charge )['refund_id'] );
+		$facts = $this->sut->parse_refunded_charge( $charge, $answer );
+		$this->sut->assert_refund_amounts( $facts );
+		$this->sut->apply_charge_refund_under_lock( $this->sut->get_fresh_order( $order ), $facts, $charge, $answer, false );
+		$this->assertSame( '4.00', wc_format_decimal( $this->get_refund_by_provider_id( $order, 're_answer' )->get_amount(), 2 ) );
+	}
+
+	/**
+	 * @testdox The event resolves its order before rejecting a negative amount.
+	 */
+	public function test_negative_refund_on_unresolvable_charge_fails_lookup_first(): void {
+		$charge                                 = $this->get_successful_refund_charge();
+		$charge['refunds']['data'][0]['amount'] = -1;
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'Could not find WooPayments order via charge ID' );
+		$this->sut->process( 'charge.refunded', $charge );
+	}
+
+	/**
 	 * A failed refund may arrive after a different full refund or after the original row was recreated.
 	 *
 	 * @dataProvider failed_note_histories

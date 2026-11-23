@@ -9412,6 +9412,16 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Only an authorization awaiting capture prevents a refund.
+	 */
+	public function test_uncaptured_refund_check_reads_the_stored_intent_state(): void {
+		$order = new WC_Order();
+		$this->assertFalse( WooPaymentsGateway::has_uncaptured_payment( $order ) );
+		$order->update_meta_data( '_intention_status', 'requires_capture' );
+		$this->assertTrue( WooPaymentsGateway::has_uncaptured_payment( $order ) );
+	}
+
+	/**
 	 * @testdox Should refuse refunds while the payment is only authorized, pointing at the capture actions.
 	 */
 	public function test_process_refund_refuses_uncaptured_payment(): void {

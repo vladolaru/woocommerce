@@ -927,6 +927,17 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 			return $this->get_invalid_refund_amount_error();
 		}
 
+		return $this->get_refund_amount_for_order( $amount, $order );
+	}
+
+	/**
+	 * Convert the requested minor units and check how much the order has left.
+	 *
+	 * @param int      $amount Positive amount in minor units.
+	 * @param WC_Order $order  Order being refunded.
+	 * @return float|WP_Error
+	 */
+	private function get_refund_amount_for_order( int $amount, WC_Order $order ) {
 		$refund_amount = WooPaymentsCurrencyUtils::amount_from_minor_units( $amount, (string) $order->get_currency() );
 		$remaining     = (float) $order->get_remaining_refund_amount();
 		if ( $refund_amount > $remaining ) {

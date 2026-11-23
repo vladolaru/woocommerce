@@ -526,6 +526,17 @@ class WooPaymentsRefundAmbiguityService {
 	}
 
 	/**
+	 * Whether this order has a valid refund attempt for the charge, without settling or clearing it.
+	 *
+	 * @param WC_Order $order     Order to check.
+	 * @param string   $charge_id Charge to refund.
+	 * @return bool
+	 */
+	public function has_unsettled_attempt( WC_Order $order, string $charge_id ): bool {
+		return null !== $this->read_record( $order, $charge_id, false );
+	}
+
+	/**
 	 * Read the order's record when it applies to this order and charge.
 	 *
 	 * A record naming another order or charge was copied or left stale, and is deleted with a warning. A record never
@@ -534,9 +545,10 @@ class WooPaymentsRefundAmbiguityService {
 	 *
 	 * @param WC_Order $order     Order being refunded.
 	 * @param string   $charge_id The order's charge.
+	 * @param bool     $clear_invalid Whether a malformed record should be removed.
 	 * @return array{order_id:int,charge_id:string,key:string,amount:int,currency:string,request:array{charge:string,amount:int,reason:string,source:string},wc_refund_id:int,failed_at:int,last_failed_at:int,found_refund_id:string,found_amount:int,found_currency:string,sent:bool}|null
 	 */
-	private function read_record( WC_Order $order, string $charge_id ): ?array {
+	private function read_record( WC_Order $order, string $charge_id, bool $clear_invalid = true ): ?array {
 		$stored = $order->get_meta( WooPaymentsPaymentOperationService::REFUND_AMBIGUITY_META, true );
 		if ( '' === $stored || null === $stored ) {
 			return null;
@@ -545,8 +557,10 @@ class WooPaymentsRefundAmbiguityService {
 		$request = is_array( $stored ) && isset( $stored['request'] ) && is_array( $stored['request'] ) ? $stored['request'] : array();
 		$key     = is_array( $stored ) ? (string) ( $stored['key'] ?? '' ) : '';
 		if ( ! is_array( $stored ) || (int) ( $stored['order_id'] ?? 0 ) !== $order->get_id() || (string) ( $stored['charge_id'] ?? '' ) !== $charge_id || '' === $key || (string) ( $request['charge'] ?? '' ) !== $charge_id ) {
-			$this->clear_record( $order );
-			$this->log( sprintf( 'The refund ambiguity record on order #%d names another order or charge, or is malformed, so it is ignored and deleted.', $order->get_id() ), $order, $key );
+			if ( $clear_invalid ) {
+				$this->clear_record( $order );
+				$this->log( sprintf( 'The refund ambiguity record on order #%d names another order or charge, or is malformed, so it is ignored and deleted.', $order->get_id() ), $order, $key );
+			}
 
 			return null;
 		}

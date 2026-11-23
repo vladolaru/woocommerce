@@ -1708,6 +1708,26 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
+	 * Whether the order's payment is still awaiting capture.
+	 *
+	 * @param WC_Order $order Order to refund.
+	 * @return bool
+	 */
+	public static function has_uncaptured_payment( WC_Order $order ): bool {
+		return 'requires_capture' === (string) $order->get_meta( '_intention_status', true );
+	}
+
+	/**
+	 * Get the merchant instructions for refunding an uncaptured payment.
+	 *
+	 * @return string
+	 */
+	public static function get_uncaptured_refund_message(): string {
+		/* translators: an error message which will appear if a user tries to refund an order which has been authorized but not yet charged. */
+		return __( "This payment is not captured yet. To cancel this order, please go to 'Order Actions' > 'Cancel authorization'. To proceed with a refund, please go to 'Order Actions' > 'Capture charge' to charge the payment card, and then trigger a refund via the 'Refund' button.", 'woocommerce' );
+	}
+
+	/**
 	 * Process refund for an order.
 	 *
 	 * @param int        $order_id Order ID.
@@ -1723,12 +1743,11 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		// An authorized-but-uncaptured payment has nothing to refund yet; refunding the
 		// charge would race the capture. Point the merchant at the order actions instead.
-		if ( 'requires_capture' === (string) $order->get_meta( '_intention_status', true ) ) {
+		if ( self::has_uncaptured_payment( $order ) ) {
 			$this->forget_refund_row( $order, $amount );
 			return new WP_Error(
 				'uncaptured-payment',
-				/* translators: an error message which will appear if a user tries to refund an order which has been authorized but not yet charged. */
-				__( "This payment is not captured yet. To cancel this order, please go to 'Order Actions' > 'Cancel authorization'. To proceed with a refund, please go to 'Order Actions' > 'Capture charge' to charge the payment card, and then trigger a refund via the 'Refund' button.", 'woocommerce' )
+				self::get_uncaptured_refund_message()
 			);
 		}
 
