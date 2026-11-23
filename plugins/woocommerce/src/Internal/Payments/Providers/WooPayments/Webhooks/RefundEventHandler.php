@@ -33,7 +33,8 @@ use WC_Order_Refund;
  *
  * An event with a field missing or malformed, a refund amount that is not valid or a refund update status other than
  * failed, canceled or succeeded is refused (InvalidArgumentException): the webhook answers 400 and the event is not
- * retried. Client 11.1.0 refuses a field that is not set, a negative charge amount, a refund above the order total and an
+ * retried. A refund above a same-currency order's current total is retried because the total can change.
+ * Client 11.1.0 refuses a field that is not set, a negative charge amount, a refund above the order total and an
  * unknown status that way (class-wc-payments-webhook-processing-service.php:361, :933, :1131). An empty field, a field of
  * the wrong type and a negative refund amount are refused here only, stricter than client 11.1.0. A charge no order
  * holds is a failure that is retried, as client 11.1.0 answers it with 500 (same file, :317, :1111); a charge whose metadata
@@ -183,6 +184,92 @@ class RefundEventHandler {
 	}
 
 	/**
+	 * Record a refund the retry worker or sweep had to drop, unless another delivery already settled it.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param array<string,mixed> $charge Provider charge.
+	 * @return bool Whether this refund belongs to an order in the payment currency.
+	 */
+	public function note_dropped_refund( array $charge ): bool {
+		if ( ! $this->is_recordable_refunded_charge( $charge ) ) {
+			return false;
+		}
+		$facts = $this->parse_refunded_charge( $charge );
+		$this->assert_refund_amounts( $facts );
+		$order = $this->event_order_resolver->find_order_by_charge_id( $facts['charge_id'], $charge ) ?? $this->event_order_resolver->find_order_from_charge_metadata( $charge );
+		if ( ! $order instanceof WC_Order ) {
+			return false;
+		}
+
+		$token = $this->order_payment_lock->claim( $order, $this->persistence_vocabulary, 'refund_webhook_' . $facts['refund_id'], 'refund webhook' );
+		try {
+			// Even if a live holder refuses this last claim, check what it has already saved.
+			$order = $this->get_fresh_order( $order, true );
+			if ( $facts['charge_id'] !== (string) $order->get_meta( '_charge_id', true ) || ! $this->is_own_payment( $order, $charge, $facts['charge_id'] ) || ! $this->can_report_refund( $order, $facts['currency'], $facts['refund_status'] ) ) {
+				return false;
+			}
+			if ( $this->get_refund_by_provider_refund_id( $order, $facts['refund_id'] ) || $this->has_failed_refund_note( $order, $facts['refund_id'] ) || $this->has_legacy_failed_refund_note( $order, $facts ) ) {
+				return true;
+			}
+
+			$exceeds_balance = null !== $token && ( $facts['refunded_amount'] > (float) $order->get_total() || (float) $this->local_refund_amount( $order, $facts['refunded_amount'] ) > (float) $order->get_remaining_refund_amount() );
+			$this->add_unrecorded_refund_note( $order, $facts['refund_id'], $facts['refund_amount'], $facts['currency'], null, $exceeds_balance );
+			return true;
+		} finally {
+			if ( null !== $token ) {
+				$this->order_payment_lock->release( $order, $this->persistence_vocabulary, $token );
+			}
+		}
+	}
+
+	/**
+	 * Whether the refund represents money moved in this order's currency.
+	 *
+	 * @param WC_Order $order    Order being refunded.
+	 * @param string   $currency Charge currency.
+	 * @param string   $status   Provider refund status.
+	 * @return bool
+	 */
+	private function can_report_refund( WC_Order $order, string $currency, string $status ): bool {
+		return 0 === strcasecmp( $currency, $order->get_currency() ) && ( '' === $status || 'succeeded' === $status || WooPaymentsIntentCodec::is_pending_refund_status( $status ) );
+	}
+
+	/**
+	 * Amount passed to core when creating the row or checking why it could not be created.
+	 *
+	 * @param WC_Order $order  Order being refunded.
+	 * @param float    $amount Payment amount in major units.
+	 * @return string
+	 */
+	private function local_refund_amount( WC_Order $order, float $amount ): string {
+		return wc_format_decimal( $amount, CurrencyUtil::get_price_decimals( $order->get_currency() ) );
+	}
+
+	/**
+	 * Record the difference once, even when an earlier delivery stopped before its created note.
+	 *
+	 * @param WC_Order    $order           Order being refunded.
+	 * @param string      $refund_id       Provider refund ID.
+	 * @param int         $amount          Payment amount in minor units.
+	 * @param string      $currency        Payment currency.
+	 * @param string|null $recorded        Stored row amount, or null when there is no row.
+	 * @param bool        $exceeds_balance Whether the amount exceeds the balance after the last retry.
+	 * @throws RuntimeException When the order note could not be saved.
+	 */
+	private function add_unrecorded_refund_note( WC_Order $order, string $refund_id, int $amount, string $currency, ?string $recorded, bool $exceeds_balance = false ): void {
+		$identity = 'refund:' . $refund_id . ':unrecorded';
+		$notes    = wc_get_container()->get( OrderPaymentNotes::class );
+		if ( $notes->find_by_identity( $order, $identity, $this->persistence_vocabulary ) ) {
+			return;
+		}
+		$note = wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_unrecorded_refund_note( $refund_id, $amount, $currency, $recorded, $exceeds_balance );
+		if ( ! $notes->add( $order, $note, $identity, $this->persistence_vocabulary ) ) {
+			throw new RuntimeException( 'Could not record the WooPayments refund note.' );
+		}
+	}
+
+	/**
 	 * Whether this charge can record a refund on an order.
 	 *
 	 * @param array<string,mixed> $charge Provider charge.
@@ -252,7 +339,8 @@ class RefundEventHandler {
 	 * @param array<string,mixed> $refund      Provider refund.
 	 * @param bool                $record_only Whether only the charge metadata identified the order.
 	 * @phpstan-param RefundFacts $facts
-	 * @throws InvalidArgumentException When the refund exceeds the order total.
+	 * @throws InvalidArgumentException When the charge currency differs and the refund exceeds the order total.
+	 * @throws RuntimeException When the refund exceeds the same-currency order total.
 	 */
 	public function apply_charge_refund_under_lock( WC_Order $order, array $facts, array $charge, array $refund, bool $record_only ): void {
 		// An order found by the charge's metadata is recorded only while it still does not hold the charge: one that
@@ -274,7 +362,7 @@ class RefundEventHandler {
 		$linked_refund = $this->get_refund_by_provider_refund_id( $order, $facts['refund_id'] );
 		if ( $linked_refund instanceof WC_Order_Refund ) {
 			if ( ! $this->has_created_refund_note( $order, $linked_refund, $facts['refund_id'] ) ) {
-				$this->add_note_and_metadata_for_created_refund( $order, $linked_refund, $facts['refund_id'], $facts['balance_txn_id'], $facts['is_pending_refund'] );
+				$this->add_note_and_metadata_for_created_refund( $order, $linked_refund, $facts['refund_id'], $facts['balance_txn_id'], $facts['refund_status'], $facts['refund_amount'], $facts['currency'] );
 			}
 			return;
 		}
@@ -287,7 +375,7 @@ class RefundEventHandler {
 		// A refund call that died after the platform answered left its own row unlinked; the record stays for the next call.
 		$died_row = $this->get_row_left_by_unfinished_refund( $order, $facts['charge_id'], $refund, $facts['refund_amount'], $facts['currency'] );
 		if ( $died_row instanceof WC_Order_Refund ) {
-			$this->add_note_and_metadata_for_created_refund( $order, $died_row, $facts['refund_id'], $facts['balance_txn_id'], $facts['is_pending_refund'] );
+			$this->add_note_and_metadata_for_created_refund( $order, $died_row, $facts['refund_id'], $facts['balance_txn_id'], $facts['refund_status'], $facts['refund_amount'], $facts['currency'] );
 			// wc_create_refund() never reached that row: its two filters decide the status, as core asks them for an existing refund, with no e-mail.
 			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- WooCommerce core filter, documented in includes/wc-order-functions.php.
 			$is_partially_refunded = (bool) apply_filters( 'woocommerce_order_is_partially_refunded', 0 < (float) $order->get_remaining_refund_amount() || ( $order->has_free_item() && 0 < $order->get_remaining_refund_items() ), $order->get_id(), $died_row->get_id() );
@@ -301,10 +389,22 @@ class RefundEventHandler {
 			return;
 		}
 
+		$report_refund = $this->can_report_refund( $order, $facts['currency'], $facts['refund_status'] );
+		if ( $report_refund && wc_get_container()->get( OrderPaymentNotes::class )->find_by_identity( $order, 'refund:' . $facts['refund_id'] . ':unrecorded', $this->persistence_vocabulary ) ) {
+			return;
+		}
+
 		if ( $facts['refunded_amount'] > (float) $order->get_total() ) {
+			if ( $report_refund ) {
+				throw new RuntimeException( esc_html( sprintf( 'The refund amount is not valid for charge ID: %s', $facts['charge_id'] ) ) );
+			}
 			throw new InvalidArgumentException( esc_html( sprintf( 'The refund amount is not valid for charge ID: %s', $facts['charge_id'] ) ) );
 		}
 
+		if ( $report_refund ) {
+			// Core checks the cached total. A manual refund may have been deleted since the last attempt.
+			wp_cache_delete( \WC_Cache_Helper::get_cache_prefix( 'orders' ) . 'total_refunded' . $order->get_id(), 'orders' );
+		}
 		$wc_refund = $this->create_local_refund(
 			$order,
 			$facts['refund_id'],
@@ -313,7 +413,7 @@ class RefundEventHandler {
 			$facts['is_partial_refund'] ? array() : RefundLineItems::get_remaining( $order )
 		);
 
-		$this->add_note_and_metadata_for_created_refund( $order, $wc_refund, $facts['refund_id'], $facts['balance_txn_id'], $facts['is_pending_refund'] );
+		$this->add_note_and_metadata_for_created_refund( $order, $wc_refund, $facts['refund_id'], $facts['balance_txn_id'], $facts['refund_status'], $facts['refund_amount'], $facts['currency'] );
 		$this->event_order_resolver->log_own_event_on_another_payment_method( $order, 'charge.refunded', $facts['charge_id'] );
 	}
 
@@ -373,7 +473,7 @@ class RefundEventHandler {
 
 					$wc_refund = $this->get_refund_by_provider_refund_id( $order, $refund_id );
 					if ( $wc_refund instanceof WC_Order_Refund ) {
-						$this->add_note_and_metadata_for_created_refund( $order, $wc_refund, $refund_id, $balance_txn_id, false );
+						$this->add_note_and_metadata_for_created_refund( $order, $wc_refund, $refund_id, $balance_txn_id, $status, $amount, $currency );
 					}
 				} finally {
 					$this->order_payment_lock->release( $order, $this->persistence_vocabulary, $lock_token );
@@ -400,7 +500,7 @@ class RefundEventHandler {
 	 */
 	private function create_local_refund( WC_Order $order, string $refund_id, float $amount, string $reason, array $line_items ): WC_Order_Refund {
 		$refund_args = array(
-			'amount'                          => wc_format_decimal( $amount, CurrencyUtil::get_price_decimals( $order->get_currency() ) ),
+			'amount'                          => $this->local_refund_amount( $order, $amount ),
 			'reason'                          => $reason,
 			'order_id'                        => $order->get_id(),
 			RefundRowCapture::REFUND_META_ARG => array( '_wcpay_refund_id' => $refund_id ),
@@ -451,9 +551,12 @@ class RefundEventHandler {
 	 * @param WC_Order_Refund $wc_refund      Refund object.
 	 * @param string          $refund_id      Provider refund ID.
 	 * @param string          $balance_txn_id Balance transaction ID.
-	 * @param bool            $is_pending     Whether the provider refund is pending.
+	 * @param string          $status         Provider refund status.
+	 * @param int             $amount         Payment amount in minor units.
+	 * @param string          $currency       Payment currency.
 	 */
-	private function add_note_and_metadata_for_created_refund( WC_Order $order, WC_Order_Refund $wc_refund, string $refund_id, string $balance_txn_id, bool $is_pending ): void {
+	private function add_note_and_metadata_for_created_refund( WC_Order $order, WC_Order_Refund $wc_refund, string $refund_id, string $balance_txn_id, string $status, int $amount, string $currency ): void {
+		$is_pending = WooPaymentsIntentCodec::is_pending_refund_status( $status );
 		$order->update_meta_data( '_wcpay_refund_status', $is_pending ? 'pending' : 'successful' );
 		$wc_refund->update_meta_data( '_wcpay_refund_id', $refund_id );
 		if ( '' !== $balance_txn_id ) {
@@ -465,6 +568,11 @@ class RefundEventHandler {
 		// so its return does not mean the status was saved.
 		$order->save_meta_data();
 		$order->save();
+
+		$recorded = (string) $wc_refund->get_amount( 'edit' );
+		if ( $this->can_report_refund( $order, $currency, $status ) && WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $recorded, $currency ) !== $amount ) {
+			$this->add_unrecorded_refund_note( $order, $refund_id, $amount, $currency, $recorded );
+		}
 
 		// The note goes last, so a note on the order means the refund's status and metadata were saved, even when an order
 		// save hook threw.

@@ -1870,6 +1870,41 @@ class WooPaymentsOrderNoteService {
 	}
 
 	/**
+	 * Describe the money refunded and what the order recorded.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param string      $refund_id       Provider refund ID.
+	 * @param int         $amount          Payment amount in minor units.
+	 * @param string      $currency        Payment currency, matching the order.
+	 * @param string|null $recorded        Stored row amount, or null when there is no row.
+	 * @param bool        $exceeds_balance Whether the amount exceeds the balance after the last retry.
+	 * @return string
+	 */
+	public function format_unrecorded_refund_note( string $refund_id, int $amount, string $currency, ?string $recorded, bool $exceeds_balance ): string {
+		if ( null !== $recorded ) {
+			/* translators: Order note when a WooPayments refund is recorded at a rounded amount. %1$s: amount refunded, %2$s: its currency code, %3$s: WooPayments, %4$s: refund ID, %5$s: amount recorded on the order. */
+			$template = __( 'A refund of %1$s %2$s was made using %3$s (<code>%4$s</code>). This order records it as %5$s %2$s, rounded to the decimals this store uses for %2$s.', 'woocommerce' );
+		} elseif ( $exceeds_balance ) {
+			/* translators: Order note when a WooPayments refund could not be recorded on the order. %1$s: amount refunded, %2$s: its currency code, %3$s: WooPayments, %4$s: refund ID. */
+			$template = __( 'A refund of %1$s %2$s was made using %3$s (<code>%4$s</code>). No refund was recorded on this order, because the amount is more than the order has left to refund.', 'woocommerce' );
+		} else {
+			/* translators: Order note when a WooPayments refund could not be recorded on the order. %1$s: amount refunded, %2$s: its currency code, %3$s: WooPayments, %4$s: refund ID. */
+			$template = __( 'A refund of %1$s %2$s was made using %3$s (<code>%4$s</code>). No refund was recorded on this order, because the order could not be updated after several tries.', 'woocommerce' );
+		}
+
+		$money = wc_format_decimal( WooPaymentsCurrencyUtils::amount_from_minor_units( $amount, $currency ), WooPaymentsCurrencyUtils::get_stripe_minor_unit_for_currency( $currency ) );
+		return sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html( $template, array( 'code' => '<code>' ) ),
+			esc_html( wc_format_localized_price( $money ) ),
+			esc_html( strtoupper( $currency ) ),
+			'WooPayments',
+			esc_html( $refund_id ),
+			null === $recorded ? '' : esc_html( wc_format_localized_price( $recorded ) )
+		);
+	}
+
+	/**
 	 * Build the order note for a synchronous refund attempt that failed.
 	 *
 	 * @param WC_Order $order         Order object.

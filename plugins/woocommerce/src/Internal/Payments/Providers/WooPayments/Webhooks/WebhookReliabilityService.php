@@ -317,6 +317,7 @@ class WebhookReliabilityService implements RegisterHooksInterface {
 			$type     = is_string( $event['type'] ?? null ) ? $event['type'] : 'unknown type';
 			if ( $attempts >= count( self::RETRY_DELAYS_SECONDS ) || ! $this->event_ingestor->is_retried_lock_refusal( $event ) ) {
 				$this->delete_failed_event( $event_id );
+				$this->note_dropped_refund( $event );
 				wc_get_logger()->error(
 					sprintf( 'WooPayments webhook event %1$s (%2$s) was dropped after %3$d retries: no job will process it again.', $event_id, $type, $attempts ),
 					array(
@@ -395,7 +396,7 @@ class WebhookReliabilityService implements RegisterHooksInterface {
 		if ( $attempts >= count( self::RETRY_DELAYS_SECONDS ) ) {
 			$this->delete_failed_event( $event_id );
 			// The note goes first: it contains its own failures.
-			if ( $exception instanceof OrderPaymentLockRefusedException ) {
+			if ( ! $this->note_dropped_refund( $event ) && $exception instanceof OrderPaymentLockRefusedException ) {
 				$this->add_lock_refusal_note( $exception->get_order_id(), $event_id );
 			}
 			wc_get_logger()->error(
@@ -426,6 +427,34 @@ class WebhookReliabilityService implements RegisterHooksInterface {
 			array( 'event_id' => $event_id ),
 			min( $due, $holder_free )
 		);
+	}
+
+	/**
+	 * Leave the refund's final outcome on its order when the event has no further attempts.
+	 *
+	 * @param array<string,mixed> $event Dropped event.
+	 * @return bool Whether this refund takes the place of the ordinary lock-refusal note.
+	 */
+	private function note_dropped_refund( array $event ): bool {
+		if ( 'charge.refunded' !== ( $event['type'] ?? '' ) || ! is_array( $event['data']['object'] ?? null ) ) {
+			return false;
+		}
+		try {
+			return wc_get_container()->get( RefundEventHandler::class )->note_dropped_refund( $event['data']['object'] );
+		} catch ( \Throwable $failure ) {
+			wc_get_logger()->error(
+				'Could not note the dropped WooPayments refund on its order.',
+				array_merge(
+					WooPaymentsLogger::get_failure_context( $failure ),
+					array(
+						'source'   => WooPaymentsLogger::SOURCE,
+						'event_id' => $event['id'],
+					)
+				)
+			);
+			// An order-note hook can throw after the refund note and its identity are saved.
+			return true;
+		}
 	}
 
 	/**

@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\W
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendCurrenciesController;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventOrderResolver;
@@ -1620,7 +1621,7 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 					return $charge;
 				},
 				'refund amount is not valid',
-				\InvalidArgumentException::class,
+				\RuntimeException::class,
 			),
 			'negative refund amount'             => array(
 				$refunded,
@@ -1864,7 +1865,7 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 	 *
 	 * @param WC_Order $order Order.
 	 * @param string   $text  Text the note contains.
-	 * @return array<int,object>
+	 * @return \stdClass[]
 	 */
 	private function get_notes_containing( WC_Order $order, string $text ): array {
 		return array_values(
@@ -2565,6 +2566,7 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 		$refund = $this->get_refund_by_provider_id( wc_get_order( $order->get_id() ), 're_123' );
 		$this->assertSame( $expected_amount, wc_format_decimal( $refund->get_amount(), 2 ), 'The local refund should record the amount the platform refunded.' );
 		$this->assertSame( $expected_amount, wc_format_decimal( -1 * (float) $refund->get_total(), 2 ), 'The refund total should match the amount.' );
+		$this->assertCount( 1, $this->get_notes_containing( $order, '<code>re_123</code>' ) );
 	}
 
 	/**
@@ -3085,5 +3087,186 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 	 */
 	public function translate_test_string( string $translation, string $text, string $domain ): string {
 		return $this->gettext_replacements[ $domain ][ $text ] ?? $translation;
+	}
+
+	/**
+	 * @testdox A repeated rounded refund keeps the row and explains the original amount before its created note.
+	 * @testWith [449, 0, "4.49", "4", false]
+	 *           [960, 0, "9.60", "10", true]
+	 *           [40, 10, "0.40", "0", true]
+	 * @param int    $minor    Payment amount.
+	 * @param int    $prior    Earlier manual refund.
+	 * @param string $money    Expected payment amount.
+	 * @param string $recorded Expected stored amount.
+	 * @param bool   $full     Whether core fires the full-refund notification.
+	 */
+	public function test_rounded_refund_history( int $minor, int $prior, string $money, string $recorded, bool $full ): void {
+		$order = $this->create_refundable_order();
+		$order->set_billing_email( 'shopper@example.test' );
+		if ( $prior ) {
+			$order->set_total( '10.40' );
+		}
+		$order->save();
+		update_option( 'woocommerce_price_num_decimals', 0 );
+		if ( $prior ) {
+			$this->assertInstanceOf(
+				WC_Order_Refund::class,
+				wc_create_refund(
+					array(
+						'amount'   => $prior,
+						'order_id' => $order->get_id(),
+					)
+				)
+			);
+			$this->assertSame( OrderStatus::REFUNDED, $this->sut->get_fresh_order( $order )->get_status() );
+		}
+		$charge                                 = $this->get_successful_refund_charge();
+		$charge['refunds']['data'][0]['amount'] = $minor;
+		$expected                               = "A refund of $money USD was made using WooPayments (<code>re_123</code>). This order records it as $recorded USD, rounded to the decimals this store uses for USD.";
+		$count                                  = did_action( 'woocommerce_order_fully_refunded' );
+		$email                                  = WC()->mailer()->get_emails()['WC_Email_Customer_Refunded_Order'];
+		$this->assertInstanceOf( \WC_Email_Customer_Refunded_Order::class, $email );
+		add_action( 'woocommerce_order_fully_refunded_notification', array( $email, 'trigger_full' ), 10, 2 );
+		$sent = array();
+		$mail = static function ( $callback, $instance ) use ( &$sent ) {
+			return static function ( $to ) use ( &$sent, $instance ): bool {
+				$sent[] = array( $instance->id, $to );
+				return true;
+			};
+		};
+		add_filter( 'woocommerce_mail_callback', $mail, 10, 2 );
+		try {
+			$this->sut->process( 'charge.refunded', $charge );
+			$this->sut->process( 'charge.refunded', $charge );
+		} finally {
+			remove_filter( 'woocommerce_mail_callback', $mail );
+		}
+
+		$fresh = $this->sut->get_fresh_order( $order );
+		$this->assertCount( $prior ? 2 : 1, $fresh->get_refunds() );
+		$this->assertSame( (float) $recorded, (float) $this->get_refund_by_provider_id( $fresh, 're_123' )->get_amount() );
+		$this->assertSame( $full ? OrderStatus::REFUNDED : OrderStatus::PROCESSING, $fresh->get_status() );
+		$this->assertSame( 'successful', $fresh->get_meta( '_wcpay_refund_status' ) );
+		$this->assertSame( $count + (int) $full, did_action( 'woocommerce_order_fully_refunded' ) );
+		if ( $full ) {
+			$this->assertSame( array( array( 'customer_refunded_order', 'shopper@example.test' ) ), $sent );
+		}
+		$notes = $this->get_notes_containing( $order, '<code>re_123</code>' );
+		$this->assertCount( 2, $notes );
+		usort( $notes, static fn( $a, $b ) => $a->id <=> $b->id );
+		$this->assertSame( $expected, $notes[0]->content );
+		$key = ( new WooPaymentsPersistenceVocabulary() )->get_note_identity_meta_key();
+		$this->assertSame( hash( 'sha256', 'refund:re_123:unrecorded' ), get_comment_meta( $notes[0]->id, $key, true ) );
+		$this->assertStringContainsString( 'successfully processed', $notes[1]->content );
+
+		$failure                   = $this->get_refund_event_object( 'charge.refund.updated', $order );
+		$failure['amount']         = $minor;
+		$failure['failure_reason'] = 'declined';
+		$this->sut->process( 'charge.refund.updated', $failure );
+		$this->assertCount( $prior ? 1 : 0, $this->sut->get_fresh_order( $order )->get_refunds() );
+		$this->assertCount( 1, $this->get_notes_containing( $order, $expected ) );
+		$this->assertCount( 1, $this->get_notes_containing( $order, '<strong>unsuccessful</strong> using WooPayments (<code>re_123</code>): The refund was declined by the card issuer.' ) );
+	}
+
+	/**
+	 * @testdox A replay completes both notes on a rounded row when either insert was interrupted.
+	 * @testWith ["was made using", 449]
+	 *           ["successfully processed", 449]
+	 *           ["was made using", 40]
+	 *           ["successfully processed", 40]
+	 * @param string $interrupted Text identifying the interrupted insert.
+	 * @param int    $minor       Payment amount.
+	 */
+	public function test_interrupted_rounded_refund( string $interrupted, int $minor ): void {
+		$order = $this->create_refundable_order();
+		if ( 40 === $minor ) {
+			$order->set_total( '10.40' );
+			$order->save();
+		}
+		update_option( 'woocommerce_price_num_decimals', 0 );
+		if ( 40 === $minor ) {
+			$manual = wc_create_refund(
+				array(
+					'order_id' => $order->get_id(),
+					'amount'   => 10,
+				)
+			);
+			$this->assertInstanceOf( WC_Order_Refund::class, $manual );
+		}
+		$charge                                 = $this->get_successful_refund_charge();
+		$charge['refunds']['data'][0]['amount'] = $minor;
+		$interrupt                              = static function ( $data ) use ( $interrupted ) {
+			if ( false !== strpos( $data['comment_content'], $interrupted ) ) {
+				throw new \RuntimeException( 'Interrupted note insert.' );
+			}
+			return $data;
+		};
+		add_filter( 'woocommerce_new_order_note_data', $interrupt );
+		try {
+			$this->sut->process( 'charge.refunded', $charge );
+			$this->fail( 'The note insert should have been interrupted.' );
+		} catch ( \RuntimeException $failure ) {
+			$this->assertSame( 'Interrupted note insert.', $failure->getMessage() );
+		} finally {
+			remove_filter( 'woocommerce_new_order_note_data', $interrupt );
+		}
+		$this->sut->process( 'charge.refunded', $charge );
+		$notes = $this->get_notes_containing( $order, '<code>re_123</code>' );
+		$this->assertCount( 2, $notes );
+		$this->assertLessThan( $this->get_notes_containing( $order, 'successfully processed' )[0]->id, $this->get_notes_containing( $order, 'was made using' )[0]->id );
+		$this->get_refund_by_provider_id( $this->sut->get_fresh_order( $order ), 're_123' )->delete( true );
+		$this->sut->process( 'charge.refunded', $charge );
+		$this->assertCount( 40 === $minor ? 1 : 0, $this->sut->get_fresh_order( $order )->get_refunds() );
+	}
+
+	/**
+	 * @testdox A refund in another currency keeps its original row or permanent refusal.
+	 */
+	public function test_other_currency_refund_history(): void {
+		$order = $this->create_refundable_order();
+		update_option( 'woocommerce_price_num_decimals', 0 );
+		$charge                                 = $this->get_successful_refund_charge();
+		$charge['currency']                     = 'eur';
+		$charge['refunds']['data'][0]['amount'] = 449;
+		$this->sut->process( 'charge.refunded', $charge );
+		$this->assertSame( 4.0, (float) $this->get_refund_by_provider_id( $this->sut->get_fresh_order( $order ), 're_123' )->get_amount() );
+		$this->assertCount( 1, $this->get_notes_containing( $order, '<code>re_123</code>' ) );
+		$charge['refunds']['data'][0]['id']     = 're_above';
+		$charge['refunds']['data'][0]['amount'] = 1001;
+		$this->expectException( \InvalidArgumentException::class );
+		$this->sut->process( 'charge.refunded', $charge );
+	}
+
+	/**
+	 * @testdox A foreign-currency order keeps its exact final forty cents on a zero-decimal USD store.
+	 */
+	public function test_exact_foreign_currency_refund_history(): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'woocommerce_price_num_decimals', 2 );
+		update_option( 'woocommerce_feature_multi_currency_enabled', 'yes' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '1.04' );
+		$frontend = wc_get_container()->get( MultiCurrencyFrontendCurrenciesController::class );
+		add_filter( 'woocommerce_order_class', array( $frontend, 'flag_order_loading' ), 900 );
+		add_filter( 'wc_get_price_decimals', array( $frontend, 'get_price_decimals' ), 900 );
+		$order = $this->create_refundable_order();
+		$order->set_currency( 'EUR' );
+		$order->set_total( '10.40' );
+		$order->save();
+		$manual = wc_create_refund(
+			array(
+				'order_id' => $order->get_id(),
+				'amount'   => 10,
+			)
+		);
+		$this->assertInstanceOf( WC_Order_Refund::class, $manual );
+		update_option( 'woocommerce_price_num_decimals', 0 );
+		$charge                                 = $this->get_successful_refund_charge();
+		$charge['currency']                     = 'eur';
+		$charge['refunds']['data'][0]['amount'] = 40;
+		$this->sut->process( 'charge.refunded', $charge );
+		$this->assertSame( 0.4, (float) $this->get_refund_by_provider_id( $this->sut->get_fresh_order( $order ), 're_123' )->get_amount() );
+		$this->assertCount( 1, $this->get_notes_containing( $order, '<code>re_123</code>' ) );
 	}
 }

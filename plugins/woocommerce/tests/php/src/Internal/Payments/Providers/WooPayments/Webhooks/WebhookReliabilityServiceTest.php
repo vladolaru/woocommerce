@@ -3,6 +3,13 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Webhooks;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\RefundEventHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookRestController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventOrderResolver;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\OtherChargeRecorder;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
+use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockWithClaimHook;
 use ActionScheduler;
 use ActionScheduler_Store;
 use Automattic\WooCommerce\Enums\OrderStatus;
@@ -1837,5 +1844,324 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		$service->init( $scheduler, $api_client, $ingestor );
 
 		return $service;
+	}
+
+	/**
+	 * A queued refund of this order's own charge.
+	 *
+	 * @param int    $minor    Payment amount.
+	 * @param string $currency Payment currency.
+	 * @return array
+	 */
+	private function refund_event( int $minor, string $currency = 'usd' ): array {
+		$refund = array(
+			'id'     => 're_order',
+			'amount' => $minor,
+			'status' => 'succeeded',
+		);
+		return array(
+			'id'   => 'evt_refund',
+			'type' => 'charge.refunded',
+			'data' => array(
+				'object' => array(
+					'id'       => 'ch_order',
+					'status'   => 'succeeded',
+					'captured' => true,
+					'amount'   => 2000,
+					'currency' => $currency,
+					'refunds'  => array( 'data' => array( $refund ) ),
+				),
+			),
+		);
+	}
+
+	/** @return \WC_Order Order holding the event's charge. */
+	private function refundable_order(): \WC_Order {
+		$order = new \WC_Order();
+		$order->set_currency( 'USD' );
+		$order->set_total( '10.00' );
+		$order->set_status( OrderStatus::PROCESSING );
+		$order->set_transaction_id( 'pi_order' );
+		$order->update_meta_data( '_intent_id', 'pi_order' );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->update_meta_data( '_charge_id', 'ch_order' );
+		$order->save();
+		return $order;
+	}
+
+	/**
+	 * @testdox Only an exhausted refund leaves a note, using the reason that still applies on the order.
+	 * @testWith ["remainder", 550, "5.50"]
+	 *           ["lowered decimals", 60, "0.60"]
+	 *           ["total", 1050, "10.50"]
+	 *           ["write", 449, "4.49"]
+	 *           ["lock", 449, "4.49"]
+	 *           ["other currency lock", 449, "4.49"]
+	 *           ["other currency remainder", 550, "5.50"]
+	 *           ["manual refund", 800, "8.00"]
+	 *           ["lock note hook", 449, "4.49"]
+	 * @param string $reason Reason for failure.
+	 * @param int    $minor  Refund in minor units.
+	 * @param string $money  Expected display of the payment amount.
+	 */
+	public function test_exhausted_refund_history( string $reason, int $minor, string $money ): void {
+		$order      = $this->refundable_order();
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		$other      = 0 === strpos( $reason, 'other currency' );
+		$locked     = false !== strpos( $reason, 'lock' );
+		$prior      = 0;
+		if ( 'lowered decimals' === $reason ) {
+			$order->set_total( '10.40' );
+			$order->save();
+			$prior = 10;
+			update_option( 'woocommerce_price_num_decimals', 0 );
+		} elseif ( 'manual refund' === $reason ) {
+			$prior = 3;
+		} elseif ( false !== strpos( $reason, 'remainder' ) ) {
+			$prior = 5;
+		}
+		if ( 'remainder' === $reason ) {
+			update_option( 'woocommerce_price_num_decimals', 0 );
+			$earlier = $this->refund_event( 450 );
+			$earlier['data']['object']['refunds']['data'][0]['id'] = 're_earlier';
+			wc_get_container()->get( EventIngestor::class )->process( $earlier );
+		} elseif ( $prior ) {
+			$manual = wc_create_refund(
+				array(
+					'order_id' => $order->get_id(),
+					'amount'   => $prior,
+				)
+			);
+			$this->assertInstanceOf( \WC_Order_Refund::class, $manual );
+		}
+		update_option( 'woocommerce_price_num_decimals', 0 );
+		$event   = $this->refund_event( $minor, $other ? 'eur' : 'usd' );
+		$store   = new QueuedEventRows();
+		$service = $this->create_service( new RecordingActionSchedulerService(), new StaticFailedEventsApiClient(), wc_get_container()->get( EventIngestor::class ) );
+		$store->set_event( 'evt_refund', $event );
+		$throw = static function () {
+			throw new \Exception( 'Refund hook failed.' );
+		};
+		if ( 'write' === $reason ) {
+			add_action( 'woocommerce_create_refund', $throw );
+		}
+		if ( 'lock note hook' === $reason ) {
+			add_action( 'woocommerce_order_note_added', $throw );
+		}
+		if ( $locked ) {
+			$this->hold_order_payment_lock( $order, $vocabulary );
+		}
+		try {
+			for ( $attempt = 0; $attempt <= 3; ++$attempt ) {
+				$this->assertSame( $attempt, $store->get_event( 'evt_refund' )[ WebhookReliabilityService::RETRY_ATTEMPTS_EVENT_KEY ] ?? 0 );
+				$this->assertSame( array(), $this->refund_recording_notes( $order ) );
+				try {
+					$service->process_event( 'evt_refund' );
+				} catch ( \RuntimeException $failure ) {
+					$this->assertSame( $locked ? OrderPaymentLockRefusedException::class : \RuntimeException::class, get_class( $failure ) );
+					continue;
+				}
+				$this->fail( 'The failure must be retried and reported to the worker.' );
+			}
+		} finally {
+			remove_action( 'woocommerce_order_note_added', $throw );
+			remove_action( 'woocommerce_create_refund', $throw );
+			$this->clear_order_payment_lock( $order, $vocabulary );
+		}
+		$this->assertNull( $store->get_event( 'evt_refund' ) );
+		$lock_text = 'A WooPayments update for this order (event evt_refund) could not be applied, because another payment operation kept the order locked. Check the payment in your WooPayments dashboard.';
+		$contents  = wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' );
+		$this->assertCount( $other && $locked ? 1 : 0, array_keys( $contents, $lock_text, true ) );
+		$this->assertCount( $prior ? 1 : 0, wc_get_container()->get( RefundEventHandler::class )->get_fresh_order( $order )->get_refunds() );
+		$this->assertSame( 'remainder' === $reason ? 'successful' : '', wc_get_container()->get( RefundEventHandler::class )->get_fresh_order( $order )->get_meta( '_wcpay_refund_status' ) );
+		if ( $other ) {
+			$this->assertSame( array(), $this->refund_recording_notes( $order ) );
+			return;
+		}
+		$why      = $locked || 'write' === $reason ? 'the order could not be updated after several tries' : 'the amount is more than the order has left to refund';
+		$expected = "A refund of $money USD was made using WooPayments (<code>re_order</code>). No refund was recorded on this order, because $why.";
+		$this->assertSame( array( $expected ), $this->refund_recording_notes( $order ) );
+		$writer = wc_get_container()->get( RefundEventHandler::class );
+		$charge = $event['data']['object'];
+		$this->assertFalse( $writer->has_legacy_failed_refund_note( $order, $writer->parse_refunded_charge( $charge ) ) );
+		$order->set_total( '20.00' );
+		$order->save();
+		$writer->process( 'charge.refunded', $charge );
+		$this->assertCount( $prior ? 1 : 0, $writer->get_fresh_order( $order )->get_refunds() );
+		$this->assertSame( array( $expected ), $this->refund_recording_notes( $order ) );
+		$writer->process(
+			'charge.refund.updated',
+			array(
+				'charge'         => 'ch_order',
+				'id'             => 're_order',
+				'amount'         => $minor,
+				'currency'       => 'usd',
+				'status'         => 'failed',
+				'failure_reason' => 'declined',
+			)
+		);
+		$this->assertSame( 'failed', wc_get_container()->get( RefundEventHandler::class )->get_fresh_order( $order )->get_meta( '_wcpay_refund_status' ) );
+		$this->assertSame( array( $expected ), $this->refund_recording_notes( $order ) );
+		$price = WooPaymentsCurrencyUtils::format_explicit_order_price( $minor / 100, 'usd', $order );
+		$this->assertContains( "A refund of $price was <strong>unsuccessful</strong> using WooPayments (<code>re_order</code>): The refund was declined by the card issuer.", wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ) );
+	}
+
+	/**
+	 * @param \WC_Order $order Refunded order.
+	 * @return string[] Notes carrying this refund's recording identity.
+	 */
+	private function refund_recording_notes( \WC_Order $order ): array {
+		$key   = ( new WooPaymentsPersistenceVocabulary() )->get_note_identity_meta_key();
+		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+		return array_values( wp_list_pluck( array_filter( $notes, static fn( $note ) => hash( 'sha256', 'refund:re_order:unrecorded' ) === get_comment_meta( $note->id, $key, true ) ), 'content' ) );
+	}
+
+	/**
+	 * @testdox A retry after the manual refund is removed records the rounded row.
+	 */
+	public function test_refund_recovers_inside_retry_window(): void {
+		$order = $this->refundable_order();
+		update_option( 'woocommerce_price_num_decimals', 0 );
+		$manual = wc_create_refund(
+			array(
+				'order_id' => $order->get_id(),
+				'amount'   => 5,
+			)
+		);
+		$this->assertInstanceOf( \WC_Order_Refund::class, $manual );
+		$service = wc_get_container()->get( WebhookReliabilityService::class );
+		( new QueuedEventRows() )->set_event( 'evt_refund', $this->refund_event( 550 ) );
+		try {
+			$service->process_event( 'evt_refund' );
+			$this->fail( 'The manual refund leaves only five dollars.' );
+		} catch ( \RuntimeException $failure ) {
+			$this->assertStringContainsString( 'Could not create local refund', $failure->getMessage() );
+			$this->assertSame( array(), $this->refund_recording_notes( $order ) );
+		}
+		$manual->delete( true );
+		$service->process_event( 'evt_refund' );
+		$this->assertCount( 1, wc_get_container()->get( RefundEventHandler::class )->get_fresh_order( $order )->get_refunds() );
+		$this->assertSame( array( 'A refund of 5.50 USD was made using WooPayments (<code>re_order</code>). This order records it as 6 USD, rounded to the decimals this store uses for USD.' ), $this->refund_recording_notes( $order ) );
+	}
+
+	/**
+	 * @testdox The sweep checks the order inside its claim before recording a dropped refund.
+	 * @testWith ["empty"]
+	 *           ["row"]
+	 *           ["failure"]
+	 * @param string $history What the preceding holder wrote.
+	 */
+	public function test_swept_refund_history( string $history ): void {
+		$order       = $this->refundable_order();
+		$event       = $this->refund_event( 400 );
+		$writer      = wc_get_container()->get( RefundEventHandler::class );
+		$lock        = new OrderPaymentLockWithClaimHook(
+			static function () use ( $writer, $event, $history ) {
+				if ( 'row' === $history ) {
+					$writer->process( 'charge.refunded', $event['data']['object'] );
+				} elseif ( 'failure' === $history ) {
+					$writer->process(
+						'charge.refund.updated',
+						array(
+							'charge'   => 'ch_order',
+							'id'       => 're_order',
+							'amount'   => 400,
+							'currency' => 'usd',
+							'status'   => 'failed',
+						)
+					);
+				}
+			}
+		);
+		$drop_writer = new RefundEventHandler();
+		$drop_writer->init( $lock, new WooPaymentsPersistenceVocabulary(), wc_get_container()->get( EventOrderResolver::class ), wc_get_container()->get( OtherChargeRecorder::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
+		$container = $GLOBALS['wc_container'];
+		$this->assertInstanceOf( \Automattic\WooCommerce\Testing\Tools\TestingContainer::class, $container );
+		$container->replace( RefundEventHandler::class, $drop_writer );
+		$store   = new QueuedEventRows();
+		$service = $this->create_service( new RecordingActionSchedulerService(), new StaticFailedEventsApiClient(), wc_get_container()->get( EventIngestor::class ) );
+		try {
+			for ( $sweep = 0; $sweep < 2; ++$sweep ) {
+				$store->set_event( 'evt_refund', $event + array( WebhookReliabilityService::RETRY_ATTEMPTS_EVENT_KEY => 3 ), time() - 2 * DAY_IN_SECONDS );
+				$service->sweep_queued_events();
+			}
+			$this->assertTrue( $lock->hook_ran );
+			$this->assertNull( $store->get_event( 'evt_refund' ) );
+			$expected = 'empty' === $history ? array( 'A refund of 4.00 USD was made using WooPayments (<code>re_order</code>). No refund was recorded on this order, because the order could not be updated after several tries.' ) : array();
+			$this->assertSame( $expected, $this->refund_recording_notes( $order ) );
+		} finally {
+			$container->replace( RefundEventHandler::class, $writer );
+		}
+	}
+
+	/**
+	 * @testdox The webhook retries a passing write failure and never reports a refund that subsequently failed.
+	 * @testWith [false]
+	 *           [true]
+	 * @param bool $failed Whether the provider returns the money before the retry.
+	 */
+	public function test_passing_refund_write_failure( bool $failed ): void {
+		$order = $this->refundable_order();
+		$event = $this->refund_event( 400 );
+		$throw = static function () {
+			throw new \Exception( 'Refund temporarily refused.' );
+		};
+		add_action( 'woocommerce_create_refund', $throw );
+		try {
+			$response = $this->deliver_refund_webhook( $event );
+		} finally {
+			remove_action( 'woocommerce_create_refund', $throw );
+		}
+		$this->assertSame( 500, $response->get_status() );
+		$this->assertSame( $event, ( new QueuedEventRows() )->get_event( 'evt_refund' ) );
+		$this->assertSame( array(), $this->refund_recording_notes( $order ) );
+		if ( $failed ) {
+			$refund = array(
+				'charge'   => 'ch_order',
+				'id'       => 're_order',
+				'amount'   => 400,
+				'currency' => 'usd',
+				'status'   => 'failed',
+			);
+			wc_get_container()->get( RefundEventHandler::class )->process( 'charge.refund.updated', $refund );
+		}
+		$this->sut->process_event( 'evt_refund' );
+		$this->assertNull( ( new QueuedEventRows() )->get_event( 'evt_refund' ) );
+		$this->assertCount( $failed ? 0 : 1, wc_get_container()->get( RefundEventHandler::class )->get_fresh_order( $order )->get_refunds() );
+		$this->assertSame( array(), $this->refund_recording_notes( $order ) );
+		$this->assertSame( $failed ? 'failed' : 'successful', wc_get_container()->get( RefundEventHandler::class )->get_fresh_order( $order )->get_meta( '_wcpay_refund_status' ) );
+	}
+
+	/**
+	 * @testdox The webhook retries an amount above the total only when the currencies match.
+	 * @testWith ["usd", 500]
+	 *           ["eur", 400]
+	 * @param string $currency Payment currency.
+	 * @param int    $status   Expected HTTP status.
+	 */
+	public function test_refund_above_total_webhook( string $currency, int $status ): void {
+		$order = $this->refundable_order();
+		$event = $this->refund_event( 1500, $currency );
+		$this->assertSame( $status, $this->deliver_refund_webhook( $event )->get_status() );
+		$this->assertSame( 500 === $status ? $event : null, ( new QueuedEventRows() )->get_event( 'evt_refund' ) );
+		$this->assertSame( array(), $this->refund_recording_notes( $order ) );
+		if ( 500 === $status ) {
+			$order->set_total( '20.00' );
+			$order->save();
+			$this->sut->process_event( 'evt_refund' );
+			$this->assertCount( 1, wc_get_container()->get( RefundEventHandler::class )->get_fresh_order( $order )->get_refunds() );
+			$this->assertSame( array(), $this->refund_recording_notes( $order ) );
+		}
+	}
+
+	/**
+	 * @param array $event Provider event.
+	 * @return \WP_REST_Response
+	 */
+	private function deliver_refund_webhook( array $event ): \WP_REST_Response {
+		/** @var \WP_REST_Request<array<string,mixed>> $request */
+		$request = new \WP_REST_Request( 'POST', '/wc/v3/payments/webhook' );
+		$request->set_body_params( $event );
+		return wc_get_container()->get( WebhookRestController::class )->handle_webhook( $request );
 	}
 }

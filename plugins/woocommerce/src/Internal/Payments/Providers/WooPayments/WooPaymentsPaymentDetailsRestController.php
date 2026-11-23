@@ -976,7 +976,7 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 					}
 				}
 			} catch ( Throwable $failure ) {
-				// A concurrent Admin refund can still roll back its temporary row. Let the event retry against the resulting balance.
+				// A concurrent Admin refund can still roll back its temporary row. The event retries against the resulting balance and notes a write it finally gives up.
 				wp_cache_delete( \WC_Cache_Helper::get_cache_prefix( 'orders' ) . 'total_refunded' . $order->get_id(), 'orders' );
 				wc_get_container()->get( WooPaymentsLogger::class )->log_throwable_always( 'Failed to record the refund from the REST API.', $failure, array( 'order_id' => $order->get_id() ) );
 			}

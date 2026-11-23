@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendCurrenciesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
@@ -1141,6 +1142,8 @@ class WooPaymentsPaymentDetailsOrderlessRefundTest extends WC_REST_Unit_Test_Cas
 			$this->assertCount( 1, $rows );
 			$this->assertSame( 're_answer', $rows[0]->get_meta( '_wcpay_refund_id' ) );
 			$this->assertSame( 1.0, (float) $rows[0]->get_amount() );
+			$notes = wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' );
+			$this->assertCount( 1, array_filter( $notes, static fn( $text ) => false !== strpos( $text, '<code>re_answer</code>' ) ) );
 			$this->assertSame( array( -1.0, -1.0 ), array_values( array_map( static fn( $line ) => (float) $line->get_total( 'edit' ), $rows[0]->get_items() ) ) );
 		} finally {
 			update_option( 'woocommerce_price_num_decimals', $original_decimals );
@@ -1711,5 +1714,88 @@ class WooPaymentsPaymentDetailsOrderlessRefundTest extends WC_REST_Unit_Test_Cas
 		);
 
 		return is_array( $ids ) ? count( $ids ) : 0;
+	}
+
+	/**
+	 * @testdox A successful platform answer survives a refused local write and the event settles the order.
+	 * @testWith ["manual refund", false]
+	 *           ["manual refund", true]
+	 *           ["persistent hook", false]
+	 *           ["persistent hook", true]
+	 *           ["passing hook", false]
+	 * @param string $reason      Cause of the refused write.
+	 * @param bool   $early_event Whether an event also arrives during the send.
+	 */
+	public function test_refund_answer_after_refused_write( string $reason, bool $early_event ): void {
+		$order = $this->create_charge_order();
+		$order->set_total( '10.00' );
+		$order->save();
+		$answer                      = $this->refund_answer( $order, 800, 'succeeded', 1000 );
+		$charge                      = $answer['payment_intent']['charges']['data'][0];
+		$writer                      = wc_get_container()->get( RefundEventHandler::class );
+		$service                     = wc_get_container()->get( WebhookReliabilityService::class );
+		$event                       = array(
+			'id'   => 'evt_answer',
+			'type' => 'charge.refunded',
+			'data' => array( 'object' => $charge ),
+		);
+		$throw                       = static function () {
+			throw new \Exception( 'Refund hook refused.' );
+		};
+		$this->http_client->response = function () use ( $order, $reason, $answer, $early_event, $writer, $charge, $throw ) {
+			if ( $early_event ) {
+				try {
+					$writer->process( 'charge.refunded', $charge );
+					$this->fail( 'The route still holds the order lock.' );
+				} catch ( OrderPaymentLockRefusedException $refused ) {
+					$this->assertSame( $order->get_id(), $refused->get_order_id() );
+				}
+			}
+			if ( 'manual refund' === $reason ) {
+				$this->assertInstanceOf(
+					\WC_Order_Refund::class,
+					wc_create_refund(
+						array(
+							'order_id' => $order->get_id(),
+							'amount'   => 3,
+						)
+					)
+				);
+			} else {
+				add_action( 'woocommerce_create_refund', $throw );
+			}
+			return $this->refund_response( $answer );
+		};
+		$notes                       = static fn() => array_values( array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( $text ) => false !== strpos( $text, 'was made using' ) ) );
+		try {
+			$response = $this->dispatch_keyed_refund( 'refund-key', 800 );
+			$this->assertSame( 200, $response->get_status() );
+			$this->assertSame( $answer, $response->get_data() );
+			$this->assertSame( array(), $notes() );
+			$this->assertSame( '', $writer->get_fresh_order( $order )->get_meta( '_wcpay_refund_status' ) );
+			$service->retry_failed_event( $event );
+			if ( 'passing hook' === $reason ) {
+				remove_action( 'woocommerce_create_refund', $throw );
+				$service->process_event( 'evt_answer' );
+				$this->assertSame( array(), $notes() );
+				$rows = $writer->get_fresh_order( $order )->get_refunds();
+				$this->assertCount( 1, $rows );
+				$this->assertSame( 're_answer', $rows[0]->get_meta( '_wcpay_refund_id' ) );
+				return;
+			}
+			for ( $attempt = 0; $attempt <= 3; ++$attempt ) {
+				$this->assertSame( array(), $notes() );
+				try {
+					$service->process_event( 'evt_answer' );
+					$this->fail( 'The local write should still be refused.' );
+				} catch ( \RuntimeException $failure ) {
+					$this->assertStringContainsString( 'Could not create local refund', $failure->getMessage() );
+				}
+			}
+			$why = 'manual refund' === $reason ? 'the amount is more than the order has left to refund' : 'the order could not be updated after several tries';
+			$this->assertSame( array( "A refund of 8.00 USD was made using WooPayments (<code>re_answer</code>). No refund was recorded on this order, because $why." ), $notes() );
+		} finally {
+			remove_action( 'woocommerce_create_refund', $throw );
+		}
 	}
 }
