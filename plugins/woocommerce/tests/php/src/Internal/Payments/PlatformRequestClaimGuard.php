@@ -21,7 +21,11 @@ final class PlatformRequestClaimGuard {
 	/**
 	 * The order lock's platform request permissions. Each row requires the holder operation, verb and route,
 	 * and every listed provider caller > callee pair. The money operations and their decision reads come first.
-	 * The named checkout cache-only row requires zero sends. Capture can also fetch the account for Level 3 data.
+	 * The named checkout cache-only row requires zero sends. In direct checkout with a cold account cache,
+	 * the Level 3 country lookup can fetch the account under the claim. If it does not warm the cache,
+	 * the composition data settler can fetch the account when the provider applies payment effects.
+	 * Remove the three direct checkout skips when checkout reads the account once before taking the claim.
+	 * Capture can also fetch the account for Level 3 data.
 	 * That fetch is a violation until capture reads the Level 3 country from the stored account.
 	 *
 	 * Hook callbacks under the claim are outside coverage if they use another transport or never run in the test.
@@ -213,7 +217,7 @@ final class PlatformRequestClaimGuard {
 	}
 
 	/**
-	 * Keep the direct checkout finding visible until optional Level 3 data uses the stored country or is omitted.
+	 * The Level 3 country lookup currently warms the account before the composition data settler reads it.
 	 * Any additional violation still fails. An unexpected pass calls for removing the expected-failure marker.
 	 *
 	 * @param int $order_id Order processed without the gateway availability check.
@@ -221,7 +225,7 @@ final class PlatformRequestClaimGuard {
 	public static function expect_cold_checkout_account_read( int $order_id ): void {
 		Assert::assertSame( array( self::CACHED_CHECKOUT_ACCOUNT . " (order $order_id, GET accounts)" ), self::$violations );
 		self::$violations = array();
-		Assert::markTestSkipped( 'Direct checkout must use the stored country for optional Level 3 data or omit it without a platform read.' );
+		Assert::markTestSkipped( 'With a cold account cache, the Level 3 country lookup or the composition data settler can fetch the account from the platform under the checkout claim. Remove this skip when checkout reads the account once before taking the claim.' );
 	}
 
 	/**
