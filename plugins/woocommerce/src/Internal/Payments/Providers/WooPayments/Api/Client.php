@@ -2826,6 +2826,9 @@ class Client {
 			if ( isset( $error['param'] ) && is_string( $error['param'] ) ) {
 				$error_data['param'] = $error['param'];
 			}
+			if ( is_array( $error['payment_intent'] ?? null ) ) {
+				$error_data['payment_intent'] = $error['payment_intent'];
+			}
 
 			if ( 'amount_too_large' === $error_code && 'requires_capture' === $payment_intent_status ) {
 				// Client 11.1.0 replaces the raw API message (wc-payment-api/class-wc-payments-api-client.php:2859-2864)

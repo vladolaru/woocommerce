@@ -405,7 +405,10 @@ class WooPaymentsIntentConfirmationService {
 			} else {
 				// Every write goes on the one order read after the refusal, so none adds a second row of a key it saved.
 				$this->attach_charge_details_after_refusal( $stored_order, $event );
-				$this->apply_display_details( $stored_order, $intent, $setup_payment_details );
+				$stored_intent_id = (string) $stored_order->get_meta( '_intent_id', true );
+				if ( '' === $stored_intent_id || (string) ( $intent['id'] ?? '' ) === $stored_intent_id ) {
+					$this->apply_display_details( $stored_order, $intent, $setup_payment_details );
+				}
 				$displayed = true;
 			}
 		}
@@ -612,6 +615,9 @@ class WooPaymentsIntentConfirmationService {
 		}
 
 		$intent_meta = ( new WooPaymentsOutcomeMetadataMapper() )->get_outcome_meta( $outcome );
+		if ( ! $is_setup && 'requires_payment_method' === ( $intent['status'] ?? '' ) ) {
+			$intent_meta += WooPaymentsOrderEffects::failed_payment_method_details_meta( $intent );
+		}
 		if ( ( $intent['status'] ?? '' ) !== $provider_status ) {
 			$intent_meta['_intention_status'] = $provider_status;
 		}

@@ -46,6 +46,8 @@ use WC_Unit_Test_Case;
  * Tests for the WooPaymentsCheckoutAjaxController class.
  */
 class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
+	use FailedOrderCardRender;
+
 
 	/**
 	 * Original store currency.
@@ -3241,7 +3243,9 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$recorded = $this->load_recorded_manual_3ds_entry( $pair );
 		$order    = $this->create_woopayments_order( '10.99' );
 		$order->update_meta_data( '_intent_id', $recorded['body']['id'] );
+		$order->update_meta_data( '_payment_method_id', $recorded['body']['last_payment_error']['payment_method']['id'] );
 		$order->save();
+		$render = $this->observe_failed_order_card();
 
 		$http_client           = new FakeHttpClient();
 		$http_client->response = array(
@@ -3268,6 +3272,21 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'failed', $order->get_status(), "$pair carries last_payment_error, so the order is failed." );
 		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ) );
 		$this->assertSame( $expected_charge_id, $order->get_meta( '_charge_id', true ), "$pair's charge identity must match the recorded intent's own charges list." );
+		$error_method = $recorded['body']['last_payment_error']['payment_method'];
+		$details      = $recorded['body']['charges']['data'][0]['payment_method_details'] ?? array(
+			'type' => 'card',
+			'card' => $error_method['card'],
+		);
+		$this->assertSame( 0, $render->fetches, 'Rendering a declined callback must use the stored card.' );
+		$this->assertSame( array( $details['card']['last4'] ), $render->last4 );
+		$this->assertEquals( $details, json_decode( $order->get_meta( '_wcpay_payment_method_details', true ), true ) );
+		$this->assertSame( 1, $this->count_order_meta_rows( $order->get_id() )['_wcpay_payment_method_details'] );
+		if ( '' === $expected_charge_id ) {
+			$this->assertFalse( $order->meta_exists( '_charge_id' ) );
+		} else {
+			$this->assertSame( $details['card']['last4'], $order->get_meta( 'last4', true ) );
+			$this->assertSame( $details['card']['brand'], $order->get_meta( '_card_brand', true ) );
+		}
 	}
 
 	/**
@@ -3417,6 +3436,71 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( OrderStatus::PENDING, wc_get_order( $order->get_id() )->get_status() );
 		$this->assertCount( 1, $this->get_failed_payment_notes( $order ) );
+	}
+
+	/**
+	 * @testdox A refused paid confirmation keeps a newer attempt's display and can still set it on an unbound order.
+	 *
+	 * @testWith [true]
+	 *           [false]
+	 * @param bool $newer Whether another checkout stored its intent during the fetch.
+	 */
+	public function test_refused_paid_confirmation_preserves_the_current_card( bool $newer ): void {
+		$intent = $this->load_recorded_manual_3ds_entry( 'classic_checkout_challenge_completed' )['body'];
+		$order  = $this->create_woopayments_order( '10.99' );
+		$order->update_meta_data( '_intent_id', $intent['id'] );
+		$order->save();
+
+		$lock       = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		$token      = null;
+		$details    = array(
+			'type' => 'card',
+			'card' => array(
+				'brand' => 'mastercard',
+				'last4' => '4444',
+			),
+		);
+		$during     = static function () use ( $newer, $order, $details, $lock, $vocabulary, &$token ) {
+			$fresh = new WC_Order( $order->get_id() );
+			$fresh->update_meta_data( '_intent_id', $newer ? 'pi_newer_checkout' : '' );
+			if ( $newer ) {
+				$fresh->update_meta_data( '_wcpay_payment_method_details', (string) wp_json_encode( $details ) );
+				$fresh->update_meta_data( 'last4', '4444' );
+				$fresh->update_meta_data( '_card_brand', 'mastercard' );
+				$fresh->set_payment_method_title( 'Newer card' );
+			}
+			$fresh->save();
+			$token = $lock->claim( $fresh, $vocabulary, 'pi_newer_checkout', 'payment status update' );
+		};
+		$client     = $this->bind_intents_to_order( $this->create_api_client_running_during_fetch( $intent, $during ), $order );
+		try {
+			$this->create_controller( $client )->confirm_order_payment(
+				array(
+					'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+					'order_id'    => $order->get_id(),
+					'intent_id'   => $intent['id'],
+				)
+			);
+		} finally {
+			if ( null !== $token ) {
+				$lock->release( $order, $vocabulary, $token );
+			}
+		}
+		$this->assertNotNull( $token );
+		$fresh = new WC_Order( $order->get_id() );
+		$rows  = $this->count_order_meta_rows( $order->get_id() );
+		foreach ( array( '_wcpay_payment_method_details', 'last4', '_card_brand' ) as $key ) {
+			$this->assertSame( 1, $rows[ $key ] ?? 0, $key );
+		}
+		$expected = $newer ? $details : $intent['charges']['data'][0]['payment_method_details'];
+		$this->assertEquals( $expected, json_decode( $fresh->get_meta( '_wcpay_payment_method_details', true ), true ) );
+		$this->assertSame( $expected['card']['last4'], $fresh->get_meta( 'last4', true ) );
+		$this->assertSame( $expected['card']['brand'], $fresh->get_meta( '_card_brand', true ) );
+		$this->assertSame( '', $fresh->get_meta( '_charge_id', true ) );
+		if ( $newer ) {
+			$this->assertSame( 'Newer card', $fresh->get_payment_method_title( 'edit' ) );
+		}
 	}
 
 	/**

@@ -44,6 +44,8 @@ use WC_Unit_Test_Case;
  * Tests for the WooPaymentsRedirectReturnController class.
  */
 class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
+	use FailedOrderCardRender;
+
 
 	use ProviderTextLogAssertions;
 
@@ -1768,6 +1770,62 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			'a provider decline, high-risk customer'  => array( 'payment_method_provider_decline', 'partner_high_risk_customer', 'payment_method_provider_decline', 'partner_high_risk_customer' ),
 			'a provider decline, partner generic'     => array( 'payment_method_provider_decline', 'partner_generic_decline', 'payment_method_provider_decline', 'partner_generic_decline' ),
 		);
+	}
+
+	/**
+	 * @testdox A redirect decline supplies its payment method only when making the Failed transition.
+	 *
+	 * @testWith [false]
+	 *           [true]
+	 * @param bool $already_failed Whether an earlier attempt already failed the order.
+	 */
+	public function test_redirect_decline_stores_the_card_for_the_failed_email( bool $already_failed ): void {
+		$order = $this->create_order();
+		$order->update_meta_data( '_payment_method_id', 'pm_return' );
+		if ( $already_failed ) {
+			$order->set_status( OrderStatus::FAILED );
+		}
+		$order->save();
+		$card                       = array(
+			'brand' => 'visa',
+			'last4' => '4242',
+		);
+		$api_client                 = new RedirectReturnApiClientStub();
+		$api_client->payment_intent = array(
+			'id'                 => 'pi_return_failed',
+			'status'             => 'requires_payment_method',
+			'metadata'           => array( 'order_id' => $order->get_id() ),
+			'last_payment_error' => array(
+				'code'           => 'card_declined',
+				'decline_code'   => 'generic_decline',
+				'charge'         => 'ch_declined',
+				'payment_method' => array(
+					'id'   => 'pm_return',
+					'type' => 'card',
+					'card' => $card,
+				),
+			),
+		);
+		$this->sut                  = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_return_failed' );
+		$render = $this->observe_failed_order_card();
+		$this->handle_wp_expecting_redirect();
+		$order = new WC_Order( $order->get_id() );
+		$this->assertSame( OrderStatus::FAILED, $order->get_status() );
+		$this->assertFalse( $order->meta_exists( '_charge_id' ) );
+		$this->assertSame( 0, $render->fetches );
+		$this->assertSame( $already_failed ? array() : array( '4242' ), $render->last4 );
+		if ( $already_failed ) {
+			$this->assertFalse( $order->meta_exists( '_wcpay_payment_method_details' ) );
+		} else {
+			$this->assertSame(
+				array(
+					'type' => 'card',
+					'card' => $card,
+				),
+				json_decode( $order->get_meta( '_wcpay_payment_method_details', true ), true )
+			);
+		}
 	}
 
 	/**

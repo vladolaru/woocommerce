@@ -59,6 +59,52 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Stale order objects rendered for the same payment reuse the persisted card and leave one details row.
+	 *
+	 * @testWith ["missing"]
+	 *           ["placeholder"]
+	 *           ["charge"]
+	 * @param string $stored What another writer saved after the email objects were read.
+	 */
+	public function test_stale_renders_share_one_persisted_card( string $stored ): void {
+		$fetched = array(
+			'type' => 'card',
+			'card' => array(
+				'brand' => 'visa',
+				'last4' => '4242',
+			),
+		);
+		$charge  = array(
+			'type' => 'card',
+			'card' => array(
+				'brand' => 'mastercard',
+				'last4' => '4444',
+			),
+		);
+		$client  = $this->create_recording_payment_method_client( $fetched );
+		$this->register_card_info_service( $client );
+		$first = $this->create_card_info_order( 'pm_renewal' );
+		$first->get_meta_data();
+		$second = clone $first;
+		if ( 'missing' !== $stored ) {
+			$writer = new WC_Order( $first->get_id() );
+			$writer->update_meta_data( '_wcpay_payment_method_details', 'charge' === $stored ? (string) wp_json_encode( $charge ) : '[]' );
+			$writer->save_meta_data();
+		}
+		$expected = 'charge' === $stored ? $charge : $fetched;
+		$orders   = 'charge' === $stored ? array( $first ) : array( $first, $second );
+		$last4    = array_map( static fn( WC_Order $order ): string => PaymentInfo::get_card_info( $order )['last4'], $orders );
+
+		global $wpdb;
+		$count = \Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled()
+			? $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$wpdb->prefix}wc_orders_meta WHERE order_id = %d AND meta_key = '_wcpay_payment_method_details'", $first->get_id() ) )
+			: $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE post_id = %d AND meta_key = '_wcpay_payment_method_details'", $first->get_id() ) );
+		$this->assertSame( array( 'charge' === $stored ? 0 : 1, 1 ), array( count( $client->requested_ids ), (int) $count ), 'Platform fetches and stored details rows.' );
+		$this->assertSame( array_fill( 0, count( $orders ), $expected['card']['last4'] ), $last4 );
+		$this->assertEquals( $expected, json_decode( ( new WC_Order( $first->get_id() ) )->get_meta( '_wcpay_payment_method_details', true ), true ) );
+	}
+
+	/**
 	 * @testdox Without stored details the payment method is fetched once and stored, so the next render makes no call.
 	 */
 	public function test_card_info_fetches_missing_details_once_and_stores_them(): void {
@@ -344,7 +390,7 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 	 * Build a native API client double that records the payment methods it is asked for.
 	 *
 	 * @param array<string,mixed> $details Details to return.
-	 * @return Client
+	 * @return Client&object{requested_ids:string[]}
 	 */
 	private function create_recording_payment_method_client( array $details ): Client {
 		return new class( $details ) extends Client {

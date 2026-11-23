@@ -19,6 +19,43 @@ use WC_Order;
 class WooPaymentsOrderEffects {
 
 	/**
+	 * Get the failed charge's display details, or the error's payment method details for a chargeless decline.
+	 *
+	 * @param array<string,mixed> $intent Platform intent.
+	 * @return array<string,string> Order meta.
+	 */
+	public static function failed_payment_method_details_meta( array $intent ): array {
+		$charge = WooPaymentsIntentCodec::first_charge( $intent );
+		if ( array() !== $charge ) {
+			return self::payment_method_details_meta( $charge['payment_method_details'] ?? array() );
+		}
+
+		$method = $intent['last_payment_error']['payment_method'] ?? array();
+		$type   = $method['type'] ?? '';
+		if ( ! is_string( $type ) || '' === $type || ! is_array( $method[ $type ] ?? null ) ) {
+			return array();
+		}
+
+		return self::payment_method_details_meta(
+			array(
+				'type' => $type,
+				$type  => $method[ $type ],
+			)
+		);
+	}
+
+	/**
+	 * Encode the payment method details supplied by a charge or decline for display on the order.
+	 *
+	 * @param mixed $details Platform payment method details.
+	 * @return array<string,string> Order meta.
+	 */
+	public static function payment_method_details_meta( $details ): array {
+		$encoded = is_array( $details ) && array() !== $details ? wp_json_encode( $details ) : false;
+		return false === $encoded ? array() : array( '_wcpay_payment_method_details' => $encoded );
+	}
+
+	/**
 	 * Compose payment-method identity and metadata without rendering a title.
 	 *
 	 * @param array<string,mixed> $result                Platform PaymentIntent response.
@@ -308,15 +345,7 @@ class WooPaymentsOrderEffects {
 			$meta['_wcpay_payment_transaction_id'] = $balance_transaction_id;
 		}
 
-		$payment_method_details = isset( $charge['payment_method_details'] ) && is_array( $charge['payment_method_details'] ) ? $charge['payment_method_details'] : array();
-		if ( ! empty( $payment_method_details ) ) {
-			$encoded_details = wp_json_encode( $payment_method_details );
-			if ( false !== $encoded_details ) {
-				$meta['_wcpay_payment_method_details'] = $encoded_details;
-			}
-		}
-
-		return $meta;
+		return $meta + self::payment_method_details_meta( $charge['payment_method_details'] ?? array() );
 	}
 
 	/**

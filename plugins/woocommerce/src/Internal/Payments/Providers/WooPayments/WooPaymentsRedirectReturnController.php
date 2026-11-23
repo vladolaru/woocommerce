@@ -541,10 +541,14 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 			? $this->note_service->format_declined_payment_note_candidates( $order, $intent_id, $intent_error )
 			: $this->note_service->format_redirect_payment_failed_note_candidates( $order, $intent_id, $exception_message );
 
+		$meta = '' === $intent_status ? array() : array( '_intention_status' => $intent_status );
+		if ( ! $order->has_status( OrderStatus::FAILED ) && 0 === strpos( $intent_id, 'pi_' ) ) {
+			$meta += WooPaymentsOrderEffects::failed_payment_method_details_meta( array( 'last_payment_error' => $intent_error ) );
+		}
 		return new PaymentLifecycleEvent(
 			PaymentLifecycleEvent::STATUS_FAILED,
 			$intent_id,
-			'' === $intent_status ? array() : array( '_intention_status' => $intent_status ),
+			$meta,
 			array(),
 			$note_candidates[0],
 			PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED,

@@ -39,6 +39,7 @@ use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
 use Automattic\WooCommerce\Tests\Internal\Payments\StorefrontMultiCurrencyTestTrait;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPlatformEvents;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\StoredPaymentRecords;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\FailedOrderCardRender;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
@@ -57,6 +58,8 @@ use WP_REST_Request;
  * Tests for the EventIngestor class.
  */
 class EventIngestorTest extends WC_Unit_Test_Case {
+	use FailedOrderCardRender;
+
 
 	use OrderPaymentLockTestTrait;
 
@@ -1940,6 +1943,86 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 			'on hold for review' => array( 'on-hold', 'review_allowed' ),
 			'pending'            => array( 'pending', 'allow' ),
 		);
+	}
+
+	/**
+	 * @testdox Only an actionable, non-terminal decline stores its card before the Failed email.
+	 *
+	 * @testWith ["charge"]
+	 *           ["no charge"]
+	 *           ["terminal"]
+	 *           ["another intent"]
+	 *           ["already paid"]
+	 *           ["already failed"]
+	 * @param string $scenario The kind of decline delivered.
+	 */
+	public function test_failure_event_stores_only_the_declined_card( string $scenario ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$order  = $this->create_woopayments_order();
+		$event  = $this->recorded_payment_intent_event( 'card_declined_failed', $order );
+		$intent = &$event['data']['object'];
+		$pm     = $intent['last_payment_error']['payment_method'];
+		$order->update_meta_data( '_payment_method_id', $pm['id'] );
+		$order->update_meta_data( '_intent_id', 'another intent' === $scenario ? 'pi_other' : $intent['id'] );
+		if ( 'no charge' === $scenario ) {
+			$intent['charges']['data'] = array();
+		} elseif ( 'terminal' === $scenario ) {
+			$intent['last_payment_error']['payment_method']['type'] = 'card_present';
+		} elseif ( 'already paid' === $scenario ) {
+			$order->set_status( OrderStatus::PROCESSING );
+		} elseif ( 'already failed' === $scenario ) {
+			$order->set_status( OrderStatus::FAILED );
+		}
+		$order->save();
+		$render = $this->observe_failed_order_card();
+		$this->sut->process( $event );
+		$order = new WC_Order( $order->get_id() );
+		$this->assertFalse( $order->meta_exists( '_charge_id' ) );
+		if ( in_array( $scenario, array( 'charge', 'no charge' ), true ) ) {
+			$expected = 'charge' === $scenario ? $intent['charges']['data'][0]['payment_method_details'] : array(
+				'type' => 'card',
+				'card' => $pm['card'],
+			);
+			$this->assertSame( 0, $render->fetches, 'The failure must supply the card before the email renders.' );
+			$this->assertSame( array( $expected['card']['last4'] ), $render->last4 );
+			$this->assertEquals( $expected, json_decode( $order->get_meta( '_wcpay_payment_method_details', true ), true ) );
+		} else {
+			$this->assertSame( '', $order->get_meta( '_wcpay_payment_method_details', true ) );
+		}
+	}
+
+	/**
+	 * @testdox A later intent paid by webhook replaces the earlier declined card, including on redelivery after a refusal.
+	 *
+	 * @testWith [false]
+	 *           [true]
+	 * @param bool $retry Whether another holder refuses the first delivery.
+	 */
+	public function test_success_event_replaces_another_intents_declined_card( bool $retry ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$order = $this->create_woopayments_order();
+		$order->set_total( '10.99' );
+		$order->set_status( OrderStatus::FAILED );
+		$order->update_meta_data( '_intent_id', 'pi_earlier' );
+		$order->update_meta_data( '_wcpay_payment_method_details', '{"type":"card","card":{"last4":"0002","brand":"visa"}}' );
+		$order->save();
+		$event = $this->recorded_payment_intent_event( 'card_checkout_succeeded', $order );
+		if ( $retry ) {
+			$vocabulary = new WooPaymentsPersistenceVocabulary();
+			$this->hold_order_payment_lock( $order, $vocabulary, 'pi_earlier' );
+			try {
+				$this->sut->process( $event );
+				$this->fail( 'The first delivery should be refused.' );
+			} catch ( OrderPaymentLockRefusedException $refusal ) {
+				$this->assertSame( $order->get_id(), $refusal->get_order_id() );
+			} finally {
+				$this->clear_order_payment_lock( $order, $vocabulary );
+			}
+		}
+		$this->sut->process( $event );
+		$order = new WC_Order( $order->get_id() );
+		$this->assertSame( $event['data']['object']['id'], $order->get_meta( '_intent_id', true ) );
+		$this->assertEquals( $event['data']['object']['charges']['data'][0]['payment_method_details'], json_decode( $order->get_meta( '_wcpay_payment_method_details', true ), true ) );
 	}
 
 	/**

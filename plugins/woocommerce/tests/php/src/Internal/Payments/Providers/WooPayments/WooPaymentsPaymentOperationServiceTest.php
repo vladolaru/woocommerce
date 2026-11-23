@@ -82,6 +82,8 @@ use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\
  * Tests for the WooPaymentsPaymentOperationService class.
  */
 class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
+	use FailedOrderCardRender;
+
 
 	use ProviderTextLogAssertions;
 
@@ -6529,8 +6531,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string $pair                REC-1 fixture pair key.
 	 * @param string $expected_intent_id  Recorded declined PaymentIntent ID.
+	 * @param bool   $renewal             Whether this is a scheduled renewal.
 	 */
-	public function test_card_decline_over_fake_transport_fails_order_once_with_recorded_intent( string $pair, string $expected_intent_id ): void {
+	public function test_card_decline_over_fake_transport_fails_order_once_with_recorded_intent( string $pair, string $expected_intent_id, bool $renewal = false ): void {
 		$order           = $this->create_woopayments_order( '10.00' );
 		$account_service = $this->create_account_service( false );
 		$recorded        = $this->load_recorded_decline_entry( $pair );
@@ -6551,8 +6554,19 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 
 		$provider = $this->create_provider_over_fake_transport( $http_client, $account_service, $customer_service );
 
+		$render  = $this->observe_failed_order_card( 2 );
+		$context = PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_failed_card' );
+		if ( $renewal ) {
+			$user_id = $this->factory()->user->create();
+			$this->assertIsInt( $user_id );
+			$token = $this->create_card_token( $user_id, 'pm_failed_card' );
+			$order->set_customer_id( $user_id );
+			$order->add_payment_token( $token );
+			$order->save();
+			$context = PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, '', array( 'payment_token' => (string) $token->get_id() ), array( 'scheduled_subscription_payment' => true ) );
+		}
 		$outcome = wc_get_container()->get( PaymentProcessingService::class )->process_checkout_outcome(
-			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_rec1_checkout' ),
+			$context,
 			$provider
 		);
 
@@ -6573,6 +6587,11 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 		$this->assertCount( 1, $failed_notes, "Exactly one failed-payment note should record the $pair decline." );
+		$details = $recorded['error']['payment_intent']['charges']['data'][0]['payment_method_details'];
+		$this->assertFalse( $order->meta_exists( '_charge_id' ) );
+		$this->assertSame( 0, $render->fetches, 'Neither failed email needs a payment method request.' );
+		$this->assertSame( array_fill( 0, 2, $details['card']['last4'] ), $render->last4 );
+		$this->assertEquals( $details, json_decode( $order->get_meta( '_wcpay_payment_method_details', true ), true ) );
 	}
 
 	/**
@@ -7264,13 +7283,17 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * REC-1 recorded decline pairs used by the checkout-over-fake-transport test, one card-error and one non-card-declined code.
+	 * Recorded checkout declines, including a scheduled renewal using a saved card.
 	 *
-	 * @return array<string,array{string,string}>
+	 * @return array<string,array{0:string,1:string,2?:bool}>
 	 */
 	public function recorded_checkout_decline_envelope_data(): array {
 		return array(
 			'generic_decline (card_declined)' => array( 'generic_decline', 'pi_3UJTiNBzWlxcwgpP0GauBpTM' ),
+			'expired card'                    => array( 'expired_card', 'pi_3UJTirBzWlxcwgpP1t1J6e0x' ),
+			'insufficient funds'              => array( 'insufficient_funds', 'pi_3UJTivBzWlxcwgpP1bPJniIM' ),
+			'incorrect CVC'                   => array( 'incorrect_cvc', 'pi_3UJTizBzWlxcwgpP1uk4AvqD' ),
+			'scheduled renewal'               => array( 'generic_decline', 'pi_3UJTiNBzWlxcwgpP0GauBpTM', true ),
 			'processing_error'                => array( 'processing_error', 'pi_3UJTj2BzWlxcwgpP1ildtn5J' ),
 		);
 	}

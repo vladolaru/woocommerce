@@ -632,8 +632,9 @@ class PaymentIntentEventHandler {
 			return;
 		}
 
+		$stored_intent_id = (string) $order->get_meta( '_intent_id', true );
 		$this->set_succeeded_payment_intent_meta( $order, $payment_intent );
-		$this->lifecycle_service->apply_meta_under_lock( $order, $this->get_succeeded_payment_intent_meta( $payment_intent, $order ), array() );
+		$this->lifecycle_service->apply_meta_under_lock( $order, $this->get_succeeded_payment_intent_meta( $payment_intent, $order, $stored_intent_id ), array() );
 	}
 
 	/**
@@ -821,7 +822,7 @@ class PaymentIntentEventHandler {
 		$charge                     = WooPaymentsIntentCodec::first_charge( $event_object );
 		$balance_transaction_id     = WooPaymentsIntentCodec::balance_transaction_id( $charge['balance_transaction'] ?? null );
 		$captures_the_authorization = null === $hold_note_candidates && WooPaymentsOrderEffects::captures_the_authorization( $order, $event_object, $stored_intent_id );
-		$meta                       = $this->get_succeeded_payment_intent_meta( $event_object, $order, $captures_the_authorization );
+		$meta                       = $this->get_succeeded_payment_intent_meta( $event_object, $order, $stored_intent_id, $captures_the_authorization );
 
 		if ( null !== $hold_note_candidates ) {
 			return new PaymentLifecycleEvent(
@@ -866,10 +867,11 @@ class PaymentIntentEventHandler {
 	 *
 	 * @param array<string,mixed> $event_object               Provider intent object.
 	 * @param WC_Order            $order                      Order object.
+	 * @param string              $stored_intent_id          Intent stored before this success.
 	 * @param bool                $captures_the_authorization Whether the payment completes the order as a capture.
 	 * @return array<string,string>
 	 */
-	private function get_succeeded_payment_intent_meta( array $event_object, WC_Order $order, bool $captures_the_authorization = false ): array {
+	private function get_succeeded_payment_intent_meta( array $event_object, WC_Order $order, string $stored_intent_id, bool $captures_the_authorization = false ): array {
 		$charge = WooPaymentsIntentCodec::first_charge( $event_object );
 		$meta   = $this->without_empty_values(
 			array(
@@ -901,6 +903,9 @@ class PaymentIntentEventHandler {
 				),
 				$captures_the_authorization ? WooPaymentsOrderEffects::attached_fee_meta( $charge ) : array()
 			);
+			if ( '' !== $stored_intent_id && $stored_intent_id !== $this->get_object_id( $event_object ) ) {
+				$meta += WooPaymentsOrderEffects::payment_method_details_meta( $charge['payment_method_details'] ?? array() );
+			}
 		}
 
 		return $meta;
@@ -965,7 +970,7 @@ class PaymentIntentEventHandler {
 						array(
 							'_intention_status' => isset( $event_object['status'] ) ? (string) $event_object['status'] : '',
 						)
-					),
+					) + ( 'card_present' === $payment_method_type ? array() : WooPaymentsOrderEffects::failed_payment_method_details_meta( $event_object ) ),
 					array(),
 					$note_candidates[0],
 					PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED,

@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
 use WC_Order;
@@ -82,10 +83,13 @@ class WooPaymentsOrderCardInfo implements RegisterHooksInterface {
 			return $card_info;
 		}
 
-		// Meta reads are filtered, so neither value is trusted to be a string; a non-string ID fails the fetch below, which is contained.
-		$stored_details = $order->get_meta( '_wcpay_payment_method_details', true );
-		$details        = is_string( $stored_details ) ? json_decode( $stored_details, true ) : null;
-		if ( ! is_array( $details ) || array() === $details ) {
+		$details = $this->get_stored_details( $order );
+		if ( array() === $details && $order->get_id() ) {
+			// Another email or confirmation may have stored the card since this object was read.
+			$order   = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
+			$details = $this->get_stored_details( $order );
+		}
+		if ( array() === $details ) {
 			$payment_method_id = $order->get_meta( '_payment_method_id', true );
 			if ( '' === $payment_method_id ) {
 				return $card_info;
@@ -102,6 +106,7 @@ class WooPaymentsOrderCardInfo implements RegisterHooksInterface {
 			// so a render of the same order skips the fetch and another order with the same payment method asks again.
 			// An order with no ID is not remembered, and nothing is stored on the order.
 			try {
+				// Stated lock exception: rendering a Failed email can fetch the payment method when the failure carried no details.
 				$details = $this->payment_method_details_service->fetch_payment_method_details( $payment_method_id );
 			} catch ( Throwable $exception ) {
 				self::log_fetch_failure( $order, $payment_method_id, $exception );
@@ -148,6 +153,18 @@ class WooPaymentsOrderCardInfo implements RegisterHooksInterface {
 		}
 
 		return array_map( 'sanitize_text_field', $info );
+	}
+
+	/**
+	 * Read the stored card details, ignoring malformed or filtered meta.
+	 *
+	 * @param WC_Order $order Order being rendered.
+	 * @return array<string,mixed>
+	 */
+	private function get_stored_details( WC_Order $order ): array {
+		$stored  = $order->get_meta( '_wcpay_payment_method_details', true );
+		$details = is_string( $stored ) ? json_decode( $stored, true ) : null;
+		return is_array( $details ) ? $details : array();
 	}
 
 	/**

@@ -1577,6 +1577,10 @@ class WooPaymentsPaymentOperationService {
 		if ( 'card_error' === $exception->get_error_type() ) {
 			$meta = isset( $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ) && is_array( $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ) ? $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] : array();
 
+			$intent = $exception->get_error_data()['payment_intent'] ?? null;
+			if ( is_array( $intent ) ) {
+				$meta += WooPaymentsOrderEffects::failed_payment_method_details_meta( $intent );
+			}
 			$meta['_wcpay_fraud_meta_box_type']                         = 'allow';
 			$data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] = $meta;
 		}
