@@ -776,8 +776,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Replace the account cache row only while it holds the bytes read before, compared byte for byte. A replaced row is
-	 * cached as update_option() caches it.
+	 * Replace the account cache row only while it holds the bytes read before, compared byte for byte.
 	 *
 	 * @param string $seen_row Serialized row read before the account fetch.
 	 * @param string $new_row  Serialized row to store.
@@ -799,13 +798,9 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 				$seen_row
 			)
 		);
-		if ( 0 < (int) $updated ) {
-			WooPaymentsSetupTier::cache_written_option( WooPaymentsDatabaseCache::ACCOUNT_KEY, $new_row );
-			return true;
-		}
-
 		$this->legacy_proxy->call_function( 'wp_cache_delete', WooPaymentsDatabaseCache::ACCOUNT_KEY, 'options' );
-		return false;
+
+		return 0 < (int) $updated;
 	}
 
 	/**

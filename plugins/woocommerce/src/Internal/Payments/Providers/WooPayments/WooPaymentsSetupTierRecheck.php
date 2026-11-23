@@ -20,6 +20,9 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
  * that dies between the row and the tier write at the last step leaves the tier low. Steps of one drop that a queue backlog
  * runs at once or out of order can each log their line. A store with no account row at a step's start is not recovered,
  * such as after a refused reset whose tier restore failed on a store whose row was already gone, or whose row restore failed.
+ * On a store with a persistent object cache, a request that loaded the options from the database just before a raise can
+ * put the old tier back into the cache just after it: the database holds the raised tier, and the store stays at the
+ * lowest tier until its options cache is next rebuilt.
  *
  * @since 11.4.0
  * @internal

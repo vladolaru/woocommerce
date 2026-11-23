@@ -833,48 +833,6 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox R32: a raise caches the tier and the row as update_option() does, so options another request read before the writes and adds to the cache after them do not hide the raise.
-	 */
-	public function test_r32_options_read_before_a_raise_do_not_hide_it(): void {
-		$drop                 = $this->drop_from_a_connected_account();
-		$this->client->answer = fn() => $this->account();
-		$this->register_cron_request();
-		wp_cache_delete( 'alloptions', 'options' );
-		$stale_options = wp_load_alloptions();
-		$stale_row     = $this->raw_row();
-		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $stale_options[ WooPaymentsSetupTier::OPTION_NAME ] );
-		// Another request read the options and the row before the step's writes, missed the cache, and adds them on the
-		// step's first query after the tier write.
-		$tier_written = false;
-		$added        = false;
-		$race         = static function ( $query ) use ( &$tier_written, &$added, $stale_options, $stale_row ) {
-			if ( $tier_written && ! $added ) {
-				$added = true;
-				wp_cache_add( 'alloptions', $stale_options, 'options' );
-				wp_cache_add( self::ROW, $stale_row, 'options' );
-			} elseif ( is_string( $query ) && 0 === strpos( $query, 'UPDATE' ) && false !== strpos( $query, WooPaymentsSetupTier::OPTION_NAME ) ) {
-				$tier_written = true;
-			}
-			return $query;
-		};
-		add_filter( 'query', $race );
-
-		try {
-			$this->run_step( $drop, 1 );
-		} finally {
-			remove_filter( 'query', $race );
-		}
-
-		$this->assertTrue( $added, 'The other request added its options after the tier write.' );
-		$this->tier->invalidate();
-		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $this->tier->get_stored_tier(), 'The raised tier is what the options read.' );
-		$row = get_option( self::ROW );
-		$this->assertIsArray( $row );
-		$this->assertSame( $this->account(), $row['data'], 'The written row is what the options read.' );
-		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $this->stored_tier() );
-	}
-
-	/**
 	 * @testdox R33: a drop reads the stored tier past this request's memo, so a tier another request raised after the memo was filled gets its four steps.
 	 */
 	public function test_r33_a_drop_reads_the_stored_tier_past_the_request_memo(): void {
@@ -1321,12 +1279,6 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 			if ( 'jetpack_options' === $name ) {
 				$options = maybe_unserialize( $value );
 				unset( $options['fallback_no_verify_ssl_certs'], $options['time_diff'] );
-				$value = $options;
-			}
-			if ( 'jetpack_private_options' === $name ) {
-				// The connection's token lock clean-up, and its token deletion on a site address mismatch.
-				$options = maybe_unserialize( $value );
-				unset( $options['token_lock'], $options['blog_token'], $options['user_token'], $options['user_tokens'] );
 				$value = $options;
 			}
 			$snapshot[ 'option:' . $name ] = array( $value, $row['autoload'] );
