@@ -96,6 +96,13 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	private const UPDATE_FIRST_SENTENCE = 'WooPayments is now part of WooCommerce. To switch, first update the WooPayments extension to the latest version.';
 
 	/**
+	 * The same prompt on a network, where only a super admin may update plugins.
+	 *
+	 * @var string
+	 */
+	private const UPDATE_FIRST_NETWORK_SENTENCE = 'WooPayments is now part of WooCommerce. To switch, a super admin first needs to update the WooPayments extension to the latest version.';
+
+	/**
 	 * A failure code that only defers the switch, for rows about a deferred switch rather than any one condition.
 	 *
 	 * @var string
@@ -1556,16 +1563,17 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 		$activate = 'WooPayments is now part of WooCommerce. To switch, first activate the WooPayments extension in Plugins and update it to the latest version.';
 		$sitewide = "This store can't switch yet because the WooPayments extension is active for every site of the network.";
 		$excluded = 'Its subscriptions are billed through Stripe Billing';
+		$update   = is_multisite() ? self::UPDATE_FIRST_NETWORK_SENTENCE : self::UPDATE_FIRST_SENTENCE;
 
 		return array(
 			'at the minimum, active'                       => array( '10.6.0', 'active', $manager, 'Start the switch', true ),
 			'above the minimum, active'                    => array( '11.1.0', 'active', $manager, 'Start the switch', true ),
 			'at the minimum, waiting for the switch'       => array( '10.6.0', 'deactivated', $manager, 'Start the switch', true ),
-			'below, active, a user who may update plugins' => array( '10.5.2', 'active', $updater, self::UPDATE_FIRST_SENTENCE, false ),
-			'below, active, a user who may not update plugins' => array( '10.5.2', 'active', $manager, self::UPDATE_FIRST_SENTENCE, false ),
+			'below, active, a user who may update plugins' => array( '10.5.2', 'active', $updater, $update, false ),
+			'below, active, a user who may not update plugins' => array( '10.5.2', 'active', $manager, $update, false ),
 			'below, waiting for the switch'                => array( '10.5.2', 'deactivated', $updater, $activate, false ),
 			'below, active for every site'                 => array( '10.5.2', 'network active', $updater, $sitewide, false ),
-			'below, loaded outside the plugin lists'       => array( '10.5.2', 'loaded outside', $updater, self::UPDATE_FIRST_SENTENCE, false ),
+			'below, loaded outside the plugin lists'       => array( '10.5.2', 'loaded outside', $updater, $update, false ),
 			'at the minimum, loaded outside the plugin lists' => array( '10.6.0', 'loaded outside', $updater, self::LOADED_OUTSIDE_PLUGIN_LISTS_SENTENCE, false ),
 			'below, excluded for bundled subscriptions'    => array( '10.5.2', 'excluded', $updater, $excluded, false ),
 			'below, a shop manager'                        => array( '10.5.2', 'active', array( 'manage_woocommerce' ), '', false ),
@@ -1614,7 +1622,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 			delete_site_option( 'menu_items' );
 		}
 
-		$this->assertStringContainsString( 'WooPayments is now part of WooCommerce. To switch, a super admin first needs to update the WooPayments extension to the latest version.', $notices );
+		$this->assertStringContainsString( self::UPDATE_FIRST_NETWORK_SENTENCE, $notices );
 		$this->assertStringNotContainsString( 'Start the switch', $notices );
 		$this->assertFalse( $queued );
 		$this->assertSame( array(), $job->sources, 'The click queues nothing.' );
@@ -1814,7 +1822,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 		}
 		if ( array() === $expected ) {
 			$notices = $this->render_admin_notices( $controller );
-			$this->assertStringContainsString( self::UPDATE_FIRST_SENTENCE, $notices );
+			$this->assertStringContainsString( is_multisite() ? self::UPDATE_FIRST_NETWORK_SENTENCE : self::UPDATE_FIRST_SENTENCE, $notices );
 			$this->assertStringNotContainsString( 'Start the switch', $notices );
 		}
 	}

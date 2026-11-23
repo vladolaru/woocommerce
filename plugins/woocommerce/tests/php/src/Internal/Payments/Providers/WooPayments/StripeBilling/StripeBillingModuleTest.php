@@ -20,10 +20,13 @@ use WC_Unit_Test_Case;
 class StripeBillingModuleTest extends WC_Unit_Test_Case {
 
 	/**
-	 * Clear the registries the subscription doubles read, the staging flag and the admin screen.
+	 * Clear the registries the subscription doubles read, the staging flag, the admin screen and the network Plugins menu.
 	 */
 	public function tearDown(): void {
 		try {
+			if ( is_multisite() ) {
+				delete_site_option( 'menu_items' );
+			}
 			unset(
 				$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ],
 				$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ],
@@ -441,6 +444,10 @@ class StripeBillingModuleTest extends WC_Unit_Test_Case {
 		$subscription->set_status( $subscription_status );
 		$subscription->save();
 		$this->register_module();
+		if ( is_multisite() ) {
+			// A site administrator may deactivate plugins on a network only when it gives site admins the Plugins menu.
+			update_site_option( 'menu_items', array( 'plugins' => '1' ) );
+		}
 		wp_set_current_user( self::factory()->user->create( array( 'role' => $role ) ) );
 		set_current_screen( $screen );
 
