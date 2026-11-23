@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\DisputeEventHandler;
 use WC_Cache_Helper;
 use WC_Order;
 use WC_Order_Refund;
@@ -701,8 +702,8 @@ class WooPaymentsRefundAmbiguityService {
 
 	/**
 	 * Find the manual refund row that records the earlier attempt's refund: marked as a manual record, not refunded through
-	 * the gateway, with no provider refund ID, created after the failure, for exactly the refund's amount. The oldest one
-	 * takes the link.
+	 * the gateway, with no provider refund or lost dispute ID, created at or after the failure, for exactly the refund's
+	 * amount. The oldest one takes the link.
 	 *
 	 * @param WC_Order_Refund[] $rows         The order's refunds other than this call's own row.
 	 * @param string            $currency     Order currency.
@@ -719,6 +720,7 @@ class WooPaymentsRefundAmbiguityService {
 				self::is_manual_record_row( $refund )
 				&& ! $refund->get_refunded_payment()
 				&& '' === (string) $refund->get_meta( '_wcpay_refund_id', true )
+				&& '' === (string) $refund->get_meta( DisputeEventHandler::LOST_DISPUTE_ID_REFUND_META_KEY, true )
 				&& null !== $created && $created->getTimestamp() >= $failed_at
 				&& WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $refund->get_amount(), $currency ) === $amount_minor
 			) {

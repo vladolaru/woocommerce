@@ -54,7 +54,7 @@ class DisputeEventHandler {
 	 *
 	 * @var string
 	 */
-	private const LOST_DISPUTE_ID_REFUND_META_KEY = '_wcpay_dispute_id';
+	public const LOST_DISPUTE_ID_REFUND_META_KEY = '_wcpay_dispute_id';
 
 	/**
 	 * Statuses that close a dispute (won, lost, prevented) or an inquiry (warning_closed), as Stripe sends them with

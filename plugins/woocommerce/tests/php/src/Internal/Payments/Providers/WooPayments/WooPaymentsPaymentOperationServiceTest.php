@@ -8664,6 +8664,66 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A lookup links the earlier refund to this call's row when an equal lost dispute is the only other row.
+	 */
+	public function test_lookup_keeps_the_dispute_separate_from_the_found_refund(): void {
+		$order = $this->create_refund_hold_order();
+		$this->seed_refund_hold( $order, array( 'failed_at' => time() - 1000 ) );
+		$dispute                = $this->create_refund_row( $order, 5.55, 'Dispute lost.', array( '_wcpay_dispute_id' => 'dp_lost' ) );
+		$list                   = $this->recorded_refund_list();
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			self::http_json( 200, $list ),
+			self::http_json( 200, $this->recorded_refund_answer( 're_second', 'key_second', 555 ) ),
+		);
+		$provider               = $this->create_refund_hold_provider( $http_client );
+
+		list( $result, $row ) = $this->run_refund( $provider, $order, 5.55 );
+
+		$this->assertTrue( $result );
+		$this->assertSame( '', wc_get_order( $dispute->get_id() )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( array( self::refund_list_trail() ), self::request_trail( $http_client ) );
+		$this->assertSame( $list['data'][0]['id'], wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( '', self::refund_hold_of( $order ) );
+		$this->assertSame( 11.10, (float) wc_get_order( $order->get_id() )->get_total_refunded() );
+	}
+
+	/**
+	 * @testdox The backstop counts the lost dispute as settled and links only the merchant's record, if present.
+	 *
+	 * @testWith [5.55, 35.00, false]
+	 *           [5.55, 29.11, true]
+	 *           [2.00, 31.11, true]
+	 *
+	 * @param float $disputed      Lost dispute amount.
+	 * @param float $other_refund  Amount of a separate, settled refund.
+	 * @param bool  $has_manual    Whether the merchant recorded the found refund after the dispute.
+	 */
+	public function test_backstop_counts_the_dispute_without_linking_it( float $disputed, float $other_refund, bool $has_manual ): void {
+		$order = $this->create_refund_hold_order();
+		$hold  = $this->seed_refund_hold( $order, self::found_hold_record( array( 'failed_at' => time() - 1000 ) ) );
+		$this->link_local_refund_row( $order, $other_refund, 're_other' );
+		$dispute                = $this->create_refund_row( $order, $disputed, 'Dispute lost.', array( '_wcpay_dispute_id' => 'dp_lost' ) );
+		$manual                 = $has_manual ? $this->create_refund_row( $order, 5.55, 'Recorded from the Stripe dashboard' ) : null;
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_answer( 're_next', 'key_next', 200 ) ) );
+		$provider               = $this->create_refund_hold_provider( $http_client );
+
+		list( $result, $row ) = $this->run_refund( $provider, $order, 2.00 );
+
+		$this->assertTrue( $result );
+		$this->assertSame( '', wc_get_order( $dispute->get_id() )->get_meta( '_wcpay_refund_id', true ) );
+		if ( null !== $manual ) {
+			$this->assertSame( $hold['found_refund_id'], wc_get_order( $manual->get_id() )->get_meta( '_wcpay_refund_id', true ) );
+		}
+		$trail = self::request_trail( $http_client );
+		$this->assertCount( 1, $trail, 'Counting the dispute leaves too little to refund the found amount, so no lookup is needed.' );
+		$this->assertStringStartsWith( 'POST refunds ', $trail[0] );
+		$this->assertSame( 're_next', wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( '', self::refund_hold_of( $order ) );
+	}
+
+	/**
 	 * @testdox A manual record of the earlier refund made before any lookup takes the link, so a deliberate same-amount refund sends fresh and the order's refunds match the money.
 	 *
 	 * Monitor rulings 2026-10-10 13:20 and 13:17 (the review's row 3 variant): the merchant recorded the earlier refund
@@ -10919,17 +10979,19 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @param WC_Order $order  Parent order.
 	 * @param float    $amount Amount.
 	 * @param string   $reason Reason.
+	 * @param array    $meta   Refund metadata supplied to the capture.
 	 * @return WC_Order_Refund
 	 */
-	private function create_refund_row( WC_Order $order, float $amount, string $reason ): WC_Order_Refund {
+	private function create_refund_row( WC_Order $order, float $amount, string $reason, array $meta = array() ): WC_Order_Refund {
 		// As on a store where the runtime loads, the capture listens and marks the row as a manual record.
 		$this->use_runtime_refund_capture()->register();
 		$refund = wc_create_refund(
 			array(
-				'order_id'       => $order->get_id(),
-				'amount'         => $amount,
-				'reason'         => $reason,
-				'refund_payment' => false,
+				'order_id'                        => $order->get_id(),
+				'amount'                          => $amount,
+				'reason'                          => $reason,
+				'refund_payment'                  => false,
+				RefundRowCapture::REFUND_META_ARG => $meta,
 			)
 		);
 		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
