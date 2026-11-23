@@ -23,6 +23,46 @@ class WooPaymentsOrderStatusChangeConfirmationTest extends WC_Unit_Test_Case {
 	private $sut;
 
 	/**
+	 * Secondary site for the cross-site charge check.
+	 *
+	 * @var int|null
+	 */
+	private static $other_blog_id;
+
+	/**
+	 * Install the secondary site's schema before the per-test transactions start.
+	 *
+	 * @param \WP_UnitTest_Factory $factory WordPress test factory.
+	 */
+	public static function wpSetUpBeforeClass( $factory ): void {
+		if ( ! is_multisite() ) {
+			return;
+		}
+
+		$other_blog_id = $factory->blog->create();
+		self::assertIsInt( $other_blog_id );
+		self::$other_blog_id = $other_blog_id;
+		switch_to_blog( self::$other_blog_id );
+		try {
+			WC_Install::create_tables();
+			( new \ActionScheduler_StoreSchema() )->register_tables( true );
+			( new \ActionScheduler_LoggerSchema() )->register_tables( true );
+		} finally {
+			restore_current_blog();
+		}
+	}
+
+	/**
+	 * Delete the fixture site, including its WooCommerce and Action Scheduler tables.
+	 */
+	public static function wpTearDownAfterClass(): void {
+		if ( null !== self::$other_blog_id ) {
+			wp_delete_site( self::$other_blog_id );
+			self::$other_blog_id = null;
+		}
+	}
+
+	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
@@ -250,6 +290,7 @@ class WooPaymentsOrderStatusChangeConfirmationTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should keep projected charge context isolated to the active site.
 	 * @group ms-required
+	 * @group multisite
 	 */
 	public function test_projects_charge_id_from_the_active_site_and_restores_main_site(): void {
 		if ( ! is_multisite() ) {
@@ -257,18 +298,15 @@ class WooPaymentsOrderStatusChangeConfirmationTest extends WC_Unit_Test_Case {
 		}
 
 		$main_blog_id = get_current_blog_id();
-		$other_blog   = self::factory()->blog->create();
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'no' ) );
 		$order = $this->create_order();
 		$order->update_meta_data( '_charge_id', 'ch_main_site' );
 		$order->update_meta_data( '_wcpay_mode', 'prod' );
 		$order->save();
 
-		switch_to_blog( $other_blog );
+		switch_to_blog( self::$other_blog_id );
 		try {
-			WC_Install::create_tables();
-			( new \ActionScheduler_StoreSchema() )->register_tables( true );
-			( new \ActionScheduler_LoggerSchema() )->register_tables( true );
+			update_option( 'woocommerce_currency', 'USD' );
 			update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 			$other_order = $this->create_order();
 			$other_order->update_meta_data( '_charge_id', 'ch_other_site' );

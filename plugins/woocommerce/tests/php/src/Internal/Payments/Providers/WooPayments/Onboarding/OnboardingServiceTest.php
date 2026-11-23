@@ -2105,6 +2105,7 @@ class OnboardingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Test-drive payment-method snapshots remain scoped to the active multisite blog.
 	 * @group ms-required
+	 * @group multisite
 	 */
 	public function test_test_drive_payment_method_snapshot_is_site_scoped(): void {
 		if ( ! is_multisite() ) {
