@@ -1861,7 +1861,7 @@ describe( 'WooPaymentsReportsPage', () => {
 		} );
 	} );
 
-	it( 'keeps Date visible as the locked Fees title even when saved among the columns', async () => {
+	it( 'shows Date once as the Fees title even when saved among the columns', async () => {
 		setMockUserPreferences( {
 			wc_payments_reports_fees_view: {
 				fields: [ 'date', 'transaction_id', 'amount' ],
@@ -1875,10 +1875,59 @@ describe( 'WooPaymentsReportsPage', () => {
 			titleField: 'date',
 			fields: [ 'transaction_id', 'amount' ],
 		} );
-		expect(
-			table?.fields?.find( ( field ) => field.id === 'date' )
-		).toMatchObject( { enableHiding: false } );
 		expect( screen.getAllByText( 'Date & time' ) ).toHaveLength( 1 );
+	} );
+
+	it( 'hides the Fees Date title from Properties for the current visit only', async () => {
+		const { DataViews } = jest.requireActual( '@wordpress/dataviews' );
+		const route = [ '/woopayments/reports?report_tab=fees' ];
+		setMockUserPreferences( {
+			wc_payments_reports_fees_view: {
+				fields: [ 'fees' ],
+				perPage: 25,
+				layout: defaultFeesLayout,
+			},
+		} );
+
+		await mockDataViews.withImplementation(
+			( props ) => <DataViews { ...props } />,
+			async () => {
+				const firstVisit = renderReportsPage( route );
+				const table = within( await screen.findByRole( 'table' ) );
+				expect( table.getByText( 'Date & time' ) ).toBeInTheDocument();
+				fireEvent.click(
+					screen.getByRole( 'button', { name: 'View options' } )
+				);
+				await screen.findByText( 'Properties' );
+
+				jest.useFakeTimers();
+				try {
+					fireEvent.click(
+						screen.getByText( 'Date', { selector: 'span' } )
+					);
+					await act( () => jest.advanceTimersByTimeAsync( 750 ) );
+					expect(
+						table.queryByText( 'Date & time' )
+					).not.toBeInTheDocument();
+					expect(
+						table.getByText( 'Fees total' )
+					).toBeInTheDocument();
+					expect( mockUpdateUserPreferences ).not.toHaveBeenCalled();
+				} finally {
+					jest.useRealTimers();
+				}
+
+				firstVisit.unmount();
+				renderReportsPage( route );
+				const reopened = within( await screen.findByRole( 'table' ) );
+				expect(
+					reopened.getByText( 'Date & time' )
+				).toBeInTheDocument();
+				expect(
+					reopened.queryByText( 'Transaction ID' )
+				).not.toBeInTheDocument();
+			}
+		);
 	} );
 
 	it.each( [
@@ -2004,6 +2053,27 @@ describe( 'WooPaymentsReportsPage', () => {
 			)
 		);
 		expect( mockGetFees ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	it( 'does not write the saved Fees view when the rows per page stay the same', async () => {
+		setMockUserPreferences( {
+			wc_payments_reports_fees_view: { perPage: 50 },
+		} );
+		renderReportsPage( [
+			'/woopayments/reports?report_tab=fees&per_page=50',
+		] );
+
+		fireEvent.change(
+			await screen.findByRole( 'searchbox', { name: 'Search fees' } ),
+			{ target: { value: 'txn_456' } }
+		);
+
+		await waitFor( () =>
+			expect( screen.getByTestId( 'location' ) ).toHaveTextContent(
+				'search%5B%5D=txn_456'
+			)
+		);
+		expect( mockUpdateUserPreferences ).not.toHaveBeenCalled();
 	} );
 
 	it.each( [

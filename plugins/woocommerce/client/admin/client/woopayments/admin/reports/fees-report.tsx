@@ -118,8 +118,10 @@ const getTransactionRoute = ( item: ReportsFee ) =>
 // Client 11.1.0 `reports/fees/use-fees-url-sync.ts:26,208-233`: a search reaches the URL after typing pauses.
 const FEES_SEARCH_URL_DEBOUNCE_MS = 500;
 
+// Client 11.3.0 `reports/fees/view.ts:5`: the user meta that keeps the merchant's Fees view; only its rows per page is read.
 const FEES_VIEW_PREFERENCE_KEY = 'wc_payments_reports_fees_view';
 
+// Client 11.3.0 `reports/fees/use-fees-user-prefs.ts:19,88-93`: a burst of view changes becomes one write of the final rows per page.
 const FEES_VIEW_PREFERENCE_WRITE_DELAY_MS = 750;
 
 // The Fees report endpoint's `per_page` range (`WooPaymentsReportsRestController.php`).
@@ -141,11 +143,13 @@ type SavedFeesView = {
 	perPage?: unknown;
 };
 
+// Client 11.3.0 `reports/fees/view.ts:19-35`: Date occupies the title slot, separate from the saved columns.
 const getFeesTableFields = ( fields: unknown ): string[] =>
 	Array.isArray( fields )
 		? fields.filter( ( field ) => field !== 'date' )
 		: DEFAULT_FEES_FIELDS;
 
+// Client 11.3.0 `reports/fees/view.ts:49-68`: restore the layout and keep formatted currency columns start-aligned.
 const getFeesTableView = (
 	search: string,
 	savedView: SavedFeesView | undefined,
@@ -303,7 +307,7 @@ const FeesReport = ( {
 		[]
 	);
 
-	// Re-seed on external navigation or the first preference load. Our own writes must leave staged filter chips intact.
+	// Client 11.3.0 `reports/fees/use-fees-view.ts:190-205`: re-seed on external navigation or first preference load to preserve staged filters.
 	useEffect( () => {
 		const urlKey = getFeesUrlKey( location.search, savedPerPage );
 		const justLoaded = ! wasLoadedRef.current && hasLoadedSavedView;
@@ -338,6 +342,7 @@ const FeesReport = ( {
 
 		setView( nextView );
 
+		// Client 11.3.0 `reports/fees/use-fees-user-prefs.ts:26-37,66-101`: compare and save fields, page size and layout together.
 		const nextPreference = {
 			fields: getFeesTableFields( nextView.fields ),
 			perPage: nextView.perPage,
@@ -462,7 +467,6 @@ const FeesReport = ( {
 				label: __( 'Date', 'woocommerce' ),
 				header: __( 'Date & time', 'woocommerce' ),
 				type: 'date',
-				enableHiding: false,
 				enableSorting: true,
 				filterBy: {
 					operators: [ 'between', 'on', 'before', 'after' ],
