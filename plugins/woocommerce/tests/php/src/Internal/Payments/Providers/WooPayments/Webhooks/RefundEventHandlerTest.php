@@ -264,7 +264,7 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 			$this->sut->process( 'charge.refund.updated', $event );
 
 			$this->assertSame( $interrupt ? 1 : 0, did_action( 'woocommerce_order_note_added' ) - $added );
-			$this->assertSame( 'insufficient_funds' === $reason ? 1 : 0, did_action( 'woocommerce_after_order_object_save' ) - $saves );
+			$this->assertSame( $interrupt ? 1 : 0, did_action( 'woocommerce_after_order_object_save' ) - $saves );
 			$this->assertSame( 1, did_action( 'woocommerce_delete_order_refund' ) - $deletions );
 			$this->assertSame( 1, did_action( 'woocommerce_order_status_refunded_to_failed' ) - $transitions );
 			$this->assertSame( 1, did_action( 'woocommerce_order_status_failed_notification' ) - $notifications );
@@ -383,28 +383,25 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * A previously noted failure may have stopped before either of its two status writes.
+	 * The extension's cancellation note preserves a later manual refund in every stored refund status.
 	 *
-	 * @testWith ["refunded", "successful", "failed"]
-	 *           ["refunded", "failed", "failed"]
-	 *           ["processing", "pending", "processing"]
-	 * @param string $status        Current order status.
-	 * @param string $refund_status Stale refund status.
-	 * @param string $expected      Expected order status.
+	 * @testWith [""]
+	 *           ["failed"]
+	 *           ["pending"]
+	 *           ["successful"]
+	 * @param string $refund_status Current stored refund status.
 	 */
-	public function test_matched_failure_repairs_unfinished_status_writes( string $status, string $refund_status, string $expected ): void {
-		$order                              = $this->create_refundable_order();
-		$charge                             = $this->get_successful_refund_charge();
-		$charge['refunds']['data'][0]['id'] = 're_earlier';
-		$this->sut->process( 'charge.refunded', $charge );
-		$order = wc_get_order( $order->get_id() );
-		$order->set_status( $status );
-		$order->update_meta_data( '_wcpay_refund_status', $refund_status );
-		$order->save();
+	public function test_extension_cancellation_note_preserves_a_manual_refund( string $refund_status ): void {
+		$order = $this->create_refundable_order();
 		$order->add_order_note( sprintf( 'A refund of %s was <strong>cancelled</strong> using WooPayments (<code>re_123</code>).', wc_price( 4, array( 'currency' => 'USD' ) ) ) );
+		$order->set_status( OrderStatus::REFUNDED );
+		if ( '' !== $refund_status ) {
+			$order->update_meta_data( '_wcpay_refund_status', $refund_status );
+		}
+		$order->save();
 
-		$this->sut->process(
-			'charge.refund.updated',
+		$this->assert_refund_replay_preserves_order(
+			$order,
 			array(
 				'id'       => 're_123',
 				'charge'   => 'ch_123',
@@ -413,11 +410,52 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 				'status'   => 'canceled',
 			)
 		);
+	}
 
-		$order = wc_get_order( $order->get_id() );
-		$this->assertSame( $expected, $order->get_status() );
-		$this->assertSame( 'failed', $order->get_meta( '_wcpay_refund_status' ) );
-		$this->assertCount( 1, $this->get_notes_containing( $order, '<code>re_123</code>' ) );
+	/**
+	 * Replay a refund update and check for changes to the order, its refunds, its notes or the failed-order email.
+	 *
+	 * @param WC_Order $order Order as the merchant left it.
+	 * @param array    $event Refund update to replay.
+	 */
+	private function assert_refund_replay_preserves_order( WC_Order $order, array $event ): void {
+		$notes         = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+		$refund_ids    = array_map( static fn( $refund ) => $refund->get_id(), $order->get_refunds() );
+		$notifications = did_action( 'woocommerce_order_status_failed_notification' );
+		$saves         = did_action( 'woocommerce_after_order_object_save' );
+
+		$this->assertSame( 0, $this->deliver_refund_update_and_count_emails( $event ) );
+
+		$fresh = wc_get_order( $order->get_id() );
+		$this->assertSame( $order->get_status(), $fresh->get_status() );
+		$this->assertSame( $order->get_meta( '_wcpay_refund_status' ), $fresh->get_meta( '_wcpay_refund_status' ) );
+		$this->assertSame( $refund_ids, array_map( static fn( $refund ) => $refund->get_id(), $fresh->get_refunds() ) );
+		$this->assertEquals( $notes, wc_get_order_notes( array( 'order_id' => $fresh->get_id() ) ) );
+		$this->assertSame( $notifications, did_action( 'woocommerce_order_status_failed_notification' ) );
+		$this->assertSame( $saves, did_action( 'woocommerce_after_order_object_save' ) );
+	}
+
+	/**
+	 * Deliver a refund update with a customer failed-order email recipient and an in-memory mail transport.
+	 *
+	 * @param array $event Refund update.
+	 * @return int Messages sent during the delivery.
+	 */
+	private function deliver_refund_update_and_count_emails( array $event ): int {
+		$email = WC()->mailer()->get_emails()['WC_Email_Customer_Failed_Order'];
+		add_action( 'woocommerce_order_status_failed_notification', array( $email, 'trigger' ), 10, 2 );
+		$recipient = static fn() => 'buyer@example.test';
+		$transport = static fn() => '__return_true';
+		add_filter( 'woocommerce_email_recipient_customer_failed_order', $recipient );
+		add_filter( 'woocommerce_mail_callback', $transport );
+		try {
+			$sent = did_action( 'woocommerce_email_sent' );
+			$this->sut->process( 'charge.refund.updated', $event );
+			return did_action( 'woocommerce_email_sent' ) - $sent;
+		} finally {
+			remove_filter( 'woocommerce_mail_callback', $transport );
+			remove_filter( 'woocommerce_email_recipient_customer_failed_order', $recipient );
+		}
 	}
 
 	/**
@@ -437,7 +475,7 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 			'status'         => 'failed',
 			'failure_reason' => 'insufficient_funds',
 		);
-		if ( in_array( $history, array( 'built-in', 'neighbour' ), true ) ) {
+		if ( in_array( $history, array( 'built-in', 'neighbour', 'recreated row' ), true ) ) {
 			$prior       = $event;
 			$prior['id'] = 'neighbour' === $history ? 're_other' : 're_current';
 			$this->sut->process( 'charge.refund.updated', $prior );
@@ -450,6 +488,11 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 			$order->add_order_note( sprintf( 'English' === $history ? $format : 'Solde insuffisant pour %s.', $price . ( 'old format' === $history ? ' US$' : '' ) ) );
 		}
 
+		if ( 'recreated row' === $history ) {
+			$row = $this->create_local_refund( $order );
+			$row->update_meta_data( '_wcpay_refund_id', $event['id'] );
+			$row->save_meta_data();
+		}
 		if ( 'built-in' === $history ) {
 			$this->install_test_translations(
 				array( 'woocommerce' => array( 'Refund of %1$s <strong>failed</strong> due to insufficient funds in your WooPayments balance.' => 'Solde insuffisant pour %1$s.' ) )
@@ -459,13 +502,18 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 		$order->set_status( OrderStatus::REFUNDED );
 		$order->update_meta_data( '_wcpay_refund_status', 'successful' );
 		$order->save();
-		$this->sut->process( 'charge.refund.updated', $event );
+		$emails = $this->deliver_refund_update_and_count_emails( $event );
 
-		$order = wc_get_order( $order->get_id() );
-		$this->assertSame( 'failed', $order->get_status() );
-		$this->assertSame( 'failed', $order->get_meta( '_wcpay_refund_status' ) );
+		$order   = wc_get_order( $order->get_id() );
+		$stopped = 'built-in' === $history;
+		$this->assertSame( $stopped ? 'refunded' : 'failed', $order->get_status() );
+		$this->assertSame( $stopped ? 'successful' : 'failed', $order->get_meta( '_wcpay_refund_status' ) );
+		$this->assertSame( $stopped ? 0 : 1, $emails );
+		if ( 'recreated row' === $history ) {
+			$this->assertFalse( wc_get_order( $row->get_id() ) );
+		}
 		$notes = $this->get_notes_containing( $order, 'woocommerce-Price-amount' );
-		$this->assertCount( in_array( $history, array( 'built-in', 'first' ), true ) ? 1 : 2, $notes );
+		$this->assertCount( in_array( $history, array( 'built-in', 'first', 'recreated row' ), true ) ? 1 : 2, $notes );
 		$identities = array();
 		foreach ( $notes as $note ) {
 			$identities[] = get_comment_meta( $note->id, '_wc_woopayments_note_identity', false );
@@ -474,9 +522,11 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 		if ( 'neighbour' === $history ) {
 			$this->assertContains( array( hash( 'sha256', 'refund:re_other:failed' ) ), $identities );
 		}
-		if ( 'English' === $history ) {
-			$this->sut->process( 'charge.refund.updated', $event );
-			$this->assertCount( 2, $this->get_notes_containing( $order, 'woocommerce-Price-amount' ) );
+		$order->set_status( OrderStatus::REFUNDED );
+		$order->save();
+		$this->assert_refund_replay_preserves_order( $order, $event );
+		if ( 'neighbour' === $history ) {
+			$this->assert_refund_replay_preserves_order( $order, $prior );
 		}
 	}
 
@@ -486,6 +536,7 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 		foreach ( self::note_history_cases( array( 'insufficient funds' ) ) as $label => $case ) {
 			$cases[ $label ] = array( $case[1] );
 		}
+		$cases['insufficient funds / recreated row'] = array( 'recreated row' );
 		return $cases;
 	}
 

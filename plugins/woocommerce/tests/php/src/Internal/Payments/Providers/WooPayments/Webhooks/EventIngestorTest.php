@@ -6215,9 +6215,15 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox charge.refund.updated repairs status metadata when a failed-refund note already exists.
+	 * @testdox A replay of a noted failure preserves a manual refund and the current stored refund status.
+	 *
+	 * @testWith [""]
+	 *           ["pending"]
+	 *           ["successful"]
+	 *           ["failed"]
+	 * @param string $refund_status Stored refund status when the event arrives again.
 	 */
-	public function test_charge_refund_updated_failed_reconciles_existing_note_without_returning_early(): void {
+	public function test_noted_refund_failure_preserves_a_manual_refund( string $refund_status ): void {
 		$order = $this->create_refundable_woopayments_order( '10.00' );
 		$event = $this->create_refund_updated_event(
 			array(
@@ -6230,17 +6236,29 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->delete_meta_data( '_wcpay_refund_status' );
+		if ( '' === $refund_status ) {
+			$order->delete_meta_data( '_wcpay_refund_status' );
+		} else {
+			$order->update_meta_data( '_wcpay_refund_status', $refund_status );
+		}
 		$order->set_status( 'refunded' );
 		$order->save();
+		$notifications = did_action( 'woocommerce_order_status_failed_notification' );
+		$saves         = did_action( 'woocommerce_after_order_object_save' );
+		$rows          = array_map( static fn( $refund ) => $refund->get_id(), $order->get_refunds() );
+		$notes         = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
 
 		$this->sut->process( $event );
 
 		$order = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'failed', $order->get_status() );
-		$this->assertSame( 'failed', $order->get_meta( '_wcpay_refund_status', true ) );
+		$this->assertSame( 'refunded', $order->get_status() );
+		$this->assertSame( $refund_status, $order->get_meta( '_wcpay_refund_status', true ) );
+		$this->assertSame( $rows, array_map( static fn( $refund ) => $refund->get_id(), $order->get_refunds() ) );
+		$this->assertEquals( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertSame( $saves, did_action( 'woocommerce_after_order_object_save' ) );
+		$this->assertSame( $notifications, did_action( 'woocommerce_order_status_failed_notification' ) );
 	}
 
 	/**
