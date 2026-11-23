@@ -4746,6 +4746,92 @@ class ClientTest extends WC_Unit_Test_Case {
 		}
 	}
 
+	/** Multipart uploads and pre-encoded uploads must produce the same request, including scalar file names. */
+	public function test_upload_paths_send_the_same_body(): void {
+		$http           = new FakeHttpClient();
+		$http->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => '{"id":"file_receipt"}',
+		);
+		$client         = new Client();
+		$client->init( $http, $this->create_account_service( false ), $this->transport_log() );
+		/** @var WP_REST_Request<array<string,mixed>> $request */
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/file' );
+		$request->set_param( 'purpose', 'dispute_evidence' );
+		$request->set_param( 'as_account', true );
+
+		$tmp_file = wp_tempnam( 'evidence' );
+		try {
+			file_put_contents( $tmp_file, 'hello' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Test fixture.
+			$request->set_file_params(
+				array(
+					'file' => array(
+						'name'     => 123,
+						'type'     => 'application/pdf',
+						'tmp_name' => $tmp_file,
+					),
+				)
+			);
+			$client->upload_file( $request );
+			$multipart = array( $http->last_method, $http->last_path, $http->last_body );
+
+			$client->upload_file_contents( 'aGVsbG8=', '123', 'application/pdf', 'dispute_evidence', true );
+			$this->assertSame( $multipart, array( $http->last_method, $http->last_path, $http->last_body ) );
+			$this->assertSame( 2, $http->request_count );
+		} finally {
+			wp_delete_file( $tmp_file );
+		}
+	}
+
+	/** The pre-encoded path retains the same provider failure code and HTTP status as multipart uploads. */
+	public function test_upload_file_contents_wraps_provider_failures(): void {
+		$http           = new FakeHttpClient();
+		$http->response = array(
+			'response' => array( 'code' => 413 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => '{"error":{"code":"file_too_large","message":"File exceeds limit."}}',
+		);
+		$client         = new Client();
+		$client->init( $http, $this->create_account_service( false ), $this->transport_log() );
+		try {
+			$client->upload_file_contents( 'aGVsbG8=', 'receipt.pdf', 'application/pdf', 'dispute_evidence' );
+			$this->fail( 'Expected an upload error.' );
+		} catch ( ApiException $failure ) {
+			$this->assertSame( 'wcpay_evidence_file_upload_error', $failure->get_error_code() );
+			$this->assertSame( 413, $failure->get_http_code() );
+			$this->assertStringContainsString( 'File exceeds limit.', $failure->getMessage() );
+		}
+	}
+
+	/**
+	 * Multipart errors keep their local codes before reaching the Files API.
+	 *
+	 * @testWith [false, "wcpay_evidence_file_max_size"]
+	 *           [true, "wcpay_evidence_file_read_error"]
+	 * @param bool   $missing Whether the supplied temp file is missing.
+	 * @param string $code Expected local error.
+	 */
+	public function test_multipart_file_errors_send_nothing( bool $missing, string $code ): void {
+		$http   = new FakeHttpClient();
+		$client = new Client();
+		$client->init( $http, $this->create_account_service( false ), $this->transport_log() );
+		/** @var WP_REST_Request<array<string,mixed>> $request */
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/file' );
+		if ( $missing ) {
+			$request->set_file_params( array( 'file' => array( 'tmp_name' => __DIR__ . '/missing-upload.pdf' ) ) );
+		}
+		try {
+			// Suppress the expected missing-file warning to observe the API exception it produces.
+			@$client->upload_file( $request ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+			$this->fail( 'Expected a local upload error.' );
+		} catch ( ApiException $failure ) {
+			$this->assertSame( $code, $failure->get_error_code() );
+			$this->assertSame( 400, $failure->get_http_code() );
+			$this->assertSame( 0, $http->request_count );
+		}
+	}
+
 	/**
 	 * @testdox Should send DELETE parameters in the query string with no request body, so the Jetpack signature verifies.
 	 */

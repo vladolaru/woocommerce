@@ -33,6 +33,7 @@ abstract class AbilityTestCase extends \WC_Unit_Test_Case {
 		'get-transactions',
 		'get-transactions-summary',
 		'refund-charge',
+		'upload-dispute-evidence-file',
 	);
 
 	/** Start a fresh request before discovering abilities. */

@@ -14,7 +14,6 @@ class AbilityRegistrationTest extends AbilityTestCase {
 	private const NOT_YET_PORTED = array(
 		'accept-dispute',
 		'submit-dispute-evidence',
-		'upload-dispute-evidence-file',
 	);
 
 	/** Provide the independent extension records without losing empty object defaults. */
@@ -123,7 +122,7 @@ class AbilityRegistrationTest extends AbilityTestCase {
 		$this->install_root();
 		add_filter( self::GATE, '__return_true' );
 		$classes = apply_filters( 'woocommerce_ability_definition_classes', array() );
-		$this->assertCount( 19, $classes );
+		$this->assertCount( 20, $classes );
 		foreach ( $classes as $class ) {
 			$this->assertArrayNotHasKey( 'public', $class::get_registration_args()['meta'], $class );
 		}

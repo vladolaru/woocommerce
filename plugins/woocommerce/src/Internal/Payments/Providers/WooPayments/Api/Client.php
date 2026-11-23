@@ -2210,14 +2210,38 @@ class Client {
 			throw new ApiException( __( 'Unable to read the uploaded file.', 'woocommerce' ), 'wcpay_evidence_file_read_error', 400 );
 		}
 
+		return $this->upload_file_contents(
+			base64_encode( $file_contents ), // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Encode the uploaded file for the Files API.
+			isset( $file['name'] ) && is_scalar( $file['name'] ) ? (string) $file['name'] : '',
+			isset( $file['type'] ) && is_scalar( $file['type'] ) ? (string) $file['type'] : '',
+			(string) $request->get_param( 'purpose' ),
+			(bool) $request->get_param( 'as_account' )
+		);
+	}
+
+	/**
+	 * Upload base64 file contents through the merchant Files endpoint.
+	 * Client 11.3.0 includes/wc-payment-api/class-wc-payments-api-client.php:902-923 (upload_evidence_file_contents).
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param string $file_contents_base64 Base64-encoded contents.
+	 * @param string $file_name            File name.
+	 * @param string $file_type            MIME type.
+	 * @param string $purpose              Provider file purpose.
+	 * @param bool   $as_account           Whether to upload as the connected account.
+	 * @return array<string,mixed> Provider file object.
+	 * @throws ApiException When the upload fails.
+	 */
+	public function upload_file_contents( string $file_contents_base64, string $file_name, string $file_type, string $purpose, bool $as_account = false ): array {
 		try {
 			return $this->request(
 				array(
-					'file'       => base64_encode( $file_contents ), // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Encoding uploaded file contents for the provider Files API.
-					'file_name'  => isset( $file['name'] ) && is_scalar( $file['name'] ) ? (string) $file['name'] : '',
-					'file_type'  => isset( $file['type'] ) && is_scalar( $file['type'] ) ? (string) $file['type'] : '',
-					'purpose'    => (string) $request->get_param( 'purpose' ),
-					'as_account' => (bool) $request->get_param( 'as_account' ),
+					'file'       => $file_contents_base64,
+					'file_name'  => $file_name,
+					'file_type'  => $file_type,
+					'purpose'    => $purpose,
+					'as_account' => $as_account,
 				),
 				self::FILES_API,
 				'POST'
