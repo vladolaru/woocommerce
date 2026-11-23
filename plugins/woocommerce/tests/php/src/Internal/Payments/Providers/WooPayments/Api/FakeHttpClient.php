@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\HttpClient;
+use Automattic\WooCommerce\Tests\Internal\Payments\PlatformRequestClaimGuard;
 
 /**
  * Fake WooPayments HTTP client for provider transport tests.
@@ -131,7 +132,24 @@ class FakeHttpClient extends HttpClient {
 	 * @param bool        $blocking       Whether the request should block for the response.
 	 * @return mixed
 	 */
-	public function request( string $method, string $path, array $headers = array(), ?string $body = null, int $timeout = 70, bool $use_user_token = false, bool $blocking = true ) {
+	final public function request( string $method, string $path, array $headers = array(), ?string $body = null, int $timeout = 70, bool $use_user_token = false, bool $blocking = true ) {
+		PlatformRequestClaimGuard::observe( $method, $path );
+		return $this->respond_to_request( $method, $path, $headers, $body, $timeout, $use_user_token, $blocking );
+	}
+
+	/**
+	 * Supply the response after the claim guard has observed the request.
+	 *
+	 * @param string      $method  HTTP method.
+	 * @param string      $path    WPCOM path.
+	 * @param string[]    $headers Request headers.
+	 * @param string|null $body    Request body.
+	 * @param int         $timeout        Request timeout.
+	 * @param bool        $use_user_token Whether to sign with the connection-owner user token.
+	 * @param bool        $blocking       Whether the request should block for the response.
+	 * @return mixed
+	 */
+	public function respond_to_request( string $method, string $path, array $headers = array(), ?string $body = null, int $timeout = 70, bool $use_user_token = false, bool $blocking = true ) {
 		++$this->request_count;
 
 		$this->last_method         = $method;

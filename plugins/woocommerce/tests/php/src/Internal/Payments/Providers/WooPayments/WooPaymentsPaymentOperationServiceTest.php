@@ -2905,12 +2905,12 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			 * @param bool        $blocking       Whether the request should block for the response.
 			 * @return mixed
 			 */
-			public function request( string $method, string $path, array $headers = array(), ?string $body = null, int $timeout = 70, bool $use_user_token = false, bool $blocking = true ) {
+			public function respond_to_request( string $method, string $path, array $headers = array(), ?string $body = null, int $timeout = 70, bool $use_user_token = false, bool $blocking = true ) {
 				if ( is_callable( $this->on_request ) ) {
 					call_user_func( $this->on_request, $method );
 				}
 
-				return parent::request( $method, $path, $headers, $body, $timeout, $use_user_token, $blocking );
+				return parent::respond_to_request( $method, $path, $headers, $body, $timeout, $use_user_token, $blocking );
 			}
 		};
 		$seen                    = array();
@@ -3445,7 +3445,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			 * @param bool        $blocking       Whether the request should block for the response.
 			 * @return mixed
 			 */
-			public function request( string $method, string $path, array $headers = array(), ?string $body = null, int $timeout = 70, bool $use_user_token = false, bool $blocking = true ) {
+			public function respond_to_request( string $method, string $path, array $headers = array(), ?string $body = null, int $timeout = 70, bool $use_user_token = false, bool $blocking = true ) {
 				foreach ( $this->routes as $needle => $answer ) {
 					if ( false !== strpos( $path, $needle ) ) {
 						array_unshift( $this->responses, $answer );
@@ -3453,7 +3453,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 					}
 				}
 
-				return parent::request( $method, $path, $headers, $body, $timeout, $use_user_token, $blocking );
+				return parent::respond_to_request( $method, $path, $headers, $body, $timeout, $use_user_token, $blocking );
 			}
 		};
 		$http_client->routes = $routes;
@@ -10501,12 +10501,12 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			 * @param bool        $blocking       Whether the request should block for the response.
 			 * @return mixed
 			 */
-			public function request( string $method, string $path, array $headers = array(), ?string $body = null, int $timeout = 70, bool $use_user_token = false, bool $blocking = true ) {
+			public function respond_to_request( string $method, string $path, array $headers = array(), ?string $body = null, int $timeout = 70, bool $use_user_token = false, bool $blocking = true ) {
 				if ( is_callable( $this->before_answer ) ) {
 					call_user_func( $this->before_answer, $method );
 				}
 
-				return parent::request( $method, $path, $headers, $body, $timeout, $use_user_token, $blocking );
+				return parent::respond_to_request( $method, $path, $headers, $body, $timeout, $use_user_token, $blocking );
 			}
 		};
 

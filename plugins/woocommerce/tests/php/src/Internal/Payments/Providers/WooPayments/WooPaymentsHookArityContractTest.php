@@ -63,6 +63,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransactionsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTransactionsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionController;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPublicFraudServices;
 use ReflectionClass;
 use ReflectionMethod;
@@ -183,45 +184,18 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	 * transport response for any request.
 	 */
 	private function fake_http_client(): HttpClient {
-		return new class() extends HttpClient {
-			/**
-			 * @return bool
-			 */
-			public function is_connected(): bool {
-				return true;
-			}
-
-			/**
-			 * @return int|null
-			 */
-			public function get_blog_id(): ?int {
-				return 123456789;
-			}
-
-			/**
-			 * @param string      $method         HTTP method.
-			 * @param string      $path           WPCOM API path.
-			 * @param string[]    $headers        Request headers.
-			 * @param string|null $body           Encoded request body.
-			 * @param int         $timeout        Request timeout.
-			 * @param bool        $use_user_token Whether to sign with the connection-owner user token.
-			 * @param bool        $blocking       Whether the request should block for the response.
-			 * @return array<string,mixed>
-			 */
-			public function request( string $method, string $path, array $headers = array(), ?string $body = null, int $timeout = 70, bool $use_user_token = false, bool $blocking = true ) {
-				unset( $method, $path, $headers, $body, $timeout, $use_user_token, $blocking );
-
-				return array(
-					'body'     => '{"data":[]}',
-					'response' => array(
-						'code'    => 200,
-						'message' => 'OK',
-					),
-					'headers'  => array(),
-					'cookies'  => array(),
-				);
-			}
-		};
+		$http           = new FakeHttpClient();
+		$http->blog_id  = 123456789;
+		$http->response = array(
+			'body'     => '{"data":[]}',
+			'response' => array(
+				'code'    => 200,
+				'message' => 'OK',
+			),
+			'headers'  => array(),
+			'cookies'  => array(),
+		);
+		return $http;
 	}
 
 	/**

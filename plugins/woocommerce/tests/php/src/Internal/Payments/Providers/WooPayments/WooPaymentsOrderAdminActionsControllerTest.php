@@ -6251,14 +6251,14 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 			 * @param bool        $blocking       Whether the request blocks.
 			 * @return mixed
 			 */
-			public function request( string $method, string $path, array $headers = array(), ?string $body = null, int $timeout = 70, bool $use_user_token = false, bool $blocking = true ) {
+			public function respond_to_request( string $method, string $path, array $headers = array(), ?string $body = null, int $timeout = 70, bool $use_user_token = false, bool $blocking = true ) {
 				if ( null !== $this->meanwhile ) {
 					$meanwhile       = $this->meanwhile;
 					$this->meanwhile = null;
 					$meanwhile();
 				}
 
-				return parent::request( $method, $path, $headers, $body, $timeout, $use_user_token, $blocking );
+				return parent::respond_to_request( $method, $path, $headers, $body, $timeout, $use_user_token, $blocking );
 			}
 		};
 		$transport->response = $response;
@@ -6302,8 +6302,8 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 			 * @param bool        $blocking       Whether the request blocks.
 			 * @return mixed
 			 */
-			public function request( string $method, string $path, array $headers = array(), ?string $body = null, int $timeout = 70, bool $use_user_token = false, bool $blocking = true ) {
-				parent::request( $method, $path, $headers, $body, $timeout, $use_user_token, $blocking );
+			public function respond_to_request( string $method, string $path, array $headers = array(), ?string $body = null, int $timeout = 70, bool $use_user_token = false, bool $blocking = true ) {
+				parent::respond_to_request( $method, $path, $headers, $body, $timeout, $use_user_token, $blocking );
 
 				return ( $this->answer )( $path );
 			}

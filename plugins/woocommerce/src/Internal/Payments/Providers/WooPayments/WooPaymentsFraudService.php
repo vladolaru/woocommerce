@@ -323,6 +323,7 @@ class WooPaymentsFraudService implements RegisterHooksInterface {
 			return null;
 		}
 
+		// Stated lock exception: saving the captured order can fetch public Sift configuration when its cache is cold.
 		$fetched = $this->api_client->fetch_public_fraud_services_config();
 		if ( ! is_array( $fetched ) ) {
 			set_transient( self::PUBLIC_CONFIG_TRANSIENT, self::PUBLIC_CONFIG_FAILURE_SENTINEL, self::PUBLIC_CONFIG_FAILURE_TTL );

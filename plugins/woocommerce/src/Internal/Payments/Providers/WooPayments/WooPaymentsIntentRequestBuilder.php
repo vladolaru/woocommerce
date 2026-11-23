@@ -187,6 +187,7 @@ class WooPaymentsIntentRequestBuilder {
 			$request_data['setup_future_usage'] = 'off_session';
 		}
 
+		// Stated lock exception: ordinary checkout already read the account during availability checks; Level 3 uses that copy.
 		$level3_data = $this->get_level3_service()->get_data_from_order( $order );
 		if ( array() !== $level3_data ) {
 			$request_data['level3'] = $level3_data;

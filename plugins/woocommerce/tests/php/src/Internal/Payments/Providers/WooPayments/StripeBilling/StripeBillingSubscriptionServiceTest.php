@@ -3,6 +3,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling;
 
+use Automattic\WooCommerce\Tests\Internal\Payments\PlatformRequestClaimGuard;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WithOrderPaymentClaim;
 use Automattic\WooCommerce\Tests\Internal\Payments\StorefrontMultiCurrencyTestTrait;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
@@ -36,6 +38,7 @@ use WC_Unit_Test_Case;
  * first as the client's `request()` adds it (`class-wc-payments-api-client.php:2635-2640`).
  */
 class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
+	use WithOrderPaymentClaim;
 
 	use StorefrontMultiCurrencyTestTrait;
 
@@ -941,7 +944,7 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 		$subscription = $this->create_subscription( array( '_wcpay_subscription_id' => $wcpay_subscription_id ), 2, '49.80', 'USD', $payment_method );
 		$token        = $this->create_token();
 
-		$this->sut->update_wcpay_subscription_payment_method( $subscription->get_id(), $token->get_id(), $token );
+		$this->with_order_payment_claim( $subscription, 'checkout', fn() => $this->sut->update_wcpay_subscription_payment_method( $subscription->get_id(), $token->get_id(), $token ) );
 
 		$this->assertSame( $expected_requests, $this->http_client->request_count );
 		if ( $expected_requests ) {
@@ -1707,7 +1710,7 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 		// The recorded charge collected 10.00 USD.
 		$renewal_order->set_total( '10.00' );
 		$renewal_order->save();
-		wc_get_container()->get( OrderPaymentLock::class )->claim( $renewal_order, new WooPaymentsPersistenceVocabulary(), 'pi_webhookRecordingTheRenewal', 'payment operation' );
+		PlatformRequestClaimGuard::rival_token( wc_get_container()->get( OrderPaymentLock::class )->claim( $renewal_order, new WooPaymentsPersistenceVocabulary(), 'pi_webhookRecordingTheRenewal', 'payment operation' ) );
 		$payments_completed = did_action( 'woocommerce_payment_complete' );
 		$token              = $this->create_token();
 

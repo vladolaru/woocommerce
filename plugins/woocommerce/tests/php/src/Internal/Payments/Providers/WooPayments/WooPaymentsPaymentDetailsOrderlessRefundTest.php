@@ -79,8 +79,8 @@ class WooPaymentsPaymentDetailsOrderlessRefundTest extends WC_REST_Unit_Test_Cas
 			 * @param bool        $blocking       Whether to wait for the response.
 			 * @return mixed
 			 */
-			public function request( string $method, string $path, array $headers = array(), ?string $body = null, int $timeout = 70, bool $use_user_token = false, bool $blocking = true ) {
-				$response = parent::request( $method, $path, $headers, $body, $timeout, $use_user_token, $blocking );
+			public function respond_to_request( string $method, string $path, array $headers = array(), ?string $body = null, int $timeout = 70, bool $use_user_token = false, bool $blocking = true ) {
+				$response = parent::respond_to_request( $method, $path, $headers, $body, $timeout, $use_user_token, $blocking );
 				return $response instanceof \Closure ? $response() : $response;
 			}
 		};

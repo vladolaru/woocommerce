@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling;
 
+use Automattic\WooCommerce\Tests\Internal\Payments\PlatformRequestClaimGuard;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\FailedOrderCardRender;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
@@ -1617,7 +1618,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 			// The other delivery runs inside this one's intent read, and then still holds the order lock.
 			remove_filter( 'wcpay_api_request_params', $overlap );
 			$this->sut->handle_event( $event );
-			$lock_token = wc_get_container()->get( OrderPaymentLock::class )->claim( wc_get_order( $order->get_id() ), $vocabulary, self::RENEWAL_INTENT_ID, 'payment status update' );
+			$lock_token = PlatformRequestClaimGuard::rival_token( wc_get_container()->get( OrderPaymentLock::class )->claim( wc_get_order( $order->get_id() ), $vocabulary, self::RENEWAL_INTENT_ID, 'payment status update' ) );
 			return $args[0] ?? null;
 		};
 		add_filter( 'wcpay_api_request_params', $overlap );
@@ -1681,7 +1682,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 				get_post( $order->get_id() );
 				$pending_post = wp_cache_get( $order->get_id(), 'posts' );
 				$this->sut->handle_event( $event );
-				$lock_token = wc_get_container()->get( OrderPaymentLock::class )->claim( $order, $vocabulary, self::RENEWAL_INTENT_ID, 'payment status update' );
+				$lock_token = PlatformRequestClaimGuard::rival_token( wc_get_container()->get( OrderPaymentLock::class )->claim( $order, $vocabulary, self::RENEWAL_INTENT_ID, 'payment status update' ) );
 				add_action( 'woocommerce_subscription_status_on-hold', $restore );
 				return $args[0] ?? null;
 			};
@@ -1932,7 +1933,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		$order->set_payment_method( 'woocommerce_payments' );
 		$order->update_meta_data( '_wcpay_billing_invoice_id', self::RENEWAL_INVOICE_ID );
 		$order->save();
-		wc_get_container()->get( OrderPaymentLock::class )->claim( $order, new WooPaymentsPersistenceVocabulary(), 'pi_rec63CheckoutInFlight', 'payment operation' );
+		PlatformRequestClaimGuard::rival_token( wc_get_container()->get( OrderPaymentLock::class )->claim( $order, new WooPaymentsPersistenceVocabulary(), 'pi_rec63CheckoutInFlight', 'payment operation' ) );
 		$this->queue_response( 200, $this->get_renewal_intent() );
 
 		try {

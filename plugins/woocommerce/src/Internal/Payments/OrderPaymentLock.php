@@ -17,6 +17,8 @@ use WC_Order;
  * comment at that call, naming it a stated exception to this rule. An operation that runs past the lock's expiry and
  * is taken over can still clear records the newer claim relies on; that is a stated exception to this rule.
  *
+ * The executable list of permitted platform calls lives in tests/php/src/Internal/Payments/PlatformRequestClaimGuard.php.
+ *
  * @since 11.0.0
  * @internal
  */

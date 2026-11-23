@@ -18,6 +18,7 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil;
 use Automattic\WooCommerce\StoreApi\Payments\PaymentContext;
 use Automattic\WooCommerce\StoreApi\Payments\PaymentResult;
+use Automattic\WooCommerce\Tests\Internal\Payments\PlatformRequestClaimGuard;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\StoredPaymentRecords;
 use Automattic\WooCommerce\Testing\Tools\TestingContainer;
@@ -158,7 +159,7 @@ class WooPaymentsEarlierAttemptCleanupTest extends WC_Unit_Test_Case {
 
 		$lock       = wc_get_container()->get( OrderPaymentLock::class );
 		$vocabulary = wc_get_container()->get( WooPaymentsPersistenceVocabulary::class );
-		$held_token = $lock_held ? $lock->claim( $order, $vocabulary, 'pi_other', 'refund' ) : null;
+		$held_token = $lock_held ? PlatformRequestClaimGuard::rival_token( $lock->claim( $order, $vocabulary, 'pi_other', 'refund' ) ) : null;
 		try {
 			$this->sut->finish_earlier_attempts();
 		} finally {

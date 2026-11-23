@@ -19,6 +19,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLo
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WithOrderPaymentClaim;
 use PHPUnit\Framework\MockObject\MockObject;
 use WC_Order;
 use WC_Unit_Test_Case;
@@ -32,6 +33,7 @@ use WC_Unit_Test_Case;
  * client's array literals, with `test_mode` first as the client's `request()` adds it (`class-wc-payments-api-client.php:2635-2640`).
  */
 class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
+	use WithOrderPaymentClaim;
 
 	private const BILLING_FIXTURE = __DIR__ . '/../Fixtures/platform-stripe-billing-api.json';
 	private const EVENTS_FIXTURE  = __DIR__ . '/../Fixtures/platform-invoice-events.json';
@@ -170,7 +172,7 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 		$subscription = $this->create_stripe_billed_subscription( $order, 'parent' );
 		$this->subscriptions_controller->expects( $this->never() )->method( 'update_failing_payment_method' );
 
-		$this->sut->maybe_record_invoice_payment( $order->get_id() );
+		$this->with_order_payment_claim( $order, 'checkout', fn() => $this->sut->maybe_record_invoice_payment( $order->get_id() ) );
 
 		$this->assertSame(
 			array(

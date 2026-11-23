@@ -9,6 +9,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Testing\Tools\CodeHacking\CodeHacker;
 use Automattic\WooCommerce\Testing\Tools\EnvironmentIsolation;
+use Automattic\WooCommerce\Tests\Internal\Payments\PlatformRequestClaimGuard;
 use Automattic\WooCommerce\Utilities\OrderUtil;
 use PHPUnit\Framework\Constraint\IsType;
 
@@ -138,6 +139,9 @@ class WC_Unit_Test_Case extends WP_HTTP_TestCase {
 		// of these signals still sets it and wins.
 		EnvironmentIsolation::apply();
 		EnvironmentIsolation::apply_for_test( static::class );
+		if ( 0 === strpos( static::class, 'Automattic\\WooCommerce\\Tests\\Internal\\Payments\\' ) ) {
+			PlatformRequestClaimGuard::start();
+		}
 
 		// Add custom factories.
 		$this->factory = new WC_Unit_Test_Factory();
@@ -204,6 +208,7 @@ class WC_Unit_Test_Case extends WP_HTTP_TestCase {
 			parent::tearDown();
 		}
 
+		PlatformRequestClaimGuard::finish();
 		EnvironmentIsolation::assert_no_unmocked_requests();
 	}
 

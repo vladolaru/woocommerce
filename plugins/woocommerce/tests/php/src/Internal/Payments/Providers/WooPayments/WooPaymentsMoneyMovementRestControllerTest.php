@@ -1888,8 +1888,8 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	 * @return \WP_REST_Response
 	 */
 	private function dispatch_card_answer( WC_Order $order, $answer, ?callable $during = null ): \WP_REST_Response {
-		$http = $this->getMockBuilder( FakeHttpClient::class )->onlyMethods( array( 'request' ) )->getMock();
-		$http->expects( $this->once() )->method( 'request' )->willReturnCallback(
+		$http = $this->getMockBuilder( FakeHttpClient::class )->onlyMethods( array( 'respond_to_request' ) )->getMock();
+		$http->expects( $this->once() )->method( 'respond_to_request' )->willReturnCallback(
 			static function () use ( $answer, $during ): array {
 				if ( null !== $during ) {
 					$during();
