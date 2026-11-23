@@ -101,6 +101,26 @@ class WooPaymentsErrorMessages {
 	}
 
 	/**
+	 * Ask the shopper to submit a fresh platform payment method after replacing a missing customer.
+	 *
+	 * @since 11.4.0
+	 * @return string
+	 */
+	public static function get_place_order_again_message(): string {
+		return __( 'Your payment could not be completed and you have not been charged. Please place your order again.', 'woocommerce' );
+	}
+
+	/**
+	 * Ask the shopper to choose another method when their saved card's customer no longer exists.
+	 *
+	 * @since 11.4.0
+	 * @return string
+	 */
+	public static function get_unavailable_saved_method_message(): string {
+		return __( 'This saved payment method is no longer available. Please choose another payment method or enter new card details.', 'woocommerce' );
+	}
+
+	/**
 	 * Get the message for a shopper whose earlier payment attempt for the order is still being processed.
 	 *
 	 * @since 11.4.0

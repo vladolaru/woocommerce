@@ -28,6 +28,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEarlierAttemptCleanup;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsErrorMessages;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFailedTransactionRateLimiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressPaymentMethodTypes;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLevel3Service;
@@ -3543,11 +3544,12 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * error.param); the platform's list route returns Stripe's status and body unchanged (wpcom
 	 * `wcpay/class-intentions-controller.php:371-373` through `wcpay/class-base-controller.php:476-491`).
 	 *
+	 * @param int $status HTTP status returned by the platform.
 	 * @return array<string,mixed>
 	 */
-	private static function stripe_no_such_customer(): array {
+	private static function stripe_no_such_customer( int $status = 404 ): array {
 		return self::http_json(
-			404,
+			$status,
 			array(
 				'error' => array(
 					'type'    => 'invalid_request_error',
@@ -3700,9 +3702,10 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string $intent_id Intent ID.
 	 * @param string $pm        Payment method charged.
+	 * @param string $customer  Customer that paid.
 	 * @return array<string,mixed>
 	 */
-	private static function succeeded_charge( string $intent_id, string $pm ): array {
+	private static function succeeded_charge( string $intent_id, string $pm, string $customer = 'cus_sent' ): array {
 		return self::http_json(
 			200,
 			array(
@@ -3710,7 +3713,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 				'status'         => 'succeeded',
 				'amount'         => 1000,
 				'currency'       => 'usd',
-				'customer'       => 'cus_sent',
+				'customer'       => $customer,
 				'payment_method' => $pm,
 			)
 		);
@@ -4396,6 +4399,181 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Checkout asks for a fresh credential without failing the order, even if the replacement customer cannot be created.
+	 *
+	 * @testWith ["platform", true]
+	 *           ["platform", false]
+	 *           ["saved", true]
+	 *           ["saved", false]
+	 *
+	 * @param string $card          Credential submitted at checkout.
+	 * @param bool   $create_works Whether the platform creates the replacement customer.
+	 */
+	public function test_missing_customer_checkout_refuses_an_unusable_card( string $card, bool $create_works ): void {
+		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$this->assertIsInt( $user_id );
+		wp_set_current_user( $user_id );
+		update_user_option( $user_id, '_wcpay_customer_id_live', 'cus_sent' );
+		$order = $this->create_woopayments_order();
+		$order->set_customer_id( $user_id );
+		$order->update_meta_data( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, 'key_earlier' );
+		$order->save();
+
+		$http            = new FakeHttpClient();
+		$http->responses = array(
+			self::stripe_no_such_customer( 400 ),
+			$create_works ? self::http_json( 200, array( 'id' => 'cus_new' ) ) : self::stripe_api_error( 503 ),
+		);
+		$gateway         = new WooPaymentsGateway();
+		$session         = new \WC_Session_Handler();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $this->missing_customer_provider( $http ), null, null, null, null, null, null, new WooPaymentsFailedTransactionRateLimiter( $session ) );
+		$merchant_email = 'woocommerce_order_status_pending_to_failed_notification';
+		$shopper_email  = 'woocommerce_order_status_failed_notification';
+		$before         = array( did_action( $merchant_email ), did_action( $shopper_email ) );
+		$session->set( 'wcpay_card_declined_registry', array( 1 ) );
+
+		if ( 'saved' === $card ) {
+			$_POST['wc-woocommerce_payments-payment-token'] = (string) $this->create_card_token( $user_id, 'pm_card' )->get_id();
+			$message                                        = 'This saved payment method is no longer available. Please choose another payment method or enter new card details.';
+		} else {
+			$_POST['wcpay-payment-method']             = 'pm_card';
+			$_POST['wcpay-is-platform-payment-method'] = 'true';
+			$message                                   = 'Your payment could not be completed and you have not been charged. Please place your order again.';
+		}
+
+		try {
+			$result = $gateway->process_payment( $order->get_id() );
+			$this->assertSame( 'failure', $result['result'] );
+			$this->assertSame( array( $message ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+			$this->assertSame( array( 'POST intentions', 'POST customers' ), self::platform_calls( $http ) );
+			$this->assertSame( $create_works ? 'cus_new' : false, get_user_option( '_wcpay_customer_id_live', $user_id ) );
+			$this->assertSame( array( 1 ), $session->get( 'wcpay_card_declined_registry' ) );
+			$this->assertSame( $before, array( did_action( $merchant_email ), did_action( $shopper_email ) ) );
+
+			$order = wc_get_order( $order->get_id() );
+			$this->assertInstanceOf( WC_Order::class, $order );
+			$this->assertSame( OrderStatus::PENDING, $order->get_status() );
+			$this->assertSame( 'pm_card', $order->get_meta( '_payment_method_id' ) );
+			$this->assertSame( 'cus_sent', $order->get_meta( '_stripe_customer_id' ) );
+			$this->assertSame( '', $order->get_meta( '_intent_id' ) );
+			$this->assertSame( '', $order->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META ) );
+			$this->assertCount( 1, self::note_texts_containing( $order, 'No such customer' ) );
+
+			if ( ! $create_works ) {
+				return;
+			}
+
+			wc_clear_notices();
+			$unavailable = 'The saved payment method can no longer be used.';
+			if ( 'saved' === $card ) {
+				$http->responses[] = self::http_json(
+					400,
+					array(
+						'error' => array(
+							'code'    => 'payment_method_no_longer_available',
+							'message' => $unavailable,
+						),
+					)
+				);
+			} else {
+				$_POST['wcpay-payment-method'] = 'pm_fresh';
+				$http->responses[]             = self::succeeded_charge( 'pi_paid', 'pm_fresh', 'cus_new' );
+			}
+
+			$result = $gateway->process_payment( $order->get_id() );
+			$second = json_decode( (string) $http->last_body, true );
+			$this->assertSame( array( 'POST intentions', 'POST customers', 'POST intentions' ), self::platform_calls( $http ) );
+			$this->assertSame( 'cus_new', $second['customer'] );
+			$this->assertSame( 'saved' === $card ? 'pm_card' : 'pm_fresh', $second['payment_method'] );
+			$this->assertNotSame( 'key_earlier', $http->last_headers['Idempotency-Key'] );
+			$order = wc_get_order( $order->get_id() );
+			$this->assertInstanceOf( WC_Order::class, $order );
+			if ( 'saved' === $card ) {
+				$this->assertSame( 'failure', $result['result'] );
+				$this->assertSame( OrderStatus::FAILED, $order->get_status() );
+				$this->assertSame( array( $before[0] + 1, $before[1] + 1 ), array( did_action( $merchant_email ), did_action( $shopper_email ) ) );
+				$this->assertSame( array( 'Error: ' . $unavailable ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+			} else {
+				$this->assertSame( 'success', $result['result'] );
+				$this->assertTrue( $order->is_paid() );
+			}
+		} finally {
+			unset( $_POST['wc-woocommerce_payments-payment-token'], $_POST['wcpay-payment-method'], $_POST['wcpay-is-platform-payment-method'] );
+			wc_clear_notices();
+		}
+	}
+
+	/**
+	 * @testdox A connected card declined after replacing its customer counts as one declined attempt.
+	 */
+	public function test_missing_customer_resend_counts_a_real_decline_once(): void {
+		$order   = $this->create_woopayments_order();
+		$account = $this->create_account_service( false );
+		$gateway = new WooPaymentsGateway();
+		$session = new \WC_Session_Handler();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_declining_checkout( $this->load_recorded_decline_entry( 'generic_decline' ), $account, true ), null, null, null, null, null, null, new WooPaymentsFailedTransactionRateLimiter( $session ) );
+		$session->set( 'wcpay_card_declined_registry', array() );
+		$_POST['wcpay-payment-method'] = 'pm_card';
+
+		try {
+			$this->assertSame( 'failure', $gateway->process_payment( $order->get_id() )['result'] );
+			$this->assertCount( 1, $session->get( 'wcpay_card_declined_registry' ) );
+			$order = wc_get_order( $order->get_id() );
+			$this->assertInstanceOf( WC_Order::class, $order );
+			$this->assertSame( OrderStatus::FAILED, $order->get_status() );
+		} finally {
+			unset( $_POST['wcpay-payment-method'] );
+			wc_clear_notices();
+		}
+	}
+
+	/**
+	 * @testdox A saved renewal card can retry only with another existing customer.
+	 *
+	 * @testWith ["cus_sent", "failed"]
+	 *           ["cus_other", "completed"]
+	 *
+	 * @param string $stored_customer Customer stored on the user.
+	 * @param string $status          Expected renewal order status.
+	 */
+	public function test_missing_customer_renewal_uses_only_an_existing_customer( string $stored_customer, string $status ): void {
+		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$this->assertIsInt( $user_id );
+		update_user_option( $user_id, '_wcpay_customer_id_live', $stored_customer );
+		$order = $this->create_woopayments_order();
+		$token = $this->create_card_token( $user_id, 'pm_card' );
+		$order->set_customer_id( $user_id );
+		$order->update_meta_data( '_stripe_customer_id', 'cus_sent' );
+		$order->add_payment_token( $token );
+		$order->save();
+
+		$http            = new FakeHttpClient();
+		$http->responses = array( self::stripe_no_such_customer( 400 ), self::succeeded_charge( 'pi_paid', 'pm_card', 'cus_other' ) );
+		$context         = PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, '', array( 'payment_token' => (string) $token->get_id() ), array( 'scheduled_subscription_payment' => true ) );
+		wc_get_container()->get( PaymentProcessingService::class )->process_checkout_outcome( $context, $this->missing_customer_provider( $http ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( $status, $order->get_status() );
+		$this->assertSame( 'cus_sent' === $stored_customer ? array( 'POST intentions' ) : array( 'POST intentions', 'POST intentions' ), self::platform_calls( $http ) );
+		$this->assertSame( $stored_customer, json_decode( (string) $http->last_body, true )['customer'] );
+	}
+
+	/**
+	 * Keep the real customer store and charge client on the same recording transport.
+	 *
+	 * @param FakeHttpClient $http Recording transport.
+	 * @return WooPaymentsProvider
+	 */
+	private function missing_customer_provider( FakeHttpClient $http ): WooPaymentsProvider {
+		$account = $this->create_account_service( false );
+		$client  = new Client();
+		$client->init( $http, $account, wc_get_container()->get( TransportLog::class ) );
+
+		return $this->create_provider_over_fake_transport( $http, $account, $this->create_real_customer_service( $client ) );
+	}
+
+	/**
 	 * @testdox Charge should recreate and retry under a derived key, kept on the order, when the transport reports a missing customer.
 	 *
 	 * The retry sends another customer, and Stripe refuses a reused idempotency key with a different body, so the retry
@@ -4485,6 +4663,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'key_charge', 'key_charge:customer-recovery' ), $api_client->keys );
 		$fresh_order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $fresh_order );
+		$this->assertSame( 'cus_recreated', $fresh_order->get_meta( '_stripe_customer_id' ) );
 		$this->assertSame( 'key_charge:customer-recovery', $fresh_order->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) );
 	}
 

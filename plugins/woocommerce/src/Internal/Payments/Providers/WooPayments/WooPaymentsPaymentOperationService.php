@@ -773,6 +773,7 @@ class WooPaymentsPaymentOperationService {
 
 		$this->assert_total_meets_cached_platform_minimum( $order );
 
+		// Stated lock exception: a first charge may need to create its customer before it can send the payment.
 		$customer_id      = $this->get_customer_id_for_context( $context );
 		$woopay_intent_id = $this->get_woopay_intent_id( $context );
 
@@ -850,8 +851,8 @@ class WooPaymentsPaymentOperationService {
 	 * A charge that could pay again for the order's attached payment, which the duplicate check could not read, is refused
 	 * before anything is written or sent; see get_unread_payment_refusal_tier(). A kept key refused because the new request differs from the earlier one (a new card after a timeout) settles what
 	 * the earlier request did before anything is charged; see settle_earlier_charge(). A scheduled renewal is not looked
-	 * up. A missing customer is replaced and the charge retried, except while the order has an ambiguity record, or for a
-	 * saved card when the user has no other customer.
+	 * up. Customer recovery requires a definitive missing-customer answer and a credential that can still pay.
+	 * Checkout asks for a fresh credential when the platform has consumed the new card or the saved card lost its customer.
 	 *
 	 * @param PaymentOperationContext $context      Payment context.
 	 * @param array<string,mixed>     $request_data Charge request; its customer is replaced when the platform does not find it.
@@ -888,14 +889,23 @@ class WooPaymentsPaymentOperationService {
 				return $this->failed_charge_outcome( $order, $exception, true, (string) ( $request_data['customer'] ?? '' ), self::is_scheduled_renewal( $context ), (string) ( $request_data['payment_method'] ?? '' ) );
 			}
 
-			// A new customer has none of the user's saved cards, so a saved card is retried only on the user's other customer
-			// (client 11.2.0 class-wc-payment-gateway-wcpay.php:5449-5458).
-			if ( 0 < $this->get_saved_payment_token_id( $context ) && null === $this->customer_service->get_other_user_customer_id( $order, (string) ( $request_data['customer'] ?? '' ) ) ) {
-				return $this->failed_charge_outcome( $order, $exception, true, (string) ( $request_data['customer'] ?? '' ), self::is_scheduled_renewal( $context ), (string) ( $request_data['payment_method'] ?? '' ) );
+			$missing_customer_id = (string) ( $request_data['customer'] ?? '' );
+			$payment_method_id   = (string) ( $request_data['payment_method'] ?? '' );
+			$saved_card          = 0 < $this->get_saved_payment_token_id( $context );
+			$saved_card_unusable = $saved_card && null === $this->customer_service->get_other_user_customer_id( $order, $missing_customer_id );
+			$scheduled_renewal   = self::is_scheduled_renewal( $context );
+			if ( $scheduled_renewal && $saved_card_unusable ) {
+				return $this->failed_charge_outcome( $order, $exception, true, $missing_customer_id, true, $payment_method_id );
+			}
+
+			// The platform shares a new card before it checks the customer. That share can only be used once.
+			$new_platform_card = ! $saved_card && ! empty( $request_data['is_platform_payment_method'] );
+			if ( ! $scheduled_renewal && ( $saved_card_unusable || $new_platform_card ) ) {
+				return $this->customer_replaced_refusal_outcome( $order, $exception, $missing_customer_id, $payment_method_id, $saved_card_unusable );
 			}
 		}
 
-		$missing_customer_id      = (string) ( $request_data['customer'] ?? '' );
+		// Stated lock exception: the retried charge needs a customer that can use this credential.
 		$customer_id              = $this->customer_service->replace_missing_customer_for_order( $order, $missing_customer_id );
 		$request_data['customer'] = $customer_id;
 		// A different body under the same key would be refused, so the retry gets its own key, kept on the order so that an
@@ -917,6 +927,34 @@ class WooPaymentsPaymentOperationService {
 		}
 
 		return $result;
+	}
+
+	/**
+	 * Prepare the next checkout after a definitive refusal of a credential that cannot pay again.
+	 *
+	 * @param WC_Order     $order               Order being paid.
+	 * @param ApiException $exception           Missing-customer answer to the original charge.
+	 * @param string       $missing_customer_id Customer sent with that charge.
+	 * @param string       $payment_method_id   Payment method sent with that charge.
+	 * @param bool         $saved_card          Whether the shopper needs to choose another saved method or enter new details.
+	 * @return PaymentOutcome
+	 */
+	private function customer_replaced_refusal_outcome( WC_Order $order, ApiException $exception, string $missing_customer_id, string $payment_method_id, bool $saved_card ): PaymentOutcome {
+		try {
+			// Stated lock exception: replace the missing customer for the next press and saved-card list, without resending.
+			$this->customer_service->replace_missing_customer_for_order( $order, $missing_customer_id );
+		} catch ( \Throwable $replacement_error ) {
+			// The charge was definitively refused even if preparing the next checkout failed.
+			$this->logger->log_throwable( 'Could not replace the missing checkout customer.', $replacement_error, array( 'order_id' => $order->get_id() ) );
+		}
+
+		$outcome = $this->failed_charge_outcome( $order, $exception, true, $missing_customer_id, false, $payment_method_id );
+		$data    = $outcome->get_data();
+
+		$data[ PaymentOutcome::DATA_PRESERVE_ORDER_STATUS ]        = true;
+		$data[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] = $saved_card ? WooPaymentsErrorMessages::get_unavailable_saved_method_message() : WooPaymentsErrorMessages::get_place_order_again_message();
+
+		return new PaymentOutcome( $outcome->get_status(), $outcome->get_provider_payment_id(), '', $payment_method_id, $missing_customer_id, $data );
 	}
 
 	/**
@@ -1867,6 +1905,7 @@ class WooPaymentsPaymentOperationService {
 					return $this->failed_setup_intent_outcome( $context, $exception, $request_data );
 				}
 
+				// Stated lock exception: the retried SetupIntent needs an existing customer.
 				$customer_id              = $this->customer_service->replace_missing_customer_for_order( $order, (string) ( $request_data['customer'] ?? '' ) );
 				$request_data['customer'] = $customer_id;
 				// SetupIntent keys are not kept on the order, so only the key changes for the different body.
