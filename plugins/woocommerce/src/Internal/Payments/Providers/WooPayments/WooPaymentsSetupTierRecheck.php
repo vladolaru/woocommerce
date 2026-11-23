@@ -16,15 +16,19 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
  * lowering stays with the foreground account reads. A step that settles the tier removes this drop's later steps; a step
  * that cannot settle it leaves them. The step that ends the schedule logs exactly one line, whatever the logging setting.
  *
+ * A step that settles the tier also schedules one look a minute later, as step 0 of the same drop. On a store with a
+ * persistent object cache, a request that loaded the options from the database just before a raise can put them back into
+ * the cache just after it, and every request then runs at the lowest tier. The look compares the tier in the cached options
+ * with the database row and, when they differ, drops the cached options so the next request loads the stored tier, with
+ * one logged line. It sends no platform request, writes no option and schedules nothing.
+ *
  * Known limits: a step whose process dies, or a last step that throws, logs only Action Scheduler's own failure, and one
  * that dies between the row and the tier write at the last step leaves the tier low. Steps of one drop that a queue backlog
  * runs at once or out of order can each log their line. A store with no account row at a step's start is not recovered,
  * such as after a refused reset whose tier restore failed on a store whose row was already gone, or whose row restore failed.
- * On a store with a persistent object cache, a request that loaded the options from the database just before a raise can
- * put them back into the cache just after it: the store then runs at the lowest tier until an admin request next refreshes
- * the account, as a visit to the Payments pages does, whose tier write logs a failed write and drops the cached options,
- * or until the cache is flushed. That request itself still runs at the lowest tier; the next one is right. If the race also
- * put back an older account row with a recent fetch time, the refresh waits for that row to expire (2 hours in admin).
+ * A look that runs where nothing registers its hook, because the extension took over or the feature was turned off within
+ * that minute, fails in Action Scheduler and leaves the cache as it is. If the race also put back an older account row, the
+ * look drops that cached row the same way when it differs from the database row, with one logged line.
  *
  * @since 11.4.0
  * @internal
@@ -33,6 +37,12 @@ class WooPaymentsSetupTierRecheck {
 
 	/** The last step's number. */
 	public const LAST_STEP = 4;
+
+	/** The look's step number: it runs after a step settled the tier, and is not one of the four steps. */
+	public const LOOK_STEP = 0;
+
+	/** Seconds from a settled step to its look, past the queue run that settled it. */
+	private const LOOK_DELAY = MINUTE_IN_SECONDS;
 
 	/**
 	 * Seconds from the drop to each step.
@@ -81,6 +91,13 @@ class WooPaymentsSetupTierRecheck {
 	private WooPaymentsAccountService $account_service;
 
 	/**
+	 * Setup tier store, whose cached tier the look compares.
+	 *
+	 * @var WooPaymentsSetupTier
+	 */
+	private WooPaymentsSetupTier $setup_tier;
+
+	/**
 	 * Action Scheduler service.
 	 *
 	 * @var WooPaymentsActionSchedulerService
@@ -100,11 +117,13 @@ class WooPaymentsSetupTierRecheck {
 	 * @internal
 	 *
 	 * @param WooPaymentsAccountService         $account_service  Account service.
+	 * @param WooPaymentsSetupTier              $setup_tier       Setup tier store.
 	 * @param WooPaymentsActionSchedulerService $action_scheduler Action Scheduler service.
 	 * @param WooPaymentsLogger                 $logger           Logger.
 	 */
-	final public function init( WooPaymentsAccountService $account_service, WooPaymentsActionSchedulerService $action_scheduler, WooPaymentsLogger $logger ): void {
+	final public function init( WooPaymentsAccountService $account_service, WooPaymentsSetupTier $setup_tier, WooPaymentsActionSchedulerService $action_scheduler, WooPaymentsLogger $logger ): void {
 		$this->account_service  = $account_service;
+		$this->setup_tier       = $setup_tier;
 		$this->action_scheduler = $action_scheduler;
 		$this->logger           = $logger;
 	}
@@ -115,7 +134,7 @@ class WooPaymentsSetupTierRecheck {
 	 * @internal
 	 *
 	 * @param mixed $drop_time When the tier dropped.
-	 * @param mixed $step      The step's number, from 1.
+	 * @param mixed $step      The step's number, from 1, or the look's.
 	 */
 	public static function run_step( $drop_time = null, $step = null ): void {
 		wc_get_container()->get( self::class )->handle( $drop_time, $step );
@@ -152,30 +171,68 @@ class WooPaymentsSetupTierRecheck {
 	}
 
 	/**
-	 * Run one step: read the account, remove this drop's later steps once the tier is settled, and log the line that
-	 * ends the schedule.
+	 * Run one step: read the account, remove this drop's later steps once the tier is settled, schedule the look, and log
+	 * the line that ends the schedule. The look only compares what the cache holds with the database.
 	 *
 	 * @internal
 	 *
 	 * @param mixed $drop_time When the tier dropped.
-	 * @param mixed $step      The step's number, from 1.
+	 * @param mixed $step      The step's number, from 1, or the look's.
 	 */
 	public function handle( $drop_time, $step ): void {
-		if ( ! is_numeric( $drop_time ) || ! is_numeric( $step ) || ! isset( self::STEP_OFFSETS[ (int) $step ] ) ) {
+		if ( ! is_numeric( $drop_time ) || ! is_numeric( $step ) ) {
 			return;
 		}
 		$drop_time = (int) $drop_time;
 		$step      = (int) $step;
 
+		if ( self::LOOK_STEP === $step ) {
+			$this->look( $drop_time );
+			return;
+		}
+		if ( ! isset( self::STEP_OFFSETS[ $step ] ) ) {
+			return;
+		}
+
 		$outcome = $this->account_service->recheck_low_tier();
 		if ( isset( self::SETTLED[ $outcome ] ) ) {
 			$this->remove_steps( $drop_time, $step + 1 );
 			$this->log( self::SETTLED[ $outcome ][0], self::SETTLED[ $outcome ][1], $drop_time );
+			$this->schedule_look( $drop_time );
 			return;
 		}
 
 		if ( self::LAST_STEP === $step && isset( self::UNSETTLED[ $outcome ] ) ) {
 			$this->log( self::UNSETTLED[ $outcome ][0], self::UNSETTLED[ $outcome ][1], $drop_time );
+		}
+	}
+
+	/**
+	 * Schedule the look a minute after a step settled the tier. A drop has at most one pending look.
+	 *
+	 * @param int $drop_time When the tier dropped.
+	 */
+	private function schedule_look( int $drop_time ): void {
+		try {
+			$this->action_scheduler->schedule_job( WooPaymentsSetupTier::RECHECK_HOOK, array( $drop_time, self::LOOK_STEP ), time() + self::LOOK_DELAY );
+		} catch ( \Throwable $e ) {
+			$this->log( 'warning', 'could not schedule the look at the cached tier after the tier settled', $drop_time );
+		}
+	}
+
+	/**
+	 * Drop the cached tier and the cached account row where they differ from the database, with one line for each.
+	 *
+	 * @param int $drop_time When the tier dropped.
+	 */
+	private function look( int $drop_time ): void {
+		$tiers = $this->setup_tier->confirm_cached_tier();
+		if ( null !== $tiers ) {
+			$this->log( 'warning', sprintf( 'look found the tier %1$s in the cached options and %2$s in the database, and dropped the cached options', $tiers[0], $tiers[1] ), $drop_time );
+		}
+
+		if ( $this->account_service->confirm_cached_account_row() ) {
+			$this->log( 'warning', 'look found a cached account row that differs from the database, and dropped it', $drop_time );
 		}
 	}
 

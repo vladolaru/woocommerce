@@ -281,6 +281,37 @@ final class WooPaymentsSetupTier {
 	}
 
 	/**
+	 * Compare the tier in the cached options with the database row, and drop the cached options when they differ.
+	 *
+	 * The cached options are read past this request's copy where a persistent object cache keeps one. They are dropped, never
+	 * written back, since a write would also put back this request's copy of every other autoloaded option. Cached options
+	 * without the tier, as when it is not autoloaded, are left alone.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return array{0:string,1:string}|null The cached and the stored tier as printed in a log line when they differed, or null.
+	 */
+	public function confirm_cached_tier(): ?array {
+		global $wpdb;
+
+		$this->invalidate();
+		$cached = wp_cache_get( 'alloptions', 'options', true );
+		if ( ! is_array( $cached ) || ! array_key_exists( self::OPTION_NAME, $cached ) ) {
+			return null;
+		}
+
+		$stored = $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", self::OPTION_NAME ) );
+		if ( $cached[ self::OPTION_NAME ] === $stored ) {
+			return null;
+		}
+
+		wp_cache_delete( 'alloptions', 'options' );
+		wp_cache_delete( self::OPTION_NAME, 'options' );
+
+		return array( $this->print_tier( $cached[ self::OPTION_NAME ] ), $this->print_tier( $stored ) );
+	}
+
+	/**
 	 * Invalidate one blog's memoized setup tier.
 	 *
 	 * @since 11.2.0
@@ -300,20 +331,29 @@ final class WooPaymentsSetupTier {
 	 * @param bool   $autoloaded      Whether the option is autoloaded.
 	 */
 	private function log_write_failure( string $requested_tier, $stored_tier, bool $autoloaded ): void {
-		if ( null === $stored_tier ) {
-			$printed_tier = 'none';
-		} else {
-			$printed_tier = $this->is_valid_tier( $stored_tier ) ? $stored_tier : gettype( $stored_tier );
-		}
 		wc_get_logger()->error(
 			sprintf(
 				'WooPayments setup tier write failed: requested %1$s, stored %2$s, autoloaded %3$s.',
 				$requested_tier,
-				$printed_tier,
+				$this->print_tier( $stored_tier ),
 				$autoloaded ? 'yes' : 'no'
 			),
 			array( 'source' => WooPaymentsLogger::SOURCE )
 		);
+	}
+
+	/**
+	 * Print a stored value for a log line: the tier, `none` when the option is missing, or the PHP type of anything else.
+	 *
+	 * @param mixed $stored_tier Value read from the option.
+	 * @return string
+	 */
+	private function print_tier( $stored_tier ): string {
+		if ( null === $stored_tier ) {
+			return 'none';
+		}
+
+		return $this->is_valid_tier( $stored_tier ) ? $stored_tier : gettype( $stored_tier );
 	}
 
 	/**

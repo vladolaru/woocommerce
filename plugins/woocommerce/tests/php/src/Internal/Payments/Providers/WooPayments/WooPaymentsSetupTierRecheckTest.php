@@ -26,6 +26,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTierRecheck;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStatusChangeRetryListener;
 use Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -50,6 +51,9 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 	private const ROW = 'wcpay_account_data';
 
 	private const DISABLED_FLAG = 'wcpay_on_boarding_disabled';
+
+	/** The look's step number, after a step settled the tier. */
+	private const LOOK = 0;
 
 	private const OFFSETS = array(
 		1 => 15 * MINUTE_IN_SECONDS,
@@ -896,6 +900,181 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @return array<string,array{string,int}>
+	 */
+	public static function provide_steps_and_looks(): array {
+		return array(
+			'step 1 raises the tier'        => array( 'raise', 1, 1 ),
+			'step 4 raises the tier'        => array( 'raise', 4, 1 ),
+			'step 1 finds the tier moved'   => array( 'moved', 1, 1 ),
+			'step 1 finds the extension'    => array( 'extension', 1, 1 ),
+			'step 1 finds no account'       => array( 'none', 1, 0 ),
+			'step 4 fails its account read' => array( 'failed', 4, 0 ),
+		);
+	}
+
+	/**
+	 * @testdox L1: a step that settles the tier leaves exactly one look of its drop, due a minute later, and one that does not settle it leaves none: $_dataName.
+	 * @dataProvider provide_steps_and_looks
+	 *
+	 * @param string $answer   What the step finds.
+	 * @param int    $step     The step.
+	 * @param int    $expected The pending looks after it.
+	 */
+	public function test_l1_a_settled_step_schedules_one_look( string $answer, int $step, int $expected ): void {
+		global $wpdb;
+
+		$drop = $this->drop_from_a_connected_account();
+		$this->register_cron_request();
+		$this->client->answer = fn() => $this->account();
+		if ( 'moved' === $answer ) {
+			$wpdb->update( $wpdb->options, array( 'option_value' => WooPaymentsSetupTier::CONNECTED ), array( 'option_name' => WooPaymentsSetupTier::OPTION_NAME ) );
+		} elseif ( 'extension' === $answer ) {
+			$this->client->answer = function () {
+				update_option( 'active_plugins', array( 'woocommerce-payments/woocommerce-payments.php' ) );
+				return $this->account();
+			};
+		} elseif ( 'none' === $answer ) {
+			$this->client->answer = static function () {
+				throw new ApiException( 'Not found.', 'wcpay_account_not_found', 404 );
+			};
+		} elseif ( 'failed' === $answer ) {
+			$this->client->answer = static function () {
+				throw new ApiException( 'Timed out.', 'wcpay_http_request_failed', 500 );
+			};
+		}
+		$before = time();
+
+		$this->run_step( $drop, $step );
+
+		$looks = $this->pending_looks();
+		$this->assertCount( $expected, $looks );
+		if ( 1 === $expected ) {
+			$this->assertSame( array( $drop, self::LOOK ), $looks[0]['args'] );
+			$this->assertGreaterThanOrEqual( $before + MINUTE_IN_SECONDS, $looks[0]['date'] );
+			$this->assertLessThanOrEqual( time() + MINUTE_IN_SECONDS, $looks[0]['date'] );
+		}
+	}
+
+	/**
+	 * @testdox L2: when a race puts the options back into the cache with available over a raise to active, the look a minute later drops them with one warning naming both tiers, and the next request runs at active.
+	 */
+	public function test_l2_the_look_ends_the_lost_race(): void {
+		$drop                 = $this->drop_from_a_connected_account();
+		$this->client->answer = fn() => $this->account();
+		$this->register_cron_request();
+		$this->run_step( $drop, 1 );
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $this->stored_tier() );
+		$this->stage_cached_tier( WooPaymentsSetupTier::AVAILABLE );
+		$this->tier->invalidate();
+		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->tier->get_effective_tier(), 'The race left the store at available.' );
+		$this->logger->lines = array();
+
+		$this->assertSame( ActionScheduler_Store::STATUS_COMPLETE, $this->run_step( $drop, self::LOOK ) );
+
+		$this->tier->invalidate();
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $this->tier->get_effective_tier(), 'The next request runs at active.' );
+		$this->assertSame( array( array( 'warning', 'The WooPayments setup tier re-check look found the tier available in the cached options and active in the database, and dropped the cached options.' ) ), $this->recheck_lines() );
+	}
+
+	/**
+	 * @testdox L3: when a race puts back the drop's empty account row over a raise, the look a minute later drops it with one warning, and the next request can take payments again from the stored row, so checkout offers the payment method.
+	 */
+	public function test_l3_the_look_ends_a_stale_empty_account_row(): void {
+		$drop                 = $this->drop_from_a_connected_account();
+		$drop_row             = $this->raw_row();
+		$this->client->answer = fn() => $this->account();
+		$this->register_cron_request();
+		$this->run_step( $drop, 1 );
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $this->stored_tier() );
+		wp_cache_set( self::ROW, $drop_row, 'options' );
+		// The next requests' account reads fail, so what they serve can only come from the stored row.
+		$this->client->answer = static function () {
+			throw new ApiException( 'Timed out.', 'wcpay_http_request_failed', 500 );
+		};
+		$this->assertFalse( $this->next_request_can_process_payments(), 'The race left checkout without the payment method.' );
+		$this->logger->lines = array();
+
+		$this->assertSame( ActionScheduler_Store::STATUS_COMPLETE, $this->run_step( $drop, self::LOOK ) );
+
+		$this->assertTrue( $this->next_request_can_process_payments(), 'The next request can take payments again.' );
+		$this->assertSame( array( array( 'warning', 'The WooPayments setup tier re-check look found a cached account row that differs from the database, and dropped it.' ) ), $this->recheck_lines() );
+	}
+
+	/**
+	 * @testdox L4: when the cached tier and account row equal the database, the look reads the two rows and nothing else, keeps the cached options and the cached row, and logs nothing.
+	 */
+	public function test_l4_an_equal_cache_is_left_alone(): void {
+		$drop                 = $this->drop_from_a_connected_account();
+		$this->client->answer = fn() => $this->account();
+		$this->register_cron_request();
+		$this->run_step( $drop, 1 );
+		$this->stage_cached_tier( WooPaymentsSetupTier::ACTIVE );
+		$alloptions             = wp_cache_get( 'alloptions', 'options' );
+		$alloptions['l4_probe'] = 'kept';
+		wp_cache_set( 'alloptions', $alloptions, 'options' );
+		get_option( self::ROW );
+		$cached_row          = wp_cache_get( self::ROW, 'options' );
+		$this->logger->lines = array();
+		$queries             = array();
+		$record              = static function ( $query ) use ( &$queries ) {
+			$queries[] = $query;
+			return $query;
+		};
+		add_filter( 'query', $record );
+
+		try {
+			wc_get_container()->get( WooPaymentsSetupTierRecheck::class )->handle( $drop, self::LOOK );
+		} finally {
+			remove_filter( 'query', $record );
+		}
+
+		$this->assertCount( 2, $queries, 'Two reads: ' . implode( ' | ', $queries ) );
+		$this->assertStringContainsString( WooPaymentsSetupTier::OPTION_NAME, $queries[0] );
+		$this->assertStringContainsString( self::ROW, $queries[1] );
+		$this->assertSame( 'kept', wp_cache_get( 'alloptions', 'options' )['l4_probe'] ?? null, 'The cached options are kept.' );
+		$this->assertIsString( $cached_row );
+		$this->assertSame( $cached_row, wp_cache_get( self::ROW, 'options' ), 'The cached account row is kept.' );
+		$this->assertSame( array(), $this->recheck_lines() );
+	}
+
+	/**
+	 * @testdox L5: a look that drops a stale cached tier and account row sends no platform request, reads no account, writes no stored value and schedules nothing.
+	 */
+	public function test_l5_the_look_sends_no_request_and_schedules_nothing(): void {
+		$drop                 = $this->drop_from_a_connected_account();
+		$drop_row             = $this->raw_row();
+		$this->client->answer = fn() => $this->account();
+		$this->register_cron_request();
+		$this->run_step( $drop, 1 );
+		$stored = $this->snapshot();
+		$this->stage_cached_tier( WooPaymentsSetupTier::AVAILABLE );
+		wp_cache_set( self::ROW, $drop_row, 'options' );
+		as_unschedule_all_actions( self::HOOK );
+		$this->client->plain_gets      = 0;
+		$this->client->foreground_gets = 0;
+		$this->logger->lines           = array();
+		$requests                      = 0;
+		$count                         = static function ( $response ) use ( &$requests ) {
+			++$requests;
+			return $response;
+		};
+		add_filter( 'pre_http_request', $count );
+
+		try {
+			wc_get_container()->get( WooPaymentsSetupTierRecheck::class )->handle( $drop, self::LOOK );
+		} finally {
+			remove_filter( 'pre_http_request', $count );
+		}
+
+		$this->assertCount( 2, $this->recheck_lines(), 'The look dropped both.' );
+		$this->assertSame( 0, $requests, 'No platform request.' );
+		$this->assertSame( 0, $this->client->plain_gets + $this->client->foreground_gets, 'No account read.' );
+		$this->assertSame( array(), $this->changed_keys( $stored, $this->snapshot() ), 'No stored value changed.' );
+		$this->assertSame( array(), $this->pending_actions(), 'Nothing scheduled, so the look cannot loop.' );
+	}
+
+	/**
 	 * @testdox R36: a gateway turned $before to $after in another request during the account read raises the tier to $expected, the tier of the setting as stored when the step writes.
 	 * @testWith ["yes", "no", "connected"]
 	 *           ["no", "yes", "active"]
@@ -1694,11 +1873,39 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Get the pending re-check steps, in order of their time.
+	 * Get the pending re-check steps, without the looks, in order of their time.
 	 *
 	 * @return array<int,array{args:array<int,int>,date:int}>
 	 */
 	private function pending_steps(): array {
+		return array_values(
+			array_filter(
+				$this->pending_actions(),
+				static fn( array $action ): bool => self::LOOK !== $action['args'][1]
+			)
+		);
+	}
+
+	/**
+	 * Get the pending looks, in order of their time.
+	 *
+	 * @return array<int,array{args:array<int,int>,date:int}>
+	 */
+	private function pending_looks(): array {
+		return array_values(
+			array_filter(
+				$this->pending_actions(),
+				static fn( array $action ): bool => self::LOOK === $action['args'][1]
+			)
+		);
+	}
+
+	/**
+	 * Get the pending actions of the re-check hook, steps and looks, in order of their time.
+	 *
+	 * @return array<int,array{args:array<int,int>,date:int}>
+	 */
+	private function pending_actions(): array {
 		$actions = as_get_scheduled_actions(
 			array(
 				'hook'     => self::HOOK,
@@ -1735,6 +1942,50 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 		sort( $steps );
 
 		return $steps;
+	}
+
+	/**
+	 * Put the options back into the cache as a race does, from the database but with this tier.
+	 *
+	 * @param string $tier The tier the cached options hold.
+	 */
+	private function stage_cached_tier( string $tier ): void {
+		wp_cache_delete( 'alloptions', 'options' );
+		$alloptions                                      = wp_load_alloptions( true );
+		$alloptions[ WooPaymentsSetupTier::OPTION_NAME ] = $tier;
+		wp_cache_set( 'alloptions', $alloptions, 'options' );
+	}
+
+	/**
+	 * Tell whether a new front request, with the cache as it is, can take payments: the account check the payment method
+	 * needs before checkout offers it.
+	 *
+	 * @return bool
+	 */
+	private function next_request_can_process_payments(): bool {
+		wc_get_container()->reset_all_resolved();
+		$this->arbiter         = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
+		$this->tier            = wc_get_container()->get( WooPaymentsSetupTier::class );
+		$this->account_service = wc_get_container()->get( WooPaymentsAccountService::class );
+
+		return WooPaymentsSetupTier::ACTIVE === $this->tier->get_effective_tier()
+			&& wc_get_container()->get( WooPaymentsProvider::class )->can_process_payments();
+	}
+
+	/**
+	 * Get the re-check lines logged, with their levels.
+	 *
+	 * @return array<int,array{0:string,1:string}>
+	 */
+	private function recheck_lines(): array {
+		$lines = array();
+		foreach ( $this->logger->lines as $line ) {
+			if ( false !== strpos( $line[1], 'setup tier re-check' ) ) {
+				$lines[] = array( $line[0], $line[1] );
+			}
+		}
+
+		return $lines;
 	}
 
 	/**

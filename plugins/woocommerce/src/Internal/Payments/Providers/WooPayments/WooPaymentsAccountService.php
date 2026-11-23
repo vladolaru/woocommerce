@@ -763,6 +763,27 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Compare the cached account cache row with the database row, byte for byte, and drop the cached row when they differ.
+	 *
+	 * The cached row is read past this request's copy where a persistent object cache keeps one, and is dropped, never
+	 * written, so the next read loads the database row. With no cached row there is nothing to compare.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return bool Whether the cached row differed and was dropped.
+	 */
+	public function confirm_cached_account_row(): bool {
+		$cached = $this->legacy_proxy->call_function( 'wp_cache_get', WooPaymentsDatabaseCache::ACCOUNT_KEY, 'options', true );
+		if ( false === $cached || $this->read_account_row() === $cached ) {
+			return false;
+		}
+
+		$this->legacy_proxy->call_function( 'wp_cache_delete', WooPaymentsDatabaseCache::ACCOUNT_KEY, 'options' );
+
+		return true;
+	}
+
+	/**
 	 * Read the account cache row's stored bytes from the database.
 	 *
 	 * @return string|null The serialized row, or null when there is none.
