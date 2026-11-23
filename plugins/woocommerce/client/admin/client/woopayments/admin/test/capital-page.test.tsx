@@ -296,6 +296,9 @@ describe( 'WooPaymentsCapitalPage', () => {
 		expect( screen.getByText( '2 loans' ) ).toBeInTheDocument();
 		expect( screen.getByText( '$1,500.00 total' ) ).toBeInTheDocument();
 		expect( screen.getByText( '$150.00 fixed fees' ) ).toBeInTheDocument();
+		const loansRegion = screen.getByRole( 'region', { name: 'All loans' } );
+		expect( loansRegion ).toHaveAttribute( 'tabindex', '0' );
+		expect( loansRegion ).toContainElement( screen.getByRole( 'table' ) );
 		expect( screen.getByText( 'Active' ) ).toBeInTheDocument();
 		expect( screen.getByText( /Paid off:/ ) ).toBeInTheDocument();
 		expect(

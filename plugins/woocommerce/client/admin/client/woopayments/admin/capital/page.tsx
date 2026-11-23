@@ -318,7 +318,9 @@ export const WooPaymentsCapitalPage = () => {
 			{ hasLoans && (
 				<section className="woocommerce-woopayments-capital__section">
 					<div className="woocommerce-woopayments-capital__table-heading">
-						<h3>{ __( 'All loans', 'woocommerce' ) }</h3>
+						<h3 id="woocommerce-woopayments-all-loans-heading">
+							{ __( 'All loans', 'woocommerce' ) }
+						</h3>
 						<EllipsisMenu
 							label={ __(
 								'Choose which values to display',
@@ -352,32 +354,46 @@ export const WooPaymentsCapitalPage = () => {
 						/>
 					</div>
 					<LoanListSummary loans={ loans } />
-					<table className="woocommerce-woopayments-capital__table">
-						<thead>
-							<tr>
-								{ visibleColumns.map( ( { key, label } ) => (
-									<th
-										key={ key }
-										scope="col"
-										data-column={ key }
-									>
-										{ label }
-									</th>
-								) ) }
-							</tr>
-						</thead>
-						<tbody>
-							{ loans.map( ( loan ) => (
-								<tr key={ loan.stripe_loan_id }>
-									{ visibleColumns.map( ( { key, cell } ) => (
-										<td key={ key } data-column={ key }>
-											{ cell( loan ) }
-										</td>
-									) ) }
+					<div
+						className="woocommerce-woopayments-capital__table-scroll"
+						role="region"
+						aria-labelledby="woocommerce-woopayments-all-loans-heading"
+						tabIndex={ 0 }
+					>
+						<table className="woocommerce-woopayments-capital__table">
+							<thead>
+								<tr>
+									{ visibleColumns.map(
+										( { key, label } ) => (
+											<th
+												key={ key }
+												scope="col"
+												data-column={ key }
+											>
+												{ label }
+											</th>
+										)
+									) }
 								</tr>
-							) ) }
-						</tbody>
-					</table>
+							</thead>
+							<tbody>
+								{ loans.map( ( loan ) => (
+									<tr key={ loan.stripe_loan_id }>
+										{ visibleColumns.map(
+											( { key, cell } ) => (
+												<td
+													key={ key }
+													data-column={ key }
+												>
+													{ cell( loan ) }
+												</td>
+											)
+										) }
+									</tr>
+								) ) }
+							</tbody>
+						</table>
+					</div>
 				</section>
 			) }
 		</div>

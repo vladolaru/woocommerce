@@ -2,6 +2,7 @@
 
 .woocommerce-woopayments-capital {
 	display: grid;
+	grid-template-columns: minmax(0, 1fr);
 	gap: $gap;
 	max-width: $woopayments-admin-page-max-width;
 
@@ -44,6 +45,10 @@
 		align-items: baseline;
 	}
 
+	&__table-scroll {
+		overflow-x: auto;
+	}
+
 	&__table {
 		border-collapse: collapse;
 		width: 100%;
@@ -65,7 +70,8 @@
 		white-space: nowrap;
 	}
 
-	&__loan-action:focus-visible {
+	&__loan-action:focus-visible,
+	&__table-scroll:focus-visible {
 		outline: var(--wp-admin-border-width-focus) solid var(--wp-admin-theme-color);
 		outline-offset: 2px;
 	}
