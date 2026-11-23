@@ -459,6 +459,53 @@ class WooPaymentsOrderNoteWordingSnapshotTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The saved German catalog recognises both mismatch holds and an authorization for another payment after the pack is removed.
+	 */
+	public function test_snapshot_recognises_hold_and_authorization_notes_after_pack_removal(): void {
+		$this->install_language_pack( 'de_DE' );
+		$this->sut->capture();
+		wp_delete_file( $this->language_dir . 'woocommerce-payments-de_DE.mo' );
+
+		$order = wc_create_order();
+		$order->set_total( 12 );
+		$order->set_currency( 'USD' );
+		$notes = wc_get_container()->get( WooPaymentsOrderNoteService::class );
+		wc_get_container()->replace( WooPaymentsOrderNoteWordingSnapshot::class, $this->sut );
+		try {
+			$cases = array(
+				array(
+					sprintf(
+						'WooPayments hat %1$s USD für <a href="%2$s" target="_blank" rel="noopener noreferrer">pi_hold</a> belastet. Bestellsumme: %3$s USD. Bestellung <strong>angehalten</strong>.',
+						wc_price( 10, array( 'currency' => 'USD' ) ),
+						$notes->transaction_url( 'pi_hold', '' ),
+						wc_price( 12, array( 'currency' => 'USD' ) )
+					),
+					$notes->format_amount_mismatch_hold_note_candidates( $order, 'pi_hold', '', 1000, 'USD' ),
+				),
+				array(
+					'Rechnung in_hold über $10.00 USD bei einer Bestellsumme von $12.00 USD. Bestellung <strong>angehalten</strong>.',
+					$notes->format_invoice_mismatch_hold_note_candidates( $order, 'in_hold', 1000, 'USD' ),
+				),
+				array(
+					'Zahlung <code>pi_other</code> autorisiert. Die Bestellung wartet auf <code>pi_awaited</code>.',
+					$notes->format_authorization_of_another_payment_note_candidates( 'pi_other', 'pi_awaited' ),
+				),
+			);
+
+			$duplicated = array();
+			foreach ( $cases as list( $german_note, $candidates ) ) {
+				$order->add_order_note( $german_note );
+				if ( $notes->add_note_once( $order, $candidates[0], '', $candidates ) ) {
+					$duplicated[] = $german_note;
+				}
+			}
+			$this->assertSame( array(), $duplicated );
+		} finally {
+			wc_get_container()->reset_all_replacements();
+		}
+	}
+
+	/**
 	 * Build the fixture catalog into the extension's language pack for a locale.
 	 *
 	 * @param string $locale Locale.

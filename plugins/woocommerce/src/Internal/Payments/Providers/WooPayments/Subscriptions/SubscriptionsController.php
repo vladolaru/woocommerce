@@ -20,6 +20,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\Webh
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsHtmlUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderMode;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOutcomeMetadataMapper;
@@ -568,41 +569,59 @@ class SubscriptionsController implements RegisterHooksInterface {
 	 * @return PaymentLifecycleEvent
 	 */
 	private function build_customer_action_failure_event( WC_Order $renewal_order, string $intent_id, string $charge_id ): PaymentLifecycleEvent {
-		$failure_note = $this->get_subscription_customer_action_failure_note( $renewal_order, $intent_id, $charge_id );
+		$failure_notes = $this->get_subscription_customer_action_failure_notes( $renewal_order, $intent_id, $charge_id );
 
 		return new PaymentLifecycleEvent(
 			PaymentLifecycleEvent::STATUS_FAILED,
 			'' === $intent_id ? null : $intent_id,
 			array(),
 			array(),
-			'' === $failure_note ? null : $failure_note,
+			$failure_notes[0] ?? null,
 			null,
-			'' === $failure_note ? array() : array( $failure_note )
+			$failure_notes
 		);
 	}
 
 	/**
-	 * Get the failed-renewal note for customer-action-required outcomes.
+	 * Get the failed-renewal note and the earlier wording used to recognise existing notes.
 	 *
 	 * @param WC_Order $renewal_order Renewal order.
 	 * @param string   $intent_id     Provider payment intent ID.
 	 * @param string   $charge_id     Provider charge ID.
-	 * @return string Order note.
+	 * @return string[] The note to write first.
 	 */
-	private function get_subscription_customer_action_failure_note( WC_Order $renewal_order, string $intent_id, string $charge_id ): string {
-		$transaction_id = '' !== $charge_id ? $charge_id : $intent_id;
-		if ( '' === $transaction_id ) {
-			return '';
+	private function get_subscription_customer_action_failure_notes( WC_Order $renewal_order, string $intent_id, string $charge_id ): array {
+		if ( '' === $intent_id && '' === $charge_id ) {
+			return array();
 		}
 
-		return wp_kses_post(
+		$amount = WooPaymentsCurrencyUtils::format_price_in_currency( (float) $renewal_order->get_total(), $renewal_order->get_currency() );
+		$url    = wc_get_container()->get( WooPaymentsOrderNoteService::class )->transaction_url( rawurlencode( $intent_id ), rawurlencode( $charge_id ) );
+
+		return array(
 			sprintf(
-				/* translators: %1$s: the failed payment amount, %2$s: WooPayments, %3$s: transaction ID. */
-				__( 'A payment of %1$s <strong>failed</strong> using %2$s (<code>%3$s</code>).', 'woocommerce' ),
-				WooPaymentsCurrencyUtils::format_price_in_currency( (float) $renewal_order->get_total(), $renewal_order->get_currency() ),
+				WooPaymentsHtmlUtils::escape_interpolated_html(
+					/* translators: %1$s: the failed payment amount, %2$s: WooPayments, %3$s: transaction ID, %4$s: transaction URL. */
+					__( 'A payment of %1$s <strong>failed</strong> using %2$s (<a>%3$s</a>).', 'woocommerce' ),
+					array(
+						'strong' => '<strong>',
+						'a'      => '' !== $url ? '<a href="%4$s" target="_blank" rel="noopener noreferrer">' : '<code>',
+					)
+				),
+				$amount,
 				'WooPayments',
-				esc_html( $transaction_id )
-			)
+				esc_html( '' !== $intent_id ? $intent_id : $charge_id ),
+				$url
+			),
+			wp_kses_post(
+				sprintf(
+					/* translators: %1$s: the failed payment amount, %2$s: WooPayments, %3$s: transaction ID. */
+					__( 'A payment of %1$s <strong>failed</strong> using %2$s (<code>%3$s</code>).', 'woocommerce' ),
+					$amount,
+					'WooPayments',
+					esc_html( '' !== $charge_id ? $charge_id : $intent_id )
+				)
+			),
 		);
 	}
 

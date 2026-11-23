@@ -1,6 +1,5 @@
-# Three WooPayments extension order-note wordings, for the note wording snapshot tests. The msgids are the extension's
-# 11.1.0 source strings (includes/class-wc-payments-order-service.php:2054, :2321 and :2296). The German msgstrs are
-# synthetic, written for these tests, not taken from the extension's language pack.
+# WooPayments order-note formats with synthetic German translations for the snapshot tests.
+# The charge, cancellation and expiry msgids come from client 11.1.0 includes/class-wc-payments-order-service.php.
 msgid ""
 msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -14,3 +13,12 @@ msgstr "Die Zahlungsautorisierung wurde erfolgreich <strong>storniert</strong> (
 
 msgid "Payment authorization has <strong>expired</strong> (<a>%1$s</a>)."
 msgstr "Die Zahlungsautorisierung ist <strong>abgelaufen</strong> (<a>%1$s</a>)."
+
+msgid "A payment of %1$s was charged using %2$s (<a>%3$s</a>), but the order total is %4$s. The order was put <strong>on hold</strong>; review it before fulfilling."
+msgstr "%2$s hat %1$s für <a>%3$s</a> belastet. Bestellsumme: %4$s. Bestellung <strong>angehalten</strong>."
+
+msgid "The renewal invoice %3$s collected %1$s, but the order total is %2$s. The order was put <strong>on hold</strong>; review it before fulfilling."
+msgstr "Rechnung %3$s über %1$s bei einer Bestellsumme von %2$s. Bestellung <strong>angehalten</strong>."
+
+msgid "A WooPayments payment <code>%1$s</code> was authorized, but this order is waiting on payment <code>%2$s</code>, so the order was not updated. Unless the order is later updated with payment <code>%1$s</code>, its authorization is not captured and expires on its own."
+msgstr "Zahlung <code>%1$s</code> autorisiert. Die Bestellung wartet auf <code>%2$s</code>."

@@ -957,6 +957,11 @@ class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'failed', $order->get_status() );
 		$this->assertSame( $order->get_id(), $received['hook_order']->get_id() );
+		$this->assertContains(
+			$this->get_extension_renewal_failure_note( 'pi_requires_action' ),
+			wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ),
+			'Client 11.3.0 checks the full note, including the intent link, even when a charge ID is present.'
+		);
 		$this->assertSame( 'pi_requires_action', $received['intent_id'] );
 		$this->assertSame( 'pm_requires_action', $received['payment_method_id'] );
 		$this->assertSame( 'cus_requires_action', $received['customer_id'] );
@@ -1269,7 +1274,8 @@ class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$order = wc_get_order( $order->get_id() );
 		$this->assertSame( 1, $hook_calls );
 		$this->assertSame( $expected_status, $order->get_status() );
-		$this->assertCount( $expected_notes, array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $note ): bool => $note === $failure_note ) );
+		$expected_note = $listener_notes ? $failure_note : $this->get_extension_renewal_failure_note( 'pi_renewal_auth' );
+		$this->assertCount( $expected_notes, array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $note ): bool => $note === $expected_note ) );
 	}
 
 	/**
@@ -1350,12 +1356,7 @@ class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_scheduled_renewal_needing_authentication_with_an_error_takes_the_renewal_path(): void {
 		list( $order, $outcome ) = $this->arrange_renewal_needing_authentication( true );
-		$renewal_note            = wp_kses_post(
-			sprintf(
-				'A payment of %1$s <strong>failed</strong> using WooPayments (<code>pi_renewal_auth</code>).',
-				WooPaymentsCurrencyUtils::format_price_in_currency( 12.0, 'USD' )
-			)
-		);
+		$renewal_note            = $this->get_extension_renewal_failure_note( 'pi_renewal_auth' );
 		$hook_calls              = 0;
 		add_action(
 			'woocommerce_woocommerce_payments_payment_requires_action',
@@ -1506,6 +1507,21 @@ class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 		)->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $intent, true ) );
 
 		return array( $order, $outcome );
+	}
+
+	/**
+	 * Client 11.3.0 class-wc-payments-order-service.php:2646-2664 formats the note that order_note_exists() compares verbatim.
+	 *
+	 * @param string $intent_id Payment intent ID.
+	 * @return string
+	 */
+	private function get_extension_renewal_failure_note( string $intent_id ): string {
+		return sprintf(
+			'A payment of %1$s <strong>failed</strong> using WooPayments (<a href="%2$s" target="_blank" rel="noopener noreferrer">%3$s</a>).',
+			wc_price( 12, array( 'currency' => 'USD' ) ),
+			admin_url( 'admin.php?page=wc-admin&path=%2Fpayments%2Ftransactions%2Fdetails&id=' . $intent_id ),
+			$intent_id
+		);
 	}
 
 	/**

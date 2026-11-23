@@ -19,11 +19,11 @@ use WC_Order;
 /**
  * Formats and deduplicates WooPayments order notes.
  *
- * Most notes are formatted twice, in WooCommerce's text domain and in the `woocommerce-payments` text domain the extension
- * wrote with (the `*_note_candidates()` builders return every wording), so a note the extension already left on the order
- * is recognised as the same note and not added again. The extension wordings are also rendered in each language the
- * switch captured (WooPaymentsOrderNoteWordingSnapshot). The cancel-failed, insufficient-balance refund, rate-limited
- * payment, refund failure and other-charge notes are formatted once, in WooCommerce's text domain.
+ * New notes use WooCommerce's text domain. To recognise existing notes, the candidate builders also render extension
+ * wordings from the live catalog and each language captured at the switch. WooCommerce alone formats cancellation failures,
+ * rate limits, refund failures (including insufficient balance), other charges, payments on paid orders, collected invoices
+ * and operation refusals. Dispute, fee-detail, subscription, generic capture failure and earlier-attempt cleanup notes also
+ * use only WooCommerce's text domain.
  *
  * @since 11.0.0
  * @internal
