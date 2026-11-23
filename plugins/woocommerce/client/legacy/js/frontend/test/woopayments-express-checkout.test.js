@@ -1196,6 +1196,7 @@ describe( 'woopayments-express-checkout', () => {
 			[ 403, invalid, 2 ],
 			[ 401, invalid, 1 ],
 			[ 403, 'other', 1 ],
+			[ 400, 'woocommerce_rest_invalid_tokenized_cart_session', 1 ],
 		] )(
 			'retains partial updates and bounds attempts for %i %s',
 			async ( status, code, attempts ) => {

@@ -165,6 +165,21 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 
 		if ( ! $this->has_valid_session_nonce() ) {
 			if ( $this->has_product_session_marker() ) {
+				// A product page's nonces age together. Refuse before dispatch so the retry can select the isolated cart.
+				$store_nonce = $request->get_header( 'Nonce' );
+				if ( $store_nonce && 0 === strpos( $request->get_route(), '/wc/store/' )
+					&& $request->get_header( 'X-WooPayments-Tokenized-Cart-Nonce' )
+					&& $request->get_header( 'X-WooPayments-Tokenized-Cart-Session-Nonce' )
+					&& ! wp_verify_nonce( $store_nonce, 'wc_store_api' )
+					&& $this->has_valid_incoming_session_token() ) {
+					$error    = new WP_Error( 'woocommerce_rest_invalid_nonce', __( 'Nonce is invalid.', 'woocommerce' ), array( 'status' => 403 ) );
+					$response = rest_convert_error_to_response( $error );
+					$response->header( 'Nonce', wp_create_nonce( 'wc_store_api' ) );
+					$response->header( 'Nonce-Timestamp', (string) time() );
+					$response->header( 'Cache-Control', 'no-store' );
+					return $response;
+				}
+
 				return $this->reject_invalid_tokenized_cart_session( $result, $server, $request );
 			}
 
