@@ -268,6 +268,8 @@ class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 	 * @testdox The renewal root registers the WooPayments failed-renewal authentication emails.
 	 */
 	public function test_renewal_root_registers_failed_renewal_authentication_emails(): void {
+		require_once WC_ABSPATH . 'includes/emails/class-wc-email.php';
+
 		$this->load_subscriptions();
 		wc_get_container()->get( SubscriptionsController::class )->handle_plugins_loaded();
 
