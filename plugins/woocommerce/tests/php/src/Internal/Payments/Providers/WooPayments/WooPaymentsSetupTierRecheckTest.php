@@ -891,6 +891,34 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox R36: a gateway turned $before to $after in another request during the account read raises the tier to $expected, the tier of the setting as stored when the step writes.
+	 * @testWith ["yes", "no", "connected"]
+	 *           ["no", "yes", "active"]
+	 *
+	 * @param string $before   The gateway's enabled setting when the step starts.
+	 * @param string $after    The setting another request stores during the read.
+	 * @param string $expected The tier the raise writes.
+	 */
+	public function test_r36_a_gateway_setting_changed_during_the_read_picks_the_tier( string $before, string $after, string $expected ): void {
+		global $wpdb;
+
+		$drop = $this->drop_from_a_connected_account( $before );
+		$this->register_cron_request();
+		$option               = WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION;
+		$this->client->answer = function () use ( $wpdb, $option, $after ) {
+			// Another request saves the setting: the database changes, this request's cached options do not.
+			$settings            = get_option( $option );
+			$settings['enabled'] = $after;
+			$wpdb->update( $wpdb->options, array( 'option_value' => maybe_serialize( $settings ) ), array( 'option_name' => $option ) );
+			return $this->account();
+		};
+
+		$this->run_step( $drop, 1 );
+
+		$this->assertSame( $expected, $this->stored_tier() );
+	}
+
+	/**
 	 * @return array<string,array{string,bool,array<int,string>}>
 	 */
 	public static function provide_lowest_tier_cron_registrations(): array {

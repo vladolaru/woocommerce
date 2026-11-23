@@ -23,7 +23,8 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
  * On a store with a persistent object cache, a request that loaded the options from the database just before a raise can
  * put them back into the cache just after it: the store then runs at the lowest tier until an admin request next refreshes
  * the account, as a visit to the Payments pages does, whose tier write logs a failed write and drops the cached options,
- * or until the cache is flushed.
+ * or until the cache is flushed. That request itself still runs at the lowest tier; the next one is right. If the race also
+ * put back an older account row with a recent fetch time, the refresh waits for that row to expire (2 hours in admin).
  *
  * @since 11.4.0
  * @internal
