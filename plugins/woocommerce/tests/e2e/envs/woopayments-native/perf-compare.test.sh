@@ -188,7 +188,8 @@ fake_page_body() {
 		wrong-body) content='<div data-block-name="woocommerce/cart"></div>' ;;
 		esac
 	fi
-	printf '<body class="%s wp-theme-%s"><main>%s</main>\n' "$classes" "$(< "${PERF_FAKE_ROOT:?}/theme")" "$content"
+	printf '<html><body class="%s wp-theme-%s"><main>%s</main>\n' "$classes" "$(< "${PERF_FAKE_ROOT:?}/theme")" "$content"
+	if [[ "$target" == '/?post_type=product' && "${PERF_FAKE_CASE:-}" == truncated-body ]]; then return 0; fi
 	if [[ "${3:-}" == 'X-WooCommerce-Native-Payments-Asset-Control: 1' && "$state" == active_native && "${PERF_FAKE_CASE:-}" != missing-positive && "$target" == '/?page_id=7' ]]; then
 		printf '<script src="/wp-content/plugins/woocommerce/assets/js/frontend/woopayments-frontend-tracks.min.js"></script>\n'
 	fi
@@ -198,19 +199,19 @@ fake_page_body() {
 	asset-available-fail) [[ "$target" != / || "$state" != available || "${4:-}" != 2 ]] || printf '<script>var wcpayConfig = {};</script>\n' ;;
 	asset-native-fail) [[ "$target" != / || "$state" != disabled ]] || printf '<script id="wcpay-dormant-js" src="%s/wp-content/plugins/woocommerce/assets/js/dormant.js"></script>\n' "$origin" ;;
 	esac
-	if [[ "$target" != '/?page_id=7' || "${PERF_FAKE_CASE:-}" == missing-positive ]]; then return; fi
-	case "$state" in
-	active_native)
+	case "$target:$state" in
+	'/?page_id=7:active_native')
 		printf "<link rel='stylesheet' id='wc-payment-method-woopayments-css' href='%s/wp-content/plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments.css?ver=1&#038;rtl=0' media='all' />\n" "$origin"
 		printf '<script id="wc-payment-method-woopayments-js-extra">var wcpayConfig = {"a":1};</script>\n'
 		printf '<script id="wc-payment-method-woopayments-js" src="/wp-content/plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments.js?ver=1"></script>\n'
 		printf '<script id="stripe-js" src="https://js.stripe.com/v3/"></script>\n'
 		;;
-	active_plugin)
+	'/?page_id=7:active_plugin')
 		printf '<script id="WCPAY_BLOCKS_CHECKOUT-js" src="%s/wp-content/plugins/woocommerce-payments-reference/dist/blocks-checkout.js?ver=1"></script>\n' "$origin"
 		printf '<script id="stripe-js" src="https://js.stripe.com/v3/"></script>\n'
 		;;
 	esac
+	printf '</body></html>\n'
 }
 
 # Asset files are served by name: 300 bytes of stylesheet, 1000 of native script and 800 of plugin script.
@@ -766,16 +767,22 @@ run_case asset-native-fail asset-native-fail 1 ci
 grep -Fq $'disabled\tassets:front\t1\t1\t21\tNA\tNA\tNA\tNA\tfail' "$TEST_ROOT/asset-native-fail/output/result.tsv" || fail 'A native tag on the disabled front page did not fail the asset gate.'
 assert_cleaned "$TEST_ROOT/asset-native-fail"
 
-for invalid in empty-body wrong-body; do
+for invalid in empty-body wrong-body truncated-body; do
 	run_case "$invalid" "$invalid" 1 ci
-	expected='empty response body'
-	if [[ "$invalid" == wrong-body ]]; then expected='missing Storefront markup for shop'; fi
+	expected='missing Storefront markup for shop'
+	if [[ "$invalid" == empty-body ]]; then expected='empty response body'; fi
 	grep -Fq "Invalid warm-up-r1 (baseline_noop/shop): $expected." "$TEST_ROOT/$invalid/stderr" || fail "$invalid did not identify the invalid shop response."
 	assert_cleaned "$TEST_ROOT/$invalid"
 done
 
+printf '<html><body class="home wp-theme-storefront"><main></main></body></html>\n' > "$TEST_ROOT/complete.html"
+if bash -c 'source "$1"; validate_page_body "$2" unknown sample' _ "$RUNNER" "$TEST_ROOT/complete.html" 2> "$TEST_ROOT/unknown-page.stderr"; then
+	fail 'The page check accepted an unknown page name.'
+fi
+grep -Fxq 'Invalid sample: unknown page name: unknown.' "$TEST_ROOT/unknown-page.stderr" || fail 'The page check did not identify the unknown page.'
+
 run_case missing-positive missing-positive 1 ci
-grep -Fxq $'active_native\tassets:checkout_tracking\t0\t0\t0\tNA\tNA\tNA\tNA\tfail' "$TEST_ROOT/missing-positive/output/result.tsv" || fail 'The asset gate accepted a checkout without the expected shopper script.'
+grep -Fxq $'active_native\tassets:checkout_tracking\t4\t1326\t100\tNA\tNA\tNA\tNA\tfail' "$TEST_ROOT/missing-positive/output/result.tsv" || fail 'The four other checkout tags must not satisfy the shopper tracking control.'
 assert_cleaned "$TEST_ROOT/missing-positive"
 
 run_case asset-available-fail asset-available-fail 1 local

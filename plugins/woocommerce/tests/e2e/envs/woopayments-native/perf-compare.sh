@@ -297,9 +297,10 @@ validate_page_body() {
 	product) marker="<div id=\"product-$PRODUCT_ID\"" ;;
 	cart) marker='data-block-name="woocommerce/cart"|<form[^>]+class="woocommerce-cart-form"' ;;
 	checkout) marker='data-block-name="woocommerce/checkout"|<form[^>]+class="checkout woocommerce-checkout"' ;;
+	*) echo "Invalid $sample: unknown page name: $page." >&2; return 1 ;;
 	esac
 	if ! grep -Eq '<body[^>]*class="([^"]* )?wp-theme-storefront( |")' "$body" ||
-		! grep -Fq '</main>' "$body" || ! grep -Eq "$marker" "$body"; then
+		! grep -Fq '</main>' "$body" || ! grep -Fq '</html>' "$body" || ! grep -Eq "$marker" "$body"; then
 		echo "Invalid $sample: missing Storefront markup for $page." >&2
 		return 1
 	fi
@@ -769,4 +770,4 @@ main() {
 	if [[ $SAMPLE_FAILED -ne 0 || $GATE_FAILED -ne 0 ]]; then return 1; fi
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi
