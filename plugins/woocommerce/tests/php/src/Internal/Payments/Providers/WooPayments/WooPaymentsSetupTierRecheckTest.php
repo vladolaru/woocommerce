@@ -550,6 +550,8 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 			'H11 tier moved before the tier write'      => array( 'H11', 1 ),
 			'H12a tier write failed, step 1'            => array( 'H12a', 0 ),
 			'H12b tier write failed, step 4'            => array( 'H12b', 1 ),
+			'H13a account with no ID, step 1'           => array( 'H13a', 0 ),
+			'H13b account with no ID, step 4'           => array( 'H13b', 1 ),
 			'X1 refused reset puts the tier back'       => array( 'X1', 1 ),
 			'X2 refused reset whose tier restore fails' => array( 'X2', 0 ),
 		);
@@ -582,7 +584,7 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 		}
 
 		$drop = $this->drop_from_a_connected_account( 'H10' === $path ? 'no' : 'yes' );
-		$step = in_array( $path, array( 'H0b', 'H4', 'H5b', 'H8', 'H12b' ), true ) ? 4 : ( 'H5a' === $path ? 2 : 1 );
+		$step = in_array( $path, array( 'H0b', 'H4', 'H5b', 'H8', 'H12b', 'H13b' ), true ) ? 4 : ( 'H5a' === $path ? 2 : 1 );
 		$this->register_cron_request();
 
 		$found                = fn() => $this->account();
@@ -609,6 +611,10 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 				$this->client->answer = static function () {
 					throw new ApiException( 'No account.', 'wcpay_account_not_found', 404 );
 				};
+				break;
+			case 'H13a':
+			case 'H13b':
+				$this->client->answer = fn() => array_diff_key( $this->account(), array( 'account_id' => true ) );
 				break;
 			case 'H6':
 				$this->client->answer = function () use ( $found ) {
@@ -785,25 +791,129 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @return array<string,array{string,bool}>
+	 * @return array<string,array{mixed}>
 	 */
-	public static function provide_lowest_tier_cron_registrations(): array {
+	public static function provide_answers_with_no_account_id(): array {
 		return array(
-			'R1 stored available, built-in owner' => array( 'builtin', true ),
-			'R2 feature off'                      => array( 'feature_off', false ),
-			'R2 extension owner'                  => array( 'extension', false ),
-			'R2 stored disabled'                  => array( 'disabled', false ),
+			'no account ID'                      => array( null ),
+			'an empty account ID'                => array( '' ),
+			'an account ID that is not a scalar' => array( array( 'acct_123' ) ),
 		);
 	}
 
 	/**
-	 * @testdox R1 and R2: on a cron request the low tiers' cron root registers the re-check only on a stored available tier the built-in owns, with no query, option read or class load, and the class list stays as it was: $_dataName.
+	 * @testdox R31: an account answer with $_dataName writes nothing, as the foreground tier write refuses it; steps 1 to 3 keep the later steps and log nothing, and step 4 logs one warning.
+	 * @dataProvider provide_answers_with_no_account_id
+	 *
+	 * @param mixed $account_id The answer's account ID, or null for none.
+	 */
+	public function test_r31_an_account_with_no_id_raises_nothing( $account_id ): void {
+		$drop                 = $this->drop_from_a_connected_account();
+		$this->client->answer = function () use ( $account_id ) {
+			$account = array_diff_key( $this->account(), array( 'account_id' => true ) );
+			if ( null !== $account_id ) {
+				$account['account_id'] = $account_id;
+			}
+			return $account;
+		};
+		$this->register_cron_request();
+		$before = $this->stored_state();
+
+		$this->run_step( $drop, 1 );
+
+		$this->assertSame( 1, $this->client->plain_gets, 'The step read the account.' );
+		$this->assertSame( $before, $this->stored_state(), 'Row, tier and flag bytes are unchanged.' );
+		$this->assertSame( array( 2, 3, 4 ), $this->pending_step_numbers( $drop ), 'The later steps are kept.' );
+		$this->assertSame( array(), $this->recheck_levels() );
+
+		$this->run_step( $drop, 4 );
+
+		$this->assertSame( $before, $this->stored_state() );
+		$this->assertSame( array( 'warning' ), $this->recheck_levels() );
+	}
+
+	/**
+	 * @testdox R32: a raise caches the tier and the row as update_option() does, so options another request read before the writes and adds to the cache after them do not hide the raise.
+	 */
+	public function test_r32_options_read_before_a_raise_do_not_hide_it(): void {
+		$drop                 = $this->drop_from_a_connected_account();
+		$this->client->answer = fn() => $this->account();
+		$this->register_cron_request();
+		wp_cache_delete( 'alloptions', 'options' );
+		$stale_options = wp_load_alloptions();
+		$stale_row     = $this->raw_row();
+		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $stale_options[ WooPaymentsSetupTier::OPTION_NAME ] );
+		// Another request read the options and the row before the step's writes, missed the cache, and adds them on the
+		// step's first query after the tier write.
+		$tier_written = false;
+		$added        = false;
+		$race         = static function ( $query ) use ( &$tier_written, &$added, $stale_options, $stale_row ) {
+			if ( $tier_written && ! $added ) {
+				$added = true;
+				wp_cache_add( 'alloptions', $stale_options, 'options' );
+				wp_cache_add( self::ROW, $stale_row, 'options' );
+			} elseif ( is_string( $query ) && 0 === strpos( $query, 'UPDATE' ) && false !== strpos( $query, WooPaymentsSetupTier::OPTION_NAME ) ) {
+				$tier_written = true;
+			}
+			return $query;
+		};
+		add_filter( 'query', $race );
+
+		try {
+			$this->run_step( $drop, 1 );
+		} finally {
+			remove_filter( 'query', $race );
+		}
+
+		$this->assertTrue( $added, 'The other request added its options after the tier write.' );
+		$this->tier->invalidate();
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $this->tier->get_stored_tier(), 'The raised tier is what the options read.' );
+		$row = get_option( self::ROW );
+		$this->assertIsArray( $row );
+		$this->assertSame( $this->account(), $row['data'], 'The written row is what the options read.' );
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $this->stored_tier() );
+	}
+
+	/**
+	 * @testdox R33: a drop reads the stored tier past this request's memo, so a tier another request raised after the memo was filled gets its four steps.
+	 */
+	public function test_r33_a_drop_reads_the_stored_tier_past_the_request_memo(): void {
+		$this->store_has_account( 'yes' );
+		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::AVAILABLE );
+		$this->arbiter->invalidate();
+		$this->tier->invalidate();
+		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->tier->get_stored_tier(), 'The request remembers available.' );
+		// Another request raises the tier again, and this request's options see it.
+		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::ACTIVE );
+		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->tier->get_stored_tier(), 'The memo still holds available.' );
+
+		$this->account_service->overwrite_cache_with_no_account();
+
+		$this->assertCount( 4, $this->pending_steps(), 'The drop from active scheduled its steps.' );
+		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->stored_tier() );
+	}
+
+	/**
+	 * @return array<string,array{string,bool,array<int,string>}>
+	 */
+	public static function provide_lowest_tier_cron_registrations(): array {
+		return array(
+			'R1 stored available, built-in owner' => array( 'builtin', true, array( ReconciliationJob::class, PluginLifecycleListener::class, WooPaymentsStatusChangeRetryListener::class ) ),
+			'R2 feature off'                      => array( 'feature_off', false, array( WooPaymentsStatusChangeRetryListener::class ) ),
+			'R2 extension owner'                  => array( 'extension', false, array( ReconciliationJob::class, PluginLifecycleListener::class, WooPaymentsStatusChangeRetryListener::class ) ),
+			'R2 stored disabled'                  => array( 'disabled', false, array() ),
+		);
+	}
+
+	/**
+	 * @testdox R1 and R2: on a cron request the low tiers' cron root registers the re-check only on a stored available tier the built-in owns, with no query, option read or class load where the guard is computed or where the hook is added, and the class list stays as it was: $_dataName.
 	 * @dataProvider provide_lowest_tier_cron_registrations
 	 *
-	 * @param string $store    The store's shape.
-	 * @param bool   $expected Whether the re-check is registered.
+	 * @param string            $store    The store's shape.
+	 * @param bool              $expected Whether the re-check is registered.
+	 * @param array<int,string> $classes  The classes the request loads.
 	 */
-	public function test_r1_r2_a_lowest_tier_cron_request_gains_one_hook_and_nothing_else( string $store, bool $expected ): void {
+	public function test_r1_r2_a_lowest_tier_cron_request_gains_one_hook_and_nothing_else( string $store, bool $expected, array $classes ): void {
 		update_option( WooPaymentsSetupTier::OPTION_NAME, 'disabled' === $store ? WooPaymentsSetupTier::DISABLED : WooPaymentsSetupTier::AVAILABLE );
 		if ( 'feature_off' === $store ) {
 			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
@@ -816,15 +926,22 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 		$this->bootstrap()->register( $container, RequestTypeUtil::CRON );
 
 		$this->assertSame( $expected ? 1 : 0, $this->recheck_callbacks() );
-		if ( 'disabled' === $store ) {
-			$this->assertNotContains( WooPaymentsStatusChangeRetryListener::class, $container->resolved );
-			return;
-		}
-		$this->assertSame(
-			'builtin' === $store ? array( ReconciliationJob::class, PluginLifecycleListener::class, WooPaymentsStatusChangeRetryListener::class ) : $container->resolved,
-			$container->resolved,
-			'The class list is the one the request loaded before.'
+		$this->assertSame( $classes, $container->resolved, 'The class list is the one the request loaded before.' );
+		// The guard is computed while the class list is built: that costs what the list's own inputs cost, and no more.
+		$inputs  = $this->meter_call(
+			function (): void {
+				$this->tier->get_effective_tier();
+				$this->tier->get_stored_tier();
+			}
 		);
+		$listing = $this->meter_call(
+			function (): void {
+				$this->tier->get_classes_for_request( RequestTypeUtil::CRON );
+			}
+		);
+		$this->assertSame( $inputs->options, $listing->options, 'No option read where the guard is computed.' );
+		$this->assertSame( $inputs->queries, $listing->queries, 'No query where the guard is computed.' );
+		$this->assertSame( array(), $listing->autoloads, 'No class load where the guard is computed.' );
 		$this->assertSame( 0, $container->meters['register']->queries, 'No query.' );
 		$this->assertSame( 0, $container->meters['register']->option_reads, 'No option read.' );
 		$this->assertSame( array(), $container->meters['register']->autoloads, 'No class load.' );
@@ -1180,8 +1297,8 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Every stored value a step could touch: the options table, the WooCommerce sessions table and two cached options,
-	 * without the records the WordPress.com transport writes on every signed request.
+	 * Every stored value a step could touch: the options table and the WooCommerce sessions table, without the records the
+	 * WordPress.com connection writes on every signed request.
 	 *
 	 * @return array<string,mixed>
 	 */
@@ -1206,19 +1323,24 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 				unset( $options['fallback_no_verify_ssl_certs'], $options['time_diff'] );
 				$value = $options;
 			}
+			if ( 'jetpack_private_options' === $name ) {
+				// The connection's token lock clean-up, and its token deletion on a site address mismatch.
+				$options = maybe_unserialize( $value );
+				unset( $options['token_lock'], $options['blog_token'], $options['user_token'], $options['user_tokens'] );
+				$value = $options;
+			}
 			$snapshot[ 'option:' . $name ] = array( $value, $row['autoload'] );
 		}
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery
 		foreach ( $wpdb->get_results( "SELECT session_key, session_value FROM {$wpdb->prefix}woocommerce_sessions", ARRAY_A ) as $row ) {
 			$snapshot[ 'session:' . $row['session_key'] ] = $row['session_value'];
 		}
-		$snapshot['cache:wcpay_onboarding_test_mode'] = wp_cache_get( 'wcpay_onboarding_test_mode', 'options' );
 
 		return $snapshot;
 	}
 
 	/**
-	 * Name what changed between two snapshots: option names, session keys and cache keys.
+	 * Name what changed between two snapshots: option names and session keys.
 	 *
 	 * @param array<string,mixed> $before Snapshot before.
 	 * @param array<string,mixed> $after  Snapshot after.
@@ -1227,9 +1349,6 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 	private function changed_keys( array $before, array $after ): array {
 		$changed = array();
 		foreach ( array_unique( array_merge( array_keys( $before ), array_keys( $after ) ) ) as $key ) {
-			if ( 0 === strpos( $key, 'cache:' ) ) {
-				continue;
-			}
 			if ( ! array_key_exists( $key, $before ) || ! array_key_exists( $key, $after ) || $before[ $key ] !== $after[ $key ] ) {
 				$changed[] = (string) preg_replace( '/^option:/', '', $key );
 			}
@@ -1601,6 +1720,9 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 			public int $option_reads = 0;
 
 			/** @var array<int,string> */
+			public array $options = array();
+
+			/** @var array<int,string> */
 			public array $autoloads = array();
 
 			/** @var array<int,string> */
@@ -1623,6 +1745,7 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 					'all'      => function ( $hook_name ) {
 						if ( is_string( $hook_name ) && 0 === strpos( $hook_name, 'pre_option_' ) ) {
 							++$this->option_reads;
+							$this->options[] = substr( $hook_name, strlen( 'pre_option_' ) );
 						}
 					},
 					'autoload' => function ( $class_name ) {
@@ -1646,6 +1769,26 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 				$this->stopped   = true;
 			}
 		};
+	}
+
+	/**
+	 * Meter one call made with the setup tier's and the runtime arbiter's request memos empty.
+	 *
+	 * @param callable $call The call.
+	 * @return object Meter.
+	 */
+	private function meter_call( callable $call ): object {
+		$this->arbiter->invalidate();
+		$this->tier->invalidate();
+		$meter = $this->meter();
+		$meter->start();
+		try {
+			$call();
+		} finally {
+			$meter->stop();
+		}
+
+		return $meter;
 	}
 
 	/**

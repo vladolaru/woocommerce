@@ -241,8 +241,8 @@ final class WooPaymentsSetupTier {
 	/**
 	 * Raise a stored `available` tier to `connected` or `active`, only while the database still holds `available`.
 	 *
-	 * Another writer's tier stands: a tier raised or lowered since it was read is left as it is. The request memo and the
-	 * cached options are dropped either way, so the next read sees what is stored.
+	 * Another writer's tier stands: a tier raised or lowered since it was read is left as it is. A written tier is cached as
+	 * update_option() caches it; otherwise the cached options are dropped, so the next read sees what is stored.
 	 *
 	 * @since 11.4.0
 	 *
@@ -264,16 +264,49 @@ final class WooPaymentsSetupTier {
 				self::AVAILABLE
 			)
 		);
+		$this->invalidate();
+		if ( 0 < (int) $updated ) {
+			self::cache_written_option( self::OPTION_NAME, $tier );
+			return true;
+		}
+
 		wp_cache_delete( 'alloptions', 'options' );
 		wp_cache_delete( self::OPTION_NAME, 'options' );
-		$this->invalidate();
-
 		if ( false === $updated ) {
 			$this->log_write_failure( $tier, get_option( self::OPTION_NAME, null ), array_key_exists( self::OPTION_NAME, wp_load_alloptions( true ) ) );
 			return null;
 		}
 
-		return 0 < $updated;
+		return false;
+	}
+
+	/**
+	 * Cache an option value written with raw SQL the way update_option() caches its own write (wp-includes/option.php,
+	 * with the autoload left as it was): in the cached options array when it is there, else under its own key.
+	 *
+	 * Setting the value, not deleting the cache, keeps a request that read the options before the write from caching
+	 * them again over it.
+	 *
+	 * @since 11.4.0
+	 * @internal
+	 *
+	 * @param string $option           Option name.
+	 * @param string $serialized_value Value as stored.
+	 */
+	public static function cache_written_option( string $option, string $serialized_value ): void {
+		$notoptions = wp_cache_get( 'notoptions', 'options' );
+		if ( is_array( $notoptions ) && isset( $notoptions[ $option ] ) ) {
+			unset( $notoptions[ $option ] );
+			wp_cache_set( 'notoptions', $notoptions, 'options' );
+		}
+
+		$alloptions = wp_load_alloptions( true );
+		if ( isset( $alloptions[ $option ] ) ) {
+			$alloptions[ $option ] = $serialized_value;
+			wp_cache_set( 'alloptions', $alloptions, 'options' );
+		} else {
+			wp_cache_set( $option, $serialized_value, 'options' );
+		}
 	}
 
 	/**

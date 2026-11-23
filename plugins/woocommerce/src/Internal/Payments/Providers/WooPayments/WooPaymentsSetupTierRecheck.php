@@ -16,8 +16,9 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
  * lowering stays with the foreground account reads. A step that settles the tier removes this drop's later steps; a step
  * that cannot settle it leaves them. The step that ends the schedule logs exactly one line, whatever the logging setting.
  *
- * Known limits: a step whose process dies logs only Action Scheduler's own failure, and one that dies between the row and
- * the tier write at the last step leaves the tier low. A store with no account row at a step's start is not recovered,
+ * Known limits: a step whose process dies, or a last step that throws, logs only Action Scheduler's own failure, and one
+ * that dies between the row and the tier write at the last step leaves the tier low. Steps of one drop that a queue backlog
+ * runs at once or out of order can each log their line. A store with no account row at a step's start is not recovered,
  * such as after a refused reset whose tier restore failed on a store whose row was already gone, or whose row restore failed.
  *
  * @since 11.4.0
@@ -59,10 +60,11 @@ class WooPaymentsSetupTierRecheck {
 	 * @var array<string,array{0:string,1:string}>
 	 */
 	private const UNSETTLED = array(
-		WooPaymentsAccountService::RECHECK_NO_ACCOUNT  => array( 'info', 'ended after four reads: the platform reports no account, so the tier stays available' ),
-		WooPaymentsAccountService::RECHECK_NO_ROW      => array( 'info', 'ended: there is no account row to compare against, so the tier stays available' ),
-		WooPaymentsAccountService::RECHECK_READ_FAILED => array( 'warning', 'ended after four reads without raising the tier: the account read failed' ),
-		WooPaymentsAccountService::RECHECK_ROW_CHANGED => array( 'warning', 'ended after four reads without raising the tier: the account row kept changing' ),
+		WooPaymentsAccountService::RECHECK_NO_ACCOUNT    => array( 'info', 'ended after four reads: the platform reports no account, so the tier stays available' ),
+		WooPaymentsAccountService::RECHECK_NO_ROW        => array( 'info', 'ended: there is no account row to compare against, so the tier stays available' ),
+		WooPaymentsAccountService::RECHECK_READ_FAILED   => array( 'warning', 'ended after four reads without raising the tier: the account read failed' ),
+		WooPaymentsAccountService::RECHECK_NO_ACCOUNT_ID => array( 'warning', 'ended after four reads without raising the tier: the account answer had no account ID' ),
+		WooPaymentsAccountService::RECHECK_ROW_CHANGED   => array( 'warning', 'ended after four reads without raising the tier: the account row kept changing' ),
 		WooPaymentsAccountService::RECHECK_TIER_WRITE_FAILED => array( 'warning', 'ended after four reads without raising the tier: the tier write failed' ),
 	);
 

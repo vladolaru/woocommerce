@@ -61,6 +61,9 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	/** Re-check outcome: the platform reports no account. */
 	public const RECHECK_NO_ACCOUNT = 'no_account';
 
+	/** Re-check outcome: the platform answered an account with no ID, which the setup tier write refuses. */
+	public const RECHECK_NO_ACCOUNT_ID = 'no_account_id';
+
 	/** Re-check outcome: the account row changed during the read, so nothing was written. */
 	public const RECHECK_ROW_CHANGED = 'row_changed';
 
@@ -645,6 +648,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		}
 
 		if ( $extension_owns_payments || array() === $account_data ) {
+			// Held before the call below, after which static analysis no longer knows the property is set.
 			$setup_tier = $this->setup_tier;
 			if ( ! $extension_owns_payments ) {
 				$this->schedule_recheck_on_drop();
@@ -653,12 +657,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( ! is_array( $account_data ) ) {
-			return;
-		}
-
-		$account_id = $account_data['account_id'] ?? null;
-		if ( ! is_scalar( $account_id ) || '' === (string) $account_id ) {
+		if ( ! is_array( $account_data ) || ! $this->has_account_id( $account_data ) ) {
 			return;
 		}
 
@@ -674,10 +673,15 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * The steps exist before the tier is written, so a request that dies after the drop still leaves them.
 	 */
 	private function schedule_recheck_on_drop(): void {
+		if ( null === $this->setup_tier || null === $this->runtime_arbiter ) {
+			return;
+		}
+
+		// Read the stored tier past this request's memo, from the options the tier write compares against: another request
+		// may have raised it since.
+		$this->setup_tier->invalidate();
 		if (
-			null === $this->setup_tier
-			|| null === $this->runtime_arbiter
-			|| ! in_array( $this->setup_tier->get_stored_tier(), array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true )
+			! in_array( $this->setup_tier->get_stored_tier(), array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true )
 			|| ! $this->runtime_arbiter->is_builtin_owner()
 		) {
 			return;
@@ -692,8 +696,8 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 *
 	 * The owner and the stored tier are read fresh. The account row is read before the account fetch and replaced only if it
 	 * still holds those bytes, marked as never fetched so the first foreground reader refreshes it with its listeners
-	 * loaded; the tier is then raised only while it still reads `available`. No account, a failed read or a row with no
-	 * account to compare against writes nothing, and nothing here can lower a tier.
+	 * loaded; the tier is then raised only while it still reads `available`. No account, an account with no ID, a failed
+	 * read or no row to compare against writes nothing, and nothing here can lower a tier.
 	 *
 	 * @since 11.4.0
 	 *
@@ -728,6 +732,10 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		}
 		if ( array() === $account_data ) {
 			return self::RECHECK_NO_ACCOUNT;
+		}
+		// The foreground tier write refuses an account with no ID, so the step does too.
+		if ( ! $this->has_account_id( $account_data ) ) {
+			return self::RECHECK_NO_ACCOUNT_ID;
 		}
 
 		$this->runtime_arbiter->invalidate();
@@ -768,7 +776,8 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Replace the account cache row only while it holds the bytes read before, compared byte for byte.
+	 * Replace the account cache row only while it holds the bytes read before, compared byte for byte. A replaced row is
+	 * cached as update_option() caches it.
 	 *
 	 * @param string $seen_row Serialized row read before the account fetch.
 	 * @param string $new_row  Serialized row to store.
@@ -790,9 +799,25 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 				$seen_row
 			)
 		);
-		$this->legacy_proxy->call_function( 'wp_cache_delete', WooPaymentsDatabaseCache::ACCOUNT_KEY, 'options' );
+		if ( 0 < (int) $updated ) {
+			WooPaymentsSetupTier::cache_written_option( WooPaymentsDatabaseCache::ACCOUNT_KEY, $new_row );
+			return true;
+		}
 
-		return 0 < (int) $updated;
+		$this->legacy_proxy->call_function( 'wp_cache_delete', WooPaymentsDatabaseCache::ACCOUNT_KEY, 'options' );
+		return false;
+	}
+
+	/**
+	 * Tell whether account data carries an account ID, without which the setup tier is not raised.
+	 *
+	 * @param array<string,mixed> $account_data Account data.
+	 * @return bool
+	 */
+	private function has_account_id( array $account_data ): bool {
+		$account_id = $account_data['account_id'] ?? null;
+
+		return is_scalar( $account_id ) && '' !== (string) $account_id;
 	}
 
 	/**
