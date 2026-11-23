@@ -35,6 +35,11 @@
 			"raw_growth_bytes": 4396,
 			"gzip_growth_bytes": 3196
 		},
+		"frontend-tracks.js": {
+			"raw_bytes": 2108,
+			"gzip_bytes": 934,
+			"reason": "Shopper Tracks events from the checkout scripts share one queue and are sent in batches, as WooPayments 11.3.0 does. The measured ceilings add no dependencies and stay below the extension's own script for the same feature."
+		},
 		"admin-capital.js": {
 			"raw_bytes": 12124,
 			"gzip_bytes": 4243,
