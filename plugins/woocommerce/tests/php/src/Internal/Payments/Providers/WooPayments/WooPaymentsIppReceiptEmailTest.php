@@ -16,6 +16,14 @@ use WC_Unit_Test_Case;
 class WooPaymentsIppReceiptEmailTest extends WC_Unit_Test_Case {
 
 	/**
+	 * Load the base email class before creating a receipt email.
+	 */
+	public function setUp(): void {
+		parent::setUp();
+		require_once WC_ABSPATH . 'includes/emails/class-wc-email.php';
+	}
+
+	/**
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
