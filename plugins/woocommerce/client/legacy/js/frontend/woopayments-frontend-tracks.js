@@ -13,7 +13,7 @@
 	var proceedToCheckout;
 
 	if (
-		! params || ! params.tracksUrl || ! params.nonce ||
+		! params || params.trackingDisabled || ! params.tracksUrl || ! params.nonce ||
 		! Array.isArray( params.allowedEvents ) || ! window.fetch || ! window.FormData
 	) {
 		return;
@@ -102,15 +102,9 @@
 		pending.forEach( window.wcWooPaymentsTracks.push );
 	}
 
-	function recordUserEvent( eventName, eventProperties ) {
-		window.wcWooPaymentsTracks.push( { event: eventName, properties: eventProperties || {} } );
-	}
-
 	events = params.events || [];
 	params.events = [];
-	events.forEach( function ( track ) {
-		recordUserEvent( track.event, track.properties );
-	} );
+	events.forEach( window.wcWooPaymentsTracks.push );
 
 	proceedToCheckout = params.proceedToCheckout;
 	params.proceedToCheckout = null;
@@ -130,10 +124,13 @@
 			}
 
 			// Client 11.1.0 sends `wcpay_proceed_to_checkout_button_click`, which its recorder prefixes again.
-			recordUserEvent( 'proceed_to_checkout_button_click', {
-				woopay_direct_checkout:
-					!! proceedToCheckout.woopayDirectCheckout &&
-					! /(?:^|;\s*)skip_woopay=1(?:;|$)/.test( document.cookie ),
+			window.wcWooPaymentsTracks.push( {
+				event: 'proceed_to_checkout_button_click',
+				properties: {
+					woopay_direct_checkout:
+						!! proceedToCheckout.woopayDirectCheckout &&
+						! /(?:^|;\s*)skip_woopay=1(?:;|$)/.test( document.cookie ),
+				},
 			} );
 		},
 		true

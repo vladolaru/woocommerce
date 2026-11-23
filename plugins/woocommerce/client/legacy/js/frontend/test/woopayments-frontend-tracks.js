@@ -21,6 +21,7 @@ describe( 'WooPayments frontend Tracks queue', () => {
 		window.wc_woopayments_frontend_tracks_params = {
 			tracksUrl: 'https://example.test/wp-json/wc/v3/payments/tracks',
 			restNonce: 'rest-nonce',
+			trackingDisabled: '',
 			nonce: 'tracks-nonce',
 			allowedEvents: [
 				'product_page_view', 'pay_for_order_page_view',
@@ -61,6 +62,32 @@ describe( 'WooPayments frontend Tracks queue', () => {
 	const sizes = () => window.fetch.mock.calls.map( ( [ , options ] ) =>
 		JSON.parse( options.body.get( 'tracksEvents' ) ).length );
 	const hide = () => window.dispatchEvent( new Event( 'pagehide' ) );
+
+	it( 'does not queue or send footer events for an administrator', () => {
+		window.wc_woopayments_frontend_tracks_params.trackingDisabled = '1';
+		window.navigator.sendBeacon = jest.fn().mockReturnValue( true );
+
+		loadScript();
+		jest.runOnlyPendingTimers();
+		hide();
+
+		expect( window.fetch ).not.toHaveBeenCalled();
+		expect( window.navigator.sendBeacon ).not.toHaveBeenCalled();
+		expect( window.wcWooPaymentsTracks ).toBeUndefined();
+	} );
+
+	it( 'honors the opt-out cookie on a shopper page with tracking enabled', () => {
+		document.cookie = 'tk_opt-out=1';
+		try {
+			loadScript();
+			add();
+			hide();
+			jest.runOnlyPendingTimers();
+			expect( window.fetch ).not.toHaveBeenCalled();
+		} finally {
+			document.cookie = 'tk_opt-out=; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+		}
+	} );
 
 	it( 'coalesces footer and checkout events after two idle seconds', () => {
 		loadScript();

@@ -198,6 +198,44 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should apply the same shopper role check to the footer queue and an incoming batch for a $role.
+	 * @testWith ["administrator", true]
+	 *           ["customer", false]
+	 *
+	 * @param string $role     Storefront visitor's role.
+	 * @param bool   $disabled Whether to skip shopper tracking.
+	 */
+	public function test_footer_and_posted_batch_respect_the_shopper_role( string $role, bool $disabled ): void {
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		$this->login_as_role( $role );
+		$sut = $this->create_controller();
+		$this->assertSame( ! $disabled, $sut->prepare_checkout_tracking() );
+		$sut->queue_user_event( 'product_page_view' );
+		$sut->enqueue_frontend_events_script();
+		try {
+			$localized = (string) wp_scripts()->get_data( 'wc-woopayments-frontend-tracks', 'data' );
+			preg_match( '/^var wc_woopayments_frontend_tracks_params = (\{.*\});$/s', $localized, $matches );
+			$params = json_decode( $matches[1] ?? '', true );
+			$this->assertSame( (string) $disabled, $params['trackingDisabled'] ?? null );
+
+			$requests = $this->capture_http_requests();
+			$response = $sut->record_tracks_request(
+				array(
+					'tracksNonce'  => $params['nonce'],
+					'tracksEvents' => wp_json_encode( array( array( 'event' => 'product_page_view' ) ) ),
+				)
+			);
+			$this->assertSame( 200, $response['status_code'] );
+			$this->assertCount( $disabled ? 0 : 1, $requests );
+		} finally {
+			remove_action( 'wp_footer', array( $sut, 'enqueue_frontend_events_script' ) );
+			wp_dequeue_script( 'wc-woopayments-frontend-tracks' );
+			wp_deregister_script( 'wc-woopayments-frontend-tracks' );
+		}
+	}
+
+	/**
 	 * @testdox Should stop only the current batch on a local send error and continue after an unobservable HTTP status.
 	 * @testWith [0, 1]
 	 *           [503, 2]

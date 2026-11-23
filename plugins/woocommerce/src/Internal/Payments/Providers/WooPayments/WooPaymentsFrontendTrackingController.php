@@ -721,6 +721,8 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 				'restNonce'         => wp_create_nonce( 'wp_rest' ),
 				'events'            => $this->frontend_events,
 				'allowedEvents'     => array_keys( $allowed_events ),
+				// The browser checks the opt-out cookie so cached guest pages work for other shoppers.
+				'trackingDisabled'  => ! $this->is_tracked_shopper_request(),
 				'proceedToCheckout' => $this->proceed_to_checkout,
 			)
 		);
