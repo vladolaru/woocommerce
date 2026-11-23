@@ -233,14 +233,14 @@ class WooPaymentsOrderEffects {
 	 *
 	 * @param array<string,mixed>  $intent              Platform PaymentIntent response.
 	 * @param string               $order_currency      Order currency.
-	 * @param string               $order_mode          `_wcpay_mode` value, one of WooPaymentsOrderMode.
+	 * @param string|null          $order_mode          Charge mode to include, or null when applying an existing intent.
 	 * @param array<string,string> $settlement_meta     Precomputed settlement metadata.
 	 * @param bool                 $was_held_for_review Whether the order was held for fraud review before completing.
 	 * @param bool                 $include_fee_meta    Whether to add the fee meta client 11.1.0 attaches from the charge (class-wc-payments-order-service.php:1741).
 	 * @param bool                 $is_capture          Whether a succeeded intent completes the order as a capture (completed_charge_meta()).
 	 * @return array<string,string>
 	 */
-	public static function payment_intent_meta( array $intent, string $order_currency, string $order_mode, array $settlement_meta = array(), bool $was_held_for_review = false, bool $include_fee_meta = true, bool $is_capture = false ): array {
+	public static function payment_intent_meta( array $intent, string $order_currency, ?string $order_mode, array $settlement_meta = array(), bool $was_held_for_review = false, bool $include_fee_meta = true, bool $is_capture = false ): array {
 		$status                 = isset( $intent['status'] ) ? (string) $intent['status'] : '';
 		$charge                 = WooPaymentsIntentCodec::latest_charge( $intent );
 		$charge_id              = isset( $charge['id'] ) ? (string) $charge['id'] : '';
@@ -249,9 +249,12 @@ class WooPaymentsOrderEffects {
 		$meta                   = array(
 			// Client 11.1.0 stores the intent model's currency, which its constructor uppercases (class-wc-payments-api-payment-intention.php:93, class-wc-payments-order-service.php:1361,1414).
 			'_wcpay_intent_currency'        => strtoupper( $intent_currency ),
-			'_wcpay_mode'                   => $order_mode,
 			'_wcpay_payment_transaction_id' => $balance_transaction_id,
 		);
+
+		if ( null !== $order_mode ) {
+			$meta['_wcpay_mode'] = $order_mode;
+		}
 
 		if ( '' !== $charge_id ) {
 			$meta['_charge_id'] = $charge_id;

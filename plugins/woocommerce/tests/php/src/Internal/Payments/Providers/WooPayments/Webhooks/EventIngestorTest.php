@@ -389,6 +389,8 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	 */
 	public function test_payment_intent_succeeded_completes_order(): void {
 		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '_wcpay_mode', 'test' );
+		$order->save();
 
 		$this->sut->process( $this->create_payment_intent_event( 'payment_intent.succeeded', $order ) );
 

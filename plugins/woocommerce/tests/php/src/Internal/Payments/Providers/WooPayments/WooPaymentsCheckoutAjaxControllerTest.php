@@ -151,8 +151,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( $recorded['body']['id'], $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( $recorded['body']['payment_method'], $order->get_meta( '_payment_method_id', true ) );
 		$this->assertSame( $recorded['body']['customer'], $order->get_meta( '_stripe_customer_id', true ) );
-		// A live account stores plugin 11.1.0 `Order_Mode::PRODUCTION` (class-wc-payment-gateway-wcpay.php:1677).
-		$this->assertSame( 'prod', $order->get_meta( '_wcpay_mode', true ) );
+		$this->assertFalse( $order->meta_exists( '_wcpay_mode' ) );
 		// Plugin 11.1.0 stores the order currency for setup intents (class-wc-payments-order-service.php:1361).
 		$this->assertSame( 'USD', $order->get_meta( '_wcpay_intent_currency', true ) );
 		// Client 11.1.0 update_order_status() completes the $0 order with this plain note (gw:4263-4271); its order service then
@@ -697,11 +696,12 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Order-status callback should use the account service for lifecycle mode metadata.
+	 * @testdox The order-status callback preserves the charge mode and records the card and fee details.
 	 */
-	public function test_update_order_status_uses_account_service_mode_for_lifecycle_meta(): void {
+	public function test_update_order_status_preserves_charge_mode_and_records_payment_details(): void {
 		$order = $this->create_woopayments_order( '50.00' );
 		$order->update_meta_data( '_intent_id', 'pi_native' );
+		$order->update_meta_data( '_wcpay_mode', 'test' );
 		$order->save();
 
 		$api_client = new class() extends Client {
@@ -2929,7 +2929,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pm_native', $order->get_meta( '_payment_method_id', true ) );
 		$this->assertSame( 'cus_native', $order->get_meta( '_stripe_customer_id', true ) );
 		$this->assertSame( 'USD', $order->get_meta( '_wcpay_intent_currency', true ) );
-		$this->assertSame( 'test', $order->get_meta( '_wcpay_mode', true ) );
+		$this->assertFalse( $order->meta_exists( '_wcpay_mode' ) );
 		$this->assertFalse( $order->meta_exists( '_wcpay_payment_method_details' ) );
 		$this->assertSame( '', $order->get_meta( '_wcpay_payment_transaction_id', true ) );
 		$this->assertSame( 'not_card', $order->get_meta( '_wcpay_fraud_meta_box_type', true ) );

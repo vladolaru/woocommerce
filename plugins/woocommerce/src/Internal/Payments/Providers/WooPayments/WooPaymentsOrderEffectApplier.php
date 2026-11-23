@@ -576,9 +576,11 @@ class WooPaymentsOrderEffectApplier {
 		$plan            = $outcome->get_effect_plan();
 		$returned_intent = $plan instanceof WooPaymentsOrderEffectPlan && in_array( $plan->get_type(), array( WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT, WooPaymentsOrderEffectPlan::TYPE_SETUP_INTENT ), true );
 		if ( $plan instanceof WooPaymentsOrderEffectPlan && WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT === $plan->get_type() ) {
-			$outcome = $this->merge_effect_data_into_outcome(
+			$meta                = $this->compose_payment_intent_meta( $context->get_order(), $plan->get_provider_result(), $plan->writes_fee_meta(), false );
+			$meta['_wcpay_mode'] = $this->account_service->get_order_mode();
+			$outcome             = $this->merge_effect_data_into_outcome(
 				$outcome,
-				array( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => $this->compose_payment_intent_meta( $context->get_order(), $plan->get_provider_result(), $plan->writes_fee_meta(), false ) ),
+				array( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => $meta ),
 				$plan
 			);
 		} elseif ( $plan instanceof WooPaymentsOrderEffectPlan && WooPaymentsOrderEffectPlan::TYPE_SETUP_INTENT === $plan->get_type() ) {
@@ -754,7 +756,7 @@ class WooPaymentsOrderEffectApplier {
 		$meta            = WooPaymentsOrderEffects::payment_intent_meta(
 			$result,
 			(string) $order->get_currency(),
-			$this->account_service->get_order_mode(),
+			null,
 			$settlement_meta,
 			( ! $captures && $order->has_status( OrderStatus::ON_HOLD ) ) || 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ),
 			$include_fee_meta || $captures,
@@ -776,9 +778,8 @@ class WooPaymentsOrderEffectApplier {
 	 * @return array<string,mixed>
 	 */
 	private function compose_payment_intent_effect_data( WC_Order $order, array $result, array $meta, ?array $hold, bool $is_started, bool $is_merchant_initiated ): array {
-		$status     = (string) ( $result['status'] ?? '' );
-		$charge     = WooPaymentsIntentCodec::latest_charge( $result );
-		$order_mode = $this->account_service->get_order_mode();
+		$status = (string) ( $result['status'] ?? '' );
+		$charge = WooPaymentsIntentCodec::latest_charge( $result );
 
 		$effect_data = array( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => $meta );
 		$intent_id   = isset( $result['id'] ) ? (string) $result['id'] : '';
@@ -807,8 +808,7 @@ class WooPaymentsOrderEffectApplier {
 				$order,
 				$intent_id,
 				$charge_id,
-				WooPaymentsIntentCodec::balance_transaction_id( $charge['balance_transaction'] ?? null ),
-				$order_mode
+				WooPaymentsIntentCodec::balance_transaction_id( $charge['balance_transaction'] ?? null )
 			);
 			$effect_data[ PaymentOutcome::DATA_NOTE ]             = $note_candidates[0];
 			$effect_data[ PaymentOutcome::DATA_NOTE_TYPE ]        = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS;

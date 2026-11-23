@@ -7,11 +7,13 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Admin\API\LaunchYourStore;
 use Automattic\WooCommerce\Caches\OrderCache;
 use Automattic\WooCommerce\Enums\OrderInternalStatus;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
 use Automattic\WooCommerce\Internal\Orders\UnpaidOrderTimeoutMarker;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\DebugTools;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLevel3Service;
@@ -4154,9 +4156,94 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$order = $this->reload( $order );
 		$this->assertSame( array( 'intentions/pi_unpaid?test_mode=1' ), $this->request_paths( $transport ), 'One read, in the order\'s own mode.' );
 		$this->assertSame( OrderStatus::PROCESSING, $order->get_status() );
-		$this->assertSame( 1, $this->count_notes_containing( $order, 'successfully charged' ) );
+		$this->assertSame( 1, $this->count_notes_containing( $order, 'No real funds were collected' ) );
 		$this->assertSame( 0, $this->count_notes_containing( $order, 'Unpaid order cancelled' ) );
 		$this->assertFalse( UnpaidOrderTimeoutMarker::is_marked( $order ) );
+	}
+
+	/**
+	 * @testdox The hold-stock job keeps the charge mode when it rescues a payment.
+	 * @dataProvider rescued_payment_modes
+	 *
+	 * @param string $mode       Mode stored at checkout, or empty for an unmarked order.
+	 * @param bool   $test_store Whether the store is in test mode when the timer runs.
+	 * @param string $kind       Paid, authorized or captured payment.
+	 */
+	public function test_unpaid_order_rescue_preserves_charge_mode( string $mode, bool $test_store, string $kind ): void {
+		$order = $this->create_unpaid_order( 'captured' === $kind ? 'requires_capture' : 'requires_action' );
+		if ( '' === $mode ) {
+			$order->delete_meta_data( '_wcpay_mode' );
+		} else {
+			$order->update_meta_data( '_wcpay_mode', $mode );
+		}
+		if ( 'captured' === $kind ) {
+			$order->set_transaction_id( 'pi_unpaid' );
+		}
+		$order->save();
+		$this->age_unpaid_order( $order );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => $test_store ? 'yes' : 'no' ) );
+		$status    = 'authorized' === $kind ? 'requires_capture' : 'succeeded';
+		$transport = $this->create_transport( self::http_json( 200, self::unpaid_intent( $order, $status ) ) );
+
+		$this->run_unpaid_order_job( $transport );
+
+		$order     = $this->reload( $order );
+		$test_read = 'test' === $mode;
+		$this->assertSame( array( 'intentions/pi_unpaid?test_mode=' . (int) $test_read ), $this->request_paths( $transport ) );
+		$this->assertSame( 'authorized' === $kind ? OrderStatus::ON_HOLD : OrderStatus::PROCESSING, $order->get_status() );
+		$this->assertSame( $mode, $order->get_meta( '_wcpay_mode', true ) );
+		$this->assertSame( '' !== $mode, $order->meta_exists( '_wcpay_mode' ) );
+		if ( 'paid' === $kind ) {
+			$this->assertSame( (int) $test_read, $this->count_notes_containing( $order, 'No real funds were collected' ) );
+			$this->assertSame( (int) ! $test_read, $this->count_notes_containing( $order, 'successfully charged' ) );
+		} elseif ( 'captured' === $kind ) {
+			$this->assertSame( 1, $this->count_notes_containing( $order, 'successfully captured' ) );
+		}
+	}
+
+	/**
+	 * @return array<string,array{string,bool,string}>
+	 */
+	public static function rescued_payment_modes(): array {
+		$cases = array();
+		foreach ( array( 'paid', 'authorized', 'captured' ) as $kind ) {
+			$cases[ "$kind test on live" ]     = array( 'test', false, $kind );
+			$cases[ "$kind live on test" ]     = array( 'prod', true, $kind );
+			$cases[ "$kind unmarked on test" ] = array( '', true, $kind );
+			$cases[ "$kind test on test" ]     = array( 'test', true, $kind );
+			$cases[ "$kind live on live" ]     = array( 'prod', false, $kind );
+		}
+		return $cases;
+	}
+
+	/**
+	 * @testdox Test-order cleanup removes a test order and keeps a live order rescued in test mode.
+	 * @testWith ["debug"]
+	 *           ["launch"]
+	 *
+	 * @param string $tool Test-order cleanup tool.
+	 */
+	public function test_test_order_cleanup_spares_a_rescued_live_order( string $tool ): void {
+		$order = $this->create_unpaid_order( 'requires_action' );
+		$order->update_meta_data( '_wcpay_mode', 'prod' );
+		$order->save();
+		$this->age_unpaid_order( $order );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$this->run_unpaid_order_job( $this->create_transport( self::http_json( 200, self::unpaid_intent( $order, 'succeeded' ) ) ) );
+		$this->assertSame( OrderStatus::PROCESSING, $this->reload( $order )->get_status() );
+
+		$control = $this->create_unpaid_order( 'succeeded' );
+		$user_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
+		$this->assertIsInt( $user_id );
+		wp_set_current_user( $user_id );
+		if ( 'debug' === $tool ) {
+			wc_get_container()->get( DebugTools::class )->delete_test_orders();
+			$this->assertFalse( wc_get_order( $control->get_id() ) );
+		} else {
+			( new LaunchYourStore() )->delete_woopay_test_orders();
+			$this->assertSame( OrderStatus::TRASH, $this->reload( $control )->get_status() );
+		}
+		$this->assertSame( OrderStatus::PROCESSING, $this->reload( $order )->get_status() );
 	}
 
 	/**
@@ -4174,7 +4261,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$this->run_unpaid_order_job( $this->create_transport( self::http_json( 200, $intent ) ) );
 
 		$this->assertSame( OrderStatus::PROCESSING, $this->reload( $order )->get_status() );
-		$this->assertSame( 1, $this->count_notes_containing( $order, 'successfully charged' ) );
+		$this->assertSame( 1, $this->count_notes_containing( $order, 'No real funds were collected' ) );
 	}
 
 	/**

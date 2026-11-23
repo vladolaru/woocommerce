@@ -49,6 +49,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	public function test_lifecycle_enrichment_does_not_persist_payment_intent_effects(): void {
 		$order = $this->create_woopayments_order();
 		$order->set_payment_method_title( 'Card' );
+		$order->update_meta_data( '_wcpay_mode', 'test' );
 		$order->save();
 		$result  = array(
 			'id'       => 'pi_read_only',
@@ -74,6 +75,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$reloaded = wc_get_order( $order->get_id() );
 
 		$this->assertArrayHasKey( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY, $enriched->get_data() );
+		$this->assertArrayNotHasKey( '_wcpay_mode', $enriched->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] );
 		$this->assertInstanceOf( WC_Order::class, $reloaded );
 		$this->assertSame( 'Card', $reloaded->get_payment_method_title() );
 		$this->assertSame( '', $reloaded->get_meta( '_charge_id', true ) );
@@ -121,6 +123,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	public function test_payment_intent_effects_persist_display_details(): void {
 		$order = $this->create_woopayments_order();
 		$order->set_payment_method_title( 'Card' );
+		$order->update_meta_data( '_wcpay_mode', 'test' );
 		$order->save();
 		$result  = array(
 			'id'       => 'pi_display',
@@ -174,6 +177,8 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'txn_display', $applied_outcome->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]['_wcpay_payment_transaction_id'] );
 		$this->assertSame( $plan, $applied_outcome->get_effect_plan() );
 		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'prod', $order->get_meta( '_wcpay_mode', true ) );
+		$this->assertStringContainsString( 'successfully charged', $applied_outcome->get_data()[ PaymentOutcome::DATA_NOTE ] );
 		$this->assertSame( '4242', $order->get_meta( 'last4', true ) );
 		$this->assertSame( 'visa', $order->get_meta( '_card_brand', true ) );
 		$this->assertSame( 'Visa credit card', $order->get_payment_method_title() );
@@ -543,9 +548,9 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Synchronous test payments compose the test note before payment metadata persists.
+	 * @testdox A checkout test charge records its mode before composing the payment note.
 	 */
-	public function test_synchronous_test_payment_uses_test_note_before_mode_metadata_persists(): void {
+	public function test_checkout_test_charge_records_mode_before_composing_the_success_note(): void {
 		$order           = $this->create_woopayments_order( '25.00' );
 		$result          = array(
 			'id'       => 'pi_test_mode',
@@ -569,16 +574,16 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$account_service->method( 'get_account_default_currency' )->willReturn( 'usd' );
 		$account_service->method( 'get_mode' )->willReturn( 'test' );
 
-		$enriched = $this->create_applier( null, null, $account_service )->enrich_outcome_for_lifecycle(
+		$applied = $this->apply_charge(
+			$this->create_applier( null, null, $account_service ),
 			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_test_mode' ),
 			new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_test_mode' ),
 			WooPaymentsOrderEffectPlan::for_payment_intent( $result, false )
 		);
 
-		$this->assertSame( 'test', $enriched->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]['_wcpay_mode'] );
-		$this->assertStringContainsString( 'A test payment of', $enriched->get_data()[ PaymentOutcome::DATA_NOTE ] );
-		$this->assertStringContainsString( 'No real funds were collected.', $enriched->get_data()[ PaymentOutcome::DATA_NOTE ] );
-		$this->assertSame( '', $order->get_meta( '_wcpay_mode', true ) );
+		$this->assertSame( 'test', $order->get_meta( '_wcpay_mode', true ) );
+		$this->assertStringContainsString( 'A test payment of', $applied->get_data()[ PaymentOutcome::DATA_NOTE ] );
+		$this->assertStringContainsString( 'No real funds were collected.', $applied->get_data()[ PaymentOutcome::DATA_NOTE ] );
 	}
 
 	/**

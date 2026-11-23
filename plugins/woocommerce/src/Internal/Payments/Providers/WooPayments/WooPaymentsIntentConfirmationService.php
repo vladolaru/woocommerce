@@ -597,7 +597,6 @@ class WooPaymentsIntentConfirmationService {
 				array(
 					// Plugin 11.1.0 stores the order currency for setup intents (class-wc-payments-order-service.php:1361).
 					'_wcpay_intent_currency' => (string) $order->get_currency(),
-					'_wcpay_mode'            => $this->account_service->get_order_mode(),
 				)
 			)
 			: WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false );
