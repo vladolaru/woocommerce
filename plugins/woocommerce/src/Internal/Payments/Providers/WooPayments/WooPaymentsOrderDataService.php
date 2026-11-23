@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Utilities\OrderUtil;
 use WC_Order;
 
 /**
@@ -19,6 +20,47 @@ use WC_Order;
 class WooPaymentsOrderDataService {
 
 	private const META_KEY_STRIPE_EXCHANGE_RATE = '_wcpay_multi_currency_stripe_exchange_rate';
+
+	/**
+	 * Check a direct refund against the stored balance before any order getter can round it for display.
+	 *
+	 * @param WC_Order $order Order under the payment lock.
+	 * @param int      $amount Requested amount in provider minor units.
+	 * @return bool
+	 */
+	public function can_cover_refund_amount( WC_Order $order, int $amount ): bool {
+		global $wpdb;
+
+		$scale = 10 ** WooPaymentsCurrencyUtils::get_stripe_minor_unit_for_currency( $order->get_currency() );
+		if ( OrderUtil::custom_orders_table_usage_is_enabled() ) {
+			// HPOS stores refund totals as negative decimals.
+			$covered = $wpdb->get_var(
+				$wpdb->prepare(
+					"SELECT %d <= %d * (o.total_amount + COALESCE((SELECT SUM(r.total_amount) FROM {$wpdb->prefix}wc_orders r WHERE r.parent_order_id = o.id AND r.type = 'shop_order_refund'), 0))
+					FROM {$wpdb->prefix}wc_orders o WHERE o.id = %d",
+					$amount,
+					$scale,
+					$order->get_id()
+				)
+			);
+		} else {
+			// Legacy refund amounts are positive strings. Cast before summing to keep the decimal arithmetic exact.
+			$covered = $wpdb->get_var(
+				$wpdb->prepare(
+					"SELECT %d <= %d * (CAST(o.meta_value AS DECIMAL(65,30)) - COALESCE((
+						SELECT SUM(CAST(r.meta_value AS DECIMAL(65,30))) FROM {$wpdb->posts} p
+						INNER JOIN {$wpdb->postmeta} r ON r.post_id = p.ID AND r.meta_key = '_refund_amount'
+						WHERE p.post_parent = o.post_id AND p.post_type = 'shop_order_refund'
+					), 0)) FROM {$wpdb->postmeta} o WHERE o.post_id = %d AND o.meta_key = '_order_total' ORDER BY o.meta_id LIMIT 1",
+					$amount,
+					$scale,
+					$order->get_id()
+				)
+			);
+		}
+
+		return '1' === (string) $covered;
+	}
 
 	/**
 	 * Build the billing-details payload for payment method updates.

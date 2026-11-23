@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments;
 
+use Automattic\WooCommerce\Caches\OrderCache;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use InvalidArgumentException;
 use WC_Order;
@@ -208,6 +209,83 @@ class OrderPaymentLifecycleService {
 			call_user_func( array( $data_store, 'clear_cached_data' ), array( $order_id ) );
 		}
 		$data_store->read( $order );
+	}
+
+	/**
+	 * Read the order and its refund IDs again. A direct refund also needs fresh related rows and price settings.
+	 *
+	 * @since 11.4.0
+	 * @param WC_Order $order           Order being refunded.
+	 * @param bool     $include_related Whether to refresh refund details, items, notes and settings.
+	 * @return WC_Order
+	 * @throws \UnexpectedValueException When the refund query does not return a list.
+	 * @throws \RuntimeException When the locked order no longer exists.
+	 */
+	public function get_fresh_order_with_refunds( WC_Order $order, bool $include_related = false ): WC_Order {
+		global $wpdb;
+
+		$order_id = $order->get_id();
+		$prefix   = \WC_Cache_Helper::get_cache_prefix( 'orders' );
+		wp_cache_delete( $prefix . 'refund_ids' . $order_id, 'orders' );
+		if ( ! $include_related ) {
+			return $this->get_fresh_order_from_data_store( $order );
+		}
+		wp_cache_delete( $prefix . 'total_refunded' . $order_id, 'orders' );
+
+		// Options may be autoloaded, individually cached, or cached as absent before the order was locked.
+		wp_cache_delete_multiple( array( 'alloptions', 'notoptions', 'woocommerce_currency', 'woocommerce_price_num_decimals' ), 'options' );
+
+		// The posts query generation also controls legacy refund membership queries.
+		clean_post_cache( $order_id );
+		$refund_query = new \WC_Order_Query(
+			array(
+				'type'   => 'shop_order_refund',
+				'parent' => $order_id,
+				'limit'  => -1,
+				'return' => 'ids',
+			)
+		);
+		$refund_ids   = $refund_query->get_orders();
+		if ( ! is_array( $refund_ids ) ) {
+			throw new \UnexpectedValueException( 'Could not read the refunds for this order.' );
+		}
+		$order_ids   = array_merge( array( $order_id ), $refund_ids );
+		$order_cache = wc_get_container()->get( OrderCache::class );
+		$data_store  = $order->get_data_store();
+		if ( is_callable( array( $data_store, 'clear_cached_data' ) ) ) {
+			call_user_func( array( $data_store, 'clear_cached_data' ), $order_ids );
+		}
+		foreach ( $order_ids as $id ) {
+			$order_cache->remove( $id );
+			clean_post_cache( $id );
+			wp_cache_delete( \WC_Data::generate_meta_cache_key( $id, 'orders' ), 'orders' );
+			wp_cache_delete( 'order-items-' . $id, 'orders' );
+		}
+
+		// Select the current IDs without hydrating stale item objects or their metadata.
+		$item_ids = $wpdb->get_col(
+			$wpdb->prepare(
+				'SELECT order_item_id FROM ' . $wpdb->prefix . 'woocommerce_order_items WHERE order_id IN (' . implode( ',', array_fill( 0, count( $order_ids ), '%d' ) ) . ')',
+				...$order_ids
+			)
+		);
+		foreach ( $item_ids as $id ) {
+			wp_cache_delete( 'item-' . $id, 'order-items' );
+			wp_cache_delete( $id, 'order_item_meta' );
+			wp_cache_delete( \WC_Data::generate_meta_cache_key( $id, 'order-items' ), 'order-items' );
+		}
+
+		wp_cache_set_comments_last_changed();
+		$note_ids = $wpdb->get_col( $wpdb->prepare( "SELECT comment_ID FROM {$wpdb->comments} WHERE comment_post_ID = %d AND comment_type = 'order_note'", $order_id ) );
+		wp_cache_delete_multiple( $note_ids, 'comment' );
+		wp_cache_delete_multiple( $note_ids, 'comment_meta' );
+
+		// A clone retains item collections already loaded into the caller's order.
+		$fresh_order = wc_get_order( $order_id );
+		if ( ! $fresh_order instanceof WC_Order ) {
+			throw new \RuntimeException( 'Could not read the order being refunded.' );
+		}
+		return $this->get_fresh_order_from_data_store( $fresh_order );
 	}
 
 	/**

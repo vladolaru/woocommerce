@@ -14,7 +14,10 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\PaymentIntentEventHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventOrderResolver;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\RefundEventHandler;
 use Automattic\WooCommerce\Internal\RestApiControllerBase;
+use Automattic\WooCommerce\Internal\Utilities\CurrencyUtil;
 use WC_Order;
 use WP_Error;
 use WP_REST_Request;
@@ -866,9 +869,9 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Refund a charge that has no WooCommerce order.
+	 * Refund a charge when the caller supplies no WooPayments order.
 	 *
-	 * The charge must be a `ch_` or `py_` ID and the amount a positive integer, and nothing is written locally
+	 * The charge must be a `ch_` or `py_` ID and the amount a positive integer
 	 * (client 11.1.0 `includes/admin/class-wc-rest-payments-refunds-controller.php:107-114` and its `Refund_Charge` request).
 	 * Invalid input is refused with a 400.
 	 *
@@ -900,17 +903,112 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 			);
 		}
 
+		$refund = $this->refund_charge_without_order( $charge_id, $amount, $reason, 'transaction_details_no_order' );
+		return is_wp_error( $refund ) ? $refund : new WP_REST_Response( $refund );
+	}
+
+	/**
+	 * Refund a charge directly and record the answer when it resolves to the locked order.
+	 *
+	 * @since 11.4.0
+	 * @param string      $charge_id Charge to refund.
+	 * @param int|null    $amount    Amount in minor units, or null for the charge's remainder.
+	 * @param string|null $reason    Merchant's reason.
+	 * @param string      $source    Refund source sent in the metadata.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	public function refund_charge_without_order( string $charge_id, ?int $amount, ?string $reason, string $source ) {
+		$resolver   = wc_get_container()->get( EventOrderResolver::class );
+		$order      = $resolver->find_order_by_charge_id( $charge_id );
+		$lock       = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		$token      = null;
 		try {
-			// No idempotency key is set, as in client 11.1.0 (`includes/admin/class-wc-rest-payments-refunds-controller.php:107-114`),
-			// so the transport mints a fresh one per request.
-			return new WP_REST_Response( $this->api_client->refund_charge( $charge_id, $amount, $reason, 'transaction_details_no_order', '' ) );
+			if ( null === $order || ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( $order->get_payment_method() ) ) {
+				return $this->api_client->refund_charge( $charge_id, $amount, $reason, $source, '' );
+			}
+
+			$token = $lock->claim( $order, $vocabulary, null, 'refund' );
+			if ( null === $token ) {
+				$lock->log_refusal( $order, $vocabulary, 'refund' );
+				return new WP_Error( 'order_payment_refund_locked', __( 'A payment operation is already in progress for this order.', 'woocommerce' ), array( 'status' => 409 ) );
+			}
+
+			$writer  = wc_get_container()->get( RefundEventHandler::class );
+			$order   = $writer->get_fresh_order( $order, true );
+			$refusal = $this->get_charge_refund_refusal( $order, $charge_id, $amount );
+			if ( null !== $refusal ) {
+				return $refusal;
+			}
+
+			$lock->mark_money_request_unsaved( $token, true );
+			$answer = $this->api_client->refund_charge( $charge_id, $amount, $reason, $source, '' );
+			try {
+				$charge = $answer['payment_intent']['charges']['data'][0] ?? null;
+				if ( WooPaymentsIntentCodec::outcome_from_refund_result( $answer )->is_successful() && is_array( $charge ) && ( $charge['id'] ?? null ) === $charge_id && $writer->is_recordable_refunded_charge( $charge ) ) {
+					$order    = $writer->get_fresh_order( $order, true );
+					$resolved = $resolver->find_order_by_charge_id( $charge_id, $charge );
+					if ( $resolved && $resolved->get_id() === $order->get_id() ) {
+						$facts = $writer->parse_refunded_charge( $charge, $answer );
+						$writer->assert_refund_amounts( $facts );
+						if ( ! $writer->has_legacy_failed_refund_note( $order, $facts ) ) {
+							$writer->apply_charge_refund_under_lock( $order, $facts, $charge, $answer, false );
+						}
+					}
+				}
+			} catch ( Throwable $failure ) {
+				// A concurrent Admin refund can still roll back its temporary row. Let the event retry against the resulting balance.
+				wp_cache_delete( \WC_Cache_Helper::get_cache_prefix( 'orders' ) . 'total_refunded' . $order->get_id(), 'orders' );
+				wc_get_container()->get( WooPaymentsLogger::class )->log_throwable_always( 'Failed to record the refund from the REST API.', $failure, array( 'order_id' => $order->get_id() ) );
+			}
+			return $answer;
 		} catch ( ApiException $exception ) {
-			return new WP_Error(
-				'wcpay_refund_payment',
-				$exception->getMessage(),
-				array( 'status' => 500 )
-			);
+			return new WP_Error( 'wcpay_refund_payment', $exception->getMessage(), array( 'status' => 500 ) );
+		} finally {
+			if ( null !== $token && null !== $order ) {
+				$lock->release( $order, $vocabulary, $token );
+			}
 		}
+	}
+
+	/**
+	 * Check the direct refund against the locked order before sending.
+	 *
+	 * @param WC_Order $order     Freshly read order.
+	 * @param string   $charge_id Charge to refund.
+	 * @param int|null $amount    Amount in minor units.
+	 * @return WP_Error|null
+	 */
+	private function get_charge_refund_refusal( WC_Order $order, string $charge_id, ?int $amount ): ?WP_Error {
+		if ( WooPaymentsGateway::has_uncaptured_payment( $order ) ) {
+			return new WP_Error( 'wcpay_refund_uncaptured_payment', WooPaymentsGateway::get_uncaptured_refund_message(), array( 'status' => 409 ) );
+		}
+		if ( null === $amount ) {
+			return new WP_Error( 'wcpay_refund_amount_required', __( 'Give the amount to refund: this charge belongs to an order.', 'woocommerce' ), array( 'status' => 400 ) );
+		}
+		$payment_currency = (string) $order->get_meta( '_wcpay_intent_currency', true );
+		if ( '' !== $payment_currency && strtolower( $payment_currency ) !== strtolower( $order->get_currency() ) ) {
+			return new WP_Error( 'wcpay_refund_currency_mismatch', __( "This order's currency differs from its payment's. Refund it from the order page.", 'woocommerce' ), array( 'status' => 409 ) );
+		}
+		$currency = (string) $order->get_currency();
+		$decimals = CurrencyUtil::get_price_decimals( $currency );
+		$minor    = WooPaymentsCurrencyUtils::get_stripe_minor_unit_for_currency( $currency );
+		if ( $minor > $decimals && 0 !== $amount % ( 10 ** ( $minor - $decimals ) ) ) {
+			/* translators: %d: Number of decimal places used to record refunds. */
+			$message = sprintf( _n( 'This store records refunds to %d decimal place. Enter an amount it can record exactly.', 'This store records refunds to %d decimal places. Enter an amount it can record exactly.', $decimals, 'woocommerce' ), $decimals );
+			return new WP_Error( 'wcpay_refund_amount_precision', $message, array( 'status' => 400 ) );
+		}
+		if ( ! wc_get_container()->get( WooPaymentsOrderDataService::class )->can_cover_refund_amount( $order, $amount ) ) {
+			return $this->get_invalid_refund_amount_error();
+		}
+		$gateway = wc_get_payment_gateway_by_order( $order );
+		if ( ! $gateway instanceof \WC_Payment_Gateway || ! $gateway->can_refund_order( $order ) ) {
+			return new WP_Error( 'order_payment_refund_missing_charge', __( 'This order does not have a WooPayments charge to refund.', 'woocommerce' ), array( 'status' => 409 ) );
+		}
+		if ( wc_get_container()->get( WooPaymentsRefundAmbiguityService::class )->has_unsettled_attempt( $order, $charge_id ) ) {
+			return new WP_Error( 'wcpay_order_refund_unresolved', __( "This order's last refund attempt is not settled yet. Refund it from the order page, which settles it first.", 'woocommerce' ), array( 'status' => 409 ) );
+		}
+		return null;
 	}
 
 	/**

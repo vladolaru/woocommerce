@@ -772,6 +772,36 @@ class RefundEventHandler {
 	}
 
 	/**
+	 * Whether a legacy failure note identifies this refund before a stale creation answer is applied.
+	 *
+	 * @param WC_Order $order Order read after the platform call.
+	 * @param array    $facts Parsed refund answer.
+	 * @phpstan-param RefundFacts $facts
+	 * @return bool
+	 */
+	public function has_legacy_failed_refund_note( WC_Order $order, array $facts ): bool {
+		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+		$id    = '<code>' . esc_html( $facts['refund_id'] ) . '</code>';
+		$texts = array_filter( wp_list_pluck( $notes, 'content' ), static fn( $text ) => false !== strpos( (string) $text, $id ) );
+		if ( empty( $texts ) ) {
+			return false;
+		}
+
+		$price   = WooPaymentsCurrencyUtils::format_explicit_order_price( $facts['refunded_amount'], $facts['currency'], $order );
+		$service = wc_get_container()->get( WooPaymentsOrderNoteService::class );
+		// A pending answer has no reason for the earlier failure. Only non-balance failure wordings identify the refund.
+		foreach ( array( 'canceled', '', 'lost_or_stolen_card', 'expired_or_canceled_card', 'charge_for_pending_refund_disputed', 'declined', 'merchant_request' ) as $reason ) {
+			$canceled   = 'canceled' === $reason;
+			$candidates = $service->extension_failed_refund_notes( $order, $price, $facts['refunded_amount'], $facts['currency'], $facts['refund_id'], $canceled, $reason );
+			if ( array_intersect( $texts, $candidates ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
 	 * Tell whether the order has the note a failed or canceled charge.refund.updated wrote for a provider refund.
 	 *
 	 * @param WC_Order $order     Order object.
@@ -819,12 +849,11 @@ class RefundEventHandler {
 	 * refund another request linked since; that cache entry is dropped too.
 	 *
 	 * @param WC_Order $order Order object.
+	 * @param bool     $include_related Whether the direct refund needs fresh related rows and settings.
 	 * @return WC_Order
 	 */
-	public function get_fresh_order( WC_Order $order ): WC_Order {
-		wp_cache_delete( \WC_Cache_Helper::get_cache_prefix( 'orders' ) . 'refund_ids' . $order->get_id(), 'orders' );
-
-		return wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
+	public function get_fresh_order( WC_Order $order, bool $include_related = false ): WC_Order {
+		return wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_with_refunds( $order, $include_related );
 	}
 
 	/**
