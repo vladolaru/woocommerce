@@ -88,6 +88,14 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	private ?array $payment_gateways = null;
 
 	/**
+	 * Whether this request's gateway map lists Amazon Pay by the stored account row, as client 11.3.0 does. Only a renewal
+	 * handed over at the lowest setup tier sets it (RenewalGatewayHandover).
+	 *
+	 * @var bool
+	 */
+	private bool $amazon_pay_from_stored_row = false;
+
+	/**
 	 * WooPayments order effect applier.
 	 *
 	 * @var WooPaymentsOrderEffectApplier
@@ -423,6 +431,42 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 		}
 
 		return $matrix;
+	}
+
+	/**
+	 * Get the classes a renewal handed over at the lowest setup tier registers, in order (RenewalGatewayHandover).
+	 *
+	 * The renewal's charge needs them, and the lowest tier lists none of them. The Stripe Billing module goes first, so a
+	 * renewal Stripe Billing collects is never charged here; classes that schedule recurring work are left out, since their
+	 * handlers are absent from later requests at that tier.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return array<int,class-string> Class names in registration order.
+	 */
+	public static function get_renewal_handover_classes(): array {
+		return array(
+			StripeBillingModule::class,
+			SubscriptionsController::class,
+			WooPaymentsTokenClassMapController::class,
+			WooPaymentsFeeDetailsNoteController::class,
+			WooPaymentsFraudOrderTrackingService::class,
+			WooPaymentsTestModeOrderEmailService::class,
+			WooPaymentsOrderCardInfo::class,
+			WooPaymentsLogEntryFormat::class,
+		);
+	}
+
+	/**
+	 * List Amazon Pay in this request's gateway map by the stored account row, as client 11.3.0 does, for a renewal handed
+	 * over at the lowest setup tier. A map already built is kept.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @internal
+	 */
+	public function list_amazon_pay_from_stored_row(): void {
+		$this->amazon_pay_from_stored_row = true;
 	}
 
 	/**
@@ -782,7 +826,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 * @return array<string,WooPaymentsGateway>
 	 */
 	private function build_payment_gateway_map(): array {
-		$definitions = $this->payment_method_registry->get_registered( $this->account_service );
+		$definitions = $this->payment_method_registry->get_registered( $this->account_service, $this->amazon_pay_from_stored_row );
 		if ( ! empty( $definitions ) ) {
 			// Prime caches to reduce future queries.
 			wp_prime_option_caches(

@@ -89,14 +89,19 @@ class PaymentMethodRegistry {
 	 * Every definition, with Amazon Pay only while its feature is on. The availability filter does not apply here: it
 	 * decides only which of these methods the account is offered (get_available_payment_method_ids_for_account()).
 	 *
-	 * @param WooPaymentsAccountService $account_service WooPayments account service.
+	 * @param WooPaymentsAccountService $account_service             WooPayments account service.
+	 * @param bool                      $amazon_pay_from_stored_row Whether Amazon Pay follows the stored account row as client
+	 *                                                              11.3.0 reads it, for a renewal handed over at the lowest tier.
 	 * @return array<string,PaymentMethodDefinition>
 	 */
-	public function get_registered( WooPaymentsAccountService $account_service ): array {
+	public function get_registered( WooPaymentsAccountService $account_service, bool $amazon_pay_from_stored_row = false ): array {
 		$this->initialize_definitions();
 
-		$definitions = $this->definitions;
-		if ( ! $this->is_amazon_pay_enabled( $account_service ) ) {
+		$definitions        = $this->definitions;
+		$amazon_pay_enabled = $amazon_pay_from_stored_row
+			? $account_service->is_ece_confirmation_tokens_enabled_in_stored_account()
+			: $this->is_amazon_pay_enabled( $account_service );
+		if ( ! $amazon_pay_enabled ) {
 			unset( $definitions['amazon_pay'] );
 		}
 

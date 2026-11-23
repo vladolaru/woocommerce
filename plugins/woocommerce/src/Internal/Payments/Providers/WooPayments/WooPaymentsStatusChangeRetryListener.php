@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\RenewalGatewayHandover;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use WC_Order;
 
@@ -22,12 +23,42 @@ use WC_Order;
  * cancel fails (class-wc-payments-order-service.php:1827-1831, :1880-1884), so the merchant knows the authorization is
  * still open. It changes no status and calls no platform.
  *
- * As the low tiers' cron root, it also registers the setup tier re-check (WooPaymentsSetupTierRecheck).
+ * As the low tiers' cron root, it also registers the setup tier re-check (WooPaymentsSetupTierRecheck) and, under the
+ * same guard, the filter that hands a due WooPayments renewal to the gateway (RenewalGatewayHandover).
  *
  * @since 11.2.0
  * @internal
  */
 class WooPaymentsStatusChangeRetryListener implements RegisterHooksInterface {
+
+	/** WooCommerce Subscriptions' action for a due renewal. */
+	public const RENEWAL_ACTION = 'woocommerce_scheduled_subscription_payment';
+
+	/** WooCommerce Subscriptions' action for a retry of a failed renewal. */
+	public const RENEWAL_RETRY_ACTION = 'woocommerce_scheduled_subscription_payment_retry';
+
+	/**
+	 * The WooPayments gateways whose renewals are handed over: the card and Amazon Pay gateways, the reusable ones
+	 * (SubscriptionMethodPolicy::get_reusable_gateway_ids()). Written out, so the check loads no class.
+	 */
+	public const RENEWAL_GATEWAY_IDS = array( 'woocommerce_payments', 'woocommerce_payments_amazon_pay' );
+
+	/**
+	 * Every value Stripe Billing records on a subscription, live, cancelled or migrated. A subscription carrying any of them
+	 * is never handed over, since Stripe may still bill it. Written out, so the check loads no class.
+	 */
+	public const STRIPE_BILLING_META_KEYS = array(
+		'_wcpay_subscription_id',
+		'_wcpay_subscription_discount_ids',
+		'_wcpay_pending_invoice_id',
+		'_wcpay_billing_invoice_id',
+		'_cancelled_wcpay_subscription_id',
+		'_migrated_wcpay_subscription_id',
+		'_migrated_wcpay_subscription_discount_ids',
+		'_migrated_wcpay_pending_invoice_id',
+		'_migrated_wcpay_billing_invoice_id',
+		'_wcpay_subscription_migrated_during',
+	);
 
 	/**
 	 * Setup tier, which decides whether the order actions controller runs the retry.
@@ -48,16 +79,58 @@ class WooPaymentsStatusChangeRetryListener implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register the retry hook and, on a stored `available` tier the built-in owns, the setup tier re-check.
+	 * Register the retry hook and, on a stored `available` tier the built-in owns, the setup tier re-check and the renewal
+	 * hand-over filter.
 	 *
-	 * This class is the cron root of the low tiers, so the re-check registers here: one hook, with no class loaded, no
-	 * option read and no query.
+	 * This class is the cron root of the low tiers, so both register here: two hooks, with no class loaded, no option read
+	 * and no query.
 	 */
 	public function register() {
 		add_action( WooPaymentsOrderAdminActionsController::RETRY_STATUS_CHANGE_OPERATION_ACTION, array( $this, 'handle_retry_status_change_operation' ), 10, 4 );
 		if ( $this->setup_tier->should_register_recheck() ) {
 			WooPaymentsSetupTier::register_recheck_hook();
+			$callback = array( self::class, 'handle_subscription_is_manual' );
+			if ( false === has_filter( 'woocommerce_subscription_is_manual', $callback ) ) {
+				add_filter( 'woocommerce_subscription_is_manual', $callback, 0, 2 );
+			}
 		}
+	}
+
+	/**
+	 * Hand a due renewal of a WooPayments subscription to the gateway while the setup tier is the lowest, as the extension's
+	 * always-registered gateway takes it.
+	 *
+	 * Only inside WooCommerce Subscriptions' due-renewal and retry actions, and only for a card or Amazon Pay subscription.
+	 * One carrying any Stripe Billing value stays manual whatever it came in as, since Stripe may still bill it. Otherwise a
+	 * manual answer goes to RenewalGatewayHandover, the first class this filter loads.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $is_manual    Whether the subscription renews manually.
+	 * @param mixed $subscription The subscription.
+	 * @return mixed
+	 */
+	public static function handle_subscription_is_manual( $is_manual, $subscription = null ) {
+		if (
+			( ! doing_action( self::RENEWAL_ACTION ) && ! doing_action( self::RENEWAL_RETRY_ACTION ) )
+			|| ! $subscription instanceof WC_Order
+			|| ! in_array( $subscription->get_payment_method(), self::RENEWAL_GATEWAY_IDS, true )
+		) {
+			return $is_manual;
+		}
+
+		// The subscription's meta was loaded with it, so this reads no store.
+		foreach ( $subscription->get_meta_data() as $meta ) {
+			if ( in_array( $meta->key, self::STRIPE_BILLING_META_KEYS, true ) && ! empty( $meta->value ) ) {
+				return true;
+			}
+		}
+
+		if ( true !== $is_manual ) {
+			return $is_manual;
+		}
+
+		return wc_get_container()->get( RenewalGatewayHandover::class )->handle( $subscription );
 	}
 
 	/**

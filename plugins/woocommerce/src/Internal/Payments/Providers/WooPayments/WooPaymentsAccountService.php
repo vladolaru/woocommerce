@@ -1011,6 +1011,24 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Tell whether ECE confirmation tokens are enabled by the stored account row as client 11.3.0 reads it: the row holds
+	 * account data, an empty account included, that does not turn them off (class-wc-payments-features.php:452-467). An
+	 * absent row does not count. Only a renewal handed over at the lowest setup tier reads this (RenewalGatewayHandover).
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return bool
+	 */
+	public function is_ece_confirmation_tokens_enabled_in_stored_account(): bool {
+		$cache_contents = $this->get_account_cache();
+		if ( ! is_array( $cache_contents ) || ! array_key_exists( 'data', $cache_contents ) || ! is_array( $cache_contents['data'] ) ) {
+			return false;
+		}
+
+		return empty( $cache_contents['data']['ece_confirmation_tokens_disabled'] );
+	}
+
+	/**
 	 * Tell whether a connected WooPayments account ID is available.
 	 *
 	 * @return bool

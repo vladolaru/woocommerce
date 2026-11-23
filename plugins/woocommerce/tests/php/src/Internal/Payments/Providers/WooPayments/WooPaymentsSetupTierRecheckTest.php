@@ -19,6 +19,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\Webh
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderAdminActionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
@@ -39,6 +40,8 @@ use WP_Error;
 class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 
 	private const HOOK = 'woocommerce_woopayments_setup_tier_recheck';
+
+	private const HAND_OVER_FILTER = 'woocommerce_subscription_is_manual';
 
 	private const GROUP = 'woocommerce_payments';
 
@@ -973,6 +976,80 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @return array<string,array{string,bool}>
+	 */
+	public static function provide_hand_over_registrations(): array {
+		return array(
+			'stored available, built-in owner' => array( 'builtin', true ),
+			'feature off'                      => array( 'feature_off', false ),
+			'extension owner'                  => array( 'extension', false ),
+			'stored disabled'                  => array( 'disabled', false ),
+			'connected'                        => array( WooPaymentsSetupTier::CONNECTED, false ),
+			'active'                           => array( WooPaymentsSetupTier::ACTIVE, false ),
+		);
+	}
+
+	/**
+	 * @testdox N1: a cron request on a store $_dataName gains the renewal hand-over filter only under the re-check's guard: one callback, beside the re-check hook and the retry hook, and no other hook or class.
+	 * @dataProvider provide_hand_over_registrations
+	 *
+	 * @param string $store    The store's shape.
+	 * @param bool   $expected Whether the filter is registered.
+	 */
+	public function test_n1_the_hand_over_filter_registers_under_the_guard( string $store, bool $expected ): void {
+		$tiers = array(
+			'disabled'                      => WooPaymentsSetupTier::DISABLED,
+			WooPaymentsSetupTier::CONNECTED => WooPaymentsSetupTier::CONNECTED,
+			WooPaymentsSetupTier::ACTIVE    => WooPaymentsSetupTier::ACTIVE,
+		);
+		update_option( WooPaymentsSetupTier::OPTION_NAME, $tiers[ $store ] ?? WooPaymentsSetupTier::AVAILABLE );
+		if ( 'feature_off' === $store ) {
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
+		}
+		if ( 'extension' === $store ) {
+			update_option( 'active_plugins', array( 'woocommerce-payments/woocommerce-payments.php' ) );
+		}
+		$container = $this->make_container();
+		$before    = $this->callback_counts();
+
+		$this->bootstrap()->register( $container, RequestTypeUtil::CRON );
+
+		$this->assertSame( $expected ? 1 : 0, $this->hand_over_callbacks() );
+		if ( $expected ) {
+			$this->assertSame(
+				array( self::HAND_OVER_FILTER, WooPaymentsOrderAdminActionsController::RETRY_STATUS_CHANGE_OPERATION_ACTION, self::HOOK ),
+				$this->hooks_gained( $before ),
+				'The filter is the one hook added beside the re-check and the retry listener.'
+			);
+			$this->assertSame( 0, $container->meters['register']->queries, 'No query.' );
+			$this->assertSame( 0, $container->meters['register']->option_reads, 'No option read.' );
+			$this->assertSame( array(), $container->meters['register']->autoloads, 'No class load.' );
+		}
+	}
+
+	/**
+	 * @testdox N1: on a stored available tier, a $request request gains the renewal hand-over filter only when Action Scheduler begins an action, then exactly once.
+	 * @testWith ["front"]
+	 *           ["admin"]
+	 *           ["ajax"]
+	 *           ["rest"]
+	 *
+	 * @param string $request Request type.
+	 */
+	public function test_n1_a_page_request_registers_the_hand_over_only_when_the_scheduler_runs( string $request ): void {
+		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::AVAILABLE );
+		$container = $this->make_container();
+
+		$this->bootstrap()->register( $container, $request );
+
+		$this->assertSame( 0, $this->hand_over_callbacks(), 'No filter at bootstrap.' );
+		$this->run_noop_action();
+		$this->assertSame( 1, $this->hand_over_callbacks() );
+		$this->run_noop_action();
+		$this->assertSame( 1, $this->hand_over_callbacks(), 'A second action adds no second callback.' );
+	}
+
+	/**
 	 * @testdox R2b: on a stored available tier, a $request request gains no re-check until Action Scheduler begins an action, and then exactly one, with no query, no option read and only the cron classes the request already registers there.
 	 * @testWith ["front"]
 	 *           ["admin"]
@@ -1691,6 +1768,54 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 				return $query;
 			}
 		);
+	}
+
+	/**
+	 * Count the callbacks on the renewal hand-over filter.
+	 *
+	 * @return int
+	 */
+	private function hand_over_callbacks(): int {
+		$counts = $this->callback_counts();
+
+		return $counts[ self::HAND_OVER_FILTER ] ?? 0;
+	}
+
+	/**
+	 * Count every hook's callbacks.
+	 *
+	 * @return array<string,int>
+	 */
+	private function callback_counts(): array {
+		global $wp_filter;
+
+		$counts = array();
+		foreach ( $wp_filter as $hook => $filter ) {
+			$counts[ $hook ] = 0;
+			foreach ( $filter->callbacks as $callbacks ) {
+				$counts[ $hook ] += count( $callbacks );
+			}
+		}
+
+		return $counts;
+	}
+
+	/**
+	 * Get the hooks that gained callbacks since a count, sorted.
+	 *
+	 * @param array<string,int> $before Counts before.
+	 * @return array<int,string>
+	 */
+	private function hooks_gained( array $before ): array {
+		$gained = array();
+		foreach ( $this->callback_counts() as $hook => $count ) {
+			if ( $count > ( $before[ $hook ] ?? 0 ) ) {
+				$gained[] = (string) $hook;
+			}
+		}
+		sort( $gained );
+
+		return $gained;
 	}
 
 	/**
