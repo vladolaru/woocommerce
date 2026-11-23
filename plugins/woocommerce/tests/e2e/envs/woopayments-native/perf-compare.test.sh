@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# The single-quoted php -r programs below interpolate their variables in PHP.
+# shellcheck disable=SC2016
 
 set -euo pipefail
 
@@ -20,6 +22,11 @@ fake_pnpm() {
 
 	if [[ "$command" != 'wp' ]]; then
 		case "$command" in
+		printenv) [[ "$1" == HOME ]] && echo /home/test ;;
+		cmp)
+			[[ "$1" == -s && "$3" == "$2.restored.sql" ]]
+			cmp -s "$root/site/${2##*/}" "$root/site/${3##*/}"
+			;;
 		cp)
 			[[ "$2" == 'wp-content/mu-plugins/woopayments-native-perf-probe.php' ]]
 			mkdir -p "$root/site/wp-content/mu-plugins"
@@ -38,8 +45,8 @@ fake_pnpm() {
 					rm -rf "$root/site/$value"
 					printf 'REFERENCE_REMOVE\t%s\n' "$value" >> "$root/events.log"
 					;;
-				/var/www/html/.woocommerce-native-perf-*.sql)
-					rm -f "$root/site/db-snapshot.sql"
+				/home/test/.woocommerce-native-perf-*.sql)
+					rm -f "$root/site/${value##*/}"
 					printf 'SNAPSHOT_REMOVE\t%s\n' "$value" >> "$root/events.log"
 					;;
 				-rf|-f) ;;
@@ -62,7 +69,7 @@ fake_pnpm() {
 		case "$5" in
 		ensure-product)
 			printf 'PRODUCT_READY\n' >> "$root/events.log"
-			printf '17\t/\t/?post_type=product\t/?product=perf-product\t/?page_id=6\t/?page_id=7\t/index.php?rest_route=/wc/store/v1/cart\n'
+			printf '17\t/\t/?post_type=product\t/?product=canvas-tote\t/?page_id=6\t/?page_id=7\t/index.php?rest_route=/wc/store/v1/cart\n'
 			;;
 		install-reference)
 			printf 'REFERENCE_INSTALL\t%s\t%s\n' "$6" "$7" >> "$root/events.log"
@@ -91,18 +98,25 @@ fake_pnpm() {
 			snapshot="$3"
 			printf 'DB_EXPORT\t%s\n' "$snapshot" >> "$root/events.log"
 			if [[ "${PERF_FAKE_CASE:-}" == 'export-failure' ]]; then exit 67; fi
-			printf '%s\n' "$snapshot" > "$root/snapshot-path"
-			printf 'database\n' > "$root/site/db-snapshot.sql"
+			cp "$root/theme" "$root/site/${snapshot##*/}"
+			if [[ "$snapshot" == *.restored.sql && "${PERF_FAKE_CASE:-}" == restore-mismatch ]]; then
+				echo 'drift' >> "$root/site/${snapshot##*/}"
+			fi
 			;;
 		import)
 			snapshot="$3"
 			printf 'DB_IMPORT\t%s\n' "$snapshot" >> "$root/events.log"
-			[[ -f "$root/site/db-snapshot.sql" && "$(< "$root/snapshot-path")" == "$snapshot" ]]
+			cp "$root/site/${snapshot##*/}" "$root/theme"
 			if [[ "${PERF_FAKE_CASE:-}" == 'import-failure' ]]; then exit 68; fi
 			printf 'false\n' > "$root/reference-active"
 			;;
 		*) exit 67 ;;
 		esac
+		;;
+	theme)
+		[[ "$2" == activate && "$3" == storefront ]]
+		echo storefront > "$root/theme"
+		echo THEME_ACTIVE >> "$root/events.log"
 		;;
 	option)
 		case "$2" in
@@ -160,12 +174,31 @@ fake_pnpm() {
 # source is root-relative and the stylesheet URL is entity-encoded, as WordPress prints them.
 fake_page_body() {
 	local state="$1" target="$2" origin='http://canonical.native.test:8187'
+	local classes='page' content=''
+	case "$target" in
+	/) classes=home ;;
+	'/?post_type=product') content='<header class="woocommerce-products-header">Shop</header>' ;;
+	'/?product=canvas-tote') content='<div id="product-17">Canvas Tote</div>' ;;
+	'/?page_id=6') content='<div data-block-name="woocommerce/cart"></div>' ;;
+	'/?page_id=7') content='<div data-block-name="woocommerce/checkout"></div>' ;;
+	esac
+	if [[ "$target" == '/?post_type=product' ]]; then
+		case "${PERF_FAKE_CASE:-}" in
+		empty-body) return 0 ;;
+		wrong-body) content='<div data-block-name="woocommerce/cart"></div>' ;;
+		esac
+	fi
+	printf '<body class="%s wp-theme-%s"><main>%s</main>\n' "$classes" "$(< "${PERF_FAKE_ROOT:?}/theme")" "$content"
+	if [[ "${3:-}" == 'X-WooCommerce-Native-Payments-Asset-Control: 1' && "$state" == active_native && "${PERF_FAKE_CASE:-}" != missing-positive && "$target" == '/?page_id=7' ]]; then
+		printf '<script src="/wp-content/plugins/woocommerce/assets/js/frontend/woopayments-frontend-tracks.min.js"></script>\n'
+	fi
 	printf "<link rel='canonical' href='%s/product/wcpay-perf-product/' />\n" "$origin"
 	printf '<script id="jquery-core-js" src="%s/wp-includes/js/jquery/jquery.min.js"></script>\n' "$origin"
 	case "${PERF_FAKE_CASE:-}" in
+	asset-available-fail) [[ "$target" != / || "$state" != available || "${4:-}" != 2 ]] || printf '<script>var wcpayConfig = {};</script>\n' ;;
 	asset-native-fail) [[ "$target" != / || "$state" != disabled ]] || printf '<script id="wcpay-dormant-js" src="%s/wp-content/plugins/woocommerce/assets/js/dormant.js"></script>\n' "$origin" ;;
 	esac
-	if [[ "$target" != '/?page_id=7' ]]; then return; fi
+	if [[ "$target" != '/?page_id=7' || "${PERF_FAKE_CASE:-}" == missing-positive ]]; then return; fi
 	case "$state" in
 	active_native)
 		printf "<link rel='stylesheet' id='wc-payment-method-woopayments-css' href='%s/wp-content/plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments.css?ver=1&#038;rtl=0' media='all' />\n" "$origin"
@@ -186,7 +219,7 @@ fake_asset_body() {
 	*/wc-payment-method-woopayments.css*) head -c 300 /dev/zero | tr '\0' 'c' ;;
 	*/wc-payment-method-woopayments.js*) head -c 1000 /dev/zero | tr '\0' 'j' ;;
 	*/blocks-checkout.js*) head -c 800 /dev/zero | tr '\0' 'p' ;;
-	*/dormant.js) printf 'x' ;;
+	*/dormant.js|*/woopayments-frontend-tracks.min.js) printf 'x' ;;
 	*) exit 74 ;;
 	esac
 }
@@ -212,7 +245,7 @@ fake_curl() {
 		case "$kind:$target" in
 		asset:/wp-content/*|asset:/wp-includes/*) ;;
 		asset:*) exit 72 ;;
-		*:/|*:"/?add-to-cart=17&quantity=1"|*:"/?post_type=product"|*:"/?product=perf-product"|*:"/?page_id=6"|*:"/?page_id=7"|*:"/index.php?rest_route=/wc/store/v1/cart") ;;
+		*:/|*:"/?add-to-cart=17&quantity=1"|*:"/?post_type=product"|*:"/?product=canvas-tote"|*:"/?page_id=6"|*:"/?page_id=7"|*:"/index.php?rest_route=/wc/store/v1/cart") ;;
 		*) exit 72 ;;
 		esac
 	fi
@@ -225,7 +258,7 @@ fake_curl() {
 	final_url="$url"
 	if [[ "$url" == *'add-to-cart=17'* ]]; then : > "$cookie.populated"; fi
 	if [[ "$url" == *'rest_route=/wc/store/v1/cart'* ]]; then printf '{"items":[{"id":17}]}\n' > "$body"; fi
-	if [[ -n "$body" && ! -s "$body" ]]; then fake_page_body "$state" "$target" > "$body"; fi
+	if [[ -n "$body" && ! -s "$body" ]]; then fake_page_body "$state" "$target" "$trace_header" "$repeat" > "$body"; fi
 
 	if [[ -n "$headers" && "$kind" != preflight ]]; then
 		case "$state" in
@@ -290,11 +323,12 @@ if [[ "$(basename "$0")" == 'pnpm' ]]; then fake_pnpm "$@"; exit; fi
 if [[ "$(basename "$0")" == 'curl' ]]; then fake_curl "$@"; exit; fi
 if [[ "$(basename "$0")" == 'date' ]]; then fake_date "$@"; exit; fi
 
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 readonly RUNNER="$SCRIPT_DIR/perf-compare.sh"
 readonly PROBE="$SCRIPT_DIR/perf-probe.php"
-readonly PLUGIN_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd -P)"
-readonly TEST_ROOT="$(mktemp -d "${TMPDIR:?TMPDIR is required}/perf-compare-test.XXXXXX")"
+PLUGIN_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd -P)"
+TEST_ROOT="$(mktemp -d "${TMPDIR:?TMPDIR is required}/perf-compare-test.XXXXXX")"
+readonly SCRIPT_DIR PLUGIN_ROOT TEST_ROOT
 trap 'rm -rf "$TEST_ROOT"' EXIT
 
 fail() { echo "$1" >&2; exit 1; }
@@ -546,7 +580,8 @@ grep -Fxq "reference-zip-integrity: $probe_reference_zip has SHA-256 $probe_refe
 assert_probe_reference_tidy local-zip-integrity
 
 status=0; run_probe_install_reference local-zip-missing "$probe_reference_sha" "$probe_reference_root/mount/missing.zip" || status=$?
-[[ "$status" == 1 ]] && grep -Fxq "reference-zip-missing: $probe_reference_root/mount/missing.zip" "$probe_reference_root/local-zip-missing/stderr" || fail 'install-reference did not refuse a missing local archive.'
+[[ "$status" == 1 ]] || fail "Missing zip returned exit $status."
+grep -Fxq "reference-zip-missing: $probe_reference_root/mount/missing.zip" "$probe_reference_root/local-zip-missing/stderr" || fail 'install-reference did not refuse a missing local archive.'
 [[ ! -e "$probe_reference_root/local-zip-missing/plugins/woocommerce-payments-reference" ]] || fail 'install-reference installed something without its local archive.'
 assert_probe_reference_tidy local-zip-missing
 
@@ -555,6 +590,7 @@ setup_case() {
 	local name="$1" root="$TEST_ROOT/$1"
 	mkdir -p "$root/bin" "$root/output" "$root/site/wp-content/plugins" "$root/site/wp-content/mu-plugins"
 	: > "$root/commands.log"; : > "$root/events.log"; : > "$root/samples.log"; : > "$root/wp-env.json"
+	printf 'default\n' > "$root/theme"
 	printf 'false\n' > "$root/canonical-active"
 	printf 'false\n' > "$root/reference-active"
 	printf 'baseline_noop\n' > "$root/current-state"
@@ -579,7 +615,8 @@ assert_cleaned() {
 	local root="$1"
 	[[ ! -e "$root/site/wp-content/mu-plugins/woopayments-native-perf-probe.php" ]] || fail "probe remained in $root"
 	[[ ! -e "$root/site/wp-content/plugins/woocommerce-payments-reference" ]] || fail "reference remained in $root"
-	[[ ! -e "$root/site/db-snapshot.sql" ]] || fail "database snapshot remained in $root"
+	if compgen -G "$root/site/.woocommerce-native-perf-*.sql" > /dev/null; then fail "database snapshot remained in $root"; fi
+	[[ "$(< "$root/theme")" == default ]] || fail "Storefront remained active in $root"
 	[[ "$(< "$root/canonical-active")" == false ]] || fail "canonical plugin changed in $root"
 }
 
@@ -588,18 +625,18 @@ local_root="$TEST_ROOT/local-pass"; local_output="$local_root/output/result.tsv"
 expected_account='{"data":{"account_id":"acct_native_ci","country":"US","default_currency":"usd","payments_enabled":true,"payouts_enabled":true,"details_submitted":true,"is_live":false,"test_publishable_key":"pk_test_native_ci","live_publishable_key":"","statement_descriptor":"NATIVE CI","statement_descriptor_kanji":"","statement_descriptor_kana":"","business_profile":{"name":"Native CI store","url":"https://example.test","support_address":{"country":"US"},"support_email":"support@example.test","support_phone":"+10000000000"},"branding":{"logo":"","icon":"","primary_color":"#000000","secondary_color":"#ffffff"},"communications_email":"owner@example.test","store_currencies":{"default":"usd"},"customer_currencies":{"supported":["usd","eur","aud","cad","chf","gbp","jpy","nzd","sek"]},"account_details":{"account_status":{"text":"Enabled"},"payout_status":{"text":"Enabled"},"banner":null},"deposits":{"interval":"daily","weekly_anchor":"monday","monthly_anchor":1,"delay_days":2,"status":"enabled","restrictions":"","completed_waiting_period":true},"platform_checkout_eligible":true,"capabilities":{"card_payments":"active","klarna_payments":"active"},"supported_payment_methods":["card","klarna"],"fees":{"card":[],"klarna":[]}},"fetched":1788898000,"errored":false,"consecutive_errors":0}'
 [[ "$(grep -Fc $'ACCOUNT_DATA\t'"$expected_account" "$local_root/events.log")" == 29 ]] || fail 'Connected and active states did not use the complete seed-time account cache.'
 [[ "$(grep -c $'^SEED_TIME\t1788898000$' "$local_root/events.log")" == 1 ]] || fail 'The account cache timestamp was not captured exactly once at seed time.'
-[[ "$(wc -l < "$local_output" | tr -d ' ')" == 72 ]] || fail 'Local output is not the complete 30-row matrix plus the six gateway rows, four header rows, 30 asset rows and timing row.'
+[[ "$(wc -l < "$local_output" | tr -d ' ')" == 73 ]] || fail 'Local output is not the complete 30-row matrix plus the six gateway rows, four header rows, 30 asset rows, the asset control and timing row.'
 [[ "$(grep -c $'^CURL\tprimary-warmup\t' "$local_root/samples.log")" == 90 ]] || fail 'Local matrix did not warm all six states across five routes for each of the three STATE_SAMPLES attempts.'
 [[ "$(grep -c $'^CURL\tprimary-capture\t' "$local_root/samples.log")" == 90 ]] || fail 'Local matrix did not capture all six states across five routes for each of the three STATE_SAMPLES attempts.'
 if awk -F '\t' '$2 != "preflight" && $4 !~ /^http:\/\/canonical.native.test:8187\// { bad=1 } END { exit bad ? 0 : 1 }' "$local_root/samples.log"; then fail 'Shopper requests did not share the service home origin and cookie scope.'; fi
-for target in '/' '/?post_type=product' '/?product=perf-product' '/?page_id=6' '/?page_id=7'; do
+for target in '/' '/?post_type=product' '/?product=canvas-tote' '/?page_id=6' '/?page_id=7'; do
 	grep -Fq $'CURL\tprimary-capture\tbaseline_noop\thttp://canonical.native.test:8187'"$target"$'\t' "$local_root/samples.log" || fail "The canonical measured route was not used: $target"
 done
 [[ "$(grep -c $'^CURL\ttiming\t' "$local_root/samples.log")" == 18 ]] || fail 'Local timing did not run nine alternating pairs.'
 [[ "$(awk -F '\t' '$2 == "population" && $4 ~ /wc\/store\/v1\/cart/ { count++ } END { print count + 0 }' "$local_root/samples.log")" == 40 ]] || fail 'Every state/timing/attribution sample did not prove a populated Store API cart.'
 [[ "$(grep -c $'^CURL\tattribution\tbaseline_noop\t.*\tX-WooCommerce-Native-Payments-Perf-Trace: baseline_noop$' "$local_root/samples.log")" == 1 ]] || fail 'Local attribution did not trace baseline_noop exactly once.'
 [[ "$(grep -c $'^CURL\tattribution\tdisabled\t.*\tX-WooCommerce-Native-Payments-Perf-Trace: disabled$' "$local_root/samples.log")" == 1 ]] || fail 'Local attribution did not trace disabled exactly once.'
-[[ "$(grep -c $'^DB_EXPORT\t' "$local_root/events.log")" == 1 ]] || fail 'The disposable database was not exported exactly once.'
+[[ "$(grep -c $'^DB_EXPORT\t' "$local_root/events.log")" == 3 ]] || fail 'Expected original, seeded and restored database exports.'
 [[ "$(grep -c $'^DB_IMPORT\t' "$local_root/events.log")" == 51 ]] || fail 'The disposable database reset count is wrong.'
 [[ "$(grep -c $'^MULTI_CURRENCY_FEATURE\t"0"$' "$local_root/events.log")" == 40 ]] || fail 'Every local state preparation must disable Multi-Currency before native-tier measurement.'
 [[ "$(grep -c $'^CORE_MULTI_CURRENCY_FEATURE\t"no"$' "$local_root/events.log")" == 40 ]] || fail 'Every local state preparation must disable the independent Core Multi-Currency feature before native-tier measurement.'
@@ -607,9 +644,16 @@ done
 awk -F'\t' '$1 == "WOOPAYMENTS_FEATURE" { want = ($2 == "baseline_noop" || $2 == "disabled") ? "\"no\"" : "\"yes\""; if ($3 != want) exit 1 }' "$local_root/events.log" || fail 'The WooPayments feature must be "no" for baseline_noop and disabled, and "yes" for every other local state.'
 [[ "$(grep -c $'^REFERENCE_ACTIVATE$' "$local_root/events.log")" == 13 ]] || fail 'The isolated reference was not activated for its thirteen samples.'
 [[ "$(grep -c $'^REFERENCE_DOWNLOAD\t' "$local_root/events.log")" == 1 && "$(grep -c '^REFERENCE_LOCAL' "$local_root/events.log")" == 0 ]] || fail 'Without --reference-zip the reference was not installed through its one download.'
-awk '/^DB_EXPORT/{seen=1} /^DB_IMPORT/ && !seen{exit 1}' "$local_root/events.log" || fail 'Database import preceded the one export.'
-[[ "$(awk '$1 == "SEED" || $1 == "STORE_OPEN" || $1 == "PRODUCT_READY" || $1 == "DB_EXPORT" { printf "%s ", $1 }' "$local_root/events.log" | head -c 40)" == 'SEED STORE_OPEN PRODUCT_READY DB_EXPORT ' ]] || fail 'The open store and product were not ready after seed and before the one database export.'
-awk '/^SEED$/{seed=NR} /^SEED_TIME\t/{seed_time=NR} /^DB_EXPORT\t/{exported=NR} END{exit seed < seed_time && seed_time < exported ? 0 : 1}' "$local_root/events.log" || fail 'The account timestamp was not captured after seed and before export.'
+awk -F '\t' '
+	/^DB_EXPORT/ { if (++exports == 1) original=$2; if (exports == 2) seeded=$2; if (exports == 3 && $2 != original ".restored.sql") exit 1 }
+	/^THEME_ACTIVE$/ { if (exports != 1) exit 1; theme=1 }
+	/^SEED$/ { if (!theme) exit 1; seed=NR }
+	/^SEED_TIME/ { if (!seed) exit 1; timestamp=NR }
+	/^STORE_OPEN$/ { if (!timestamp) exit 1; open_store=NR }
+	/^PRODUCT_READY$/ { if (!open_store || exports != 1) exit 1; ready=1 }
+	/^DB_IMPORT/ { if (!ready || exports != 2 || ($2 != seeded && $2 != original)) exit 1; last_import=$2 }
+	END { if (exports != 3 || !ready || original == seeded || last_import != original) exit 1 }
+' "$local_root/events.log" || fail 'The original store and Storefront seed snapshots were used out of order.'
 awk '/^STATE/{if(last !~ /^DB_IMPORT/) exit 1} {last=$0}' "$local_root/events.log" || fail 'A state was prepared without an immediately preceding database reset.'
 awk '/^SAMPLE\tprimary-capture\tactive_plugin$/{if(++primary == 5) pending=1; next} /^SAMPLE\ttiming\tactive_plugin$/{pending=1; next} pending && /^DB_IMPORT/{pending=0; next} pending && /^(STATE|SAMPLE)/{exit 1} END{exit pending}' "$local_root/events.log" || fail 'A reference sample was not followed by a database reset.'
 grep -Fq $'disabled\tfront\t101\t1524288\t105\tbaseline_noop\t1\t524288\t5\tpass' "$local_output" || fail 'The exact no-op ceiling did not pass.'
@@ -633,8 +677,9 @@ grep -Fq $'active_native\tassets:front\t0\t0\t0\tNA\tNA\tNA\tNA\tinformational' 
 for page in front shop product cart checkout; do
 	grep -Fq $'disabled\tassets:'"$page"$'\t0\t0\t0\tNA\tNA\tNA\tNA\tpass' "$local_output" || fail "The disabled $page asset row did not pass."
 done
-grep -Fq $'available\tassets:checkout\t0\t0\t0\tNA\tNA\tNA\tNA\tinformational' "$local_output" || fail 'The available asset row was gated.'
-[[ "$(grep -c $'^ASSET_FETCH\t' "$local_root/events.log")" == 3 ]] || fail 'Each same-origin asset file was not fetched exactly once.'
+grep -Fq $'available\tassets:checkout\t0\t0\t0\tNA\tNA\tNA\tNA\tpass' "$local_output" || fail 'The empty available asset row did not pass.'
+grep -Fq $'active_native\tassets:checkout_tracking\t5\t1327' "$local_output" || fail 'The connected checkout did not find the shopper script.'
+[[ "$(grep -c $'^ASSET_FETCH\t' "$local_root/events.log")" == 4 ]] || fail 'Each same-origin asset file was not fetched exactly once.'
 if grep -q $'^CURL\tasset\t[^\t]*\thttps://js.stripe.com' "$local_root/samples.log"; then fail 'A third-party asset was fetched.'; fi
 assert_cleaned "$local_root"
 
@@ -645,7 +690,7 @@ printf 'reference zip fixture\n' > "$reference_fixture"
 run_case local-reference-zip pass 0 local "$reference_fixture"
 reference_root="$TEST_ROOT/local-reference-zip"
 [[ "$(grep -c '^REFERENCE_LOCAL' "$reference_root/events.log")" == 1 && "$(grep -c '^REFERENCE_DOWNLOAD' "$reference_root/events.log")" == 0 ]] || fail 'A --reference-zip run downloaded the reference or did not hand install-reference its copy.'
-[[ "$(wc -l < "$reference_root/output/result.tsv" | tr -d ' ')" == 72 ]] || fail 'A --reference-zip run did not emit the complete local matrix.'
+[[ "$(wc -l < "$reference_root/output/result.tsv" | tr -d ' ')" == 73 ]] || fail 'A --reference-zip run did not emit the complete local matrix.'
 [[ "$(grep -c $'^REFERENCE_ACTIVATE$' "$reference_root/events.log")" == 13 ]] || fail 'A --reference-zip run did not activate the reference for its thirteen samples.'
 if compgen -G "$PLUGIN_ROOT/tests/bin/tmp/woopayments-perf-reference.*" > /dev/null; then fail 'The --reference-zip copy remained in the plugin mount.'; fi
 [[ "$(< "$reference_fixture")" == 'reference zip fixture' ]] || fail 'The --reference-zip source was changed or removed.'
@@ -668,7 +713,7 @@ assert_cleaned "$TEST_ROOT/persistent-query-regression"
 
 run_case gateway-native-boundary-pass gateway-native-boundary-pass 0 local
 boundary_output="$TEST_ROOT/gateway-native-boundary-pass/output/result.tsv"
-[[ "$(wc -l < "$boundary_output" | tr -d ' ')" == 72 ]] || fail 'The active_native gateway boundary case did not emit a complete deterministic TSV.'
+[[ "$(wc -l < "$boundary_output" | tr -d ' ')" == 73 ]] || fail 'The active_native gateway boundary case did not emit a complete deterministic TSV.'
 grep -Fq $'active_native\tgateway\t7\t0\tNA\tactive_plugin\t2\tNA\tNA\tpass' "$boundary_output" || fail 'The active_native gateway tolerance did not pass at exactly qd=2.'
 assert_cleaned "$TEST_ROOT/gateway-native-boundary-pass"
 
@@ -683,7 +728,7 @@ assert_cleaned "$TEST_ROOT/attribution-artifact-failure"
 
 for failure in query-fail memory-fail hook-fail timing-fail gateway-warm-fail gateway-dormancy-fail gateway-native-fail gateway-connected-fail; do
 	run_case "$failure" "$failure" 1 local
-	[[ "$(wc -l < "$TEST_ROOT/$failure/output/result.tsv" | tr -d ' ')" == 72 ]] || fail "$failure did not emit a complete deterministic TSV."
+	[[ "$(wc -l < "$TEST_ROOT/$failure/output/result.tsv" | tr -d ' ')" == 73 ]] || fail "$failure did not emit a complete deterministic TSV."
 	assert_cleaned "$TEST_ROOT/$failure"
 done
 grep -Fq $'connected\tfront\t203\t1524288\t105\tactive_plugin\t3\t-1475712\t-55\tfail' "$TEST_ROOT/query-fail/output/result.tsv" || fail 'Connected did not fail at exactly three queries over the reference plugin.'
@@ -702,12 +747,12 @@ grep -Fq 'observed 1 outbound HTTP requests' "$TEST_ROOT/outbound-http/stderr" |
 
 run_case ci-pass pass 0 ci
 ci_root="$TEST_ROOT/ci-pass"; ci_output="$ci_root/output/result.tsv"
-[[ "$(wc -l < "$ci_output" | tr -d ' ')" == 36 ]] || fail 'CI output is not the complete three-state subset plus its three gateway, two header and 15 asset rows.'
+[[ "$(wc -l < "$ci_output" | tr -d ' ')" == 37 ]] || fail 'CI output is not the complete three-state subset plus its three gateway, two header and 16 asset rows.'
 [[ "$(awk -F '\t' 'NR > 1 { states[$1]=1 } END { for (state in states) print state }' "$ci_output" | sort | tr '\n' ' ')" == 'active_native baseline_noop disabled ' ]] || fail 'CI sampled the wrong states.'
 grep -Fq $'baseline_noop\tgateway\t2\t0\tNA\tbaseline_noop\t0\tNA\tNA\tpass' "$ci_output" || fail 'The exact CI baseline_noop gateway row did not pass.'
 grep -Fq $'disabled\tgateway\t3\t0\tNA\tbaseline_noop\t1\tNA\tNA\tpass' "$ci_output" || fail 'The exact CI disabled gateway row did not pass.'
 grep -Fq $'active_native\tgateway\t6\t0\tNA\tnot_evaluated\tNA\tNA\tNA\tnot_evaluated' "$ci_output" || fail 'CI did not keep active_native gateway not_evaluated.'
-[[ "$(grep -c $'^DB_EXPORT\t' "$ci_root/events.log")" == 1 && "$(grep -c $'^DB_IMPORT\t' "$ci_root/events.log")" == 10 ]] || fail 'CI did not use one export and ten resets (three STATE_SAMPLES attempts per sampled state, plus the final cleanup restore).'
+[[ "$(grep -c $'^DB_EXPORT\t' "$ci_root/events.log")" == 3 && "$(grep -c $'^DB_IMPORT\t' "$ci_root/events.log")" == 10 ]] || fail 'CI did not use three exports and ten imports (three STATE_SAMPLES attempts per sampled state, plus the final cleanup restore).'
 [[ "$(grep -c $'^MULTI_CURRENCY_FEATURE\t"0"$' "$ci_root/events.log")" == 9 ]] || fail 'Every CI state preparation attempt must disable Multi-Currency before native-tier measurement.'
 [[ "$(grep -c $'^WOOPAYMENTS_FEATURE\t' "$ci_root/events.log")" == "$(grep -c $'^STATE\t' "$ci_root/events.log")" ]] || fail 'Every CI state preparation must write the WooPayments feature.'
 awk -F'\t' '$1 == "WOOPAYMENTS_FEATURE" { want = ($2 == "baseline_noop" || $2 == "disabled") ? "\"no\"" : "\"yes\""; if ($3 != want) exit 1 }' "$ci_root/events.log" || fail 'The WooPayments feature must be "no" for baseline_noop and disabled, and "yes" for every other CI state.'
@@ -720,6 +765,26 @@ assert_cleaned "$ci_root"
 run_case asset-native-fail asset-native-fail 1 ci
 grep -Fq $'disabled\tassets:front\t1\t1\t21\tNA\tNA\tNA\tNA\tfail' "$TEST_ROOT/asset-native-fail/output/result.tsv" || fail 'A native tag on the disabled front page did not fail the asset gate.'
 assert_cleaned "$TEST_ROOT/asset-native-fail"
+
+for invalid in empty-body wrong-body; do
+	run_case "$invalid" "$invalid" 1 ci
+	expected='empty response body'
+	if [[ "$invalid" == wrong-body ]]; then expected='missing Storefront markup for shop'; fi
+	grep -Fq "Invalid warm-up-r1 (baseline_noop/shop): $expected." "$TEST_ROOT/$invalid/stderr" || fail "$invalid did not identify the invalid shop response."
+	assert_cleaned "$TEST_ROOT/$invalid"
+done
+
+run_case missing-positive missing-positive 1 ci
+grep -Fxq $'active_native\tassets:checkout_tracking\t0\t0\t0\tNA\tNA\tNA\tNA\tfail' "$TEST_ROOT/missing-positive/output/result.tsv" || fail 'The asset gate accepted a checkout without the expected shopper script.'
+assert_cleaned "$TEST_ROOT/missing-positive"
+
+run_case asset-available-fail asset-available-fail 1 local
+grep -Eq '^available[[:space:]]+assets:front[[:space:]]+1[[:space:]].*fail$' "$TEST_ROOT/asset-available-fail/output/result.tsv" || fail 'The lowest enabled tier printed inline payment configuration without failing.'
+assert_cleaned "$TEST_ROOT/asset-available-fail"
+
+run_case restore-mismatch restore-mismatch 1 ci
+grep -Fq 'Original export retained' "$TEST_ROOT/restore-mismatch/stderr" || fail 'The database restore mismatch went unreported.'
+compgen -G "$TEST_ROOT/restore-mismatch/site/.woocommerce-native-perf-*-original.sql" > /dev/null || fail 'The original export was lost after a restore mismatch.'
 
 # N-139: a native state must not set a cookie name or send a header name baseline_noop does not.
 run_case header-new-cookie header-new-cookie 1 ci
@@ -742,7 +807,7 @@ assert_cleaned "$TEST_ROOT/header-baseline-only"
 
 run_case gateway-warm-fail-ci gateway-warm-fail 1 ci
 gateway_warm_fail_ci_output="$TEST_ROOT/gateway-warm-fail-ci/output/result.tsv"
-[[ "$(wc -l < "$gateway_warm_fail_ci_output" | tr -d ' ')" == 36 ]] || fail 'CI gateway-warm-fail did not emit a complete deterministic TSV.'
+[[ "$(wc -l < "$gateway_warm_fail_ci_output" | tr -d ' ')" == 37 ]] || fail 'CI gateway-warm-fail did not emit a complete deterministic TSV.'
 grep -Fq $'active_native\tgateway\t6\t1\tNA\tnot_evaluated\tNA\tNA\tNA\tfail' "$gateway_warm_fail_ci_output" || fail 'CI active_native gateway did not fail on a nonzero warm call with no reference state evaluated.'
 assert_cleaned "$TEST_ROOT/gateway-warm-fail-ci"
 
@@ -756,7 +821,8 @@ grep -Fq 'Cleanup failed' "$TEST_ROOT/reference-remove-failure/stderr" || fail '
 
 for arguments in '--mode' '--store-url' '--output' '--wp-env-config' '--wp-env-service' '--reference-zip' '--reference-zip= --output result.tsv' '--mode unsupported --output result.tsv' '--reference-zip /nonexistent/reference.zip --output result.tsv'; do
 	name="argument-$(printf '%s' "$arguments" | tr ' /' '__')"; setup_case "$name"; root="$TEST_ROOT/$name"; status=0
-	# shellcheck disable=SC2086 -- Deliberately split malformed argument vectors.
+	# Deliberately split malformed argument vectors.
+	# shellcheck disable=SC2086
 	PATH="$root/bin:$PATH" PERF_FAKE_ROOT="$root" "$RUNNER" $arguments > "$root/stdout" 2> "$root/stderr" || status=$?
 	[[ "$status" == 2 && ! -s "$root/commands.log" ]] || fail "Argument contract failed without isolation for: $arguments"
 done
@@ -765,13 +831,15 @@ done
 for mode in local ci; do
 	name="argument-empty-reference-zip-$mode"; setup_case "$name"; root="$TEST_ROOT/$name"; status=0
 	PATH="$root/bin:$PATH" PERF_FAKE_ROOT="$root" "$RUNNER" --mode "$mode" --reference-zip '' --output result.tsv > "$root/stdout" 2> "$root/stderr" || status=$?
-	[[ "$status" == 2 && ! -s "$root/commands.log" ]] && grep -Fxq -- '--reference-zip requires a non-empty operand' "$root/stderr" || fail "An empty --reference-zip operand was not refused at parsing in $mode mode."
+	[[ "$status" == 2 && ! -s "$root/commands.log" ]] || fail "Empty zip reached $mode mode."
+	grep -Fxq -- '--reference-zip requires a non-empty operand' "$root/stderr" || fail "An empty --reference-zip operand was not refused at parsing in $mode mode."
 done
 
 # CI mode refuses --reference-zip for the mode itself: the zip exists, so only the mode check can refuse it.
 [[ -f "$probe_reference_zip" ]] || fail 'The zip fixture for the CI-mode --reference-zip case is missing.'
 name='argument-ci-reference-zip'; setup_case "$name"; root="$TEST_ROOT/$name"; status=0
 PATH="$root/bin:$PATH" PERF_FAKE_ROOT="$root" "$RUNNER" --mode ci --reference-zip "$probe_reference_zip" --output result.tsv > "$root/stdout" 2> "$root/stderr" || status=$?
-[[ "$status" == 2 && ! -s "$root/commands.log" ]] && grep -Fxq -- '--reference-zip applies only to --mode local' "$root/stderr" || fail 'CI mode accepted --reference-zip with an existing zip.'
+[[ "$status" == 2 && ! -s "$root/commands.log" ]] || fail 'The local zip reached CI mode.'
+grep -Fxq -- '--reference-zip applies only to --mode local' "$root/stderr" || fail 'CI mode accepted --reference-zip with an existing zip.'
 
 echo 'perf-compare.sh tests passed.'

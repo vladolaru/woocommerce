@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 
+# Compares boot and Storefront page assembly. With the stand-in account, neither
+# native WooPayments nor the reference extension renders a payment form or express button.
 set -euo pipefail
 
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-readonly PLUGIN_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd -P)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+PLUGIN_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd -P)"
+readonly SCRIPT_DIR PLUGIN_ROOT
 readonly REFERENCE_DIRECTORY='woocommerce-payments-reference'
 readonly REFERENCE_SHA256='58ea000906c2fc6f40e9a79d5ea60ec3104ae6d5ddf4ae533c2162b3b5fe5f96'
 readonly REFERENCE_URL='https://github.com/Automattic/woocommerce-payments/releases/download/11.2.0/woocommerce-payments.zip'
@@ -17,9 +20,8 @@ readonly REFERENCE_STAGE_PARENT='tests/bin/tmp'
 # run, spawned on shutdown once the snapshot's cron lock expired, draining pending Action
 # Scheduler work mid-sample; the probe now disables WP-Cron, so attempts agree (T.12b).
 readonly STATE_SAMPLES=3
-# A script or style is native when its handle (the tag id WordPress prints) or its URL names the provider, or is
-# the FingerprintJS copy native ships for it under assets/js/fingerprintjs/.
-readonly NATIVE_ASSET_PATTERN='woopayments|wcpay|woocommerce-payments|fingerprintjs|js\.stripe\.com'
+# Match provider handles, URLs and inline configurations, including the bundled FingerprintJS asset.
+readonly NATIVE_ASSET_PATTERN='woopay|wcpay|woocommerce-payments|fingerprintjs|js\.stripe\.com'
 
 MODE='local'
 STORE_URL='http://localhost:8187'
@@ -34,6 +36,7 @@ CLEANED=0
 CLEANUP_FAILED=0
 DATABASE_EXPORTED=0
 DATABASE_SNAPSHOT=''
+ORIGINAL_SNAPSHOT=''
 ACCOUNT_FETCHED_AT=''
 PRODUCT_PATH=''
 PRODUCT_ID=''
@@ -169,13 +172,21 @@ cleanup() {
 	local failed=0
 	if [[ "$CLEANED" == 1 ]]; then return "$CLEANUP_FAILED"; fi
 	CLEANED=1
-	if [[ "$DATABASE_EXPORTED" == 1 ]] && ! store_wp db import "$DATABASE_SNAPSHOT" > /dev/null; then
-		echo 'Cleanup failed to restore the disposable database.' >&2
+	if [[ "$DATABASE_EXPORTED" == 1 ]]; then
+		if ! store_wp db import "$ORIGINAL_SNAPSHOT" > /dev/null ||
+			! store_wp db export "$ORIGINAL_SNAPSHOT.restored.sql" --skip-comments --order-by-primary > /dev/null ||
+			! store_cli cmp -s "$ORIGINAL_SNAPSHOT" "$ORIGINAL_SNAPSHOT.restored.sql"; then
+			echo "Cleanup could not verify the restored database. Original export retained at $ORIGINAL_SNAPSHOT." >&2
+			failed=1
+		fi
+	fi
+	if [[ "$failed" == 0 && -n "$ORIGINAL_SNAPSHOT" ]] && ! store_cli rm -f "$ORIGINAL_SNAPSHOT" > /dev/null; then
+		echo 'Cleanup failed to remove the original export.' >&2
 		failed=1
 	fi
 	if ! store_cli rm -f "$PROBE_TARGET" > /dev/null 2>&1; then echo 'Cleanup failed to remove the MU probe.' >&2; failed=1; fi
 	if ! store_cli rm -rf wp-content/plugins/woocommerce-payments-reference wp-content/plugins/woocommerce-payments-reference-stage > /dev/null 2>&1; then echo 'Cleanup failed to remove the reference plugin.' >&2; failed=1; fi
-	if [[ -n "$DATABASE_SNAPSHOT" ]] && ! store_cli rm -f "$DATABASE_SNAPSHOT" > /dev/null 2>&1; then echo 'Cleanup failed to remove the database snapshot.' >&2; failed=1; fi
+	if [[ -n "$DATABASE_SNAPSHOT" ]] && ! store_cli rm -f "$DATABASE_SNAPSHOT" "$ORIGINAL_SNAPSHOT.restored.sql" > /dev/null 2>&1; then echo 'Cleanup failed to remove the database snapshot.' >&2; failed=1; fi
 	if [[ -n "$REFERENCE_STAGE" ]] && ! rm -rf "$REFERENCE_STAGE"; then echo 'Cleanup failed to remove the --reference-zip copy.' >&2; failed=1; fi
 	if [[ -n "$TEMP_ROOT" ]] && ! rm -rf "$TEMP_ROOT"; then echo 'Cleanup failed to remove its temporary directory.' >&2; failed=1; fi
 	CLEANUP_FAILED=$failed
@@ -196,6 +207,7 @@ on_exit() {
 
 seed_and_export_database() {
 	local product
+	store_wp theme activate storefront > /dev/null || return 1
 	WCPAY_RUNTIME=native E2E_WOOPAYMENTS_NATIVE_STORE_DIR="$PLUGIN_ROOT" E2E_WOOPAYMENTS_WP_ENV_CONFIG="$WP_ENV_CONFIG" E2E_WOOPAYMENTS_WP_ENV_SERVICE="$WP_ENV_SERVICE" "$SCRIPT_DIR/seed-readonly.sh" || return 1
 	ACCOUNT_FETCHED_AT="$(date +%s)" || return 1
 	[[ "$ACCOUNT_FETCHED_AT" =~ ^[1-9][0-9]*$ ]] || return 1
@@ -209,7 +221,6 @@ EOF
 		[[ "$product" == /* ]] || return 1
 	done
 	store_wp db export "$DATABASE_SNAPSHOT" > /dev/null || return 1
-	DATABASE_EXPORTED=1
 }
 
 reset_database() {
@@ -277,6 +288,23 @@ final_probe_header() {
 	'
 }
 
+validate_page_body() {
+	local body="$1" page="$2" sample="$3" marker
+	if [[ ! -s "$body" ]]; then echo "Invalid $sample: empty response body." >&2; return 1; fi
+	case "$page" in
+	front) marker='<body[^>]*class="([^"]* )?home( |")' ;;
+	shop) marker='<header class="woocommerce-products-header"' ;;
+	product) marker="<div id=\"product-$PRODUCT_ID\"" ;;
+	cart) marker='data-block-name="woocommerce/cart"|<form[^>]+class="woocommerce-cart-form"' ;;
+	checkout) marker='data-block-name="woocommerce/checkout"|<form[^>]+class="checkout woocommerce-checkout"' ;;
+	esac
+	if ! grep -Eq '<body[^>]*class="([^"]* )?wp-theme-storefront( |")' "$body" ||
+		! grep -Fq '</main>' "$body" || ! grep -Eq "$marker" "$body"; then
+		echo "Invalid $sample: missing Storefront markup for $page." >&2
+		return 1
+	fi
+}
+
 request_population_page() {
 	local state="$1" page="$2" path="$3" cookie="$4" body="$5" headers="${6:-/dev/null}"
 	local result status final_url time_total final_path expected_path
@@ -312,7 +340,9 @@ prepare_populated_session() {
 	request_population_page "$state" 'cart API' "$CART_API_PATH" "$cookie" "$cart_api_body" "$cart_api_headers" || return 1
 	grep -Eq '"items"[[:space:]]*:[[:space:]]*\[[[:space:]]*\{' "$cart_api_body" || { echo "Invalid populated session ($state): Store API cart is empty." >&2; return 1; }
 	request_population_page "$state" cart "$CART_PATH" "$cookie" "$cart_body" "$cart_headers" || return 1
+	validate_page_body "$cart_body" cart "populated session ($state/cart)" || return 1
 	request_population_page "$state" checkout "$CHECKOUT_PATH" "$cookie" "$checkout_body" "$checkout_headers" || return 1
+	validate_page_body "$checkout_body" checkout "populated session ($state/checkout)" || return 1
 }
 
 capture_page() {
@@ -320,11 +350,13 @@ capture_page() {
 	local trace_state="${7:-}"
 	local headers="$TEMP_ROOT/$state-$page-$suffix.headers" body="$TEMP_ROOT/$state-$page-$suffix.body"
 	local result status final_url final_path expected_path queries memory hooks http actual_state tier owner bootstrap probe_header time_total gateway_first gateway_second
+	local request_headers=()
 	if [[ -n "$trace_state" ]]; then
-		result="$(PERF_COMPARE_SAMPLE_KIND="$sample_kind" curl --fail-with-body --location --max-redirs 3 --silent --show-error -b "$cookie" -c "$cookie" -D "$headers" -o "$body" -w '%{http_code}\t%{url_effective}\t%{time_total}\n' -H "X-WooCommerce-Native-Payments-Perf-Trace: $trace_state" "$REQUEST_BASE$path")" || result=''
-	else
-		result="$(PERF_COMPARE_SAMPLE_KIND="$sample_kind" curl --fail-with-body --location --max-redirs 3 --silent --show-error -b "$cookie" -c "$cookie" -D "$headers" -o "$body" -w '%{http_code}\t%{url_effective}\t%{time_total}\n' "$REQUEST_BASE$path")" || result=''
+		request_headers=(-H "X-WooCommerce-Native-Payments-Perf-Trace: $trace_state")
+	elif [[ "$sample_kind" == asset-control ]]; then
+		request_headers=(-H 'X-WooCommerce-Native-Payments-Asset-Control: 1')
 	fi
+	result="$(PERF_COMPARE_SAMPLE_KIND="$sample_kind" curl --fail-with-body --location --max-redirs 3 --silent --show-error -b "$cookie" -c "$cookie" -D "$headers" -o "$body" -w '%{http_code}\t%{url_effective}\t%{time_total}\n' ${request_headers[@]+"${request_headers[@]}"} "$REQUEST_BASE$path")" || result=''
 	if [[ -z "$result" ]]; then
 		echo "Invalid $suffix ($state/$page): HTTP request failed." >&2
 		return 1
@@ -335,6 +367,7 @@ EOF
 	expected_path="$(request_target "$path")"; final_path="$(request_target "$final_url")"
 	if [[ ! "$status" =~ ^2[0-9][0-9]$ ]]; then echo "Invalid $suffix ($state/$page): HTTP status $status." >&2; return 1; fi
 	if [[ "$final_path" != "$expected_path" ]]; then echo "Invalid $suffix ($state/$page): final path $final_path, expected $expected_path." >&2; return 1; fi
+	validate_page_body "$body" "$page" "$suffix ($state/$page)" || return 1
 	probe_header="$(final_probe_header "$headers")"
 	if [[ "$probe_header" == 'error=attribution-artifacts' ]]; then echo "Invalid $suffix ($state/$page): probe could not write required attribution artifacts." >&2; return 1; fi
 	if [[ ! "$probe_header" =~ ^state=[a-z_]+\;tier=[a-z]+\;owner=(native|plugin)\;bootstrap_calls=[0-9]+\;queries=[0-9]+\;used_peak_bytes=[0-9]+\;hooks=[0-9]+\;files=[0-9]+\;http=[0-9]+\;gateway_first_queries=[0-9]+\;gateway_second_queries=[0-9]+$ ]]; then echo "Invalid $suffix ($state/$page): missing or malformed probe header." >&2; return 1; fi
@@ -406,6 +439,10 @@ sample_state() {
 	for page in "${pages[@]}"; do
 		combine_capture_samples "$state" "$page" || return 1
 	done
+	if [[ "$state" == active_native ]]; then
+		# Reuse the last populated cart for an asset-only control outside the performance samples.
+		capture_page "$state" checkout "$CHECKOUT_PATH" asset-control "$TEMP_ROOT/$state-r$STATE_SAMPLES.cookies" asset-control || return 1
+	fi
 	if [[ "$state" == active_plugin ]]; then reset_database || return 1; fi
 }
 
@@ -553,7 +590,7 @@ write_header_rows() {
 
 # Prints one line per native script, style or asset-loading link tag in an HTML body: absolute URL ('-' for
 # inline content) and the raw and gzip byte counts of inline content. A tag is native when its id or URL
-# matches NATIVE_ASSET_PATTERN. Other links (canonical, alternate, oEmbed) carry page URLs, so they are skipped.
+# or inline data matches NATIVE_ASSET_PATTERN. Other links (canonical, alternate, oEmbed) carry page URLs, so they are skipped.
 native_asset_tags() {
 	python3 - "$1" "$REQUEST_BASE" "$NATIVE_ASSET_PATTERN" <<'PY'
 import gzip, html, re, sys
@@ -565,16 +602,17 @@ for match in re.finditer(r"<(script|style|link)\b([^>]*)>", body, re.I):
     if tag == "link" and not re.search(r"\b(stylesheet|preload|modulepreload)\b", values.get("rel", ""), re.I):
         continue
     url = values.get("src" if tag == "script" else "href", "")
-    if not pattern.search(values.get("id", "")) and not pattern.search(url):
-        continue
-    inline = b""
+    inline = ""
     if tag != "link" and not url:
         end = body.find("</" + tag, match.end())
-        inline = body[match.end():end].encode() if end >= 0 else b""
+        inline = body[match.end():end] if end >= 0 else ""
+    if not (pattern.search(values.get("id", "")) or pattern.search(url) or pattern.search(inline)):
+        continue
     if url.startswith("//"):
         url = base.split(":", 1)[0] + ":" + url
     elif url.startswith("/"):
         url = base + url
+    inline = inline.encode()
     print(f"{url or '-'}\t{len(inline)}\t{len(gzip.compress(inline, 9, mtime=0)) if inline else 0}")
 PY
 }
@@ -605,30 +643,48 @@ native_asset_totals() {
 	printf '%s\t%s\t%s\n' "$count" "$total_raw" "$total_gzip"
 }
 
-# Appends one 'assets:<page>' row per sampled state and shop page, read from the first capture's body.
+# Appends one 'assets:<page>' row per sampled state and shop page, using the first capture for informational rows.
 # Column reuse: queries = native script and style tags, used_peak_bytes and hooks = their raw and gzip bytes.
-# A disabled store must print no native tag; every other row is recorded for the asset baseline.
+# Both dormant states must print zero tags. The extra connected checkout must load the native shopper script.
 write_asset_rows() {
-	local state page body totals native raw gzip verdict
+	local state page body totals native raw gzip verdict repeat attempts
 	local states=(baseline_noop disabled available connected active_native active_plugin)
 	local pages=(front shop product cart checkout)
 	for state in "${states[@]}"; do
 		if [[ "$MODE" == 'ci' && "$state" != 'baseline_noop' && "$state" != 'disabled' && "$state" != 'active_native' ]]; then continue; fi
 		for page in "${pages[@]}"; do
-			body="$TEMP_ROOT/$state-$page-capture-r1.body"
-			if [[ ! -f "$body" ]] || ! totals="$(native_asset_totals "$body")"; then
-				printf '%s\tassets:%s\tNA\tNA\tNA\tNA\tNA\tNA\tNA\tfail\n' "$state" "$page" >> "$OUTPUT"
-				GATE_FAILED=1
-				continue
+			attempts=1; verdict=informational
+			if [[ "$state" == disabled || "$state" == available ]]; then
+				attempts=$STATE_SAMPLES; verdict=pass
 			fi
-			IFS=$'\t' read -r native raw gzip <<< "$totals"
-			verdict=informational
-			if [[ "$state" == 'disabled' ]]; then
-				if [[ "$native" == 0 ]]; then verdict=pass; else verdict=fail; GATE_FAILED=1; fi
-			fi
+			for ((repeat = 1; repeat <= attempts; repeat++)); do
+				body="$TEMP_ROOT/$state-$page-capture-r$repeat.body"
+				if [[ ! -s "$body" ]] || ! totals="$(native_asset_totals "$body")"; then
+					native=NA; raw=NA; gzip=NA; verdict=fail
+					break
+				fi
+				IFS=$'\t' read -r native raw gzip <<< "$totals"
+				if [[ "$verdict" == pass && "$native" != 0 ]]; then
+					echo "Asset gate ($state/$page): found $native payment tags in capture $repeat." >&2
+					verdict=fail
+					break
+				fi
+			done
+			if [[ "$verdict" == fail ]]; then GATE_FAILED=1; fi
 			printf '%s\tassets:%s\t%s\t%s\t%s\tNA\tNA\tNA\tNA\t%s\n' "$state" "$page" "$native" "$raw" "$gzip" "$verdict" >> "$OUTPUT"
 		done
 	done
+	body="$TEMP_ROOT/active_native-checkout-asset-control.body"
+	native=NA; raw=NA; gzip=NA; verdict=fail
+	if [[ -s "$body" ]] && totals="$(native_asset_totals "$body")"; then
+		IFS=$'\t' read -r native raw gzip <<< "$totals"
+		if grep -Eq '/woopayments-frontend-tracks(\.min)?\.js([?[:space:]]|$)' "$body.native-tags"; then verdict=pass; fi
+	fi
+	if [[ "$verdict" == fail ]]; then
+		echo 'Asset control failed: the connected checkout did not load the native shopper tracking script.' >&2
+		GATE_FAILED=1
+	fi
+	printf 'active_native\tassets:checkout_tracking\t%s\t%s\t%s\tNA\tNA\tNA\tNA\t%s\n' "$native" "$raw" "$gzip" "$verdict" >> "$OUTPUT"
 }
 
 timing_gate() {
@@ -675,11 +731,16 @@ EOF
 
 main() {
 	local states=(baseline_noop disabled available connected active_native active_plugin)
-	local state
+	local state service_home
 	parse_arguments "$@"
+	service_home="$(store_cli printenv HOME)" || return 1
+	[[ "$service_home" == /* ]] || return 1
 	TEMP_ROOT="$(mktemp -d "${TMPDIR:?TMPDIR is required}/woopayments-perf-compare.XXXXXX")"
-	DATABASE_SNAPSHOT="/var/www/html/.woocommerce-native-perf-${PPID}-${RANDOM}.sql"
+	DATABASE_SNAPSHOT="$service_home/.woocommerce-native-perf-${PPID}-${RANDOM}.sql"
+	ORIGINAL_SNAPSHOT="${DATABASE_SNAPSHOT%.sql}-original.sql"
 	trap on_exit EXIT
+	store_wp db export "$ORIGINAL_SNAPSHOT" --skip-comments --order-by-primary > /dev/null || return 1
+	DATABASE_EXPORTED=1
 	curl --fail-with-body --location --max-redirs 3 --silent --show-error -D /dev/null -o /dev/null "$STORE_URL/" > /dev/null || { echo "The store did not answer: $STORE_URL" >&2; return 1; }
 	discover_request_base || { echo 'The tests service did not provide a valid canonical store origin.' >&2; return 1; }
 	if canonical_is_active; then echo 'The canonical WooPayments plugin must be inactive.' >&2; return 1; fi

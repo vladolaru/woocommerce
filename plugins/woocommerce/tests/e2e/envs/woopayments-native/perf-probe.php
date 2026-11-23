@@ -143,19 +143,21 @@ final class WooCommerce_Native_Payments_Perf_Probe {
 		);
 		if ( empty( $products ) ) {
 			$product = new WC_Product_Simple();
-			$product->set_name( 'WooPayments Native Performance Product' );
 			$product->set_status( 'publish' );
 			$product->set_catalog_visibility( 'visible' );
 			$product->set_regular_price( '10' );
 			$product->set_virtual( true );
 			$product->set_stock_status( 'instock' );
-			if ( 0 === $product->save() ) {
-				self::cli_error( 'performance-product-create-failed' );
-			}
 		} elseif ( $products[0] instanceof WC_Product ) {
 			$product = $products[0];
 		} else {
 			self::cli_error( 'invalid-performance-product' );
+		}
+
+		$product->set_name( 'Canvas Tote' );
+		$product->set_slug( 'canvas-tote' );
+		if ( 0 === $product->save() ) {
+			self::cli_error( 'performance-product-save-failed' );
 		}
 
 		foreach ( array( 'shop', 'cart', 'checkout' ) as $page_name ) {
@@ -307,6 +309,12 @@ final class WooCommerce_Native_Payments_Perf_Probe {
 			return;
 		}
 		$this->trace_state = $this->get_trace_state();
+
+		// Exercise the real shopper tracking script without persisting a store-wide opt-in.
+		if ( 'active_native' === $this->get_control_value( 'state' ) && '1' === sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_WOOCOMMERCE_NATIVE_PAYMENTS_ASSET_CONTROL'] ?? '' ) ) ) {
+			add_filter( 'wcpay_shopper_tracking_enabled', '__return_true' );
+			add_filter( 'pre_option_woocommerce_default_country', static fn() => 'US' );
+		}
 
 		add_filter( 'woocommerce_load_payment_providers', array( $this, 'control_bootstrap' ) );
 		add_filter( 'pre_http_request', array( $this, 'count_http_request' ), PHP_INT_MIN );
