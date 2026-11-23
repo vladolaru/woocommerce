@@ -8050,7 +8050,36 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			'incorrect cvc'    => array( 'incorrect_cvc', 1 ),
 			'processing error' => array( 'processing_error', 0 ),
 			'expired card'     => array( 'expired_card', 0 ),
+			'express mismatch' => array( 'confirmation_token_setup_future_usage_mismatch', 0 ),
 		);
+	}
+
+	/**
+	 * @testdox Checkout logs the express save-card hint only for the matching failed outcome.
+	 *
+	 * @testWith ["failed", "confirmation_token_setup_future_usage_mismatch", true]
+	 *           ["failed", "card_declined", false]
+	 *           ["pending_async", "confirmation_token_setup_future_usage_mismatch", false]
+	 *
+	 * @param string $status      Provider outcome status.
+	 * @param string $error_code  Provider error code.
+	 * @param bool   $expect_hint Whether the merchant should see the hint.
+	 */
+	public function test_process_payment_logs_express_save_card_hint( string $status, string $error_code, bool $expect_hint ): void {
+		$this->enable_debug_logging();
+		$logger                    = RecordingWcLogger::install();
+		$order                     = $this->create_order();
+		$service                   = new RecordingPaymentProcessingService();
+		$service->checkout_outcome = new PaymentOutcome( $status, '', '', '', '', array( PaymentOutcome::DATA_ERROR_CODE => $error_code ) );
+		$gateway                   = new WooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+		$_POST['wcpay-payment-method'] = 'pm_card';
+
+		$gateway->process_payment( $order->get_id() );
+
+		$hints   = array_values( array_filter( $logger->lines, static fn( array $line ): bool => false !== strpos( $line[1], 'wcpay_express_checkout_setup_future_usage' ) ) );
+		$message = "Order {$order->get_id()}: the express checkout token and the payment disagree about saving the card. If a plugin other than WooCommerce Subscriptions saves cards, return 'off_session' from the wcpay_express_checkout_setup_future_usage filter.";
+		$this->assertSame( $expect_hint ? array( array( 'error', $message, 'woopayments' ) ) : array(), $hints );
 	}
 
 	/**

@@ -1662,6 +1662,18 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		$this->maybe_bump_failed_transaction_rate_limiter( $outcome );
+		// Client 11.3.0 class-wc-payment-gateway-wcpay.php:1620-1631 points plugins that save cards to the express checkout filter.
+		if ( PaymentOutcome::STATUS_FAILED === $outcome->get_status() && 'confirmation_token_setup_future_usage_mismatch' === ( $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? '' ) ) {
+			$this->get_logger()->error(
+				sprintf(
+					'Order %s: the express checkout token and the payment disagree about saving the card. '
+					. 'If a plugin other than WooCommerce Subscriptions saves cards, return \'off_session\' '
+					. 'from the wcpay_express_checkout_setup_future_usage filter.',
+					$order_id
+				)
+			);
+		}
+
 		self::maybe_add_failed_checkout_notice( $outcome );
 		$this->maybe_store_paid_intent_in_session( $outcome );
 		$this->get_duplicate_payment_prevention_service()->maybe_remove_session_processing_order_for_offline_voucher( (int) $order_id, $this->get_payment_method_id(), $outcome );
