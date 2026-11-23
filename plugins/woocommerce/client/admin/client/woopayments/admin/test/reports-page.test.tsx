@@ -135,8 +135,9 @@ const mockDataViews = jest.fn(
 		const viewFields = Array.isArray( view.fields )
 			? ( view.fields as string[] )
 			: fields.map( ( field ) => field.id );
-		const visibleFields = fields.filter( ( field ) =>
-			viewFields.includes( field.id )
+		const visibleFields = fields.filter(
+			( field ) =>
+				field.id === view.titleField || viewFields.includes( field.id )
 		);
 
 		return (
@@ -457,6 +458,25 @@ const balanceSummary = {
 	ending_balance: {
 		amount: 877,
 	},
+};
+
+const defaultFeesFields = [
+	'payment_method',
+	'type',
+	'order_id',
+	'transaction_id',
+	'transaction_currency',
+	'amount',
+	'fees',
+];
+
+const defaultFeesLayout = {
+	styles: { amount: { align: 'start' }, fees: { align: 'start' } },
+};
+
+const changeFeesTableView = ( changes: Record< string, unknown > ) => {
+	const props = mockDataViews.mock.lastCall?.[ 0 ];
+	act( () => props?.onChangeView?.( { ...props.view, ...changes } ) );
 };
 
 const feeRow = {
@@ -1791,39 +1811,114 @@ describe( 'WooPaymentsReportsPage', () => {
 		);
 	} );
 
-	it( 'saves the Fees rows per page when the merchant changes it, keeping the rest of the saved view', async () => {
+	it( "opens Fees with the merchant's saved columns", async () => {
 		setMockUserPreferences( {
-			wc_payments_reports_fees_view: {
-				fields: [ 'type', 'fees' ],
-				perPage: 25,
-			},
+			wc_payments_reports_fees_view: { fields: [ 'type', 'fees' ] },
 		} );
 		renderReportsPage( [ '/woopayments/reports?report_tab=fees' ] );
 
+		const table = within(
+			await screen.findByTestId( 'reports-dataviews' )
+		);
+		expect( table.getByText( 'Date & time' ) ).toBeInTheDocument();
+		expect( table.getByText( 'Type' ) ).toBeInTheDocument();
+		expect( table.getByText( 'Fees total' ) ).toBeInTheDocument();
+		expect( table.queryByText( 'Transaction ID' ) ).not.toBeInTheDocument();
+		expect( mockDataViews.mock.lastCall?.[ 0 ].view?.fields ).toStrictEqual(
+			[ 'type', 'fees' ]
+		);
+	} );
+
+	it( 'applies the saved Fees layout when preferences arrive after mount', async () => {
+		renderReportsPage( [ '/woopayments/reports?report_tab=fees' ] );
 		await screen.findByRole( 'searchbox', { name: 'Search fees' } );
-		jest.useFakeTimers();
-		try {
-			fireEvent.click(
-				screen.getByRole( 'button', {
-					name: 'Apply detailed fees view',
-				} )
-			);
 
-			// Client 11.3.0 `reports/fees/use-fees-user-prefs.ts:19,88-93`: the write comes after 750 ms, not at once.
-			expect( mockUpdateUserPreferences ).not.toHaveBeenCalled();
-			await act( () => jest.advanceTimersByTimeAsync( 750 ) );
-
-			expect( mockUpdateUserPreferences ).toHaveBeenCalledTimes( 1 );
-			expect( mockUpdateUserPreferences ).toHaveBeenCalledWith( {
+		await act( async () => {
+			await mockUpdateUserPreferences( {
 				wc_payments_reports_fees_view: {
-					fields: [ 'type', 'fees' ],
-					perPage: 50,
+					fields: [ 'fees' ],
+					layout: {
+						density: 'compact',
+						styles: {
+							fees: { align: 'end', width: 120 },
+							type: { align: 'center' },
+						},
+					},
 				},
 			} );
-		} finally {
-			jest.useRealTimers();
-		}
+		} );
+
+		expect( mockDataViews.mock.lastCall?.[ 0 ].view ).toMatchObject( {
+			fields: [ 'fees' ],
+			layout: {
+				density: 'compact',
+				styles: {
+					amount: { align: 'start' },
+					fees: { align: 'start', width: 120 },
+					type: { align: 'center' },
+				},
+			},
+		} );
 	} );
+
+	it( 'keeps Date visible as the locked Fees title even when saved among the columns', async () => {
+		setMockUserPreferences( {
+			wc_payments_reports_fees_view: {
+				fields: [ 'date', 'transaction_id', 'amount' ],
+			},
+		} );
+		renderReportsPage( [ '/woopayments/reports?report_tab=fees' ] );
+		await screen.findByRole( 'searchbox', { name: 'Search fees' } );
+
+		const table = mockDataViews.mock.lastCall?.[ 0 ];
+		expect( table?.view ).toMatchObject( {
+			titleField: 'date',
+			fields: [ 'transaction_id', 'amount' ],
+		} );
+		expect(
+			table?.fields?.find( ( field ) => field.id === 'date' )
+		).toMatchObject( { enableHiding: false } );
+		expect( screen.getAllByText( 'Date & time' ) ).toHaveLength( 1 );
+	} );
+
+	it.each( [
+		{ name: 'a first save', stored: '', fields: defaultFeesFields },
+		{
+			name: 'saved columns',
+			stored: { fields: [ 'type', 'fees' ], perPage: 25 },
+			fields: [ 'type', 'fees' ],
+		},
+	] )(
+		'saves the Fees rows per page with columns and layout for $name',
+		async ( { stored, fields } ) => {
+			setMockUserPreferences( { wc_payments_reports_fees_view: stored } );
+			renderReportsPage( [ '/woopayments/reports?report_tab=fees' ] );
+
+			await screen.findByRole( 'searchbox', { name: 'Search fees' } );
+			jest.useFakeTimers();
+			try {
+				fireEvent.click(
+					screen.getByRole( 'button', {
+						name: 'Apply detailed fees view',
+					} )
+				);
+
+				expect( mockUpdateUserPreferences ).not.toHaveBeenCalled();
+				await act( () => jest.advanceTimersByTimeAsync( 750 ) );
+
+				expect( mockUpdateUserPreferences ).toHaveBeenCalledTimes( 1 );
+				expect( mockUpdateUserPreferences ).toHaveBeenCalledWith( {
+					wc_payments_reports_fees_view: {
+						fields,
+						perPage: 50,
+						layout: defaultFeesLayout,
+					},
+				} );
+			} finally {
+				jest.useRealTimers();
+			}
+		}
+	);
 
 	it( 'does not save the Fees rows per page before the saved view has loaded', async () => {
 		// No key yet: the current user's preferences have not arrived.
@@ -1845,9 +1940,9 @@ describe( 'WooPaymentsReportsPage', () => {
 		}
 	} );
 
-	it( 'writes the saved Fees view once for a burst of rows per page changes', async () => {
+	it( 'writes all Fees preferences once after the last column or page size change', async () => {
 		setMockUserPreferences( {
-			wc_payments_reports_fees_view: { perPage: 25 },
+			wc_payments_reports_fees_view: '',
 		} );
 		renderReportsPage( [ '/woopayments/reports?report_tab=fees' ] );
 
@@ -1863,13 +1958,33 @@ describe( 'WooPaymentsReportsPage', () => {
 			fireEvent.click(
 				screen.getByRole( 'button', { name: 'Apply 10 rows per page' } )
 			);
+			await act( () => jest.advanceTimersByTimeAsync( 400 ) );
+			const fields = mockDataViews.mock.lastCall?.[ 0 ].view
+				?.fields as string[];
+			changeFeesTableView( {
+				fields: fields.filter(
+					( field ) => field !== 'transaction_currency'
+				),
+				layout: { ...defaultFeesLayout, density: 'compact' },
+			} );
 			await act( () => jest.advanceTimersByTimeAsync( 749 ) );
 			expect( mockUpdateUserPreferences ).not.toHaveBeenCalled();
 			await act( () => jest.advanceTimersByTimeAsync( 1 ) );
 
 			expect( mockUpdateUserPreferences ).toHaveBeenCalledTimes( 1 );
 			expect( mockUpdateUserPreferences ).toHaveBeenCalledWith( {
-				wc_payments_reports_fees_view: { perPage: 10 },
+				wc_payments_reports_fees_view: {
+					fields: [
+						'payment_method',
+						'type',
+						'order_id',
+						'transaction_id',
+						'amount',
+						'fees',
+					],
+					perPage: 10,
+					layout: { ...defaultFeesLayout, density: 'compact' },
+				},
 			} );
 		} finally {
 			jest.useRealTimers();
@@ -1891,26 +2006,37 @@ describe( 'WooPaymentsReportsPage', () => {
 		expect( mockGetFees ).toHaveBeenCalledTimes( 1 );
 	} );
 
-	it( 'does not write the saved Fees view when the rows per page stay the same', async () => {
-		setMockUserPreferences( {
-			wc_payments_reports_fees_view: { perPage: 50 },
-		} );
-		renderReportsPage( [
-			'/woopayments/reports?report_tab=fees&per_page=50',
-		] );
+	it.each( [
+		{ action: 'changing only the sort', urlSize: 50 },
+		{ action: 'returning to the saved size', urlSize: 10 },
+	] )(
+		'skips a write when $action gives the normalized saved Fees view',
+		async ( { urlSize } ) => {
+			setMockUserPreferences( {
+				wc_payments_reports_fees_view: {
+					fields: [ 'date', 'fees' ],
+					perPage: 50,
+					layout: defaultFeesLayout,
+				},
+			} );
+			renderReportsPage( [
+				`/woopayments/reports?report_tab=fees&per_page=${ urlSize }`,
+			] );
+			await screen.findByRole( 'searchbox', { name: 'Search fees' } );
 
-		fireEvent.change(
-			await screen.findByRole( 'searchbox', { name: 'Search fees' } ),
-			{ target: { value: 'txn_456' } }
-		);
-
-		await waitFor( () =>
-			expect( screen.getByTestId( 'location' ) ).toHaveTextContent(
-				'search%5B%5D=txn_456'
-			)
-		);
-		expect( mockUpdateUserPreferences ).not.toHaveBeenCalled();
-	} );
+			jest.useFakeTimers();
+			try {
+				changeFeesTableView( {
+					perPage: 50,
+					sort: { field: 'fees', direction: 'asc' },
+				} );
+				await act( () => jest.advanceTimersByTimeAsync( 750 ) );
+				expect( mockUpdateUserPreferences ).not.toHaveBeenCalled();
+			} finally {
+				jest.useRealTimers();
+			}
+		}
+	);
 
 	// Client 11.3.0 `data/reports/hooks.ts:123-125,161,250`: Fees sorts a reversed range before it asks for the rows and the
 	// summary, as Balance, Documents and the money-movement lists do.
@@ -2008,23 +2134,20 @@ describe( 'WooPaymentsReportsPage', () => {
 		);
 	} );
 
-	it( 'uses the Fees default column order', async () => {
-		renderReportsPage( [ '/woopayments/reports?tab=fees' ] );
+	it.each( [ undefined, 'fees' ] )(
+		'uses the Fees default column order for stored fields %p',
+		async ( fields ) => {
+			setMockUserPreferences( {
+				wc_payments_reports_fees_view: { fields },
+			} );
+			renderReportsPage( [ '/woopayments/reports?tab=fees' ] );
 
-		await screen.findByRole( 'searchbox', { name: 'Search fees' } );
-		expect( mockDataViews.mock.calls.at( -1 )?.[ 0 ].view?.fields ).toEqual(
-			[
-				'date',
-				'payment_method',
-				'type',
-				'order_id',
-				'transaction_id',
-				'transaction_currency',
-				'amount',
-				'fees',
-			]
-		);
-	} );
+			await screen.findByRole( 'searchbox', { name: 'Search fees' } );
+			const view = mockDataViews.mock.lastCall?.[ 0 ].view;
+			expect( view?.titleField ).toBe( 'date' );
+			expect( view?.fields ).toStrictEqual( defaultFeesFields );
+		}
+	);
 
 	// Client 11.2.0 `reports/fees/fields.tsx:137-157`: the two amount columns sort but are not offered as filters.
 	it( 'defaults the Fees DataViews Date filter to Between and offers no amount filters', async () => {

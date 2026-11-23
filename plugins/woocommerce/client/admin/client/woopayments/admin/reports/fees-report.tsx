@@ -11,7 +11,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { recordEvent } from '@woocommerce/tracks';
 import { useUserPreferences } from '@woocommerce/data';
 // @ts-expect-error - Use the WordPress-bundled DataViews entry in wp-admin builds.
-import { DataViews, type Field, type View } from '@wordpress/dataviews/wp';
+import { DataViews, type Field, type ViewTable } from '@wordpress/dataviews/wp';
 
 /**
  * Internal dependencies
@@ -118,14 +118,57 @@ const getTransactionRoute = ( item: ReportsFee ) =>
 // Client 11.1.0 `reports/fees/use-fees-url-sync.ts:26,208-233`: a search reaches the URL after typing pauses.
 const FEES_SEARCH_URL_DEBOUNCE_MS = 500;
 
-// Client 11.3.0 `reports/fees/view.ts:5`: the user meta that keeps the merchant's Fees view; only its rows per page is read.
 const FEES_VIEW_PREFERENCE_KEY = 'wc_payments_reports_fees_view';
 
-// Client 11.3.0 `reports/fees/use-fees-user-prefs.ts:19,88-93`: a burst of view changes becomes one write of the final rows per page.
 const FEES_VIEW_PREFERENCE_WRITE_DELAY_MS = 750;
 
 // The Fees report endpoint's `per_page` range (`WooPaymentsReportsRestController.php`).
 const FEES_MAX_PER_PAGE = 100;
+
+const DEFAULT_FEES_FIELDS = [
+	'payment_method',
+	'type',
+	'order_id',
+	'transaction_id',
+	'transaction_currency',
+	'amount',
+	'fees',
+];
+
+type SavedFeesView = {
+	fields?: unknown;
+	layout?: ViewTable[ 'layout' ];
+	perPage?: unknown;
+};
+
+const getFeesTableFields = ( fields: unknown ): string[] =>
+	Array.isArray( fields )
+		? fields.filter( ( field ) => field !== 'date' )
+		: DEFAULT_FEES_FIELDS;
+
+const getFeesTableView = (
+	search: string,
+	savedView: SavedFeesView | undefined,
+	savedPerPage: number
+): ViewTable => {
+	const layout = savedView?.layout;
+	const styles = layout?.styles;
+
+	return {
+		type: 'table',
+		titleField: 'date',
+		fields: getFeesTableFields( savedView?.fields ),
+		layout: {
+			...layout,
+			styles: {
+				...styles,
+				amount: { ...styles?.amount, align: 'start' },
+				fees: { ...styles?.fees, align: 'start' },
+			},
+		},
+		...parseReportsFeesViewFromSearch( search, savedPerPage ),
+	};
+};
 
 // The Fees params in a location search, normalized so equal views compare equal.
 const getFeesUrlKey = ( search: string, defaultPerPage?: number ) =>
@@ -180,28 +223,17 @@ const FeesReport = ( {
 	const hasLoadedSavedView = FEES_VIEW_PREFERENCE_KEY in preferences;
 	const savedView = ( ( preferences as Record< string, unknown > )[
 		FEES_VIEW_PREFERENCE_KEY
-	] || {} ) as { perPage?: unknown };
+	] || undefined ) as SavedFeesView | undefined;
 	// A stored size the report endpoint would refuse opens with 25 instead.
-	const storedPerPage = normalizePositiveInteger( savedView.perPage, 25 );
+	const storedPerPage = normalizePositiveInteger( savedView?.perPage, 25 );
 	const savedPerPage = storedPerPage > FEES_MAX_PER_PAGE ? 25 : storedPerPage;
-	const savePerPageTimerRef = useRef< ReturnType<
-		typeof setTimeout
-	> | null >( null );
-	// Client 11.1.0 `reports/fees/use-fees-url-sync.ts:167-195`: sort, paging, search and filters come from the URL.
-	const [ view, setView ] = useState< View >( () => ( {
-		type: 'table',
-		fields: [
-			'date',
-			'payment_method',
-			'type',
-			'order_id',
-			'transaction_id',
-			'transaction_currency',
-			'amount',
-			'fees',
-		],
-		...parseReportsFeesViewFromSearch( location.search, savedPerPage ),
-	} ) );
+	const saveViewTimerRef = useRef< ReturnType< typeof setTimeout > | null >(
+		null
+	);
+	const wasLoadedRef = useRef( hasLoadedSavedView );
+	const [ view, setView ] = useState< ViewTable >( () =>
+		getFeesTableView( location.search, savedView, savedPerPage )
+	);
 	const feesUrlKeyRef = useRef(
 		getFeesUrlKey( location.search, savedPerPage )
 	);
@@ -264,29 +296,28 @@ const FeesReport = ( {
 			if ( searchUrlTimerRef.current ) {
 				clearTimeout( searchUrlTimerRef.current );
 			}
-			if ( savePerPageTimerRef.current ) {
-				clearTimeout( savePerPageTimerRef.current );
+			if ( saveViewTimerRef.current ) {
+				clearTimeout( saveViewTimerRef.current );
 			}
 		},
 		[]
 	);
 
-	// Back, forward or a pasted link re-seeds the view; the page's own writes do not, so staged filter chips stay.
+	// Re-seed on external navigation or the first preference load. Our own writes must leave staged filter chips intact.
 	useEffect( () => {
 		const urlKey = getFeesUrlKey( location.search, savedPerPage );
+		const justLoaded = ! wasLoadedRef.current && hasLoadedSavedView;
+		wasLoadedRef.current = hasLoadedSavedView;
 
-		if ( urlKey === feesUrlKeyRef.current ) {
+		if ( urlKey === feesUrlKeyRef.current && ! justLoaded ) {
 			return;
 		}
 
 		feesUrlKeyRef.current = urlKey;
-		setView( ( previousView: View ) => ( {
-			...previousView,
-			...parseReportsFeesViewFromSearch( location.search, savedPerPage ),
-		} ) );
-	}, [ location.search, savedPerPage ] );
+		setView( getFeesTableView( location.search, savedView, savedPerPage ) );
+	}, [ location.search, savedPerPage, savedView, hasLoadedSavedView ] );
 
-	const applyView = ( nextView: View ) => {
+	const applyView = ( nextView: ViewTable ) => {
 		const currentSearch = serializeReportsFeesViewToSearch( view );
 		const nextSearch = serializeReportsFeesViewToSearch( nextView );
 		const hasSearchChange =
@@ -307,20 +338,27 @@ const FeesReport = ( {
 
 		setView( nextView );
 
-		// Client 11.3.0 `reports/fees/use-fees-user-prefs.ts:68-96`: the rows per page the merchant picks are kept for the
-		// next visit, beside the rest of the saved view. Nothing is written before the saved view has loaded, which would
-		// replace it, and a burst of changes is written once.
-		if ( hasLoadedSavedView && nextView.perPage !== view.perPage ) {
-			if ( savePerPageTimerRef.current ) {
-				clearTimeout( savePerPageTimerRef.current );
+		const nextPreference = {
+			fields: getFeesTableFields( nextView.fields ),
+			perPage: nextView.perPage,
+			layout: nextView.layout,
+		};
+		const savedPreference = savedView && {
+			...savedView,
+			fields: getFeesTableFields( savedView.fields ),
+		};
+		if (
+			hasLoadedSavedView &&
+			JSON.stringify( nextPreference ) !==
+				JSON.stringify( savedPreference )
+		) {
+			if ( saveViewTimerRef.current ) {
+				clearTimeout( saveViewTimerRef.current );
 			}
-			savePerPageTimerRef.current = setTimeout( () => {
-				savePerPageTimerRef.current = null;
+			saveViewTimerRef.current = setTimeout( () => {
+				saveViewTimerRef.current = null;
 				void updateUserPreferences( {
-					[ FEES_VIEW_PREFERENCE_KEY ]: {
-						...savedView,
-						perPage: nextView.perPage,
-					},
+					[ FEES_VIEW_PREFERENCE_KEY ]: nextPreference,
 				} );
 			}, FEES_VIEW_PREFERENCE_WRITE_DELAY_MS );
 		}
@@ -424,6 +462,7 @@ const FeesReport = ( {
 				label: __( 'Date', 'woocommerce' ),
 				header: __( 'Date & time', 'woocommerce' ),
 				type: 'date',
+				enableHiding: false,
 				enableSorting: true,
 				filterBy: {
 					operators: [ 'between', 'on', 'before', 'after' ],
@@ -569,7 +608,7 @@ const FeesReport = ( {
 		[ loadedSummary?.sources, loadedSummary?.types ]
 	);
 
-	const handleChangeView = ( nextView: View ) => {
+	const handleChangeView = ( nextView: ViewTable ) => {
 		if ( nextView.search !== view.search ) {
 			recordEvent( 'wcpay_reports_fees_search', {
 				search_length: String( nextView.search || '' ).length,
