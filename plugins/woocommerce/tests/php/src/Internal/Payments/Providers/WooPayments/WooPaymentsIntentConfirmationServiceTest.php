@@ -102,18 +102,19 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 		);
 		$sut = $this->create_intent_confirmation_service( $api_client, null, $this->create_account_service( false ) );
 
-		// Later confirmation steps can repair a duplicate. Inspect the rows visible to listeners of the first save.
+		// Later confirmation steps can repair a duplicate. Inspect the confirmation object's first save.
 		$first_save_ids = null;
 		add_action(
 			'woocommerce_update_order',
-			static function ( $order_id ) use ( $order, &$first_save_ids ): void {
-				if ( $order->get_id() === $order_id && null === $first_save_ids ) {
+			static function ( $order_id, $updated_order ) use ( $order, &$first_save_ids ): void {
+				if ( $updated_order === $order && null === $first_save_ids ) {
 					$stored = new WC_Order( $order_id );
 					$stored->read_meta_data( true );
 					$first_save_ids = array_values( wp_list_pluck( $stored->get_meta( '_payment_method_id', false ), 'value' ) );
 				}
 			},
-			1
+			1,
+			2
 		);
 
 		$sut->confirm_intent_for_order( $order, $intent['id'], false, true );
