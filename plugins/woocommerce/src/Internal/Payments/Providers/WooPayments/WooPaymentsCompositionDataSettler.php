@@ -49,6 +49,25 @@ class WooPaymentsCompositionDataSettler {
 	}
 
 	/**
+	 * Read the account, refreshing it when due, before an entry point takes the order's payment claim.
+	 *
+	 * The reads under the claim, the Level 3 lookup and run_settled() among them, are then served from the request's
+	 * memory. A failed read leaves the payment on the stored account; a throw, from a refresh callback for one, is logged.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param \WC_Order $order Order about to be claimed.
+	 * @return void
+	 */
+	public function settle_account_before_claim( \WC_Order $order ): void {
+		try {
+			$this->account_service->get_cached_account_data();
+		} catch ( \Throwable $throwable ) {
+			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Failed to read the WooPayments account before the payment.', $throwable, array( 'order_id' => $order->get_id() ) );
+		}
+	}
+
+	/**
 	 * Read the account, refreshing it when due, then run the segment with platform cache refreshes stopped.
 	 *
 	 * @since 11.4.0

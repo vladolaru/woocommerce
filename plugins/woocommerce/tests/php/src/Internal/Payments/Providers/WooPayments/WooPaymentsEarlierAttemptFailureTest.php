@@ -13,13 +13,13 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\Webh
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAjaxController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCompositionDataSettler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderAdminActionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderCardInfo;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
-use Automattic\WooCommerce\Tests\Internal\Payments\PlatformRequestClaimGuard;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPlatformEvents;
 use WC_Helper_Product;
@@ -145,7 +145,6 @@ class WooPaymentsEarlierAttemptFailureTest extends WC_Unit_Test_Case {
 		}
 		$this->assertSame( 1, $this->count_notes_containing( $order, '<strong>failed</strong> to complete' ), "The earlier attempt's decline note stays the only failure note." );
 		$this->assertSame( 0, $this->count_notes_containing( $order, '<strong>failed</strong> using' ) );
-		PlatformRequestClaimGuard::expect_cold_checkout_account_read( $order->get_id() );
 	}
 
 	/**
@@ -211,7 +210,6 @@ class WooPaymentsEarlierAttemptFailureTest extends WC_Unit_Test_Case {
 		$this->assertSame( 1, $this->count_notes_containing( $order, 'was processed using WooPayments' ) );
 		$this->assertSame( 1, $this->count_notes_containing( $order, '<strong>failed</strong> to complete' ) );
 		$this->assertSame( 0, $this->count_notes_containing( $order, '<strong>failed</strong> using' ) );
-		PlatformRequestClaimGuard::expect_cold_checkout_account_read( $order->get_id() );
 	}
 
 	/**
@@ -364,9 +362,12 @@ class WooPaymentsEarlierAttemptFailureTest extends WC_Unit_Test_Case {
 	/**
 	 * Run a checkout of the order with the saved card, through the payment runtime and the WooPayments provider.
 	 *
+	 * The account is read before the claim, as the card gateway and the renewal read it before they call the runtime.
+	 *
 	 * @param WC_Order $order Order.
 	 */
 	private function checkout( WC_Order $order ): void {
+		wc_get_container()->get( WooPaymentsCompositionDataSettler::class )->settle_account_before_claim( $order );
 		wc_get_container()->get( PaymentProcessingService::class )->process_checkout_outcome(
 			PaymentOperationContext::for_checkout( $this->reload( $order ), WooPaymentsPersistenceVocabulary::GATEWAY_ID, self::SAVED_CARD ),
 			wc_get_container()->get( WooPaymentsProvider::class )

@@ -15,18 +15,17 @@ use ReflectionProperty;
  */
 final class PlatformRequestClaimGuard {
 
-	/** Checkout availability has already read the account before the claim. */
-	private const CACHED_CHECKOUT_ACCOUNT = 'Checkout must use the cached account for Level 3 data';
-
 	/**
 	 * The order lock's platform request permissions. Each row requires the holder operation, verb and route,
 	 * and every listed provider caller > callee pair. The money operations and their decision reads come first.
-	 * The named checkout cache-only row requires zero sends. In direct checkout with a cold account cache,
-	 * the Level 3 country lookup can fetch the account under the claim. If it does not warm the cache,
-	 * the composition data settler can fetch the account when the provider applies payment effects.
-	 * Remove the three direct checkout skips when checkout reads the account once before taking the claim.
-	 * Capture can also fetch the account for Level 3 data.
-	 * That fetch is a violation until capture reads the Level 3 country from the stored account.
+	 * No row lets checkout, capture, payment intent creation or terminal capture read the account: each entry point
+	 * reads it once before its claim, so the Level 3 lookup and the composition data settler read it from memory.
+	 * The webhooks' two account reads are the remaining stated exceptions, until events read the account before their claim.
+	 *
+	 * Stated limit: the cached account is checked for expiry on every read. When it expires between the read before
+	 * the claim and a read under it, the later read fetches the account under the claim. That is about 1 in 2,500 admin
+	 * captures and 1 in 30,000 front-end payments, and it costs about a second of hold. Closing it would change what the
+	 * account cache means for every reader in a request, so it is not closed. No test moves the clock between the reads.
 	 *
 	 * Hook callbacks under the claim are outside coverage if they use another transport or never run in the test.
 	 * The guard also misses requests to other hosts, tests that mock the HTTP client below the guard,
@@ -70,7 +69,6 @@ final class PlatformRequestClaimGuard {
 		array( '*', 'GET payment_methods/{id}', 'WooPaymentsOrderCardInfo::handle_order_payment_card_info>fetch_payment_method_details', '@failed-email' ),
 		array( 'payment status update', 'GET accounts', 'Webhooks/PaymentIntentEventHandler::process_order_payment_event>run_settled', 'WooPaymentsCompositionDataSettler::run_settled>get_cached_account_data', 'WooPaymentsAccountService::fetch_account_data>get_account' ),
 		array( 'capture', 'GET accounts/fraud_services', 'WooPaymentsFraudOrderTrackingService::handle_woocommerce_update_order>is_sift_tracking_enabled', 'WooPaymentsFraudService::get_cached_public_config>fetch_public_fraud_services_config' ),
-		self::CACHED_CHECKOUT_ACCOUNT => array( 'checkout', 'GET accounts', 'WooPaymentsIntentRequestBuilder::charge_request_data>get_data_from_order', 'WooPaymentsLevel3Service::get_data_from_order>get_account_country' ),
 	);
 
 	/** @var bool Whether a Payments test is running. */
@@ -203,29 +201,14 @@ final class PlatformRequestClaimGuard {
 			}
 		}
 
-		foreach ( self::RULES as $name => $rule ) {
+		foreach ( self::RULES as $rule ) {
 			list( $holder, $route ) = $rule;
 			$pattern                = str_replace( '\{id\}', '[^/]+', preg_quote( $route, '~' ) );
 			if ( ( $operation === $holder || '*' === $holder ) && preg_match( '~^' . $pattern . '$~D', $request ) && ! array_diff( array_slice( $rule, 2 ), $sites ) ) {
-				if ( self::CACHED_CHECKOUT_ACCOUNT === $name ) {
-					self::$violations[] = self::CACHED_CHECKOUT_ACCOUNT . " (order $order_id, $request)";
-				}
 				return;
 			}
 		}
 		self::$violations[] = "$operation order $order_id: $request via " . implode( ', ', $sites );
-	}
-
-	/**
-	 * The Level 3 country lookup currently warms the account before the composition data settler reads it.
-	 * Any additional violation still fails. An unexpected pass calls for removing the expected-failure marker.
-	 *
-	 * @param int $order_id Order processed without the gateway availability check.
-	 */
-	public static function expect_cold_checkout_account_read( int $order_id ): void {
-		Assert::assertSame( array( self::CACHED_CHECKOUT_ACCOUNT . " (order $order_id, GET accounts)" ), self::$violations );
-		self::$violations = array();
-		Assert::markTestSkipped( 'With a cold account cache, the Level 3 country lookup or the composition data settler can fetch the account from the platform under the checkout claim. Remove this skip when checkout reads the account once before taking the claim.' );
 	}
 
 	/**

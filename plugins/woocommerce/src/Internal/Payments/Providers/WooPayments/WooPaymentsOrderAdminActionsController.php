@@ -752,6 +752,10 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 		}
 		// A refused status change is retried while a retry slot is left (schedule_retry()).
 		$retried = array( PaymentOperationContext::PAYMENT_DATA_RETRIED_ON_LOCK_REFUSAL => $on_status_change && isset( WebhookReliabilityService::RETRY_DELAYS_SECONDS[ $retry ] ) );
+		// The account is read before the capture claim, so the Level 3 lookup under it does not fetch it.
+		if ( PaymentProcessingService::OPERATION_CAPTURE === $operation ) {
+			wc_get_container()->get( WooPaymentsCompositionDataSettler::class )->settle_account_before_claim( $order );
+		}
 		try {
 			$outcome = PaymentProcessingService::OPERATION_CAPTURE === $operation
 				? $this->processing_service->capture(

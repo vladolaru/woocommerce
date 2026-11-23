@@ -371,6 +371,8 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 			return $this->server_error();
 		}
 
+		// The account is read before the claim, so nothing under the claim fetches it while the merchant waits at the counter.
+		$this->get_composition_data_settler()->settle_account_before_claim( $order );
 		$order_payment_lock = wc_get_container()->get( OrderPaymentLock::class );
 		$vocabulary         = new WooPaymentsPersistenceVocabulary();
 		$lock_token         = $this->claim_terminal_capture_lock( $order_payment_lock, $order, $vocabulary, $intent_id );

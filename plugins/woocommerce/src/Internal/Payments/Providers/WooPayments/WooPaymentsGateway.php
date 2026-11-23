@@ -1647,6 +1647,8 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return $payment_method_error_result;
 		}
 
+		// The account is read before the checkout claim, so nothing under the claim fetches it.
+		wc_get_container()->get( WooPaymentsCompositionDataSettler::class )->settle_account_before_claim( $order );
 		$context                        = PaymentOperationContext::for_checkout(
 			$order,
 			$this->id,

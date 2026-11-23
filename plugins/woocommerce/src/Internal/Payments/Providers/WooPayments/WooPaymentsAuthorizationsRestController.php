@@ -233,6 +233,10 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 		}
 
 		$this->add_fraud_outcome_manual_entry( $order, 'capture' === $action ? 'approve' : 'block' );
+		// The account is read before the capture claim, so the Level 3 lookup under it does not fetch it.
+		if ( 'capture' === $action ) {
+			wc_get_container()->get( WooPaymentsCompositionDataSettler::class )->settle_account_before_claim( $order );
+		}
 
 		$outcome = 'capture' === $action
 			? $this->processing_service->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $this->provider )

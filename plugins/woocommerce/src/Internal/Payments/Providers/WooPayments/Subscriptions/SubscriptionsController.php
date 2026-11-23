@@ -19,6 +19,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCompositionDataSettler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsHtmlUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
@@ -352,6 +353,9 @@ class SubscriptionsController implements RegisterHooksInterface {
 			$renewal_order->save_meta_data();
 		}
 
+		// The account is read before the renewal's claim, so nothing under the claim fetches it. Under Action Scheduler
+		// refreshes are off, so this reads only the stored account.
+		wc_get_container()->get( WooPaymentsCompositionDataSettler::class )->settle_account_before_claim( $renewal_order );
 		try {
 			$outcome = $this->get_processing_service()->process_checkout_outcome(
 				PaymentOperationContext::for_checkout(

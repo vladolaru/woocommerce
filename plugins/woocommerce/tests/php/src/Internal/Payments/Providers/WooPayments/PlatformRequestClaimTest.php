@@ -7,16 +7,22 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\HttpClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\DisputeEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\PaymentIntentEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAuthorizationsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderAdminActionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderCardInfo;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentDetailsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTerminalPaymentsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Tests\Internal\Payments\PlatformRequestClaimGuard;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
@@ -24,6 +30,8 @@ use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeB
 use Automattic\WooCommerce\Testing\Tools\TestingContainer;
 use WC_Order;
 use WC_Unit_Test_Case;
+use WP_REST_Request;
+use WP_REST_Response;
 
 /**
  * Exercise the order claim permissions through provider code and the real API client.
@@ -50,7 +58,34 @@ class PlatformRequestClaimTest extends WC_Unit_Test_Case {
 		);
 		update_option( 'wcpay_onboarding_test_mode', 'yes' );
 		delete_option( 'wcpay_account_data' );
-		$this->http = new FakeHttpClient();
+		$this->http = new class() extends FakeHttpClient {
+			/** @var array|null The account response every account request gets, or null to answer it from the queue. */
+			public ?array $account = null;
+
+			/**
+			 * Answer an account request with the account when one is set, whenever it comes, and other requests from the queue.
+			 *
+			 * @param string      $method         HTTP method.
+			 * @param string      $path           WPCOM path.
+			 * @param string[]    $headers        Request headers.
+			 * @param string|null $body           Request body.
+			 * @param int         $timeout        Request timeout.
+			 * @param bool        $use_user_token Whether to sign with the connection-owner user token.
+			 * @param bool        $blocking       Whether the request should block for the response.
+			 * @return mixed
+			 */
+			public function respond_to_request( string $method, string $path, array $headers = array(), ?string $body = null, int $timeout = 70, bool $use_user_token = false, bool $blocking = true ) {
+				if ( null === $this->account || ! preg_match( '~/wcpay/accounts(?:\?|$)~', $path ) ) {
+					return parent::respond_to_request( $method, $path, $headers, $body, $timeout, $use_user_token, $blocking );
+				}
+				$queued          = $this->responses;
+				$this->responses = array( $this->account );
+				parent::respond_to_request( $method, $path, $headers, $body, $timeout, $use_user_token, $blocking );
+				$this->responses = $queued;
+
+				return $this->account;
+			}
+		};
 		$container  = wc_get_container();
 		$this->assertInstanceOf( TestingContainer::class, $container );
 		$container->replace( HttpClient::class, $this->http );
@@ -287,6 +322,372 @@ class PlatformRequestClaimTest extends WC_Unit_Test_Case {
 		$this->expectException( \PHPUnit\Framework\AssertionFailedError::class );
 		$this->expectExceptionMessageMatches( '/^checkout order ' . $order->get_id() . ': POST customers via [^\n]+$/D' );
 		PlatformRequestClaimGuard::finish();
+	}
+
+	/**
+	 * @testdox $_dataName reads a cold account once, before its claim, and reads nothing for the account under it.
+	 *
+	 * The Level 3 lookup and the composition data settler run under the claim and read the account the entry point read.
+	 * The guard's listener tells a read before the claim from one under it; the routes are compared in any order.
+	 *
+	 * @dataProvider provider_entry_points
+	 *
+	 * @param string   $entry  Runs the entry point.
+	 * @param string[] $routes Expected platform routes, in order.
+	 */
+	public function test_entry_point_reads_a_cold_account_before_its_claim( string $entry, array $routes ): void {
+		$this->http->account = $this->account_response();
+
+		$this->$entry( $this->authorized_order() );
+
+		$this->assertEqualsCanonicalizing( $routes, $this->routes() );
+	}
+
+	/**
+	 * Entry points that take an order payment claim and read the account under it.
+	 *
+	 * @return array<string,array{string,string[]}>
+	 */
+	public function provider_entry_points(): array {
+		return array(
+			'A direct checkout call'             => array( 'run_direct_checkout', array( 'accounts', 'customers', 'intentions' ) ),
+			'The order screen capture'           => array( 'run_order_screen_capture', array( 'accounts', 'intentions/pi_auth/capture' ) ),
+			'The status change capture'          => array( 'run_status_change_capture', array( 'accounts', 'intentions/pi_auth/capture' ) ),
+			'The REST capture'                   => array( 'run_rest_capture', array( 'intentions/pi_auth', 'accounts', 'intentions/pi_auth/capture' ) ),
+			'The REST payment intent creation'   => array( 'run_rest_payment_intent_creation', array( 'accounts', 'intentions' ) ),
+			'The terminal capture'               => array( 'run_terminal_capture', array( 'accounts', 'intentions/pi_auth', 'intentions/pi_auth/capture' ) ),
+			'A renewal run from an admin screen' => array( 'run_admin_renewal', array( 'accounts', 'intentions' ) ),
+		);
+	}
+
+	/**
+	 * @testdox When the read before the claim fails, the payment goes on with $_dataName and no second account read.
+	 *
+	 * @dataProvider provider_stored_accounts
+	 *
+	 * @param bool $stored Whether an expired US account is stored.
+	 */
+	public function test_failed_read_before_the_claim_leaves_the_payment_on_the_stored_account( bool $stored ): void {
+		if ( $stored ) {
+			$this->store_expired_account();
+		}
+		$order                 = $this->order();
+		$this->http->account   = $this->response( array( 'error' => array( 'code' => 'server_error' ) ), 500 );
+		$this->http->responses = array( $this->response( array( 'id' => 'cus_first' ) ), $this->intent_response() );
+
+		$this->pay_without_availability_check( $order );
+
+		$this->assertEqualsCanonicalizing( array( 'accounts', 'customers', 'intentions' ), $this->routes() );
+		$body = json_decode( (string) $this->http->last_body, true );
+		$this->assertSame( $stored, isset( $body['level3'] ), 'Level 3 data is sent with the stored US account, and left out with none.' );
+	}
+
+	/**
+	 * Stored account states for the failed read.
+	 *
+	 * @return array<string,array{bool}>
+	 */
+	public function provider_stored_accounts(): array {
+		return array(
+			'the expired account it stores' => array( true ),
+			'no stored account'             => array( false ),
+		);
+	}
+
+	/**
+	 * @testdox A throwing account refresh callback is logged, and the payment goes on with no account read under its claim.
+	 */
+	public function test_throwing_refresh_callback_before_the_claim_is_logged(): void {
+		$this->enable_logging();
+		$logger = RecordingWcLogger::install();
+		add_action(
+			'woocommerce_payments_account_refreshed',
+			static function (): void {
+				throw new \RuntimeException( 'Refresh callback failure.' );
+			}
+		);
+		$order                 = $this->order();
+		$this->http->account   = $this->account_response();
+		$this->http->responses = array( $this->response( array( 'id' => 'cus_first' ) ), $this->intent_response() );
+
+		$this->pay_without_availability_check( $order );
+
+		$this->assertEqualsCanonicalizing( array( 'accounts', 'customers', 'intentions' ), $this->routes() );
+		$this->assertArrayHasKey( 'level3', json_decode( (string) $this->http->last_body, true ) );
+		$lines = array_filter( $logger->lines, static fn( array $line ): bool => 'error' === $line[0] && 'Failed to read the WooPayments account before the payment.' === $line[1] );
+		$this->assertCount( 1, $lines );
+	}
+
+	/**
+	 * @testdox A status change capture retried by Action Scheduler reads no account from the platform.
+	 */
+	public function test_status_change_retry_under_action_scheduler_reads_no_account(): void {
+		$order = $this->authorized_order();
+		$order->set_status( 'completed' );
+		$order->save();
+		$this->http->responses = array( $this->recorded( 'capture_full_amount', $order ) );
+		wc_get_container()->get( WooPaymentsAccountService::class )->handle_action_scheduler_before_execute();
+
+		wc_get_container()->get( WooPaymentsOrderAdminActionsController::class )->handle_retry_status_change_operation( $order->get_id(), 'capture', 1 );
+
+		$this->assertSame( array( 'intentions/pi_auth/capture' ), $this->routes() );
+	}
+
+	/**
+	 * @testdox Cancelling an authorization from the order screen reads no account.
+	 */
+	public function test_order_screen_cancel_reads_no_account(): void {
+		$order                 = $this->authorized_order();
+		$this->http->responses = array( $this->recorded( 'authorize_manual_capture', $order, array( 'status' => 'canceled' ) ) );
+
+		wc_get_container()->get( WooPaymentsOrderAdminActionsController::class )->handle_woocommerce_order_action_cancel_authorization( $order );
+
+		$this->assertSame( array( 'intentions/pi_auth/cancel' ), $this->routes() );
+	}
+
+	/**
+	 * Pay through the card gateway as a direct caller does, without the availability check.
+	 *
+	 * @param WC_Order $order Order.
+	 */
+	private function run_direct_checkout( WC_Order $order ): void {
+		$order->delete_meta_data( '_intent_id' );
+		$order->delete_meta_data( '_intention_status' );
+		$order->set_transaction_id( '' );
+		$order->set_status( 'pending' );
+		$order->save();
+		$this->http->responses = array(
+			$this->response( array( 'id' => 'cus_first' ) ),
+			$this->intent_response(),
+		);
+
+		$this->pay_without_availability_check( $order );
+	}
+
+	/**
+	 * Capture from the order screen's Capture charge action.
+	 *
+	 * @param WC_Order $order Authorized order.
+	 */
+	private function run_order_screen_capture( WC_Order $order ): void {
+		$this->http->responses = array( $this->recorded( 'capture_full_amount', $order ) );
+
+		wc_get_container()->get( WooPaymentsOrderAdminActionsController::class )->handle_woocommerce_order_action_capture_charge( $order );
+	}
+
+	/**
+	 * Capture on the order's change to Completed.
+	 *
+	 * @param WC_Order $order Authorized order.
+	 */
+	private function run_status_change_capture( WC_Order $order ): void {
+		$this->http->responses = array( $this->recorded( 'capture_full_amount', $order ) );
+
+		wc_get_container()->get( WooPaymentsOrderAdminActionsController::class )->handle_woocommerce_order_status_completed( $order->get_id(), $order );
+	}
+
+	/**
+	 * Capture through the REST authorization route.
+	 *
+	 * @param WC_Order $order Authorized order.
+	 */
+	private function run_rest_capture( WC_Order $order ): void {
+		$this->http->responses = array(
+			$this->recorded( 'authorize_manual_capture', $order ),
+			$this->recorded( 'capture_full_amount', $order ),
+		);
+		$request               = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_authorization' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_auth' );
+
+		$response = wc_get_container()->get( WooPaymentsAuthorizationsRestController::class )->capture_authorization( $request );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response, is_wp_error( $response ) ? $response->get_error_code() : '' );
+	}
+
+	/**
+	 * Create and confirm a payment intent through the REST route.
+	 *
+	 * @param WC_Order $order Order.
+	 */
+	private function run_rest_payment_intent_creation( WC_Order $order ): void {
+		$order->delete_meta_data( '_intent_id' );
+		$order->delete_meta_data( '_intention_status' );
+		$order->set_transaction_id( '' );
+		$order->set_status( 'pending' );
+		$order->save();
+		$this->http->responses = array( $this->intent_response() );
+		$request               = new WP_REST_Request( 'POST', '/wc/v3/payments/payment_intents' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'customer', 'cus_rest' );
+		$request->set_param( 'payment_method', 'pm_card' );
+		$gateways                                  = WC()->payment_gateways()->payment_gateways;
+		WC()->payment_gateways()->payment_gateways = array( new WooPaymentsGateway() );
+
+		try {
+			$response = wc_get_container()->get( WooPaymentsPaymentDetailsRestController::class )->create_payment_intent( $request );
+		} finally {
+			WC()->payment_gateways()->payment_gateways = $gateways;
+		}
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response, is_wp_error( $response ) ? $response->get_error_code() : '' );
+	}
+
+	/**
+	 * Capture an in-person payment through the terminal route.
+	 *
+	 * @param WC_Order $order Order whose in-person payment is authorized.
+	 */
+	private function run_terminal_capture( WC_Order $order ): void {
+		$order->delete_meta_data( '_intent_id' );
+		$order->delete_meta_data( '_intention_status' );
+		$order->set_transaction_id( '' );
+		$order->set_status( 'pending' );
+		$order->save();
+		$this->http->responses = array(
+			$this->recorded( 'authorize_manual_capture', $order ),
+			$this->recorded( 'capture_full_amount', $order ),
+		);
+		$request               = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_auth' );
+
+		$response = wc_get_container()->get( WooPaymentsTerminalPaymentsRestController::class )->capture_terminal_payment( $request );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response, is_wp_error( $response ) ? $response->get_error_code() : '' );
+	}
+
+	/**
+	 * Charge a renewal with its saved card in an admin request, as the subscription screen's renewal action does.
+	 *
+	 * @param WC_Order $order Renewal order.
+	 */
+	private function run_admin_renewal( WC_Order $order ): void {
+		$order->delete_meta_data( '_intent_id' );
+		$order->delete_meta_data( '_intention_status' );
+		$order->set_transaction_id( '' );
+		$order->set_status( 'pending' );
+		$token = new \WC_Payment_Token_CC();
+		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$token->set_user_id( $order->get_customer_id() );
+		$token->set_token( 'pm_renewal' );
+		$token->set_card_type( 'visa' );
+		$token->set_last4( '4242' );
+		$token->set_expiry_month( '12' );
+		$token->set_expiry_year( '2035' );
+		$token->save();
+		$order->add_payment_token( $token );
+		$order->save();
+		update_user_option( $order->get_customer_id(), WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, 'cus_renewal' );
+		$this->http->responses = array( $this->intent_response() );
+		set_current_screen( 'edit-shop_subscription' );
+
+		try {
+			wc_get_container()->get( SubscriptionsController::class )->scheduled_subscription_payment( $order->get_total(), $order );
+		} finally {
+			set_current_screen( 'front' );
+		}
+	}
+
+	/**
+	 * Pay an order through the card gateway with a new card, as a direct caller with no shopper session does.
+	 *
+	 * Without a session the card-testing check reads no account, so nothing else reads it before the claim.
+	 *
+	 * @param WC_Order $order Order.
+	 */
+	private function pay_without_availability_check( WC_Order $order ): void {
+		$session                       = WC()->session;
+		WC()->session                  = null;
+		$_POST['wcpay-payment-method'] = 'pm_card';
+		try {
+			( new WooPaymentsGateway() )->process_payment( $order->get_id() );
+		} finally {
+			unset( $_POST['wcpay-payment-method'] );
+			WC()->session = $session;
+		}
+	}
+
+	/**
+	 * Create an on-hold order that stores an uncaptured WooPayments authorization.
+	 *
+	 * @return WC_Order
+	 */
+	private function authorized_order(): WC_Order {
+		$order = $this->order();
+		$order->set_transaction_id( 'pi_auth' );
+		$order->update_meta_data( '_intent_id', 'pi_auth' );
+		$order->update_meta_data( '_intention_status', 'requires_capture' );
+		$order->set_status( 'on-hold' );
+		$order->save();
+
+		return $order;
+	}
+
+	/**
+	 * Store the recorded US account, fetched two days ago, so a read refreshes it.
+	 */
+	private function store_expired_account(): void {
+		$fixture = wp_json_file_decode( __DIR__ . '/Fixtures/platform-test-drive-account.json', array( 'associative' => true ) );
+		update_option(
+			WooPaymentsDatabaseCache::ACCOUNT_KEY,
+			array(
+				'data'               => $fixture['account'],
+				'fetched'            => time() - 2 * DAY_IN_SECONDS,
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			),
+			false
+		);
+	}
+
+	/**
+	 * Turn on the gateway's debug logging.
+	 */
+	private function enable_logging(): void {
+		$settings                   = get_option( 'woocommerce_woocommerce_payments_settings' );
+		$settings['enable_logging'] = 'yes';
+		update_option( 'woocommerce_woocommerce_payments_settings', $settings );
+	}
+
+	/**
+	 * A recorded manual capture response for the order, as intent pi_auth.
+	 *
+	 * @param string              $pair      Entry pair in Fixtures/platform-manual-capture.json.
+	 * @param WC_Order            $order     Order.
+	 * @param array<string,mixed> $overrides Fields to replace.
+	 * @return array
+	 */
+	private function recorded( string $pair, WC_Order $order, array $overrides = array() ): array {
+		$recording = wp_json_file_decode( __DIR__ . '/Fixtures/platform-manual-capture.json', array( 'associative' => true ) );
+		foreach ( $recording['entries'] as $entry ) {
+			if ( $pair === $entry['pair'] ) {
+				$intent             = array_merge( $entry['response']['body'], $overrides );
+				$intent['id']       = 'pi_auth';
+				$intent['amount']   = (int) round( 100 * (float) $order->get_total() );
+				$intent['metadata'] = array(
+					'order_id'  => (string) $order->get_id(),
+					'order_key' => $order->get_order_key(),
+				);
+				return $this->response( $intent );
+			}
+		}
+		$this->fail( "No recorded entry {$pair}." );
+	}
+
+	/**
+	 * An intent that waits on the shopper's authentication.
+	 *
+	 * @return array
+	 */
+	private function intent_response(): array {
+		return $this->response(
+			array(
+				'id'            => 'pi_first',
+				'status'        => 'requires_action',
+				'client_secret' => 'secret',
+			)
+		);
 	}
 
 	/**

@@ -200,6 +200,8 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 			);
 		}
 
+		// The account is read before the claim, so nothing under the claim fetches it.
+		wc_get_container()->get( WooPaymentsCompositionDataSettler::class )->settle_account_before_claim( $order );
 		$order_payment_lock = wc_get_container()->get( OrderPaymentLock::class );
 		$vocabulary         = new WooPaymentsPersistenceVocabulary();
 		$lock_token         = $order_payment_lock->claim( $order, $vocabulary, null, 'payment intent creation' );
