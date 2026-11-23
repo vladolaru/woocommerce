@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # On this store the active checkout renders no payment method on either side (the stand-in account has no connection), so the gate measures feature off, lowest tier and boot, not a checkout that takes a card; that reading is the exit run's, on a store with a real account.
-# The exit run checks whether the shopper tracking script loads on a store with a real account (B-1050).
+# The exit run checks whether the shopper tracking script loads on a store with a real account.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
