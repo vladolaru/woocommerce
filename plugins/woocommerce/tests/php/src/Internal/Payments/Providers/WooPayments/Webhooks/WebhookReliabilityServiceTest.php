@@ -5,6 +5,8 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\W
 
 use ActionScheduler;
 use ActionScheduler_Store;
+use Automattic\WooCommerce\Enums\OrderStatus;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendCurrenciesController;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
@@ -589,10 +591,34 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A payment_intent.succeeded refused by a dead checkout's order payment lock is retried past the lock TTL, then marks the order paid once.
 	 */
 	public function test_lock_refused_succeeded_event_is_retried_past_the_lock_ttl_and_then_applies(): void {
-		$order = wc_create_order();
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'woocommerce_price_num_decimals', '0' );
+		update_option( 'woocommerce_feature_multi_currency_enabled', 'yes' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '1.04' );
+		$frontend = wc_get_container()->get( MultiCurrencyFrontendCurrenciesController::class );
+		$order    = wc_create_order();
+		$this->assertInstanceOf( \WC_Order::class, $order );
+		$order->add_product( \WC_Helper_Product::create_simple_product() );
+		$order->set_currency( 'EUR' );
 		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
-		$order->set_total( '10.00' );
-		$order->save();
+		// The shopper's request uses the EUR decimals. The retry job has no frontend currency hooks.
+		add_filter( 'wc_get_price_decimals', array( $frontend, 'get_price_decimals' ), 900 );
+		try {
+			$frontend->format_in_order_currency(
+				'EUR',
+				static function () use ( $order ): string {
+					$order->set_total( '10.40' );
+					$order->save();
+					return (string) $order->get_total();
+				}
+			);
+		} finally {
+			remove_filter( 'wc_get_price_decimals', array( $frontend, 'get_price_decimals' ), 900 );
+		}
+		$this->assertSame( '10.40', $order->get_total() );
+		$this->assertSame( 0, wc_get_price_decimals() );
 		$vocabulary = new WooPaymentsPersistenceVocabulary();
 		// A checkout that died after the platform captured keeps the lock until its TTL runs out.
 		$this->hold_order_payment_lock( $order, $vocabulary, 'pi_lock_ttl' );
@@ -606,8 +632,8 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 				'object' => array(
 					'id'             => 'pi_lock_ttl',
 					'status'         => 'succeeded',
-					'currency'       => 'usd',
-					'amount'         => 1000,
+					'currency'       => 'eur',
+					'amount'         => 1040,
 					'payment_method' => 'pm_lock_ttl',
 					'metadata'       => array(
 						'order_id'  => (string) $order->get_id(),
@@ -657,9 +683,23 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		}
 
 		$scheduler->scheduled_jobs = array();
-		$service->process_event( 'evt_lock_ttl' );
+		$logger                    = RecordingWcLogger::install();
+		$on_hold_notifications     = did_action( 'woocommerce_order_status_pending_to_on-hold_notification' );
+		add_filter( 'wp_doing_cron', '__return_true' );
+		try {
+			$frontend->register();
+			$this->assertFalse( has_filter( 'wc_get_price_decimals', array( $frontend, 'get_price_decimals' ) ) );
+			$service->process_event( 'evt_lock_ttl' );
+		} finally {
+			remove_filter( 'wp_doing_cron', '__return_true' );
+		}
 
 		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( \WC_Order::class, $order );
+		$this->assertSame( OrderStatus::PROCESSING, $order->get_status() );
+		$this->assertSame( $on_hold_notifications, did_action( 'woocommerce_order_status_pending_to_on-hold_notification' ) );
+		$this->assertStringNotContainsString( 'put on hold: intent', implode( ' ', array_column( $logger->get_errors(), 1 ) ) );
+		$this->assertStringNotContainsString( 'was put <strong>on hold</strong>', implode( ' ', wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ) ) );
 		$this->assertFalse( $order->needs_payment(), 'The retry after the lock expired must record the payment.' );
 		$this->assertSame( 'pi_lock_ttl', $order->get_transaction_id() );
 		$charge_notes = array_filter(

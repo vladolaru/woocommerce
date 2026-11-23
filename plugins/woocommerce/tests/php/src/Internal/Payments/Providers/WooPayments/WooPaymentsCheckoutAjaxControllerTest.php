@@ -2272,22 +2272,27 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 * Client 11.3.0 attaches the intent and completes the order (class-wc-payment-gateway-wcpay.php:4663, :4771); a split
 	 * gateway's ID names the payment method after the card gateway's (:3071-3077).
 	 *
-	 * @testWith ["woocommerce_payments"]
-	 *           ["woocommerce_payments_link"]
+	 * @testWith ["woocommerce_payments", "USD", 2]
+	 *           ["woocommerce_payments_link", "USD", 2]
+	 *           ["woocommerce_payments", "EUR", 0]
 	 *
-	 * @param string $gateway The order's WooPayments gateway.
+	 * @param string $gateway  The order's WooPayments gateway.
+	 * @param string $currency Order currency.
+	 * @param int    $decimals Store precision in the callback.
 	 */
-	public function test_update_order_status_completes_an_order_still_paid_with_woopayments( string $gateway ): void {
-		$order = $this->create_woopayments_order( '50.00' );
+	public function test_update_order_status_completes_an_order_still_paid_with_woopayments( string $gateway, string $currency, int $decimals ): void {
+		$order = $this->create_woopayments_order( '10.40' );
+		$order->set_currency( $currency );
 		$order->set_payment_method( $gateway );
 		$order->update_meta_data( '_intent_id', 'pi_own' );
 		$order->update_meta_data( '_intention_status', 'requires_action' );
 		$order->save();
+		update_option( 'woocommerce_price_num_decimals', $decimals );
 		$intent = array(
 			'id'             => 'pi_own',
 			'status'         => 'succeeded',
-			'amount'         => 5000,
-			'currency'       => 'usd',
+			'amount'         => 1040,
+			'currency'       => strtolower( $currency ),
 			'customer'       => 'cus_own',
 			'payment_method' => 'pm_own',
 			'metadata'       => array( 'order_id' => (string) $order->get_id() ),

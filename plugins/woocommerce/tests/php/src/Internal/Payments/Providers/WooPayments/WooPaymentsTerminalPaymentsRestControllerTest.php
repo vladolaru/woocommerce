@@ -887,22 +887,28 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
-	 * @testdox A payment the reader captured for another amount than the order total writes the hold note, then completes the order as the terminal capture does.
+	 * @testdox The reader payment completes the order and writes a hold note only for an amount different from the stored total.
 	 *
 	 * Client 11.3.0 includes/admin/class-wc-rest-payments-orders-controller.php:215-217 holds the order through
 	 * update_order_status_from_intent() (class-wc-payments-order-service.php:486-487, :2095-2139), then :281
 	 * mark_terminal_payment_completed() sets the filtered completed status (class-wc-payments-order-service.php:929-942).
+	 * @testWith [1000, 1]
+	 *           [1040, 0]
+	 *
+	 * @param int $amount Amount the reader collected in cents.
+	 * @param int $holds  Expected mismatch holds.
 	 */
-	public function test_capture_terminal_payment_notes_the_hold_of_a_reader_payment_for_another_amount_and_completes_the_order(): void {
+	public function test_capture_terminal_payment_notes_a_mismatch_against_the_stored_total( int $amount, int $holds ): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
 		add_filter( 'wcpay_dev_mode', '__return_false' );
-		$logger                                       = RecordingWcLogger::install();
-		$order                                        = $this->create_order( 12.34, 'USD' );
+		$logger = RecordingWcLogger::install();
+		$order  = $this->create_order( 10.40, 'EUR' );
+		update_option( 'woocommerce_price_num_decimals', '0' );
 		$this->api_client->payment_intention_response = array(
 			'id'       => 'pi_terminal_other_amount',
 			'status'   => 'succeeded',
-			'amount'   => 1000,
-			'currency' => 'usd',
+			'amount'   => $amount,
+			'currency' => 'eur',
 			'metadata' => array( 'order_id' => (string) $order->get_id() ),
 			'charges'  => array( 'data' => array( array( 'id' => 'ch_terminal_other_amount' ) ) ),
 		);
@@ -917,9 +923,9 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 		$notes = array_map( static fn( $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 		$this->assertSame( 'completed', $order->get_status() );
 		$this->assertSame( 'pi_terminal_other_amount', $order->get_transaction_id() );
-		$this->assertCount( 1, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'was put <strong>on hold</strong>' ) ) );
-		$this->assertCount( 0, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'successfully charged' ) ) );
-		$this->assertCount( 1, array_filter( array_map( 'strval', array_column( $logger->lines, 1 ) ), static fn( string $line ): bool => false !== strpos( $line, 'put on hold: intent' ) ) );
+		$this->assertCount( $holds, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'was put <strong>on hold</strong>' ) ) );
+		$this->assertCount( 1 - $holds, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'successfully charged' ) ) );
+		$this->assertCount( $holds, array_filter( array_map( 'strval', array_column( $logger->lines, 1 ) ), static fn( string $line ): bool => false !== strpos( $line, 'put on hold: intent' ) ) );
 	}
 
 	/**

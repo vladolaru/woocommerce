@@ -8,6 +8,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
+use Automattic\WooCommerce\Internal\Utilities\CurrencyUtil;
 use WC_Order;
 
 defined( 'ABSPATH' ) || exit;
@@ -85,8 +87,12 @@ class WooPaymentsAmountMismatchHold {
 			|| 0 === strpos( $intent_id, 'seti_' )
 			|| WooPaymentsOrderEffects::captures_the_authorization( $order, $intent, $stored_intent_id )
 			|| WooPaymentsIntentCodec::is_invoice_intent( $intent )
-			|| WooPaymentsCurrencyUtils::intent_matches_order_total( $intent, $order )
 		) {
+			return null;
+		}
+
+		$total = $this->get_stored_total( $order );
+		if ( WooPaymentsCurrencyUtils::intent_matches_order_total( $intent, $order, $total ) ) {
 			return null;
 		}
 
@@ -108,10 +114,32 @@ class WooPaymentsAmountMismatchHold {
 				$intent_id,
 				$charged_amount,
 				$charged_currency,
-				$order->get_total(),
+				$total,
 				$order->get_currency()
 			),
 		);
+	}
+
+	/**
+	 * Read a separate copy when the request rounds the order more coarsely than its currency.
+	 *
+	 * @param WC_Order $order Order being paid.
+	 * @return float Order total for the mismatch decision.
+	 */
+	private function get_stored_total( WC_Order $order ): float {
+		$target = CurrencyUtil::get_price_decimals( $order->get_currency() );
+		if ( wc_get_price_decimals() >= $target ) {
+			return (float) $order->get_total();
+		}
+
+		$use_order_precision = static fn( $decimals ): int => max( absint( $decimals ), $target );
+		add_filter( 'wc_get_price_decimals', $use_order_precision, PHP_INT_MAX );
+		try {
+			$fresh_order = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
+			return (float) $fresh_order->get_total();
+		} finally {
+			remove_filter( 'wc_get_price_decimals', $use_order_precision, PHP_INT_MAX );
+		}
 	}
 
 	/**

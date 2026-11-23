@@ -37,6 +37,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsChargeAmbiguityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundAmbiguityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderAdminActionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAuthorizationsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventIngestor;
@@ -791,6 +792,71 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 
 		$capture_notes_after_direct_repeat = array_values( array_filter( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), $capture_note_matches ) );
 		$this->assertCount( 1, $capture_notes_after_direct_repeat, "A genuine second capture must not duplicate the capture note, matching the client's note-once dedup (os:1663)." );
+	}
+
+	/**
+	 * @testdox Capture sends the admin request's rounded total and its success webhook keeps the captured order paid.
+	 */
+	public function test_capture_charge_keeps_the_amount_read_in_admin(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$order = $this->create_recorded_manual_capture_order();
+		$order->set_currency( 'EUR' );
+		$order->set_total( '10.40' );
+		$order->save();
+		update_option( 'woocommerce_price_num_decimals', '0' );
+		$order     = $this->reload( $order );
+		$transport = $this->create_operation_transport( PaymentProcessingService::OPERATION_CAPTURE );
+		$this->create_unpaid_order_platform( $transport );
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ) );
+		$this->sut->register();
+		$this->fire_order_hook( 'woocommerce_order_action_capture_charge', $order );
+
+		$body = json_decode( $transport->requests[0]['body'], true );
+		$this->assertSame( 1000, $body['amount_to_capture'] );
+		$this->assertSame( (string) $order->get_id(), $body['level3']['merchant_reference'] );
+		$this->assertTrue( $this->reload( $order )->has_status( OrderStatus::PROCESSING ) );
+		$notes                               = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+		$event                               = $this->recorded_payment_success_event( $order, self::RECORDED_INTENT, self::RECORDED_CHARGE );
+		$event['data']['object']['currency'] = 'eur';
+		$event['data']['object']['amount']   = 1000;
+		wc_get_container()->get( EventIngestor::class )->process( $event );
+
+		$this->assertSame( OrderStatus::PROCESSING, $this->reload( $order )->get_status() );
+		$this->assertSame( wp_list_pluck( $notes, 'id' ), wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'id' ) );
+	}
+
+	/**
+	 * @testdox A succeeded payment records the charge or the hold for the amount the platform received.
+	 * @testWith ["EUR", 0, 900, "on-hold"]
+	 *           ["EUR", 0, 1000, "on-hold"]
+	 *           ["EUR", 2, 1040, "processing"]
+	 *           ["USD", 2, 1040, "processing"]
+	 *           ["USD", 2, 1000, "on-hold"]
+	 *
+	 * @param string $currency Order and charge currency.
+	 * @param int    $decimals Precision when the event is applied.
+	 * @param int    $amount   Amount received by the platform.
+	 * @param string $status   Expected order status.
+	 */
+	public function test_success_records_the_amount_at_order_currency_precision( string $currency, int $decimals, int $amount, string $status ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$order = $this->create_unpaid_order( 'requires_action' );
+		$order->set_currency( $currency );
+		$order->set_total( '10.40' );
+		$order->save();
+		update_option( 'woocommerce_price_num_decimals', $decimals );
+		$order = $this->reload( $order );
+
+		$request = wc_get_container()->get( WooPaymentsOrderDetailsService::class )->build_create_payment_intent_request_from_order( $order, 'cus_order', 'pm_order', false );
+		$this->assertSame( 0 === $decimals ? 1000 : 1040, $request['amount'] );
+
+		$event                               = $this->recorded_payment_success_event( $order, 'pi_unpaid', 'ch_unpaid' );
+		$event['data']['object']['currency'] = strtolower( $currency );
+		$event['data']['object']['amount']   = $amount;
+		wc_get_container()->get( EventIngestor::class )->process( $event );
+
+		$this->assertSame( $status, $this->reload( $order )->get_status() );
+		$this->assertSame( OrderStatus::ON_HOLD === $status ? 1 : 0, $this->count_notes_containing( $order, 'was put <strong>on hold</strong>' ) );
 	}
 
 	/**
@@ -4091,6 +4157,24 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 1, $this->count_notes_containing( $order, 'successfully charged' ) );
 		$this->assertSame( 0, $this->count_notes_containing( $order, 'Unpaid order cancelled' ) );
 		$this->assertFalse( UnpaidOrderTimeoutMarker::is_marked( $order ) );
+	}
+
+	/**
+	 * @testdox The hold-stock job settles a payment in full even when the job reads the order with fewer decimals.
+	 */
+	public function test_unpaid_order_whose_stored_total_matches_the_charge_is_completed(): void {
+		$order = $this->create_unpaid_order( 'requires_action' );
+		$order->set_currency( 'EUR' );
+		$order->set_total( '10.40' );
+		$order->save();
+		$this->age_unpaid_order( $order );
+		update_option( 'woocommerce_price_num_decimals', '0' );
+		$intent             = self::unpaid_intent( $order, 'succeeded', 1040 );
+		$intent['currency'] = 'eur';
+		$this->run_unpaid_order_job( $this->create_transport( self::http_json( 200, $intent ) ) );
+
+		$this->assertSame( OrderStatus::PROCESSING, $this->reload( $order )->get_status() );
+		$this->assertSame( 1, $this->count_notes_containing( $order, 'successfully charged' ) );
 	}
 
 	/**

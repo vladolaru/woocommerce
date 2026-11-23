@@ -101,12 +101,13 @@ final class WooPaymentsCurrencyUtils {
 	 *
 	 * @param array<string,mixed> $intent A PaymentIntent as the platform returns it.
 	 * @param WC_Order            $order  Order object.
+	 * @param float|null          $total  Total read at the order currency precision, or null to use the loaded total.
 	 * @return bool
 	 */
-	public static function intent_matches_order_total( array $intent, WC_Order $order ): bool {
+	public static function intent_matches_order_total( array $intent, WC_Order $order, ?float $total = null ): bool {
 		return strtolower( isset( $intent['currency'] ) && is_string( $intent['currency'] ) ? $intent['currency'] : '' ) === strtolower( (string) $order->get_currency() )
 			&& is_numeric( $intent['amount'] ?? null )
-			&& self::is_order_total_in_minor_units( (int) $intent['amount'], $order );
+			&& self::amount_to_minor_units( $total ?? (float) $order->get_total(), (string) $order->get_currency() ) === (int) $intent['amount'];
 	}
 
 	/**

@@ -3,10 +3,12 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAmountMismatchHold;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -28,6 +30,70 @@ class WooPaymentsAmountMismatchHoldTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 		$this->sut = wc_get_container()->get( WooPaymentsAmountMismatchHold::class );
+	}
+
+	/**
+	 * @testdox A payment is compared to the saved total even when the request rounds the order on read.
+	 * @testWith ["10.40", 1040, "eur", false]
+	 *           ["10.40", 900, "eur", true]
+	 *           ["10.40", 1000, "eur", true]
+	 *           ["10.60", 1060, "eur", false]
+	 *           ["10.40", 1040, "gbp", true]
+	 *
+	 * @param string $total    Saved EUR total.
+	 * @param int    $amount   Amount charged in minor units.
+	 * @param string $currency Currency charged.
+	 * @param bool   $held     Whether the payment differs from the saved total.
+	 */
+	public function test_compares_the_saved_total_in_a_lower_precision_request( string $total, int $amount, string $currency, bool $held ): void {
+		$order = $this->create_order( $total, 'EUR' );
+		update_option( 'woocommerce_price_num_decimals', '0' );
+		$order   = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
+		$rounded = (string) $order->get_total();
+		$this->assertSame( number_format( (float) $total, 0 ), $rounded );
+
+		$hold = $this->sut->decide_hold( $order, $this->succeeded_intent( $amount, $currency ) );
+
+		$this->assertSame( $held, null !== $hold );
+		if ( null !== $hold ) {
+			$this->assertStringContainsString( 'order total is ' . (float) $total . ' EUR.', $hold['log_line'] );
+		}
+		$this->assertSame( 0, wc_get_price_decimals() );
+		$this->assertSame( $rounded, (string) $order->get_total(), 'The capture action still sees the rounded total.' );
+	}
+
+	/**
+	 * @testdox The separate duplicate-payment check still compares to the total loaded by the current request.
+	 */
+	public function test_duplicate_payment_check_keeps_the_loaded_amount(): void {
+		$order = $this->create_order( '10.40', 'EUR' );
+		update_option( 'woocommerce_price_num_decimals', '0' );
+		$order   = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
+		$service = wc_get_container()->get( WooPaymentsDuplicatePaymentPreventionService::class );
+		$this->assertNull( $service->get_amount_mismatch_error( $this->succeeded_intent( 1000, 'eur' ), $order ) );
+	}
+
+	/**
+	 * @testdox An ordinary USD store can decide a payment without another order read or a decimals override.
+	 */
+	public function test_ordinary_store_uses_the_loaded_total(): void {
+		$order = $this->create_order( '10.40', 'USD' );
+		$reads = did_action( 'clean_post_cache' );
+		$seen  = array();
+		$watch = static function ( $decimals ) use ( &$seen ) {
+			$seen[] = isset( $GLOBALS['wp_filter']['wc_get_price_decimals']->callbacks[ PHP_INT_MAX ] );
+			return $decimals;
+		};
+		add_filter( 'wc_get_price_decimals', $watch );
+
+		try {
+			$this->assertNull( $this->sut->decide_hold( $order, $this->succeeded_intent( 1040, 'usd' ) ) );
+			$this->assertNotNull( $this->sut->decide_hold( $order, $this->succeeded_intent( 1000, 'usd' ) ) );
+		} finally {
+			remove_filter( 'wc_get_price_decimals', $watch );
+		}
+		$this->assertSame( $reads, did_action( 'clean_post_cache' ) );
+		$this->assertNotContains( true, $seen );
 	}
 
 	/**
