@@ -36,6 +36,7 @@ class DisputeEventHandlerTest extends WC_Unit_Test_Case {
 	use OrderPaymentLockTestTrait;
 	use ProviderTextLogAssertions;
 	use RefundLinesTestTrait;
+	use OrderNoteSnapshotTestTrait;
 
 	/**
 	 * The System Under Test.
@@ -82,6 +83,168 @@ class DisputeEventHandlerTest extends WC_Unit_Test_Case {
 		$this->original_options = array();
 		$this->reset_container_replacements();
 		parent::tearDown();
+	}
+
+	/**
+	 * Extension 11.3.0 appends an escaped dispute ID to the note and inserts the reason and deadline raw.
+	 *
+	 * @dataProvider created_note_histories
+	 * @param string $status  Status of the incoming dispute.
+	 * @param string $history Notes already on this charge.
+	 */
+	public function test_created_note_history( string $status, string $history ): void {
+		$order = $this->create_disputable_order();
+		$order->set_currency( 'USD' );
+		$order->set_total( 100 );
+		$order->update_meta_data( '_charge_id', 'ch_notes' );
+		$order->save();
+		$event           = $this->get_created_event_object( 'dp_current', $status );
+		$event['charge'] = 'ch_notes';
+
+		$inquiry = 'warning_needs_response' === $status;
+		$source  = $inquiry ? 'A payment inquiry has been raised for %1$s with reason "%2$s". <a>Response due by %3$s</a>.' : 'Payment has been disputed for %1$s with reason "%2$s". <a>Response due by %3$s</a>.';
+		$title   = $inquiry ? 'Enquête' : 'Litige';
+		$reason  = "L'achat & la carte";
+		$this->capture_note_translations(
+			array(
+				$source                    => $title . ' %1$s / %2$s / <a>%3$s</a>.',
+				'Transaction unauthorized' => $reason,
+				'(Dispute ID: %s)'         => '(Litige %s)',
+			),
+			'stale snapshot' === $history
+		);
+		update_option( '_wcpay_feature_customer_multi_currency', '1' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
+		add_filter( 'wcpay_multi_currency_should_output_explicit_price', '__return_false' );
+		add_filter( 'woocommerce_date_format', static fn() => 'English' === $history ? 'Y-m-d' : "Y & 'd'" );
+		$amount = wc_price( 10, array( 'currency' => 'USD' ) );
+		$date   = date_i18n( wc_date_format(), $event['evidence_details']['due_by'] );
+		$link   = '<a href="' . admin_url( 'admin.php?page=wc-admin&path=%2Fpayments%2Ftransactions%2Fdetails&id=ch_notes' ) . '" target="_blank" rel="noopener noreferrer">';
+		$id     = 'neighbour' === $history ? 'dp_other' : 'dp_current';
+		if ( 'built-in' === $history ) {
+			$this->deliver_in_prior_note_language( $source, 'Rückfrage %1$s / %2$s. <a>%3$s</a>.', fn() => $this->sut->process( 'charge.dispute.created', $event ) );
+		} elseif ( 'English' === $history ) {
+			$order->add_order_note( ( $inquiry ? 'A payment inquiry has been raised for ' : 'Payment has been disputed for ' ) . $amount . ' with reason &quot;Transaction unauthorized&quot;. ' . $link . 'Response due by ' . $date . '</a>. (Dispute ID: ' . $id . ')' );
+		} elseif ( 'first' !== $history ) {
+			$suffix = 'old format' === $history ? '' : ' (Litige ' . $id . ')';
+			$order->add_order_note( $title . ' ' . $amount . ' USD / ' . $reason . ' / ' . $link . $date . '</a>.' . $suffix );
+		}
+		$order = wc_get_order( $order->get_id() );
+		$order->set_status( OrderStatus::COMPLETED );
+		$open = 'neighbour' === $history ? array( 'dp_other' ) : array();
+		if ( $open ) {
+			$order->update_meta_data( '_wcpay_open_dispute_ids', $open );
+		} else {
+			$order->delete_meta_data( '_wcpay_open_dispute_ids' );
+		}
+		if ( 'snapshot' === $history ) {
+			$closed_status = $inquiry ? 'warning_closed' : 'won';
+			$order->add_order_note( $title . ' ' . $closed_status . '. ' . $link . 'Détails</a>. (Litige dp_current)' );
+		}
+		$order->save();
+		$before = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+
+		$this->sut->process( 'charge.dispute.created', $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$runs  = in_array( $history, array( 'first', 'neighbour', 'stale snapshot', 'old format' ), true );
+		$this->assertSame( $runs ? 'on-hold' : 'completed', $order->get_status() );
+		$this->assertSame( $runs ? array_merge( $open, array( 'dp_current' ) ) : '', $order->get_meta( '_wcpay_open_dispute_ids' ) );
+		$this->assertCount( $before + ( $runs ? 2 : 0 ), wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+	}
+
+	/** @return array<string,array{string,string}> Created dispute and inquiry histories. */
+	public static function created_note_histories(): array {
+		return self::note_history_cases( array( 'needs_response', 'warning_needs_response' ) );
+	}
+
+	/**
+	 * A loss handled by the extension leaves an unlinked local refund and its closing note.
+	 *
+	 * @dataProvider closed_note_histories
+	 * @param string $status  Status of the incoming close.
+	 * @param string $history Notes already on this charge.
+	 */
+	public function test_closed_note_history( string $status, string $history ): void {
+		wc_get_container()->get( RefundRowCapture::class )->register();
+		$order = $this->create_disputable_order();
+		$order->set_currency( 'USD' );
+		$order->set_total( 100 );
+		$order->update_meta_data( '_charge_id', 'ch_notes' );
+		$order->save();
+		$event = array(
+			'id'       => 'dp_current',
+			'charge'   => 'ch_notes',
+			'amount'   => 3000,
+			'currency' => 'usd',
+			'status'   => $status,
+		);
+
+		$inquiry = 'warning_closed' === $status;
+		$source  = $inquiry ? 'Payment inquiry has been closed with status %1$s. See <a>payment status</a> for more details.' : 'Dispute has been closed with status %1$s. See <a>dispute overview</a> for more details.';
+		$title   = $inquiry ? 'Enquête' : 'Litige';
+		$this->capture_note_translations(
+			array(
+				$source            => $title . ' %1$s. <a>Détails</a>.',
+				'(Dispute ID: %s)' => '(Litige %s)',
+			),
+			'stale snapshot' === $history
+		);
+		$link = '<a href="' . admin_url( 'admin.php?page=wc-admin&path=%2Fpayments%2Ftransactions%2Fdetails&id=ch_notes' ) . '" target="_blank" rel="noopener noreferrer">';
+		$id   = 'neighbour' === $history ? 'dp_other' : 'dp_current';
+		$lost = 'lost' === $status;
+		if ( 'built-in' === $history ) {
+			$this->deliver_in_prior_note_language( $source, 'Geschlossen: %1$s. <a>Details</a>.', fn() => $this->sut->process( 'charge.dispute.closed', $event ) );
+		} elseif ( 'first' !== $history ) {
+			if ( $lost ) {
+				$refund = wc_create_refund(
+					array(
+						'order_id' => $order->get_id(),
+						'amount'   => 30,
+					)
+				);
+				$this->assertInstanceOf( \WC_Order_Refund::class, $refund );
+				$this->assertSame( '', $refund->get_meta( '_wcpay_dispute_id' ) );
+			}
+			if ( 'English' === $history ) {
+				$order->add_order_note( str_replace( '<a>', $link, sprintf( $source, $status ) ) . ' (Dispute ID: ' . $id . ')' );
+			} else {
+				$suffix = 'old format' === $history ? '' : ' (Litige ' . $id . ')';
+				$order->add_order_note( $title . ' ' . $status . '. ' . $link . 'Détails</a>.' . $suffix );
+			}
+		}
+		$order = wc_get_order( $order->get_id() );
+		if ( 'neighbour' === $history ) {
+			$created = $inquiry ? 'A payment inquiry has been raised for ' : 'Payment has been disputed for ';
+			$order->add_order_note( $created . wc_price( 30, array( 'currency' => 'USD' ) ) . ' with reason &quot;Transaction unauthorized&quot;. ' . $link . 'Response due by ' . date_i18n( wc_date_format(), 1893456000 ) . '</a>. (Dispute ID: dp_current)' );
+			$order->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_current' ) );
+		}
+		$order->set_status( OrderStatus::PROCESSING );
+		$order->save();
+		$prior_rows = count( $order->get_refunds() );
+		$before     = count( $this->find_order_note( $order, $status . '.' ) );
+
+		$this->sut->process( 'charge.dispute.closed', $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$runs  = in_array( $history, array( 'first', 'neighbour', 'stale snapshot', 'old format' ), true );
+		$this->assertSame( $runs && ! $lost ? 'completed' : 'processing', $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_wcpay_open_dispute_ids' ) );
+		$this->assertCount( $prior_rows + ( $lost && $runs ? 1 : 0 ), $order->get_refunds() );
+		$this->assertCount( $before + ( $runs ? 1 : 0 ), $this->find_order_note( $order, $status . '.' ) );
+		if ( $lost ) {
+			$linked = array();
+			foreach ( $order->get_refunds() as $refund ) {
+				$this->assertEquals( 30, $refund->get_amount() );
+				$linked[] = $refund->get_meta( '_wcpay_dispute_id' );
+			}
+			$this->assertSame( $runs || 'built-in' === $history, in_array( 'dp_current', $linked, true ) );
+		}
+	}
+
+	/** @return array<string,array{string,string}> Close outcomes and histories. */
+	public static function closed_note_histories(): array {
+		return self::note_history_cases( array( 'warning_closed', 'won', 'lost' ) );
 	}
 
 	/**

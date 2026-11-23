@@ -431,11 +431,29 @@ class RefundEventHandler {
 			}
 		}
 
+		$notes    = wc_get_container()->get( OrderPaymentNotes::class );
+		$identity = 'refund:' . $refund_id . ( $is_cancelled ? ':canceled' : ':failed' );
 		if ( ! $is_cancelled && 'insufficient_funds' === $failure_reason ) {
-			$this->add_refund_order_note_once( $order, $this->get_insufficient_balance_refund_note( $order, $amount ), $refund_id, 'failed' );
+			// Equal amounts yield identical wording even for different refunds.
+			if ( 0 === $notes->find_by_identity( $order, $identity, $this->persistence_vocabulary ) ) {
+				$notes->add( $order, $this->get_insufficient_balance_refund_note( $order, $amount ), $identity, $this->persistence_vocabulary );
+			}
 		} else {
-			$note = $this->get_failed_refund_note( $order, $refund_id, $amount, $currency, $is_cancelled, $failure_reason );
-			$this->add_refund_order_note_once( $order, $note, $refund_id, $is_cancelled ? 'canceled' : 'failed' );
+			$service     = wc_get_container()->get( WooPaymentsOrderNoteService::class );
+			$major_units = WooPaymentsCurrencyUtils::amount_from_minor_units( $amount, $currency );
+			$price       = WooPaymentsCurrencyUtils::format_explicit_order_price( $major_units, $currency, $order );
+			$note        = $this->get_failed_refund_note( $price, $refund_id, $is_cancelled, $failure_reason );
+			$equivalents = $service->extension_failed_refund_notes( $order, $price, $major_units, $currency, $refund_id, $is_cancelled, $failure_reason );
+			$note_id     = $service->find_note( $order, $note, $identity, $equivalents );
+			if ( $note_id > 0 ) {
+				$service->record_note_identity( $note_id, $identity );
+				// Removing a recreated refund row still requires repairing the order status.
+				if ( null === $wc_refund ) {
+					return;
+				}
+			} else {
+				$notes->add( $order, $note, $identity, $this->persistence_vocabulary );
+			}
 		}
 
 		if ( OrderStatus::REFUNDED === $order->get_status() ) {
@@ -469,18 +487,15 @@ class RefundEventHandler {
 	/**
 	 * Build the failed or canceled refund note.
 	 *
-	 * @param WC_Order $order          Order object.
-	 * @param string   $refund_id      Provider refund ID.
-	 * @param int      $amount         Refund amount in provider minor units.
-	 * @param string   $currency       Refund currency.
-	 * @param bool     $is_cancelled   Whether the refund was canceled.
-	 * @param string   $failure_reason Provider failure reason.
+	 * @param string $formatted_amount Formatted refund amount.
+	 * @param string $refund_id      Provider refund ID.
+	 * @param bool   $is_cancelled   Whether the refund was canceled.
+	 * @param string $failure_reason Provider failure reason.
 	 * @return string
 	 */
-	private function get_failed_refund_note( WC_Order $order, string $refund_id, int $amount, string $currency, bool $is_cancelled, string $failure_reason ): string {
-		$formatted_amount = WooPaymentsCurrencyUtils::format_explicit_order_price( WooPaymentsCurrencyUtils::amount_from_minor_units( $amount, $currency ), $currency, $order );
-		$status           = $is_cancelled ? esc_html__( 'cancelled', 'woocommerce' ) : esc_html__( 'unsuccessful', 'woocommerce' );
-		$suffix           = $is_cancelled ? '.' : ': ' . $this->get_refund_failure_message( $failure_reason );
+	private function get_failed_refund_note( string $formatted_amount, string $refund_id, bool $is_cancelled, string $failure_reason ): string {
+		$status = $is_cancelled ? esc_html__( 'cancelled', 'woocommerce' ) : esc_html__( 'unsuccessful', 'woocommerce' );
+		$suffix = $is_cancelled ? '.' : ': ' . $this->get_refund_failure_message( $failure_reason );
 
 		// As client 11.1.0 writes it (class-wc-payments-order-service.php:1979-1993): the text is escaped around its tags, each
 		// value this code supplies is escaped at its source, and the amount is wc_price() output stored as the extension stores it.

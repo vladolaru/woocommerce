@@ -49,6 +49,7 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 	use OrderPaymentLockTestTrait;
 	use ProviderTextLogAssertions;
 	use RefundLinesTestTrait;
+	use OrderNoteSnapshotTestTrait;
 
 	/**
 	 * Original multi-currency options restored after each test.
@@ -106,6 +107,157 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 		$this->reset_container_replacements();
 		parent::tearDown();
 	}
+
+	/**
+	 * A failed refund may arrive after a different full refund or after the original row was recreated.
+	 *
+	 * @dataProvider failed_note_histories
+	 * @param string $status  Provider refund status.
+	 * @param string $history Notes and refund rows left on the order.
+	 */
+	public function test_failed_note_history( string $status, string $history ): void {
+		$order   = $this->create_refundable_order();
+		$event   = array(
+			'id'             => 're_current',
+			'charge'         => 'ch_123',
+			'amount'         => 1000,
+			'currency'       => 'usd',
+			'status'         => $status,
+			'failure_reason' => 'declined',
+		);
+		$format  = 'A refund of %1$s was <strong>%2$s</strong> using %3$s (<code>%4$s</code>)%5$s';
+		$message = 'The refund was declined by the card issuer.';
+		$french  = 'Remboursement de %1$s <strong>%2$s</strong> via %3$s (<code>%4$s</code>)%5$s';
+		$strings = array(
+			$format        => $french,
+			'cancelled'    => 'annulé & clos',
+			'unsuccessful' => 'refusé & clos',
+			$message       => "L'émetteur & la banque ont refusé.",
+		);
+		$this->capture_note_translations( $strings, 'stale snapshot' === $history );
+		update_option( '_wcpay_feature_customer_multi_currency', '1' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
+		add_filter( 'wcpay_multi_currency_should_output_explicit_price', '__return_false' );
+		$linked = in_array( $history, array( 'neighbour', 'recreated row', 'first' ), true );
+		if ( 'built-in' === $history ) {
+			$this->deliver_in_prior_note_language( $format, 'Erstattung %1$s <strong>%2$s</strong> / %3$s (<code>%4$s</code>)%5$s', fn() => $this->sut->process( 'charge.refund.updated', $event ) );
+		} elseif ( 'first' !== $history ) {
+			$english = in_array( $history, array( 'English', 'recreated row' ), true );
+			$word    = 'canceled' === $status ? 'cancelled' : 'unsuccessful';
+			$amount  = wc_price( 10, array( 'currency' => 'USD' ) );
+			if ( ! $english ) {
+				$amount .= 'old format' === $history ? ' US$' : ' USD';
+			}
+			$order->add_order_note(
+				sprintf(
+					$english ? $format : $french,
+					$amount,
+					$english ? $word : $strings[ $word ],
+					'WooPayments',
+					'neighbour' === $history ? 're_other' : 're_current',
+					'canceled' === $status ? '.' : ': ' . ( $english ? $message : $strings[ $message ] )
+				)
+			);
+		}
+
+		// Deliver a successful full refund, including the real row and its provider ID.
+		$charge                                 = $this->get_successful_refund_charge();
+		$charge['refunds']['data'][0]['id']     = $linked ? 're_current' : 're_later';
+		$charge['refunds']['data'][0]['amount'] = 1000;
+		$this->sut->process( 'charge.refunded', $charge );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'refunded', $order->get_status() );
+		$this->assertSame( 'successful', $order->get_meta( '_wcpay_refund_status' ) );
+		$this->assertCount( 1, $order->get_refunds() );
+
+		$this->sut->process( 'charge.refund.updated', $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$stop  = in_array( $history, array( 'English', 'snapshot', 'built-in' ), true );
+		$this->assertSame( $stop ? 'refunded' : 'failed', $order->get_status() );
+		$this->assertSame( $stop ? 'successful' : 'failed', $order->get_meta( '_wcpay_refund_status' ) );
+		$this->assertCount( $linked ? 0 : 1, $order->get_refunds() );
+		$notes = $this->get_notes_containing( $order, '<strong>' );
+		$this->assertCount( in_array( $history, array( 'neighbour', 'stale snapshot', 'old format' ), true ) ? 2 : 1, $notes );
+	}
+
+	/** @return array<string,array{string,string}> Failure and cancellation histories. */
+	public static function failed_note_histories(): array {
+		return self::note_history_cases( array( 'failed', 'canceled' ) ) + array(
+			'failed / recreated row'   => array( 'failed', 'recreated row' ),
+			'canceled / recreated row' => array( 'canceled', 'recreated row' ),
+		);
+	}
+
+	/**
+	 * Equal amounts have identical wording. Only a note stamped for this refund can suppress its next note.
+	 *
+	 * @dataProvider insufficient_funds_histories
+	 * @param string $history Prior failure on this order.
+	 */
+	public function test_insufficient_funds_note_history( string $history ): void {
+		$order = $this->create_refundable_order();
+		$this->set_woopayments_account_country( 'HK' );
+		$event = array(
+			'id'             => 're_current',
+			'charge'         => 'ch_123',
+			'amount'         => 400,
+			'currency'       => 'usd',
+			'status'         => 'failed',
+			'failure_reason' => 'insufficient_funds',
+		);
+		if ( in_array( $history, array( 'built-in', 'neighbour' ), true ) ) {
+			$prior       = $event;
+			$prior['id'] = 'neighbour' === $history ? 're_other' : 're_current';
+			$this->sut->process( 'charge.refund.updated', $prior );
+		} elseif ( 'first' !== $history ) {
+			$price  = wc_price( 4, array( 'currency' => 'USD' ) );
+			$format = 'Refund of %s <strong>failed</strong> due to insufficient funds in your WooPayments balance.';
+			if ( 'snapshot' === $history ) {
+				$this->capture_note_translations( array( $format => 'Solde insuffisant pour %s.' ) );
+			}
+			$order->add_order_note( sprintf( 'English' === $history ? $format : 'Solde insuffisant pour %s.', $price . ( 'old format' === $history ? ' US$' : '' ) ) );
+		}
+
+		if ( 'built-in' === $history ) {
+			$this->install_test_translations(
+				array( 'woocommerce' => array( 'Refund of %1$s <strong>failed</strong> due to insufficient funds in your WooPayments balance.' => 'Solde insuffisant pour %1$s.' ) )
+			);
+		}
+		$order = wc_get_order( $order->get_id() );
+		$order->set_status( OrderStatus::REFUNDED );
+		$order->update_meta_data( '_wcpay_refund_status', 'successful' );
+		$order->save();
+		$this->sut->process( 'charge.refund.updated', $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'failed', $order->get_status() );
+		$this->assertSame( 'failed', $order->get_meta( '_wcpay_refund_status' ) );
+		$notes = $this->get_notes_containing( $order, 'woocommerce-Price-amount' );
+		$this->assertCount( in_array( $history, array( 'built-in', 'first' ), true ) ? 1 : 2, $notes );
+		$identities = array();
+		foreach ( $notes as $note ) {
+			$identities[] = get_comment_meta( $note->id, '_wc_woopayments_note_identity', false );
+		}
+		$this->assertContains( array( hash( 'sha256', 'refund:re_current:failed' ) ), $identities );
+		if ( 'neighbour' === $history ) {
+			$this->assertContains( array( hash( 'sha256', 'refund:re_other:failed' ) ), $identities );
+		}
+		if ( 'English' === $history ) {
+			$this->sut->process( 'charge.refund.updated', $event );
+			$this->assertCount( 2, $this->get_notes_containing( $order, 'woocommerce-Price-amount' ) );
+		}
+	}
+
+	/** @return array<string,array{string}> Insufficient-funds histories. */
+	public static function insufficient_funds_histories(): array {
+		$cases = array();
+		foreach ( self::note_history_cases( array( 'insufficient funds' ) ) as $label => $case ) {
+			$cases[ $label ] = array( $case[1] );
+		}
+		return $cases;
+	}
+
 
 	/**
 	 * @testdox Failed refund notes follow the WooPayments extension's explicit-price rule.
@@ -223,7 +375,7 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A $status refund update on an order carrying the note the WooPayments extension wrote for it adds no second note.
+	 * @testdox An extension note for $_dataName suppresses a new note only when its wording identifies the refund.
 	 *
 	 * Client 11.1.0 writes the failed or cancelled note in handle_failed_refund() (class-wc-payments-order-service.php:1979-1999),
 	 * deduped by exact text, and the insufficient-balance note with FROD support in handle_insufficient_balance_for_refund()
@@ -264,7 +416,7 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 				static fn( $note ): bool => false !== strpos( (string) $note->content, 'efund of' )
 			)
 		);
-		$this->assertCount( 1, $refund_notes );
+		$this->assertCount( 'insufficient_funds' === $failure_reason ? 2 : 1, $refund_notes );
 		$this->assertSame( $extension_note, $refund_notes[0]->content );
 	}
 

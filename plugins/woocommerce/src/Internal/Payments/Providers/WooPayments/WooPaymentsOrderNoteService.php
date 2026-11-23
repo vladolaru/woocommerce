@@ -21,8 +21,8 @@ use WC_Order;
  *
  * New notes use WooCommerce's text domain. To recognise existing notes, the candidate builders also render extension
  * wordings from the live catalog and each language captured at the switch. WooCommerce alone formats cancellation failures,
- * rate limits, refund failures (including insufficient balance), other charges, payments on paid orders, collected invoices
- * and operation refusals. Dispute, fee-detail, subscription, generic capture failure and earlier-attempt cleanup notes also
+ * rate limits, synchronous refund failures, insufficient-balance failures, other charges, payments on paid orders, collected invoices
+ * and operation refusals. Dispute updates, fee-detail, subscription, generic capture failure and earlier-attempt cleanup notes also
  * use only WooCommerce's text domain.
  *
  * @since 11.0.0
@@ -2229,6 +2229,213 @@ class WooPaymentsOrderNoteService {
 			$status_text
 		);
 	}
+	/**
+	 * Render the created note the extension left on the order, including its raw reason and deadline.
+	 *
+	 * @param WC_Order $order      Order being disputed.
+	 * @param string   $current_price Event amount as formatted for the current order.
+	 * @param float    $amount     Disputed amount in major units.
+	 * @param string   $reason     Provider reason code.
+	 * @param string   $due_by     Formatted evidence deadline.
+	 * @param string   $url        Dispute details URL.
+	 * @param bool     $is_inquiry Whether this is a payment inquiry.
+	 * @param string   $dispute_id Provider dispute ID.
+	 * @return string[] Comparison wordings only.
+	 * @since 11.4.0
+	 */
+	public function extension_dispute_created_notes( WC_Order $order, string $current_price, float $amount, string $reason, string $due_by, string $url, bool $is_inquiry, string $dispute_id ): array {
+		return $this->extension_amount_wordings(
+			$order,
+			$current_price,
+			$amount,
+			$order->get_currency(),
+			function ( string $price ) use ( $reason, $due_by, $url, $is_inquiry, $dispute_id ): string {
+				if ( $is_inquiry ) {
+					/* translators: %1$s: disputed amount, %2$s: reason, %3$s: evidence deadline. */
+					$format = __( 'A payment inquiry has been raised for %1$s with reason "%2$s". <a>Response due by %3$s</a>.', 'woocommerce-payments' );
+				} else {
+					/* translators: %1$s: disputed amount, %2$s: reason, %3$s: evidence deadline. */
+					$format = __( 'Payment has been disputed for %1$s with reason "%2$s". <a>Response due by %3$s</a>.', 'woocommerce-payments' );
+				}
+
+				$note = sprintf(
+					WooPaymentsHtmlUtils::escape_interpolated_html( $format, array( 'a' => '<a href="%4$s" target="_blank" rel="noopener noreferrer">' ) ),
+					$price,
+					$this->extension_dispute_reason( $reason ),
+					$due_by,
+					$url
+				);
+				return $this->append_extension_dispute_id( $note, $dispute_id );
+			}
+		);
+	}
+
+	/**
+	 * Render the closed note in each extension catalogue.
+	 *
+	 * @param string $status     Dispute status.
+	 * @param string $url        Dispute details URL.
+	 * @param bool   $is_inquiry Whether this is a payment inquiry.
+	 * @param string $dispute_id Provider dispute ID.
+	 * @return string[] Comparison wordings only.
+	 * @since 11.4.0
+	 */
+	public function extension_dispute_closed_notes( string $status, string $url, bool $is_inquiry, string $dispute_id ): array {
+		return $this->extension_wordings(
+			function () use ( $status, $url, $is_inquiry, $dispute_id ): string {
+				if ( $is_inquiry ) {
+					/* translators: %1$s: dispute status. */
+					$format = __( 'Payment inquiry has been closed with status %1$s. See <a>payment status</a> for more details.', 'woocommerce-payments' );
+				} else {
+					/* translators: %1$s: dispute status. */
+					$format = __( 'Dispute has been closed with status %1$s. See <a>dispute overview</a> for more details.', 'woocommerce-payments' );
+				}
+
+				$note = sprintf(
+					WooPaymentsHtmlUtils::escape_interpolated_html( $format, array( 'a' => '<a href="%2$s" target="_blank" rel="noopener noreferrer">' ) ),
+					$status,
+					$url
+				);
+				return $this->append_extension_dispute_id( $note, $dispute_id );
+			}
+		);
+	}
+
+	/**
+	 * Append the suffix that distinguishes sibling disputes in the extension's wording.
+	 *
+	 * @param string $note       Note text.
+	 * @param string $dispute_id Provider dispute ID.
+	 * @return string
+	 */
+	private function append_extension_dispute_id( string $note, string $dispute_id ): string {
+		/* translators: %s: dispute ID. */
+		return '' === $dispute_id ? $note : $note . ' ' . sprintf( esc_html__( '(Dispute ID: %s)', 'woocommerce-payments' ), esc_html( $dispute_id ) );
+	}
+
+	/**
+	 * Build the extension's failure note from the event amount and the same catalogue for every word.
+	 *
+	 * @param WC_Order $order          Order being refunded.
+	 * @param string   $current_price Event amount as formatted for the current order.
+	 * @param float    $amount         Refund amount in major units.
+	 * @param string   $currency       Refund currency.
+	 * @param string   $refund_id      Provider refund ID.
+	 * @param bool     $is_cancelled   Whether the refund was cancelled.
+	 * @param string   $failure_reason Provider failure reason.
+	 * @return string[] Comparison wordings only.
+	 * @since 11.4.0
+	 */
+	public function extension_failed_refund_notes( WC_Order $order, string $current_price, float $amount, string $currency, string $refund_id, bool $is_cancelled, string $failure_reason ): array {
+		return $this->extension_amount_wordings(
+			$order,
+			$current_price,
+			$amount,
+			$currency,
+			function ( string $price ) use ( $refund_id, $is_cancelled, $failure_reason ): string {
+				return sprintf(
+					WooPaymentsHtmlUtils::escape_interpolated_html(
+						/* translators: %1$s: refund amount, %2$s: status, %3$s: WooPayments, %4$s: refund ID, %5$s: failure message or period. */
+						__( 'A refund of %1$s was <strong>%2$s</strong> using %3$s (<code>%4$s</code>)%5$s', 'woocommerce-payments' ),
+						array(
+							'strong' => '<strong>',
+							'code'   => '<code>',
+						)
+					),
+					$price,
+					$is_cancelled ? __( 'cancelled', 'woocommerce-payments' ) : __( 'unsuccessful', 'woocommerce-payments' ),
+					'WooPayments',
+					$refund_id,
+					$is_cancelled ? '.' : ': ' . $this->extension_refund_failure_message( $failure_reason )
+				);
+			}
+		);
+	}
+
+	/**
+	 * Render each event price in the live and captured extension catalogues.
+	 *
+	 * @param WC_Order                $order    Order object.
+	 * @param string                  $current_price Event amount as formatted for the current order.
+	 * @param float                   $amount   Event amount in major units.
+	 * @param string                  $currency Event currency.
+	 * @param callable(string):string $render   Renders a comparison note with a formatted price.
+	 * @return string[]
+	 */
+	private function extension_amount_wordings( WC_Order $order, string $current_price, float $amount, string $currency, callable $render ): array {
+		$prices = array_unique( array_merge( array( $current_price ), $this->format_amount_candidates( $order, $amount, $currency ) ) );
+		$notes  = array();
+		foreach ( $prices as $price ) {
+			$notes = array_merge( $notes, $this->extension_wordings( fn(): string => $render( $price ) ) );
+		}
+		return $this->unique_note_candidates( ...$notes );
+	}
+
+	/**
+	 * Get the reason label from the extension catalogue currently being rendered.
+	 *
+	 * @param string $reason Provider reason code.
+	 * @return string
+	 */
+	private function extension_dispute_reason( string $reason ): string {
+		switch ( $reason ) {
+			case 'bank_cannot_process':
+				return __( 'Bank cannot process', 'woocommerce-payments' );
+			case 'check_returned':
+				return __( 'Check returned', 'woocommerce-payments' );
+			case 'credit_not_processed':
+				return __( 'Credit not processed', 'woocommerce-payments' );
+			case 'customer_initiated':
+				return __( 'Customer initiated', 'woocommerce-payments' );
+			case 'debit_not_authorized':
+				return __( 'Debit not authorized', 'woocommerce-payments' );
+			case 'duplicate':
+				return __( 'Duplicate', 'woocommerce-payments' );
+			case 'fraudulent':
+				return __( 'Transaction unauthorized', 'woocommerce-payments' );
+			case 'incorrect_account_details':
+				return __( 'Incorrect account details', 'woocommerce-payments' );
+			case 'insufficient_funds':
+				return __( 'Insufficient funds', 'woocommerce-payments' );
+			case 'product_not_received':
+				return __( 'Product not received', 'woocommerce-payments' );
+			case 'product_unacceptable':
+				return __( 'Product unacceptable', 'woocommerce-payments' );
+			case 'subscription_canceled':
+				return __( 'Subscription canceled', 'woocommerce-payments' );
+			case 'unrecognized':
+				return __( 'Unrecognized', 'woocommerce-payments' );
+			case 'noncompliant':
+				return __( 'Non-compliant', 'woocommerce-payments' );
+		}
+		return __( 'General', 'woocommerce-payments' );
+	}
+
+	/**
+	 * Get the user-facing failure message for a refund failure reason.
+	 *
+	 * @param string $failure_reason Provider failure reason.
+	 * @return string
+	 */
+	private function extension_refund_failure_message( string $failure_reason ): string {
+		switch ( $failure_reason ) {
+			case 'lost_or_stolen_card':
+				return __( 'The card used for the original payment has been reported lost or stolen.', 'woocommerce-payments' );
+			case 'expired_or_canceled_card':
+				return __( 'The card used for the original payment has expired or been canceled.', 'woocommerce-payments' );
+			case 'charge_for_pending_refund_disputed':
+				return __( 'The charge for this refund is being disputed by the customer.', 'woocommerce-payments' );
+			case 'insufficient_funds':
+				return __( 'Insufficient funds in your WooPayments balance.', 'woocommerce-payments' );
+			case 'declined':
+				return __( 'The refund was declined by the card issuer.', 'woocommerce-payments' );
+			case 'merchant_request':
+				return __( 'The refund was canceled at your request.', 'woocommerce-payments' );
+		}
+
+		return __( 'An unknown error occurred while processing the refund.', 'woocommerce-payments' );
+	}
+
 	// phpcs:enable WordPress.WP.I18n.TextDomainMismatch
 
 	/**

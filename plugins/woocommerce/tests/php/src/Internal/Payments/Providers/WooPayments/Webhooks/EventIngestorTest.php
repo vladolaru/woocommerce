@@ -6215,9 +6215,9 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox charge.refund.updated repairs status metadata when a failed-refund note already exists.
+	 * @testdox charge.refund.updated preserves later status changes when the refund failure was already handled.
 	 */
-	public function test_charge_refund_updated_failed_reconciles_existing_note_without_returning_early(): void {
+	public function test_charge_refund_updated_failed_preserves_later_status_on_replay(): void {
 		$order = $this->create_refundable_woopayments_order( '10.00' );
 		$event = $this->create_refund_updated_event(
 			array(
@@ -6230,7 +6230,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->delete_meta_data( '_wcpay_refund_status' );
+		$order->update_meta_data( '_wcpay_refund_status', 'successful' );
 		$order->set_status( 'refunded' );
 		$order->save();
 
@@ -6239,8 +6239,8 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		$order = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'failed', $order->get_status() );
-		$this->assertSame( 'failed', $order->get_meta( '_wcpay_refund_status', true ) );
+		$this->assertSame( 'refunded', $order->get_status() );
+		$this->assertSame( 'successful', $order->get_meta( '_wcpay_refund_status', true ) );
 	}
 
 	/**

@@ -196,22 +196,26 @@ class DisputeEventHandler {
 	 * @param string              $charge_id    Charge ID.
 	 */
 	private function process_dispute_created( WC_Order $order, array $event_object, string $charge_id ): void {
-		$evidence   = $this->get_required_array( $event_object, 'evidence_details' );
-		$dispute_id = isset( $event_object['id'] ) ? $this->get_required_string( $event_object, 'id' ) : '';
-		$status     = $this->get_required_string( $event_object, 'status' );
-		$is_inquiry = 0 === strpos( $status, 'warning_' );
-		$amount     = $this->get_formatted_dispute_amount( $order, $this->get_required_int( $event_object, 'amount' ) );
-		$reason     = $this->get_dispute_reason_description( $this->get_required_string( $event_object, 'reason' ) );
-		$due_by     = $this->get_dispute_due_by_date( $this->get_required_int( $evidence, 'due_by' ) );
-		$note       = $this->get_dispute_created_note( $charge_id, $amount, $reason, $due_by, $is_inquiry, $dispute_id );
-		$note_type  = $is_inquiry ? 'created_inquiry' : 'created_dispute';
+		$evidence    = $this->get_required_array( $event_object, 'evidence_details' );
+		$dispute_id  = isset( $event_object['id'] ) ? $this->get_required_string( $event_object, 'id' ) : '';
+		$status      = $this->get_required_string( $event_object, 'status' );
+		$is_inquiry  = 0 === strpos( $status, 'warning_' );
+		$minor_units = $this->get_required_int( $event_object, 'amount' );
+		$amount      = WooPaymentsCurrencyUtils::amount_from_minor_units( $minor_units, $order->get_currency() );
+		$price       = $this->get_formatted_dispute_amount( $order, $amount );
+		$url         = $this->get_dispute_url( $charge_id );
+		$reason      = $this->get_required_string( $event_object, 'reason' );
+		$due_by      = $this->get_dispute_due_by_date( $this->get_required_int( $evidence, 'due_by' ) );
+		$note        = $this->get_dispute_created_note( $url, $price, $this->get_dispute_reason_description( $reason ), $due_by, $is_inquiry, $dispute_id );
+		$equivalents = $this->order_note_service->extension_dispute_created_notes( $order, $price, $amount, $reason, $due_by, $url, $is_inquiry, $dispute_id );
+		$note_type   = $is_inquiry ? 'created_inquiry' : 'created_dispute';
 
 		$this->run_under_dispute_lock(
 			$order,
 			'charge.dispute.created',
 			$event_object,
 			$charge_id,
-			function ( WC_Order $order ) use ( $note, $dispute_id, $status, $note_type ): bool {
+			function ( WC_Order $order ) use ( $note, $dispute_id, $status, $note_type, $equivalents ): bool {
 				// A created event retried after the dispute closed finds the closed note and changes nothing, so the order is not put
 				// back on hold for a dispute that is over.
 				if ( $this->has_dispute_closed_note( $order, $dispute_id ) ) {
@@ -227,7 +231,8 @@ class DisputeEventHandler {
 					function () use ( $order, $dispute_id ): void {
 						$this->add_open_dispute_id( $order, $dispute_id );
 						$order->update_status( OrderStatus::ON_HOLD );
-					}
+					},
+					$equivalents
 				);
 			}
 		);
@@ -241,18 +246,20 @@ class DisputeEventHandler {
 	 * @param string              $charge_id    Charge ID.
 	 */
 	private function process_dispute_closed( WC_Order $order, array $event_object, string $charge_id ): void {
-		$status     = $this->get_required_string( $event_object, 'status' );
-		$dispute_id = $this->get_required_string( $event_object, 'id' );
-		$is_inquiry = 0 === strpos( $status, 'warning_' );
-		$note       = $this->get_dispute_closed_note( $charge_id, $status, $is_inquiry, $dispute_id );
-		$note_type  = $is_inquiry ? 'closed_inquiry' : 'closed_dispute';
+		$status      = $this->get_required_string( $event_object, 'status' );
+		$dispute_id  = $this->get_required_string( $event_object, 'id' );
+		$is_inquiry  = 0 === strpos( $status, 'warning_' );
+		$url         = $this->get_dispute_url( $charge_id );
+		$note        = $this->get_dispute_closed_note( $url, $status, $is_inquiry, $dispute_id );
+		$equivalents = $this->order_note_service->extension_dispute_closed_notes( $status, $url, $is_inquiry, $dispute_id );
+		$note_type   = $is_inquiry ? 'closed_inquiry' : 'closed_dispute';
 
 		$this->run_under_dispute_lock(
 			$order,
 			'charge.dispute.closed',
 			$event_object,
 			$charge_id,
-			fn( WC_Order $order ): bool => $this->apply_dispute_closed( $order, $event_object, $note, $dispute_id, $status, $note_type, $charge_id )
+			fn( WC_Order $order ): bool => $this->apply_dispute_closed( $order, $event_object, $note, $dispute_id, $status, $note_type, $charge_id, $equivalents )
 		);
 	}
 
@@ -266,9 +273,10 @@ class DisputeEventHandler {
 	 * @param string              $status                 Dispute status.
 	 * @param string              $note_type              Note type.
 	 * @param string              $charge_id              Charge ID.
+	 * @param string[]            $equivalents            Extension wordings for the same close.
 	 * @return bool True when the close was applied.
 	 */
-	private function apply_dispute_closed( WC_Order $order, array $event_object, string $note, string $dispute_id, string $status, string $note_type, string $charge_id ): bool {
+	private function apply_dispute_closed( WC_Order $order, array $event_object, string $note, string $dispute_id, string $status, string $note_type, string $charge_id, array $equivalents ): bool {
 		// A callback of its own, so removing it cannot remove a site's own '__return_false' on these emails.
 		$disable_email = static fn(): bool => false;
 
@@ -322,7 +330,8 @@ class DisputeEventHandler {
 					remove_filter( 'woocommerce_email_enabled_customer_refunded_order', $disable_email );
 					remove_filter( 'woocommerce_email_enabled_customer_completed_renewal_order', $disable_email );
 				}
-			}
+			},
+			$equivalents
 		);
 	}
 
@@ -509,13 +518,13 @@ class DisputeEventHandler {
 	 * Get formatted disputed amount.
 	 *
 	 * @param WC_Order $order  Order object.
-	 * @param int      $amount Dispute amount.
+	 * @param float    $amount Dispute amount in major units.
 	 * @return string
 	 */
-	private function get_formatted_dispute_amount( WC_Order $order, int $amount ): string {
+	private function get_formatted_dispute_amount( WC_Order $order, float $amount ): string {
 		$currency = $order->get_currency();
 		$price    = WooPaymentsCurrencyUtils::format_price_in_currency(
-			WooPaymentsCurrencyUtils::amount_from_minor_units( $amount, $currency ),
+			$amount,
 			strtoupper( $currency )
 		);
 
@@ -539,7 +548,7 @@ class DisputeEventHandler {
 	/**
 	 * Get content for a dispute created order note.
 	 *
-	 * @param string $charge_id              Charge ID.
+	 * @param string $url                    Dispute details URL.
 	 * @param string $amount                 Formatted amount.
 	 * @param string $reason                 Reason description.
 	 * @param string $due_by                 Due date.
@@ -547,7 +556,7 @@ class DisputeEventHandler {
 	 * @param string $dispute_id             Dispute ID, appended so a charge's several disputes each get a distinct note.
 	 * @return string
 	 */
-	private function get_dispute_created_note( string $charge_id, string $amount, string $reason, string $due_by, bool $is_inquiry, string $dispute_id = '' ): string {
+	private function get_dispute_created_note( string $url, string $amount, string $reason, string $due_by, bool $is_inquiry, string $dispute_id = '' ): string {
 		if ( $is_inquiry ) {
 			/* translators: %1: the disputed amount and currency; %2: the dispute reason; %3 the deadline date for responding to the inquiry */
 			$format = __( 'A payment inquiry has been raised for %1$s with reason "%2$s". <a>Response due by %3$s</a>.', 'woocommerce' );
@@ -564,7 +573,7 @@ class DisputeEventHandler {
 			$amount,
 			esc_html( $reason ),
 			esc_html( $due_by ),
-			$this->get_dispute_url( $charge_id )
+			$url
 		);
 
 		return $this->append_dispute_id_to_note( $note, $dispute_id );
@@ -573,13 +582,13 @@ class DisputeEventHandler {
 	/**
 	 * Get content for a dispute closed order note.
 	 *
-	 * @param string $charge_id              Charge ID.
+	 * @param string $url                    Dispute details URL.
 	 * @param string $status                 Dispute status.
 	 * @param bool   $is_inquiry             Whether the dispute is an inquiry.
 	 * @param string $dispute_id             Dispute ID, appended so a charge's several disputes each get a distinct note.
 	 * @return string
 	 */
-	private function get_dispute_closed_note( string $charge_id, string $status, bool $is_inquiry, string $dispute_id = '' ): string {
+	private function get_dispute_closed_note( string $url, string $status, bool $is_inquiry, string $dispute_id = '' ): string {
 		if ( $is_inquiry ) {
 			/* translators: %1: the dispute status */
 			$format = __( 'Payment inquiry has been closed with status %1$s. See <a>payment status</a> for more details.', 'woocommerce' );
@@ -593,7 +602,7 @@ class DisputeEventHandler {
 		$note = sprintf(
 			WooPaymentsHtmlUtils::escape_interpolated_html( $format, array( 'a' => '<a href="%2$s" target="_blank" rel="noopener noreferrer">' ) ),
 			esc_html( $status ),
-			$this->get_dispute_url( $charge_id )
+			$url
 		);
 
 		return $this->append_dispute_id_to_note( $note, $dispute_id );
@@ -743,14 +752,15 @@ class DisputeEventHandler {
 	 * @param string   $event_status Provider dispute status.
 	 * @param string   $note_type    Stable note type.
 	 * @param callable $before_add   Side effects to apply only when the note is new.
+	 * @param string[] $equivalents  Extension wordings for the same dispute event.
 	 * @return bool True when the note was added.
 	 */
-	private function add_dispute_order_note_once( WC_Order $order, string $note, string $dispute_id, string $event_status, string $note_type, ?callable $before_add = null ): bool {
+	private function add_dispute_order_note_once( WC_Order $order, string $note, string $dispute_id, string $event_status, string $note_type, ?callable $before_add = null, array $equivalents = array() ): bool {
 		return $this->order_note_service->add_note_once(
 			$order,
 			$note,
 			self::get_dispute_note_identity( $dispute_id, $event_status, $note_type ),
-			array(),
+			$equivalents,
 			$before_add
 		);
 	}
