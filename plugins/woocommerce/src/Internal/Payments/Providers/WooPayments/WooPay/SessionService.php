@@ -466,7 +466,7 @@ class SessionService {
 		$user_id     = get_current_user_id();
 		$customer_id = $this->customer_service->get_or_create_customer_id_for_user( $user_id );
 
-		// WooPay requests that resolve as guest read the cart session for the shopper's currency.
+		// WooPay requests that resolve as guest read the cart session for the shopper's currency, as client 11.3.0 `class-woopay-session.php:628-636`.
 		if ( 0 !== $user_id && wc_get_container()->get( MultiCurrencyRuntimeArbiter::class )->is_builtin_owner() ) {
 			$currency_code = get_user_meta( $user_id, StateBuilder::CURRENCY_STORAGE_KEY, true );
 			if ( is_string( $currency_code ) && ! empty( $currency_code ) && WC()->session ) {

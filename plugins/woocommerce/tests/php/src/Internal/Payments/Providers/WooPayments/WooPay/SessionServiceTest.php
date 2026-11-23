@@ -2105,6 +2105,26 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox WooPay keeps the guest's session currency without checking the feature for a saved shopper preference.
+	 */
+	public function test_saved_currency_copy_skips_guest_requests(): void {
+		wp_set_current_user( 0 );
+		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		WC()->session = new \WC_Session_Handler();
+		WC()->session->init_session_cookie();
+		WC()->session->set( StateBuilder::CURRENCY_STORAGE_KEY, 'EUR' );
+
+		$sut          = $this->create_service();
+		$feature_hook = 'pre_option_' . MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION;
+		$reads_before = did_filter( $feature_hook );
+
+		$sut->start_init_session_request();
+
+		$this->assertSame( 'EUR', WC()->session->get( StateBuilder::CURRENCY_STORAGE_KEY ) );
+		$this->assertSame( $reads_before, did_filter( $feature_hook ), 'Guest requests should skip the saved-currency feature lookup.' );
+	}
+
+	/**
 	 * Sign in a shopper whose cart session still holds EUR from before login.
 	 *
 	 * @param string $saved_currency Currency saved in the shopper's account.
