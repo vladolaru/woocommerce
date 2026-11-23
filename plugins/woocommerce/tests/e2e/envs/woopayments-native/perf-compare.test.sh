@@ -190,13 +190,17 @@ fake_page_body() {
 	fi
 	printf '<html><body class="%s wp-theme-%s"><main>%s</main>\n' "$classes" "$(< "${PERF_FAKE_ROOT:?}/theme")" "$content"
 	if [[ "$target" == '/?post_type=product' && "${PERF_FAKE_CASE:-}" == truncated-body ]]; then return 0; fi
-	if [[ "${3:-}" == 'X-WooCommerce-Native-Payments-Asset-Control: 1' && "$state" == active_native && "${PERF_FAKE_CASE:-}" != missing-positive && "$target" == '/?page_id=7' ]]; then
-		printf '<script src="/wp-content/plugins/woocommerce/assets/js/frontend/woopayments-frontend-tracks.min.js"></script>\n'
+	if [[ "$target" == '/?page_id=7' || "$target" == '/?page_id=6' ]]; then
+		local namespace=other
+		if [[ "$state" == active_native && "${PERF_FAKE_CASE:-}" != missing-positive ]] || [[ "$state" == disabled && "${PERF_FAKE_CASE:-}" == dormant-wcpay-key ]]; then
+			namespace=wcpay
+		fi
+		printf '%s\n' "<script id='wc-settings-js-before'>var wcSettings = JSON.parse( decodeURIComponent( '%7B%22extensions%22%3A%7B%22${namespace}%22%3A%7B%7D%7D%7D' ) );</script>"
 	fi
 	printf "<link rel='canonical' href='%s/product/wcpay-perf-product/' />\n" "$origin"
 	printf '<script id="jquery-core-js" src="%s/wp-includes/js/jquery/jquery.min.js"></script>\n' "$origin"
 	case "${PERF_FAKE_CASE:-}" in
-	asset-available-fail) [[ "$target" != / || "$state" != available || "${4:-}" != 2 ]] || printf '<script>var wcpayConfig = {};</script>\n' ;;
+	asset-available-fail) [[ "$target" != / || "$state" != available || "${3:-}" != 2 ]] || printf '<script>var wcpayConfig = {};</script>\n' ;;
 	asset-native-fail) [[ "$target" != / || "$state" != disabled ]] || printf '<script id="wcpay-dormant-js" src="%s/wp-content/plugins/woocommerce/assets/js/dormant.js"></script>\n' "$origin" ;;
 	esac
 	case "$target:$state" in
@@ -220,7 +224,7 @@ fake_asset_body() {
 	*/wc-payment-method-woopayments.css*) head -c 300 /dev/zero | tr '\0' 'c' ;;
 	*/wc-payment-method-woopayments.js*) head -c 1000 /dev/zero | tr '\0' 'j' ;;
 	*/blocks-checkout.js*) head -c 800 /dev/zero | tr '\0' 'p' ;;
-	*/dormant.js|*/woopayments-frontend-tracks.min.js) printf 'x' ;;
+	*/dormant.js) printf 'x' ;;
 	*) exit 74 ;;
 	esac
 }
@@ -259,7 +263,7 @@ fake_curl() {
 	final_url="$url"
 	if [[ "$url" == *'add-to-cart=17'* ]]; then : > "$cookie.populated"; fi
 	if [[ "$url" == *'rest_route=/wc/store/v1/cart'* ]]; then printf '{"items":[{"id":17}]}\n' > "$body"; fi
-	if [[ -n "$body" && ! -s "$body" ]]; then fake_page_body "$state" "$target" "$trace_header" "$repeat" > "$body"; fi
+	if [[ -n "$body" && ! -s "$body" ]]; then fake_page_body "$state" "$target" "$repeat" > "$body"; fi
 
 	if [[ -n "$headers" && "$kind" != preflight ]]; then
 		case "$state" in
@@ -670,17 +674,16 @@ for state in disabled available connected active_native; do
 	grep -Fq "$state"$'\theaders\tNA\tNA\tNA\tbaseline_noop\t0\tNA\tNA\tpass' "$local_output" || fail "Identical header and cookie names with different values did not pass for $state."
 done
 if grep -q $'^active_plugin\theaders\t' "$local_output"; then fail 'The reference plugin state was header-gated.'; fi
-# N-299 asset rows: native tags counted by handle or URL, same-origin bytes summed raw and gzip (300 + 26 + 1000
-# and 25 + 46 + 29: a decoded stylesheet URL, inline data, a root-relative script), Stripe.js counted, not fetched.
-grep -Fq $'active_native\tassets:checkout\t4\t1326\t100\tNA\tNA\tNA\tNA\tinformational' "$local_output" || fail 'The active_native checkout asset row was not recorded.'
+# Counts two inline scripts, a stylesheet, a same-origin script and Stripe.js. Only local bytes enter the totals.
+grep -Fq $'active_native\tassets:checkout\t5\t1433\t209\tNA\tNA\tNA\tNA\tinformational' "$local_output" || fail 'The active_native checkout asset row was not recorded.'
 grep -Fq $'active_plugin\tassets:checkout\t2\t800\t28\tNA\tNA\tNA\tNA\tinformational' "$local_output" || fail 'The reference plugin checkout asset row was not recorded.'
 grep -Fq $'active_native\tassets:front\t0\t0\t0\tNA\tNA\tNA\tNA\tinformational' "$local_output" || fail 'A canonical page link naming the provider was counted as an asset.'
 for page in front shop product cart checkout; do
 	grep -Fq $'disabled\tassets:'"$page"$'\t0\t0\t0\tNA\tNA\tNA\tNA\tpass' "$local_output" || fail "The disabled $page asset row did not pass."
 done
 grep -Fq $'available\tassets:checkout\t0\t0\t0\tNA\tNA\tNA\tNA\tpass' "$local_output" || fail 'The empty available asset row did not pass.'
-grep -Fq $'active_native\tassets:checkout_tracking\t5\t1327' "$local_output" || fail 'The connected checkout did not find the shopper script.'
-[[ "$(grep -c $'^ASSET_FETCH\t' "$local_root/events.log")" == 4 ]] || fail 'Each same-origin asset file was not fetched exactly once.'
+grep -Fxq $'active_native\tassets:checkout_wcpay\t5\t1433\t209\tNA\tNA\tNA\tNA\tpass' "$local_output" || fail 'The active checkout did not find extensions.wcpay in wc-settings-js-before.'
+[[ "$(grep -c $'^ASSET_FETCH\t' "$local_root/events.log")" == 3 ]] || fail 'Each same-origin asset file was not fetched exactly once.'
 if grep -q $'^CURL\tasset\t[^\t]*\thttps://js.stripe.com' "$local_root/samples.log"; then fail 'A third-party asset was fetched.'; fi
 assert_cleaned "$local_root"
 
@@ -758,7 +761,7 @@ grep -Fq $'active_native\tgateway\t6\t0\tNA\tnot_evaluated\tNA\tNA\tNA\tnot_eval
 [[ "$(grep -c $'^WOOPAYMENTS_FEATURE\t' "$ci_root/events.log")" == "$(grep -c $'^STATE\t' "$ci_root/events.log")" ]] || fail 'Every CI state preparation must write the WooPayments feature.'
 awk -F'\t' '$1 == "WOOPAYMENTS_FEATURE" { want = ($2 == "baseline_noop" || $2 == "disabled") ? "\"no\"" : "\"yes\""; if ($3 != want) exit 1 }' "$ci_root/events.log" || fail 'The WooPayments feature must be "no" for baseline_noop and disabled, and "yes" for every other CI state.'
 if grep -Eq '^REFERENCE_(INSTALL|ACTIVATE)' "$ci_root/events.log"; then fail 'CI touched the reference plugin.'; fi
-grep -Fq $'active_native\tassets:checkout\t4\t1326\t100\tNA\tNA\tNA\tNA\tinformational' "$ci_output" || fail 'CI did not record the active_native checkout assets.'
+grep -Fq $'active_native\tassets:checkout\t5\t1433\t209\tNA\tNA\tNA\tNA\tinformational' "$ci_output" || fail 'CI did not record the active_native checkout assets.'
 grep -Fq $'disabled\tassets:checkout\t0\t0\t0\tNA\tNA\tNA\tNA\tpass' "$ci_output" || fail 'The CI disabled checkout asset row did not pass.'
 assert_cleaned "$ci_root"
 
@@ -782,8 +785,14 @@ fi
 grep -Fxq 'Invalid sample: unknown page name: unknown.' "$TEST_ROOT/unknown-page.stderr" || fail 'The page check did not identify the unknown page.'
 
 run_case missing-positive missing-positive 1 ci
-grep -Fxq $'active_native\tassets:checkout_tracking\t4\t1326\t100\tNA\tNA\tNA\tNA\tfail' "$TEST_ROOT/missing-positive/output/result.tsv" || fail 'The four other checkout tags must not satisfy the shopper tracking control.'
+grep -Fxq $'active_native\tassets:checkout_wcpay\t4\t1326\t100\tNA\tNA\tNA\tNA\tfail' "$TEST_ROOT/missing-positive/output/result.tsv" || fail 'The four other checkout tags must not satisfy the extensions.wcpay control.'
 assert_cleaned "$TEST_ROOT/missing-positive"
+
+run_case dormant-wcpay-key dormant-wcpay-key 1 ci
+for page in cart checkout; do
+	grep -Fxq $'disabled\tassets:'"$page"$'\t1\t107\t109\tNA\tNA\tNA\tNA\tfail' "$TEST_ROOT/dormant-wcpay-key/output/result.tsv" || fail "The disabled $page printed extensions.wcpay without failing."
+done
+assert_cleaned "$TEST_ROOT/dormant-wcpay-key"
 
 run_case asset-available-fail asset-available-fail 1 local
 grep -Eq '^available[[:space:]]+assets:front[[:space:]]+1[[:space:]].*fail$' "$TEST_ROOT/asset-available-fail/output/result.tsv" || fail 'The lowest enabled tier printed inline payment configuration without failing.'

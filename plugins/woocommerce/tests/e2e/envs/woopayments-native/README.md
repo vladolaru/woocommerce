@@ -88,3 +88,11 @@ Each case asserts a value the recorded data sets, under the fixture only:
 | `payouts-disputes-smoke.spec.ts`, disputes list | Two disputes needing a response, by id and amount. |
 | `admin-page-loads.spec.ts`, payment details | The recorded charge and its timeline; the Documents routes are absent for the recorded US account. |
 | `test-mode-notice.spec.ts`, payout details route | A recorded payout id. |
+
+## Local performance gate
+
+`perf-compare.sh` checks for the Store API `extensions.wcpay` key in the active checkout’s inline `wc-settings-js-before` script. Both dormant states must render zero WooPayments tags.
+
+On this store the active checkout renders no payment method on either side (the stand-in account has no connection), so the gate measures feature off, lowest tier and boot, not a checkout that takes a card; that reading is the exit run's, on a store with a real account.
+
+The exit run checks whether the shopper tracking script loads on a store with a real account (B-1050).

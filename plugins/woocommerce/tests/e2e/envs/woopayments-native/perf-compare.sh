@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# Compares boot and Storefront page assembly. With the stand-in account, neither
-# native WooPayments nor the reference extension renders a payment form or express button.
+# On this store the active checkout renders no payment method on either side (the stand-in account has no connection), so the gate measures feature off, lowest tier and boot, not a checkout that takes a card; that reading is the exit run's, on a store with a real account.
+# The exit run checks whether the shopper tracking script loads on a store with a real account (B-1050).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -354,8 +354,6 @@ capture_page() {
 	local request_headers=()
 	if [[ -n "$trace_state" ]]; then
 		request_headers=(-H "X-WooCommerce-Native-Payments-Perf-Trace: $trace_state")
-	elif [[ "$sample_kind" == asset-control ]]; then
-		request_headers=(-H 'X-WooCommerce-Native-Payments-Asset-Control: 1')
 	fi
 	result="$(PERF_COMPARE_SAMPLE_KIND="$sample_kind" curl --fail-with-body --location --max-redirs 3 --silent --show-error -b "$cookie" -c "$cookie" -D "$headers" -o "$body" -w '%{http_code}\t%{url_effective}\t%{time_total}\n' ${request_headers[@]+"${request_headers[@]}"} "$REQUEST_BASE$path")" || result=''
 	if [[ -z "$result" ]]; then
@@ -440,10 +438,6 @@ sample_state() {
 	for page in "${pages[@]}"; do
 		combine_capture_samples "$state" "$page" || return 1
 	done
-	if [[ "$state" == active_native ]]; then
-		# Reuse the last populated cart for an asset-only control outside the performance samples.
-		capture_page "$state" checkout "$CHECKOUT_PATH" asset-control "$TEMP_ROOT/$state-r$STATE_SAMPLES.cookies" asset-control || return 1
-	fi
 	if [[ "$state" == active_plugin ]]; then reset_database || return 1; fi
 }
 
@@ -590,11 +584,24 @@ write_header_rows() {
 }
 
 # Prints one line per native script, style or asset-loading link tag in an HTML body: absolute URL ('-' for
-# inline content) and the raw and gzip byte counts of inline content. A tag is native when its id or URL
-# or inline data matches NATIVE_ASSET_PATTERN. Other links (canonical, alternate, oEmbed) carry page URLs, so they are skipped.
+# inline content), raw and gzip byte counts, and a flag for the extensions.wcpay settings key.
+# Provider handles, URLs and inline data also count. Links that don't load assets are skipped.
 native_asset_tags() {
 	python3 - "$1" "$REQUEST_BASE" "$NATIVE_ASSET_PATTERN" <<'PY'
-import gzip, html, re, sys
+import gzip, html, json, re, sys
+from urllib.parse import unquote
+
+def has_wcpay_namespace(inline):
+    decoded = unquote(inline)
+    for match in re.finditer(r'"extensions"\s*:\s*(?=\{)', decoded):
+        try:
+            extensions, _ = json.JSONDecoder().raw_decode(decoded, match.end())
+        except ValueError:
+            continue
+        if "wcpay" in extensions:
+            return True
+    return False
+
 body = open(sys.argv[1], encoding="utf-8", errors="replace").read()
 base, pattern = sys.argv[2], re.compile(sys.argv[3], re.I)
 for match in re.finditer(r"<(script|style|link)\b([^>]*)>", body, re.I):
@@ -607,25 +614,27 @@ for match in re.finditer(r"<(script|style|link)\b([^>]*)>", body, re.I):
     if tag != "link" and not url:
         end = body.find("</" + tag, match.end())
         inline = body[match.end():end] if end >= 0 else ""
-    if not (pattern.search(values.get("id", "")) or pattern.search(url) or pattern.search(inline)):
+    checkout_key = tag == "script" and values.get("id") == "wc-settings-js-before" and has_wcpay_namespace(inline)
+    if not (checkout_key or pattern.search(values.get("id", "")) or pattern.search(url) or pattern.search(inline)):
         continue
     if url.startswith("//"):
         url = base.split(":", 1)[0] + ":" + url
     elif url.startswith("/"):
         url = base + url
     inline = inline.encode()
-    print(f"{url or '-'}\t{len(inline)}\t{len(gzip.compress(inline, 9, mtime=0)) if inline else 0}")
+    print(f"{url or '-'}\t{len(inline)}\t{len(gzip.compress(inline, 9, mtime=0)) if inline else 0}\t{int(checkout_key)}")
 PY
 }
 
 # Prints a page body's native tag count and the raw and gzip bytes of their same-origin files and inline
-# data. Each file is fetched once per run; a third-party file (Stripe.js) is counted but not fetched, so the
-# totals never depend on another host.
+# data, followed by whether the settings script contains extensions.wcpay. Each same-origin file is fetched
+# once per run. Third-party files such as Stripe.js count toward tags only.
 native_asset_totals() {
-	local body="$1" tags="$1.native-tags" url inline_raw inline_gzip cache raw gzip
-	local count=0 total_raw=0 total_gzip=0
+	local body="$1" tags="$1.native-tags" url inline_raw inline_gzip checkout_key cache raw gzip
+	local count=0 total_raw=0 total_gzip=0 has_checkout_key=0
 	native_asset_tags "$body" > "$tags" || return 1
-	while IFS=$'\t' read -r url inline_raw inline_gzip; do
+	while IFS=$'\t' read -r url inline_raw inline_gzip checkout_key; do
+		if [[ "$checkout_key" == 1 ]]; then has_checkout_key=1; fi
 		count=$((count + 1))
 		if [[ "$url" == - ]]; then
 			raw="$inline_raw"; gzip="$inline_gzip"
@@ -641,14 +650,14 @@ native_asset_totals() {
 		fi
 		total_raw=$((total_raw + raw)); total_gzip=$((total_gzip + gzip))
 	done < "$tags"
-	printf '%s\t%s\t%s\n' "$count" "$total_raw" "$total_gzip"
+	printf '%s\t%s\t%s\t%s\n' "$count" "$total_raw" "$total_gzip" "$has_checkout_key"
 }
 
 # Appends one 'assets:<page>' row per sampled state and shop page, using the first capture for informational rows.
 # Column reuse: queries = native script and style tags, used_peak_bytes and hooks = their raw and gzip bytes.
-# Both dormant states must print zero tags. The extra connected checkout must load the native shopper script.
+# Both dormant states must print zero tags. The active checkout must include extensions.wcpay in wc-settings-js-before.
 write_asset_rows() {
-	local state page body totals native raw gzip verdict repeat attempts
+	local state page body totals native raw gzip verdict repeat attempts checkout_key
 	local states=(baseline_noop disabled available connected active_native active_plugin)
 	local pages=(front shop product cart checkout)
 	for state in "${states[@]}"; do
@@ -664,7 +673,7 @@ write_asset_rows() {
 					native=NA; raw=NA; gzip=NA; verdict=fail
 					break
 				fi
-				IFS=$'\t' read -r native raw gzip <<< "$totals"
+				IFS=$'\t' read -r native raw gzip checkout_key <<< "$totals"
 				if [[ "$verdict" == pass && "$native" != 0 ]]; then
 					echo "Asset gate ($state/$page): found $native payment tags in capture $repeat." >&2
 					verdict=fail
@@ -673,19 +682,17 @@ write_asset_rows() {
 			done
 			if [[ "$verdict" == fail ]]; then GATE_FAILED=1; fi
 			printf '%s\tassets:%s\t%s\t%s\t%s\tNA\tNA\tNA\tNA\t%s\n' "$state" "$page" "$native" "$raw" "$gzip" "$verdict" >> "$OUTPUT"
+			if [[ "$state" == active_native && "$page" == checkout ]]; then
+				if [[ "$verdict" != fail && "$checkout_key" == 1 ]]; then
+					verdict=pass
+				else
+					echo 'Asset control failed: active checkout is missing extensions.wcpay in wc-settings-js-before.' >&2
+					verdict=fail; GATE_FAILED=1
+				fi
+				printf 'active_native\tassets:checkout_wcpay\t%s\t%s\t%s\tNA\tNA\tNA\tNA\t%s\n' "$native" "$raw" "$gzip" "$verdict" >> "$OUTPUT"
+			fi
 		done
 	done
-	body="$TEMP_ROOT/active_native-checkout-asset-control.body"
-	native=NA; raw=NA; gzip=NA; verdict=fail
-	if [[ -s "$body" ]] && totals="$(native_asset_totals "$body")"; then
-		IFS=$'\t' read -r native raw gzip <<< "$totals"
-		if grep -Eq '/woopayments-frontend-tracks(\.min)?\.js([?[:space:]]|$)' "$body.native-tags"; then verdict=pass; fi
-	fi
-	if [[ "$verdict" == fail ]]; then
-		echo 'Asset control failed: the connected checkout did not load the native shopper tracking script.' >&2
-		GATE_FAILED=1
-	fi
-	printf 'active_native\tassets:checkout_tracking\t%s\t%s\t%s\tNA\tNA\tNA\tNA\t%s\n' "$native" "$raw" "$gzip" "$verdict" >> "$OUTPUT"
 }
 
 timing_gate() {

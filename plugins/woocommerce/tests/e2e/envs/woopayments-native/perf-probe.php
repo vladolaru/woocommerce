@@ -310,12 +310,6 @@ final class WooCommerce_Native_Payments_Perf_Probe {
 		}
 		$this->trace_state = $this->get_trace_state();
 
-		// Exercise the real shopper tracking script without persisting a store-wide opt-in.
-		if ( 'active_native' === $this->get_control_value( 'state' ) && '1' === sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_WOOCOMMERCE_NATIVE_PAYMENTS_ASSET_CONTROL'] ?? '' ) ) ) {
-			add_filter( 'wcpay_shopper_tracking_enabled', '__return_true' );
-			add_filter( 'pre_option_woocommerce_default_country', static fn() => 'US' );
-		}
-
 		add_filter( 'woocommerce_load_payment_providers', array( $this, 'control_bootstrap' ) );
 		add_filter( 'pre_http_request', array( $this, 'count_http_request' ), PHP_INT_MIN );
 		if ( '' !== $this->trace_state ) {
