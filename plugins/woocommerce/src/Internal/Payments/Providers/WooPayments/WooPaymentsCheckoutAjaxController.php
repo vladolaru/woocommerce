@@ -155,7 +155,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 		}
 
 		$intent_id = $this->get_request_string( $request, 'intent_id' );
-		if ( '' === $intent_id || $intent_id !== (string) $order->get_meta( '_intent_id', true ) ) {
+		if ( ! $this->intent_confirmation_service->is_order_intent( $order, $intent_id ) ) {
 			$this->intent_confirmation_service->add_intent_mismatch_note(
 				$order,
 				/* translators: This will be used to indicate an unknown value for an ID. */

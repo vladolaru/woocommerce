@@ -205,6 +205,20 @@ class WooPaymentsIntentConfirmationService {
 	}
 
 	/**
+	 * Tell whether an intent ID is the one the order stores, the test the order-status callback applies before its fetch
+	 * and again under the order payment lock. An empty ID never is.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param WC_Order $order     Order read for the decision.
+	 * @param string   $intent_id Intent ID the callback named.
+	 * @return bool
+	 */
+	public function is_order_intent( WC_Order $order, string $intent_id ): bool {
+		return '' !== $intent_id && (string) $order->get_meta( '_intent_id', true ) === $intent_id;
+	}
+
+	/**
 	 * Log the one warning line of a request refused because its order's payment method is another gateway's.
 	 *
 	 * @since 11.4.0
@@ -362,9 +376,16 @@ class WooPaymentsIntentConfirmationService {
 		$displayed       = false;
 		$refusing_order  = null;
 		list( $event )   = $this->build_lifecycle_event_from_intent( $intent, $order, $zero_amount_plain_note );
-		$build           = function ( WC_Order $stored_order ) use ( $intent, $is_redirect_return, $zero_amount_plain_note, $attaches_intent, $setup_payment_details, &$displayed, &$refusing_order ): array {
+		$build           = function ( WC_Order $stored_order ) use ( $intent, $status, $is_redirect_return, $zero_amount_plain_note, $attaches_intent, $setup_payment_details, &$displayed, &$refusing_order ): array {
 			if ( $this->is_order_of_another_payment_method( $stored_order ) ) {
 				$refusing_order = $stored_order;
+				return array( null, null );
+			}
+			// The callback's check before its fetch, repeated: an intent that holds no money and is no longer the order's, because
+			// a later attempt was stored during the fetch, changes nothing, so it cannot fail or re-record that attempt.
+			if ( ! $is_redirect_return && ! WooPaymentsIntentCodec::holds_money( $status ) && ! $this->is_order_intent( $stored_order, (string) ( $intent['id'] ?? '' ) ) ) {
+				$displayed = true;
+				$this->log_payment_not_own( $stored_order, $intent, false );
 				return array( null, null );
 			}
 			// A payment the webhook would record as another charge on this order, such as one over a reference the merchant

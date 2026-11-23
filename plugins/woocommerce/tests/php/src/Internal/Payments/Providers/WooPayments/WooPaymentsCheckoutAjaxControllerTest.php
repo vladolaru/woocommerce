@@ -1087,6 +1087,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			'different intent'       => array( 'seti_other', 'seti_expected', 'seti_other' ),
 			'no intent in request'   => array( null, 'seti_expected', 'unknown' ),
 			'no intent on the order' => array( 'seti_other', '', 'seti_other' ),
+			'empty on both sides'    => array( '', '', '' ),
 		);
 	}
 
@@ -3114,10 +3115,11 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 * @param WC_Order                                 $order                       Order being confirmed.
 	 * @param array<string,mixed>                      $intent                      PaymentIntent or SetupIntent response.
 	 * @param WooPaymentsFeeDetailsNoteController|null $fee_details_note_controller Fee details note controller, which applies the lifecycle event.
+	 * @param callable|null                            $while_fetching              Runs during the platform fetch.
 	 * @return array<string,mixed>
 	 */
-	private function get_update_order_status_response_for_intent( WC_Order $order, array $intent, ?WooPaymentsFeeDetailsNoteController $fee_details_note_controller = null ): array {
-		$api_client = $this->create_api_client_returning( $intent );
+	private function get_update_order_status_response_for_intent( WC_Order $order, array $intent, ?WooPaymentsFeeDetailsNoteController $fee_details_note_controller = null, ?callable $while_fetching = null ): array {
+		$api_client = $this->create_api_client_returning( $intent, $while_fetching );
 
 		return $this->create_controller( $this->bind_intents_to_order( $api_client, $order ), null, null, null, $fee_details_note_controller )->confirm_order_payment(
 			array(
@@ -3287,6 +3289,148 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			$this->assertSame( $details['card']['last4'], $order->get_meta( 'last4', true ) );
 			$this->assertSame( $details['card']['brand'], $order->get_meta( '_card_brand', true ) );
 		}
+	}
+
+	/**
+	 * @testdox A superseded callback holding no money preserves the newer payment: $_dataName.
+	 *
+	 * @dataProvider superseded_callback_data
+	 *
+	 * @param string $arrival_status Status returned by the first attempt's fetch.
+	 * @param string $order_status   Order status after the second checkout.
+	 * @param string $new_status     Intent status after the second checkout.
+	 * @param bool   $failure_noted  Whether the first failure already has its note.
+	 */
+	public function test_superseded_callback_preserves_the_newer_payment( string $arrival_status, string $order_status, string $new_status, bool $failure_noted = false ): void {
+		$intent = $this->load_recorded_manual_3ds_entry( 'blocks_post_authentication_decline' )['body'];
+		$order  = $this->create_woopayments_order( '10.99' );
+		$order->update_meta_data( '_intent_id', $intent['id'] );
+		$order->save();
+		if ( $failure_noted ) {
+			$this->get_update_order_status_response_for_intent( $order, $intent );
+			$this->assertCount( 1, $this->get_failed_payment_notes( $order ) );
+		}
+		if ( 'requires_action' === $arrival_status ) {
+			$intent = array(
+				'id'     => $intent['id'],
+				'status' => $arrival_status,
+			);
+		}
+
+		$store_retry = static function () use ( $order, $order_status, $new_status, &$notes ): void {
+			$retry = self::read_stored_order( $order->get_id() );
+			$retry->set_status( $order_status );
+			$retry->set_transaction_id( 'pi_retry' );
+			$retry->update_meta_data( '_intent_id', 'pi_retry' );
+			$retry->update_meta_data( '_intention_status', $new_status );
+			$retry->update_meta_data( '_payment_method_id', 'pm_retry' );
+			$retry->update_meta_data( '_charge_id', 'ch_retry' );
+			$retry->save();
+			$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+		};
+		$logger      = RecordingWcLogger::install();
+		$email_hook  = 'woocommerce_order_status_' . $order_status . '_to_failed_notification';
+		$emails      = did_action( $email_hook );
+
+		$response = $this->get_update_order_status_response_for_intent( $order, $intent, null, $store_retry );
+
+		$stored = self::read_stored_order( $order->get_id() );
+		$this->assertSame( 409, $response['status_code'] );
+		$this->assertSame( $order_status, $stored->get_status() );
+		$this->assertSame( 'pi_retry', $stored->get_transaction_id() );
+		$this->assertSame( 'pi_retry', $stored->get_meta( '_intent_id', true ) );
+		$this->assertSame( $new_status, $stored->get_meta( '_intention_status', true ) );
+		$this->assertSame( 'pm_retry', $stored->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( 'ch_retry', $stored->get_meta( '_charge_id', true ) );
+		$this->assertEquals( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertSame( $emails, did_action( $email_hook ) );
+		$this->assertCount( 1, array_filter( $logger->lines, static fn( $line ) => 'warning' === $line[0] && 0 === strpos( $line[1], 'order-status callback left payment ' ) ) );
+
+		if ( OrderStatus::PENDING === $order_status ) {
+			$this->assert_retry_callback_completes_payment( $stored );
+		}
+	}
+
+	/** @return array<string,array{0:string,1:string,2:string,3?:bool}> */
+	public function superseded_callback_data(): array {
+		return array(
+			'decline after retry started'                => array( 'requires_payment_method', OrderStatus::PENDING, 'requires_action' ),
+			'decline after retry authorized'             => array( 'requires_payment_method', OrderStatus::ON_HOLD, 'requires_capture' ),
+			'already noted decline after authorization'  => array( 'requires_payment_method', OrderStatus::ON_HOLD, 'requires_capture', true ),
+			'decline after captured payment held'        => array( 'requires_payment_method', OrderStatus::ON_HOLD, 'succeeded' ),
+			'authentication pending after authorization' => array( 'requires_action', OrderStatus::ON_HOLD, 'requires_capture' ),
+			'decline after retry paid'                   => array( 'requires_payment_method', OrderStatus::PROCESSING, 'succeeded' ),
+		);
+	}
+
+	/**
+	 * @testdox A retry started after a decline can complete its payment.
+	 */
+	public function test_sequential_retry_callback_completes_payment(): void {
+		$decline = $this->load_recorded_manual_3ds_entry( 'blocks_post_authentication_decline' )['body'];
+		$order   = $this->create_woopayments_order( '10.99' );
+		$order->update_meta_data( '_intent_id', $decline['id'] );
+		$order->save();
+		$this->get_update_order_status_response_for_intent( $order, $decline );
+		$retry = self::read_stored_order( $order->get_id() );
+		$this->assertSame( OrderStatus::FAILED, $retry->get_status() );
+		$retry->update_meta_data( '_intent_id', 'pi_retry' );
+		$retry->update_meta_data( '_intention_status', 'requires_action' );
+		$retry->save();
+		$this->assert_retry_callback_completes_payment( $retry );
+	}
+
+	/**
+	 * Confirm a successful retry through the checkout callback.
+	 *
+	 * @param WC_Order $order Order storing the second attempt.
+	 */
+	private function assert_retry_callback_completes_payment( WC_Order $order ): void {
+		$intent       = $this->load_recorded_manual_3ds_entry( 'classic_checkout_challenge_completed' )['body'];
+		$intent['id'] = 'pi_retry';
+		$response     = $this->get_update_order_status_response_for_intent( $order, $intent );
+		$paid         = self::read_stored_order( $order->get_id() );
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertTrue( $paid->is_paid() );
+		$this->assertSame( 'pi_retry', $paid->get_transaction_id() );
+	}
+
+	/**
+	 * @testdox A successful callback still applies after another attempt starts during its fetch.
+	 */
+	public function test_superseded_success_still_completes_payment(): void {
+		$intent = $this->load_recorded_manual_3ds_entry( 'classic_checkout_challenge_completed' )['body'];
+		$order  = $this->create_woopayments_order( '10.99' );
+		$order->update_meta_data( '_intent_id', $intent['id'] );
+		$order->save();
+		$store_retry = static function () use ( $order ): void {
+			$retry = self::read_stored_order( $order->get_id() );
+			$retry->update_meta_data( '_intent_id', 'pi_retry' );
+			$retry->save();
+		};
+
+		$response = $this->get_update_order_status_response_for_intent( $order, $intent, null, $store_retry );
+
+		$paid = self::read_stored_order( $order->get_id() );
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertTrue( $paid->is_paid() );
+		$this->assertSame( $intent['id'], $paid->get_transaction_id() );
+		$this->assertSame( $intent['id'], $paid->get_meta( '_intent_id', true ) );
+	}
+
+	/**
+	 * Read an order from the data store.
+	 *
+	 * @param int $order_id Order ID.
+	 * @return WC_Order
+	 * @throws \RuntimeException When the order cannot be read.
+	 */
+	private static function read_stored_order( int $order_id ): WC_Order {
+		$order = wc_get_order( $order_id );
+		if ( ! $order instanceof WC_Order ) {
+			throw new \RuntimeException( 'The order cannot be read.' );
+		}
+		return $order;
 	}
 
 	/**
