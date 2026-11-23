@@ -121,6 +121,7 @@ class WooPaymentsIntentConfirmationService {
 		// Client 11.3.0 gw:4708-4713: a card change records the intent's payment method on the order first.
 		$payment_method_id = WooPaymentsIntentCodec::result_payment_method_id( $intent );
 		if ( '' !== $payment_method_id ) {
+			$order->read_meta_data( true );
 			$order->update_meta_data( '_payment_method_id', $payment_method_id );
 			$order->save();
 		}

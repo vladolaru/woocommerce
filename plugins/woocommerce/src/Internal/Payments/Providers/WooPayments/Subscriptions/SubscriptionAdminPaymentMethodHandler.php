@@ -164,7 +164,7 @@ class SubscriptionAdminPaymentMethodHandler {
 			return;
 		}
 
-		$this->apply_token_to_subscription( $subscription, $token );
+		$this->token_service->attach_token_to_order( $subscription, $token );
 	}
 
 	/**
@@ -306,7 +306,13 @@ class SubscriptionAdminPaymentMethodHandler {
 		}
 
 		$subscription->set_payment_method( $token_gateway_id );
-		$this->apply_token_to_subscription( $subscription, $new_token );
+		$this->token_service->attach_token_to_order( $subscription, $new_token );
+
+		// Refreshing meta would discard any edits Subscriptions has staged.
+		$subscription->save();
+		$subscription->read_meta_data( true );
+		$subscription->update_meta_data( '_payment_method_id', (string) $new_token->get_token() );
+		$subscription->save_meta_data();
 
 		return true;
 	}
@@ -681,20 +687,6 @@ class SubscriptionAdminPaymentMethodHandler {
 		}
 
 		return $fallback;
-	}
-
-	/**
-	 * Apply a WooPayments token to a subscription/order and keep provider metadata coherent.
-	 *
-	 * @param WC_Order         $subscription Subscription object.
-	 * @param WC_Payment_Token $token        Token object.
-	 * @return void
-	 */
-	private function apply_token_to_subscription( WC_Order $subscription, WC_Payment_Token $token ): void {
-		$this->token_service->attach_token_to_order( $subscription, $token );
-
-		$subscription->update_meta_data( '_payment_method_id', (string) $token->get_token() );
-		$subscription->save();
 	}
 
 	/**

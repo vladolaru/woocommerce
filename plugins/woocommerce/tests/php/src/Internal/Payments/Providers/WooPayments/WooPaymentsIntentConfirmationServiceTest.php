@@ -84,6 +84,44 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A card change updates the payment method row inserted while its SetupIntent was being fetched.
+	 */
+	public function test_card_change_updates_a_payment_method_inserted_during_confirmation(): void {
+		$order = $this->create_woopayments_order( '10.99' );
+		$order->read_meta_data( true );
+		$intent             = $this->load_recorded_intent( 'platform-3ds-challenge-results.json', 'my_account_setup_intent_challenge_completed' );
+		$intent['metadata'] = array( 'order_id' => (string) $order->get_id() );
+		$api_client         = $this->createMock( Client::class );
+		$api_client->expects( $this->once() )->method( 'get_setup_intention' )->with( $intent['id'] )->willReturnCallback(
+			static function () use ( $order, $intent ): array {
+				$other = new WC_Order( $order->get_id() );
+				$other->update_meta_data( '_payment_method_id', 'pm_other' );
+				$other->save_meta_data();
+				return $intent;
+			}
+		);
+		$sut = $this->create_intent_confirmation_service( $api_client, null, $this->create_account_service( false ) );
+
+		// Later confirmation steps can repair a duplicate. Inspect the rows visible to listeners of the first save.
+		$first_save_ids = null;
+		add_action(
+			'woocommerce_update_order',
+			static function ( $order_id ) use ( $order, &$first_save_ids ): void {
+				if ( $order->get_id() === $order_id && null === $first_save_ids ) {
+					$stored = new WC_Order( $order_id );
+					$stored->read_meta_data( true );
+					$first_save_ids = array_values( wp_list_pluck( $stored->get_meta( '_payment_method_id', false ), 'value' ) );
+				}
+			},
+			1
+		);
+
+		$sut->confirm_intent_for_order( $order, $intent['id'], false, true );
+
+		$this->assertSame( array( $intent['payment_method'] ), $first_save_ids );
+	}
+
+	/**
 	 * @testdox Confirming a paid intent for an order reduces its stock once.
 	 *
 	 * Client 11.3.0 leaves stock reduction to WooCommerce core on the order-status callback

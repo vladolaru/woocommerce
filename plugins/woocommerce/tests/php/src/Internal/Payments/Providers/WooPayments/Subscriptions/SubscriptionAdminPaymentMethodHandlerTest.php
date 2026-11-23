@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\Amazon
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\SubscriptionPaymentIdsOnSave;
 use WC_Order;
 use WC_Payment_Token_CC;
 use WC_Unit_Test_Case;
@@ -144,6 +145,7 @@ class SubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_Case {
 	 * @param string $gateway_id Reusable gateway ID.
 	 */
 	public function test_save_meta_in_order_tokens_attaches_selected_token_and_provider_meta( string $gateway_id ): void {
+		SubscriptionPaymentIdsOnSave::register( $this );
 		$user_id      = self::factory()->user->create();
 		$subscription = $this->create_subscription_order( $user_id, $gateway_id );
 		$subscription->update_meta_data( '_stripe_customer_id', 'cus_existing' );
@@ -163,6 +165,7 @@ class SubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_Case {
 	 * @testdox Should reappend a previously used token when an admin makes it active again.
 	 */
 	public function test_save_meta_in_order_tokens_reappends_previously_used_token(): void {
+		SubscriptionPaymentIdsOnSave::register( $this );
 		$user_id      = self::factory()->user->create();
 		$subscription = $this->create_subscription_order( $user_id );
 		$token_a      = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_a' );
@@ -179,6 +182,52 @@ class SubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_Case {
 			array_values( array_map( 'absint', $subscription->get_payment_tokens() ) )
 		);
 		$this->assertSame( 'pm_a', $subscription->get_meta( '_payment_method_id', true ) );
+	}
+
+	/**
+	 * @testdox The order-tokens action attaches the token and leaves the payment method ID for the save-time repair.
+	 */
+	public function test_order_tokens_does_not_write_the_payment_method_id(): void {
+		$user_id = self::factory()->user->create();
+		$this->assertIsInt( $user_id );
+		$subscription = $this->create_subscription_order( $user_id );
+		$token        = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_selected' );
+		$saves        = did_action( 'woocommerce_update_order' );
+
+		$this->sut->save_meta_in_order_tokens( $subscription, 'wc_order_tokens', 'token', (string) $token->get_id() );
+
+		$this->assertContains( $token->get_id(), array_map( 'absint', $subscription->get_payment_tokens() ) );
+		$this->assertSame( '', $subscription->get_meta( '_payment_method_id' ) );
+		$this->assertSame( array(), $this->get_stored_payment_method_ids( $subscription ) );
+		$this->assertSame( $saves + 1, did_action( 'woocommerce_update_order' ), 'Only attaching the new token saves the order.' );
+	}
+
+	/**
+	 * @testdox Saving order tokens preserves a concurrent insert until the next save from a fresh load.
+	 */
+	public function test_order_tokens_defers_to_a_concurrent_payment_method(): void {
+		list( $subscription, $token ) = $this->create_subscription_with_concurrent_payment_method();
+		SubscriptionPaymentIdsOnSave::register( $this );
+
+		$this->sut->save_meta_in_order_tokens( $subscription, 'wc_order_tokens', 'token', (string) $token->get_id() );
+		$subscription->save();
+
+		$this->assertSame( array( 'pm_other' ), $this->get_stored_payment_method_ids( $subscription ) );
+		( new WC_Order( $subscription->get_id() ) )->save();
+		$this->assertSame( array( 'pm_selected' ), $this->get_stored_payment_method_ids( $subscription ) );
+	}
+
+	/**
+	 * @testdox Replacing a token updates the concurrently inserted row and persists pending subscription changes.
+	 */
+	public function test_token_replacement_updates_a_concurrent_payment_method(): void {
+		list( $subscription, $token ) = $this->create_subscription_with_concurrent_payment_method();
+		$subscription->update_meta_data( '_pending_change', 'keep' );
+
+		$this->sut->update_subscription_token( true, $subscription, $token );
+
+		$this->assertSame( array( 'pm_selected' ), $this->get_stored_payment_method_ids( $subscription ) );
+		$this->assertSame( 'keep', ( new WC_Order( $subscription->get_id() ) )->get_meta( '_pending_change' ) );
 	}
 
 	/**
@@ -449,6 +498,38 @@ class SubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_Case {
 		$title = $this->sut->get_specific_new_payment_method_title( 'Card', WooPaymentsPersistenceVocabulary::GATEWAY_ID, $subscription );
 
 		$this->assertSame( 'Card ending in 4242', $title, 'Client 11.1.0 trait :1080-1083; live client subscription 26 note "to Card ending in 4242".' );
+	}
+
+	/**
+	 * Attach the selected token before a second request inserts a different payment method ID.
+	 *
+	 * @return array{WC_Order, WC_Payment_Token_CC}
+	 */
+	private function create_subscription_with_concurrent_payment_method(): array {
+		$user_id = self::factory()->user->create();
+		$this->assertIsInt( $user_id );
+		$subscription = $this->create_subscription_order( $user_id );
+		$token        = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_selected' );
+		$subscription->add_payment_token( $token );
+		$subscription->read_meta_data( true );
+
+		$other = new WC_Order( $subscription->get_id() );
+		$other->update_meta_data( '_payment_method_id', 'pm_other' );
+		$other->save_meta_data();
+
+		return array( $subscription, $token );
+	}
+
+	/**
+	 * Read all stored payment method IDs, including duplicates.
+	 *
+	 * @param WC_Order $order Order to read.
+	 * @return string[]
+	 */
+	private function get_stored_payment_method_ids( WC_Order $order ): array {
+		$stored = new WC_Order( $order->get_id() );
+		$stored->read_meta_data( true );
+		return array_values( wp_list_pluck( $stored->get_meta( '_payment_method_id', false ), 'value' ) );
 	}
 
 	/**
