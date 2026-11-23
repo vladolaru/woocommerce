@@ -3,6 +3,10 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendCurrenciesController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
@@ -415,25 +419,27 @@ class WooPaymentsPaymentDetailsOrderlessRefundTest extends WC_REST_Unit_Test_Cas
 	/**
 	 * Build the platform answer with the charge that the event will carry.
 	 *
-	 * @param WC_Order $order  Charge holder.
-	 * @param int      $amount Refund in cents.
-	 * @param string   $status Provider status.
+	 * @param WC_Order $order        Charge holder.
+	 * @param int      $amount       Refund in minor units.
+	 * @param string   $status       Provider status.
+	 * @param int      $charge_total Original charge in minor units.
+	 * @param string   $currency     Charge and refund currency.
 	 * @return array
 	 */
-	private function refund_answer( WC_Order $order, int $amount = 1099, string $status = 'succeeded' ): array {
+	private function refund_answer( WC_Order $order, int $amount = 1099, string $status = 'succeeded', int $charge_total = 1099, string $currency = 'usd' ): array {
 		$refund = array(
 			'id'       => 're_answer',
 			'status'   => $status,
 			'amount'   => $amount,
-			'currency' => 'usd',
+			'currency' => $currency,
 			'charge'   => 'ch_refund',
 		);
 		$charge = array(
 			'id'       => 'ch_refund',
 			'status'   => 'succeeded',
 			'captured' => true,
-			'amount'   => 1099,
-			'currency' => 'usd',
+			'amount'   => $charge_total,
+			'currency' => $currency,
 			'refunds'  => array( 'data' => array( $refund ) ),
 			'metadata' => array(
 				'order_key' => $order->get_order_key(),
@@ -1307,6 +1313,71 @@ class WooPaymentsPaymentDetailsOrderlessRefundTest extends WC_REST_Unit_Test_Cas
 			}
 		} finally {
 			update_option( 'woocommerce_price_num_decimals', $previous );
+		}
+	}
+
+	/**
+	 * @testdox An admin refund of a euro order can send only the amount the writer can record.
+	 */
+	public function test_admin_refund_checks_the_writers_remaining_amount(): void {
+		$server = $_SERVER;
+		try {
+			update_option( 'woocommerce_currency', 'USD' );
+			update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+			update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
+			update_option( 'woocommerce_price_num_decimals', 2 );
+			$order = $this->create_charge_order();
+			$order->set_currency( 'EUR' );
+			$order->set_total( '10.40' );
+			$order->update_meta_data( '_wcpay_intent_currency', 'eur' );
+			$order->save();
+			$this->assertSame( '10.40', $order->get_total() );
+
+			update_option( 'woocommerce_price_num_decimals', 0 );
+			$_SERVER['HTTP_REFERER'] = admin_url( 'admin.php?page=wc-admin' );
+			$_SERVER['REQUEST_URI']  = '/wp-json/wc/v3/payments/refund';
+			$this->assertTrue( wc_get_container()->get( MultiCurrencyRuntimeArbiter::class )->is_builtin_owner() );
+			$this->assertTrue( wc_get_container()->get( RequestContext::class )->is_admin_api_request() );
+			$frontend = wc_get_container()->get( MultiCurrencyFrontendCurrenciesController::class );
+			$frontend->register();
+			$this->assertFalse( has_filter( 'wc_get_price_decimals', array( $frontend, 'get_price_decimals' ) ) );
+			$before = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+			$status = $order->get_status();
+
+			$dispatch = function ( int $amount ) use ( $order ) {
+				$this->http_client->response = $this->refund_response( $this->refund_answer( $order, $amount, 'succeeded', 1040, 'eur' ) );
+				return $this->server->dispatch(
+					$this->create_refund_request(
+						array(
+							'charge_id' => 'ch_refund',
+							'amount'    => $amount,
+						)
+					)
+				);
+			};
+			$response = $dispatch( 1040 );
+			$this->assertSame( 400, $response->get_status() );
+			$this->assertSame( 'wcpay_refund_invalid_amount', $response->get_data()['code'] );
+			$this->assertSame( 'This order cannot record that refund amount. The largest amount it can record is 10.00 EUR.', $response->get_data()['message'] );
+			$this->assertSame( 0, $this->http_client->request_count );
+			$fresh = wc_get_order( $order->get_id() );
+			$this->assertSame( $status, $fresh->get_status() );
+			$this->assertSame( '', $fresh->get_meta( '_wcpay_refund_status' ) );
+			$this->assertCount( 0, $fresh->get_refunds() );
+			$this->assertEquals( $before, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+			$this->assertFalse( $this->is_locked( $order ) );
+
+			$this->assertSame( 200, $dispatch( 1000 )->get_status() );
+			$row = wc_get_order( $order->get_id() )->get_refunds()[0];
+			$this->assertSame( 10.0, (float) $row->get_amount() );
+			$this->assertSame( 're_answer', $row->get_meta( '_wcpay_refund_id' ) );
+			$response = $dispatch( 40 );
+			$this->assertSame( 400, $response->get_status() );
+			$this->assertSame( 'This order cannot record that refund amount. The largest amount it can record is 0.00 EUR.', $response->get_data()['message'] );
+			$this->assertSame( 1, $this->http_client->request_count );
+			$this->assertCount( 1, wc_get_order( $order->get_id() )->get_refunds() );
+		} finally {
+			$_SERVER = $server;
 		}
 	}
 

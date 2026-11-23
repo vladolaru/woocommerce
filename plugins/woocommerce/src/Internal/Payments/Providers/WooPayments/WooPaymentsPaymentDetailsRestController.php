@@ -1001,6 +1001,17 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 		if ( ! wc_get_container()->get( WooPaymentsOrderDataService::class )->can_cover_refund_amount( $order, $amount ) ) {
 			return $this->get_invalid_refund_amount_error();
 		}
+
+		// Core checks the hydrated order, which an admin request can read at a lower precision than the stored total.
+		$remaining                = max( '0', $order->get_remaining_refund_amount() );
+		list( $whole, $fraction ) = array_pad( explode( '.', $remaining ), 2, '' );
+		$fraction                 = substr( str_pad( $fraction, $minor, '0' ), 0, $minor );
+		if ( $amount > (int) ( $whole . $fraction ) ) {
+			$maximum = wc_format_localized_price( 0 === $minor ? $whole : $whole . '.' . $fraction );
+			/* translators: 1: Largest recordable refund amount, 2: Order currency code. */
+			$message = sprintf( __( 'This order cannot record that refund amount. The largest amount it can record is %1$s %2$s.', 'woocommerce' ), $maximum, $currency );
+			return new WP_Error( 'wcpay_refund_invalid_amount', $message, array( 'status' => 400 ) );
+		}
 		$gateway = wc_get_payment_gateway_by_order( $order );
 		if ( ! $gateway instanceof \WC_Payment_Gateway || ! $gateway->can_refund_order( $order ) ) {
 			return new WP_Error( 'order_payment_refund_missing_charge', __( 'This order does not have a WooPayments charge to refund.', 'woocommerce' ), array( 'status' => 409 ) );
