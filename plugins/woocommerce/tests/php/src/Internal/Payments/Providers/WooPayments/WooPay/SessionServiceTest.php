@@ -3,6 +3,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutStoreApiExtension;
@@ -2057,6 +2060,63 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 			'the logged-in user email when neither a request email nor a customer email exists' => array( 'account-fallback@example.com', '', '', null, 'account-fallback@example.com' ),
 			'the supplied email over every fallback' => array( null, 'billing-fallback@example.com', null, 'supplied@example.com', 'supplied@example.com' ),
 		);
+	}
+
+	/**
+	 * @testdox WooPay uses the signed-in shopper's saved currency when a later request resolves as $identity.
+	 * @testWith ["guest"]
+	 *           ["shopper"]
+	 *
+	 * @param string $identity User resolved for the later WooPay request.
+	 */
+	public function test_saved_currency_on_followup_request( string $identity ): void {
+		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		update_option( 'woocommerce_currency', 'EUR' );
+		update_option( StateBuilder::ENABLED_CURRENCIES_OPTION, array( 'GBP' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_gbp', '0.8' );
+		$this->set_up_shopper_currency( 'gbp' );
+
+		$this->create_service()->start_init_session_request();
+
+		if ( 'guest' === $identity ) {
+			wp_set_current_user( 0 );
+			$this->assertSame( 'GBP', WC()->session->get( StateBuilder::CURRENCY_STORAGE_KEY ) );
+		}
+		$state = wc_get_container()->get( StateBuilderFactory::class )->get_state_builder()->build();
+		$this->assertSame( 'GBP', $state->get_selected_currency()->get_code() );
+	}
+
+	/**
+	 * @testdox WooPay preserves the session currency when the feature is disabled or the shopper has no saved currency.
+	 * @testWith ["no", "gbp"]
+	 *           ["yes", ""]
+	 *
+	 * @param string $feature_enabled Multi-Currency feature setting.
+	 * @param string $saved_currency  Shopper's saved currency.
+	 */
+	public function test_saved_currency_copy_preserves_session( string $feature_enabled, string $saved_currency ): void {
+		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, $feature_enabled );
+		$this->set_up_shopper_currency( $saved_currency );
+
+		$this->create_service()->start_init_session_request();
+
+		$this->assertSame( 'EUR', WC()->session->get( StateBuilder::CURRENCY_STORAGE_KEY ) );
+	}
+
+	/**
+	 * Sign in a shopper whose cart session still holds EUR from before login.
+	 *
+	 * @param string $saved_currency Currency saved in the shopper's account.
+	 */
+	private function set_up_shopper_currency( string $saved_currency ): void {
+		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$this->assertIsInt( $user_id );
+		wp_set_current_user( $user_id );
+		update_user_meta( $user_id, StateBuilder::CURRENCY_STORAGE_KEY, $saved_currency );
+		WC()->session = new \WC_Session_Handler();
+		WC()->session->init_session_cookie();
+		WC()->session->set( StateBuilder::CURRENCY_STORAGE_KEY, 'EUR' );
 	}
 
 	/**

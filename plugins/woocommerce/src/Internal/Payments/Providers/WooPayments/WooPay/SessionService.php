@@ -8,6 +8,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay;
 
 use Automattic\Jetpack\Connection\Client as Jetpack_Connection_Client;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Automattic\WooCommerce\StoreApi\RoutesController;
 use Automattic\WooCommerce\StoreApi\StoreApi;
@@ -461,7 +463,17 @@ class SessionService {
 		// From the request, WooPay's identity and the signed-in shopper, before the cart preload below can replace the session.
 		$email = $this->resolve_session_email( $email );
 		// The platform customer of the session the request came with, as client 11.3.0 `class-woopay-session.php:621-626`.
-		$customer_id = $this->customer_service->get_or_create_customer_id_for_user( get_current_user_id() );
+		$user_id     = get_current_user_id();
+		$customer_id = $this->customer_service->get_or_create_customer_id_for_user( $user_id );
+
+		// WooPay requests that resolve as guest read the cart session for the shopper's currency.
+		if ( 0 !== $user_id && wc_get_container()->get( MultiCurrencyRuntimeArbiter::class )->is_builtin_owner() ) {
+			$currency_code = get_user_meta( $user_id, StateBuilder::CURRENCY_STORAGE_KEY, true );
+			if ( is_string( $currency_code ) && ! empty( $currency_code ) && WC()->session ) {
+				WC()->session->set( StateBuilder::CURRENCY_STORAGE_KEY, strtoupper( $currency_code ) );
+			}
+		}
+
 		// The cart and checkout are preloaded before the rest of the request is built, as client 11.3.0 `class-woopay-session.php:653-654`.
 		$preloaded_requests = $is_pay_for_order
 			? array(
