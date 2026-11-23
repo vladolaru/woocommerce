@@ -5,7 +5,9 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use ActionScheduler;
 use ActionScheduler_Store;
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
+use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\PaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
@@ -919,6 +921,77 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 		$this->run_step( $drop, 1 );
 
 		$this->assertSame( $expected, $this->stored_tier() );
+	}
+
+	/**
+	 * @testdox R37: a capture retry that falls due after a step raised the tier in the same run follows what the run registered: the failure note where the order actions controller was never hooked, and nothing from the listener where its retry callback is hooked ($controller_hooked).
+	 * @testWith [false]
+	 *           [true]
+	 *
+	 * @param bool $controller_hooked Whether the order actions controller's retry callback is hooked in this run.
+	 */
+	public function test_r37_a_retry_after_a_raise_in_the_same_run_follows_what_is_registered( bool $controller_hooked ): void {
+		$hook  = WooPaymentsOrderAdminActionsController::RETRY_STATUS_CHANGE_OPERATION_ACTION;
+		$order = wc_create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_status( OrderStatus::COMPLETED );
+		$order->set_transaction_id( 'pi_authorized' );
+		$order->update_meta_data( '_intent_id', 'pi_authorized' );
+		$order->update_meta_data( '_intention_status', 'requires_capture' );
+		$order->save();
+		$drop = $this->drop_from_a_connected_account();
+		$this->register_cron_request();
+		$this->assertNotContains( WooPaymentsOrderAdminActionsController::class, $this->tier->get_classes_for_request( RequestTypeUtil::CRON ), 'The run booted on available, without the order actions controller.' );
+		$controller_runs = new \ArrayObject();
+		if ( $controller_hooked ) {
+			$controller = $this->getMockBuilder( WooPaymentsOrderAdminActionsController::class )->disableOriginalConstructor()->onlyMethods( array( 'handle_retry_status_change_operation' ) )->getMock();
+			$controller->method( 'handle_retry_status_change_operation' )->willReturnCallback(
+				static function () use ( $controller_runs ): void {
+					$controller_runs[] = func_get_args();
+				}
+			);
+			add_action( $hook, array( $controller, 'handle_retry_status_change_operation' ), 10, 4 );
+		}
+		$this->client->answer = fn() => $this->account();
+
+		$this->assertSame( ActionScheduler_Store::STATUS_COMPLETE, $this->run_step( $drop, 1 ) );
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $this->tier->get_effective_tier(), 'The run now reads active.' );
+
+		$order        = wc_get_order( $order->get_id() );
+		$notes_before = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$http         = 0;
+		add_filter(
+			'pre_http_request',
+			static function ( $response ) use ( &$http ) {
+				++$http;
+				return $response;
+			}
+		);
+		$action_id = as_schedule_single_action(
+			time() - 1,
+			$hook,
+			array(
+				'order_id'  => $order->get_id(),
+				'operation' => PaymentProcessingService::OPERATION_CAPTURE,
+				'retry'     => 1,
+			),
+			self::GROUP
+		);
+
+		ActionScheduler::runner()->process_action( $action_id, 'WP Cron' );
+
+		$this->assertSame( ActionScheduler_Store::STATUS_COMPLETE, ActionScheduler::store()->get_status( (string) $action_id ) );
+		$notes    = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+		$failures = array_filter( $notes, static fn( $note ): bool => 'Capture authorization <strong>failed</strong> to complete.' === $note->content );
+		$this->assertCount( $controller_hooked ? 0 : 1, $failures, 'The failure note, only where the controller does not run the retry.' );
+		$this->assertCount( $notes_before + ( $controller_hooked ? 0 : 1 ), $notes, 'No other note.' );
+		$this->assertCount( $controller_hooked ? 1 : 0, $controller_runs, 'The controller runs the retry where it is hooked.' );
+		$after = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::COMPLETED, $after->get_status() );
+		$this->assertSame( 'requires_capture', $after->get_meta( '_intention_status', true ) );
+		$this->assertSame( 'pi_authorized', $after->get_transaction_id() );
+		$this->assertSame( 0, $http, 'No platform call.' );
+		$this->assertFalse( as_has_scheduled_action( $hook ), 'No new retry.' );
 	}
 
 	/**

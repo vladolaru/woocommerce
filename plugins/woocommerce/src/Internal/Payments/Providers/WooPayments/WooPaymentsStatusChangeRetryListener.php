@@ -17,7 +17,7 @@ use WC_Order;
  * Answers a queued status-change capture or cancel retry that falls due where the built-in WooPayments cannot run it:
  * the WooPayments extension was activated, the WooPayments feature was turned off, or the account is no longer connected.
  *
- * WooPaymentsOrderAdminActionsController queues the retry and runs it on a connected or active setup tier; there this
+ * WooPaymentsOrderAdminActionsController queues the retry and runs it where its retry callback is hooked; there this
  * listener does nothing. Otherwise, while the order is still completed (capture) or cancelled (cancel) and authorized,
  * and for a capture paid with WooPayments, it writes the failure note client 11.1.0 writes when such a capture or
  * cancel fails (class-wc-payments-order-service.php:1827-1831, :1880-1884), so the merchant knows the authorization is
@@ -61,7 +61,7 @@ class WooPaymentsStatusChangeRetryListener implements RegisterHooksInterface {
 	);
 
 	/**
-	 * Setup tier, which decides whether the order actions controller runs the retry.
+	 * Setup tier, which decides whether the re-check and the renewal hand-over register.
 	 *
 	 * @var WooPaymentsSetupTier
 	 */
@@ -149,7 +149,7 @@ class WooPaymentsStatusChangeRetryListener implements RegisterHooksInterface {
 	 */
 	public function handle_retry_status_change_operation( $order_id, $operation = '', $retry = 0, $intent_id = '' ): void {
 		unset( $retry );
-		if ( in_array( $this->setup_tier->get_effective_tier(), array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true ) ) {
+		if ( self::is_retry_run_by_controller() ) {
 			return;
 		}
 
@@ -180,5 +180,37 @@ class WooPaymentsStatusChangeRetryListener implements RegisterHooksInterface {
 		}
 
 		WooPaymentsOrderAdminActionsController::add_operation_failure_note( $order, $operation );
+	}
+
+	/**
+	 * Tell whether the order actions controller's retry callback is hooked in this process, so the controller runs the retry.
+	 *
+	 * The process registered its classes once, at boot. A setup tier raised later in the same process, for example by a
+	 * re-check step in the same queue run, does not register the controller, so the tier cannot answer this.
+	 *
+	 * @return bool
+	 */
+	private static function is_retry_run_by_controller(): bool {
+		global $wp_filter;
+
+		$hook = $wp_filter[ WooPaymentsOrderAdminActionsController::RETRY_STATUS_CHANGE_OPERATION_ACTION ] ?? null;
+		if ( ! $hook instanceof \WP_Hook ) {
+			return false;
+		}
+
+		foreach ( $hook->callbacks as $callbacks ) {
+			foreach ( $callbacks as $callback ) {
+				$function = $callback['function'] ?? null;
+				if (
+					is_array( $function )
+					&& ( $function[0] ?? null ) instanceof WooPaymentsOrderAdminActionsController
+					&& 'handle_retry_status_change_operation' === ( $function[1] ?? null )
+				) {
+					return true;
+				}
+			}
+		}
+
+		return false;
 	}
 }
