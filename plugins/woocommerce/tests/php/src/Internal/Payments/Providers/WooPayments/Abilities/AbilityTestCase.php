@@ -32,6 +32,7 @@ abstract class AbilityTestCase extends \WC_Unit_Test_Case {
 		'get-timeline',
 		'get-transactions',
 		'get-transactions-summary',
+		'refund-charge',
 	);
 
 	/** Start a fresh request before discovering abilities. */

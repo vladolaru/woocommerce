@@ -931,6 +931,7 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 	 * @param string|null $reason    Merchant's reason.
 	 * @param string      $source    Refund source sent in the metadata.
 	 * @param string      $caller_key Idempotency key supplied by the caller.
+	 * @throws ApiException For an ability refund, so its caller can inspect the original failure.
 	 * @return array<string,mixed>|WP_Error
 	 */
 	public function refund_charge_without_order( string $charge_id, ?int $amount, ?string $reason, string $source, string $caller_key ) {
@@ -981,6 +982,9 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 			}
 			return $answer;
 		} catch ( ApiException $exception ) {
+			if ( 'woopayments_ability' === $source ) {
+				throw $exception;
+			}
 			return new WP_Error( 'wcpay_refund_payment', $exception->getMessage(), array( 'status' => 500 ) );
 		} finally {
 			if ( null !== $token && null !== $order ) {

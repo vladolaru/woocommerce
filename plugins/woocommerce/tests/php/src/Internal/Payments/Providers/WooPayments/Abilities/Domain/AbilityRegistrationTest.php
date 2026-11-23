@@ -13,7 +13,6 @@ use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Abiliti
 class AbilityRegistrationTest extends AbilityTestCase {
 	private const NOT_YET_PORTED = array(
 		'accept-dispute',
-		'refund-charge',
 		'submit-dispute-evidence',
 		'upload-dispute-evidence-file',
 	);
@@ -92,6 +91,10 @@ class AbilityRegistrationTest extends AbilityTestCase {
 		$this->assertTrue( wp_has_ability( $record->name ), $record->name );
 		$ability = wp_get_ability( $record->name );
 		$this->assertSame( \WP_Ability::class, get_class( $ability ) );
+		if ( self::PREFIX . 'refund-charge' === $record->name ) {
+			// The order balance can refuse a repeat before the provider replays the refund.
+			$record->description = 'Create a full or partial refund on a Stripe charge. Amount is in minor units (e.g. cents). Send the same idempotency_key with the same request again and no second refund is made: you get the first answer back, or a refusal that says why when the first refund is already recorded on the order.';
+		}
 		foreach ( array( 'label', 'description', 'category' ) as $field ) {
 			$this->assertSame( $record->$field, $ability->{ 'get_' . $field }(), "$record->name $field" );
 		}
@@ -120,7 +123,7 @@ class AbilityRegistrationTest extends AbilityTestCase {
 		$this->install_root();
 		add_filter( self::GATE, '__return_true' );
 		$classes = apply_filters( 'woocommerce_ability_definition_classes', array() );
-		$this->assertCount( 18, $classes );
+		$this->assertCount( 19, $classes );
 		foreach ( $classes as $class ) {
 			$this->assertArrayNotHasKey( 'public', $class::get_registration_args()['meta'], $class );
 		}
