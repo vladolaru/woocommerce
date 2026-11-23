@@ -24,6 +24,11 @@ class WooPaymentsFrontendAssets {
 	public const APPEARANCE_SCRIPT_HANDLE = 'wc-woopayments-appearance';
 
 	/**
+	 * Shared express cart client.
+	 */
+	public const EXPRESS_CART_SCRIPT_HANDLE = 'wc-woopayments-express-cart';
+
+	/**
 	 * Stripe.js script handle.
 	 */
 	public const STRIPE_SCRIPT_HANDLE = 'stripe';
@@ -55,6 +60,26 @@ class WooPaymentsFrontendAssets {
 
 		// phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion
 		wp_register_script( self::STRIPE_SCRIPT_HANDLE, self::STRIPE_SCRIPT_URL, array(), null, true );
+	}
+
+	/**
+	 * Register the cart client used by both express checkout scripts.
+	 *
+	 * @since 11.4.0
+	 */
+	public function register_express_cart_script(): void {
+		if ( wp_script_is( self::EXPRESS_CART_SCRIPT_HANDLE, 'registered' ) ) {
+			return;
+		}
+
+		$suffix = Constants::is_true( 'SCRIPT_DEBUG' ) ? '' : '.min';
+		wp_register_script(
+			self::EXPRESS_CART_SCRIPT_HANDLE,
+			WC()->plugin_url() . '/assets/js/frontend/utils/woopayments-express-cart' . $suffix . '.js',
+			array(),
+			WC_VERSION,
+			true
+		);
 	}
 
 	/**

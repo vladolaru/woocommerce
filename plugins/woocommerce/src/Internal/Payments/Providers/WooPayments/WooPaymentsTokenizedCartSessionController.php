@@ -77,6 +77,8 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 
 		add_filter( 'rest_pre_dispatch', array( $this, 'maybe_reject_invalid_tokenized_cart_session' ), 10, 3 );
 
+		add_filter( 'rest_post_dispatch', array( $this, 'add_express_nonce_headers' ), 10, 3 );
+
 		if ( $this->is_custom_session_order_received_request() ) {
 			// The page empties the cart. With core's cart session hooks off, the stored cart is neither cleared nor saved again,
 			// and the restore keeps it in memory for the rest of the page (client class-wc-payments-payment-request-session.php:47-58).
@@ -195,6 +197,27 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 			__( 'Invalid tokenized cart session.', 'woocommerce' ),
 			array( 'status' => 400 )
 		);
+	}
+
+	/**
+	 * Refresh express nonces after dispatch, including when the Store API refused the previous nonce.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param mixed $response REST response.
+	 * @param mixed $server   REST server.
+	 * @param mixed $request  REST request.
+	 * @return mixed
+	 */
+	public function add_express_nonce_headers( $response, $server, $request ) {
+		if ( ! $response instanceof WP_REST_Response || ! $request instanceof WP_REST_Request ||
+			0 !== strpos( $request->get_route(), '/wc/store/' ) || ! $request->get_header( 'X-WooPayments-Tokenized-Cart-Nonce' ) ) {
+			return $response;
+		}
+
+		$response->header( 'X-WooPayments-Tokenized-Cart-Nonce', wp_create_nonce( self::TOKENIZED_CART_NONCE_ACTION ) );
+		$response->header( 'X-WooPayments-Tokenized-Cart-Session-Nonce', wp_create_nonce( self::SESSION_NONCE_ACTION ) );
+		return $response;
 	}
 
 	/**

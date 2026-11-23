@@ -62,6 +62,7 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 			remove_filter( 'woocommerce_session_handler', array( $this->sut, 'handle_woocommerce_session_handler' ), 20 );
 			remove_filter( 'woocommerce_persistent_cart_enabled', array( $this->sut, 'disable_persistent_cart' ) );
 			remove_filter( 'woocommerce_get_return_url', array( $this->sut, 'add_tokenized_cart_return_url_marker' ) );
+			remove_filter( 'rest_post_dispatch', array( $this->sut, 'add_express_nonce_headers' ), 10 );
 			remove_filter( 'rest_post_dispatch', array( $this->sut, 'handle_store_api_response' ), 10 );
 			remove_filter( 'rest_pre_dispatch', array( $this->sut, 'maybe_reject_invalid_tokenized_cart_session' ), 10 );
 			remove_filter( 'rest_pre_dispatch', array( $this->sut, 'reject_invalid_tokenized_cart_session' ), 10 );
@@ -98,6 +99,39 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 
 		remove_filter( 'woocommerce_session_handler', array( $this->sut, 'handle_woocommerce_session_handler' ), 20 );
 		remove_filter( 'rest_pre_dispatch', array( $this->sut, 'maybe_reject_invalid_tokenized_cart_session' ), 10 );
+	}
+
+	/**
+	 * @testWith [200]
+	 *           [403]
+	 *
+	 * @param int $status Response status.
+	 */
+	public function test_express_nonce_headers_follow_the_route_and_marker( int $status ): void {
+		$this->sut = $this->create_controller();
+		$this->sut->register();
+		$server  = new \WP_REST_Server();
+		$cart    = 'X-WooPayments-Tokenized-Cart-Nonce';
+		$session = 'X-WooPayments-Tokenized-Cart-Session-Nonce';
+
+		foreach ( array( '/wc/store/v1/products', '/wp/v2/posts' ) as $route ) {
+			$request = new WP_REST_Request( 'GET', $route );
+			foreach ( array( false, true ) as $marked ) {
+				if ( $marked ) {
+					$request->set_header( $cart, 'previous' );
+				}
+				$response = apply_filters( 'rest_post_dispatch', new WP_REST_Response( array(), $status ), $server, $request );
+				$headers  = $response->get_headers();
+				$this->assertSame( $status, $response->get_status() );
+				if ( $marked && '/wc/store/v1/products' === $route ) {
+					$this->assertSame( wp_create_nonce( 'woopayments_tokenized_cart_nonce' ), $headers[ $cart ] ?? null );
+					$this->assertSame( wp_create_nonce( 'woopayments_tokenized_cart_session_nonce' ), $headers[ $session ] ?? null );
+				} else {
+					$this->assertArrayNotHasKey( $cart, $headers );
+					$this->assertArrayNotHasKey( $session, $headers );
+				}
+			}
+		}
 	}
 
 	/**

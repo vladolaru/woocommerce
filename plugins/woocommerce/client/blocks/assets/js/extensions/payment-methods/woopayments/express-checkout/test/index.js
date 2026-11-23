@@ -466,6 +466,11 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 	} );
 
 	beforeEach( () => {
+		jest.isolateModules( () =>
+			jest.requireActual(
+				'../../../../../../../../legacy/js/frontend/utils/woopayments-express-cart'
+			)
+		);
 		jest.clearAllMocks();
 		mockNotices = [];
 		baseExpressCheckoutParams.enabled_methods = [ 'payment_request' ];
@@ -3260,6 +3265,75 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			navigate.mockReset();
 			window.history.replaceState( null, '', checkoutUrl );
 		} );
+
+		it.each( [ true, false ] )(
+			'refreshes express nonces once before confirmation, accepted %s',
+			async ( accepted ) => {
+				const cart = 'X-WooPayments-Tokenized-Cart-Nonce';
+				const refusal = Response.json(
+					{ code: 'woocommerce_rest_invalid_nonce' },
+					{
+						status: 403,
+						headers: { Nonce: 'current', [ cart ]: 'current-cart' },
+					}
+				);
+				apiFetch.mockReset().mockRejectedValueOnce( refusal );
+				apiFetch.setNonce = jest.fn();
+				if ( accepted ) {
+					apiFetch.mockResolvedValueOnce(
+						Response.json( confirmationResponse, {
+							headers: { Nonce: 'latest' },
+						} )
+					);
+				} else {
+					apiFetch.mockRejectedValue( refusal );
+				}
+				stripe.handleNextAction = jest.fn().mockResolvedValue( {
+					paymentIntent: { id: 'pi_3ds', status: 'succeeded' },
+				} );
+				try {
+					await confirmGooglePay();
+					expect( apiFetch ).toHaveBeenCalledTimes( 2 );
+					expect(
+						apiFetch.mock.calls[ 1 ][ 0 ].headers
+					).toMatchObject( {
+						Nonce: 'current',
+						[ cart ]: 'current-cart',
+					} );
+					expect(
+						apiFetch.mock.calls[ 1 ][ 0 ].headers
+					).not.toHaveProperty(
+						'X-WooPayments-Tokenized-Cart-Session-Nonce'
+					);
+					expect( apiFetch.setNonce ).toHaveBeenCalledTimes( 2 );
+					expect(
+						apiFetch.setNonce.mock.lastCall[ 0 ].get( 'Nonce' )
+					).toBe( accepted ? 'latest' : 'current' );
+					expect( stripe.handleNextAction ).toHaveBeenCalledTimes(
+						accepted ? 1 : 0
+					);
+					expect(
+						stripe.createConfirmationToken
+					).toHaveBeenCalledTimes( 1 );
+					apiFetch.mockResolvedValueOnce( Response.json( {} ) );
+					await act( async () => {
+						await expressHandlers.shippingratechange( {
+							shippingRate: { id: 'flat_rate:1' },
+							resolve: jest.fn(),
+							reject: jest.fn(),
+						} );
+					} );
+					expect( apiFetch.mock.lastCall[ 0 ].headers ).toMatchObject(
+						{
+							Nonce: accepted ? 'latest' : 'current',
+							[ cart ]: 'current-cart',
+						}
+					);
+				} finally {
+					delete apiFetch.setNonce;
+				}
+			}
+		);
 
 		it( 'confirms the intent from the Store API payment details and sends the shopper to the order', async () => {
 			stripe.handleNextAction = jest.fn().mockResolvedValue( {

@@ -302,6 +302,7 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 	 * Register the classic express checkout assets; this controller is their only registrar.
 	 */
 	private function register_classic_express_checkout_assets(): void {
+		$this->frontend_assets->register_express_cart_script();
 		$this->frontend_assets->register_stripe_script();
 
 		if ( ! wp_script_is( self::CLASSIC_EXPRESS_CHECKOUT_SCRIPT_HANDLE, 'registered' ) ) {
@@ -312,7 +313,7 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 				// wp-hooks on every surface: the extension filters (WooCommerce Subscriptions, Deposits, Product Bundles) run
 				// through it, as the client 11.1.0 bundle that imports @wordpress/hooks does. wp-a11y announces a click on the
 				// refresh overlay, as the client 11.2.0 bundle's @wordpress/a11y speak() does.
-				array( 'jquery', WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE, 'wp-a11y', 'wp-api-fetch', 'wp-hooks', 'wp-i18n' ),
+				array( 'jquery', WooPaymentsFrontendAssets::EXPRESS_CART_SCRIPT_HANDLE, WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE, 'wp-a11y', 'wp-api-fetch', 'wp-hooks', 'wp-i18n' ),
 				WC_VERSION,
 				true
 			);

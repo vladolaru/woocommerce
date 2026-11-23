@@ -148,6 +148,9 @@ describe( 'woopayments-express-checkout', () => {
 	}
 
 	beforeEach( () => {
+		jest.isolateModules( () =>
+			require( '../utils/woopayments-express-cart' )
+		);
 		apiFetch = jest.fn();
 		window.wp = {
 			apiFetch,
@@ -1184,6 +1187,99 @@ describe( 'woopayments-express-checkout', () => {
 		);
 	} );
 
+	describe( 'express nonce freshness', () => {
+		const cart = 'X-WooPayments-Tokenized-Cart-Nonce';
+		const session = 'X-WooPayments-Tokenized-Cart-Session-Nonce';
+		const invalid = 'woocommerce_rest_invalid_nonce';
+
+		it.each( [
+			[ 403, invalid, 2 ],
+			[ 401, invalid, 1 ],
+			[ 403, 'other', 1 ],
+		] )(
+			'retains partial updates and bounds attempts for %i %s',
+			async ( status, code, attempts ) => {
+				const { placeOrder } = loadModule(
+					baseParams( { button_context: 'product' } )
+				);
+				apiFetch.setNonce = jest.fn();
+				const place = () =>
+					placeOrder( 'ctoken_123', { billingDetails: {} } );
+				apiFetch.mockResolvedValueOnce(
+					Response.json(
+						{},
+						{
+							headers: {
+								Nonce: 'current',
+								[ cart ]: 'current-cart',
+								[ session ]: 'current-session',
+							},
+						}
+					)
+				);
+				await place();
+				apiFetch.mockClear();
+				apiFetch.mockImplementation( () =>
+					Promise.reject(
+						Response.json(
+							{ code },
+							{
+								status,
+								headers: {
+									Nonce: 'next',
+									[ cart ]: 'next-cart',
+								},
+							}
+						)
+					)
+				);
+				await expect( place() ).rejects.toBeDefined();
+				expect( apiFetch ).toHaveBeenCalledTimes( attempts );
+				expect( apiFetch.mock.calls[ 0 ][ 0 ].headers ).toMatchObject( {
+					Nonce: 'current',
+					[ cart ]: 'current-cart',
+					[ session ]: 'current-session',
+				} );
+				expect( apiFetch.setNonce ).toHaveBeenCalledTimes(
+					attempts + 1
+				);
+				apiFetch.mockResolvedValueOnce( Response.json( {} ) );
+				await place();
+				for ( const [ options ] of apiFetch.mock.calls.slice( 1 ) ) {
+					expect( options.headers ).toMatchObject( {
+						Nonce: 'next',
+						[ cart ]: 'next-cart',
+						[ session ]: 'current-session',
+					} );
+				}
+			}
+		);
+
+		it( 'retries once with retained values when the Store API nonce is absent, keeping existing-order payment separate', async () => {
+			const error = Response.json(
+				{ code: invalid },
+				{ status: 403, headers: { [ cart ]: 'partial-cart' } }
+			);
+			const place = ( params ) =>
+				loadModule( baseParams( params ) ).placeOrder( 'ctoken_123', {
+					billingDetails: {},
+				} );
+			apiFetch
+				.mockRejectedValueOnce( error )
+				.mockResolvedValueOnce( Response.json( {} ) );
+			await place( {} );
+			expect( apiFetch ).toHaveBeenCalledTimes( 2 );
+			expect( apiFetch.mock.calls[ 1 ][ 0 ] ).toEqual(
+				apiFetch.mock.calls[ 0 ][ 0 ]
+			);
+			apiFetch.mockClear().mockRejectedValueOnce( error );
+			await expect(
+				place( { button_context: 'pay_for_order', order_id: 42 } )
+			).rejects.toBe( error );
+			expect( apiFetch ).toHaveBeenCalledTimes( 1 );
+		} );
+	} );
+
 	describe( 'placeOrder', () => {
 		it( 'uses the stored order identity while filling only missing contact fields from the wallet', async () => {
 			const params = baseParams( {
@@ -1574,6 +1670,7 @@ describe( 'woopayments-express-checkout', () => {
 						payment_data: paymentData( 'checkout' ),
 						extensions: {},
 					},
+					parse: false,
 				},
 			],
 			[

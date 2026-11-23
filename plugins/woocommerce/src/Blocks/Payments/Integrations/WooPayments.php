@@ -220,10 +220,11 @@ final class WooPayments extends AbstractPaymentMethodType {
 		}
 
 		if ( $this->is_card_gateway() && $this->should_enqueue_express_checkout_assets() ) {
+			$this->frontend_assets->register_express_cart_script();
 			$this->frontend_assets->register_stripe_script();
 			$handles[] = $this->register_payment_method_assets(
 				self::EXPRESS_CHECKOUT_SCRIPT_HANDLE,
-				array_merge( array( WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE, self::CHECKOUT_BLOCKS_SCRIPT_HANDLE ), $this->register_common_scripts() )
+				array_merge( array( WooPaymentsFrontendAssets::EXPRESS_CART_SCRIPT_HANDLE, WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE, self::CHECKOUT_BLOCKS_SCRIPT_HANDLE ), $this->register_common_scripts() )
 			);
 		}
 

@@ -3,13 +3,10 @@
 	'use strict';
 
 	var config = window.wcpayExpressCheckoutParams || {};
-	// The localized values that change during the page's life, read once; the script never writes `config`. A product
-	// preview narrows the methods, a product-page Store API answer refreshes the nonce, and a pay-for-order POST that
-	// stored the wallet email makes it the order's authorization email.
+	// A product preview narrows the methods, and pay-for-order can update the authorization email.
 	var state = {
 		enabledMethods: config.enabled_methods,
 		paymentMethodTypes: config.payment_method_types,
-		storeApiNonce: config.nonce && config.nonce.store_api_nonce,
 		billingEmail: config.billing_email,
 	};
 	// Shopper-facing strings, translated through the wp-i18n dependency like client 11.1.0's @wordpress/i18n
@@ -229,81 +226,6 @@
 		);
 	}
 
-	function getStoreApiHeaders(
-		includeSessionNonce,
-		includeTokenizedCartNonce
-	) {
-		var nonce = config.nonce || {};
-		var headers = {};
-
-		if ( state.storeApiNonce ) {
-			headers.Nonce = state.storeApiNonce;
-		}
-
-		if (
-			includeTokenizedCartNonce !== false &&
-			nonce.tokenized_cart_nonce
-		) {
-			headers[ 'X-WooPayments-Tokenized-Cart-Nonce' ] =
-				nonce.tokenized_cart_nonce;
-		}
-
-		if ( includeSessionNonce && nonce.tokenized_cart_session_nonce ) {
-			headers[ 'X-WooPayments-Tokenized-Cart-Session-Nonce' ] =
-				nonce.tokenized_cart_session_nonce;
-		}
-
-		if ( isProduct() && tokenizedCartSession !== null ) {
-			headers[ 'X-WooPayments-Tokenized-Cart-Session' ] =
-				tokenizedCartSession;
-		}
-
-		return headers;
-	}
-
-	/**
-	 * Read a product-page Store API response: keep its nonce and, unless told otherwise, its tokenized cart session.
-	 *
-	 * @param {Object}  response     The raw response (`parse: false`).
-	 * @param {boolean} adoptSession False when the session in the response must not replace the current one.
-	 * @return {*} The response body.
-	 */
-	function normalizeStoreApiResponse( response, adoptSession ) {
-		var nextNonce;
-		var nextSession;
-
-		if (
-			! isProduct() ||
-			! response ||
-			! response.headers ||
-			typeof response.headers.get !== 'function'
-		) {
-			return response;
-		}
-
-		nextNonce = response.headers.get( 'Nonce' );
-		if ( nextNonce ) {
-			state.storeApiNonce = nextNonce;
-		}
-
-		nextSession = response.headers.get(
-			'X-WooPayments-Tokenized-Cart-Session'
-		);
-		if (
-			adoptSession !== false &&
-			nextSession !== null &&
-			nextSession !== undefined
-		) {
-			tokenizedCartSession = nextSession;
-		}
-
-		if ( typeof response.json === 'function' ) {
-			return response.json();
-		}
-
-		return response;
-	}
-
 	function addQueryArgs( path, args ) {
 		var query = Object.keys( args )
 			.filter( function ( key ) {
@@ -334,43 +256,39 @@
 	 * @return {Promise} The response body.
 	 */
 	function requestCart( options, adoptSession ) {
-		var apiFetch = window.wp.apiFetch;
-		var includeSessionNonce = isProduct();
-		var requestOptions = Object.assign( {}, options, {
-			// Pin the currency the page was rendered with, so cache-optimized
-			// or geolocation-driven multi-currency setups can't serve the
-			// request in a different currency than the wallet sheet shows.
-			path: addQueryArgs( options.path, {
-				currency: getStoreApiCurrency(),
-			} ),
-			headers: Object.assign(
-				{},
-				getStoreApiHeaders( includeSessionNonce, true ),
-				options.headers || {}
-			),
-		} );
-
-		if ( isProduct() ) {
-			requestOptions.parse = false;
+		var product = isProduct();
+		var headers = {};
+		if ( product && tokenizedCartSession !== null ) {
+			headers[ 'X-WooPayments-Tokenized-Cart-Session' ] =
+				tokenizedCartSession;
 		}
-
-		return apiFetch( requestOptions ).then( function ( response ) {
-			return normalizeStoreApiResponse(
-				response,
-				! adoptSession || adoptSession()
-			);
-		} );
+		return window.wc.woopayments.requestExpressCart(
+			window.wp.apiFetch,
+			Object.assign( {}, options, {
+				path: addQueryArgs( options.path, {
+					currency: getStoreApiCurrency(),
+				} ),
+				headers: Object.assign( headers, options.headers ),
+				parse: ! product,
+			} ),
+			config.nonce,
+			product,
+			product &&
+				function ( session ) {
+					if ( ! adoptSession || adoptSession() ) {
+						tokenizedCartSession = session;
+					}
+				}
+		);
 	}
 
 	function requestOrder( options ) {
-		var apiFetch = window.wp.apiFetch;
-
-		return apiFetch(
+		var nonce = config.nonce && config.nonce.store_api_nonce;
+		return window.wp.apiFetch(
 			Object.assign( {}, options, {
 				headers: Object.assign(
-					{},
-					getStoreApiHeaders( false, false ),
-					options.headers || {}
+					nonce ? { Nonce: nonce } : {},
+					options.headers
 				),
 			} )
 		);
@@ -1681,25 +1599,21 @@
 	}
 
 	function requestIapiProductPreview( product ) {
-		var apiFetch = window.wp.apiFetch;
-		var headers = Object.assign( {}, getStoreApiHeaders( true, true ), {
-			'X-WooPayments-Tokenized-Cart-Session': '',
-			'X-WooPayments-Tokenized-Cart-Is-Ephemeral-Cart': '1',
-		} );
-
 		function requestPreview() {
-			return apiFetch( {
-				method: 'POST',
-				path: addQueryArgs( '/wc/store/v1/cart/add-item', {
-					currency: getStoreApiCurrency(),
-				} ),
-				headers: headers,
-				data: product,
-				parse: false,
-			} ).then( function ( response ) {
-				// The preview's ephemeral cart session must not replace the shopper's.
-				return normalizeStoreApiResponse( response, false );
-			} );
+			return requestCart(
+				{
+					method: 'POST',
+					path: '/wc/store/v1/cart/add-item',
+					headers: {
+						'X-WooPayments-Tokenized-Cart-Session': '',
+						'X-WooPayments-Tokenized-Cart-Is-Ephemeral-Cart': '1',
+					},
+					data: product,
+				},
+				function () {
+					return false;
+				}
+			);
 		}
 
 		return productCurrencyResolutionPromise

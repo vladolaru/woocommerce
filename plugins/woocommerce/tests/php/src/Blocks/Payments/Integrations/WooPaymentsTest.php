@@ -429,7 +429,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 				array(
 					'wc-payment-method-woopayments-express-checkout',
 					'assets/client/blocks/wc-payment-method-woopayments-express-checkout.js',
-					array( 'stripe', 'wc-blocks-checkout', 'wc-payment-method-woopayments-common' ),
+					array( 'wc-woopayments-express-cart', 'stripe', 'wc-blocks-checkout', 'wc-payment-method-woopayments-common' ),
 				),
 				array(
 					'wc-payment-method-woopayments-express-checkout',
@@ -829,6 +829,8 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		$loaded = $this->get_dependency_closure( $dependencies );
 		$this->assertContains( 'stripe', $loaded );
 		$this->assertTrue( wp_script_is( 'stripe', 'registered' ) );
+		$this->assertContains( 'wc-woopayments-express-cart', $loaded );
+		$this->assertTrue( wp_script_is( 'wc-woopayments-express-cart', 'registered' ) );
 		// A webpack entry runs only once its shared chunk has loaded; the express script skips the WooPay protocol.
 		$this->assertContains( 'wc-payment-method-woopayments-common', $loaded );
 		$this->assertNotContains( 'wc-woopayments-common', $loaded, 'The shared helpers are in the shared chunk.' );

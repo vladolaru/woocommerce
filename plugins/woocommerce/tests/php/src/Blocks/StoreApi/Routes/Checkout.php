@@ -3950,6 +3950,33 @@ class Checkout extends \WP_Test_REST_TestCase {
 	}
 
 	/**
+	 * @testdox Only the accepted express checkout reaches payment processing after a nonce refresh.
+	 */
+	public function test_express_nonce_refresh_reaches_payment_once(): void {
+		$controller = wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenizedCartSessionController::class );
+		$controller->register();
+		$server  = rest_get_server();
+		$request = $this->build_valid_post_request();
+		$header  = 'X-WooPayments-Tokenized-Cart-Nonce';
+		$request->set_header( $header, 'previous' );
+		$request->set_header( 'Nonce', 'previous' );
+		$hook   = 'woocommerce_rest_checkout_process_payment_with_context';
+		$before = did_action( $hook );
+
+		$refused = apply_filters( 'rest_post_dispatch', $server->dispatch( $request ), $server, $request );
+		$this->assertSame( 403, $refused->get_status() );
+		$this->assertSame( 'woocommerce_rest_invalid_nonce', $refused->get_data()['code'] );
+		$this->assertSame( $before, did_action( $hook ) );
+
+		$headers = $refused->get_headers();
+		$this->assertSame( wp_create_nonce( 'woopayments_tokenized_cart_nonce' ), $headers[ $header ] ?? null );
+		$request->set_header( $header, $headers[ $header ] );
+		$request->set_header( 'Nonce', $headers['Nonce'] );
+		$this->assertSame( 200, $server->dispatch( $request )->get_status() );
+		$this->assertSame( $before + 1, did_action( $hook ) );
+	}
+
+	/**
 	 * @testdox Store API checkout stores the order awaiting payment before invoking the payment gateway.
 	 */
 	public function test_post_sets_order_awaiting_payment_before_processing_payment(): void {

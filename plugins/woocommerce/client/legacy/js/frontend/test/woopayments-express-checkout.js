@@ -366,6 +366,9 @@ describe( 'WooPayments express checkout', () => {
 	}
 
 	beforeEach( () => {
+		jest.isolateModules( () =>
+			require( '../utils/woopayments-express-cart' )
+		);
 		jest.resetModules();
 		bodyEventHandlers = {};
 		delegatedQuantityHandlers = [];
@@ -2653,6 +2656,19 @@ describe( 'WooPayments express checkout', () => {
 			product_type: 'variable',
 		};
 		window.wp.apiFetch
+			.mockRejectedValueOnce(
+				Response.json(
+					{ code: 'woocommerce_rest_invalid_nonce' },
+					{
+						status: 403,
+						headers: {
+							Nonce: 'preview',
+							'X-WooPayments-Tokenized-Cart-Nonce':
+								'preview-cart',
+						},
+					}
+				)
+			)
 			.mockResolvedValueOnce(
 				getStoreApiResponse(
 					{
@@ -2689,14 +2705,23 @@ describe( 'WooPayments express checkout', () => {
 		jest.advanceTimersByTime( 250 );
 		// The click comes once the preview has answered: a click while it is pending is rejected (client 11.2.0
 		// shortcode-buttons-express/index.js:320-324).
+		await jest.runAllTimersAsync();
 		await flushMicrotasks();
 
+		expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 2 );
 		await expressHandlers.click( { resolve: resolveClick } );
 		await Promise.resolve();
 		await Promise.resolve();
 
-		expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 2 );
+		expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 3 );
 		expect( window.wp.apiFetch.mock.calls[ 1 ][ 0 ].headers ).toMatchObject(
+			{
+				Nonce: 'preview',
+				'X-WooPayments-Tokenized-Cart-Nonce': 'preview-cart',
+				'X-WooPayments-Tokenized-Cart-Is-Ephemeral-Cart': '1',
+			}
+		);
+		expect( window.wp.apiFetch.mock.calls[ 2 ][ 0 ].headers ).toMatchObject(
 			{
 				'X-WooPayments-Tokenized-Cart-Session': '',
 			}

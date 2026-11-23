@@ -376,26 +376,13 @@ const getPlaceOrderExtensions = () => {
 	);
 };
 
-const getStoreApiHeaders = ( includeSessionNonce = false ) => {
-	const nonce = params?.nonce || {};
-	const headers = {};
-
-	if ( nonce.store_api_nonce ) {
-		headers.Nonce = nonce.store_api_nonce;
-	}
-
-	if ( nonce.tokenized_cart_nonce ) {
-		headers[ 'X-WooPayments-Tokenized-Cart-Nonce' ] =
-			nonce.tokenized_cart_nonce;
-	}
-
-	if ( includeSessionNonce && nonce.tokenized_cart_session_nonce ) {
-		headers[ 'X-WooPayments-Tokenized-Cart-Session-Nonce' ] =
-			nonce.tokenized_cart_session_nonce;
-	}
-
-	return headers;
-};
+const requestCart = ( options, includeSession = false ) =>
+	window.wc.woopayments.requestExpressCart(
+		apiFetch,
+		options,
+		params.nonce,
+		includeSession
+	);
 
 const getCartTotal = ( billing ) => {
 	const cartTotal = Number( billing?.cartTotal?.value );
@@ -1408,13 +1395,12 @@ const ExpressCheckoutElement = ( {
 			'shippingaddresschange',
 			async ( event ) => {
 				try {
-					const updatedCart = await apiFetch( {
+					const updatedCart = await requestCart( {
 						method: 'POST',
 						path: getStoreApiPath(
 							'/wc/store/v1/cart/update-customer'
 						),
 						headers: {
-							...getStoreApiHeaders(),
 							'X-WooPayments-Tokenized-Cart': true,
 						},
 						data: {
@@ -1475,12 +1461,11 @@ const ExpressCheckoutElement = ( {
 		expressElementRef.current.on( 'shippingratechange', async ( event ) => {
 			const currentCart = getCurrentCart();
 			try {
-				const updatedCart = await apiFetch( {
+				const updatedCart = await requestCart( {
 					method: 'POST',
 					path: getStoreApiPath(
 						'/wc/store/v1/cart/select-shipping-rate'
 					),
-					headers: getStoreApiHeaders(),
 					data: {
 						package_id: getPackageIdForShippingRate(
 							currentCart,
@@ -1564,37 +1549,39 @@ const ExpressCheckoutElement = ( {
 							),
 						}
 					: undefined;
-				const response = await apiFetch( {
-					method: 'POST',
-					path: getStoreApiPath( '/wc/store/v1/checkout' ),
-					headers: {
-						...getStoreApiHeaders(
-							params.button_context === 'product'
-						),
-						'X-WooPayments-Tokenized-Cart': true,
-						// Lets the server reject placement when the cart's
-						// currency drifted away from the one the Element
-						// booted with.
-						...( elementCurrency
-							? {
-									'X-WooPayments-Payment-Currency':
-										elementCurrency,
-								}
-							: {} ),
+				const response = await requestCart(
+					{
+						method: 'POST',
+						path: getStoreApiPath( '/wc/store/v1/checkout' ),
+						headers: {
+							'X-WooPayments-Tokenized-Cart': true,
+							// Lets the server reject placement when the cart's
+							// currency drifted away from the one the Element
+							// booted with.
+							...( elementCurrency
+								? {
+										'X-WooPayments-Payment-Currency':
+											elementCurrency,
+									}
+								: {} ),
+						},
+						data: {
+							payment_method: PAYMENT_METHOD_NAME,
+							billing_address:
+								expressCheckout.getBillingAddress( event ),
+							shipping_address: eventShippingAddress,
+							...( orderNotes
+								? { customer_note: orderNotes }
+								: {} ),
+							payment_data: getPaymentData(
+								paymentCredentialId,
+								paymentMethodTypes
+							),
+							extensions: getPlaceOrderExtensions(),
+						},
 					},
-					data: {
-						payment_method: PAYMENT_METHOD_NAME,
-						billing_address:
-							expressCheckout.getBillingAddress( event ),
-						shipping_address: eventShippingAddress,
-						...( orderNotes ? { customer_note: orderNotes } : {} ),
-						payment_data: getPaymentData(
-							paymentCredentialId,
-							paymentMethodTypes
-						),
-						extensions: getPlaceOrderExtensions(),
-					},
-				} );
+					params.button_context === 'product'
+				);
 
 				if (
 					response?.payment_result?.payment_status &&
