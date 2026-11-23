@@ -455,15 +455,18 @@ class WooCommerceNameYourPriceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox NYP 4.0.1 applies the converted cart price on the first session load after a currency switch.
-	 *
-	 * The old cart check missed the extension's magic getter and left the product at 15 after the switch to USD.
+	 * @testdox NYP $version applies the converted cart price on the first session load after a currency switch.
+	 * @testWith ["3.8.3"]
+	 *           ["4.0.1"]
 	 *
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
+	 *
+	 * @param string $version Installed Name Your Price version.
 	 */
-	public function test_currency_switch_updates_the_nyp_cart_product_price(): void {
-		$singleton = require __DIR__ . '/Fixtures/name-your-price-cart.inc';
+	public function test_currency_switch_updates_the_nyp_cart_product_price( string $version ): void {
+		$singleton          = require __DIR__ . '/Fixtures/name-your-price-cart.inc';
+		$singleton->version = $version;
 		// The extension class must exist only in this PHPUnit child process.
 		if ( ! class_exists( 'WC_Name_Your_Price' ) ) {
 			class_alias( get_class( $singleton ), 'WC_Name_Your_Price' );

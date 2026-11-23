@@ -384,7 +384,6 @@ class WooCommerceNameYourPrice implements RegisterHooksInterface {
 		$name_your_price = \WC_Name_Your_Price();
 		if (
 			! is_object( $name_your_price )
-			|| ( ! $this->has_nyp_v4_hooks && ! isset( $name_your_price->cart ) )
 			|| ! is_object( $name_your_price->cart ?? null )
 			|| ! is_callable( array( $name_your_price->cart, 'set_cart_item' ) )
 		) {
