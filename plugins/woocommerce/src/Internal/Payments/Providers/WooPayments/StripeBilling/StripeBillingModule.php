@@ -251,6 +251,16 @@ class StripeBillingModule implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Tell whether the subscription still holds its Stripe subscription ID.
+	 *
+	 * @param WC_Order $subscription Subscription.
+	 * @return bool
+	 */
+	public function has_stripe_subscription_id( WC_Order $subscription ): bool {
+		return '' !== $this->get_subscription_service()->get_wcpay_subscription_id( $subscription );
+	}
+
+	/**
 	 * Tell whether any subscription related to an order is billed by Stripe Billing; always false when the module is not loaded.
 	 *
 	 * @param WC_Order $order Order.

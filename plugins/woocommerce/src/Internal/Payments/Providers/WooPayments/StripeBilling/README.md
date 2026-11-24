@@ -23,7 +23,7 @@ Code outside this folder names only `StripeBillingModule`, and only at the point
 |---|---|---|
 | S1 | `WooPaymentsProvider.php` | registers the module root in the bootstrap matrix |
 | S2 | `WooPaymentsGateway.php` | adjusts the gateway's subscription supports to the toggle |
-| S3 | `Subscriptions/SubscriptionsController.php` | skips the store's own renewal charge for Stripe-billed subscriptions |
+| S3 | `Subscriptions/SubscriptionsController.php` | skips the store's own renewal charge for Stripe-billed subscriptions and asks the module whether a subscription still holds its Stripe subscription ID before invoicing a stalled renewal |
 | S4 | `Webhooks/EventIngestor.php` | routes `invoice.upcoming`, `invoice.paid` and `invoice.payment_failed` after the mode check and looks up existing orders for dropped invoices. When the module is unloaded, delivery returns the client's 400 refusal and lookup returns no order |
 | S5 | `WooPaymentsGateway.php` | fires `woocommerce_payments_changed_subscription_payment_method` after a payment method change |
 | S6 | `WooPaymentsStoreSetupReportController.php` | reports whether Stripe Billing is enabled |

@@ -29,9 +29,9 @@ class StripeBillingPlacementTest extends WC_Unit_Test_Case {
 	);
 
 	/**
-	 * @testdox The scanner finds module references in code and ignores them in comments.
+	 * @testdox The scanner permits only the module class in seam files and ignores comments.
 	 */
-	public function test_scanner_finds_code_references_and_ignores_comments(): void {
+	public function test_scanner_recognizes_allowed_references(): void {
 		$referencing = <<<'PHP'
 <?php
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
@@ -49,13 +49,16 @@ PHP;
 $module = WooPaymentsStripeBillingModuleFactory::class;
 PHP;
 
-		$this->assertTrue( $this->references_module( $referencing ) );
-		$this->assertTrue( $this->references_module( $relative ) );
-		$this->assertFalse( $this->references_module( $commented ) );
+		$this->assertTrue( $this->has_forbidden_reference( $referencing, false ) );
+		$this->assertFalse( $this->has_forbidden_reference( $referencing, true ) );
+		$this->assertTrue( $this->has_forbidden_reference( $relative, false ) );
+		$this->assertFalse( $this->has_forbidden_reference( $relative, true ) );
+		$this->assertTrue( $this->has_forbidden_reference( str_replace( 'StripeBillingModule', 'StripeBillingSubscriptionService', $referencing ), true ) );
+		$this->assertFalse( $this->has_forbidden_reference( $commented, false ) );
 	}
 
 	/**
-	 * @testdox Outside the module folder, only the seam files reference the Stripe Billing module.
+	 * @testdox Outside the module folder, only the seam files may name StripeBillingModule and none may name its services.
 	 */
 	public function test_only_seam_files_reference_the_module(): void {
 		$plugin_directory = WC()->plugin_path() . '/';
@@ -69,20 +72,20 @@ PHP;
 				}
 
 				$path = substr( str_replace( '\\', '/', $file->getPathname() ), strlen( $plugin_directory ) );
-				if ( 0 === strpos( $path, self::MODULE_DIRECTORY ) || in_array( $path, self::SEAM_FILES, true ) ) {
+				if ( 0 === strpos( $path, self::MODULE_DIRECTORY ) ) {
 					continue;
 				}
 
 				// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading local production source for a placement assertion.
 				$source = (string) file_get_contents( $file->getPathname() );
 				// The scanner's pattern needs the literal module name, so a file without it is skipped before tokenizing.
-				if ( false !== strpos( $source, 'StripeBilling' ) && $this->references_module( $source ) ) {
+				if ( false !== stripos( $source, 'StripeBilling' ) && $this->has_forbidden_reference( $source, in_array( $path, self::SEAM_FILES, true ) ) ) {
 					$violations[] = $path;
 				}
 			}
 		}
 
-		$this->assertSame( array(), $violations, 'Only the seam files listed in StripeBilling/README.md may reference the Stripe Billing module.' );
+		$this->assertSame( array(), $violations, 'Only StripeBillingModule may be named outside its folder, and only in the seam files listed in StripeBilling/README.md.' );
 	}
 
 	/**
@@ -106,13 +109,16 @@ PHP;
 	}
 
 	/**
-	 * Tell whether PHP source references the module namespace outside comments.
+	 * Check whether code names the Stripe Billing namespace beyond the class allowed at a seam.
 	 *
-	 * @param string $source PHP source.
+	 * @param string $source       PHP source.
+	 * @param bool   $is_seam_file Whether this file may name StripeBillingModule.
 	 * @return bool
 	 */
-	private function references_module( string $source ): bool {
-		return 1 === preg_match( '/(^|[^\w\\\\])(\\\\?[\w\\\\]*\\\\)?StripeBilling\\\\/', $this->code_without_comments( $source ) );
+	private function has_forbidden_reference( string $source, bool $is_seam_file ): bool {
+		$pattern = $is_seam_file ? '/\bStripeBilling\b(?!\\\\StripeBillingModule\b(?!\\\\))/i' : '/\bStripeBilling\b/i';
+
+		return 1 === preg_match( $pattern, $this->code_without_comments( $source ) );
 	}
 
 	/**

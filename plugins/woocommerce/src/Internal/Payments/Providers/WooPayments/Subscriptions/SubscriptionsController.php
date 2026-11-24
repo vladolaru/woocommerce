@@ -17,7 +17,6 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOutcomeApplyException;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingSubscriptionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -869,7 +868,7 @@ class SubscriptionsController implements RegisterHooksInterface {
 
 		// Stripe can still bill a subscription that holds its Stripe subscription ID until the cancellation is confirmed,
 		// so asking the shopper to pay here could collect the renewal twice.
-		if ( '' !== wc_get_container()->get( StripeBillingSubscriptionService::class )->get_wcpay_subscription_id( $subscription ) ) {
+		if ( $this->get_stripe_billing_module()->has_stripe_subscription_id( $subscription ) ) {
 			return;
 		}
 
