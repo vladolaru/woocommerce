@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudOrderTrackingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
@@ -19,6 +20,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\SepaTo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\SubscriptionPaymentIdsOnSave;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use RuntimeException;
@@ -1327,6 +1329,50 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 1, $customer_service->failed_fetch_attempts, 'The provider fetch must have been attempted.' );
 		$this->assertArrayHasKey( $local_token->get_id(), $tokens, 'A provider outage must degrade to the locally stored list.' );
 		$this->assertNotNull( \WC_Payment_Tokens::get( $local_token->get_id() ), 'A provider outage must not delete local tokens.' );
+	}
+
+	/**
+	 * @testdox A saved-card list answered with a page deletes no stored card and caches nothing, as a failed fetch does.
+	 */
+	public function test_saved_card_list_answered_with_a_page_deletes_nothing(): void {
+		$this->register_card_gateway_id();
+		$user_id = $this->factory()->user->create();
+		assert( is_int( $user_id ) );
+		wp_set_current_user( $user_id );
+		$local_token           = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_local' );
+		$token_id              = $local_token->get_id();
+		$http_client           = new FakeHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'text/html' ),
+			'body'     => '<html><body>Bad gateway</body></html>',
+		);
+		$account_service       = $this->create_account_service( true );
+		$api_client            = new Client();
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
+		$customer_service = new class() extends WooPaymentsCustomerService {
+			/**
+			 * Report the user's stored customer.
+			 *
+			 * @param int|null $user_id User ID.
+			 * @return string
+			 */
+			public function migrate_and_get_customer_id( ?int $user_id ): string {
+				unset( $user_id );
+
+				return 'cus_page';
+			}
+		};
+		$customer_service->init( $api_client, $account_service, wc_get_container()->get( WooPaymentsSessionService::class ) );
+		$this->create_service( array(), $api_client, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card' ) ) );
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token filter.
+		$tokens = apply_filters( 'woocommerce_get_customer_payment_tokens', array( $token_id => $local_token ), $user_id, '' );
+
+		$this->assertGreaterThan( 0, $http_client->request_count, 'The list was read from the platform.' );
+		$this->assertArrayHasKey( $token_id, $tokens );
+		$this->assertNotNull( WC_Payment_Tokens::get( $token_id ), 'A page is not an empty list: the stored card stays.' );
+		$this->assertSame( '', get_user_meta( $user_id, '_wcpay_payment_methods', true ), 'Nothing is cached from a page.' );
 	}
 
 	/**

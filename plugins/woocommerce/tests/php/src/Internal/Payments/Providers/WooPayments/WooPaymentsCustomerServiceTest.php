@@ -411,6 +411,33 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A customer creation answered with a page fails as a timeout and stores no customer ID.
+	 */
+	public function test_customer_creation_answered_with_a_page_stores_no_customer(): void {
+		$user_id = $this->factory->user->create( array( 'user_login' => 'page-answer' ) );
+		assert( is_int( $user_id ) );
+		$order                 = $this->create_checkout_order( $user_id );
+		$http_client           = new FakeHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'text/html' ),
+			'body'     => '<html><body>Bad gateway</body></html>',
+		);
+		$api_client            = new Client();
+		$api_client->init( $http_client, $this->create_account_service_stub( false ), wc_get_container()->get( TransportLog::class ) );
+
+		try {
+			$this->create_sut( false, $api_client )->get_or_create_customer_id_for_order( $order );
+			$this->fail( 'A page carries no customer.' );
+		} catch ( ApiException $exception ) {
+			$this->assertSame( 'wcpay_http_request_failed', $exception->get_error_code() );
+		}
+
+		$this->assertSame( 1, $http_client->request_count );
+		$this->assertFalse( get_user_option( '_wcpay_customer_id_live', $user_id ), 'No customer ID is stored from a page.' );
+	}
+
+	/**
 	 * @testdox Read-only customer evidence should not migrate or delete persisted user options.
 	 */
 	public function test_get_persisted_customer_id_by_user_id_does_not_mutate_deprecated_storage(): void {

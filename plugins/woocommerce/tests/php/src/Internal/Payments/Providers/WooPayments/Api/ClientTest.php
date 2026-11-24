@@ -5423,15 +5423,17 @@ class ClientTest extends WC_Unit_Test_Case {
 	/**
 	 * The client rejects an undecodable JSON body before the promotions service sees it, so the service caches the error
 	 * for six hours instead of an empty list (client 11.1.0 `includes/wc-payment-api/class-wc-payments-api-client.php:2826-2834`,
-	 * `includes/class-wc-payments-pm-promotions-service.php:202-221`).
+	 * `includes/class-wc-payments-pm-promotions-service.php:202-221`). Under a 200 the failure is a timeout's, as on the
+	 * request path.
 	 *
 	 * @testdox Should reject a promotions response with status $status whose JSON body cannot be decoded.
-	 * @testWith [200]
-	 *           [201]
+	 * @testWith [200, "Http request failed. Reason: WooPayments answered with a body that is not the JSON its endpoint returns."]
+	 *           [201, "Unable to decode response from WooPayments."]
 	 *
-	 * @param int $status HTTP status of the response.
+	 * @param int    $status  HTTP status of the response.
+	 * @param string $message Expected failure message.
 	 */
-	public function test_get_pm_promotions_rejects_an_undecodable_json_body( int $status ): void {
+	public function test_get_pm_promotions_rejects_an_undecodable_json_body( int $status, string $message ): void {
 		$http_client           = new FakeHttpClient();
 		$http_client->blog_id  = 123;
 		$http_client->response = array(
@@ -5443,7 +5445,7 @@ class ClientTest extends WC_Unit_Test_Case {
 		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$this->expectException( ApiException::class );
-		$this->expectExceptionMessage( 'Unable to decode response from WooPayments.' );
+		$this->expectExceptionMessage( $message );
 
 		$sut->get_pm_promotions( array( 'locale' => 'en_US' ) );
 	}
@@ -5935,5 +5937,266 @@ class ClientTest extends WC_Unit_Test_Case {
 			)
 		);
 		delete_option( 'wcpay_account_data' );
+	}
+
+	/**
+	 * Success-coded answers whose body is not the JSON the endpoint returns: content type and body.
+	 *
+	 * The page is what a proxy or a PHP fatal in front of the platform sends; the others are what a broken or cut-short
+	 * answer leaves. None is an answer any of the client's array endpoints gives (the platform's endpoints answer an object
+	 * or a list, `[]` included).
+	 *
+	 * @return array<string,array{0:array<string,string>,1:string}>
+	 */
+	public function provider_unreadable_success_bodies(): array {
+		$json = array( 'content-type' => 'application/json; charset=UTF-8' );
+
+		return array(
+			'an HTML page'            => array( array( 'content-type' => 'text/html; charset=UTF-8' ), '<!DOCTYPE html><html><body><h1>502 Bad Gateway</h1></body></html>' ),
+			'an empty body'           => array( array(), '' ),
+			'an empty JSON body'      => array( $json, '' ),
+			'the JSON true'           => array( $json, 'true' ),
+			'the JSON number 5'       => array( $json, '5' ),
+			'the JSON string ok'      => array( $json, '"ok"' ),
+			'the JSON null'           => array( $json, 'null' ),
+			'a cut-short JSON object' => array( $json, '{"id":"pi_cut","status":"succ' ),
+		);
+	}
+
+	/**
+	 * @testdox A 200 answer with $_dataName fails as a timed-out request does: ambiguous, the answer unknown, a 500 REST error.
+	 *
+	 * @dataProvider provider_unreadable_success_bodies
+	 *
+	 * @param array<string,string> $headers Response headers.
+	 * @param string               $body    Response body.
+	 */
+	public function test_an_unreadable_success_body_fails_as_a_timeout( array $headers, string $body ): void {
+		$timeout = $this->capture_intent_read_failure( new WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out after 70001 milliseconds' ) );
+		$failure = $this->capture_intent_read_failure(
+			array(
+				'response' => array( 'code' => 200 ),
+				'headers'  => $headers,
+				'body'     => $body,
+			)
+		);
+
+		$this->assertSame( $timeout->get_error_code(), $failure->get_error_code(), 'The failure carries the timeout\'s code, so every caller takes its timeout branch.' );
+		$this->assertSame( $timeout->get_http_code(), $failure->get_http_code() );
+		$this->assertTrue( $failure->has_ambiguous_outcome() );
+		$this->assertTrue( ApiException::leaves_the_answer_unknown( $failure ) );
+		$this->assertSame( array( 'status' => 500 ), $failure->to_wp_error()->get_error_data() );
+		$this->assertSame( 'wcpay_unexpected_response_body', $failure->get_error_data()['transport_error_code'] ?? null );
+	}
+
+	/**
+	 * @testdox A 200 answer of an empty JSON $_dataName is still an empty result, the platform's own empty answer.
+	 * @testWith ["list", "[]"]
+	 *           ["object", "{}"]
+	 *
+	 * @param string $shape Shape of the body.
+	 * @param string $body  Response body.
+	 */
+	public function test_an_empty_json_list_or_object_is_still_an_empty_result( string $shape, string $body ): void {
+		unset( $shape );
+		$http_client           = new FakeHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => $body,
+		);
+		$sut                   = new Client();
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
+
+		$this->assertSame( array(), $sut->get_account() );
+	}
+
+	/**
+	 * @testdox The minimum recurring amount, which the platform answers as a bare number, still comes back as $_dataName.
+	 *
+	 * The platform answers `rest_ensure_response( $minimum )`, an integer for a supported currency and a float for another
+	 * (wpcom `wcpay/class-subscriptions-controller.php:502-516`). A JSON null, which it answers for a currency missing from
+	 * its table, threw before this change too; the minimum-amount handler turns either failure into 0.
+	 *
+	 * @testWith ["an integer", "100", 100]
+	 *           ["a float", "12.5", 12.5]
+	 *
+	 * @param string    $label    Case.
+	 * @param string    $body     Response body.
+	 * @param int|float $expected Decoded result.
+	 */
+	public function test_a_site_request_still_returns_a_bare_number( string $label, string $body, $expected ): void {
+		unset( $label );
+		$http_client           = new FakeHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => $body,
+		);
+		$sut                   = new Client();
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
+
+		$this->assertSame( $expected, $sut->send_site_request( array(), 'subscriptions/minimum_amount/usd', 'GET' ) );
+	}
+
+	/**
+	 * @testdox A site request answered with a page fails as a timeout, while its caller checks a scalar body itself.
+	 */
+	public function test_a_site_request_answered_with_a_page_fails_as_a_timeout(): void {
+		$http_client           = new FakeHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'text/html' ),
+			'body'     => '<html><body>Bad gateway</body></html>',
+		);
+		$sut                   = new Client();
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
+
+		try {
+			$sut->send_site_request( array(), 'subscriptions/minimum_amount/usd', 'GET' );
+			$this->fail( 'A page is not the endpoint\'s answer.' );
+		} catch ( ApiException $exception ) {
+			$this->assertSame( 'wcpay_http_request_failed', $exception->get_error_code() );
+			$this->assertTrue( $exception->has_ambiguous_outcome() );
+		}
+	}
+
+	/**
+	 * @testdox Saving VAT details still succeeds and refreshes the account when the platform answers false; a page fails as a timeout and refreshes nothing.
+	 *
+	 * The platform saves the details, then answers `false` when the saved name or address is empty to PHP
+	 * (wpcom `wcpay/class-vat-controller.php:180-212`, `service/class-vat-service.php:157-161`).
+	 *
+	 * @testWith ["false", "application/json", true]
+	 *           ["<html><body>Bad gateway</body></html>", "text/html", false]
+	 *
+	 * @param string $body      Response body.
+	 * @param string $type      Content type.
+	 * @param bool   $succeeds  Whether the save succeeds.
+	 */
+	public function test_saving_vat_details_keeps_the_platforms_false_answer( string $body, string $type, bool $succeeds ): void {
+		$http_client           = new FakeHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => $type ),
+			'body'     => $body,
+		);
+		$account_service       = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_test_mode_enabled', 'refresh_account_data' ) )
+			->getMock();
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( false );
+		$account_service->expects( $succeeds ? $this->once() : $this->never() )->method( 'refresh_account_data' )->willReturn( array() );
+		$sut = new Client();
+		$sut->init( $http_client, $account_service, $this->transport_log() );
+
+		try {
+			$result = $sut->save_vat_details( null, '0', '0' );
+			$this->assertTrue( $succeeds, 'A page must not answer success.' );
+			$this->assertSame( array(), $result );
+		} catch ( ApiException $exception ) {
+			$this->assertFalse( $succeeds, 'The platform\'s false is its answer to a saved request.' );
+			$this->assertSame( 'wcpay_http_request_failed', $exception->get_error_code() );
+		}
+	}
+
+	/**
+	 * @testdox A document, whose answer is the file itself, still comes back as the raw response.
+	 */
+	public function test_a_document_still_comes_back_raw(): void {
+		$pdf                   = "%PDF-1.4\n%\xE2\xE3\xCF\xD3\n1 0 obj\n<<>>\nendobj\n";
+		$http_client           = new FakeHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/pdf' ),
+			'body'     => $pdf,
+		);
+		$sut                   = new Client();
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
+
+		$this->assertSame( $pdf, wp_remote_retrieve_body( $sut->get_document( 'vat_invoice_123' ) ) );
+	}
+
+	/**
+	 * @testdox A request sent without waiting for its answer still returns an empty result, whatever comes back.
+	 */
+	public function test_a_request_sent_without_waiting_still_returns_an_empty_result(): void {
+		$http_client           = new FakeHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array(),
+			'body'     => '',
+		);
+		$sut                   = new Client();
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
+
+		$this->assertSame( array(), $sut->send_store_setup( array( 'step' => 'done' ) ) );
+		$this->assertFalse( $http_client->last_blocking );
+	}
+
+	/**
+	 * @testdox Payment method promotions answered with a page fail as a timeout, so the promotions service caches the failure instead of an empty list.
+	 */
+	public function test_promotions_answered_with_a_page_fail_as_a_timeout(): void {
+		$http_client           = new FakeHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'text/html' ),
+			'body'     => '<html><body>Bad gateway</body></html>',
+		);
+		$sut                   = new Client();
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
+
+		try {
+			$sut->get_pm_promotions( array( 'locale' => 'en_US' ) );
+			$this->fail( 'A page is not a list of promotions.' );
+		} catch ( ApiException $exception ) {
+			$this->assertSame( 'wcpay_http_request_failed', $exception->get_error_code() );
+			$this->assertTrue( $exception->has_ambiguous_outcome() );
+		}
+	}
+
+	/**
+	 * @testdox Recommended payment methods answered with a page fail as a timeout, so onboarding caches no empty list.
+	 */
+	public function test_recommended_payment_methods_answered_with_a_page_fail_as_a_timeout(): void {
+		$filter = static function (): array {
+			return array(
+				'response' => array( 'code' => 200 ),
+				'headers'  => array( 'content-type' => 'text/html' ),
+				'body'     => '<html><body>Bad gateway</body></html>',
+			);
+		};
+		add_filter( 'pre_http_request', $filter );
+
+		try {
+			( new Client() )->get_recommended_payment_methods( 'GB', 'en_US' );
+			$this->fail( 'A page is not a list of payment methods.' );
+		} catch ( ApiException $exception ) {
+			$this->assertSame( 'wcpay_http_request_failed', $exception->get_error_code() );
+		} finally {
+			remove_filter( 'pre_http_request', $filter );
+		}
+	}
+
+	/**
+	 * Read a payment intent over a fake transport that gives one answer, and get the failure.
+	 *
+	 * @param array<string,mixed>|WP_Error $answer Transport answer.
+	 * @return ApiException
+	 */
+	private function capture_intent_read_failure( $answer ): ApiException {
+		$http_client           = new FakeHttpClient();
+		$http_client->response = $answer;
+		$sut                   = new Client();
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
+
+		try {
+			$sut->get_payment_intention( 'pi_unreadable' );
+		} catch ( ApiException $exception ) {
+			return $exception;
+		}
+
+		$this->fail( 'The read must fail.' );
 	}
 }

@@ -2551,6 +2551,42 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A status change to $order_status whose intent read is answered with a page is a failed read: the failure note, no $operation, the stored status kept.
+	 *
+	 * @dataProvider status_change_operation_data
+	 *
+	 * @param string $operation    Capture or cancel.
+	 * @param string $order_status Status the order changes to.
+	 * @param string $hook         Status hook.
+	 */
+	public function test_status_change_whose_intent_read_is_answered_with_a_page_is_a_failed_read( string $operation, string $order_status, string $hook ): void {
+		$order                 = $this->create_recorded_authorization_order( 'requires_action', $order_status );
+		$http_client           = new FakeHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'text/html' ),
+			'body'     => '<html><body>Bad gateway</body></html>',
+		);
+		$account_service       = $this->getMockBuilder( WooPaymentsAccountService::class )->disableOriginalConstructor()->onlyMethods( array( 'is_test_mode_enabled' ) )->getMock();
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+		$api_client = new Client();
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
+		$processing = $this->createMock( PaymentProcessingService::class );
+		$processing->expects( $this->never() )->method( $operation );
+		$this->sut = $this->create_controller( $processing, null, $api_client );
+		$this->sut->register();
+
+		$this->fire_order_hook( $hook, $order );
+
+		$stored = wc_get_order( $order->get_id() );
+		assert( $stored instanceof WC_Order );
+		$this->assertSame( 1, $http_client->request_count );
+		$this->assertSame( $order_status, $stored->get_status() );
+		$this->assertSame( 'requires_action', $stored->get_meta( '_intention_status', true ) );
+		$this->assertSame( 1, $this->count_notes( $order, $this->failure_note( $operation ) ), 'The merchant is told the operation did not run.' );
+	}
+
+	/**
 	 * @testdox A $operation retry on an order whose status change found the lock held reads the intent again and runs once the lock is free.
 	 *
 	 * @dataProvider status_change_operation_data
@@ -5530,26 +5566,6 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An answer the store could not read starts the refusals count again: two 500s, an unreadable answer and two 500s read all five orders.
-	 *
-	 * The platform answered, so the store is not being refused; only the checkout's duplicate check counts such an answer
-	 * as leaving the payment unknown.
-	 */
-	public function test_unpaid_order_refusals_count_starts_again_after_an_unreadable_answer(): void {
-		$this->create_unpaid_orders( 5 );
-		$unreadable = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
-			'body'     => 'not json',
-		);
-		$transport  = $this->create_transport( self::platform_error( 500 ), self::platform_error( 500 ), $unreadable, self::platform_error( 500 ), self::platform_error( 500 ) );
-
-		$this->run_unpaid_order_job( $transport );
-
-		$this->assertCount( 5, $this->request_paths( $transport ) );
-	}
-
-	/**
 	 * @testdox A $_dataName stops core's hold-stock job's reads for the run at once.
 	 *
 	 * @dataProvider unpaid_order_reads_stopping_at_once
@@ -5575,8 +5591,25 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function unpaid_order_reads_stopping_at_once(): array {
 		return array(
-			'transport error' => array( 'transport error', self::transport_timeout() ),
-			'gateway timeout' => array( 'gateway timeout', self::platform_error( 504 ) ),
+			'transport error'                => array( 'transport error', self::transport_timeout() ),
+			'gateway timeout'                => array( 'gateway timeout', self::platform_error( 504 ) ),
+			// The client fails such an answer as a timeout, since the platform's answer is unknown.
+			'success-coded answer, not JSON' => array(
+				'success-coded answer, not JSON',
+				array(
+					'response' => array( 'code' => 200 ),
+					'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
+					'body'     => 'not json',
+				),
+			),
+			'success-coded page'             => array(
+				'success-coded page',
+				array(
+					'response' => array( 'code' => 200 ),
+					'headers'  => array( 'content-type' => 'text/html' ),
+					'body'     => '<html><body>Bad gateway</body></html>',
+				),
+			),
 		);
 	}
 

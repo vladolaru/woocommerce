@@ -538,6 +538,46 @@ class WooPaymentsPaymentDetailsOrderlessRefundTest extends WC_REST_Unit_Test_Cas
 	}
 
 	/**
+	 * @testdox A refund without an order answered with a page answers the timeout's error, not success, and records nothing: $_dataName.
+	 *
+	 * The refund may have gone through, so the caller is told it failed, as on a timeout, and the charge's refund webhook
+	 * records it if it did.
+	 *
+	 * @testWith ["a charge with no order", false]
+	 *           ["a charge a WooPayments order holds", true]
+	 *
+	 * @param string $label     Case.
+	 * @param bool   $has_owner Whether the charge belongs to a WooPayments order.
+	 */
+	public function test_refund_without_order_answered_with_a_page_answers_an_error( string $label, bool $has_owner ): void {
+		unset( $label );
+		$order                       = $has_owner ? $this->create_charge_order( 'woocommerce_payments', 'ch_3UJZZBBzWlxcwgpP0BZvfjOj' ) : null;
+		$this->http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'text/html' ),
+			'body'     => '<html><body>Bad gateway</body></html>',
+		);
+
+		$response = $this->server->dispatch(
+			$this->create_refund_request(
+				array(
+					'charge_id' => 'ch_3UJZZBBzWlxcwgpP0BZvfjOj',
+					'amount'    => 1099,
+				)
+			)
+		);
+
+		$this->assertSame( 500, $response->get_status() );
+		$this->assertSame( 'wcpay_refund_payment', $response->get_data()['code'] ?? null );
+		if ( $order ) {
+			$order = wc_get_order( $order->get_id() );
+			assert( $order instanceof WC_Order );
+			$this->assertSame( array(), $order->get_refunds() );
+			$this->assertFalse( $this->is_locked( $order ) );
+		}
+	}
+
+	/**
 	 * @testdox A refund cannot send money or release the lock when $holder already holds it.
 	 * @testWith ["checkout"]
 	 *           ["capture"]

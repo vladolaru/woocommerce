@@ -21,6 +21,13 @@ use WP_Error;
 class ApiException extends RuntimeException {
 
 	/**
+	 * Transport error code of a success-coded answer whose body is not the JSON its endpoint returns.
+	 *
+	 * @since 11.4.0
+	 */
+	public const UNEXPECTED_RESPONSE_BODY = 'wcpay_unexpected_response_body';
+
+	/**
 	 * Provider error code.
 	 *
 	 * @var string
@@ -93,6 +100,30 @@ class ApiException extends RuntimeException {
 		$this->error_data        = $error_data;
 		$this->payment_intent_id = $payment_intent_id;
 		$this->merchant_message  = $merchant_message;
+	}
+
+	/**
+	 * Build the failure for a success-coded answer whose body is not the JSON its endpoint returns: a page, an empty body, a
+	 * JSON scalar or a cut-short body. The request may have done its work, so the failure has the shape of a timeout's
+	 * (`wcpay_http_request_failed`, 500): ambiguous, the answer unknown, and every caller takes its timeout branch.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return self
+	 */
+	public static function for_unexpected_response_body(): self {
+		return new self(
+			sprintf(
+				/* translators: %1$s: original error message. */
+				__( 'Http request failed. Reason: %1$s', 'woocommerce' ),
+				__( 'WooPayments answered with a body that is not the JSON its endpoint returns.', 'woocommerce' )
+			),
+			'wcpay_http_request_failed',
+			500,
+			'',
+			'',
+			array( 'transport_error_code' => self::UNEXPECTED_RESPONSE_BODY )
+		);
 	}
 
 	/**

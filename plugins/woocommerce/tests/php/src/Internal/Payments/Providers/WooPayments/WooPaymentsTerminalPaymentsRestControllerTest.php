@@ -8,6 +8,9 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventOrderResolver;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
@@ -1368,6 +1371,81 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 		$this->assertSame( 'failed', $order->get_status(), 'An expired authorization must fail the order like the charge.expired webhook.' );
 		$this->assertSame( 'canceled', $order->get_meta( '_intention_status', true ) );
 		$this->assertNotEmpty( $this->get_order_note_containing( $order, 'expired' ) );
+	}
+
+	/**
+	 * @testdox A terminal capture answered with a page re-reads the intent as a timed-out capture does, and a captured intent completes the order instead of a failure note.
+	 */
+	public function test_capture_terminal_payment_answered_with_a_page_reads_the_intent_as_a_timeout_does(): void {
+		$http_client           = new FakeHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'text/html' ),
+			'body'     => '<html><body>Bad gateway</body></html>',
+		);
+		$this->api_client      = new class() extends RecordingTerminalApiClient {
+			/**
+			 * Send the capture through the real client, so the fake transport answers it.
+			 *
+			 * @param string              $intent_id         Intent ID.
+			 * @param int                 $amount_to_capture Amount in minor units.
+			 * @param array<string,mixed> $metadata          Metadata.
+			 * @param array<string,mixed> $level3            Level 3 data.
+			 * @return array<string,mixed>
+			 */
+			public function capture_intention( string $intent_id, int $amount_to_capture, array $metadata = array(), array $level3 = array() ): array {
+				$this->captures[] = array(
+					'intent_id' => $intent_id,
+					'amount'    => $amount_to_capture,
+				);
+
+				return Client::capture_intention( $intent_id, $amount_to_capture, $metadata, $level3 );
+			}
+		};
+		$account_service       = $this->getMockBuilder( WooPaymentsAccountService::class )->disableOriginalConstructor()->onlyMethods( array( 'is_test_mode_enabled' ) )->getMock();
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+		$this->api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
+		$this->sut = $this->create_controller();
+		$order     = $this->create_order( 12.34, 'USD' );
+		$order->update_status( 'on-hold' );
+		$this->api_client->payment_intention_response_queue = array(
+			array(
+				'id'       => 'pi_terminal',
+				'status'   => 'requires_capture',
+				'currency' => 'usd',
+				'metadata' => array(
+					'order_id' => (string) $order->get_id(),
+				),
+			),
+			array(
+				'id'       => 'pi_terminal',
+				'status'   => 'succeeded',
+				'currency' => 'usd',
+				'charges'  => array(
+					'data' => array(
+						array(
+							'id'             => 'ch_terminal',
+							'payment_method' => 'pm_terminal',
+						),
+					),
+				),
+			),
+		);
+
+		/** @var WP_REST_Request<array<string,mixed>> $request */
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal' );
+
+		$response = $this->sut->capture_terminal_payment( $request );
+		$order    = wc_get_order( $order->get_id() );
+		assert( $order instanceof \WC_Order );
+
+		$this->assertSame( 1, $http_client->request_count, 'The capture went to the platform.' );
+		$this->assertSame( array( 'pi_terminal', 'pi_terminal' ), $this->api_client->payment_intention_requests, 'The failed capture re-reads the intent.' );
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( '', $this->get_order_note_containing( $order, 'failed' ), 'No failed-capture note.' );
 	}
 
 	/**

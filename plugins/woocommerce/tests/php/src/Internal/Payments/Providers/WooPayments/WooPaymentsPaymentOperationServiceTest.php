@@ -879,6 +879,87 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A charge answered with $_dataName fails as a timed-out charge does, keeps its key and ambiguity record, and the shopper's next press sends the same key.
+	 *
+	 * The platform may have charged before its answer was spoiled, so nothing is decided on it: the outcome, the shopper's
+	 * message and the kept state match a charge whose every transport try timed out.
+	 *
+	 * @dataProvider provider_unreadable_success_answers
+	 *
+	 * @param array<string,mixed> $answer Transport answer to the charge.
+	 */
+	public function test_charge_answered_with_an_unreadable_body_is_handled_as_a_timeout( array $answer ): void {
+		$timeout                 = new WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out after 70001 milliseconds' );
+		$timeout_http            = new FakeHttpClient();
+		$timeout_http->responses = array( $timeout, $timeout, $timeout, $timeout );
+		$timed_out               = $this->charge_attempt( $this->create_timeout_operation_service( $timeout_http, 'cus_unreadable' ), $this->create_woopayments_order(), 'pm_unreadable', 'key_timeout' );
+
+		$order                  = $this->create_woopayments_order();
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			$answer,
+			self::http_json(
+				200,
+				array(
+					'id'     => 'pi_replayed',
+					'status' => 'succeeded',
+				)
+			),
+		);
+		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_unreadable' );
+
+		$failed = $this->charge_attempt( $sut, $order, 'pm_unreadable', 'key_first' );
+		$kept   = wc_get_order( $order->get_id() );
+		assert( $kept instanceof WC_Order );
+		$record = $kept->get_meta( WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META, true );
+
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $failed->get_status() );
+		$this->assertNull( $failed->get_effect_plan(), 'No intent plan: nothing is recorded from the answer.' );
+		$this->assertArrayNotHasKey( '_wcpay_definitive_charge_failure', $failed->get_data() );
+		$this->assertSame( $timed_out->get_data()[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ], $failed->get_data()[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ], 'The shopper is told what a timed-out charge tells them.' );
+		$this->assertSame( $timed_out->get_data()[ PaymentOutcome::DATA_ERROR_CODE ], $failed->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] );
+		$this->assertSame( 'key_first', $kept->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+		$this->assertIsArray( $record, 'The ambiguity record stays, so a refused resubmit looks up what the request did.' );
+		$this->assertSame( $order->get_id(), $record['order_id'] ?? null );
+
+		$this->charge_attempt( $sut, $kept, 'pm_unreadable', 'key_resubmit' );
+
+		$this->assertSame( array( 'POST intentions key_first', 'POST intentions key_first' ), self::request_trail( $http_client ), 'The next press replays the first request under its key.' );
+	}
+
+	/**
+	 * Success-coded transport answers whose body is not the JSON the endpoint returns.
+	 *
+	 * @return array<string,array{0:array<string,mixed>}>
+	 */
+	public function provider_unreadable_success_answers(): array {
+		$json = array( 'content-type' => 'application/json; charset=UTF-8' );
+
+		return array(
+			'an HTML page'            => array( self::http_raw( 200, array( 'content-type' => 'text/html; charset=UTF-8' ), '<!DOCTYPE html><html><body><h1>502 Bad Gateway</h1></body></html>' ) ),
+			'an empty body'           => array( self::http_raw( 200, array(), '' ) ),
+			'the JSON true'           => array( self::http_raw( 200, $json, 'true' ) ),
+			'a cut-short JSON object' => array( self::http_raw( 200, $json, '{"id":"pi_cut","status":"succ' ) ),
+		);
+	}
+
+	/**
+	 * Build a transport response with a raw body.
+	 *
+	 * @param int                  $code    HTTP status.
+	 * @param array<string,string> $headers Response headers.
+	 * @param string               $body    Raw body.
+	 * @return array<string,mixed>
+	 */
+	private static function http_raw( int $code, array $headers, string $body ): array {
+		return array(
+			'response' => array( 'code' => $code ),
+			'headers'  => $headers,
+			'body'     => $body,
+		);
+	}
+
+	/**
 	 * @testdox Charge should use the caller key for a different order.
 	 */
 	public function test_charge_uses_a_different_order_key(): void {
@@ -8217,7 +8298,8 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Ambiguous answers to a refund request: a timeout on every transport try (three retries), and a server error.
+	 * Ambiguous answers to a refund request: a timeout on every transport try (three retries), a server error, and success-coded
+	 * answers whose body is not the refund's JSON, which the client fails as a timeout.
 	 *
 	 * @return array<string,array{array<int,mixed>,int}>
 	 */
@@ -8225,8 +8307,12 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$timeout = new WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out after 70001 milliseconds' );
 
 		return array(
-			'timeout on every try' => array( array( $timeout, $timeout, $timeout, $timeout ), 4 ),
-			'server error'         => array( array( self::stripe_api_error( 500 ) ), 1 ),
+			'timeout on every try'    => array( array( $timeout, $timeout, $timeout, $timeout ), 4 ),
+			'server error'            => array( array( self::stripe_api_error( 500 ) ), 1 ),
+			'a success-coded page'    => array( array( self::http_raw( 200, array( 'content-type' => 'text/html' ), '<html><body>Bad gateway</body></html>' ) ), 1 ),
+			'a success-coded nothing' => array( array( self::http_raw( 200, array(), '' ) ), 1 ),
+			'a success-coded scalar'  => array( array( self::http_raw( 200, array( 'content-type' => 'application/json' ), 'true' ) ), 1 ),
+			'a cut-short success'     => array( array( self::http_raw( 200, array( 'content-type' => 'application/json' ), '{"id":"re_cut","status":"succ' ) ), 1 ),
 		);
 	}
 
@@ -12988,6 +13074,47 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $plan );
 		$this->assertSame( WooPaymentsOrderEffectPlan::TYPE_CAPTURE_EXPIRED, $plan->get_type(), 'Expiry must be declared on the plan at the re-fetch site.' );
 		$this->assertSame( 'canceled', $plan->get_provider_result()['status'], 'The effect plan must carry the re-fetched canceled intent so the applier composes the expired effects.' );
+	}
+
+	/**
+	 * @testdox A capture answered with a page re-reads the intent as a timed-out capture does: $_dataName.
+	 *
+	 * The capture may have gone through, so the answer decides nothing. The timeout path's re-read then decides: a canceled
+	 * intent is the expired authorization, any other leaves the plain failure with the timeout's error.
+	 *
+	 * @testWith ["a canceled intent records the expiry", "canceled", "capture_expired"]
+	 *           ["a capturable intent keeps the plain failure", "requires_capture", "capture"]
+	 *
+	 * @param string $label     Case.
+	 * @param string $live      Status the re-read finds.
+	 * @param string $plan_type Expected effect plan type.
+	 */
+	public function test_capture_answered_with_a_page_re_reads_the_intent_as_a_timeout_does( string $label, string $live, string $plan_type ): void {
+		unset( $label );
+		$order = StoredPaymentRecords::authorization( 'pi_capture_page', 'ch_capture_page' );
+		$order->set_total( '10.00' );
+		$order->save();
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			self::http_raw( 200, array( 'content-type' => 'text/html' ), '<html><body>Bad gateway</body></html>' ),
+			self::http_json(
+				200,
+				array(
+					'id'     => 'pi_capture_page',
+					'status' => $live,
+				)
+			),
+		);
+		$sut                    = $this->create_operation_service_over_fake_transport( $http_client );
+
+		$outcome = $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' );
+
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( 'wcpay_http_request_failed', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] );
+		$this->assertSame( array( 'POST intentions/pi_capture_page/capture', 'GET intentions/pi_capture_page' ), array_map( static fn( string $line ): string => implode( ' ', array_slice( explode( ' ', (string) preg_replace( '/\?\S*/', '', $line ) ), 0, 2 ) ), self::request_trail( $http_client ) ) );
+		$plan = $outcome->get_effect_plan();
+		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $plan );
+		$this->assertSame( $plan_type, $plan->get_type() );
 	}
 
 	/**

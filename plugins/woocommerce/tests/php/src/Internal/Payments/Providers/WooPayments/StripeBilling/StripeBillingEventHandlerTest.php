@@ -1346,6 +1346,42 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A paid invoice whose intent read is answered with $_dataName, for a renewal storing its uncaptured authorization, is handled as an unread intent: noted once, nothing recorded as paid, and the delivery fails for a retry.
+	 * @testWith ["a page", "text/html", "<html><body>Bad gateway</body></html>"]
+	 *           ["an empty body", "application/json", ""]
+	 *           ["the JSON true", "application/json", "true"]
+	 *
+	 * @param string $label Case.
+	 * @param string $type  Content type.
+	 * @param string $body  Response body.
+	 */
+	public function test_paid_invoice_with_an_intent_read_answered_unreadably_is_handled_as_unread( string $label, string $type, string $body ): void {
+		unset( $label );
+		$renewal                        = $this->create_renewal_storing_an_authorization( $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID ), 'processing' );
+		$this->http_client->responses[] = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => $type ),
+			'body'     => $body,
+		);
+		$failure                        = null;
+
+		try {
+			$this->sut->handle_event( $this->get_event( 'invoice_paid_renewal' ) );
+		} catch ( RuntimeException $exception ) {
+			$failure = $exception;
+		}
+
+		$stored = wc_get_order( $renewal->get_id() );
+		assert( $stored instanceof WC_Order );
+		$this->assertInstanceOf( RuntimeException::class, $failure, 'The delivery fails, so it is retried.' );
+		$this->assertCount( 1, $this->get_notes_containing( $stored, 'could not be read' ) );
+		$this->assertSame( 'pi_authorized', $stored->get_transaction_id(), 'The renewal is not recorded as paid from the answer.' );
+		$this->assertSame( 'requires_capture', $stored->get_meta( '_intention_status', true ) );
+		$this->assertSame( array(), $this->get_payment_success_notes( $stored ) );
+		$this->assertCount( 1, $this->get_requests(), 'Only the intent read: nothing is reported to the platform.' );
+	}
+
+	/**
 	 * @testdox After a paid invoice replaced a renewal's uncaptured authorization, the authorization's expiry is recorded on the renewal and changes nothing else.
 	 *
 	 * The expired charge is no longer stored, so the event finds the renewal by the charge's metadata only and records it

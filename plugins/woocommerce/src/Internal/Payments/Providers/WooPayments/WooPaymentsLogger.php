@@ -141,7 +141,7 @@ class WooPaymentsLogger {
 	 * WP_Error codes a failed request carries, from WordPress's HTTP API (`WP_Http::request()`) or from
 	 * HttpClient, logged as they are.
 	 */
-	private const LOGGABLE_TRANSPORT_ERROR_CODES = array( 'http_request_failed', 'http_request_not_executed', 'http_failure', 'wcpay_transport_invalid_response' );
+	private const LOGGABLE_TRANSPORT_ERROR_CODES = array( 'http_request_failed', 'http_request_not_executed', 'http_failure', 'wcpay_transport_invalid_response', ApiException::UNEXPECTED_RESPONSE_BODY );
 
 	/**
 	 * Account service.

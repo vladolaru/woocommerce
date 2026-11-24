@@ -424,6 +424,30 @@ class RefundChargeTest extends AbilityTestCase {
 	}
 
 	/**
+	 * @testdox A refund answered with a page is returned to the ability caller as a refund failure, not as success.
+	 */
+	public function test_refund_answered_with_a_page_is_a_failure(): void {
+		$this->http->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'text/html' ),
+			'body'     => '<html><body>Bad gateway</body></html>',
+		);
+
+		$result = $this->sut->execute(
+			array(
+				'charge_id'       => 'py_unowned',
+				'idempotency_key' => 'K',
+			)
+		);
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'wcpay_refund_failed', $result->get_error_code() );
+		$exception = $result->get_error_data()['exception'] ?? null;
+		$this->assertInstanceOf( ApiException::class, $exception );
+		$this->assertTrue( $exception->has_ambiguous_outcome() );
+	}
+
+	/**
 	 * @testdox A platform rejection or transport throwable is logged and returned to the ability caller as a refund failure.
 	 * @testWith [false,"Error: Different parameters used for this key."]
 	 *           [true,"Transport interrupted."]

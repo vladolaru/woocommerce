@@ -764,6 +764,10 @@ class Client {
 		$response_code = (int) wp_remote_retrieve_response_code( $response );
 		$body          = json_decode( wp_remote_retrieve_body( $response ), true );
 		$content_type  = wp_remote_retrieve_header( $response, 'content-type' );
+		// A 200 carries the promotions, so any other body under it is no answer, as on the request path.
+		if ( 200 === $response_code && ! is_array( $body ) ) {
+			throw ApiException::for_unexpected_response_body();
+		}
 		// An undecodable JSON body is an error whatever the status, as on the client's request path (client 11.1.0
 		// `includes/wc-payment-api/class-wc-payments-api-client.php:2826-2834`); only a 200 carries promotions.
 		if ( null === $body && false !== strpos( strtolower( is_array( $content_type ) ? implode( ',', $content_type ) : (string) $content_type ), 'application/json' ) ) {
@@ -1712,7 +1716,13 @@ class Client {
 			$params['vat_number'] = $vat_number;
 		}
 
-		$response = $this->request( $params, self::VAT_API, 'POST' );
+		$response = $this->request_decoded( $params, self::VAT_API, 'POST' );
+		// The platform saves the details, then answers false when the saved name or address is empty to PHP.
+		if ( false === $response ) {
+			$response = array();
+		} elseif ( ! is_array( $response ) ) {
+			throw ApiException::for_unexpected_response_body();
+		}
 		$this->account_service->refresh_account_data();
 
 		return $response;
@@ -1815,7 +1825,7 @@ class Client {
 	 * @param string $country_code Business location country code.
 	 * @param string $locale       User locale.
 	 * @return array<int,array<string,mixed>>
-	 * @throws ApiException When the public request fails.
+	 * @throws ApiException When the public request fails, or its 200 body is not a list.
 	 */
 	public function get_recommended_payment_methods( string $country_code, string $locale = '' ): array {
 		$request_args = Jetpack_Connection_Client::validate_args_for_wpcom_json_api_request(
@@ -1878,8 +1888,11 @@ class Client {
 		}
 
 		$decoded_body = json_decode( wp_remote_retrieve_body( $response ), true );
+		if ( ! is_array( $decoded_body ) ) {
+			throw ApiException::for_unexpected_response_body();
+		}
 
-		return is_array( $decoded_body ) ? $decoded_body : array();
+		return $decoded_body;
 	}
 
 	/**
@@ -2466,12 +2479,17 @@ class Client {
 	 * @param int|null                $timeout_seconds Seconds the request may take, retries included, or null for the default.
 	 * @param bool                    $rotate_fraud_token_on_error Whether a fraud-flagged error rotates the shopper's card-testing token.
 	 * @return array<string,mixed>
-	 * @throws ApiException When the request fails.
+	 * @throws ApiException When the request fails, or a success-coded answer is not a JSON object or list.
 	 */
 	private function request( array $params, string $api, string $method, bool $is_site_scoped = true, bool $use_user_token = false, bool $blocking = true, bool $include_test_mode_param = true, bool $return_raw_response = false, bool $use_v2_api = false, ?int $timeout_seconds = null, bool $rotate_fraud_token_on_error = true ): array {
 		$decoded_body = $this->request_decoded( $params, $api, $method, $is_site_scoped, $use_user_token, $blocking, $include_test_mode_param, $return_raw_response, $use_v2_api, $timeout_seconds, $rotate_fraud_token_on_error );
 
-		return is_array( $decoded_body ) ? $decoded_body : array();
+		// Every endpoint behind this method answers an object or a list, `[]` included; a scalar is no answer to act on.
+		if ( ! is_array( $decoded_body ) ) {
+			throw ApiException::for_unexpected_response_body();
+		}
+
+		return $decoded_body;
 	}
 
 	/**
@@ -2489,7 +2507,7 @@ class Client {
 	 * @param int|null                $timeout_seconds Seconds the request may take, retries included, or null for the default.
 	 * @param bool                    $rotate_fraud_token_on_error Whether a fraud-flagged error rotates the shopper's card-testing token.
 	 * @return mixed Decoded body; the raw transport response when asked for; an empty array for a non-blocking request.
-	 * @throws ApiException When the request fails.
+	 * @throws ApiException When the request fails, or a success-coded body does not decode.
 	 */
 	private function request_decoded( array $params, string $api, string $method, bool $is_site_scoped = true, bool $use_user_token = false, bool $blocking = true, bool $include_test_mode_param = true, bool $return_raw_response = false, bool $use_v2_api = false, ?int $timeout_seconds = null, bool $rotate_fraud_token_on_error = true ) {
 		$timeout_seconds = $timeout_seconds ?? self::REQUEST_TIMEOUT_SECONDS;
@@ -2678,6 +2696,11 @@ class Client {
 
 		if ( $return_raw_response && 400 > $response_code ) {
 			return is_array( $response ) ? $response : array();
+		}
+
+		// A success code over a page, an empty body or a cut-short body says nothing about what the request did.
+		if ( null === $decoded_body && 400 > $response_code ) {
+			throw ApiException::for_unexpected_response_body();
 		}
 
 		if ( null === $decoded_body && '' !== $response_body && $is_json ) {

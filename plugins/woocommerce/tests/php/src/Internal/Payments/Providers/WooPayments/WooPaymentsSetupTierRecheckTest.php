@@ -1564,6 +1564,89 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox An account read answered with $_dataName leaves the stored account, the tier and the payment method as a timed-out read does; the platform's empty list still means no account.
+	 * @dataProvider provide_unreadable_account_answers
+	 *
+	 * @param string $answer     The platform's answer.
+	 * @param bool   $no_account Whether the answer means no account.
+	 */
+	public function test_an_unreadable_account_answer_is_a_failed_read( string $answer, bool $no_account ): void {
+		\Jetpack_Options::update_option( 'id', 123 );
+		\Jetpack_Options::update_option( 'blog_token', 'tokenkey.blogsecret' );
+		\Jetpack_Options::update_option( 'time_diff', 0 );
+		update_option( 'wcpay_onboarding_test_mode', 'no' );
+		$this->store_has_account( 'yes' );
+		$stored = $this->stored_row()['data'];
+		$this->use_real_client();
+		$this->next_request();
+		add_filter(
+			'pre_http_request',
+			static function () use ( $answer ) {
+				return self::unreadable_account_answer( $answer );
+			}
+		);
+
+		wc_get_container()->get( WooPaymentsAccountService::class )->refresh_account_data();
+
+		$row = $this->stored_row();
+		if ( $no_account ) {
+			$this->assertSame( array(), $row['data'] );
+			$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->stored_tier() );
+			return;
+		}
+		$this->assertSame( $stored, $row['data'], 'The stored account is kept.' );
+		$this->assertTrue( $row['errored'], 'The read counts as failed.' );
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $this->stored_tier(), 'The tier, which keeps the payment method at checkout, is kept.' );
+		$this->assertSame( array(), $this->pending_steps(), 'No re-check is scheduled.' );
+	}
+
+	/**
+	 * Account answers: four that are not the endpoint's JSON, a timeout to compare them with, and the platform's empty list.
+	 *
+	 * @return array<string,array{0:string,1:bool}>
+	 */
+	public function provide_unreadable_account_answers(): array {
+		return array(
+			'a page'                  => array( 'page', false ),
+			'an empty body'           => array( 'empty', false ),
+			'the JSON true'           => array( 'true', false ),
+			'a cut-short account'     => array( 'cut', false ),
+			'a timeout'               => array( 'timeout', false ),
+			'the platform\'s list []' => array( 'list', true ),
+		);
+	}
+
+	/**
+	 * Build the transport response for an account answer.
+	 *
+	 * @param string $answer The answer's name.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	private static function unreadable_account_answer( string $answer ) {
+		if ( 'timeout' === $answer ) {
+			return new WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out' );
+		}
+		$bodies              = array(
+			'page'  => array( 'text/html; charset=UTF-8', '<!DOCTYPE html><html><body><h1>502 Bad Gateway</h1></body></html>' ),
+			'empty' => array( '', '' ),
+			'true'  => array( 'application/json', 'true' ),
+			'cut'   => array( 'application/json', '{"account_id":"acct_123","is_li' ),
+			'list'  => array( 'application/json', '[]' ),
+		);
+		list( $type, $body ) = $bodies[ $answer ];
+
+		return array(
+			'headers'  => '' === $type ? array() : array( 'content-type' => $type ),
+			'body'     => $body,
+			'response' => array(
+				'code'    => 200,
+				'message' => 'OK',
+			),
+			'cookies'  => array(),
+		);
+	}
+
+	/**
 	 * Build the transport response for an answer.
 	 *
 	 * @param string $answer The answer's name.

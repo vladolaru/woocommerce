@@ -232,12 +232,12 @@ class StripeBillingApi {
 	}
 
 	/**
-	 * Build the failure for an answer of the wrong type.
+	 * Build the failure for an answer of the wrong type: unknown, as a timeout is, since the platform may have done the work.
 	 *
 	 * @return ApiException
 	 */
 	private function unexpected_body_exception(): ApiException {
-		return new ApiException( __( 'Unable to decode response from WooPayments.', 'woocommerce' ), 'wcpay_unparseable_or_null_body' );
+		return ApiException::for_unexpected_response_body();
 	}
 
 	/**

@@ -484,7 +484,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	/**
 	 * Count an unpaid-order read toward stopping the reads for the run, by the kind of its answer.
 	 *
-	 * A transport error or a gateway timeout stops them at once. A refusal that hits the whole store (not authorized,
+	 * A transport error, a gateway timeout or a success-coded answer that is not the endpoint's JSON stops them at once. A refusal that hits the whole store (not authorized,
 	 * forbidden, too many requests), another server error, a PHP failure and an answer with no status count. Any other
 	 * answer, a not-found or a bad request about one intent included, starts the count again.
 	 *
@@ -494,7 +494,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	private function note_unpaid_read_outcome( ?Throwable $failure, bool $usable = true ): void {
 		$code      = $failure instanceof ApiException ? $failure->get_http_code() : 0;
 		$transport = $failure instanceof ApiException ? (string) ( $failure->get_error_data()['transport_error_code'] ?? '' ) : '';
-		if ( 504 === $code || in_array( $transport, array( 'http_request_failed', 'http_request_not_executed' ), true ) ) {
+		if ( 504 === $code || in_array( $transport, array( 'http_request_failed', 'http_request_not_executed', ApiException::UNEXPECTED_RESPONSE_BODY ), true ) ) {
 			$this->unpaid_order_reads_stopped = true;
 			return;
 		}
