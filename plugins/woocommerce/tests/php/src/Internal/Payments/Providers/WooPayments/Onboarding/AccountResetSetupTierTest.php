@@ -613,6 +613,40 @@ class AccountResetSetupTierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox G11: a refused reset puts back the tier the database held at its own drop, not one an earlier drop on the same service lowered.
+	 */
+	public function test_g11_a_refused_reset_ignores_an_earlier_drop(): void {
+		$this->store_has_account( 'yes', WooPaymentsSetupTier::ACTIVE );
+		$this->assertTrue( $this->account_service->drop_to_available(), 'An earlier drop lowers active.' );
+		$this->client->expects( $this->once() )->method( 'delete_account' )->willThrowException( new ApiException( 'Refused live account.', 'bad_request', 400 ) );
+
+		$this->assertInstanceOf( WP_Error::class, $this->sut->reset_onboarding() );
+
+		$this->assert_tier_is( WooPaymentsSetupTier::AVAILABLE );
+	}
+
+	/**
+	 * @testdox G12: a refused reset of a disabled store with an account stored ends disabled, although its empty account write lifted the tier during the call.
+	 */
+	public function test_g12_a_refused_reset_from_disabled_ends_disabled(): void {
+		$this->store_has_account( 'yes', WooPaymentsSetupTier::ACTIVE );
+		$this->tier->write_tier( WooPaymentsSetupTier::DISABLED );
+		$lifted = array();
+		$this->client->expects( $this->once() )->method( 'delete_account' )->willReturnCallback(
+			function () use ( &$lifted ) {
+				$this->tier->invalidate();
+				$lifted[] = $this->tier->get_stored_tier();
+				throw new ApiException( 'Refused live account.', 'bad_request', 400 );
+			}
+		);
+
+		$this->assertInstanceOf( WP_Error::class, $this->sut->reset_onboarding() );
+
+		$this->assertSame( array( WooPaymentsSetupTier::AVAILABLE ), $lifted, 'The empty account write lifted the tier during the call.' );
+		$this->assert_tier_is( WooPaymentsSetupTier::DISABLED );
+	}
+
+	/**
 	 * @testdox K7: a read whose promotion lost to a newer read leaves the newer read's account row as it is, so checkout keeps offering the card.
 	 */
 	public function test_k7_a_lost_promotion_leaves_a_newer_row_alone(): void {

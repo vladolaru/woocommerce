@@ -102,7 +102,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	private ?int $recheck_drop_time = null;
 
 	/**
-	 * The tier this request's last drop lowered, as the database held it then, so a restore puts back that tier.
+	 * The tier the database held at this request's last drop call, lowered or not, so a refused reset puts back that tier.
 	 *
 	 * @var string|null
 	 */
@@ -479,9 +479,9 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * Put back the account cache row and the setup tier after the platform did not delete the account.
 	 *
 	 * The row comes back marked as never fetched, so the first reader outside cron and AJAX still fetches the account, and a
-	 * fetch that fails serves the restored account. A row that does not read back is deleted. The tier goes back to what this
-	 * request's drop lowered, and is left alone when nothing was dropped; once it reads back, the re-check the drop scheduled
-	 * in this request is cancelled, and otherwise it stays to heal the tier.
+	 * fetch that fails serves the restored account. A row that does not read back is deleted. The tier goes back to what the
+	 * database held at this request's last drop call, and is left alone when no drop ran; once it reads back, the re-check
+	 * the drop scheduled in this request is cancelled, and otherwise it stays to heal the tier.
 	 *
 	 * @since 11.4.0
 	 *
@@ -702,6 +702,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @return bool Whether `available` reads back, or the tier was already lower.
 	 */
 	public function drop_to_available(): bool {
+		$this->dropped_tier = null;
 		if ( null === $this->setup_tier || null === $this->runtime_arbiter ) {
 			return true;
 		}
@@ -714,10 +715,10 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		// The tier is read past this request's cached options, which another request may have outdated.
 		$this->legacy_proxy->call_function( 'wp_cache_delete', 'alloptions', 'options' );
 		$setup_tier->invalidate();
-		if ( ! in_array( $setup_tier->get_stored_tier(), array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true ) ) {
+		$this->dropped_tier = $setup_tier->get_stored_tier();
+		if ( ! in_array( $this->dropped_tier, array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true ) ) {
 			return true;
 		}
-		$this->dropped_tier = $setup_tier->get_stored_tier();
 		$this->schedule_recheck_on_drop();
 		$this->database_cache->disable_refresh();
 
