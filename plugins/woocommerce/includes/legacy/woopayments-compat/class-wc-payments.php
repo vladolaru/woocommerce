@@ -6,8 +6,8 @@
 
 declare( strict_types = 1 );
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\WooPaymentsCompatibilityNotice;
 use WCPay\Core\Mode;
-use Automattic\WooCommerce\Internal\Utilities\WooPaymentsCompatibilityNotice;
 
 /**
  * Stands in for the WooPayments extension's WC_Payments class, so extensions that detect WooPayments by it keep working.
@@ -19,6 +19,8 @@ use Automattic\WooCommerce\Internal\Utilities\WooPaymentsCompatibilityNotice;
  */
 class WC_Payments {
 	// phpcs:enable Squiz.Classes.ClassFileName.NoMatch,SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName,Squiz.Classes.ValidClassName.NotCamelCaps
+
+	use WooPaymentsCompatibilityNotice;
 
 	/**
 	 * Return the shared WooPayments mode for this request.
@@ -49,7 +51,7 @@ class WC_Payments {
 	 * @return Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway
 	 */
 	public static function get_gateway() {
-		WooPaymentsCompatibilityNotice::warn( __METHOD__, "WC()->payment_gateways()->payment_gateways()['woocommerce_payments'] ?? null" );
+		self::warn_compatibility_method( __METHOD__, "WC()->payment_gateways()->payment_gateways()['woocommerce_payments'] ?? null" );
 
 		return wc_get_container()->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway::class );
 	}
@@ -65,6 +67,6 @@ class WC_Payments {
 	 * @return void
 	 */
 	public static function hide_gateways_on_settings_page() {
-		WooPaymentsCompatibilityNotice::warn( __METHOD__ );
+		self::warn_compatibility_method( __METHOD__ );
 	}
 }

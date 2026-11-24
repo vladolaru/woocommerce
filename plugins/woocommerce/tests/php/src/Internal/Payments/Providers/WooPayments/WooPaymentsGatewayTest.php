@@ -226,7 +226,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @param bool   $expected Whether the gateway reports itself enabled.
 	 */
 	public function test_is_enabled_reads_the_enabled_setting( string $enabled, bool $expected ): void {
-		$this->reset_compatibility_notices();
+		$this->reset_compatibility_notices( WooPaymentsGateway::class );
 		$this->setExpectedIncorrectUsage( WooPaymentsGateway::class . '::is_enabled()' );
 		$this->with_gateway_settings(
 			array( 'enabled' => $enabled ),

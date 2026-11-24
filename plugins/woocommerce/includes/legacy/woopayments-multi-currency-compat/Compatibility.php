@@ -9,7 +9,7 @@ namespace WCPay\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\IntegrationsController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
-use Automattic\WooCommerce\Internal\Utilities\WooPaymentsCompatibilityNotice;
+use Automattic\WooCommerce\Internal\MultiCurrency\Compat\WooPaymentsCompatibilityNotice;
 
 /**
  * Stands in for the WooPayments extension's Multi-Currency compatibility class, which `MultiCurrency::get_compatibility()`
@@ -22,6 +22,8 @@ use Automattic\WooCommerce\Internal\Utilities\WooPaymentsCompatibilityNotice;
  */
 class Compatibility {
 
+	use WooPaymentsCompatibilityNotice;
+
 	/**
 	 * Get a currency code that overrides the shopper's selected currency, or false.
 	 *
@@ -33,7 +35,7 @@ class Compatibility {
 	 * @return mixed
 	 */
 	public function override_selected_currency() {
-		WooPaymentsCompatibilityNotice::warn( __METHOD__, "apply_filters( 'wcpay_multi_currency_override_selected_currency', false )" );
+		self::warn_compatibility_method( __METHOD__, "apply_filters( 'wcpay_multi_currency_override_selected_currency', false )" );
 
 		return $this->get_controller()->override_selected_currency();
 	}
@@ -49,7 +51,7 @@ class Compatibility {
 	 * @return bool
 	 */
 	public function should_hide_widgets(): bool {
-		WooPaymentsCompatibilityNotice::warn( __METHOD__ );
+		self::warn_compatibility_method( __METHOD__ );
 
 		return $this->get_controller()->should_disable_currency_switching();
 	}
@@ -65,7 +67,7 @@ class Compatibility {
 	 * @return bool
 	 */
 	public function should_disable_currency_switching(): bool {
-		WooPaymentsCompatibilityNotice::warn( __METHOD__ );
+		self::warn_compatibility_method( __METHOD__ );
 
 		return $this->get_controller()->should_disable_currency_switching();
 	}
@@ -82,7 +84,7 @@ class Compatibility {
 	 * @return bool
 	 */
 	public function should_convert_coupon_amount( $coupon = null ): bool {
-		WooPaymentsCompatibilityNotice::warn( __METHOD__, "! \$coupon || (bool) apply_filters( 'wcpay_multi_currency_should_convert_coupon_amount', true, \$coupon )" );
+		self::warn_compatibility_method( __METHOD__, "! \$coupon || (bool) apply_filters( 'wcpay_multi_currency_should_convert_coupon_amount', true, \$coupon )" );
 
 		return $this->get_controller()->should_convert_coupon_amount( $coupon );
 	}
@@ -99,7 +101,7 @@ class Compatibility {
 	 * @return bool
 	 */
 	public function should_convert_coupon_min_max_amount( $coupon = null ): bool {
-		WooPaymentsCompatibilityNotice::warn( __METHOD__, "! \$coupon || (bool) apply_filters( 'wcpay_multi_currency_should_convert_coupon_min_max_amount', true, \$coupon )" );
+		self::warn_compatibility_method( __METHOD__, "! \$coupon || (bool) apply_filters( 'wcpay_multi_currency_should_convert_coupon_min_max_amount', true, \$coupon )" );
 
 		if ( ! $coupon ) {
 			return true;
@@ -128,7 +130,7 @@ class Compatibility {
 	 * @return bool
 	 */
 	public function should_convert_product_price( $product = null ): bool {
-		WooPaymentsCompatibilityNotice::warn( __METHOD__, "! \$product || (bool) apply_filters( 'wcpay_multi_currency_should_convert_product_price', true, \$product )" );
+		self::warn_compatibility_method( __METHOD__, "! \$product || (bool) apply_filters( 'wcpay_multi_currency_should_convert_product_price', true, \$product )" );
 
 		return $this->get_controller()->should_convert_product_price( $product );
 	}
@@ -145,7 +147,7 @@ class Compatibility {
 	 * @return bool
 	 */
 	public function should_convert_shipping_amount( $shipping_method = null ): bool {
-		WooPaymentsCompatibilityNotice::warn( __METHOD__, "! \$shipping_method || (bool) apply_filters( 'wcpay_multi_currency_should_convert_shipping_amount', true, \$shipping_method )" );
+		self::warn_compatibility_method( __METHOD__, "! \$shipping_method || (bool) apply_filters( 'wcpay_multi_currency_should_convert_shipping_amount', true, \$shipping_method )" );
 
 		if ( ! $shipping_method ) {
 			return true;
@@ -173,7 +175,7 @@ class Compatibility {
 	 * @return bool
 	 */
 	public function should_return_store_currency(): bool {
-		WooPaymentsCompatibilityNotice::warn( __METHOD__, "(bool) apply_filters( 'wcpay_multi_currency_should_return_store_currency', false )" );
+		self::warn_compatibility_method( __METHOD__, "(bool) apply_filters( 'wcpay_multi_currency_should_return_store_currency', false )" );
 
 		return $this->get_controller()->should_return_store_currency();
 	}

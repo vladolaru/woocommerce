@@ -31,7 +31,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Prefli
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\StoreApiRequestHandler;
 use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
-use Automattic\WooCommerce\Internal\Utilities\WooPaymentsCompatibilityNotice;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\WooPaymentsCompatibilityNotice;
 use Exception;
 use Throwable;
 use WC_Order;
@@ -51,6 +51,8 @@ use WP_Error;
  * @internal
  */
 class WooPaymentsGateway extends WC_Payment_Gateway_CC {
+
+	use WooPaymentsCompatibilityNotice;
 
 	/**
 	 * Untranslated gateway title.
@@ -439,7 +441,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return bool
 	 */
 	public function is_enabled() {
-		WooPaymentsCompatibilityNotice::warn( __METHOD__, "'yes' === \$gateway->get_option( 'enabled' )" );
+		self::warn_compatibility_method( __METHOD__, "'yes' === \$gateway->get_option( 'enabled' )" );
 		return 'yes' === $this->get_option( 'enabled' );
 	}
 

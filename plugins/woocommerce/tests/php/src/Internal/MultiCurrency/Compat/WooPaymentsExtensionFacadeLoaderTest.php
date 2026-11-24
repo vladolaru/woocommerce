@@ -38,7 +38,7 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	 * @testdox The core-owned facade preserves grounded extension calls and converts a price exactly once.
 	 */
 	public function test_core_owned_facade_preserves_grounded_extension_calls(): void {
-		$this->reset_compatibility_notices();
+		$this->reset_compatibility_notices( \WCPay\MultiCurrency\MultiCurrency::class, \WCPay\MultiCurrency\Compatibility::class );
 		$failing_price_converter = $this->createMock( PriceConverter::class );
 		$failing_price_converter->method( 'get_price' )->willThrowException( new \RuntimeException( 'Projection failed.' ) );
 		$this->create_loader( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $failing_price_converter );

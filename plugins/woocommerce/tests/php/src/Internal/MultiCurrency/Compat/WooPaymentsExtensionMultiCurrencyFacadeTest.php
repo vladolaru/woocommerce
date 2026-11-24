@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySwitcherWidgetCon
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\LocalizationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Tests\Internal\Compatibility\WooPaymentsCompatibilityNoticeTestTrait;
 use WC_Unit_Test_Case;
 
@@ -80,7 +81,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 	 */
 	public function setUp(): void {
 		parent::setUp();
-		$this->reset_compatibility_notices();
+		$this->reset_compatibility_notices( \WCPay\MultiCurrency\MultiCurrency::class, \WCPay\MultiCurrency\Compatibility::class );
 
 		global $wp_widget_factory;
 		$this->session = WC()->session;
@@ -583,6 +584,35 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A REST request reports incorrect usage from both compatibility boundaries without writing to the PHP error log.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_rest_compatibility_warnings_leave_the_error_log_empty(): void {
+		if ( WP_DEBUG ) {
+			$this->markTestSkipped( 'This test requires WP_DEBUG to be off.' );
+		}
+
+		$gateway                = wc_get_container()->get( WooPaymentsGateway::class );
+		$_SERVER['REQUEST_URI'] = '/wp-json/wc/store/v1/cart';
+		$this->assertTrue( WC()->is_rest_api_request() );
+		$this->setExpectedIncorrectUsage( WooPaymentsGateway::class . '::is_enabled()' );
+		$this->setExpectedIncorrectUsage( 'WCPay\MultiCurrency\MultiCurrency::is_enabled()' );
+
+		$error_log = tempnam( sys_get_temp_dir(), 'wc-compat-' );
+		$this->assertIsString( $error_log );
+		try {
+			$this->iniSet( 'error_log', $error_log );
+			$gateway->is_enabled();
+			\WCPay\MultiCurrency\MultiCurrency::is_enabled();
+
+			$this->assertStringEqualsFile( $error_log, '' );
+		} finally {
+			wp_delete_file( $error_log );
+		}
+	}
+
+	/**
 	 * @testdox Each method warns once per request and identifies its replacement or removal.
 	 */
 	public function test_each_member_warns_once_with_its_replacement_or_removal(): void {
@@ -591,7 +621,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 		add_action(
 			'doing_it_wrong_run',
 			static function ( $function_name, $message, $version ) use ( &$notices ) {
-				$notices[ $function_name ][] = array( explode( ' Backtrace: ', $message, 2 )[0], $version );
+				$notices[ $function_name ][] = array( $message, $version );
 				if ( 'WCPay\\MultiCurrency\\MultiCurrency::is_enabled()' === $function_name && 1 === count( $notices[ $function_name ] ) ) {
 					\WCPay\MultiCurrency\MultiCurrency::is_enabled();
 				}
@@ -622,7 +652,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 		$this->assertCount( 11, $notices );
 		foreach ( $notices as $member => $warnings ) {
 			$message = $replacements[ $member ] ?? "$member is a compatibility shim for the WooPayments extension with no replacement in WooCommerce and will be removed in 12.0.0.";
-			$this->assertSame( array( array( $message, WC()->version ) ), $warnings, $member );
+			$this->assertSame( array( array( esc_html( $message ), WC()->version ) ), $warnings, $member );
 		}
 	}
 

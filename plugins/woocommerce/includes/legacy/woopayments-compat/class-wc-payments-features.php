@@ -7,13 +7,13 @@
 declare( strict_types = 1 );
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\WooPaymentsCompatibilityNotice;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
-use Automattic\WooCommerce\Internal\Utilities\WooPaymentsCompatibilityNotice;
 
 /**
  * Answers feature checks from plugins written for the WooPayments extension.
@@ -25,6 +25,8 @@ use Automattic\WooCommerce\Internal\Utilities\WooPaymentsCompatibilityNotice;
  */
 class WC_Payments_Features {
 	// phpcs:enable Squiz.Classes.ClassFileName.NoMatch,SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName,Squiz.Classes.ValidClassName.NotCamelCaps
+
+	use WooPaymentsCompatibilityNotice;
 
 	/** Option for bundled subscriptions. */
 	public const WCPAY_SUBSCRIPTIONS_FLAG_NAME = '_wcpay_feature_subscriptions';
@@ -76,7 +78,7 @@ class WC_Payments_Features {
 	 * @return bool
 	 */
 	public static function is_wcpay_subscriptions_enabled() {
-		WooPaymentsCompatibilityNotice::warn( __METHOD__ );
+		self::warn_compatibility_method( __METHOD__ );
 
 		return false;
 	}
