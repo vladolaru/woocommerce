@@ -635,7 +635,7 @@ class PerSiteActivationController implements RegisterHooksInterface {
 		}
 		if ( array() !== $kept ) {
 			/* translators: %s: comma-separated list of sites. */
-			echo '<div class="notice notice-info"><p>' . esc_html( sprintf( __( 'Kept WooPayments in WooCommerce: %s.', 'woocommerce' ), $this->get_site_labels( $kept ) ) ) . '</p></div>';
+			echo '<div class="notice notice-info"><p>' . esc_html( sprintf( __( 'Left unchanged, already using the built-in WooPayments: %s.', 'woocommerce' ), $this->get_site_labels( $kept ) ) ) . '</p></div>';
 		}
 	}
 

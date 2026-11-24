@@ -269,7 +269,7 @@ class PerSiteActivationControllerTest extends WC_Unit_Test_Case {
 		$_GET[ PerSiteActivationController::QUERY_DONE ] = '1';
 		$_GET[ PerSiteActivationController::QUERY_KEPT ] = (string) $fresh;
 		$notice = $this->render_notice( $this->create_sut() );
-		$this->assertStringContainsString( 'Kept WooPayments in WooCommerce: ' . $this->get_site_label( $fresh ) . '.', $notice );
+		$this->assertStringContainsString( 'Left unchanged, already using the built-in WooPayments: ' . $this->get_site_label( $fresh ) . '.', $notice );
 		$this->assertStringNotContainsString( 'could not be activated', $notice );
 	}
 
