@@ -338,6 +338,22 @@ class StripeBillingModule implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Find the order an invoice event would update without creating a renewal.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param string              $event_type Invoice event type.
+	 * @param array<string,mixed> $invoice    Invoice object.
+	 * @return WC_Order|null
+	 */
+	public function find_existing_invoice_order( string $event_type, array $invoice ): ?WC_Order {
+		if ( ! $this->is_loaded() ) {
+			return null;
+		}
+		return wc_get_container()->get( StripeBillingEventHandler::class )->find_existing_invoice_order( $event_type, $invoice );
+	}
+
+	/**
 	 * Handle one Stripe Billing invoice event: `invoice.upcoming`, `invoice.paid` or `invoice.payment_failed`.
 	 *
 	 * @param array<string,mixed> $event Event payload.

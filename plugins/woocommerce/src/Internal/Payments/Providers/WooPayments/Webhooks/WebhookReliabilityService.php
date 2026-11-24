@@ -10,8 +10,6 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhook
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
 use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingEventHandler;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
@@ -547,10 +545,7 @@ class WebhookReliabilityService implements RegisterHooksInterface {
 		if ( 'charge.refund.updated' === $type || $container->get( DisputeEventHandler::class )->is_supported_event( $type ) || $container->get( EarlyFraudWarningEventHandler::class )->is_supported_event( $type ) ) {
 			return $container->get( EventOrderResolver::class )->find_order_by_charge_id( $object['charge'] ?? '' );
 		}
-		if ( in_array( $type, array( 'invoice.paid', 'invoice.payment_failed', 'invoice.upcoming' ), true ) && $container->get( StripeBillingModule::class )->is_loaded() ) {
-			return $container->get( StripeBillingEventHandler::class )->find_existing_invoice_order( $type, $object );
-		}
-		return null;
+		return $this->event_ingestor->find_existing_invoice_order( $type, $object );
 	}
 
 	/**

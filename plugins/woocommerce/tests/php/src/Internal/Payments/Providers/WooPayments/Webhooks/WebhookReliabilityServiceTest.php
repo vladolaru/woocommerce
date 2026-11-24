@@ -2014,12 +2014,16 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 * @testWith ["invoice.paid"]
 	 *           ["invoice.payment_failed"]
 	 *           ["invoice.upcoming"]
-	 * @param string $type Invoice event type.
+	 *           ["invoice.paid", false]
+	 * @param string $type   Invoice event type.
+	 * @param bool   $loaded Whether the billing module loaded.
 	 */
-	public function test_dropped_update_invoice( string $type ): void {
+	public function test_dropped_update_invoice( string $type, bool $loaded = true ): void {
 		WooCommerceSubscriptionsDoubles::load();
-		$module = $this->createStub( StripeBillingModule::class );
-		$module->method( 'is_loaded' )->willReturn( true );
+		$module = $this->getMockBuilder( StripeBillingModule::class )
+			->onlyMethods( array( 'is_loaded' ) )
+			->getMock();
+		$module->method( 'is_loaded' )->willReturn( $loaded );
 		$container = $GLOBALS['wc_container'];
 		$this->assertInstanceOf( \Automattic\WooCommerce\Testing\Tools\TestingContainer::class, $container );
 		$container->replace( StripeBillingModule::class, $module );
@@ -2045,7 +2049,7 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		try {
 			$store->set_event( 'evt_invoice', $event, time() - 2 * DAY_IN_SECONDS );
 			$this->sut->sweep_queued_events();
-			$expected = array( 'A WooPayments update for this order (event evt_invoice) could not be applied. Check the payment in your WooPayments dashboard.' );
+			$expected = $loaded ? array( 'A WooPayments update for this order (event evt_invoice) could not be applied. Check the payment in your WooPayments dashboard.' ) : array();
 			$this->assertSame( 'invoice.upcoming' === $type ? $expected : array(), wp_list_pluck( wc_get_order_notes( array( 'order_id' => $subscription->get_id() ) ), 'content' ) );
 			$this->assertSame( 'invoice.upcoming' === $type ? array() : $expected, wp_list_pluck( wc_get_order_notes( array( 'order_id' => $renewal->get_id() ) ), 'content' ) );
 			$this->assertNull( $store->get_row( 'evt_invoice' ) );

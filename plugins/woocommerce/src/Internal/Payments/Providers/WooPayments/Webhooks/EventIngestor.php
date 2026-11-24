@@ -277,6 +277,22 @@ class EventIngestor {
 	}
 
 	/**
+	 * Find the existing order for a dropped invoice event.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param string              $event_type   Event type.
+	 * @param array<string,mixed> $event_object Event object.
+	 * @return \WC_Order|null
+	 */
+	public function find_existing_invoice_order( string $event_type, array $event_object ): ?\WC_Order {
+		if ( ! $this->is_stripe_billing_invoice_event( $event_type ) ) {
+			return null;
+		}
+		return $this->get_stripe_billing_module()->find_existing_invoice_order( $event_type, $event_object );
+	}
+
+	/**
 	 * Tell whether an event that failed to process for a passing reason is processed again later.
 	 *
 	 * Of the Stripe Billing invoice events, only `invoice.paid` is retried, and only while the module is loaded: the
