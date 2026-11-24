@@ -5,6 +5,10 @@
 # Captures raw/gzip byte sizes for known WooPayments and multi-currency route
 # assets. Missing files are recorded explicitly so a capture cannot pretend a
 # surface was measured when the built asset was absent.
+#
+# For core builds it also records which built admin chunks hold each shared
+# helper named in SINGLE_COPY_MARKERS; compare fails when one is in more than
+# one chunk.
 
 set -uo pipefail
 
@@ -55,6 +59,7 @@ case "$mode" in
 import gzip
 import json
 import os
+import re
 import sys
 
 repo, out, requested_profile = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -230,6 +235,30 @@ for logical_name, rel in sorted(asset_map.items()):
         "path": rel,
         "raw_bytes": raw_bytes,
         "gzip_bytes": gzip_bytes,
+    }
+
+# Shared admin helpers too small for webpack to split out on their own: a route that imports one from a module of its
+# own bundles a copy. Each must ship in exactly one built admin chunk. Matched on the minified body, so the
+# minifier's variable names do not matter.
+SINGLE_COPY_MARKERS = {
+    # fetchSummary(), the empty-summary fallback the Capital, Overview, Reports and money movement routes share.
+    "woopayments-admin-fetch-summary": r'\(\{path:[\w$]+,method:"GET",signal:[\w$]+\}\)\?\?\{\}',
+}
+if profile == "wc-core":
+    chunks_dir = os.path.join(repo, CORE_ADMIN_CHUNKS)
+    chunks_built = os.path.isdir(chunks_dir)
+    chunk_texts = {}
+    if chunks_built:
+        for name in sorted(os.listdir(chunks_dir)):
+            if name.endswith(".js"):
+                with open(os.path.join(chunks_dir, name), "r", encoding="utf-8", errors="replace") as fh:
+                    chunk_texts[name] = fh.read()
+    result["single_copy"] = {
+        helper: {
+            "chunks_built": chunks_built,
+            "chunks": [name for name, text in chunk_texts.items() if re.search(marker, text)],
+        }
+        for helper, marker in sorted(SINGLE_COPY_MARKERS.items())
     }
 
 with open(out, "w", encoding="utf-8") as fh:

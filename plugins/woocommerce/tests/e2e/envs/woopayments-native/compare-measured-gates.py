@@ -120,6 +120,25 @@ def compare_bundle(args: argparse.Namespace) -> int:
             else:
                 infos.append(f"ok    {asset}: {metric} {r_value} -> {t_value} (limit {limit})")
 
+    # Shared helpers that must ship in one built chunk; only core captures record them.
+    single_copy = target.get("single_copy", {})
+    if not isinstance(single_copy, dict):
+        failures.append("single copy: invalid single_copy entry")
+        single_copy = {}
+    for helper, entry in sorted(single_copy.items()):
+        if not isinstance(entry, dict) or not isinstance(entry.get("chunks"), list):
+            failures.append(f"single copy {helper}: invalid entry")
+            continue
+        chunks = entry["chunks"]
+        if entry.get("chunks_built") is not True:
+            infos.append(f"skip  single copy {helper}: admin chunks not built")
+        elif len(chunks) == 1:
+            infos.append(f"ok    single copy {helper}: {chunks[0]}")
+        elif not chunks:
+            failures.append(f"single copy {helper}: in no built admin chunk; update or remove its marker")
+        else:
+            failures.append(f"single copy {helper}: in {len(chunks)} admin chunks ({', '.join(chunks)}), expected 1")
+
     for line in infos:
         print(line)
     if failures:

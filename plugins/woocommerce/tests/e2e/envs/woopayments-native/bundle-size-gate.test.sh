@@ -190,4 +190,33 @@ printf '{"schema": "other", "mode": "bundle", "assets": {}}' > "$WORK_DIR/bad-sc
 expect_exit 1 'a wrong schema fails closed' bash "$GATE" compare --ref "$WORK_DIR/bad-schema.json" --target "$WORK_DIR/target.json"
 grep -q 'ERROR: ref schema' "$WORK_DIR/out.txt" || fail 'wrong schema did not report the schema mismatch'
 
+# --- single copy: a shared admin helper must ship in exactly one built admin chunk ---
+helper="woopayments-admin-fetch-summary"
+# Without built admin chunks the check is skipped, not passed or failed.
+assert_json "$WORK_DIR/core-capture.json" 'data["single_copy"] == {"'"$helper"'": {"chunks_built": False, "chunks": []}}'
+expect_exit 0 'single copy is skipped when admin chunks are not built' bash "$GATE" compare --ref "$WORK_DIR/core-capture.json" --target "$WORK_DIR/core-capture.json"
+grep -q "skip  single copy $helper: admin chunks not built" "$WORK_DIR/out.txt" || fail 'unbuilt admin chunks did not skip the single-copy check'
+admin_chunks="$core_repo/plugins/woocommerce/assets/client/admin/chunks"
+mkdir -p "$admin_chunks"
+# The helper's minified body as webpack emits it, once in the shared chunk.
+printf 't.d(o,["zn",0,async(e,o)=>await n()({path:e,method:"GET",signal:o})??{}]);\n' > "$admin_chunks/9695.js"
+printf 'var capital=1;\n' > "$admin_chunks/settings-payments-woopayments-capital.js"
+# A GET without the empty-body fallback is not the helper.
+printf 'r()({path:e,method:"GET",signal:o});\n' > "$admin_chunks/5744.js"
+bash "$GATE" capture --repo "$core_repo" --out "$WORK_DIR/one-copy.json" > /dev/null
+assert_json "$WORK_DIR/one-copy.json" 'data["single_copy"] == {"'"$helper"'": {"chunks_built": True, "chunks": ["9695.js"]}}'
+expect_exit 0 'one built copy passes' bash "$GATE" compare --ref "$WORK_DIR/one-copy.json" --target "$WORK_DIR/one-copy.json"
+grep -q "ok    single copy $helper: 9695.js" "$WORK_DIR/out.txt" || fail 'one built copy did not report its chunk'
+# A route chunk that bundles its own copy, under other minified names, fails.
+printf 'var capital=1;s.d(o,["z",0,async(e,t)=>await r()({path:e,method:"GET",signal:t})??{}]);\n' > "$admin_chunks/settings-payments-woopayments-capital.js"
+bash "$GATE" capture --repo "$core_repo" --out "$WORK_DIR/two-copies.json" > /dev/null
+expect_exit 1 'a second built copy fails' bash "$GATE" compare --ref "$WORK_DIR/two-copies.json" --target "$WORK_DIR/two-copies.json"
+grep -q "FAIL  single copy $helper: in 2 admin chunks (9695.js, settings-payments-woopayments-capital.js), expected 1" "$WORK_DIR/out.txt" || fail 'a second built copy did not name both chunks'
+# Built chunks without the helper fail too, so a marker that no longer matches cannot pass silently.
+printf 'var shared=1;\n' > "$admin_chunks/9695.js"
+printf 'var capital=1;\n' > "$admin_chunks/settings-payments-woopayments-capital.js"
+bash "$GATE" capture --repo "$core_repo" --out "$WORK_DIR/no-copy.json" > /dev/null
+expect_exit 1 'no built copy fails' bash "$GATE" compare --ref "$WORK_DIR/no-copy.json" --target "$WORK_DIR/no-copy.json"
+grep -q "FAIL  single copy $helper: in no built admin chunk; update or remove its marker" "$WORK_DIR/out.txt" || fail 'a missing helper did not fail'
+
 echo 'PASS: bundle-size-gate fixture tests passed.'
