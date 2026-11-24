@@ -189,7 +189,7 @@ class WooPaymentsFeaturesFacadeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox After an account refresh lowers the tier, consumers still read the current module and account state.
+	 * @testdox An empty account read keeps the active tier, so only an explicit drop lowers it. The registered facade still answers at the lower tier.
 	 * @testWith ["is_customer_multi_currency_enabled"]
 	 *           ["is_reports_area_enabled"]
 	 *
@@ -197,12 +197,16 @@ class WooPaymentsFeaturesFacadeTest extends WC_Unit_Test_Case {
 	 */
 	public function test_account_disappears_after_loader_registration( string $method ): void {
 		$account = $this->load_facades( true );
+		$tier    = wc_get_container()->get( WooPaymentsSetupTier::class );
 		update_option( '_wcpay_feature_reports_area', '1' );
-		$account->cache_account_data_until_refreshed( $account->get_stored_account_data() );
-		$account->is_account_rejected();
-		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, wc_get_container()->get( WooPaymentsSetupTier::class )->get_effective_tier() );
-
+		$account->cache_account_data_until_refreshed( array( 'account_id' => 'acct_123' ) );
 		$this->setExpectedDeprecated( 'WC_Payments_Features::' . $method );
+		$before_read = Features::$method();
+		$this->assertSame( array(), $account->get_cached_account_data() );
+		$this->assertSame( array( WooPaymentsSetupTier::ACTIVE, $before_read ), array( $tier->get_effective_tier(), Features::$method() ) );
+
+		$account->drop_to_available();
+		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $tier->get_effective_tier() );
 		$this->assertTrue( class_exists( MultiCurrency::class ) && class_exists( 'WC_Payments_Features' ) && Features::$method() );
 	}
 }
