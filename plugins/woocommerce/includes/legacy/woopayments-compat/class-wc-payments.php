@@ -6,6 +6,8 @@
 
 declare( strict_types = 1 );
 
+use WCPay\Core\Mode;
+
 /**
  * Stands in for the WooPayments extension's WC_Payments class, so extensions that detect WooPayments by it keep working.
  *
@@ -16,6 +18,24 @@ declare( strict_types = 1 );
  */
 class WC_Payments {
 	// phpcs:enable Squiz.Classes.ClassFileName.NoMatch,SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName,Squiz.Classes.ValidClassName.NotCamelCaps
+
+	/**
+	 * Return the shared WooPayments mode for this request.
+	 *
+	 * @since 11.4.0
+	 * @deprecated 11.4.0 Removed in WooCommerce 12.0.0.
+	 *
+	 * @return Mode
+	 */
+	public static function mode() {
+		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+
+		static $mode = null;
+		if ( null === $mode ) {
+			$mode = new Mode();
+		}
+		return $mode;
+	}
 
 	/**
 	 * Return the built-in WooPayments gateway from the container.

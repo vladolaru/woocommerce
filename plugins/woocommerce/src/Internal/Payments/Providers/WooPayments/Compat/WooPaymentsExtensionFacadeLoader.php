@@ -32,6 +32,7 @@ class WooPaymentsExtensionFacadeLoader implements RegisterHooksInterface {
 		'WC_Payments'          => 'class-wc-payments.php',
 		'WC_Payments_Features' => 'class-wc-payments-features.php',
 		'WC_Payments_Utils'    => 'class-wc-payments-utils.php',
+		'WCPay\\Core\\Mode'    => 'class-mode.php',
 	);
 
 	/**
