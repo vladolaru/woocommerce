@@ -257,8 +257,9 @@ abstract class AbstractAbility extends AbstractDomainAbility implements AbilityD
 			$response = $response->as_error();
 		}
 		if ( is_wp_error( $response ) ) {
+			// The route and the code only: the message can hold the provider's text, which no ability log line carries.
 			wc_get_logger()->error(
-				sprintf( 'AbilitiesRegistrar delegation failed [%s %s]: %s (%s)', $http_method, $route, $response->get_error_message(), $response->get_error_code() ),
+				sprintf( 'AbilitiesRegistrar delegation failed [%s %s] (%s)', $http_method, $route, $response->get_error_code() ),
 				array( 'source' => 'woopayments-abilities' )
 			);
 			return $response;

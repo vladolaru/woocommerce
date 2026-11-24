@@ -243,7 +243,7 @@ class SubmitDisputeEvidenceTest extends AbilityTestCase {
 	}
 
 	/**
-	 * @testdox A $_dataName failure answers the extension's code with the route's message and logs a listed code only.
+	 * @testdox A $_dataName failure answers the extension's code with the route's message, and no ability log line holds the provider's text.
 	 * @testWith ["update", "unknown_error"]
 	 *           ["read", "resource_missing"]
 	 *           ["exception", "unknown_error"]
@@ -296,7 +296,12 @@ class SubmitDisputeEvidenceTest extends AbilityTestCase {
 
 		$own_lines = array();
 		foreach ( $logger->lines as $line ) {
-			if ( 'woopayments-abilities' === $line[2] && 0 === strpos( $line[1], 'Dispute evidence submission' ) ) {
+			if ( 'woopayments-abilities' !== $line[2] ) {
+				continue;
+			}
+			$this->assertStringNotContainsString( $message, $line[1] );
+			$this->assertStringNotContainsString( 'Private evidence text', $line[1] );
+			if ( 0 === strpos( $line[1], 'Dispute evidence submission' ) ) {
 				$own_lines[] = $line;
 			}
 		}

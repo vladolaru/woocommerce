@@ -331,14 +331,15 @@ class AbstractAbilityTest extends AbilityTestCase {
 	}
 
 	/**
-	 * A debug-gated provider logger loses REST failures when debug logging is off.
+	 * A debug-gated provider logger loses REST failures when debug logging is off. The line holds the route and the code but
+	 * not the route's message, which can carry provider text; the caller still receives the message in the error.
 	 *
-	 * @testdox Delegation errors are logged under woopayments-abilities with debug logging off.
+	 * @testdox Delegation errors are logged under woopayments-abilities with debug logging off, without the route's message.
 	 */
 	public function test_delegation_log(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
 		$logger = $this->createMock( \WC_Logger_Interface::class );
-		$logger->expects( $this->once() )->method( 'error' )->with( 'AbilitiesRegistrar delegation failed [GET /wc/v3/payments/accounts]: Unavailable (account_error)', array( 'source' => 'woopayments-abilities' ) );
+		$logger->expects( $this->once() )->method( 'error' )->with( 'AbilitiesRegistrar delegation failed [GET /wc/v3/payments/accounts] (account_error)', array( 'source' => 'woopayments-abilities' ) );
 		add_filter( 'woocommerce_logging_class', static fn() => $logger );
 		$this->bodies['accounts'] = new \WP_Error( 'account_error', 'Unavailable', array( 'status' => 503 ) );
 		$this->assertWPError( $this->ability( 'get-account' )->execute() );
