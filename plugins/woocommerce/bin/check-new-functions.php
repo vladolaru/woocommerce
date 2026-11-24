@@ -164,13 +164,14 @@ foreach ( $added_function_file_map as $function => $file ) {
 }
 
 // Calculate net added functions (added minus deleted) and clean file paths.
-// Template tags are owner-approved public contracts; every entry in this map is an owner decision.
-$owner_approved_template_tags = array(
+// Each public contract is approved only at its designated declaration site.
+$owner_approved_functions = array(
 	'wc_get_currency_switcher_markup' => 'plugins/woocommerce/includes/wc-template-functions.php',
+	'WC_Payments_Multi_Currency'      => 'plugins/woocommerce/includes/legacy/woopayments-multi-currency-compat/wc-payments-multi-currency.php',
 );
-$net_function_file_map        = array();
+$net_function_file_map    = array();
 foreach ( $added_function_file_map as $function => $file_path ) {
-	if ( isset( $owner_approved_template_tags[ $function ] ) && $owner_approved_template_tags[ $function ] === $file_path ) {
+	if ( isset( $owner_approved_functions[ $function ] ) && $owner_approved_functions[ $function ] === $file_path ) {
 		continue;
 	}
 

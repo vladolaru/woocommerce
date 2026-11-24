@@ -414,47 +414,6 @@ class WooCommerceNameYourPriceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox NYP 4.0.1 keeps both inline edits through server cart reloads starting in $start.
-	 * @testWith ["USD", "EUR", 12]
-	 *           ["EUR", "USD", 18.75]
-	 *
-	 * @param string $start    Initial currency.
-	 * @param string $other    Second currency.
-	 * @param float  $switched First edit in the second currency.
-	 */
-	public function test_inline_edits_survive_reloads( string $start, string $other, float $switched ): void {
-		$sut     = $this->register_version( '4.0.1' );
-		$product = $this->cart_product();
-		$sut->set_name_your_price_product_ids( array( $product->get_id() ) );
-		$this->select_currency( $start );
-		$untracked = array( 'nyp' => 10 );
-		$this->assertSame( $untracked, apply_filters( 'wc_nyp_edited_cart_item', $untracked, 12 ) );
-		$key = WC()->cart->add_to_cart( $product->get_id(), 1, 0, array(), array( 'nyp' => 10 ) );
-		$this->assert_reloaded_price( $key, 10 );
-
-		foreach ( array(
-			$start => 15,
-			$other => 20,
-		) as $currency => $amount ) {
-			$this->select_currency( $currency );
-			if ( $currency === $other ) {
-				$this->assert_reloaded_price( $key, $switched );
-			}
-
-			// NYP validates the new amount, filters the line, then applies its price and recalculates totals.
-			$line                             = WC()->cart->get_cart_item( $key );
-			$line['nyp']                      = $amount;
-			$edited                           = apply_filters( 'wc_nyp_edited_cart_item', $line, $amount, $key );
-			WC()->cart->cart_contents[ $key ] = $edited;
-			$edited['data']->set_price( $amount );
-			WC()->cart->calculate_totals();
-			$this->assert_reloaded_price( $key, $amount );
-			$this->assertSame( $amount, $edited['nyp_original'] );
-			$this->assertSame( $currency, $edited['nyp_currency'] );
-		}
-	}
-
-	/**
 	 * @testdox NYP $version applies the converted cart price on the first session load after a currency switch.
 	 * @testWith ["3.8.3"]
 	 *           ["4.0.1"]
@@ -487,168 +446,28 @@ class WooCommerceNameYourPriceTest extends WC_Unit_Test_Case {
 		);
 		$line   = apply_filters( 'woocommerce_get_cart_item_from_session', array( 'data' => $product ) + $values, $values, 'nyp-item' );
 
+		if ( '4.0.1' === $version ) {
+			$this->assertSame( '15.00', $line['nyp'], 'NYP owns the session conversion.' );
+			foreach ( array( 'wc_nyp_raw_minimum_price', 'wc_nyp_raw_maximum_price', 'wc_nyp_raw_suggested_price' ) as $hook ) {
+				$this->assertFalse( has_filter( $hook, array( $sut, 'get_nyp_prices' ) ) );
+			}
+			$this->assertSame( 22.0, apply_filters( 'wc_nyp_raw_minimum_price', 22.0 ), 'A minimum already converted by NYP stays at 22 EUR.' );
+			return;
+		}
 		$this->assertSame( 18.75, $line['nyp'] );
 		$this->assertSame( 18.75, (float) $line['data']->get_price() );
 	}
 
 	/**
-	 * @testdox NYP 4.0.1 converts every suggested button once with product rounding and preserves its metadata.
+	 * @testdox Earlier versions keep core's price conversions through cart edits, session restore and reorder.
 	 */
-	public function test_suggested_buttons_use_product_prices(): void {
-		$this->register_version( '4.0.1' );
-		$buttons = array(
-			3         => array( 'price' => 10.0 ),
-			'default' => array(
-				'price'   => 20.0,
-				'default' => true,
-			),
-			8         => array( 'price' => 50.0 ),
-			'bad'     => array( 'price' => 'other' ),
-			'empty'   => new \stdClass(),
-		);
-		$this->select_currency( 'USD' );
-		$this->assertSame( $buttons, apply_filters( 'wc_nyp_suggested_prices', $buttons ) );
-		$this->select_currency( 'EUR' );
-		$expected                     = $buttons;
-		$expected[3]['price']         = 8.0;
-		$expected['default']['price'] = 16.0;
-		$expected[8]['price']         = 40.0;
-		$this->assertSame( $expected, apply_filters( 'wc_nyp_suggested_prices', $buttons ) );
-		$this->select_currency( 'EUR', true, '5' );
-		$expected[3]['price']         = 10.0;
-		$expected['default']['price'] = 20.0;
-		$this->assertSame( $expected, apply_filters( 'wc_nyp_suggested_prices', $buttons ) );
-	}
-
-	/**
-	 * @testdox NYP 4.0.1 converts a EUR reorder before validation and preserves the existing cart if EUR is disabled.
-	 * @testWith [true]
-	 *           [false]
-	 *
-	 * @param bool $eur_enabled Whether the shopper can still use the order currency.
-	 */
-	public function test_reorder_uses_the_order_currency( bool $eur_enabled ): void {
-		$this->register_version( '4.0.1' );
-		$this->select_currency( 'USD', $eur_enabled );
-		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
-		wp_set_current_user( $user_id );
-		$product = $this->cart_product();
-		$order   = wc_create_order( array( 'customer_id' => $user_id ) );
-		$order->set_currency( 'EUR' );
-		$order->add_product( $this->cart_product() );
-		$item_id = $order->add_product(
-			$product,
-			1,
-			array(
-				'subtotal' => 15,
-				'total'    => 15,
-			)
-		);
-		wc_add_order_item_meta( $item_id, '_wc_nyp_price', '15.00' );
-		$order->calculate_totals();
-		$order->set_status( OrderStatus::COMPLETED );
-		$order->save();
-
-		// NYP supplies the order's entered price at priority 5, before WooCommerce validates each line.
-		add_filter(
-			'woocommerce_order_again_cart_item_data',
-			static function ( $line, $item ) {
-				$price = $item->get_meta( '_wc_nyp_price' );
-				return is_numeric( $price ) ? array( 'nyp' => (float) $price ) + $line : $line;
-			},
-			5,
-			2
-		);
-		$validated = array();
-		add_filter(
-			'woocommerce_add_to_cart_validation',
-			static function ( $valid, $id, $quantity, $variation, $attributes, $line ) use ( &$validated ) {
-				$validated[ $id ] = $line;
-				return $valid;
-			},
-			10,
-			6
-		);
-
-		$previous_session = WC()->session;
-		try {
-			WC()->session = new \WC_Session_Handler();
-			WC()->session->init_session_cookie();
-			$existing_key = WC()->cart->add_to_cart( $this->cart_product()->get_id() );
-			$session      = new \WC_Cart_Session( WC()->cart );
-			$session->set_session();
-			wc_add_notice( 'Existing message.', 'notice' );
-			$before  = WC()->session->get( 'cart' );
-			$notices = wc_get_notices();
-			WC()->session->save_data();
-
-			$redirect = new \RuntimeException();
-			add_filter(
-				'wp_redirect',
-				function ( $url ) use ( $redirect ) {
-					$this->assertSame( wc_get_cart_url(), $url );
-					throw $redirect;
-				}
-			);
-			$_GET['order_again'] = $order->get_id();
-			$_GET['_wpnonce']    = wp_create_nonce( 'woocommerce-order_again' );
-			try {
-				$session->get_cart_from_session();
-				$this->fail( 'The reorder should redirect to the clean cart.' );
-			} catch ( \RuntimeException $e ) {
-				$this->assertSame( $redirect, $e );
-			} finally {
-				unset( $_GET['order_again'], $_GET['_wpnonce'] );
-			}
-
-			// Save as shutdown would, then load the next request from the shopper's persistent session.
-			WC()->session->save_data();
-			WC()->session = new \WC_Session_Handler();
-			WC()->session->init_session_cookie();
-			WC()->cart->set_cart_contents( array() );
-			$session->get_cart_from_session();
-			if ( ! $eur_enabled ) {
-				$this->assertArrayNotHasKey( $product->get_id(), $validated );
-				$this->assertSame( $before, WC()->session->get( 'cart' ) );
-				$this->assertSame( array( $existing_key ), array_keys( WC()->cart->get_cart() ) );
-				$this->assertSame( $notices, wc_get_notices() );
-				return;
-			}
-			$line = $validated[ $product->get_id() ];
-			$this->assertSame( 18.75, $line['nyp'] );
-			$this->assertSame( 15.0, $line['nyp_original'] );
-			$this->assertSame( 'EUR', $line['nyp_currency'] );
-			$this->select_currency( 'EUR' );
-			$session->get_cart_from_session();
-			$lines = array_column( WC()->cart->get_cart(), null, 'product_id' );
-			$this->assertSame( 15.0, $lines[ $product->get_id() ]['nyp'] );
-			$this->assertSame( '15', $lines[ $product->get_id() ]['data']->get_price() );
-		} finally {
-			WC()->session = $previous_session;
-		}
-	}
-
-	/**
-	 * @testdox NYP $version keeps its existing hooks and reorder behavior, with the three additional hooks on 4.x.
-	 * @testWith ["3.8.3", false]
-	 *           ["4.0.1", true]
-	 *
-	 * @param string $version   NYP version.
-	 * @param bool   $has_edits Whether NYP supports inline cart edits.
-	 */
-	public function test_hooks_and_legacy_replacement_edit( string $version, bool $has_edits ): void {
-		$sut    = $this->register_version( $version );
+	public function test_legacy_replacement_edit(): void {
+		$sut    = $this->register_version( '3.8.3' );
 		$legacy = $this->provide_name_your_price_stores()['Name Your Price loaded under core'][2];
 		foreach ( $legacy as $hook => $callbacks ) {
 			foreach ( $callbacks as $method => $registration ) {
 				$this->assertSame( $registration[0], has_filter( $hook, array( $sut, $method ) ) );
 			}
-		}
-		foreach ( array( 'wc_nyp_edited_cart_item', 'wc_nyp_suggested_prices', 'woocommerce_order_again_cart_item_data' ) as $hook ) {
-			$this->assertSame( $has_edits, has_filter( $hook ), $hook );
-		}
-		if ( $has_edits ) {
-			return;
 		}
 
 		$product = $this->cart_product();

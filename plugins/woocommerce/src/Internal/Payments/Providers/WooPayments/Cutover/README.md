@@ -12,8 +12,26 @@ This folder moves a store from the WooPayments extension to the built-in WooPaym
 | `PreflightService` | Evaluates the conditions that block the cutover and manages the active extension. |
 | `DataMigration` | Migrates the extension's stored settings and options once per migration version. |
 | `ExtensionBoundRenewalPlugins` | Lists the plugins that take payments through the WooPayments extension's own classes, finds the active ones and names them; the preflight holds the switch back while one is active. |
+| `ExtensionBoundCurrencyPlugins` | Identifies active currency integrations that need the extension during the switch. |
 | `BundledSubscriptionsGuard` | Tells whether a store runs the bundled WooPayments subscriptions, which the cutover excludes. |
 | `PerSiteActivationController` | Offers the network-wide to per-site activation conversion, checks network-wide activations of the extension and records each site's rollback after one. |
+
+## Currency integrations that hold the switch
+
+The preflight checks active folder names in the filtered and stored site and network plugin lists. The first six rows apply when the store has an enabled currency besides its base currency. The last two apply whenever the plugin is active, including when Multi-Currency is off.
+
+| Plugin | Observed reason for the hold |
+|---|---|
+| Advanced Coupons Free | A qualifying coupon was refused. The shopper paid 44.00 EUR instead of 35.20 EUR. |
+| Easy Discounts | A qualifying discount was skipped. The shopper paid 44.00 EUR instead of 39.60 EUR. |
+| Gift Cards Pro | A 20 USD redemption deducted 20 EUR. The charge was 24.00 EUR instead of 26.40 EUR. |
+| Product Option Kit | A 10 USD option on a 50 USD item produced a 48 EUR charge instead of 53 EUR. |
+| WowAddons (`product-addons`) | The same fixed-price add-on produced a 48 EUR charge instead of 53 EUR. |
+| Smart Coupons | A second order charged 5.28 EUR when the remaining store credit covered it. |
+| Auctions Made Easy | With currencies off, the auction and shop pages failed at the missing currency function. |
+| Woocommerce Tier Pricing | With currencies off, a product page failed when it tried to obtain the currency singleton. |
+
+A plugin installed after the switch, a second currency enabled later, a renamed plugin folder, or a store that starts on the built-in can bypass these holds. Easy Product Bundles showed 67 EUR on the item-discount bundle page and charged the correct 62 EUR. Its fixed-price and total-discount bundles were not exercised. Themify's filter showed store-currency price boundaries while the product charge remained correct.
 
 ## Naming
 

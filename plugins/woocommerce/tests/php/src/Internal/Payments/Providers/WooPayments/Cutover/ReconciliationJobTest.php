@@ -44,6 +44,47 @@ use WC_Unit_Test_Case;
 class ReconciliationJobTest extends WC_Unit_Test_Case {
 
 	/**
+	 * @testdox A deferred currency hold clears through $condition and a fresh request confirms built-in ownership.
+	 * @testWith ["deactivate"]
+	 *           ["one currency"]
+	 *           ["active only"]
+	 *
+	 * @param string $condition Which condition the merchant clears.
+	 */
+	public function test_currency_hold_resumes_to_completion( string $condition ): void {
+		$this->arrange_extension_era_store();
+		$extension = WooPaymentsRuntimeArbiter::PLUGIN_FILE;
+		$blocker   = 'active only' === $condition ? 'tiered-pricing-for-woocommerce/plugin.php' : 'product-addons/plugin.php';
+		update_option( 'active_plugins', array( $extension, $blocker ) );
+		update_option( 'woocommerce_feature_multi_currency_enabled', 'active only' === $condition ? 'no' : 'yes' );
+		update_option( '_wcpay_feature_customer_multi_currency', '1' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		$preflight = wc_get_container()->get( PreflightService::class );
+		$job       = $this->create_state_writing_job( true, $preflight );
+		$this->assertTrue( $job->enqueue( 'merchant' ) );
+		$generation = $this->state_store->get_record()['generation'];
+		$this->scheduler->cancel( $generation, 1 );
+		$job->handle_reconcile( $generation, 1 );
+		$held = $this->state_store->get_record();
+		$this->assertSame( StateStore::STATE_DEFERRED, $held['state'] );
+		$this->assertSame( array( 'extension_currency_plugin_active' ), $held['deferred_codes'] );
+		$this->assertContains( $extension, $this->read_stored_active_plugins() );
+		if ( 'one currency' === $condition ) {
+			update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD' ) );
+		} else {
+			update_option( 'active_plugins', array( $extension ) );
+			$this->assertTrue( $job->bring_deferred_attempt_forward( 'extension_currency_plugin_active' ) );
+		}
+		$this->scheduler->cancel( $generation, 2 );
+		$job->handle_reconcile( $generation, 2 );
+		$verification = $this->state_store->get_record();
+		$this->assertSame( 'verify_builtin_ownership', $verification['current_step'] );
+		$this->assertNotContains( $extension, $this->read_stored_active_plugins() );
+		$this->run_ownership_verification_in_a_fresh_request( $verification, $preflight );
+		$this->assert_next_front_request_registers_the_gateway();
+	}
+
+	/**
 	 * The extension's own cached affected-orders check, which the built-in never reads, writes or deletes.
 	 *
 	 * @var string
@@ -3916,18 +3957,23 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A claim defers and keeps WooPayments active when this request hides a stored renewal plugin.
+	 * @testdox A claim defers and keeps WooPayments active when this request hides a stored plugin.
+	 * @testWith ["order-subscriptions", "extension_renewal_plugin_active"]
+	 *           ["tiered-pricing-for-woocommerce", "extension_currency_plugin_active"]
+	 *
+	 * @param string $plugin Folder of the active plugin.
+	 * @param string $reason Expected deferral reason.
 	 */
-	public function test_claim_defers_for_a_hidden_renewal_plugin(): void {
+	public function test_claim_defers_for_a_hidden_plugin( string $plugin, string $reason ): void {
 		$this->arrange_extension_era_store();
-		$plugins = array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, 'order-subscriptions/order-subscriptions.php' );
+		$plugins = array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, $plugin . '/plugin.php' );
 		update_option( 'active_plugins', $plugins );
 		add_filter( 'option_active_plugins', static fn() => array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
 
 		$record = $this->run_first_attempt_with_stored_list_preflight( new PreflightService() );
 
 		$this->assertSame( StateStore::STATE_DEFERRED, $record['state'], 'Claim step: ' . $record['current_step'] );
-		$this->assertSame( array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE ), $record['deferred_codes'] );
+		$this->assertSame( array( $reason ), $record['deferred_codes'] );
 		$this->assertSame( $plugins, $this->read_stored_active_plugins() );
 	}
 
@@ -4075,6 +4121,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	public function provide_codes_ignored_past_finalize(): array {
 		return array(
 			'a plugin that renews through the WooPayments extension' => array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE ),
+			'a currency integration requiring the extension' => array( 'extension_currency_plugin_active' ),
 			'an extension too old to switch from' => array( PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED ),
 		);
 	}

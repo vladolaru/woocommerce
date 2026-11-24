@@ -33,6 +33,59 @@ use WC_Payment_Token_CC;
 class CutoverControllerTest extends WC_Unit_Test_Case {
 
 	/**
+	 * @testdox The $store notice names both groups and clears only the hold whose condition ended.
+	 * @testWith ["extension active", false]
+	 *           ["waiting for the switch", false]
+	 *           ["extension active", true]
+	 *
+	 * @param string $store    Extension owner state.
+	 * @param bool   $deferred Whether the worker has already deferred the switch.
+	 */
+	public function test_currency_hold_notice_and_exits( string $store, bool $deferred ): void {
+		$this->arrange_switch_offer( $store );
+		$record     = array(
+			'state'                  => StateStore::STATE_DEFERRED,
+			'deferred_codes'         => array( 'extension_currency_plugin_active' ),
+			'informational_outcomes' => array(),
+		);
+		$controller = $this->create_cutover_controller(
+			$deferred ? $this->create_record_notice_job( $record ) : null,
+			null,
+			wc_get_container()->get( ExtensionBoundRenewalPlugins::class )
+		);
+		$ending     = 'extension active' === $store
+			? ' Until then nothing changes and WooPayments keeps running from the WooPayments extension.'
+			: ' Until then, activate the WooPayments extension again to keep taking payments.';
+		$lead       = "WooPayments is now part of WooCommerce, but this store can't switch yet. ";
+		$plugins    = array( 'product-addons/plugin.php', 'woocommerce-smart-coupons/plugin.php', 'tiered-pricing-for-woocommerce/plugin.php', 'auctions-made-easy-for-woocommerce/plugin.php' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( '_wcpay_feature_customer_multi_currency', '1' );
+		update_option( 'woocommerce_feature_multi_currency_enabled', 'yes' );
+		$extension = 'extension active' === $store ? array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) : array();
+		update_option( 'active_plugins', array_merge( $extension, $plugins ) );
+		$notice = $this->render_admin_notices( $controller );
+		$this->assertStringContainsString( esc_html( $lead . 'product-addons and woocommerce-smart-coupons work with more than one currency only through the WooPayments extension, so the switch waits while they are active and more than one currency is enabled.' . $ending ), $notice );
+		$this->assertStringContainsString( esc_html( $lead . 'tiered-pricing-for-woocommerce and auctions-made-easy-for-woocommerce work only with the WooPayments extension for now, so the switch waits while they are active.' . $ending ), $notice );
+		$this->assertStringNotContainsString( 'Start the switch', $notice );
+		$plugins = array( 'product-addons/plugin.php', 'tiered-pricing-for-woocommerce/plugin.php' );
+		update_option( 'active_plugins', array_merge( $extension, $plugins ) );
+		$notice = $this->render_admin_notices( $controller );
+		$this->assertStringContainsString( esc_html( $lead . 'product-addons works with more than one currency only through the WooPayments extension, so the switch waits while it is active and more than one currency is enabled.' . $ending ), $notice );
+		$this->assertStringContainsString( esc_html( $lead . 'tiered-pricing-for-woocommerce works only with the WooPayments extension for now, so the switch waits while it is active.' . $ending ), $notice );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD' ) );
+		$notice = $this->render_admin_notices( $controller );
+		$this->assertStringNotContainsString( 'more than one currency', $notice );
+		$this->assertStringContainsString( 'tiered-pricing-for-woocommerce works only', $notice );
+		update_option( 'active_plugins', $extension );
+		$notice = $this->render_admin_notices( $controller );
+		$this->assertStringNotContainsString( 'works only', $notice );
+		if ( ! $deferred ) {
+			$this->assertStringContainsString( 'Start the switch', $notice );
+		}
+	}
+
+	/**
 	 * The sentence telling a store that the WooPayments extension runs from outside Plugins.
 	 *
 	 * @var string
@@ -869,14 +922,14 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 			 */
 			public function bring_deferred_attempt_forward( ?string $code = null ): bool {
 				$this->codes[] = $code;
-				return true;
+				return 'extension_currency_plugin_active' === $code;
 			}
 		};
 		$controller = $this->create_cutover_controller( $job );
 
 		$controller->handle_plugin_deactivated( 'yith-woocommerce-subscription-premium/init.php' );
 
-		$this->assertSame( array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE ), $job->codes );
+		$this->assertSame( array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE, 'extension_currency_plugin_active' ), $job->codes );
 	}
 
 	/**

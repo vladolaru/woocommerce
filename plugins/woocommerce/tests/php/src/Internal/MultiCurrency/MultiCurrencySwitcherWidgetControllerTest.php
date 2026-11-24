@@ -202,6 +202,11 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	 * @param string $owner Runtime owner.
 	 */
 	public function test_does_not_render_core_markup_when_another_runtime_owns_multi_currency( string $owner ): void {
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'function_exists' => static fn( string $function_name ): bool => 'WC_Payments_Multi_Currency' !== $function_name && function_exists( $function_name ),
+			)
+		);
 		$sut = $this->create_controller( $owner );
 		$sut->handle_widgets_init();
 

@@ -30,6 +30,54 @@ use WC_Unit_Test_Case;
 class PreflightServiceTest extends WC_Unit_Test_Case {
 
 	/**
+	 * @testdox The switch waits for $slug at its supported currency count and resumes when cleared.
+	 * @testWith ["advanced-coupons-for-woocommerce-free", false]
+	 *           ["easy-woocommerce-discounts", false]
+	 *           ["gift-cards-pro-for-woocommerce", false]
+	 *           ["pickset-product-options", false]
+	 *           ["product-addons", false]
+	 *           ["woocommerce-smart-coupons", false]
+	 *           ["auctions-made-easy-for-woocommerce", true]
+	 *           ["tiered-pricing-for-woocommerce", true]
+	 *
+	 * @param string $slug   Plugin folder.
+	 * @param bool   $always Whether activation alone prevents the switch.
+	 */
+	public function test_currency_plugin_holds_the_switch( string $slug, bool $always ): void {
+		$files = array( $slug . '/plugin.php' );
+		update_option( 'active_plugins', $files );
+		add_filter( 'option_active_plugins', '__return_empty_array' );
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		update_option( '_wcpay_feature_customer_multi_currency', '1' );
+		delete_option( 'woocommerce_feature_multi_currency_enabled' );
+		$held = array( 'extension_currency_plugin_active' );
+		$this->assertSame( $held, $this->create_sut()->get_failures(), 'The worker sees the stored activation even on a filtered request.' );
+		remove_filter( 'option_active_plugins', '__return_empty_array' );
+		update_option( 'active_plugins', array() );
+		$filtered = static fn() => $files;
+		add_filter( 'option_active_plugins', $filtered );
+		$this->assertSame( $held, $this->create_sut()->get_failures(), 'A filtered-only active plugin also holds.' );
+		// Independent overrides model carried-over state even when the normal settings writer synchronizes the flags.
+		$core_off = static fn() => 'no';
+		add_filter( 'pre_option_woocommerce_feature_multi_currency_enabled', $core_off );
+		$this->assertSame( $always ? $held : array(), $this->create_sut()->get_failures() );
+		remove_filter( 'pre_option_woocommerce_feature_multi_currency_enabled', $core_off );
+		$extension_off = static fn() => '0';
+		add_filter( 'pre_option__wcpay_feature_customer_multi_currency', $extension_off );
+		$this->assertSame( $always ? $held : array(), $this->create_sut()->get_failures() );
+		remove_filter( 'pre_option__wcpay_feature_customer_multi_currency', $extension_off );
+		update_option( 'wcpay_multi_currency_cached_currencies', array( 'data' => array( 'EUR' => 0.88 ) ) );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.88' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'USD' ) );
+		$this->assertSame( $always ? $held : array(), $this->create_sut()->get_failures() );
+		remove_filter( 'option_active_plugins', $filtered );
+		update_option( 'active_plugins', array( 'easy-product-bundles-for-woocommerce/plugin.php' ) );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		$this->assertSame( array(), $this->create_sut()->get_failures() );
+	}
+
+	/**
 	 * Action Scheduler hooks scheduled by tests.
 	 *
 	 * @var string[]
@@ -1380,17 +1428,22 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The switch waits for a network-active renewal plugin hidden in this request.
+	 * @testdox The switch waits for a network-active plugin hidden in this request.
+	 * @testWith ["yith-woocommerce-subscription-premium", "extension_renewal_plugin_active"]
+	 *           ["auctions-made-easy-for-woocommerce", "extension_currency_plugin_active"]
 	 * @group multisite
+	 *
+	 * @param string $slug   Network-active plugin folder.
+	 * @param string $reason Failure reported to the switch.
 	 */
-	public function test_hidden_network_renewal_plugin_holds_the_switch_back(): void {
+	public function test_hidden_network_plugin_holds_the_switch_back( string $slug, string $reason ): void {
 		if ( ! is_multisite() ) {
 			$this->markTestSkipped( 'Test only runs on Multisite.' );
 		}
-		update_site_option( 'active_sitewide_plugins', array( 'yith-woocommerce-subscription-premium/init.php' => 1 ) );
+		update_site_option( 'active_sitewide_plugins', array( $slug . '/init.php' => 1 ) );
 		add_filter( 'site_option_active_sitewide_plugins', static fn() => array() );
 
-		$this->assertSame( array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE ), $this->create_sut()->get_failures() );
+		$this->assertSame( array( $reason ), $this->create_sut()->get_failures() );
 	}
 
 	/**

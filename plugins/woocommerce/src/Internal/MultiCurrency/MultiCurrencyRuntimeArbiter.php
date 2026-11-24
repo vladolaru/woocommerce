@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\WooPaymentsExtensionFacadeLoader;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 
@@ -68,6 +69,13 @@ class MultiCurrencyRuntimeArbiter {
 	final public function init( WooPaymentsRuntimeArbiter $payments_arbiter, LegacyProxy $legacy_proxy ): void {
 		$this->payments_arbiter = $payments_arbiter;
 		$this->legacy_proxy     = $legacy_proxy;
+	}
+
+	/**
+	 * Keep the extension's names available when WordPress may load it later in this request.
+	 */
+	public function is_extension_activation_request(): bool {
+		return WooPaymentsExtensionFacadeLoader::is_woopayments_activation_request();
 	}
 
 	/**

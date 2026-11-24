@@ -89,7 +89,7 @@ class MultiCurrencyUtilTest extends WC_Unit_Test_Case {
 	public function test_incomplete_extension( bool $accessor_exists ): void {
 		$this->enable_extension();
 		if ( $accessor_exists ) {
-			require __DIR__ . '/../Internal/MultiCurrency/Compat/Fixtures/extension-currency-accessor.inc';
+			require __DIR__ . '/../Internal/MultiCurrency/Compat/Fixtures/extension-currency-accessor.fixture';
 			$GLOBALS['wc_test_multi_currency_extension'] = new \stdClass();
 		}
 
@@ -115,7 +115,7 @@ class MultiCurrencyUtilTest extends WC_Unit_Test_Case {
 	 */
 	public function test_extension_owner_delegates( bool $euro_enabled ): void {
 		$this->enable_extension();
-		require __DIR__ . '/../Internal/MultiCurrency/Compat/Fixtures/extension-currency-accessor.inc';
+		require __DIR__ . '/../Internal/MultiCurrency/Compat/Fixtures/extension-currency-accessor.fixture';
 		$euro = $this->getMockBuilder( \stdClass::class )->addMethods( array( 'get_rate', 'get_code' ) )->getMock();
 		$euro->method( 'get_rate' )->willReturn( 0.75 );
 		$euro->method( 'get_code' )->willReturn( 'EUR' );

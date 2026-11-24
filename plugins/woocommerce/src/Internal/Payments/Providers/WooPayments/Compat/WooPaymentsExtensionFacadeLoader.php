@@ -99,7 +99,7 @@ class WooPaymentsExtensionFacadeLoader implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( $this->is_woopayments_activation_request() ) {
+		if ( self::is_woopayments_activation_request() ) {
 			return;
 		}
 
@@ -133,12 +133,12 @@ class WooPaymentsExtensionFacadeLoader implements RegisterHooksInterface {
 	 *
 	 * @return bool True when the facade declarations must stay available to the extension.
 	 */
-	private function is_woopayments_activation_request(): bool {
+	public static function is_woopayments_activation_request(): bool {
 		if ( Constants::is_true( 'WP_SANDBOX_SCRAPING' ) ) {
 			return true;
 		}
 
-		if ( $this->is_wp_cli_woopayments_activation_request() ) {
+		if ( self::is_wp_cli_woopayments_activation_request() ) {
 			return true;
 		}
 
@@ -148,23 +148,23 @@ class WooPaymentsExtensionFacadeLoader implements RegisterHooksInterface {
 		$secondary_action   = isset( $request['action2'] ) && is_string( $request['action2'] ) ? sanitize_key( $request['action2'] ) : '';
 		$activation_actions = array( 'activate', 'activate-plugin', 'activate-selected' );
 
-		if ( ( in_array( $action, $activation_actions, true ) || in_array( $secondary_action, $activation_actions, true ) ) && $this->request_targets_woopayments( $request ) ) {
+		if ( ( in_array( $action, $activation_actions, true ) || in_array( $secondary_action, $activation_actions, true ) ) && self::request_targets_woopayments( $request ) ) {
 			return true;
 		}
 
 		// WooCommerce's PluginsInstaller activates from an admin URL with a comma-separated `plugins` list.
 		$plugin_action = isset( $request['plugin_action'] ) && is_string( $request['plugin_action'] ) ? sanitize_key( $request['plugin_action'] ) : '';
-		if ( in_array( $plugin_action, array( 'activate', 'install-activate' ), true ) && isset( $request['plugins'] ) && is_string( $request['plugins'] ) && $this->request_targets_woopayments( array( 'plugins' => explode( ',', $request['plugins'] ) ) ) ) {
+		if ( in_array( $plugin_action, array( 'activate', 'install-activate' ), true ) && isset( $request['plugins'] ) && is_string( $request['plugins'] ) && self::request_targets_woopayments( array( 'plugins' => explode( ',', $request['plugins'] ) ) ) ) {
 			return true;
 		}
 
-		return $this->is_plugins_rest_mutation_request( $request ) || $this->is_jetpack_plugin_request();
+		return self::is_plugins_rest_mutation_request( $request ) || self::is_jetpack_plugin_request();
 	}
 
 	/**
 	 * Recognize plugin installation and activation through Jetpack's JSON API, including batched XML-RPC calls.
 	 */
-	private function is_jetpack_plugin_request(): bool {
+	private static function is_jetpack_plugin_request(): bool {
 		if ( ! Constants::is_true( 'XMLRPC_REQUEST' ) ) {
 			return false;
 		}
@@ -198,7 +198,7 @@ class WooPaymentsExtensionFacadeLoader implements RegisterHooksInterface {
 			if ( ! is_array( $args ) || 'POST' !== ( $args[0] ?? null ) ) {
 				continue;
 			}
-			if ( $this->is_jetpack_plugin_mutation( $args ) ) {
+			if ( self::is_jetpack_plugin_mutation( $args ) ) {
 				return true;
 			}
 		}
@@ -210,7 +210,7 @@ class WooPaymentsExtensionFacadeLoader implements RegisterHooksInterface {
 	 *
 	 * @param array $args JSON API arguments from the XML-RPC call.
 	 */
-	private function is_jetpack_plugin_mutation( array $args ): bool {
+	private static function is_jetpack_plugin_mutation( array $args ): bool {
 		$url  = $args[1] ?? null;
 		$path = is_string( $url ) ? wp_parse_url( $url, PHP_URL_PATH ) : null;
 		if ( ! is_string( $path ) || ! preg_match( '~/sites/[^/]+/plugins(?:/([^/]+))?(/install)?/?$~', $path, $matches ) ) {
@@ -222,7 +222,7 @@ class WooPaymentsExtensionFacadeLoader implements RegisterHooksInterface {
 		if ( 'new' === $plugin ) {
 			return true;
 		}
-		if ( '' !== $plugin && ! $this->request_targets_woopayments( array( 'plugins' => array( $plugin, $plugin . '.php' ) ) ) ) {
+		if ( '' !== $plugin && ! self::request_targets_woopayments( array( 'plugins' => array( $plugin, $plugin . '.php' ) ) ) ) {
 			return false;
 		}
 		if ( isset( $matches[2] ) ) {
@@ -249,7 +249,7 @@ class WooPaymentsExtensionFacadeLoader implements RegisterHooksInterface {
 	 *
 	 * @return bool True when the command can sandbox-load WooPayments in this process.
 	 */
-	private function is_wp_cli_woopayments_activation_request(): bool {
+	private static function is_wp_cli_woopayments_activation_request(): bool {
 		if ( ! Constants::is_true( 'WP_CLI' ) ) {
 			return false;
 		}
@@ -279,7 +279,7 @@ class WooPaymentsExtensionFacadeLoader implements RegisterHooksInterface {
 					},
 					$command_arguments
 				);
-				return in_array( '--all', $command_arguments, true ) || $this->request_targets_woopayments( array( 'plugins' => array_merge( $command_arguments, $plugin_files ) ) );
+				return in_array( '--all', $command_arguments, true ) || self::request_targets_woopayments( array( 'plugins' => array_merge( $command_arguments, $plugin_files ) ) );
 			}
 
 			if ( 'install' === $command ) {
@@ -295,7 +295,7 @@ class WooPaymentsExtensionFacadeLoader implements RegisterHooksInterface {
 					}
 				}
 
-				return $this->request_targets_woopayments( array( 'plugins' => $command_arguments ) );
+				return self::request_targets_woopayments( array( 'plugins' => $command_arguments ) );
 			}
 		}
 
@@ -308,7 +308,7 @@ class WooPaymentsExtensionFacadeLoader implements RegisterHooksInterface {
 	 * @param array<string,mixed> $request Unslashed request parameters.
 	 * @return bool True when WooPayments is one of the requested plugins.
 	 */
-	private function request_targets_woopayments( array $request ): bool {
+	private static function request_targets_woopayments( array $request ): bool {
 		$candidates = array();
 		foreach ( array( 'plugin', 'checked', 'plugins', 'slug' ) as $key ) {
 			if ( ! isset( $request[ $key ] ) ) {
@@ -324,7 +324,7 @@ class WooPaymentsExtensionFacadeLoader implements RegisterHooksInterface {
 			}
 
 			$plugin = ltrim( str_replace( '\\', '/', sanitize_text_field( (string) $candidate ) ), '/' );
-			if ( 'woocommerce-payments' === $plugin || WooPaymentsRuntimeArbiter::is_woopayments_plugin_file( $plugin ) || $this->is_woopayments_plugin_folder( $plugin ) ) {
+			if ( 'woocommerce-payments' === $plugin || WooPaymentsRuntimeArbiter::is_woopayments_plugin_file( $plugin ) || self::is_woopayments_plugin_folder( $plugin ) ) {
 				return true;
 			}
 		}
@@ -338,7 +338,7 @@ class WooPaymentsExtensionFacadeLoader implements RegisterHooksInterface {
 	 * @param string $plugin Requested plugin, without its main file.
 	 * @return bool True when the folder holds the WooPayments main file.
 	 */
-	private function is_woopayments_plugin_folder( string $plugin ): bool {
+	private static function is_woopayments_plugin_folder( string $plugin ): bool {
 		if ( str_contains( $plugin, "\0" ) || str_contains( $plugin, '..' ) || str_contains( $plugin, '/' ) || '' === $plugin ) {
 			return false;
 		}
@@ -352,7 +352,7 @@ class WooPaymentsExtensionFacadeLoader implements RegisterHooksInterface {
 	 * @param array<string,mixed> $request Unslashed request parameters.
 	 * @return bool True for a mutating plugins collection request or WooPayments item request.
 	 */
-	private function is_plugins_rest_mutation_request( array $request ): bool {
+	private static function is_plugins_rest_mutation_request( array $request ): bool {
 		$method = isset( $_SERVER['REQUEST_METHOD'] ) && is_string( $_SERVER['REQUEST_METHOD'] ) ? strtoupper( sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Sanitized inline.
 		if ( ! in_array( $method, array( 'POST', 'PUT', 'PATCH' ), true ) ) {
 			return false;

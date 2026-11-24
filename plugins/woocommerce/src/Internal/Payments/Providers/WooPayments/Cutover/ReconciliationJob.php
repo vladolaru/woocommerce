@@ -1048,7 +1048,7 @@ class ReconciliationJob implements RegisterHooksInterface {
 			// Past finalize the extension's classes never load again, so neither a listed plugin that takes payments through them
 			// nor their version has anything left to hold back.
 			if ( $past_finalize ) {
-				$failures = array_values( array_diff( $failures, array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE, PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED ) ) );
+				$failures = array_values( array_diff( $failures, array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE, PreflightService::FAILURE_EXTENSION_CURRENCY_PLUGIN_ACTIVE, PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED ) ) );
 			}
 			if ( ! $past_finalize && in_array( PreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $failures, true ) ) {
 				$this->exclude( $claimed, PreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS );

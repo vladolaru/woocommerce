@@ -59,6 +59,9 @@ class PreflightService {
 	/** A plugin that takes payments through the WooPayments extension's own classes is active; the switch waits while it is. */
 	public const FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE = 'extension_renewal_plugin_active';
 
+	/** An active currency integration needs the extension until the plugin or currency setup changes. */
+	public const FAILURE_EXTENSION_CURRENCY_PLUGIN_ACTIVE = 'extension_currency_plugin_active';
+
 	private const IDENTIFIER_PLACEHOLDERS_UNAVAILABLE_HOOK = 'woocommerce_woopayments_identifier_placeholders_unavailable';
 
 	private const OPERATIONAL_QUEUE_QUERY_FAILED_HOOK = 'woocommerce_woopayments_operational_queue_query_failed';
@@ -198,16 +201,39 @@ class PreflightService {
 		if ( $this->get_bundled_subscriptions_guard()->is_bundled_subscriptions_store() ) {
 			$failures[] = self::FAILURE_BUNDLED_SUBSCRIPTIONS;
 		}
-		$stored_site     = $this->read_stored_site_plugins();
-		$stored_network  = $this->read_stored_network_plugins();
-		$renewal_plugins = $this->get_renewal_plugins();
-		if ( array() !== $renewal_plugins->get_active_plugin_files()
-			|| null === $stored_site || null === $stored_network
-			|| array() !== $renewal_plugins->find_listed_plugin_files( array_merge( $stored_site, $stored_network ) ) ) {
+		$files = $this->get_switch_plugin_files();
+		if ( null === $files || array() !== $this->get_renewal_plugins()->find_listed_plugin_files( $files ) ) {
 			$failures[] = self::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE;
+		}
+		if ( null !== $files && array() !== ExtensionBoundCurrencyPlugins::get_groups( $files ) ) {
+			$failures[] = self::FAILURE_EXTENSION_CURRENCY_PLUGIN_ACTIVE;
 		}
 
 		return self::normalize_string_list( $failures );
+	}
+
+	/**
+	 * Get the currency plugin files that explain a switch hold.
+	 *
+	 * @return array<string,string[]>|null Groups of blockers, or null when activation cannot be checked.
+	 */
+	public function get_currency_plugin_groups(): ?array {
+		$files = $this->get_switch_plugin_files();
+		return null === $files ? null : ExtensionBoundCurrencyPlugins::get_groups( $files );
+	}
+
+	/**
+	 * A filtered worker request must still see plugins active on the site or network.
+	 *
+	 * @return array<int|string,mixed>|null Active plugin files, or null on a failed read.
+	 */
+	private function get_switch_plugin_files(): ?array {
+		$site    = $this->read_stored_site_plugins();
+		$network = $this->read_stored_network_plugins();
+		if ( null === $site || null === $network ) {
+			return null;
+		}
+		return array_merge( $this->get_renewal_plugins()->get_filtered_plugin_files(), $site, $network );
 	}
 
 	/**

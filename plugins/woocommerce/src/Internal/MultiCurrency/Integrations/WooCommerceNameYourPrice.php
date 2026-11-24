@@ -30,13 +30,6 @@ class WooCommerceNameYourPrice implements RegisterHooksInterface {
 	private const NYP_CURRENCY_META_KEY = '_wcpay_multi_currency_nyp_currency';
 
 	/**
-	 * Whether the Name Your Price 4.x hooks are attached.
-	 *
-	 * @var bool
-	 */
-	private bool $has_nyp_v4_hooks = false;
-
-	/**
 	 * Runtime owner arbiter.
 	 *
 	 * @var MultiCurrencyRuntimeArbiter
@@ -112,6 +105,12 @@ class WooCommerceNameYourPrice implements RegisterHooksInterface {
 			return;
 		}
 
+		// Name Your Price registers its own WooPayments conversions from 4.0.0.
+		$nyp = function_exists( 'WC_Name_Your_Price' ) ? \WC_Name_Your_Price() : null;
+		if ( isset( $nyp->version ) && version_compare( $nyp->version, '4.0.0', '>=' ) ) {
+			return;
+		}
+
 		add_filter( 'wc_nyp_raw_minimum_price', array( $this, 'get_nyp_prices' ) );
 		add_filter( 'wc_nyp_raw_maximum_price', array( $this, 'get_nyp_prices' ) );
 		add_filter( 'wc_nyp_raw_suggested_price', array( $this, 'get_nyp_prices' ) );
@@ -121,45 +120,6 @@ class WooCommerceNameYourPrice implements RegisterHooksInterface {
 		add_filter( StateBuilder::FILTER_PREFIX . 'should_convert_product_price', array( $this, 'should_convert_product_price' ), 50, 2 );
 		add_filter( 'wc_nyp_edit_in_cart_args', array( $this, 'edit_in_cart_args' ), 10, 2 );
 		add_filter( 'wc_nyp_get_initial_price', array( $this, 'get_initial_price' ), 10, 3 );
-
-		$version = $GLOBALS['wc_name_your_price']->version ?? null;
-		if ( $this->has_nyp_v4_hooks || ! is_string( $version ) || version_compare( $version, '4.0.0', '<' ) ) {
-			return;
-		}
-		$this->has_nyp_v4_hooks = true;
-		$remember_edit          = function ( $line, $price ) {
-			if ( is_array( $line ) && isset( $line['nyp_original'], $line['nyp_currency'] ) && is_numeric( $price ) ) {
-				$line['nyp_original'] = $price;
-				$line['nyp_currency'] = $this->get_selected_currency_code();
-			}
-			return $line;
-		};
-		$convert_suggestions    = function ( $prices ) {
-			foreach ( is_array( $prices ) ? $prices : array() as $key => $entry ) {
-				if ( is_array( $entry ) && is_numeric( $entry['price'] ?? null ) ) {
-					$prices[ $key ]['price'] = $this->get_price_converter()->get_price( $entry['price'], 'product' );
-				}
-			}
-			return $prices;
-		};
-		$convert_reorder        = function ( $line, $item, $order ) {
-			if ( ! is_array( $line ) || ! is_numeric( $line['nyp'] ?? null ) || ! $order instanceof \WC_Order || '' === $order->get_currency() ) {
-				return $line;
-			}
-			$line['nyp_original'] = $line['nyp'];
-			$line['nyp_currency'] = $order->get_currency();
-			$selected             = $this->get_selected_currency_code();
-			try {
-				$line['nyp'] = $selected === $line['nyp_currency'] ? $line['nyp_original'] : $this->get_price_converter()->get_raw_conversion( (float) $line['nyp_original'], $selected, $line['nyp_currency'] );
-			} catch ( InvalidCurrencyException $e ) {
-				wp_safe_redirect( wc_get_cart_url() );
-				exit;
-			}
-			return $line;
-		};
-		add_filter( 'wc_nyp_edited_cart_item', $remember_edit, 10, 2 );
-		add_filter( 'wc_nyp_suggested_prices', $convert_suggestions );
-		add_filter( 'woocommerce_order_again_cart_item_data', $convert_reorder, 10, 3 );
 	}
 
 	/**

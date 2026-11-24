@@ -11,8 +11,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * While WooCommerce runs Multi-Currency, declares the WooPayments extension's `WCPay\MultiCurrency\MultiCurrency` and
- * `WCPay\MultiCurrency\Compatibility` classes at `plugins_loaded`.
+ * While WooCommerce runs Multi-Currency, declares the WooPayments Multi-Currency compatibility names at `plugins_loaded`.
  *
  * Removed in WooCommerce 12.0.0.
  *
@@ -55,7 +54,7 @@ class WooPaymentsExtensionFacadeLoader implements RegisterHooksInterface {
 	 * Declare the facade class while WooCommerce runs Multi-Currency.
 	 */
 	public function load(): void {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
+		if ( ! $this->arbiter->is_builtin_owner() || $this->arbiter->is_extension_activation_request() ) {
 			return;
 		}
 
@@ -66,6 +65,22 @@ class WooPaymentsExtensionFacadeLoader implements RegisterHooksInterface {
 
 		if ( ! class_exists( 'WCPay\\MultiCurrency\\Compatibility', false ) ) {
 			require_once WC_ABSPATH . 'includes/legacy/woopayments-multi-currency-compat/Compatibility.php';
+		}
+
+		if ( ! class_exists( 'WCPay\MultiCurrency\Utils', false ) ) {
+			require_once WC_ABSPATH . 'includes/legacy/woopayments-multi-currency-compat/Utils.php';
+		}
+
+		if ( ! class_exists( 'WCPay\MultiCurrency\Exceptions\InvalidCurrencyException', false ) ) {
+			require_once WC_ABSPATH . 'includes/legacy/woopayments-multi-currency-compat/InvalidCurrencyException.php';
+		}
+
+		if ( ! class_exists( 'WCPay\MultiCurrency\Exceptions\InvalidCurrencyRateException', false ) ) {
+			require_once WC_ABSPATH . 'includes/legacy/woopayments-multi-currency-compat/InvalidCurrencyRateException.php';
+		}
+
+		if ( ! function_exists( 'WC_Payments_Multi_Currency' ) ) {
+			require_once WC_ABSPATH . 'includes/legacy/woopayments-multi-currency-compat/wc-payments-multi-currency.php';
 		}
 	}
 }

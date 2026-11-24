@@ -348,7 +348,9 @@ class CutoverController implements RegisterHooksInterface {
 		if ( is_string( $plugin ) ) {
 			$this->maybe_forget_admin_classification( $plugin );
 		}
-		$this->reconciliation_job->bring_deferred_attempt_forward( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE );
+		if ( ! $this->reconciliation_job->bring_deferred_attempt_forward( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE ) ) {
+			$this->reconciliation_job->bring_deferred_attempt_forward( PreflightService::FAILURE_EXTENSION_CURRENCY_PLUGIN_ACTIVE );
+		}
 	}
 
 	/**
@@ -577,9 +579,16 @@ class CutoverController implements RegisterHooksInterface {
 				$plugin_names = $this->renewal_plugins->get_active_plugin_names();
 				if ( $this->preflight_service->is_woopayments_loaded_outside_plugin_lists() ) {
 					$this->output_loaded_outside_plugin_lists_notice( ! $on_payments_settings );
-				} elseif ( array() !== $plugin_names ) {
+					return;
+				}
+				$groups = $this->preflight_service->get_currency_plugin_groups();
+				if ( array() !== $plugin_names ) {
 					$this->output_renewal_plugin_holdback_notice( $plugin_names, ! $on_payments_settings );
-				} else {
+				}
+				if ( ! empty( $groups ) ) {
+					$this->output_currency_holdback_notices( $groups, ! $on_payments_settings );
+				}
+				if ( array() === $groups && array() === $plugin_names ) {
 					$this->output_start_switch_notice( ! $on_payments_settings );
 				}
 			}
@@ -636,6 +645,9 @@ class CutoverController implements RegisterHooksInterface {
 					if ( array() !== $plugin_names ) {
 						$this->output_renewal_plugin_holdback_notice( $plugin_names, false );
 					}
+				}
+				if ( StateStore::STATE_DEFERRED === $record['state'] && in_array( PreflightService::FAILURE_EXTENSION_CURRENCY_PLUGIN_ACTIVE, $record[ StateStore::BLOCKING_CODES_KEY ] ?? array(), true ) ) {
+					$this->output_currency_holdback_notices( $this->preflight_service->get_currency_plugin_groups() ?? array(), false );
 				}
 				// A store manager's page brings a held switch's next attempt forward, at most about once a minute, so a merchant who
 				// cleared what holds it back sees it continue. After the lines above, which render the record as it was.
@@ -757,6 +769,46 @@ class CutoverController implements RegisterHooksInterface {
 			),
 			wp_sprintf_l( '%l', $plugin_names )
 		);
+		$this->output_plugin_holdback_notice( $message, $can_snooze );
+	}
+
+	/**
+	 * Explain each active currency hold using the plugin header names.
+	 *
+	 * @param array<string,string[]> $groups     Active files grouped by the condition that holds the switch.
+	 * @param bool                   $can_snooze Whether to offer the switch notice dismissal.
+	 */
+	private function output_currency_holdback_notices( array $groups, bool $can_snooze ): void {
+		foreach ( $groups as $group => $files ) {
+			$names = $this->renewal_plugins->get_plugin_names( $files );
+			if ( ExtensionBoundCurrencyPlugins::ADDITIONAL === $group ) {
+				/* translators: %s: plugin name, or a list of plugin names. */
+				$format = _n(
+					"WooPayments is now part of WooCommerce, but this store can't switch yet. %s works with more than one currency only through the WooPayments extension, so the switch waits while it is active and more than one currency is enabled.",
+					"WooPayments is now part of WooCommerce, but this store can't switch yet. %s work with more than one currency only through the WooPayments extension, so the switch waits while they are active and more than one currency is enabled.",
+					count( $names ),
+					'woocommerce'
+				);
+			} else {
+				/* translators: %s: plugin name, or a list of plugin names. */
+				$format = _n(
+					"WooPayments is now part of WooCommerce, but this store can't switch yet. %s works only with the WooPayments extension for now, so the switch waits while it is active.",
+					"WooPayments is now part of WooCommerce, but this store can't switch yet. %s work only with the WooPayments extension for now, so the switch waits while they are active.",
+					count( $names ),
+					'woocommerce'
+				);
+			}
+			$this->output_plugin_holdback_notice( sprintf( $format, wp_sprintf_l( '%l', $names ) ), $can_snooze );
+		}
+	}
+
+	/**
+	 * Append the existing payment state and optional dismissal to a switch hold.
+	 *
+	 * @param string $message    Reason for the hold.
+	 * @param bool   $can_snooze Whether to offer the switch notice dismissal.
+	 */
+	private function output_plugin_holdback_notice( string $message, bool $can_snooze ): void {
 		$last_sentence = $this->arbiter->is_awaiting_switch()
 			? __( 'Until then, activate the WooPayments extension again to keep taking payments.', 'woocommerce' )
 			: __( 'Until then nothing changes and WooPayments keeps running from the WooPayments extension.', 'woocommerce' );

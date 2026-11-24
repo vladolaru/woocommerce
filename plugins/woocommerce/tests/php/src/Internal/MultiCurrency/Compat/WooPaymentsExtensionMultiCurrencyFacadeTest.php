@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRestController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySwitcherWidgetController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\LocalizationService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
@@ -34,6 +35,278 @@ require_once __DIR__ . '/Fixtures/multi-currency-facade-plugin-callers.inc';
 class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 
 	use WooPaymentsCompatibilityNoticeTestTrait;
+
+	/**
+	 * @testdox Product Add-Ons reverses the posted shopper price before tax and display convert it again.
+	 */
+	public function test_addons_converts_the_posted_price_once(): void {
+		$this->declare_facade();
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.88' );
+		update_option( 'wcpay_multi_currency_price_rounding_eur', '1.00' );
+		add_filter( 'wcpay_multi_currency_override_selected_currency', static fn() => 'EUR' );
+		$base = 44.0;
+		if ( function_exists( 'WC_Payments_Multi_Currency' ) ) {
+			$this->setExpectedIncorrectUsage( 'WC_Payments_Multi_Currency()' );
+			$this->expect_facade_warnings( 'is_initialized', 'get_raw_conversion', 'get_default_currency', 'get_selected_currency' );
+			$module = WC_Payments_Multi_Currency();
+			if ( $module->is_initialized() ) {
+				$base = $module->get_raw_conversion( $base, $module->get_default_currency()->get_code(), $module->get_selected_currency()->get_code() );
+			}
+		}
+		$this->assertSame( 44.0, MultiCurrencyUtil::convert_price( $base ) );
+		$this->assertSame( 49.0, MultiCurrencyUtil::convert_price( $base * 1.1 ) );
+	}
+
+	/**
+	 * @testdox Name Your Price converts suggested, minimum and maximum prices once when its own integration runs.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_name_your_price_limits_use_one_conversion(): void {
+		$this->declare_facade();
+		$singleton                     = require dirname( __DIR__ ) . '/Integrations/Fixtures/name-your-price-cart.inc';
+		$GLOBALS['wc_name_your_price'] = $singleton;
+		class_alias( get_class( $singleton ), 'WC_Name_Your_Price' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.88' );
+		update_option( 'wcpay_multi_currency_price_rounding_eur', '1.00' );
+		add_filter( 'wcpay_multi_currency_override_selected_currency', static fn() => 'EUR' );
+		wc_get_container()->get( \Automattic\WooCommerce\Internal\MultiCurrency\Integrations\WooCommerceNameYourPrice::class )->register();
+		$this->assertTrue( function_exists( 'WC_Payments_Multi_Currency' ) );
+		$this->setExpectedIncorrectUsage( 'WC_Payments_Multi_Currency()' );
+		$this->expect_facade_warnings( 'get_price' );
+		foreach ( array( 'minimum', 'suggested', 'maximum' ) as $limit ) {
+			add_filter( 'wc_nyp_raw_' . $limit . '_price', static fn( $price ) => WC_Payments_Multi_Currency()->get_price( $price, 'product' ) );
+		}
+		$minimum = apply_filters( 'wc_nyp_raw_minimum_price', 25.0 );
+		$this->assertSame( 22.0, $minimum );
+		$this->assertSame( 44.0, apply_filters( 'wc_nyp_raw_suggested_price', 50.0 ) );
+		$this->assertSame( 88.0, apply_filters( 'wc_nyp_raw_maximum_price', 100.0 ) );
+	}
+
+	/**
+	 * @testdox A fee uses price rounding and an invoice uses the raw rate, including for a held renewal currency.
+	 * @testWith [true]
+	 *           [false]
+	 *
+	 * @param bool $held Whether the subscription holds a currency no longer enabled.
+	 */
+	public function test_accessor_preserves_fee_and_raw_amounts( bool $held ): void {
+		$this->declare_facade();
+		update_option( 'wcpay_multi_currency_enabled_currencies', $held ? array( 'GBP' ) : array( 'EUR' ) );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.88' );
+		update_option( 'wcpay_multi_currency_price_rounding_eur', '1.00' );
+		add_filter(
+			'wcpay_multi_currency_override_selected_currency',
+			static function () use ( $held ) {
+				if ( $held ) {
+					StateBuilder::set_order_currency_override( 'EUR' );
+				}
+				return 'EUR';
+			}
+		);
+		$this->setExpectedIncorrectUsage( 'WC_Payments_Multi_Currency()' );
+		$this->expect_facade_warnings( 'get_price', 'get_raw_conversion' );
+		$facade = WC_Payments_Multi_Currency();
+		$this->assertSame( 11.0, $facade->get_price( 12.34, 'product' ) );
+		$this->assertSame( 11.0, MultiCurrencyUtil::convert_price( 12.34, 'product' ) );
+		$this->assertEqualsWithDelta( 4.40, $facade->get_raw_conversion( 5, 'EUR' ), 0.00001 );
+		$this->assertEqualsWithDelta( 4.40, MultiCurrencyUtil::convert( 5, 'EUR' ), 0.00001 );
+	}
+
+	/**
+	 * @testdox Affiliate records the store-currency basis and commission for a shopper-currency order.
+	 */
+	public function test_affiliate_converts_the_order_to_store_currency(): void {
+		$this->declare_facade();
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.88' );
+		$amount = 44.0;
+		if ( function_exists( 'WC_Payments_Multi_Currency' ) ) {
+			$this->setExpectedIncorrectUsage( 'WC_Payments_Multi_Currency()' );
+			$this->expect_facade_warnings( 'get_raw_conversion', 'get_default_currency' );
+			$facade = WC_Payments_Multi_Currency();
+			$code   = $facade->get_default_currency()->get_code();
+			$this->assertSame( 'USD', $code );
+			$amount = $facade->get_raw_conversion( $amount, $code, 'EUR' );
+		}
+		$this->assertEqualsWithDelta( 50.0, $amount, 0.00001 );
+		$this->assertEqualsWithDelta( 5.0, $amount * 0.1, 0.00001 );
+	}
+
+	/**
+	 * @testdox The helper distinguishes admin REST from shopper and storefront requests.
+	 * @testWith ["/wp-json/wc/v3/products", true, true]
+	 *           ["/wp-json/wc/store/v1/cart", true, false]
+	 *           ["/shop/", true, false]
+	 *           ["/wp-json/wc/v3/products", false, false]
+	 *
+	 * @param string $uri      Request path.
+	 * @param bool   $admin    Whether an admin screen referred the request.
+	 * @param bool   $expected Whether the plugin should use admin currency formatting.
+	 */
+	public function test_marketplace_request_context( string $uri, bool $admin, bool $expected ): void {
+		$this->declare_facade();
+		$request = $_SERVER;
+		try {
+			$_SERVER['REQUEST_URI'] = $uri;
+			RequestContext::set_store_api_address( (bool) WC()->is_store_api_request() );
+			if ( $admin ) {
+				$_SERVER['HTTP_REFERER'] = admin_url( 'edit.php' );
+			} else {
+				unset( $_SERVER['HTTP_REFERER'] );
+			}
+			$this->setExpectedIncorrectUsage( 'WCPay\MultiCurrency\Utils::is_admin_api_request()' );
+			$this->assertSame( $expected, \WCPay\MultiCurrency\Utils::is_admin_api_request() );
+		} finally {
+			$_SERVER = $request;
+			RequestContext::set_store_api_address( false );
+		}
+	}
+
+	/**
+	 * @testdox An invoice keeps its original amount after catching the specific failed conversion.
+	 * @testWith [false, true]
+	 *           [true, true]
+	 *           [false, false]
+	 *           [true, false]
+	 *
+	 * @param bool $invalid_rate Whether the source rate is unusable.
+	 * @param bool $use_function Whether the caller uses the global or the existing singleton.
+	 */
+	public function test_invoice_fallback_receives_the_matching_conversion_error( bool $invalid_rate, bool $use_function ): void {
+		$this->declare_facade();
+		$this->expect_facade_warnings( 'get_raw_conversion' );
+		if ( $use_function ) {
+			$this->setExpectedIncorrectUsage( 'WC_Payments_Multi_Currency()' );
+			$module = WC_Payments_Multi_Currency();
+		} else {
+			$module = $this->get_facade();
+		}
+		if ( $invalid_rate ) {
+			$this->expect_facade_warnings( 'get_enabled_currencies' );
+			$module->get_enabled_currencies()['EUR']->set_rate( 0 );
+		}
+		$amount = 5.0;
+		try {
+			$amount = $module->get_raw_conversion( $amount, 'USD', $invalid_rate ? 'EUR' : 'BAD' );
+			$this->fail( 'The invoice must enter its fallback.' );
+		} catch ( \WCPay\MultiCurrency\Exceptions\InvalidCurrencyRateException $error ) {
+			$this->assertTrue( $invalid_rate );
+			$this->assertInstanceOf( \Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyRateException::class, $error );
+			$this->assertSame( 'Invalid source currency rate: 0', $error->getMessage() );
+		} catch ( \WCPay\MultiCurrency\Exceptions\InvalidCurrencyException $error ) {
+			$this->assertFalse( $invalid_rate );
+			$this->assertInstanceOf( InvalidCurrencyException::class, $error );
+			$this->assertSame( 'Currency is not enabled for conversion: BAD', $error->getMessage() );
+		}
+		$this->assertSame( 5.0, $amount );
+	}
+
+	/**
+	 * @testdox A pricing plugin can remove the registered shipping callback and convert each discounted line once.
+	 */
+	public function test_discounted_lines_use_the_registered_price_controller(): void {
+		$this->declare_facade();
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.88' );
+		$total = 80.0;
+		if ( function_exists( 'WC_Payments_Multi_Currency' ) ) {
+			$this->setExpectedIncorrectUsage( 'WC_Payments_Multi_Currency()' );
+			$this->expect_facade_warnings( 'is_initialized', 'get_frontend_prices', 'get_raw_conversion' );
+			$facade = WC_Payments_Multi_Currency();
+			if ( $facade->is_initialized() ) {
+				$prices = wc_get_container()->get( \Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendPricesController::class );
+				$prices->register();
+				$this->assertTrue( remove_filter( 'woocommerce_shipping_method_add_rate_args', array( $facade->get_frontend_prices(), 'convert_shipping_method_rate_cost' ), 99 ) );
+				$total = 2 * $facade->get_raw_conversion( 40.0, 'EUR' );
+			}
+		}
+		$this->assertEqualsWithDelta( 70.40, $total, 0.00001 );
+	}
+
+	/**
+	 * @testdox Both accessors share one facade and report only the public entry the plugin used.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_function_and_direct_singleton_report_separately(): void {
+		$this->declare_facade();
+		$this->assertTrue( function_exists( 'WC_Payments_Multi_Currency' ) );
+		$calls = array();
+		add_action(
+			'doing_it_wrong_run',
+			static function ( $name, $message, $version ) use ( &$calls ) {
+				$calls[] = array( $name, $message, $version );
+				if ( 'WC_Payments_Multi_Currency()' === $name && 1 === count( $calls ) ) {
+					WC_Payments_Multi_Currency();
+				}
+			},
+			10,
+			3
+		);
+		$this->setExpectedIncorrectUsage( 'WC_Payments_Multi_Currency()' );
+		$module = WC_Payments_Multi_Currency();
+		$this->assertSame( $module, WC_Payments_Multi_Currency() );
+		$this->assertSame( array( array( 'WC_Payments_Multi_Currency()', 'WC_Payments_Multi_Currency() is a compatibility shim for the WooPayments extension with no replacement in WooCommerce and will be removed in 12.0.0.', '11.4.0' ) ), $calls );
+		$this->assertSame( $module, $this->get_facade() );
+		$this->assertCount( 2, $calls );
+		$this->assertFalse( is_callable( array( $module, 'get_adjusted_price' ) ) );
+		$this->expectException( \Error::class );
+		$this->expectExceptionMessage( 'Call to undefined method WCPay\MultiCurrency\MultiCurrency::get_adjusted_price()' );
+		$module->get_adjusted_price( 10, 'EUR' );
+	}
+
+	/**
+	 * @testdox Marketplace formatters remain for an add-only consumer and detach at the end of a temporary display.
+	 * @testWith ["post-purchase offer", false]
+	 *           ["gift wrapper", true]
+	 *           ["order bump", true]
+	 *
+	 * @param string $display Name of the consumer display.
+	 * @param bool   $removes Whether the consumer removes the formatters after displaying a price.
+	 */
+	public function test_function_exposes_the_registered_formatters( string $display, bool $removes ): void {
+		$this->declare_facade();
+		$this->setExpectedIncorrectUsage( 'WC_Payments_Multi_Currency()' );
+		$this->expect_facade_warnings( 'get_frontend_currencies' );
+		$this->setExpectedIncorrectUsage( 'WCPay\MultiCurrency\Utils::is_admin_api_request()' );
+		$this->assertFalse( ( new \WCPay\MultiCurrency\Utils() )->is_admin_api_request() );
+		$module     = WC_Payments_Multi_Currency();
+		$formatters = wc_get_container()->get( \Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendCurrenciesController::class );
+		$this->assertSame( $formatters, $module->get_frontend_currencies() );
+		foreach ( array(
+			'woocommerce_currency'            => array( 'get_woocommerce_currency', 'USD' ),
+			'wc_get_price_decimals'           => array( 'get_price_decimals', 2 ),
+			'wc_get_price_decimal_separator'  => array( 'get_price_decimal_separator', '.' ),
+			'wc_get_price_thousand_separator' => array( 'get_price_thousand_separator', ',' ),
+			'woocommerce_price_format'        => array( 'get_woocommerce_price_format', '%1$s%2$s' ),
+		) as $hook => list( $method, $input ) ) {
+			add_filter( $hook, array( $formatters, $method ), 900 );
+			$this->assertSame( $formatters->$method( $input ), apply_filters( $hook, $input ) );
+			$callback = array( $module->get_frontend_currencies(), $method );
+			if ( $removes ) {
+				$this->assertTrue( remove_filter( $hook, $callback, 900 ), $display );
+				$this->assertFalse( has_filter( $hook, $callback ), $display );
+			} else {
+				$this->assertSame( 900, has_filter( $hook, $callback ), $display );
+			}
+		}
+	}
+
+	/**
+	 * @testdox An invoice can catch an invalid currency using the extension name and retain its original amount.
+	 */
+	public function test_invoice_catches_invalid_currency_through_the_accessor(): void {
+		$this->declare_facade();
+		$this->setExpectedIncorrectUsage( 'WC_Payments_Multi_Currency()' );
+		$this->expect_facade_warnings( 'get_single_currency_settings' );
+		try {
+			WC_Payments_Multi_Currency()->get_single_currency_settings( 'BAD' );
+			$this->fail( 'Invalid settings should reach the invoice fallback.' );
+		} catch ( \WCPay\MultiCurrency\Exceptions\InvalidCurrencyException $error ) {
+			$this->assertInstanceOf( \Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyException::class, $error );
+			$this->assertSame( 'Invalid currency passed to get_single_currency_settings: BAD', $error->getMessage() );
+			$this->assertSame( 500, $error->getCode() );
+		}
+	}
 
 	/**
 	 * The session a case may replace.
@@ -83,7 +356,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 	 */
 	public function setUp(): void {
 		parent::setUp();
-		$this->reset_compatibility_notices( \WCPay\MultiCurrency\MultiCurrency::class, \WCPay\MultiCurrency\Compatibility::class );
+		$this->reset_compatibility_notices( \WCPay\MultiCurrency\MultiCurrency::class, \WCPay\MultiCurrency\Compatibility::class, \WCPay\MultiCurrency\Utils::class, \Automattic\WooCommerce\Internal\MultiCurrency\Compat\WooPaymentsExtensionFacadeAccessor::class );
 
 		global $wp_widget_factory;
 		$this->session = WC()->session;
@@ -680,34 +953,42 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 	public function test_facades_leave_the_listed_members_undeclared(): void {
 		$this->declare_facade();
 		$not_declared = array(
-			'WCPay\\MultiCurrency\\MultiCurrency' => array( '__construct', 'init_hooks', 'init', 'init_rest_api', 'init_widgets', 'init_settings_pages', 'enqueue_admin_scripts', 'add_props_to_wcpay_js_config', 'add_woo_admin_notes', 'maybe_update_customer_currencies_option', 'update_selected_currency_by_url', 'update_selected_currency_by_geolocation', 'maybe_auto_enable_cache_rendering_mode', 'display_geolocation_currency_update_notice', 'set_new_customer_currency_meta', 'add_order_meta_on_refund', 'recalculate_cart', 'possible_simulation_activation', 'register_script_with_dependencies', 'get_file_version', 'get_frontend_prices', 'get_frontend_currencies', 'get_storefront_integration', 'get_currency_switcher_widget', 'set_enabled_currencies', 'update_selected_currency', 'update_single_currency_settings', 'update_settings', 'is_simulation_enabled', 'get_multi_currency_onboarding_simulation_variables', 'get_backend_formatted_wc_price', 'is_initialized' ),
+			'WCPay\\MultiCurrency\\MultiCurrency' => array( '__construct', 'init_hooks', 'init', 'init_rest_api', 'init_widgets', 'init_settings_pages', 'enqueue_admin_scripts', 'add_props_to_wcpay_js_config', 'add_woo_admin_notes', 'maybe_update_customer_currencies_option', 'update_selected_currency_by_url', 'update_selected_currency_by_geolocation', 'maybe_auto_enable_cache_rendering_mode', 'display_geolocation_currency_update_notice', 'set_new_customer_currency_meta', 'add_order_meta_on_refund', 'recalculate_cart', 'possible_simulation_activation', 'register_script_with_dependencies', 'get_file_version', 'get_storefront_integration', 'get_currency_switcher_widget', 'set_enabled_currencies', 'update_selected_currency', 'update_single_currency_settings', 'update_settings', 'is_simulation_enabled', 'get_multi_currency_onboarding_simulation_variables', 'get_backend_formatted_wc_price', 'get_adjusted_price' ),
 			'WCPay\\MultiCurrency\\Compatibility' => array( 'init', 'init_compatibility_classes', 'get_compatibility_classes', 'attach_order_modifier', 'convert_order_prices' ),
 			MultiCurrencyCurrency::class          => array( 'get_currency_name_from_code' ),
 		);
 
-		$this->assertCount( 32, $not_declared['WCPay\\MultiCurrency\\MultiCurrency'] );
+		$this->assertCount( 30, $not_declared['WCPay\\MultiCurrency\\MultiCurrency'] );
 		foreach ( $not_declared as $class => $members ) {
 			foreach ( $members as $member ) {
 				$this->assertFalse( method_exists( $class, $member ), $class . '::' . $member );
 			}
 		}
 		$this->assertFalse( class_exists( 'WCPay\\MultiCurrency\\Compatibility\\BaseCompatibility' ), 'The compatibility facade has no extension base class.' );
-		$this->assertFalse( function_exists( 'WC_Payments_Multi_Currency' ), 'WC_Payments_Multi_Currency() stays undefined.' );
 	}
 
 	/**
-	 * @testdox A REST request reports incorrect usage from both compatibility boundaries without writing to the PHP error log.
+	 * @testdox REST and AJAX requests report incorrect usage without writing to the PHP error log.
+	 * @testWith ["/wp-json/wc/store/v1/cart"]
+	 *           ["/wp-admin/admin-ajax.php"]
+	 *           ["/?wc-ajax=update_order_review"]
+	 *
+	 * @param string $path Request path.
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
-	public function test_rest_compatibility_warnings_leave_the_error_log_empty(): void {
+	public function test_rest_compatibility_warnings_leave_the_error_log_empty( string $path ): void {
 		if ( WP_DEBUG ) {
 			$this->markTestSkipped( 'This test requires WP_DEBUG to be off.' );
 		}
 
 		$gateway                = wc_get_container()->get( WooPaymentsGateway::class );
-		$_SERVER['REQUEST_URI'] = '/wp-json/wc/store/v1/cart';
-		$this->assertTrue( WC()->is_rest_api_request() );
+		$_SERVER['REQUEST_URI'] = $path;
+		if ( false !== strpos( $path, 'ajax' ) ) {
+			wc_maybe_define_constant( 'DOING_AJAX', true );
+		}
+		$this->assertTrue( WC()->is_rest_api_request() || wp_doing_ajax() );
+		$this->setExpectedIncorrectUsage( 'WC_Payments_Multi_Currency()' );
 		$this->setExpectedIncorrectUsage( WooPaymentsGateway::class . '::is_enabled()' );
 		$this->setExpectedIncorrectUsage( 'WCPay\MultiCurrency\MultiCurrency::is_enabled()' );
 
@@ -716,6 +997,8 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 		try {
 			$this->iniSet( 'error_log', $error_log );
 			$gateway->is_enabled();
+			WC_Payments_Multi_Currency();
+			WC_Payments_Multi_Currency();
 			\WCPay\MultiCurrency\MultiCurrency::is_enabled();
 
 			$this->assertStringEqualsFile( $error_log, '' );
@@ -741,7 +1024,9 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 			10,
 			3
 		);
-		$this->expect_facade_warnings( 'get_price', 'get_raw_conversion', 'get_selected_currency', 'get_explicit_selected_currency', 'get_default_currency', 'get_enabled_currencies', 'get_compatibility', 'remove_woo_admin_notes', 'is_enabled' );
+		$this->expect_facade_warnings( 'get_price', 'get_raw_conversion', 'get_selected_currency', 'get_explicit_selected_currency', 'get_default_currency', 'get_enabled_currencies', 'get_compatibility', 'remove_woo_admin_notes', 'is_enabled', 'is_initialized', 'get_frontend_prices', 'get_frontend_currencies' );
+		$this->setExpectedIncorrectUsage( 'WC_Payments_Multi_Currency()' );
+		$this->setExpectedIncorrectUsage( 'WCPay\MultiCurrency\Utils::is_admin_api_request()' );
 		$this->setExpectedIncorrectUsage( 'WCPay\\MultiCurrency\\Compatibility::should_convert_shipping_amount()' );
 
 		$facade = $this->get_facade();
@@ -754,17 +1039,22 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 		$facade->get_compatibility()->should_convert_shipping_amount();
 		\WCPay\MultiCurrency\MultiCurrency::remove_woo_admin_notes();
 		for ( $i = 0; $i < 20; ++$i ) {
+			WC_Payments_Multi_Currency()->is_initialized();
+			$facade->get_frontend_prices();
+			$facade->get_frontend_currencies();
+			\WCPay\MultiCurrency\Utils::is_admin_api_request();
 			$this->assertTrue( \WCPay\MultiCurrency\MultiCurrency::is_enabled() );
 		}
 
 		$replacements = array(
+			'WCPay\\MultiCurrency\\MultiCurrency::is_initialized()'                 => 'Use Automattic\WooCommerce\Utilities\MultiCurrencyUtil::is_active() instead.',
 			'WCPay\\MultiCurrency\\MultiCurrency::get_price()'                      => 'Use Automattic\WooCommerce\Utilities\MultiCurrencyUtil::convert_price() instead.',
 			'WCPay\\MultiCurrency\\MultiCurrency::get_raw_conversion()'             => 'Use Automattic\WooCommerce\Utilities\MultiCurrencyUtil::convert() instead.',
 			'WCPay\\MultiCurrency\\MultiCurrency::is_enabled()'                     => 'Use Automattic\WooCommerce\Utilities\MultiCurrencyUtil::is_active() instead.',
 			'WCPay\\MultiCurrency\\MultiCurrency::remove_woo_admin_notes()'         => "Use Automattic\\WooCommerce\\Admin\\Notes\\Notes::delete_notes_with_name( 'wc-payments-notes-multi-currency-available' ) instead.",
 			'WCPay\\MultiCurrency\\Compatibility::should_convert_shipping_amount()' => "Use ! \$shipping_method || (bool) apply_filters( 'wcpay_multi_currency_should_convert_shipping_amount', true, \$shipping_method ) instead.",
 		);
-		$this->assertCount( 11, $notices );
+		$this->assertCount( 16, $notices );
 		foreach ( $notices as $member => $warnings ) {
 			$message = $replacements[ $member ] ?? "$member is a compatibility shim for the WooPayments extension with no replacement in WooCommerce and will be removed in 12.0.0.";
 			$this->assertSame( array( array( esc_html( $message ), '11.4.0' ) ), $warnings, $member );

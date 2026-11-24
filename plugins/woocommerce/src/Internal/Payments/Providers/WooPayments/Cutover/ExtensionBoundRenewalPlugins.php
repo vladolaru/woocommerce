@@ -87,11 +87,20 @@ class ExtensionBoundRenewalPlugins {
 	 * @return string[]
 	 */
 	public function get_active_plugin_files(): array {
+		return $this->find_listed_plugin_files( $this->get_filtered_plugin_files() );
+	}
+
+	/**
+	 * Read the filtered site and network activation lists for plugin holdbacks.
+	 *
+	 * @return array<int|string,mixed>
+	 */
+	public function get_filtered_plugin_files(): array {
 		$plugin_files = (array) $this->legacy_proxy->call_function( 'get_option', 'active_plugins', array() );
 		if ( $this->legacy_proxy->call_function( 'is_multisite' ) ) {
 			$plugin_files = array_merge( $plugin_files, array_keys( (array) $this->legacy_proxy->call_function( 'get_site_option', 'active_sitewide_plugins', array() ) ) );
 		}
-		return $this->find_listed_plugin_files( $plugin_files );
+		return $plugin_files;
 	}
 
 	/**
@@ -119,7 +128,16 @@ class ExtensionBoundRenewalPlugins {
 	 * @return string[]
 	 */
 	public function get_active_plugin_names(): array {
-		$plugin_files = $this->get_active_plugin_files();
+		return $this->get_plugin_names( $this->get_active_plugin_files() );
+	}
+
+	/**
+	 * Read names only for the plugin files that hold the switch.
+	 *
+	 * @param string[] $plugin_files Active files.
+	 * @return string[]
+	 */
+	public function get_plugin_names( array $plugin_files ): array {
 		if ( array() === $plugin_files ) {
 			return array();
 		}

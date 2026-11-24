@@ -26,6 +26,57 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	use WooPaymentsCompatibilityNoticeTestTrait;
 
 	/**
+	 * @testdox WordPress can sandbox-load the extension after plugins_loaded without colliding with a built-in declaration.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_currency_names_stay_available_for_extension_activation(): void {
+		$_REQUEST['action'] = 'activate';
+		$_REQUEST['plugin'] = 'woocommerce-payments/woocommerce-payments.php';
+		$loader             = new WooPaymentsExtensionFacadeLoader();
+		$loader->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ) );
+		$loader->register();
+		$this->assertFalse( function_exists( 'WC_Payments_Multi_Currency' ) );
+		$this->assertFalse( class_exists( 'WCPay\MultiCurrency\MultiCurrency', false ) );
+		require __DIR__ . '/Fixtures/extension-currency-accessor.fixture';
+		$GLOBALS['wc_test_multi_currency_extension'] = new \stdClass();
+		$this->assertSame( $GLOBALS['wc_test_multi_currency_extension'], WC_Payments_Multi_Currency() );
+	}
+
+	/**
+	 * @testdox The facade is available to later plugins_loaded listeners and also on late registration.
+	 * @testWith [true]
+	 *           [false]
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 *
+	 * @param bool $early Whether the loader registers before plugins_loaded.
+	 */
+	public function test_accessor_load_timing( bool $early ): void {
+		$loader = new WooPaymentsExtensionFacadeLoader();
+		$loader->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ) );
+		if ( $early ) {
+			unset( $GLOBALS['wp_actions']['plugins_loaded'] );
+			remove_all_actions( 'plugins_loaded' );
+			$loader->register();
+			$this->assertFalse( function_exists( 'WC_Payments_Multi_Currency' ) );
+			add_action(
+				'plugins_loaded',
+				function () {
+					$this->assertTrue( function_exists( 'WC_Payments_Multi_Currency' ) );
+					$this->assertTrue( class_exists( 'WCPay\MultiCurrency\Utils', false ) );
+				},
+				1
+			);
+			do_action( 'plugins_loaded' );
+		} else {
+			$loader->register();
+		}
+		$this->assertTrue( function_exists( 'WC_Payments_Multi_Currency' ) );
+		$this->assertTrue( class_exists( 'WCPay\MultiCurrency\Exceptions\InvalidCurrencyRateException', false ) );
+	}
+
+	/**
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
@@ -147,13 +198,35 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	public function test_facade_stays_absent_outside_core_ownership(): void {
 		$this->assertFalse( class_exists( 'WCPay\\MultiCurrency\\MultiCurrency', false ), 'Precondition: an earlier in-process test declared the facade.' );
 
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		$reads   = 0;
+		$notices = 0;
+		add_filter(
+			'option_wcpay_multi_currency_enabled_currencies',
+			static function ( $codes ) use ( &$reads ) {
+				++$reads;
+				return $codes;
+			}
+		);
+		add_action(
+			'doing_it_wrong_run',
+			static function () use ( &$notices ) {
+				++$notices;
+			}
+		);
 		foreach ( array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, MultiCurrencyRuntimeArbiter::OWNER_NONE ) as $owner ) {
 			$loader = new WooPaymentsExtensionFacadeLoader();
 			$loader->init( $this->create_arbiter( $owner ) );
 			$loader->register();
 			$this->assertFalse( class_exists( 'WCPay\\MultiCurrency\\MultiCurrency', false ), 'The plugin and ownerless runtimes must retain authority over the plugin namespace.' );
 			$this->assertFalse( class_exists( 'WCPay\\MultiCurrency\\Compatibility', false ), 'The compatibility facade stays absent with the facade.' );
+			$this->assertFalse( function_exists( 'WC_Payments_Multi_Currency' ) );
+			foreach ( array( 'Utils', 'Exceptions\InvalidCurrencyException', 'Exceptions\InvalidCurrencyRateException' ) as $name ) {
+				$this->assertFalse( class_exists( 'WCPay\MultiCurrency\\' . $name, false ) );
+			}
 		}
+		$this->assertSame( 0, $reads );
+		$this->assertSame( 0, $notices );
 	}
 
 	/**

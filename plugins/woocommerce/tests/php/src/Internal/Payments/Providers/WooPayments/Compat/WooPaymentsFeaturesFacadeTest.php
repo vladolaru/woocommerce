@@ -167,13 +167,15 @@ class WooPaymentsFeaturesFacadeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Pricewise can finish its check and skip its legacy global conversion function.
+	 * @testdox Pricewise reaches currency conversion after its feature check.
 	 */
 	public function test_pricewise_currency_check(): void {
 		$this->load_facades( false );
 		$this->setExpectedIncorrectUsage( 'WC_Payments_Features::is_customer_multi_currency_enabled()' );
 		$this->assertTrue( class_exists( 'WC_Payments_Features' ) && Features::is_customer_multi_currency_enabled() );
-		$this->assertFalse( function_exists( 'WC_Payments_Multi_Currency' ) );
+		$this->setExpectedIncorrectUsage( 'WC_Payments_Multi_Currency()' );
+		$this->setExpectedIncorrectUsage( 'WCPay\MultiCurrency\MultiCurrency::get_raw_conversion()' );
+		$this->assertSame( 5.0, WC_Payments_Multi_Currency()->get_raw_conversion( 5.0, 'USD', 'USD' ) );
 	}
 
 	/**

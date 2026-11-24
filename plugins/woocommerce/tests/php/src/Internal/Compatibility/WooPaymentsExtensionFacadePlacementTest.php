@@ -78,6 +78,10 @@ class WooPaymentsExtensionFacadePlacementTest extends WC_Unit_Test_Case {
 			$plugin_directory . '/includes/legacy/woopayments-compat/class-mode.php'                       => array( 'WCPay\\Core\\Mode' ),
 			$plugin_directory . '/includes/legacy/woopayments-multi-currency-compat/MultiCurrency.php'     => array( 'WCPay\\MultiCurrency\\MultiCurrency' ),
 			$plugin_directory . '/includes/legacy/woopayments-multi-currency-compat/Compatibility.php'     => array( 'WCPay\\MultiCurrency\\Compatibility' ),
+			$plugin_directory . '/includes/legacy/woopayments-multi-currency-compat/Utils.php' => array( 'WCPay\MultiCurrency\Utils' ),
+			$plugin_directory . '/includes/legacy/woopayments-multi-currency-compat/InvalidCurrencyException.php' => array( 'WCPay\MultiCurrency\Exceptions\InvalidCurrencyException' ),
+			$plugin_directory . '/includes/legacy/woopayments-multi-currency-compat/InvalidCurrencyRateException.php' => array( 'WCPay\MultiCurrency\Exceptions\InvalidCurrencyRateException' ),
+			$plugin_directory . '/includes/legacy/woopayments-multi-currency-compat/wc-payments-multi-currency.php' => array( 'WC_Payments_Multi_Currency' ),
 		);
 
 		foreach ( $expected_symbols as $file => $symbols ) {
@@ -184,6 +188,28 @@ class WooPaymentsExtensionFacadePlacementTest extends WC_Unit_Test_Case {
 			if ( T_NAMESPACE === $token[0] ) {
 				$namespace = $this->read_namespace( $tokens, $index + 1 );
 				continue;
+			}
+
+			if ( T_FUNCTION === $token[0] && '' === $namespace && 'WC_Payments_Multi_Currency' === $this->read_type_name( $tokens, $index + 1 ) ) {
+				$declarations[] = 'WC_Payments_Multi_Currency';
+			}
+			if ( T_STRING === $token[0] && 'class_alias' === $token[1] ) {
+				// The compatibility exception files give the alias as a literal second argument.
+				for ( $i = $index + 1; isset( $tokens[ $i ] ) && ';' !== $tokens[ $i ]; ++$i ) {
+					if ( ',' === $tokens[ $i ] ) {
+						$alias = $tokens[ $i + 1 ] ?? null;
+						if ( is_array( $alias ) && T_WHITESPACE === $alias[0] ) {
+							$alias = $tokens[ $i + 2 ] ?? null;
+						}
+						if ( is_array( $alias ) && T_CONSTANT_ENCAPSED_STRING === $alias[0] ) {
+							$name = trim( $alias[1], "'\"" );
+							if ( 0 === stripos( $name, 'WCPay\\' ) ) {
+								$declarations[] = $name;
+							}
+						}
+						break;
+					}
+				}
 			}
 
 			if ( ! in_array( $token[0], $declaration_tokens, true ) ) {

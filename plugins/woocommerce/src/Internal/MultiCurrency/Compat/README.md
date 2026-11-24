@@ -1,8 +1,6 @@
 # WooPayments extension Multi-Currency compatibility
 
-This folder holds what plugins written for the WooPayments extension call in its `WCPay\MultiCurrency` namespace, answered by WooCommerce's Multi-Currency while it runs Multi-Currency: the `MultiCurrency` class and the `Compatibility` class its `get_compatibility()` returns. `WooPaymentsExtensionFacadeLoader` declares both only after active plugins have loaded (`plugins_loaded` priority 0) and only when `MultiCurrencyRuntimeArbiter::is_builtin_owner()` is true; while the WooPayments extension runs Multi-Currency, the namespace is the extension's own. The facade class files live in `includes/legacy/woopayments-multi-currency-compat/` (see the placement rule). The extension's other classes and globals live in the separate [payments compatibility boundary](../../Payments/Providers/WooPayments/Compat/README.md). The facades are removed in WooCommerce 12.0.0.
-
-The facades exist to spare these plugins a fatal error, not to emulate the extension: they answer every member the Multi-Currency module has a real answer for, from the module's own state, services and rules, and declare nothing else.
+The global `WC_Payments_Multi_Currency()` and the classes below serve plugins written for the WooPayments extension. The loader declares them at `plugins_loaded` priority 0, or immediately if the action has run, when the built-in owns Multi-Currency and the request is not activating the WooPayments extension. The function and `MultiCurrency::instance()` return the same object. Affiliate uses it to convert commissions back to store currency. Hungarian Pickup Points tests for the function before using the singleton. The [payments compatibility boundary](../../Payments/Providers/WooPayments/Compat/README.md) owns the separate payments symbols.
 
 ## Contract
 
@@ -12,6 +10,9 @@ The facades exist to spare these plugins a fatal error, not to emulate the exten
 |---|---|---|
 | `CURRENCY_SESSION_KEY`, `CURRENCY_META_KEY`, `FILTER_PREFIX`, `CUSTOMER_CURRENCIES_KEY`, `RENDERING_MODE_SPEED`, `RENDERING_MODE_CACHE`, `RENDERING_MODE_OPTION`, `CACHE_AUTODETECT_DONE_OPTION`, `CACHE_RECOMMENDATION_DISMISSED_OPTION` | The extension's values, each read from the module constant that names the same stored key, option or hook prefix. | WooCommerce Payfast Gateway (the two keys), Advanced Dynamic Pricing (`FILTER_PREFIX`) |
 | `instance(): self` | One facade instance for the request. | WooCommerce Deposits, WooCommerce Table Rate Shipping, Themify Product Filter, FOX Currency Switcher |
+| `is_initialized()` | True while the built-in owns Multi-Currency. | Advanced Dynamic Pricing, Product Add-Ons |
+| `get_frontend_prices()` | The registered price controller. Its shipping callback can be removed at priority 99. | Advanced Dynamic Pricing |
+| `get_frontend_currencies()` | The registered controller that supplies the currency, decimals, separators and price format. | Gift Wrapper, Order Bump, Gift Cards Pro, Post-Purchase Offers, Recover Abandoned Cart |
 | `get_price( $amount, string $type, ?MultiCurrencyCurrency $currency = null ): float` | Converts to the supplied currency, as in WooPayments 11.3.0. Omitting the currency or passing `null` uses the selected currency. | WooCommerce Deposits, Themify Product Filter (both use two arguments) |
 | `get_raw_conversion( float $amount, string $to_currency, string $from_currency = '' ): float` | Converts through `PriceConverter`; an omitted source currency means the store currency. | WooCommerce Table Rate Shipping, Themify Product Filter |
 | `get_selected_currency()`, `get_default_currency()`, `get_enabled_currencies()`, `get_available_currencies()`, `has_additional_currencies_enabled()`, `get_all_customer_currencies()`, `validate_currency_code( $code )` | Read the request's `MultiCurrencyState`; `validate_currency_code()` returns the upper-cased code of an available currency, else `false`. | WooCommerce Table Rate Shipping, Themify Product Filter, FOX Currency Switcher |
@@ -40,18 +41,24 @@ The currencies these members return are the module's `MultiCurrencyCurrency` obj
 
 The class does not extend the extension's `WCPay\MultiCurrency\Compatibility\BaseCompatibility`, so a type check against that class fails.
 
-### Not answered
+### Other legacy names
 
-`WC_Payments_Multi_Currency()` stays undefined: plugins that guard on `function_exists( 'WC_Payments_Multi_Currency' )` skip their WooPayments code today, and defining it would send them into the members below as well. Calling one of these members is an undefined-method error:
+Gift Wrapper, Order Bump, Gift Cards Pro and Post-Purchase Offers call `WCPay\MultiCurrency\Utils::is_admin_api_request()`. Tier Pricing constructs the helper. POP invoice integrations can catch `WCPay\MultiCurrency\Exceptions\InvalidCurrencyException` and `InvalidCurrencyRateException`. These names alias the core exceptions and preserve the original message and code.
 
-- On `MultiCurrency`: the hook callbacks and lifecycle methods (`__construct`, `init_hooks`, `init`, `init_rest_api`, `init_widgets`, `init_settings_pages`, `enqueue_admin_scripts`, `add_props_to_wcpay_js_config`, `add_woo_admin_notes`, `maybe_update_customer_currencies_option`, `update_selected_currency_by_url`, `update_selected_currency_by_geolocation`, `maybe_auto_enable_cache_rendering_mode`, `display_geolocation_currency_update_notice`, `set_new_customer_currency_meta`, `add_order_meta_on_refund`, `recalculate_cart`, `possible_simulation_activation`, `register_script_with_dependencies`, `get_file_version`), because the module registers its own; the service getters (`get_frontend_prices`, `get_frontend_currencies`, `get_storefront_integration`, `get_currency_switcher_widget`), which return the extension's internal objects; the writes (`set_enabled_currencies`, `update_selected_currency`, `update_single_currency_settings`, `update_settings`), which the settings screen and the switchers own; the settings preview internals (`is_simulation_enabled`, `get_multi_currency_onboarding_simulation_variables`), which have no consumer; `get_backend_formatted_wc_price()`, which has no module rule with the same contract; and `is_initialized()`, for which the module has no fact to report.
+Name Your Price supplies its own WooPayments conversion hooks from version 4.0.0. The module supplies conversions for earlier versions.
+
+### Remaining gaps
+
+YayPricing's cross-currency reverse calculation calls `get_adjusted_price()`, which is protected on the extension and absent here. Tier Pricing can read private currency fields on some paths. Both it and Auctions can call unavailable currency names when Multi-Currency is off on a store that started on the built-in. Missing methods raise PHP's undefined-method error.
+
+- On `MultiCurrency`: the hook callbacks and lifecycle methods (`__construct`, `init_hooks`, `init`, `init_rest_api`, `init_widgets`, `init_settings_pages`, `enqueue_admin_scripts`, `add_props_to_wcpay_js_config`, `add_woo_admin_notes`, `maybe_update_customer_currencies_option`, `update_selected_currency_by_url`, `update_selected_currency_by_geolocation`, `maybe_auto_enable_cache_rendering_mode`, `display_geolocation_currency_update_notice`, `set_new_customer_currency_meta`, `add_order_meta_on_refund`, `recalculate_cart`, `possible_simulation_activation`, `register_script_with_dependencies`, `get_file_version`), because the module registers its own; the service getters (`get_storefront_integration`, `get_currency_switcher_widget`), which return the extension's internal objects; the writes (`set_enabled_currencies`, `update_selected_currency`, `update_single_currency_settings`, `update_settings`), which the settings screen and the switchers own; the settings preview internals (`is_simulation_enabled`, `get_multi_currency_onboarding_simulation_variables`), which have no consumer; `get_backend_formatted_wc_price()`, which has no module rule with the same contract.
 - On `Compatibility`: `init`, `init_compatibility_classes`, `get_compatibility_classes`, and the hook callbacks `attach_order_modifier` and `convert_order_prices`.
 
 Each method reports incorrect usage once per request through WordPress with version `11.4.0` and names its replacement or announces removal in 12.0.0. Calling WordPress directly keeps live AJAX and REST requests quiet when debugging is off. Reading a class constant emits no notice. The Multi-Currency services own all state and conversion math.
 
 ## Placement rule
 
-`WooPaymentsExtensionFacadePlacementTest` requires every global `WC_Payments*` or namespaced `WCPay\` type declaration to live in `includes/legacy/woopayments-compat/` or `includes/legacy/woopayments-multi-currency-compat/`, outside every tree Composer scans for its classmaps: `src/` and `includes/rest-api/`, and `tests/php/src/` for development installs. The Jetpack autoloader's optimized classmap, built on every `composer install` and for the release zip, maps each class it finds in those trees whatever its namespace, so a facade placed there would be declared on first use on every store, including stores where the WooPayments extension runs; outside them, only the loaders can declare the facades. Test fixtures that declare the extension's class names use the `.fixture` extension, which Composer does not scan. The test also requires exactly one composition-root registration for each compatibility loader. A new compatibility surface belongs here only for a consumer contract observed in a plugin, and it must call the Multi-Currency services.
+`WooPaymentsExtensionFacadePlacementTest` requires the global accessor, currency exception aliases, and every global `WC_Payments*` or namespaced `WCPay\` type declaration to live in `includes/legacy/woopayments-compat/` or `includes/legacy/woopayments-multi-currency-compat/`, outside every tree Composer scans for its classmaps: `src/` and `includes/rest-api/`, and `tests/php/src/` for development installs. The Jetpack autoloader's optimized classmap, built on every `composer install` and for the release zip, maps each class it finds in those trees whatever its namespace, so a facade placed there would be declared on first use on every store, including stores where the WooPayments extension runs; outside them, only the loaders can declare the facades. Test fixtures that declare the extension's class names use the `.fixture` extension, which Composer does not scan. The test also requires exactly one composition-root registration for each compatibility loader. A new compatibility surface belongs here only for a consumer contract observed in a plugin, and it must call the Multi-Currency services.
 
 ## Public currency utility on extension-owned sites
 
@@ -61,10 +68,10 @@ When the runtime arbiter selects the extension, `MultiCurrencyUtil` uses `Extens
 
 Remove these pieces together once supported extensions no longer call the `WCPay\MultiCurrency` namespace:
 
-- The facade loader and compatibility notice trait in this folder and the facade files in `includes/legacy/woopayments-multi-currency-compat/`.
+- The facade loader, shared accessor and compatibility notice trait in this folder and the global accessor, Utils, exception alias files and existing facades in `includes/legacy/woopayments-multi-currency-compat/`.
 - The one registration line, `WooPaymentsExtensionFacadeLoader::register()` in `includes/class-woocommerce.php`.
 - The facade tests and their fixtures in `tests/php/src/Internal/MultiCurrency/Compat/`.
-- This boundary's expected symbols and loader entries in `WooPaymentsExtensionFacadePlacementTest`.
+- This boundary's expected symbols and loader entries in `WooPaymentsExtensionFacadePlacementTest` and the accessor's name and path in `bin/check-new-functions.php`.
 - The `$apply_charm_pricing` argument of `PriceConverter::adjust_amount_for_selected_currency()` and `PriceCalculator::get_adjusted_amount()`, which only the facade passes as false.
 - The WooPayments extension's asset handles registered as aliases outside this folder: `wcpay-multi-currency-async-renderer` (script and style, `MultiCurrencyAsyncPriceRendererController::COMPAT_SCRIPT_HANDLE`), the switcher block's editor script handle (`MultiCurrencySwitcherBlockController::COMPAT_EDITOR_SCRIPT_HANDLE`) and `WCPAY_MULTI_CURRENCY_ANALYTICS` (`MultiCurrencyAnalyticsController`).
 

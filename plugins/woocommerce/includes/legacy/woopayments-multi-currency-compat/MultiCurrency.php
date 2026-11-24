@@ -7,6 +7,9 @@ declare( strict_types = 1 );
 
 namespace WCPay\MultiCurrency;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\Compat\WooPaymentsExtensionFacadeAccessor;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendPricesController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendCurrenciesController;
 use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyException;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAdminNoteController;
@@ -100,13 +103,6 @@ class MultiCurrency {
 	const CACHE_RECOMMENDATION_DISMISSED_OPTION = CacheRenderingService::DISMISSED_OPTION;
 
 	/**
-	 * Request-local facade instance.
-	 *
-	 * @var self|null
-	 */
-	private static ?self $instance = null;
-
-	/**
 	 * The compatibility facade get_compatibility() returns, built on first use.
 	 *
 	 * @var Compatibility|null
@@ -126,11 +122,37 @@ class MultiCurrency {
 	public static function instance(): self {
 		self::warn_compatibility_method( __METHOD__ );
 
-		if ( null === self::$instance ) {
-			self::$instance = new self();
-		}
+		return WooPaymentsExtensionFacadeAccessor::get();
+	}
 
-		return self::$instance;
+	/**
+	 * Tell whether the built-in Multi-Currency runtime is active.
+	 *
+	 * @deprecated 11.4.0 Use Automattic\WooCommerce\Utilities\MultiCurrencyUtil::is_active() instead. Removed in WooCommerce 12.0.0.
+	 */
+	public function is_initialized(): bool {
+		self::warn_compatibility_method( __METHOD__, 'Automattic\WooCommerce\Utilities\MultiCurrencyUtil::is_active()' );
+		return true;
+	}
+
+	/**
+	 * Get the object whose callbacks convert shipping and product prices.
+	 *
+	 * @deprecated 11.4.0 No public replacement. Removed in WooCommerce 12.0.0.
+	 */
+	public function get_frontend_prices(): MultiCurrencyFrontendPricesController {
+		self::warn_compatibility_method( __METHOD__ );
+		return wc_get_container()->get( MultiCurrencyFrontendPricesController::class );
+	}
+
+	/**
+	 * Get the object whose callbacks format the shopper's currency.
+	 *
+	 * @deprecated 11.4.0 No public replacement. Removed in WooCommerce 12.0.0.
+	 */
+	public function get_frontend_currencies(): MultiCurrencyFrontendCurrenciesController {
+		self::warn_compatibility_method( __METHOD__ );
+		return wc_get_container()->get( MultiCurrencyFrontendCurrenciesController::class );
 	}
 
 	/**
