@@ -6,7 +6,7 @@ import apiFetch from '@wordpress/api-fetch';
 /**
  * Internal dependencies
  */
-import { fetchSummary } from '../fetch-summary';
+import { fetchSummary } from '../money-movement/utils';
 import type {
 	WooPaymentsCapitalLoan,
 	WooPaymentsCapitalLoansResponse,

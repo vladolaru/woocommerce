@@ -1,6 +1,7 @@
 /**
  * External dependencies
  */
+import apiFetch from '@wordpress/api-fetch';
 import { dispatch } from '@wordpress/data';
 import { dateI18n, getSettings as getDateSettings } from '@wordpress/date';
 import { decodeEntities } from '@wordpress/html-entities';
@@ -109,6 +110,20 @@ export const buildPathWithQuery = (
 	const queryString = params.toString();
 
 	return queryString ? `${ path }?${ queryString }` : path;
+};
+
+/** A successful summary GET may have no body, including an HTTP 204. */
+export const fetchSummary = async < T extends object >(
+	path: string,
+	signal?: AbortSignal
+): Promise< T | Record< string, never > > => {
+	const summary = await apiFetch< T | null | undefined >( {
+		path,
+		method: 'GET',
+		signal,
+	} );
+
+	return summary ?? {};
 };
 
 export const getResourceId = ( item: {

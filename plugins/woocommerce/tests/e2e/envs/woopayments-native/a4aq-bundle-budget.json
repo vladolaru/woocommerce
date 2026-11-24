@@ -42,8 +42,8 @@
 		},
 		"admin-capital.js": {
 			"raw_bytes": 12124,
-			"gzip_bytes": 4243,
-			"reason": "DevModeMessage uses the extension’s WordPress-provided ExternalLink. These measured ceilings cover the built-in loan columns, saved preferences and development-mode notice ported from WooPayments 11.3.0, with no added third-party code or headroom."
+			"gzip_bytes": 4253,
+			"reason": "DevModeMessage uses the extension’s WordPress-provided ExternalLink. These measured ceilings cover the built-in loan columns, saved preferences and development-mode notice ported from WooPayments 11.3.0, with no added third-party code or headroom. The gzip ceiling also covers the active loan summary's empty-response fallback, measured at 4,251 bytes: its helper ships once, in the chunk the WooPayments admin routes share, and the call to it compresses worse than the loans call it used to repeat. The 2 extra bytes cover the module-id noise seen between builds of one commit."
 		},
 		"admin-fraud-protection.js": {
 			"raw_bytes": 29707,

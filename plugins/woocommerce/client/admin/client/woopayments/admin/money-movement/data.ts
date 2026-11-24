@@ -7,7 +7,6 @@ import apiFetch from '@wordpress/api-fetch';
  * Internal dependencies
  */
 import { encodePathSegment } from '../../path-segment';
-import { fetchSummary } from '../fetch-summary';
 import type {
 	WooPaymentsAuthorization,
 	WooPaymentsAuthorizationActionResponse,
@@ -26,7 +25,7 @@ import type {
 	WooPaymentsTransaction,
 	WooPaymentsTimelineResponse,
 } from './types';
-import { buildPathWithQuery } from './utils';
+import { buildPathWithQuery, fetchSummary } from './utils';
 import { getWooPaymentsExportRecipient } from './export';
 import {
 	buildSettledTransactionsApiPath,

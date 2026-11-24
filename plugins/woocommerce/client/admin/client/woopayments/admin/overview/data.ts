@@ -7,7 +7,7 @@ import apiFetch from '@wordpress/api-fetch';
  * Internal dependencies
  */
 import { encodePathSegment } from '../../path-segment';
-import { fetchSummary } from '../fetch-summary';
+import { fetchSummary } from '../money-movement/utils';
 import type {
 	WooPaymentsDeposit,
 	WooPaymentsDepositsListResponse,
