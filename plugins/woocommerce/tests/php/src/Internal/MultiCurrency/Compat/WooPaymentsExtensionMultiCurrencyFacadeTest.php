@@ -380,6 +380,43 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Both public conversions accept the same store-currency amounts as the compatibility price method.
+	 *
+	 * @testWith [""]
+	 *           [null]
+	 *           ["12.34"]
+	 *           ["unpriced"]
+	 *           ["12.34 USD"]
+	 *           [12.34]
+	 *
+	 * @param mixed $amount Store price passed by a plugin.
+	 */
+	public function test_public_conversions_accept_compatibility_price_inputs( $amount ): void {
+		$this->declare_facade();
+		$this->expect_facade_warnings( 'get_price' );
+		$expected = $this->get_facade()->get_price( $amount, 'product' );
+
+		$this->assertSame( $expected, MultiCurrencyUtil::convert_price( $amount ) );
+		$this->assertSame( $expected, MultiCurrencyUtil::convert( $amount ) );
+	}
+
+	/**
+	 * @testdox A price with a numeric prefix follows compatibility rounding in a foreign currency.
+	 */
+	public function test_public_price_preserves_compatibility_rounding_for_a_numeric_prefix(): void {
+		$this->declare_facade();
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '1.1' );
+		update_option( 'wcpay_multi_currency_price_rounding_eur', '1.00' );
+
+		$this->expect_facade_warnings( 'get_price', 'get_enabled_currencies' );
+		$facade   = $this->get_facade();
+		$currency = $facade->get_enabled_currencies()['EUR'];
+		$expected = $facade->get_price( '50 USD', 'product', $currency );
+
+		$this->assertSame( $expected, MultiCurrencyUtil::convert_price( '50 USD', 'product', 'EUR' ) );
+	}
+
+	/**
 	 * @testdox The first public read builds the same currency state that compatibility callers see.
 	 */
 	public function test_public_utility_matches_compatibility_reads_and_raw_conversion(): void {

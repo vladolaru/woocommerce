@@ -74,12 +74,13 @@ final class MultiCurrencyUtil {
 	 * Convert an amount by exchange rate alone. An unavailable currency leaves the amount unchanged.
 	 *
 	 * @since 11.4.0
-	 * @param float  $amount Amount to convert.
+	 * @param mixed  $amount Amount to convert using PHP's float cast. Null and strings without a numeric prefix become zero.
 	 * @param string $to     Target code, or empty for the selected currency.
 	 * @param string $from   Source code, or empty for the store currency.
 	 * @return float
 	 */
-	public static function convert( float $amount, string $to = '', string $from = '' ): float {
+	public static function convert( $amount, string $to = '', string $from = '' ): float {
+		$amount = (float) $amount;
 		try {
 			switch ( self::owner() ) {
 				case MultiCurrencyRuntimeArbiter::OWNER_EXTENSION:
@@ -104,16 +105,16 @@ final class MultiCurrencyUtil {
 	 * Convert a store price using the target currency's rounding and charm settings for its price type.
 	 *
 	 * @since 11.4.0
-	 * @param float  $amount Amount in store currency.
+	 * @param mixed  $amount Store price converted using PHP's float cast. Null and strings without a numeric prefix become zero.
 	 * @param string $type   One of 'product', 'shipping', 'tax', 'coupon', or 'exchange_rate'.
 	 * @param string $to     Target code, or empty for the selected currency. An unavailable target leaves the price unchanged.
 	 * @return float
 	 */
-	public static function convert_price( float $amount, string $type = 'product', string $to = '' ): float {
+	public static function convert_price( $amount, string $type = 'product', string $to = '' ): float {
 		try {
 			switch ( self::owner() ) {
 				case MultiCurrencyRuntimeArbiter::OWNER_EXTENSION:
-					return ExtensionCurrencyBridge::convert_price( $amount, $type, $to );
+					return ExtensionCurrencyBridge::convert_price( (float) $amount, $type, $to );
 				case MultiCurrencyRuntimeArbiter::OWNER_BUILTIN:
 					return wc_get_container()->get( ServiceFactory::class )->create_price_converter()->get_price(
 						$amount,
@@ -124,7 +125,7 @@ final class MultiCurrencyUtil {
 		} catch ( InvalidCurrencyException | \BadMethodCallException $exception ) {
 			self::warn_once( __METHOD__, $exception->getMessage() );
 		}
-		return $amount;
+		return (float) $amount;
 	}
 
 	/**

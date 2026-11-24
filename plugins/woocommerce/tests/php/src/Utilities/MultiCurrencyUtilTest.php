@@ -36,7 +36,7 @@ class MultiCurrencyUtilTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'CAD', MultiCurrencyUtil::get_store_currency() );
 		$this->assertSame( array( 'CAD' => 1.0 ), MultiCurrencyUtil::get_enabled_currencies() );
 		$this->assertSame( 12.34, MultiCurrencyUtil::convert( 12.34, 'EUR' ) );
-		$this->assertSame( 12.34, MultiCurrencyUtil::convert_price( 12.34, 'product', 'EUR' ) );
+		$this->assertSame( 12.34, MultiCurrencyUtil::convert_price( '12.34', 'product', 'EUR' ) );
 	}
 
 	/**
@@ -140,7 +140,7 @@ class MultiCurrencyUtilTest extends WC_Unit_Test_Case {
 		$this->assertSame( 7.5, MultiCurrencyUtil::convert( 10 ) );
 		$this->assertSame( 10.0, MultiCurrencyUtil::convert( 7.5, 'USD', 'EUR' ) );
 		$this->assertSame( 8.0, MultiCurrencyUtil::convert_price( 10, 'shipping' ) );
-		$this->assertSame( 7.99, MultiCurrencyUtil::convert_price( 10, 'product', 'eur' ) );
+		$this->assertSame( 7.99, MultiCurrencyUtil::convert_price( '10', 'product', 'eur' ) );
 
 		$this->setExpectedIncorrectUsage( MultiCurrencyUtil::class . '::convert()' );
 		$this->setExpectedIncorrectUsage( MultiCurrencyUtil::class . '::convert_price()' );
