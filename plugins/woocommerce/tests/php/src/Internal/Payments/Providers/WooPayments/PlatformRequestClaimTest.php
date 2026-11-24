@@ -746,15 +746,18 @@ class PlatformRequestClaimTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox account.updated with the stored account due forces one refresh in its delivery and queues none.
+	 * @testdox $event_type with the stored account due forces one refresh in its delivery and queues none.
+	 * @testWith ["account.updated"]
+	 *           ["account.deleted"]
+	 * @param string $event_type Account lifecycle event.
 	 */
-	public function test_account_event_forces_its_refresh_and_queues_none(): void {
+	public function test_account_event_forces_its_refresh_and_queues_none( string $event_type ): void {
 		$this->store_due_account();
 
 		$response = $this->deliver(
 			array(
 				'id'   => 'evt_account',
-				'type' => 'account.updated',
+				'type' => $event_type,
 			)
 		);
 
