@@ -149,14 +149,13 @@ export const getWooPaymentsOverviewShell =
 // there is exactly one, with the queries `data/disputes/hooks.ts` and `resolvers.js:25-38, :79-105` build.
 export const getWooPaymentsOverviewDisputesSummary =
 	async (): Promise< WooPaymentsOverviewDisputesSummary > =>
-		apiFetch< WooPaymentsOverviewDisputesSummary >( {
-			path: buildPathWithQuery( `${ DISPUTES_PATH }/summary`, {
+		fetchSummary< WooPaymentsOverviewDisputesSummary >(
+			buildPathWithQuery( `${ DISPUTES_PATH }/summary`, {
 				page: 1,
 				pagesize: 25,
 				search: DISPUTE_AWAITING_RESPONSE_STATUSES,
-			} ),
-			method: 'GET',
-		} );
+			} )
+		);
 
 export const getWooPaymentsOverviewDisputes =
 	async (): Promise< WooPaymentsOverviewDisputesResponse > =>

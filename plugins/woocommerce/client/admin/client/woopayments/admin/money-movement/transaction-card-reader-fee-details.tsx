@@ -174,10 +174,7 @@ export const WooPaymentsCardReaderFeeDetails = ( {
 		'Readers details not loaded',
 		'woocommerce'
 	);
-	const emptyMessage: string = __(
-		'No reader details found.',
-		'woocommerce'
-	);
+	const emptyMessage: string = __( 'No data to display', 'woocommerce' );
 	let liveMessage: string = __( 'Reader details loaded.', 'woocommerce' );
 
 	if ( hasError ) {
@@ -190,8 +187,6 @@ export const WooPaymentsCardReaderFeeDetails = ( {
 		liveMessage = emptyMessage;
 	}
 
-	const handleDownload = rows.length ? () => downloadCsv( rows ) : undefined;
-
 	return (
 		<section
 			className="woocommerce-woopayments-overview-card"
@@ -202,14 +197,14 @@ export const WooPaymentsCardReaderFeeDetails = ( {
 				<h3 id="woocommerce-woopayments-card-readers-heading">
 					{ __( 'Card readers', 'woocommerce' ) }
 				</h3>
-				<Button
-					variant="secondary"
-					disabled={ ! rows.length }
-					accessibleWhenDisabled
-					onClick={ handleDownload }
-				>
-					{ __( 'Download', 'woocommerce' ) }
-				</Button>
+				{ !! rows.length && (
+					<Button
+						variant="secondary"
+						onClick={ () => downloadCsv( rows ) }
+					>
+						{ __( 'Download', 'woocommerce' ) }
+					</Button>
+				) }
 			</div>
 			<LiveStatusMessage isError={ hasError }>
 				{ liveMessage }
@@ -222,10 +217,7 @@ export const WooPaymentsCardReaderFeeDetails = ( {
 						: errorMessage }
 				</StatusMessage>
 			) }
-			{ ! isLoading && ! hasError && ! rows.length && (
-				<StatusMessage>{ emptyMessage }</StatusMessage>
-			) }
-			{ ! isLoading && ! hasError && !! rows.length && (
+			{ ! isLoading && ! hasError && (
 				<table className="woocommerce-woopayments-money-movement__reader-fees-table">
 					<thead>
 						<tr>
@@ -242,6 +234,11 @@ export const WooPaymentsCardReaderFeeDetails = ( {
 						</tr>
 					</thead>
 					<tbody>
+						{ ! rows.length && (
+							<tr>
+								<td colSpan={ 4 }>{ emptyMessage }</td>
+							</tr>
+						) }
 						{ rows.map( ( row, index ) => (
 							<tr
 								key={ `${

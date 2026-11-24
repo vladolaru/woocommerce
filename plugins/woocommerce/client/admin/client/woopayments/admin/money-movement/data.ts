@@ -107,13 +107,12 @@ export const getWooPaymentsReaderChargeSummary = async (
 	transactionId: string,
 	options: { signal?: AbortSignal } = {}
 ): Promise< WooPaymentsReaderChargeSummaryResponse > =>
-	apiFetch< WooPaymentsReaderChargeSummaryResponse >( {
-		path: `${ PAYMENTS_PATH }/readers/charges/${ encodePathSegment(
+	fetchSummary< WooPaymentsReaderChargeSummaryResponse >(
+		`${ PAYMENTS_PATH }/readers/charges/${ encodePathSegment(
 			transactionId
 		) }`,
-		method: 'GET',
-		...( options.signal ? { signal: options.signal } : {} ),
-	} );
+		options.signal
+	);
 
 export const getWooPaymentsTransactionSearch = (
 	searchTerm: string

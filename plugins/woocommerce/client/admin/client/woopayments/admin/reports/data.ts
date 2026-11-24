@@ -7,6 +7,7 @@ import apiFetch from '@wordpress/api-fetch';
  * Internal dependencies
  */
 import { encodePathSegment } from '../../path-segment';
+import { fetchSummary } from '../fetch-summary';
 import {
 	serializeReportsBalanceQuery,
 	serializeReportsFeesExportQuery,
@@ -52,13 +53,12 @@ export const getWooPaymentsReportsFees = (
 export const getWooPaymentsReportsFeesSummary = (
 	query: ReportsFeesQuery = {}
 ): Promise< ReportsFeesSummary > =>
-	apiFetch< ReportsFeesSummary >( {
-		path: appendQueryString(
+	fetchSummary< ReportsFeesSummary >(
+		appendQueryString(
 			`${ REPORTS_PATH }/fees/summary`,
 			serializeReportsFeesSummaryQuery( query )
-		),
-		method: 'GET',
-	} );
+		)
+	);
 
 export const requestWooPaymentsReportsFeesExport = (
 	query: ReportsFeesQuery = {}

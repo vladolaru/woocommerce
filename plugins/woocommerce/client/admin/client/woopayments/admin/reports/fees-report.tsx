@@ -262,7 +262,7 @@ const FeesReport = ( {
 	const serializedQuery = useMemo( () => JSON.stringify( query ), [ query ] );
 	const rows = feesState.data?.fees ?? [];
 	const loadedSummary = feesState.data?.summary;
-	const totalItems = loadedSummary?.count ?? rows.length;
+	const totalItems = loadedSummary?.count ?? 0;
 	const hasError = Boolean( feesState.error );
 	const isLoading = feesState.isLoading;
 	const hasFilters = Boolean( view.search || ( view.filters ?? [] ).length );
@@ -412,8 +412,9 @@ const FeesReport = ( {
 				data: { fees, summary },
 				isLoading: false,
 			} );
+			const count = summary.count ?? 0;
 			recordEvent( 'wcpay_reports_fees_load_success', {
-				total_items: summary.count ?? fees.length,
+				total_items: count,
 				has_filters: Boolean(
 					requestQuery.search ||
 					requestQuery.date_after ||
@@ -427,7 +428,7 @@ const FeesReport = ( {
 				sprintf(
 					/* translators: %d: number of fees loaded into the report table. */
 					__( '%d fees loaded.', 'woocommerce' ),
-					summary.count ?? fees.length
+					count
 				),
 				'polite'
 			);
@@ -740,15 +741,34 @@ const FeesReport = ( {
 		);
 	}
 
+	const exportButton =
+		headerActions &&
+		createPortal(
+			<Button
+				variant="primary"
+				onClick={ handleExport }
+				disabled={ isExporting }
+				accessibleWhenDisabled
+				aria-busy={ isExporting }
+				isBusy={ isExporting }
+			>
+				{ __( 'Export', 'woocommerce' ) }
+			</Button>,
+			headerActions
+		);
+
 	if ( rows.length === 0 && ! hasFilters ) {
 		return (
-			<ReportState
-				title={ __( 'No fees yet', 'woocommerce' ) }
-				description={ __(
-					'Fees will appear here once you start receiving payments.',
-					'woocommerce'
-				) }
-			/>
+			<>
+				{ exportButton }
+				<ReportState
+					title={ __( 'No fees yet', 'woocommerce' ) }
+					description={ __(
+						'Fees will appear here once you start receiving payments.',
+						'woocommerce'
+					) }
+				/>
+			</>
 		);
 	}
 
@@ -759,20 +779,7 @@ const FeesReport = ( {
 		>
 			{ /* Client 11.2.0 `reports/header.tsx:30-34`: Export sits in the page header, with no heading or date select
 			   in the table toolbar; the date presets live in the date filter, as on Balance. */ }
-			{ headerActions &&
-				createPortal(
-					<Button
-						variant="primary"
-						onClick={ handleExport }
-						disabled={ isExporting }
-						accessibleWhenDisabled
-						aria-busy={ isExporting }
-						isBusy={ isExporting }
-					>
-						{ __( 'Export', 'woocommerce' ) }
-					</Button>,
-					headerActions
-				) }
+			{ exportButton }
 			<ReportsDatePresets
 				selectedPreset={ activeDatePreset }
 				onPresetChange={ handlePresetChange }

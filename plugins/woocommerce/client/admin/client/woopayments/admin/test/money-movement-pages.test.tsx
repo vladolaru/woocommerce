@@ -3,6 +3,7 @@
  */
 import fs from 'fs';
 import path from 'path';
+import apiFetch from '@wordpress/api-fetch';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { recordEvent } from '@woocommerce/tracks';
@@ -79,6 +80,8 @@ const mockRecordEvent = recordEvent as jest.MockedFunction<
 let mockHistoryNavigate: ( ( to: string ) => void ) | null = null;
 
 beforeAll( setSiteDateFormats );
+
+jest.mock( '@wordpress/api-fetch', () => jest.fn() );
 
 jest.mock( '@woocommerce/navigation', () => ( {
 	...jest.requireActual( '@woocommerce/navigation' ),
@@ -3652,7 +3655,11 @@ describe( 'WooPayments money movement pages', () => {
 	it( 'renders card reader fee details from the reader charge summary route', async () => {
 		// The platform's rows, as wpcom service/class-charge-authorization-service.php
 		// get_reader_charges_summary_from_readers_transactions_count() builds them.
-		mockGetReaderChargeSummary.mockResolvedValue( [
+		mockGetReaderChargeSummary.mockImplementation(
+			jest.requireActual( '../money-movement/data' )
+				.getWooPaymentsReaderChargeSummary
+		);
+		jest.mocked( apiFetch ).mockResolvedValue( [
 			{
 				reader_id: 'tmr_reader_1',
 				status: 'active',
@@ -3767,25 +3774,39 @@ describe( 'WooPayments money movement pages', () => {
 		);
 	} );
 
-	it( 'shows an empty state for card reader fee routes without rows', async () => {
-		mockGetReaderChargeSummary.mockResolvedValue( [] );
+	it.each( [
+		[ 'empty body', null ],
+		[ 'empty list', [] ],
+	] )(
+		'shows the empty Card readers table for a fulfilled %s',
+		async ( _, response ) => {
+			mockGetReaderChargeSummary.mockImplementation(
+				jest.requireActual( '../money-movement/data' )
+					.getWooPaymentsReaderChargeSummary
+			);
+			jest.mocked( apiFetch ).mockResolvedValue( response );
 
-		render(
-			<MemoryRouter
-				initialEntries={ [
-					'/woopayments/transactions/details?id=ch_reader_fee_123&transaction_id=txn_reader_fee_123&transaction_type=card_reader_fee',
-				] }
-			>
-				<WooPaymentsTransactionDetailsPage />
-			</MemoryRouter>
-		);
+			render(
+				<MemoryRouter
+					initialEntries={ [
+						'/woopayments/transactions/details?id=ch_reader_fee_123&transaction_id=txn_reader_fee_123&transaction_type=card_reader_fee',
+					] }
+				>
+					<WooPaymentsTransactionDetailsPage />
+				</MemoryRouter>
+			);
 
-		await screen.findByRole( 'heading', { name: 'Card readers' } );
-		expect(
-			screen.getAllByText( 'No reader details found.' )
-		).toHaveLength( 2 );
-		expect( screen.queryByRole( 'table' ) ).not.toBeInTheDocument();
-	} );
+			await screen.findByRole( 'heading', { name: 'Card readers' } );
+			expect(
+				await screen.findByRole( 'cell', {
+					name: 'No data to display',
+				} )
+			).toBeInTheDocument();
+			expect(
+				screen.queryByRole( 'button', { name: 'Download' } )
+			).not.toBeInTheDocument();
+		}
+	);
 
 	it( 'times out stalled reader fee summary requests', async () => {
 		jest.useFakeTimers();

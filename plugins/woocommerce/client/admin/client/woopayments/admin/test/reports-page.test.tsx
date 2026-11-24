@@ -1,6 +1,7 @@
 /**
  * External dependencies
  */
+import apiFetch from '@wordpress/api-fetch';
 import {
 	act,
 	fireEvent,
@@ -36,6 +37,8 @@ import {
 	mockUpdateUserPreferences,
 	setMockUserPreferences,
 } from './helpers/user-preferences';
+
+jest.mock( '@wordpress/api-fetch', () => jest.fn() );
 
 // The export raises snackbars; other stores keep the real dispatch.
 jest.mock( '@wordpress/data', () => {
@@ -2237,6 +2240,62 @@ describe( 'WooPaymentsReportsPage', () => {
 			fields?.find( ( field ) => field.id === 'fees' )?.filterBy
 		).toBe( false );
 	} );
+
+	it.each( [
+		[ 'empty', undefined, 0, 1 ],
+		[
+			'full',
+			{ count: 37, sources: [ 'card' ], types: [ 'charge' ] },
+			37,
+			2,
+		],
+	] as const )(
+		'keeps the fee row with a fulfilled %s fees summary',
+		async ( _, summary, count, pages ) => {
+			mockGetFeesSummary.mockImplementation(
+				jest.requireActual( '../reports/data' )
+					.getWooPaymentsReportsFeesSummary
+			);
+			jest.mocked( apiFetch ).mockResolvedValue( summary );
+			renderReportsPage( [ '/woopayments/reports?report_tab=fees' ] );
+
+			expect(
+				await screen.findByRole( 'link', { name: 'txn_123' } )
+			).toBeInTheDocument();
+			expect( mockDataViews.mock.lastCall?.[ 0 ] ).toMatchObject( {
+				paginationInfo: { totalItems: count, totalPages: pages },
+			} );
+			expect( speak ).toHaveBeenCalledWith(
+				`${ count } fees loaded.`,
+				'polite'
+			);
+		}
+	);
+
+	it.each( [
+		[ '', 'No fees yet' ],
+		[ '&search=txn_missing', 'No fees to display' ],
+	] )(
+		'keeps Export with a fulfilled empty fees summary and no rows (%s)',
+		async ( search, heading ) => {
+			mockGetFeesSummary.mockImplementation(
+				jest.requireActual( '../reports/data' )
+					.getWooPaymentsReportsFeesSummary
+			);
+			jest.mocked( apiFetch ).mockResolvedValue( null );
+			mockGetFees.mockResolvedValue( [] );
+			renderReportsPage( [
+				`/woopayments/reports?report_tab=fees${ search }`,
+			] );
+
+			expect(
+				await screen.findByRole( 'heading', { name: heading } )
+			).toBeInTheDocument();
+			expect(
+				screen.getByRole( 'button', { name: 'Export' } )
+			).toBeEnabled();
+		}
+	);
 
 	it( 'renders Fees error and empty states', async () => {
 		mockGetFees.mockImplementationOnce( async () => {

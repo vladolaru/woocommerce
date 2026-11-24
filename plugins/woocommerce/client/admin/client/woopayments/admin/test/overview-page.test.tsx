@@ -3,6 +3,7 @@
  */
 import fs from 'fs';
 import path from 'path';
+import apiFetch from '@wordpress/api-fetch';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useSelect } from '@wordpress/data';
@@ -30,6 +31,8 @@ import { saveOption } from '../../settings/data/actions';
 
 const mockCreateSuccessNotice = jest.fn();
 const mockCreateErrorNotice = jest.fn();
+
+jest.mock( '@wordpress/api-fetch', () => jest.fn() );
 
 jest.mock( '@wordpress/data', () => {
 	const actual = jest.requireActual( '@wordpress/data' );
@@ -1034,11 +1037,15 @@ describe( 'WooPaymentsOverviewPage', () => {
 
 	// Client 11.2.0 `overview/index.js:100-105` asks the summary whatever the store's cached dispute counts say, which a
 	// new dispute leaves at zero until its webhook arrives; the shell carries no count, so the summary alone decides.
-	it( 'shows the dispute task from the summary alone, whatever the cached count', async () => {
+	it( 'shows the dispute task from a fulfilled full disputes summary, whatever the cached count', async () => {
 		mockGetShell.mockResolvedValue( createShell() );
 		mockGetOverview.mockResolvedValue( createDepositsOverview() );
 		mockGetRecent.mockResolvedValue( { data: [], total_count: 0 } );
-		mockGetDisputesSummary.mockResolvedValue( {
+		mockGetDisputesSummary.mockImplementation(
+			jest.requireActual( '../overview/data' )
+				.getWooPaymentsOverviewDisputesSummary
+		);
+		jest.mocked( apiFetch ).mockResolvedValueOnce( {
 			count: 1,
 			amount_by_currency: { usd: 1000 },
 			earliest_due_by: new Date( Date.now() + 24 * 60 * 60 * 1000 )
@@ -1053,6 +1060,28 @@ describe( 'WooPaymentsOverviewPage', () => {
 		expect(
 			await screen.findByText( 'Respond to a dispute for $10.00' )
 		).toBeInTheDocument();
+	} );
+
+	it( 'keeps the overview free of dispute tasks and notices for a fulfilled empty disputes summary', async () => {
+		mockGetOverview.mockResolvedValue( createDepositsOverview() );
+		mockGetRecent.mockResolvedValue( { data: [], total_count: 0 } );
+		mockGetDisputesSummary.mockImplementation(
+			jest.requireActual( '../overview/data' )
+				.getWooPaymentsOverviewDisputesSummary
+		);
+		jest.mocked( apiFetch ).mockResolvedValueOnce( null );
+
+		render( <WooPaymentsOverviewPage /> );
+
+		await screen.findByRole( 'heading', { name: 'Balance' } );
+		expect( mockCreateErrorNotice ).not.toHaveBeenCalled();
+		expect( mockGetOverviewDisputes ).not.toHaveBeenCalled();
+		expect(
+			screen.queryByRole( 'button', { name: 'Respond now' } )
+		).not.toBeInTheDocument();
+		expect(
+			screen.queryByRole( 'button', { name: 'See disputes' } )
+		).not.toBeInTheDocument();
 	} );
 
 	// Client 11.3.0 `overview/index.js:118-132`: the list is withheld until its request settles.
