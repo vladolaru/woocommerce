@@ -632,7 +632,7 @@ class WooPaymentsPaymentOperationService {
 					// the intent status, with no fee meta and no payment completion: the merchant's change set the order
 					// status (class-wc-payments-order-service.php:2381-2429). Its capture writer, which other captures
 					// reach, completes the payment (:2193-2219, :2216).
-					return self::leaving_order_status_when_completed( $outcome )->with_effect_plan( $plan->without_fee_meta() );
+					return self::leaving_order_status_when( PaymentOutcome::STATUS_COMPLETED, $outcome )->with_effect_plan( $plan->without_fee_meta() );
 				} catch ( ApiException $exception ) {
 					$outcome = WooPaymentsIntentCodec::failed_transport_outcome( 'capture', $exception, $intent_id );
 
@@ -660,13 +660,14 @@ class WooPaymentsPaymentOperationService {
 	}
 
 	/**
-	 * Mark a completed capture outcome to leave the order status untouched; return any other outcome as it is.
+	 * Mark an outcome of the given status to leave the order status untouched; return any other outcome as it is.
 	 *
-	 * @param PaymentOutcome $outcome Capture outcome.
+	 * @param string         $status  Outcome status to mark: a completed capture or a canceled authorization.
+	 * @param PaymentOutcome $outcome Capture or cancel outcome.
 	 * @return PaymentOutcome
 	 */
-	private static function leaving_order_status_when_completed( PaymentOutcome $outcome ): PaymentOutcome {
-		if ( PaymentOutcome::STATUS_COMPLETED !== $outcome->get_status() ) {
+	private static function leaving_order_status_when( string $status, PaymentOutcome $outcome ): PaymentOutcome {
+		if ( $status !== $outcome->get_status() ) {
 			return $outcome;
 		}
 
@@ -710,10 +711,7 @@ class WooPaymentsPaymentOperationService {
 				}
 
 				try {
-					$result  = $this->api_client->cancel_intention( $intent_id );
-					$outcome = WooPaymentsIntentCodec::outcome_from_cancel_result( $result );
-
-					return $outcome->with_effect_plan( $this->cancel_plan( $context, $result ) );
+					return $this->cancel_outcome( $context, $this->api_client->cancel_intention( $intent_id ) );
 				} catch ( ApiException $exception ) {
 					// The provider may have canceled the intent already (an expired authorization
 					// whose charge.expired webhook was missed, or a cancel that completed despite
@@ -721,8 +719,7 @@ class WooPaymentsPaymentOperationService {
 					// as in client 11.1.0's cancel_authorization() (class-wc-payment-gateway-wcpay.php:4083-4102).
 					$intent = $this->refetch_intent_after_failure( $intent_id );
 					if ( null !== $intent && 'canceled' === (string) ( $intent['status'] ?? '' ) ) {
-						return WooPaymentsIntentCodec::outcome_from_cancel_result( $intent )
-							->with_effect_plan( $this->cancel_plan( $context, $intent ) );
+						return $this->cancel_outcome( $context, $intent );
 					}
 
 					$outcome = WooPaymentsIntentCodec::failed_transport_outcome( 'cancel', $exception, $intent_id );
@@ -738,6 +735,26 @@ class WooPaymentsPaymentOperationService {
 		}
 
 		return $this->unavailable_outcome( 'cancel' );
+	}
+
+	/**
+	 * Build a cancel's outcome and effect plan from the provider's answer.
+	 *
+	 * A cancel the order's change to Cancelled ran leaves the order status as it is: client 11.3.0's status-change cancel
+	 * sets no status (class-wc-payments-order-service.php:2327-2359), so a status an earlier callback on that change set
+	 * stands, and the order is not moved to Cancelled a second time.
+	 *
+	 * @param PaymentOperationContext $context Cancel context.
+	 * @param array<string,mixed>     $result  Provider cancellation response, or the intent read after a failed cancel.
+	 * @return PaymentOutcome
+	 */
+	private function cancel_outcome( PaymentOperationContext $context, array $result ): PaymentOutcome {
+		$outcome = WooPaymentsIntentCodec::outcome_from_cancel_result( $result );
+		if ( ! empty( $context->get_provider_data()[ self::PROVIDER_DATA_CANCEL_ON_STATUS_CHANGE ] ) ) {
+			$outcome = self::leaving_order_status_when( PaymentOutcome::STATUS_CANCELED, $outcome );
+		}
+
+		return $outcome->with_effect_plan( $this->cancel_plan( $context, $result ) );
 	}
 
 	/**

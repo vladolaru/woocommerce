@@ -341,7 +341,8 @@ class PaymentLifecycleEvent {
 	 * a payment refused before processing, whose status the merchant decides. A completed event neither completes the
 	 * payment nor holds the order. It records the payment on an order whose status was already set, and its payment
 	 * reference becomes the order's transaction ID, replacing a different one. A provider sets it on a completed event
-	 * only for a payment it has decided is the order's own. Other statuses do not read the flag.
+	 * only for a payment it has decided is the order's own. A canceled event does not cancel the order, whose status a
+	 * status change already set. Other statuses do not read the flag.
 	 *
 	 * @return bool
 	 */

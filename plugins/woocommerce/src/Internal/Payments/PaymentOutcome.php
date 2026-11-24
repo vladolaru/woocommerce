@@ -164,7 +164,7 @@ class PaymentOutcome {
 	public const DATA_CHECKOUT_REDIRECT = 'checkout_redirect';
 
 	/**
-	 * Failed and completed outcomes: flags that the outcome must not change the order status.
+	 * Failed, completed and canceled outcomes: flags that the outcome must not change the order status.
 	 *
 	 * The outcome's meta and note effects are still recorded. A failed outcome does not
 	 * fail the order: a payment refused before processing (for example by fraud
@@ -173,8 +173,9 @@ class PaymentOutcome {
 	 * payment nor holds the order. It records the payment on an order whose status
 	 * was already set, and its payment ID becomes the order's transaction ID,
 	 * replacing a different one. A provider sets it on a completed outcome only for a
-	 * payment it has decided is the order's own. Outcomes of other statuses do not
-	 * read the flag.
+	 * payment it has decided is the order's own. A canceled outcome releases the
+	 * payment and does not cancel the order, whose status a status change already set.
+	 * Outcomes of other statuses do not read the flag.
 	 *
 	 * @var string
 	 */

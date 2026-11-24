@@ -2300,6 +2300,263 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A change to Cancelled releases the authorization and keeps the status an earlier Cancelled callback set on the order it was passed: $_dataName.
+	 *
+	 * Client 11.3.0's status-change cancel reads the order when the hook runs, after the callback saved, and never sets a
+	 * status (class-wc-payments-order-service.php:2327-2359), so the reopened status stands. Moving the order back to
+	 * Cancelled would be a second Cancelled change, which runs its side effects (stock, emails) a second time.
+	 *
+	 * @dataProvider status_change_cancels_after_a_reopen
+	 *
+	 * @param string $reopen_to       Status the earlier callback moves the order to, or '' for none.
+	 * @param string $platform        `answers` (the cancel succeeds), `refetch` (the cancel throws and the intent read
+	 *                                again is canceled) or `read` (the order stores `processing`, read as an authorization).
+	 * @param string $order_kind      `woopayments`, or `taken_over` for an order Check payments took over.
+	 * @param string $expected_status Order status after the cancel.
+	 */
+	public function test_status_change_cancel_keeps_the_status_an_earlier_cancelled_callback_set( string $reopen_to, string $platform, string $order_kind, string $expected_status ): void {
+		$stored = 'read' === $platform ? 'processing' : 'requires_capture';
+		$order  = 'taken_over' === $order_kind
+			? $this->create_taken_over_order( 'cheque', self::RECORDED_INTENT, $stored, OrderStatus::ON_HOLD )
+			: $this->create_recorded_authorization_order( $stored, OrderStatus::ON_HOLD );
+		$order->update_meta_data( '_wcpay_transaction_fee', '0.59' );
+		$order->update_meta_data( '_wcpay_net', '10.40' );
+		$order->save();
+		$transport = $this->create_operation_transport( PaymentProcessingService::OPERATION_CANCEL );
+		if ( 'refetch' === $platform ) {
+			$transport->responses = array( self::platform_error( 400 ) );
+		}
+		$reads     = new \ArrayObject();
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $this->create_platform( 'read' === $platform ? $this->recorded_intent( 'authorize_manual_capture' ) : null, null, $reads ) );
+		$this->sut->register();
+		if ( '' !== $reopen_to ) {
+			$this->reopen_in_an_earlier_cancelled_callback( 'same', $reopen_to );
+		}
+		$cancelled = did_action( 'woocommerce_order_status_cancelled' );
+
+		$order->update_status( OrderStatus::CANCELLED );
+
+		$this->assertSame( 'read' === $platform ? array( self::RECORDED_INTENT ) : array(), $reads->getArrayCopy() );
+		$this->assert_released_keeping_the_status( $order, $transport, $expected_status, $cancelled + 1 );
+	}
+
+	/**
+	 * Status-change cancels, the reopen before them, and the status each leaves.
+	 *
+	 * @return array<string,array{string,string,string,string}>
+	 */
+	public function status_change_cancels_after_a_reopen(): array {
+		return array(
+			'no reopen'                                => array( '', 'answers', 'woopayments', OrderStatus::CANCELLED ),
+			'no reopen, canceled intent read again'    => array( '', 'refetch', 'woopayments', OrderStatus::CANCELLED ),
+			'reopened to Pending'                      => array( OrderStatus::PENDING, 'answers', 'woopayments', OrderStatus::PENDING ),
+			'reopened to On hold'                      => array( OrderStatus::ON_HOLD, 'answers', 'woopayments', OrderStatus::ON_HOLD ),
+			'reopened to Failed'                       => array( OrderStatus::FAILED, 'answers', 'woopayments', OrderStatus::FAILED ),
+			'reopened to Pending, intent read again'   => array( OrderStatus::PENDING, 'refetch', 'woopayments', OrderStatus::PENDING ),
+			'reopened to Pending, processing read'     => array( OrderStatus::PENDING, 'read', 'woopayments', OrderStatus::PENDING ),
+			'reopened to Pending, taken over by Check' => array( OrderStatus::PENDING, 'answers', 'taken_over', OrderStatus::PENDING ),
+		);
+	}
+
+	/**
+	 * @testdox A change to Cancelled through the REST API keeps the status an earlier Cancelled callback set, and releases the authorization.
+	 *
+	 * PUT /wc/v3/orders/<id> saves the status through the order object the callbacks are passed.
+	 */
+	public function test_status_change_cancel_through_the_rest_api_keeps_the_status_an_earlier_cancelled_callback_set(): void {
+		$order = $this->create_recorded_authorization_order( 'requires_capture', OrderStatus::ON_HOLD );
+		$order->update_meta_data( '_wcpay_transaction_fee', '0.59' );
+		$order->update_meta_data( '_wcpay_net', '10.40' );
+		$order->save();
+		$transport = $this->create_operation_transport( PaymentProcessingService::OPERATION_CANCEL );
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $this->create_platform( null, null, new \ArrayObject() ) );
+		$this->sut->register();
+		$this->reopen_in_an_earlier_cancelled_callback( 'same', OrderStatus::PENDING );
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		$request = new WP_REST_Request( 'PUT', '/wc/v3/orders/' . $order->get_id() );
+		$request->set_body_params( array( 'status' => OrderStatus::CANCELLED ) );
+		$cancelled = did_action( 'woocommerce_order_status_cancelled' );
+
+		$response = rest_do_request( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assert_released_keeping_the_status( $order, $transport, OrderStatus::PENDING, $cancelled + 1 );
+	}
+
+	/**
+	 * @testdox A change to Cancelled leaves an order reopened to Processing by an earlier callback as it is, with the released-authorization note and no cancelled note.
+	 *
+	 * The order is paid by then, so the cancel's event is skipped as a late release and the stored intent status stays.
+	 */
+	public function test_status_change_cancel_on_an_order_an_earlier_callback_reopened_to_processing_is_skipped_as_late(): void {
+		$order     = $this->create_recorded_authorization_order( 'requires_capture', OrderStatus::ON_HOLD );
+		$transport = $this->create_operation_transport( PaymentProcessingService::OPERATION_CANCEL );
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $this->create_platform( null, null, new \ArrayObject() ) );
+		$this->sut->register();
+		$this->reopen_in_an_earlier_cancelled_callback( 'same', OrderStatus::PROCESSING );
+		$cancelled = did_action( 'woocommerce_order_status_cancelled' );
+
+		$order->update_status( OrderStatus::CANCELLED );
+
+		$stored = wc_get_order( $order->get_id() );
+		$this->assertSame( array( $this->operation_path( PaymentProcessingService::OPERATION_CANCEL ) ), $this->request_paths( $transport ) );
+		$this->assertSame( $cancelled + 1, did_action( 'woocommerce_order_status_cancelled' ) );
+		$this->assertSame( array( OrderStatus::PROCESSING, 'requires_capture' ), array( $stored->get_status(), $stored->get_meta( '_intention_status', true ) ) );
+		$this->assertSame( 1, $this->count_notes_containing( $order, 'was canceled, so that amount was released to the customer. The order is already paid' ) );
+		$this->assertSame( 0, $this->count_notes_containing( $order, 'was successfully <strong>cancelled</strong>' ) );
+	}
+
+	/**
+	 * @testdox A change to Cancelled keeps the status another request stores while the cancel is sent, and releases the authorization.
+	 *
+	 * The hook's order object still reads Cancelled, so the cancel's write records no status change and stores none.
+	 */
+	public function test_status_change_cancel_keeps_the_status_another_request_stores_meanwhile(): void {
+		$order = $this->create_recorded_authorization_order( 'requires_capture', OrderStatus::ON_HOLD );
+		$order->update_meta_data( '_wcpay_transaction_fee', '0.59' );
+		$order->update_meta_data( '_wcpay_net', '10.40' );
+		$order->save();
+		$transport = $this->create_transport_calling( $this->reopen_through_another_object( $order, OrderStatus::PENDING ), $this->create_operation_transport( PaymentProcessingService::OPERATION_CANCEL )->response );
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $this->create_platform( null, null, new \ArrayObject() ) );
+		$this->sut->register();
+		$cancelled = did_action( 'woocommerce_order_status_cancelled' );
+
+		$order->update_status( OrderStatus::CANCELLED );
+
+		$this->assert_released_keeping_the_status( $order, $transport, OrderStatus::PENDING, $cancelled + 1 );
+	}
+
+	/**
+	 * @testdox A queued cancel retry on an order $row.
+	 *
+	 * The retry runs only while the order still reads Cancelled. An order reopened before the retry keeps its authorization
+	 * until it expires or is cancelled by hand, a recorded limit: client 11.3.0 has no retry and releases it at the hook.
+	 *
+	 * @testWith ["still Cancelled releases the authorization", "", "cancelled"]
+	 *           ["reopened before the retry sends nothing", "before", "pending"]
+	 *           ["reopened while the retry is sent keeps the status", "meanwhile", "pending"]
+	 *
+	 * @param string $row             Row name, for the test name.
+	 * @param string $reopen          When another request reopens the order: '', `before` or `meanwhile`.
+	 * @param string $expected_status Order status after the retry.
+	 */
+	public function test_a_queued_cancel_retry_keeps_the_status_of_a_reopened_order( string $row, string $reopen, string $expected_status ): void {
+		unset( $row );
+		$this->set_ownership( 'builtin' );
+		$order = $this->create_recorded_authorization_order( 'requires_capture', OrderStatus::CANCELLED );
+		$order->update_meta_data( '_wcpay_transaction_fee', '0.59' );
+		$order->update_meta_data( '_wcpay_net', '10.40' );
+		$order->save();
+		$answer    = $this->create_operation_transport( PaymentProcessingService::OPERATION_CANCEL )->response;
+		$transport = 'meanwhile' === $reopen ? $this->create_transport_calling( $this->reopen_through_another_object( $order, OrderStatus::PENDING ), $answer ) : $this->create_operation_transport( PaymentProcessingService::OPERATION_CANCEL );
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $this->create_platform( null, null, new \ArrayObject() ) );
+		$this->sut->register();
+		$this->register_retry_listener();
+		if ( 'before' === $reopen ) {
+			( $this->reopen_through_another_object( $order, OrderStatus::PENDING ) )();
+		}
+		$action_id = as_schedule_single_action( time() - 1, self::RETRY_HOOK, $this->retry_args( $order, PaymentProcessingService::OPERATION_CANCEL, 1 ), 'woocommerce_payments' );
+		$cancelled = did_action( 'woocommerce_order_status_cancelled' );
+
+		\ActionScheduler::runner()->process_action( $action_id );
+
+		if ( 'before' === $reopen ) {
+			$stored = wc_get_order( $order->get_id() );
+			$this->assertSame( array(), $this->request_paths( $transport ) );
+			$this->assertSame( array( OrderStatus::PENDING, 'requires_capture' ), array( $stored->get_status(), $stored->get_meta( '_intention_status', true ) ) );
+			$this->assertSame( 0, $this->count_notes_containing( $order, 'was successfully <strong>cancelled</strong>' ) );
+			return;
+		}
+		$this->assert_released_keeping_the_status( $order, $transport, $expected_status, $cancelled );
+	}
+
+	/**
+	 * @testdox The $trigger cancel of an order on hold moves it to Cancelled and releases the authorization.
+	 *
+	 * Client 11.3.0's explicit cancels reach its cancelled-authorization writer, which moves the order to Cancelled
+	 * (class-wc-payments-order-service.php:480-481, :2009-2014).
+	 *
+	 * @testWith ["order screen"]
+	 *           ["list"]
+	 *
+	 * @param string $trigger `order screen` or `list`.
+	 */
+	public function test_an_explicit_cancel_moves_the_order_to_cancelled( string $trigger ): void {
+		$order = $this->create_recorded_authorization_order( 'requires_capture', OrderStatus::ON_HOLD );
+		$order->update_meta_data( '_wcpay_transaction_fee', '0.59' );
+		$order->update_meta_data( '_wcpay_net', '10.40' );
+		$order->save();
+		$transport = $this->create_operation_transport( PaymentProcessingService::OPERATION_CANCEL );
+		$cancelled = did_action( 'woocommerce_order_status_cancelled' );
+
+		$this->run_operation_from( $trigger, PaymentProcessingService::OPERATION_CANCEL, $order, $transport );
+
+		$this->assert_released_keeping_the_status( $order, $transport, OrderStatus::CANCELLED, $cancelled + 1 );
+	}
+
+	/**
+	 * Assert that the order's authorization was released once and the order holds the given status: one cancel request,
+	 * the stored intent status canceled, the fee and net deleted, one cancelled note, and the given count of changes to
+	 * Cancelled so far.
+	 *
+	 * @param WC_Order       $order               Order.
+	 * @param FakeHttpClient $transport           Platform transport the cancel went through.
+	 * @param string         $expected_status     Order status read from the data store.
+	 * @param int            $expected_cancelled  How many times the Cancelled hook has fired in this process.
+	 */
+	private function assert_released_keeping_the_status( WC_Order $order, FakeHttpClient $transport, string $expected_status, int $expected_cancelled ): void {
+		$stored   = wc_get_order( $order->get_id() );
+		$cancel   = $this->operation_path( PaymentProcessingService::OPERATION_CANCEL );
+		$requests = array_filter( $this->request_paths( $transport ), static fn( string $path ): bool => $cancel === $path );
+		$this->assertSame( $expected_status, $stored->get_status() );
+		$this->assertSame( $expected_cancelled, did_action( 'woocommerce_order_status_cancelled' ), 'Changes to Cancelled.' );
+		$this->assertCount( 1, $requests, 'One cancel request.' );
+		$this->assertSame( 'canceled', $stored->get_meta( '_intention_status', true ) );
+		$this->assertFalse( $stored->meta_exists( '_wcpay_transaction_fee' ) );
+		$this->assertFalse( $stored->meta_exists( '_wcpay_net' ) );
+		$this->assertSame( 1, $this->count_notes_containing( $order, 'was successfully <strong>cancelled</strong>' ) );
+	}
+
+	/**
+	 * Move the order to a status from a callback on the change to Cancelled that runs before WooPayments's, once, through
+	 * the order object the hook passes (`same`) or through another one (`other`).
+	 *
+	 * @param string $form   `same` or `other`.
+	 * @param string $status Status to move the order to.
+	 */
+	private function reopen_in_an_earlier_cancelled_callback( string $form, string $status ): void {
+		$ran = false;
+		add_action(
+			'woocommerce_order_status_cancelled',
+			static function ( $order_id, $order = null ) use ( $form, $status, &$ran ): void {
+				if ( $ran ) {
+					return;
+				}
+				$ran    = true;
+				$target = 'same' === $form && $order instanceof WC_Order ? $order : wc_get_order( $order_id );
+				$target->update_status( $status );
+			},
+			5,
+			2
+		);
+	}
+
+	/**
+	 * A change another request makes: the order moved to a status through an order object of its own.
+	 *
+	 * @param WC_Order $order  Order.
+	 * @param string   $status Status to move the order to.
+	 * @return callable
+	 */
+	private function reopen_through_another_object( WC_Order $order, string $status ): callable {
+		return static function () use ( $order, $status ): void {
+			$other = wc_get_order( $order->get_id() );
+			$other->set_status( $status );
+			$other->save();
+		};
+	}
+
+	/**
 	 * The order's stored meta, by key, as the data store holds it.
 	 *
 	 * @param WC_Order $order Order.

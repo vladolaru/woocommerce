@@ -128,6 +128,35 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A canceled event that keeps the order status leaves the status as it is and still writes its meta and its note once.
+	 *
+	 * A cancel run by a change to Cancelled keeps the status a callback on that change set, as a failed event that keeps the
+	 * status does.
+	 */
+	public function test_canceled_event_keeping_the_order_status_writes_its_meta_and_note(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( OrderStatus::PENDING );
+		$order->update_meta_data( '_wcpay_transaction_fee', '0.59' );
+		$order->update_meta_data( '_wcpay_net', '9.41' );
+		$order->save();
+		$cancelled = did_action( 'woocommerce_order_status_cancelled' );
+
+		$this->apply_event_under_lock(
+			$order,
+			new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_CANCELED, 'pi_kept', array( '_intention_status' => 'canceled' ), array( '_wcpay_transaction_fee', '_wcpay_net' ), 'Payment canceled.', null, array(), true )
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( OrderStatus::PENDING, $order->get_status() );
+		$this->assertSame( $cancelled, did_action( 'woocommerce_order_status_cancelled' ), 'No change to Cancelled.' );
+		$this->assertSame( 'canceled', $order->get_meta( '_intention_status', true ) );
+		$this->assertFalse( $order->meta_exists( '_wcpay_transaction_fee' ) );
+		$this->assertFalse( $order->meta_exists( '_wcpay_net' ) );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Payment canceled.' ) );
+	}
+
+	/**
 	 * @testdox Order meta is normalised the same way through a lifecycle event and through the meta-only write: $_dataName.
 	 *
 	 * Scalars become strings, structured values are JSON-encoded, and a meta key to delete is matched as a string.

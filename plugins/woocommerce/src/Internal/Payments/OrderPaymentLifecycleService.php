@@ -481,6 +481,10 @@ class OrderPaymentLifecycleService {
 				return true;
 
 			case PaymentLifecycleEvent::STATUS_CANCELED:
+				if ( $event->should_preserve_order_status() ) {
+					return false;
+				}
+
 				$order->update_status( OrderStatus::CANCELLED );
 				return true;
 
