@@ -82,6 +82,7 @@ class AbilitiesRegistrarTest extends AbilityTestCase {
 			Domain\GetDepositsSummary::class,
 			Domain\RefundCharge::class,
 			Domain\UploadDisputeEvidenceFile::class,
+			Domain\SubmitDisputeEvidence::class,
 		);
 		add_filter( self::GATE, static fn() => $value );
 		$this->assertSame( $expected, apply_filters( self::CLASS_FILTER, $prior ) );
