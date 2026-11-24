@@ -729,7 +729,10 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 		}
 
 		$replacements = array(
-			'WCPay\\MultiCurrency\\MultiCurrency::remove_woo_admin_notes()'      => "Use Automattic\\WooCommerce\\Admin\\Notes\\Notes::delete_notes_with_name( 'wc-payments-notes-multi-currency-available' ) instead.",
+			'WCPay\\MultiCurrency\\MultiCurrency::get_price()'                      => 'Use MultiCurrencyUtil::convert_price() instead.',
+			'WCPay\\MultiCurrency\\MultiCurrency::get_raw_conversion()'             => 'Use MultiCurrencyUtil::convert() instead.',
+			'WCPay\\MultiCurrency\\MultiCurrency::is_enabled()'                     => 'Use MultiCurrencyUtil::is_active() instead.',
+			'WCPay\\MultiCurrency\\MultiCurrency::remove_woo_admin_notes()'         => "Use Automattic\\WooCommerce\\Admin\\Notes\\Notes::delete_notes_with_name( 'wc-payments-notes-multi-currency-available' ) instead.",
 			'WCPay\\MultiCurrency\\Compatibility::should_convert_shipping_amount()' => "Use ! \$shipping_method || (bool) apply_filters( 'wcpay_multi_currency_should_convert_shipping_amount', true, \$shipping_method ) instead.",
 		);
 		$this->assertCount( 11, $notices );

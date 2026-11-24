@@ -140,7 +140,7 @@ class MultiCurrency {
 	 *
 	 * @since 11.0.0
 	 * @since 11.4.0 Added the optional target currency.
-	 * @deprecated 11.4.0 No public replacement.
+	 * @deprecated 11.4.0 Use MultiCurrencyUtil::convert_price() instead.
 	 *
 	 * @param mixed                      $amount   Price amount.
 	 * @param string                     $type     Price type.
@@ -148,7 +148,7 @@ class MultiCurrency {
 	 * @return float
 	 */
 	public function get_price( $amount, string $type, ?MultiCurrencyCurrency $currency = null ): float {
-		self::warn_compatibility_method( __METHOD__ );
+		self::warn_compatibility_method( __METHOD__, 'MultiCurrencyUtil::convert_price()' );
 
 		return $this->get_service_factory()->create_price_converter()->get_price( $amount, $type, $currency );
 	}
@@ -159,7 +159,7 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0 No public replacement.
+	 * @deprecated 11.4.0 Use MultiCurrencyUtil::convert() instead.
 	 *
 	 * @param float  $amount        Amount.
 	 * @param string $to_currency   Target currency code.
@@ -167,7 +167,7 @@ class MultiCurrency {
 	 * @return float
 	 */
 	public function get_raw_conversion( float $amount, string $to_currency, string $from_currency = '' ): float {
-		self::warn_compatibility_method( __METHOD__ );
+		self::warn_compatibility_method( __METHOD__, 'MultiCurrencyUtil::convert()' );
 
 		if ( '' === $from_currency ) {
 			$from_currency = $this->get_state()->get_default_currency()->get_code();
@@ -214,12 +214,12 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0 No public replacement.
+	 * @deprecated 11.4.0 Use MultiCurrencyUtil::is_active() instead.
 	 *
 	 * @return bool
 	 */
 	public static function is_enabled(): bool {
-		self::warn_compatibility_method( __METHOD__ );
+		self::warn_compatibility_method( __METHOD__, 'MultiCurrencyUtil::is_active()' );
 
 		return true;
 	}
