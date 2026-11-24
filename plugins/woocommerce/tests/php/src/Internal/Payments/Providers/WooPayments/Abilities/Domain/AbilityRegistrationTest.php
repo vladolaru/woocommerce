@@ -96,10 +96,6 @@ class AbilityRegistrationTest extends AbilityTestCase {
 		foreach ( array( 'label', 'description', 'category' ) as $field ) {
 			$this->assertSame( $record->$field, $ability->{ 'get_' . $field }(), "$record->name $field" );
 		}
-		if ( self::PREFIX . 'get-dispute' === $record->name ) {
-			// The built-in read describes the route constraint missing from the extension's input description.
-			$record->input_schema->properties->dispute_id->description = 'Stripe dispute ID using letters, digits, or underscores. The word `summary` is reserved.';
-		}
 		$meta   = $ability->get_meta();
 		$fields = array(
 			'input_schema'  => $ability->get_input_schema(),

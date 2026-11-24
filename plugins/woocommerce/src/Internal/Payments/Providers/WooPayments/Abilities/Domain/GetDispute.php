@@ -36,7 +36,7 @@ final class GetDispute extends AbstractAbility {
 		return array(
 			'label'        => __( 'Get dispute by ID', 'woocommerce' ),
 			'description'  => __( 'Look up a single dispute by ID. Answers \'what evidence is needed for dispute du_X and by when?\'.', 'woocommerce' ),
-			'input_schema' => self::get_id_input_schema( __( 'Stripe dispute ID using letters, digits, or underscores. The word `summary` is reserved.', 'woocommerce' ) ),
+			'input_schema' => self::get_id_input_schema( __( 'Stripe dispute ID (typically `du_…` or legacy `dp_…`). Stripe ID prefixes are not contractually stable, so this field is not pattern-validated.', 'woocommerce' ) ),
 		);
 	}
 
