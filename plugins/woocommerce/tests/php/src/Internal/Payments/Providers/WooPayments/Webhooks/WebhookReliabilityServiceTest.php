@@ -2010,15 +2010,17 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A lost invoice job notes only the existing order its billing handler updates.
+	 * @testdox A dropped invoice leaves a note only for a paid invoice with an existing renewal.
 	 * @testWith ["invoice.paid"]
 	 *           ["invoice.payment_failed"]
 	 *           ["invoice.upcoming"]
+	 *           ["invoice.upcoming", true, true]
 	 *           ["invoice.paid", false]
 	 * @param string $type   Invoice event type.
 	 * @param bool   $loaded Whether the billing module loaded.
+	 * @param bool   $worker Whether to exhaust a worker retry instead of sweeping the event.
 	 */
-	public function test_dropped_update_invoice( string $type, bool $loaded = true ): void {
+	public function test_dropped_update_invoice( string $type, bool $loaded = true, bool $worker = false ): void {
 		WooCommerceSubscriptionsDoubles::load();
 		$module = $this->getMockBuilder( StripeBillingModule::class )
 			->onlyMethods( array( 'is_loaded' ) )
@@ -2044,14 +2046,29 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 					'subscription' => 'sub_order',
 				),
 			),
-			WebhookReliabilityService::RETRY_ATTEMPTS_EVENT_KEY => 'invoice.paid' === $type ? 3 : 0,
+			WebhookReliabilityService::RETRY_ATTEMPTS_EVENT_KEY => $worker || 'invoice.paid' === $type ? 3 : 0,
 		);
 		try {
 			$store->set_event( 'evt_invoice', $event, time() - 2 * DAY_IN_SECONDS );
-			$this->sut->sweep_queued_events();
-			$expected = $loaded ? array( 'A WooPayments update for this order (event evt_invoice) could not be applied. Check the payment in your WooPayments dashboard.' ) : array();
-			$this->assertSame( 'invoice.upcoming' === $type ? $expected : array(), wp_list_pluck( wc_get_order_notes( array( 'order_id' => $subscription->get_id() ) ), 'content' ) );
-			$this->assertSame( 'invoice.upcoming' === $type ? array() : $expected, wp_list_pluck( wc_get_order_notes( array( 'order_id' => $renewal->get_id() ) ), 'content' ) );
+			if ( $worker ) {
+				// Upcoming invoices normally get one attempt. Exercise the final retry with the same order lookup.
+				$failure  = new \RuntimeException( 'Processing failed.' );
+				$ingestor = $this->createPartialMock( EventIngestor::class, array( 'process', 'is_retried_event' ) );
+				$ingestor->method( 'process' )->willThrowException( $failure );
+				$ingestor->method( 'is_retried_event' )->willReturn( true );
+				$service = $this->create_service( new RecordingActionSchedulerService(), new StaticFailedEventsApiClient(), $ingestor );
+				try {
+					$service->process_event( 'evt_invoice' );
+					$this->fail( 'Action Scheduler must receive the final failure.' );
+				} catch ( \RuntimeException $exception ) {
+					$this->assertSame( $failure, $exception );
+				}
+			} else {
+				$this->sut->sweep_queued_events();
+			}
+			$expected = $loaded && 'invoice.paid' === $type ? array( 'A WooPayments update for this order (event evt_invoice) could not be applied. Check the payment in your WooPayments dashboard.' ) : array();
+			$this->assertSame( array(), wp_list_pluck( wc_get_order_notes( array( 'order_id' => $subscription->get_id() ) ), 'content' ) );
+			$this->assertSame( $expected, wp_list_pluck( wc_get_order_notes( array( 'order_id' => $renewal->get_id() ) ), 'content' ) );
 			$this->assertNull( $store->get_row( 'evt_invoice' ) );
 		} finally {
 			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] );

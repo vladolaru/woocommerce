@@ -277,7 +277,8 @@ class EventIngestor {
 	}
 
 	/**
-	 * Find the existing order for a dropped invoice event.
+	 * Find the renewal order for a dropped invoice.paid event. If it does not exist yet, no note is written.
+	 * An invoice.upcoming note would land on the subscription. An invoice.payment_failed handler can fail after applying the update.
 	 *
 	 * @since 11.4.0
 	 *
@@ -286,7 +287,7 @@ class EventIngestor {
 	 * @return \WC_Order|null
 	 */
 	public function find_existing_invoice_order( string $event_type, array $event_object ): ?\WC_Order {
-		if ( ! $this->is_stripe_billing_invoice_event( $event_type ) ) {
+		if ( 'invoice.paid' !== $event_type ) {
 			return null;
 		}
 		return $this->get_stripe_billing_module()->find_existing_invoice_order( $event_type, $event_object );
