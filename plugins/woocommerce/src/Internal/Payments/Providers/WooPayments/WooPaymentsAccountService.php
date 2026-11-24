@@ -667,11 +667,18 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 			return;
 		}
 
-		$tier = 'yes' === ( $this->get_stored_gateway_settings()['enabled'] ?? null ) ? WooPaymentsSetupTier::ACTIVE : WooPaymentsSetupTier::CONNECTED;
-		if ( $is_read && WooPaymentsSetupTier::CONNECTED === $tier && WooPaymentsSetupTier::ACTIVE === $this->setup_tier->get_stored_tier() ) {
-			return;
+		$tier   = 'yes' === ( $this->get_stored_gateway_settings()['enabled'] ?? null ) ? WooPaymentsSetupTier::ACTIVE : WooPaymentsSetupTier::CONNECTED;
+		$stored = $this->setup_tier->get_stored_tier();
+		if ( ! $is_read ) {
+			$this->setup_tier->write_tier( $tier );
+		} elseif ( $tier !== $stored && ! ( WooPaymentsSetupTier::CONNECTED === $tier && WooPaymentsSetupTier::ACTIVE === $stored ) && false === $this->setup_tier->raise_from( $tier, $stored ) ) {
+			// Written only over the tier this read saw, so a reader that started before a finished reset cannot raise the
+			// store again. When the tier moved meanwhile, the row is marked so the next request reads the account again.
+			$cache_contents = $this->get_account_cache();
+			if ( is_array( $cache_contents ) ) {
+				$this->database_cache->write( WooPaymentsDatabaseCache::ACCOUNT_KEY, array_merge( $cache_contents, array( 'fetched' => 0 ) ) );
+			}
 		}
-		$this->setup_tier->write_tier( $tier );
 	}
 
 	/**
@@ -788,13 +795,13 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 			return self::RECHECK_NOT_OWNER;
 		}
 
+		// Ownership is read past this request's cached options, which another request may have outdated.
+		$this->legacy_proxy->call_function( 'wp_cache_delete', 'alloptions', 'options' );
+		$this->legacy_proxy->call_function( 'wp_cache_delete', WooPaymentsSetupTier::OPTION_NAME, 'options' );
 		$this->runtime_arbiter->invalidate();
 		if ( ! $this->runtime_arbiter->is_builtin_owner() ) {
 			return self::RECHECK_NOT_OWNER;
 		}
-
-		$this->legacy_proxy->call_function( 'wp_cache_delete', 'alloptions', 'options' );
-		$this->legacy_proxy->call_function( 'wp_cache_delete', WooPaymentsSetupTier::OPTION_NAME, 'options' );
 		$this->setup_tier->invalidate();
 		if ( ( $kept_tier ?? WooPaymentsSetupTier::AVAILABLE ) !== $this->setup_tier->get_stored_tier() ) {
 			return self::RECHECK_TIER_MOVED;
@@ -822,6 +829,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 			return self::RECHECK_NO_ACCOUNT_ID;
 		}
 
+		$this->legacy_proxy->call_function( 'wp_cache_delete', 'alloptions', 'options' );
 		$this->runtime_arbiter->invalidate();
 		if ( ! $this->runtime_arbiter->is_builtin_owner() ) {
 			return self::RECHECK_NOT_OWNER;

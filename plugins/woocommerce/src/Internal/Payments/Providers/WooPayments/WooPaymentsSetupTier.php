@@ -258,7 +258,7 @@ final class WooPaymentsSetupTier {
 			return false;
 		}
 
-		return $this->raise( $tier, self::AVAILABLE );
+		return $this->raise_from( $tier, self::AVAILABLE );
 	}
 
 	/**
@@ -271,32 +271,28 @@ final class WooPaymentsSetupTier {
 	 * @return bool|null True when written, false when the stored tier was not `disabled` or missing, null when the write failed.
 	 */
 	public function raise_to_available(): ?bool {
-		if ( add_option( self::OPTION_NAME, self::AVAILABLE, '', true ) ) {
-			$this->invalidate();
-			return true;
-		}
-
-		return $this->raise( self::AVAILABLE, self::DISABLED );
+		return $this->raise_from( self::AVAILABLE, self::DISABLED );
 	}
 
 	/**
-	 * Write a tier only while the database holds the given lower one, then drop the request memo and the cached options.
+	 * Write a tier only while the database holds the one read before, then drop the request memo and the cached options.
+	 *
+	 * A missing tier reads as `disabled`, so from `disabled` the tier is first inserted where no row exists; the insert
+	 * never replaces a row another request wrote since (add_option() would, trusting this request's cached misses).
+	 *
+	 * @since 11.4.0
 	 *
 	 * @param string $tier Setup tier to write.
 	 * @param string $from Setup tier the database must still hold.
 	 * @return bool|null True when written, false when the stored tier was not `$from`, null when the write failed.
 	 */
-	private function raise( string $tier, string $from ): ?bool {
+	public function raise_from( string $tier, string $from ): ?bool {
 		global $wpdb;
 
-		$updated = $wpdb->query(
-			$wpdb->prepare(
-				"UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s AND option_value = %s",
-				$tier,
-				self::OPTION_NAME,
-				$from
-			)
-		);
+		$updated = self::DISABLED === $from ? $wpdb->query( $wpdb->prepare( "INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, %s)", self::OPTION_NAME, $tier, wp_determine_option_autoload_value( self::OPTION_NAME, $tier, $tier, true ) ) ) : 0;
+		if ( 0 === $updated ) {
+			$updated = $wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s AND option_value = %s", $tier, self::OPTION_NAME, $from ) );
+		}
 		wp_cache_delete( 'alloptions', 'options' );
 		wp_cache_delete( self::OPTION_NAME, 'options' );
 		$this->invalidate();

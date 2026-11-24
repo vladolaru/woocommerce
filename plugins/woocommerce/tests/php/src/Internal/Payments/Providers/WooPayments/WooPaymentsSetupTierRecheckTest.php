@@ -232,11 +232,14 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 	public function test_k2_an_empty_answer_with_no_stored_tier_writes_available(): void {
 		delete_option( WooPaymentsSetupTier::OPTION_NAME );
 		$this->tier->invalidate();
+		$this->assertFalse( get_option( WooPaymentsSetupTier::OPTION_NAME ), 'This request has read the tier as missing.' );
 
 		$this->account_service->get_cached_account_data( true );
 
 		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->stored_tier() );
 		$this->assertArrayHasKey( WooPaymentsSetupTier::OPTION_NAME, wp_load_alloptions( true ) );
+		$this->tier->invalidate();
+		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->tier->get_stored_tier(), 'This request reads it too.' );
 	}
 
 	/**
@@ -460,6 +463,134 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 		wc_get_container()->get( WooPaymentsSetupTierRecheck::class )->handle( $follow_up[0], $follow_up[1] );
 
 		$this->assertSame( 0, $this->client->plain_gets );
+		$this->assertSame( $row_before, $this->raw_row() );
+	}
+
+	/**
+	 * @testdox I2: an empty read on a store with no stored tier leaves a tier another request inserted after this one read it as missing.
+	 */
+	public function test_i2_an_empty_read_leaves_a_tier_inserted_meanwhile(): void {
+		global $wpdb;
+
+		delete_option( WooPaymentsSetupTier::OPTION_NAME );
+		$this->tier->invalidate();
+		$this->assertSame( WooPaymentsSetupTier::DISABLED, $this->tier->get_stored_tier(), 'This request reads the tier as missing.' );
+		$wpdb->insert(
+			$wpdb->options,
+			array(
+				'option_name'  => WooPaymentsSetupTier::OPTION_NAME,
+				'option_value' => WooPaymentsSetupTier::ACTIVE,
+				'autoload'     => 'on',
+			)
+		);
+
+		$this->account_service->cache_account_data( array() );
+
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $this->stored_tier() );
+	}
+
+	/**
+	 * @testdox I3: an account read that saw available and the gateway off leaves active when another request enabled the gateway meanwhile.
+	 */
+	public function test_i3_an_account_read_leaves_a_concurrent_enable(): void {
+		global $wpdb;
+
+		$this->tier->write_tier( WooPaymentsSetupTier::AVAILABLE );
+		update_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array( 'enabled' => 'no' ) );
+		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->tier->get_stored_tier() );
+		$this->assertSame( 'no', get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION )['enabled'] );
+		$wpdb->update( $wpdb->options, array( 'option_value' => maybe_serialize( array( 'enabled' => 'yes' ) ) ), array( 'option_name' => WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION ) );
+		$wpdb->update( $wpdb->options, array( 'option_value' => WooPaymentsSetupTier::ACTIVE ), array( 'option_name' => WooPaymentsSetupTier::OPTION_NAME ) );
+
+		$this->account_service->cache_account_data( $this->account() );
+
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $this->stored_tier() );
+	}
+
+	/**
+	 * @testdox I4: a positive read that lost its promotion to an empty read published meanwhile leaves its row marked for a foreground refresh, and the next request raises the tier from what is then stored.
+	 */
+	public function test_i4_a_lost_promotion_marks_the_row_for_the_next_request(): void {
+		global $wpdb;
+
+		update_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array( 'enabled' => 'yes' ) );
+		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::DISABLED );
+		$this->tier->invalidate();
+		$this->assertSame( WooPaymentsSetupTier::DISABLED, $this->tier->get_stored_tier(), 'This read sees disabled.' );
+		// An empty read in another request lifted the tier to available meanwhile.
+		$wpdb->update( $wpdb->options, array( 'option_value' => WooPaymentsSetupTier::AVAILABLE ), array( 'option_name' => WooPaymentsSetupTier::OPTION_NAME ) );
+
+		$this->account_service->cache_account_data( $this->account() );
+
+		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->stored_tier(), 'The promotion matched no row.' );
+		$this->assertSame( 0, $this->stored_row()['fetched'], 'The row is marked for a foreground refresh.' );
+		$this->assertSame( $this->account(), $this->stored_row()['data'] );
+
+		$this->next_request();
+		$this->client->answer = fn() => $this->account();
+		$this->account_service->get_cached_account_data();
+
+		$this->assertSame( 1, $this->client->foreground_gets );
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $this->stored_tier() );
+	}
+
+	/**
+	 * @testdox I10: a $_dataName reads no account once another request made the extension active, though this request still read the built-in as the owner.
+	 * @testWith ["low-tier step"]
+	 *           ["follow-up"]
+	 *
+	 * @param string $read Which read runs.
+	 */
+	public function test_i10_a_read_after_another_request_activated_the_extension_reads_nothing( string $read ): void {
+		global $wpdb;
+
+		$this->tier->write_tier( 'follow-up' === $read ? WooPaymentsSetupTier::ACTIVE : WooPaymentsSetupTier::AVAILABLE );
+		update_option(
+			self::ROW,
+			array(
+				'data'               => array(),
+				'fetched'            => time(),
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			),
+			false
+		);
+		$this->arbiter->invalidate();
+		$this->assertTrue( $this->arbiter->is_builtin_owner() );
+		$wpdb->update( $wpdb->options, array( 'option_value' => maybe_serialize( array( 'woocommerce-payments/woocommerce-payments.php' ) ) ), array( 'option_name' => 'active_plugins' ) );
+
+		$outcome = 'follow-up' === $read ? $this->account_service->reread_kept_tier( WooPaymentsSetupTier::ACTIVE ) : $this->account_service->recheck_low_tier();
+
+		$this->assertSame( 0, $this->client->plain_gets );
+		$this->assertSame( WooPaymentsAccountService::RECHECK_NOT_OWNER, $outcome );
+	}
+
+	/**
+	 * @testdox I10: a follow-up whose read finds the account stores nothing once another request made the extension active during the read.
+	 */
+	public function test_i10_a_follow_up_publishes_nothing_after_the_extension_took_over_during_its_read(): void {
+		global $wpdb;
+
+		$this->tier->write_tier( WooPaymentsSetupTier::ACTIVE );
+		update_option(
+			self::ROW,
+			array(
+				'data'               => array(),
+				'fetched'            => time(),
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			),
+			false
+		);
+		$row_before           = $this->raw_row();
+		$this->client->answer = function () use ( $wpdb ): array {
+			$wpdb->update( $wpdb->options, array( 'option_value' => maybe_serialize( array( 'woocommerce-payments/woocommerce-payments.php' ) ) ), array( 'option_name' => 'active_plugins' ) );
+			return $this->account();
+		};
+
+		$this->assertSame( WooPaymentsAccountService::RECHECK_NOT_OWNER, $this->account_service->reread_kept_tier( WooPaymentsSetupTier::ACTIVE ) );
+
+		$this->assertSame( 1, $this->client->plain_gets );
 		$this->assertSame( $row_before, $this->raw_row() );
 	}
 
@@ -1136,7 +1267,7 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox R34: when a race leaves the cached options at available over a raised stored tier, the next account refresh's tier write logs its failed readback and drops the cached options, so the next read with a fresh memo gets the raised tier.
+	 * @testdox R34: when a race leaves the cached options at available over a raised stored tier, the next account refresh writes only over available, leaves the raised tier and drops the cached options, so the next read with a fresh memo gets the raised tier.
 	 */
 	public function test_r34_a_stale_low_cached_tier_clears_at_the_next_account_refresh(): void {
 		global $wpdb;
@@ -1151,9 +1282,7 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 
 		$this->account_service->cache_account_data( $this->account() );
 
-		$errors = $this->logger->get_errors();
-		$this->assertCount( 1, $errors );
-		$this->assertStringContainsString( 'WooPayments setup tier write failed: requested active, stored available, autoloaded yes.', $errors[0][1] );
+		$this->assertSame( array(), $this->logger->get_errors() );
 		$this->tier->invalidate();
 		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $this->tier->get_stored_tier(), 'The next read gets the raised tier.' );
 	}
