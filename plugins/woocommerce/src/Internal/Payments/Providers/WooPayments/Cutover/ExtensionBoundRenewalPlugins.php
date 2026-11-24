@@ -91,6 +91,16 @@ class ExtensionBoundRenewalPlugins {
 		if ( $this->legacy_proxy->call_function( 'is_multisite' ) ) {
 			$plugin_files = array_merge( $plugin_files, array_keys( (array) $this->legacy_proxy->call_function( 'get_site_option', 'active_sitewide_plugins', array() ) ) );
 		}
+		return $this->find_listed_plugin_files( $plugin_files );
+	}
+
+	/**
+	 * Find the listed renewal plugins in a site's or network's plugin files.
+	 *
+	 * @param array<int|string,mixed> $plugin_files Plugin files to check.
+	 * @return string[]
+	 */
+	public function find_listed_plugin_files( array $plugin_files ): array {
 		$matches = array();
 		foreach ( $plugin_files as $plugin_file ) {
 			if ( is_string( $plugin_file ) && isset( self::PLUGINS[ self::get_plugin_slug( $plugin_file ) ] ) && ! in_array( $plugin_file, $matches, true ) ) {

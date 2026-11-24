@@ -3916,6 +3916,22 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A claim defers and keeps WooPayments active when this request hides a stored renewal plugin.
+	 */
+	public function test_claim_defers_for_a_hidden_renewal_plugin(): void {
+		$this->arrange_extension_era_store();
+		$plugins = array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, 'order-subscriptions/order-subscriptions.php' );
+		update_option( 'active_plugins', $plugins );
+		add_filter( 'option_active_plugins', static fn() => array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
+
+		$record = $this->run_first_attempt_with_stored_list_preflight( new PreflightService() );
+
+		$this->assertSame( StateStore::STATE_DEFERRED, $record['state'], 'Claim step: ' . $record['current_step'] );
+		$this->assertSame( array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE ), $record['deferred_codes'] );
+		$this->assertSame( $plugins, $this->read_stored_active_plugins() );
+	}
+
+	/**
 	 * @testdox A plugin that renews through the WooPayments extension holds the switch back with a retry, never an exclusion, and the attempt after its deactivation finalizes.
 	 */
 	public function test_extension_renewal_plugin_defers_the_switch_until_it_is_deactivated(): void {

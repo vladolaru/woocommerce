@@ -582,7 +582,7 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	public function test_operational_action_query_failure_fails_closed( $database_results, string $database_error ): void {
 		$wpdb                          = $this->getMockBuilder( \wpdb::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'has_cap', 'prepare', 'esc_like', 'get_results' ) )
+			->onlyMethods( array( 'has_cap', 'prepare', 'esc_like', 'get_results', 'get_var' ) )
 			->getMock();
 		$wpdb->actionscheduler_actions = 'wp_actionscheduler_actions';
 		$wpdb->actionscheduler_groups  = 'wp_actionscheduler_groups';
@@ -590,6 +590,13 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 		$wpdb->method( 'has_cap' )->with( 'identifier_placeholders' )->willReturn( true );
 		$wpdb->method( 'prepare' )->willReturnArgument( 0 );
 		$wpdb->method( 'esc_like' )->willReturnArgument( 0 );
+		// Only the queue query fails. Each subsequent plugin-list read clears the previous query's error.
+		$wpdb->method( 'get_var' )->willReturnCallback(
+			static function () use ( $wpdb ) {
+				$wpdb->last_error = '';
+				return null;
+			}
+		);
 		$wpdb->expects( $this->exactly( 2 ) )
 			->method( 'get_results' )
 			->willReturnCallback(
@@ -1354,6 +1361,62 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 		$is_multisite = true;
 
 		$this->assertTrue( $sut->is_woopayments_network_active(), 'On a multisite the network plugin list counts.' );
+	}
+
+	/**
+	 * @testdox The switch waits if a renewal plugin is active in either the stored or the filtered site list.
+	 * @testWith [true, false]
+	 *           [false, true]
+	 *
+	 * @param bool $stored   Whether the renewal plugin is stored as active.
+	 * @param bool $filtered Whether this request sees the renewal plugin.
+	 */
+	public function test_stored_or_filtered_site_renewal_plugin_holds_the_switch_back( bool $stored, bool $filtered ): void {
+		$listed = array( 'order-subscriptions/order-subscriptions.php' );
+		update_option( 'active_plugins', $stored ? $listed : array() );
+		add_filter( 'option_active_plugins', static fn() => $filtered ? $listed : array() );
+
+		$this->assertSame( array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE ), $this->create_sut()->get_failures() );
+	}
+
+	/**
+	 * @testdox The switch waits for a network-active renewal plugin hidden in this request.
+	 * @group multisite
+	 */
+	public function test_hidden_network_renewal_plugin_holds_the_switch_back(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+		update_site_option( 'active_sitewide_plugins', array( 'yith-woocommerce-subscription-premium/init.php' => 1 ) );
+		add_filter( 'site_option_active_sitewide_plugins', static fn() => array() );
+
+		$this->assertSame( array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE ), $this->create_sut()->get_failures() );
+	}
+
+	/**
+	 * @testdox The switch waits when it cannot check the stored site list for renewal plugins.
+	 */
+	public function test_unreadable_site_plugin_list_holds_the_switch_back(): void {
+		$sut                               = $this->create_sut();
+		$this->read_failure                = new StoredPluginListReadFailure();
+		$this->read_failure->site_failures = 1;
+
+		$this->assertSame( array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE ), $sut->get_failures() );
+	}
+
+	/**
+	 * @testdox The switch waits when it cannot check the stored network list for renewal plugins.
+	 * @group multisite
+	 */
+	public function test_unreadable_network_plugin_list_holds_the_switch_back(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+		$sut                                  = $this->create_sut();
+		$this->read_failure                   = new StoredPluginListReadFailure();
+		$this->read_failure->network_failures = 1;
+
+		$this->assertSame( array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE ), $sut->get_failures() );
 	}
 
 	/**

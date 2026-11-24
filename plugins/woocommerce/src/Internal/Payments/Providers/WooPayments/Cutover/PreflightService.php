@@ -198,7 +198,12 @@ class PreflightService {
 		if ( $this->get_bundled_subscriptions_guard()->is_bundled_subscriptions_store() ) {
 			$failures[] = self::FAILURE_BUNDLED_SUBSCRIPTIONS;
 		}
-		if ( array() !== $this->get_renewal_plugins()->get_active_plugin_files() ) {
+		$stored_site     = $this->read_stored_site_plugins();
+		$stored_network  = $this->read_stored_network_plugins();
+		$renewal_plugins = $this->get_renewal_plugins();
+		if ( array() !== $renewal_plugins->get_active_plugin_files()
+			|| null === $stored_site || null === $stored_network
+			|| array() !== $renewal_plugins->find_listed_plugin_files( array_merge( $stored_site, $stored_network ) ) ) {
 			$failures[] = self::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE;
 		}
 
