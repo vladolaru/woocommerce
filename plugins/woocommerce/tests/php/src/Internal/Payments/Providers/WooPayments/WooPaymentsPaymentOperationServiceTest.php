@@ -3,6 +3,13 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\StoreApi\Payments\PaymentResult;
+use Automattic\WooCommerce\StoreApi\Payments\PaymentContext;
+use Automattic\WooCommerce\StoreApi\Legacy;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\EuVatNumber;
 use Automattic\WooCommerce\Internal\Orders\PaymentInfo;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventIngestor;
@@ -90,6 +97,102 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 
 
 	use ProviderTextLogAssertions;
+
+	/**
+	 * Place an already-started wallet through the Store API gateway bridge and inspect the platform transport.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 * @testWith ["Amazon Pay", "card", "shipping", ["card","amazon_pay"], ["card","amazon_pay"]]
+	 *           ["Amazon Pay billing tax: not the suppression's; existing difference, recorded separately", "card", "billing", ["card","amazon_pay"], ["card"]]
+	 *           ["Apple Pay", "card", "shipping", ["card"], ["card"]]
+	 *           ["Google Pay", "card", "shipping", ["card"], ["card"]]
+	 *           ["split Apple Pay", "apple_pay", "shipping", ["card"], []]
+	 *           ["split Google Pay", "google_pay", "shipping", ["card"], []]
+	 *
+	 * @param string   $wallet    Wallet credential used at checkout.
+	 * @param string   $method    Gateway selected at placement.
+	 * @param string   $tax_basis Address used for taxes.
+	 * @param string[] $submitted Stripe types sent by the shopper.
+	 * @param string[] $expected  Stripe types in the request, or empty if the gateway is unavailable.
+	 */
+	public function test_eu_vat_checkout_transport( string $wallet, string $method, string $tax_basis, array $submitted, array $expected ): void {
+		EuVatNumber::load();
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::ACTIVE );
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
+		update_option( '_wcpay_feature_dynamic_checkout_place_order_button', '1' );
+		update_option( 'woocommerce_calc_taxes', 'yes' );
+		update_option( 'woocommerce_tax_based_on', $tax_basis );
+		update_option( 'woocommerce_currency', 'USD' );
+		foreach ( array( 'apple_pay', 'google_pay', 'amazon_pay' ) as $wallet_id ) {
+			update_option( 'woocommerce_woocommerce_payments_' . $wallet_id . '_settings', array( 'enabled' => 'yes' ) );
+		}
+		$settings = array(
+			'enabled'                             => 'yes',
+			'express_checkout_in_payment_methods' => 'card' === $method ? 'no' : 'yes',
+			'express_checkout_checkout_methods'   => array( 'payment_request', 'amazon_pay' ),
+			'upe_enabled_payment_method_ids'      => array( 'card', 'amazon_pay', 'apple_pay', 'google_pay' ),
+		);
+		update_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, $settings );
+		$account  = $this->create_account_service(
+			true,
+			$settings,
+			array(
+				'account_id'                       => 'acct_wallet',
+				'test_publishable_key'             => 'pk_test_wallet',
+				'details_submitted'                => true,
+				'ece_confirmation_tokens_disabled' => false,
+				'capabilities'                     => array(
+					'card_payments'       => 'active',
+					'amazon_pay_payments' => 'active',
+				),
+			)
+		);
+		$customer = $this->createMock( WooPaymentsCustomerService::class );
+		$customer->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_wallet' );
+		$http           = new FakeHttpClient();
+		$http->response = self::http_json(
+			200,
+			array(
+				'id'             => 'pi_wallet',
+				'status'         => 'succeeded',
+				'payment_method' => 'pm_wallet',
+				'currency'       => 'usd',
+				'amount'         => 5000,
+			)
+		);
+		$provider       = $this->create_provider_over_fake_transport( $http, $account, $customer );
+		$gateway        = new WooPaymentsGateway( ( new PaymentMethodRegistry() )->get( $method ) );
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider, null, null, $account );
+		WC()->payment_gateways()->payment_gateways = array( $gateway );
+
+		$order   = $this->create_woopayments_order( '50.00' );
+		$context = new PaymentContext();
+		$context->set_order( $order );
+		$context->set_payment_method( $gateway->id );
+		$context->set_payment_data(
+			array(
+				'wcpay-confirmation-token' => 'ctoken_wallet',
+				WooPaymentsExpressPaymentMethodTypes::CHECKOUT_FIELD => wp_json_encode( $submitted ),
+				WooPaymentsExpressPaymentMethodTypes::CONTEXT_FIELD => 'checkout',
+			)
+		);
+
+		$result = new PaymentResult();
+		( new Legacy() )->process_legacy_payment( $context, $result );
+		if ( array() === $expected ) {
+			$this->assertSame( array(), self::platform_calls( $http ), $wallet );
+			$this->assertNull( $context->get_payment_method_instance() );
+			return;
+		}
+		$this->assertSame( array( 'POST intentions' ), self::platform_calls( $http ), $wallet );
+		$this->assertIsString( $http->last_body );
+		$payload = json_decode( $http->last_body, true );
+		$this->assertSame( $expected, $payload['payment_method_types'] );
+		$this->assertSame( 'ctoken_wallet', $payload['confirmation_token'] );
+	}
 
 	/**
 	 * Charge refunded in `Fixtures/platform-refund-list.json`.

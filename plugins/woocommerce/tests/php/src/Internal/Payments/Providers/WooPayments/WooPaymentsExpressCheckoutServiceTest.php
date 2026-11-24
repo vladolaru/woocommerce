@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\EuVatNumber;
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -18,6 +19,23 @@ use WC_Unit_Test_Case;
  * Tests for the WooPaymentsExpressCheckoutService class.
  */
 class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
+
+	/**
+	 * The settings at all wallet locations and the script decision follow EU VAT.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_eu_vat_hides_express_scripts_and_locations(): void {
+		EuVatNumber::load();
+		$this->set_up_virtual_product_context( 'checkout' );
+		$sut = $this->create_service( EuVatNumber::wallet_settings() );
+		foreach ( array( 'product', 'cart', 'checkout', 'pay_for_order' ) as $context ) {
+			$this->assertSame( array(), $sut->get_methods_enabled_at_location( $context ), $context );
+			$this->assertSame( array(), $sut->get_allowed_payment_method_types_for_context( $context ), $context );
+		}
+		$this->assertFalse( $sut->should_load_express_checkout_scripts( 'checkout' ) );
+	}
 
 	/**
 	 * Tear down test fixtures.

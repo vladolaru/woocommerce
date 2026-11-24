@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\EuVatNumber;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTosRestController;
@@ -132,14 +133,20 @@ class WooPaymentsTosRestControllerTest extends WC_REST_Unit_Test_Case {
 
 	/**
 	 * @testdox ToS route records acceptance, enables the gateway, and refreshes account data.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_tos_route_accepts_terms(): void {
+		EuVatNumber::load();
+		$choices = EuVatNumber::wallet_settings();
+		update_option( 'woocommerce_woocommerce_payments_settings', $choices );
 		$this->sut = $this->create_controller();
 		$this->sut->register_routes();
 
 		$response = $this->server->dispatch( $this->create_tos_request( array( 'accept' => true ) ) );
 
 		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( $choices, array_intersect_key( get_option( 'woocommerce_woocommerce_payments_settings' ), $choices ) );
 		$this->assertSame( array( 'result' => 'success' ), $response->get_data() );
 		$this->assertSame( 'yes', $this->get_gateway_enabled_setting() );
 		$this->assertSame(

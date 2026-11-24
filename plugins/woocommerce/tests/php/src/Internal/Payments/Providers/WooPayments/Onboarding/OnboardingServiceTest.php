@@ -3,6 +3,7 @@ declare( strict_types=1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Onboarding;
 
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\EuVatNumber;
 use Automattic\Jetpack\Connection\Manager as WPCOM_Connection_Manager;
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Admin\Notes\Note;
@@ -469,8 +470,11 @@ class OnboardingServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string   $route_suffix             Route below the onboarding step base.
 	 * @param string[] $enabled_at_platform_call Enabled payment methods stored when the platform is called.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_nox_route_applies_woopay_and_wallet_picks_turned_on( string $route_suffix, array $enabled_at_platform_call ): void {
+		EuVatNumber::load();
 		$fixture = $this->arrange_nox_picks(
 			array(
 				'card'         => true,

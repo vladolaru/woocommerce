@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\EuVatNumber;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
@@ -49,6 +50,43 @@ use WC_Unit_Test_Case;
 class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	use FailedOrderCardRender;
 
+
+	/**
+	 * The authenticated wallet callback retrieves the original intent and creates none.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_eu_vat_ajax_confirms_the_existing_intent(): void {
+		EuVatNumber::load();
+		set_current_screen( 'dashboard' );
+		$order = $this->create_order_for_intent_binding( 'payment' );
+		$order->update_meta_data( '_intent_id', 'pi_existing_wallet' );
+		$order->save();
+		$client = $this->createMock( Client::class );
+		$client->method( 'is_available' )->willReturn( true );
+		$client->expects( $this->never() )->method( 'create_and_confirm_payment_intention' );
+		$client->expects( $this->once() )->method( 'get_payment_intention' )->with( 'pi_existing_wallet' )->willReturn(
+			array(
+				'id'       => 'pi_existing_wallet',
+				'status'   => 'succeeded',
+				'amount'   => 5000,
+				'currency' => 'usd',
+				'metadata' => array( 'order_id' => (string) $order->get_id() ),
+			)
+		);
+		$response = $this->create_controller( $client )->confirm_order_payment(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => 'pi_existing_wallet',
+			)
+		);
+		$this->assertSame( 200, $response['status_code'] );
+		$paid = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $paid );
+		$this->assertTrue( $paid->is_paid() );
+	}
 
 	/**
 	 * Original store currency.

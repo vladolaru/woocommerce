@@ -87,9 +87,6 @@ class WooPaymentsExpressPaymentMethodTypes {
 	/**
 	 * Get the express checkout methods offered in a context.
 	 *
-	 * The one resolver for the buttons and for the charge-time allowlist, so a method a shopper can start is a method
-	 * the charge accepts, and the reverse. Client 11.1.0 derives both from gateway enablement (gateway :5284-5315).
-	 *
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
 	 * @param string                    $context         Express checkout context.
 	 * @param string                    $currency        Optional order/cart currency; the store currency when empty.
@@ -97,7 +94,19 @@ class WooPaymentsExpressPaymentMethodTypes {
 	 */
 	public static function get_enabled_methods_for_context( WooPaymentsAccountService $account_service, string $context = 'checkout', string $currency = '' ): array {
 		$context = self::normalize_context( $context );
-		$methods = self::get_configured_methods_for_context( $account_service, $context );
+		return self::get_available_methods( $account_service, self::get_configured_methods_for_context( $account_service, $context ), $context, $currency );
+	}
+
+	/**
+	 * Apply the account and currency checks after resolving the location's methods.
+	 *
+	 * @param WooPaymentsAccountService $account_service WooPayments account service.
+	 * @param string[]                  $methods         Configured methods.
+	 * @param string                    $context         Normalized express context.
+	 * @param string                    $currency        Order or cart currency.
+	 * @return string[]
+	 */
+	private static function get_available_methods( WooPaymentsAccountService $account_service, array $methods, string $context, string $currency ): array {
 		// The buttons pass no currency and the charge passes the order's; Amazon Pay's availability depends on it.
 		$currency = '' === $currency ? get_woocommerce_currency() : $currency;
 
@@ -126,6 +135,22 @@ class WooPaymentsExpressPaymentMethodTypes {
 			$context,
 			$currency
 		);
+	}
+
+	/**
+	 * Validate an already-started wallet against the stored choice. The extension's charge does not consult
+	 * the displayed locations EU VAT masks, so this caller alone skips the display decision.
+	 *
+	 * @param WooPaymentsAccountService $account_service WooPayments account service.
+	 * @param string                    $context         Express context.
+	 * @param string                    $currency        Order currency.
+	 * @return string[]
+	 */
+	public static function get_payment_method_types_for_charge( WooPaymentsAccountService $account_service, string $context, string $currency ): array {
+		$context = self::normalize_context( $context );
+		$setting = $account_service->get_gateway_setting( self::get_location_setting_key( $context ), null );
+		$methods = self::resolve_location_methods( $account_service, $setting );
+		return self::get_allowed_payment_method_types_for_methods( $account_service, self::get_available_methods( $account_service, $methods, $context, $currency ), $context, $currency );
 	}
 
 	/**
@@ -207,8 +232,44 @@ class WooPaymentsExpressPaymentMethodTypes {
 	 * @return array<int,string>
 	 */
 	public static function get_configured_methods_for_context( WooPaymentsAccountService $account_service, string $context ): array {
-		$setting_context = 'pay_for_order' === $context ? 'checkout' : $context;
-		$methods         = $account_service->get_gateway_setting( 'express_checkout_' . $setting_context . '_methods', null );
+		return self::resolve_location_methods( $account_service, self::get_display_location_setting( $account_service, $context ) );
+	}
+
+	/**
+	 * Read the location for buttons. WooPay uses the gateway form default when the option has never been saved.
+	 *
+	 * @param WooPaymentsAccountService $account_service  WooPayments account service.
+	 * @param string                    $context          Express context.
+	 * @param bool                      $use_form_default Whether a missing option uses the form default.
+	 * @return mixed Stored location list, its fallback, or an empty list while hidden.
+	 */
+	public static function get_display_location_setting( WooPaymentsAccountService $account_service, string $context, bool $use_form_default = false ) {
+		if ( wc_get_container()->get( EuVatNumberIntegration::class )->suppresses_express() ) {
+			return array();
+		}
+		$key = self::get_location_setting_key( $context );
+		return $use_form_default ? $account_service->get_gateway_setting( $key ) : $account_service->get_gateway_setting( $key, null );
+	}
+
+	/**
+	 * Get the location key shared by checkout and order-pay.
+	 *
+	 * @param string $context Express context.
+	 * @return string
+	 */
+	private static function get_location_setting_key( string $context ): string {
+		$location = 'pay_for_order' === $context ? 'checkout' : $context;
+		return 'express_checkout_' . $location . '_methods';
+	}
+
+	/**
+	 * Resolve the location list, falling back to card wallets only for a missing setting.
+	 *
+	 * @param WooPaymentsAccountService $account_service WooPayments account service.
+	 * @param mixed                     $methods         Location setting.
+	 * @return string[]
+	 */
+	private static function resolve_location_methods( WooPaymentsAccountService $account_service, $methods ): array {
 
 		if ( is_array( $methods ) ) {
 			return self::normalize_express_method_ids( $methods );
@@ -232,7 +293,8 @@ class WooPaymentsExpressPaymentMethodTypes {
 	 * @return bool
 	 */
 	public static function is_express_checkout_in_payment_methods_enabled( WooPaymentsAccountService $account_service ): bool {
-		return WooPaymentsSettingsService::is_dynamic_checkout_place_order_button_enabled()
+		return ! wc_get_container()->get( EuVatNumberIntegration::class )->suppresses_express()
+			&& WooPaymentsSettingsService::is_dynamic_checkout_place_order_button_enabled()
 			&& 'yes' === $account_service->get_gateway_setting( 'express_checkout_in_payment_methods', 'no' );
 	}
 

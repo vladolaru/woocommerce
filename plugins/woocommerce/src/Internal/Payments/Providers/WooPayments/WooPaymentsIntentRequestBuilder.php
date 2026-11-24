@@ -611,7 +611,7 @@ class WooPaymentsIntentRequestBuilder {
 			? (string) $provider_data[ WooPaymentsExpressPaymentMethodTypes::PROVIDER_CONTEXT_KEY ]
 			: 'checkout';
 		// The same resolver as the express buttons, so the charge accepts exactly what the buttons offered.
-		$allowed_types   = WooPaymentsExpressPaymentMethodTypes::get_allowed_payment_method_types_for_context( $this->account_service, $express_context, $currency );
+		$allowed_types   = WooPaymentsExpressPaymentMethodTypes::get_payment_method_types_for_charge( $this->account_service, $express_context, $currency );
 		$validated_types = WooPaymentsExpressPaymentMethodTypes::validate_submitted_payment_method_types( $submitted_types, $allowed_types );
 
 		return empty( $validated_types ) ? $this->card_payment_method_types( $currency ) : $validated_types;

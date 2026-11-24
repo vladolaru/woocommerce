@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay;
 
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\EuVatNumber;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\OrderStatusSync;
@@ -30,6 +31,25 @@ class OrderStatusSyncTest extends WC_Unit_Test_Case {
 	private const TRANSLATED_NAME              = 'Synchronisation du statut des commandes WooPay';
 	private const PLUGIN_TEXT_DOMAIN           = 'woocommerce-payments';
 	private const ROTATION_DUE_OPTION          = 'woocommerce_woopayments_woopay_webhook_rotation_due';
+
+	/**
+	 * A shopper-side restriction must not remove the merchant's WooPay webhook.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_eu_vat_account_refresh_keeps_webhook(): void {
+		EuVatNumber::load();
+		$webhook = $this->create_woopayments_extension_webhook();
+		$sync    = $this->create_sync( true, true );
+		$sync->register();
+		do_action( 'woocommerce_payments_account_refreshed' );
+		$this->assertSame( array( $webhook->get_id() ), $this->find_woopay_webhook_ids() );
+		$order = WC_Helper_Order::create_order();
+		$order->update_meta_data( 'is_woopay', '1' );
+		$order->save();
+		$this->assertSame( array( $webhook->get_id() ), $this->count_deliveries_of_a_status_change( $order ) );
+	}
 
 	/**
 	 * Created sync instances whose hooks must be removed after each test.

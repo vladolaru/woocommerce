@@ -3,7 +3,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay;
 
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\EuVatNumber;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use WC_Unit_Test_Case;
 
 // phpcs:disable Generic.Files.OneObjectStructurePerFile.MultipleFound,Squiz.Classes.ClassFileName.NoMatch,SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName -- Focused test doubles live next to the tests they support.
@@ -28,6 +30,46 @@ class FakeWooPaySubscriptionProduct extends \WC_Product_Simple {
 class EligibilityTest extends WC_Unit_Test_Case {
 
 	use WooPayServicesFixture;
+
+	/**
+	 * EU VAT masks the checkout location even when an extension forces the WooPay button on.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_eu_vat_location_wins_after_the_woopay_button_filter(): void {
+		EuVatNumber::load();
+		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
+		$eligibility = $this->create_eligibility();
+		$answers     = array();
+		add_filter(
+			'wcpay_woopay_enabled',
+			static function ( $enabled ) use ( &$answers ) {
+				$answers[] = $enabled;
+				return true;
+			}
+		);
+
+		$this->assertFalse( $eligibility->should_show_woopay_button( 'checkout' ) );
+		$this->assertSame( array( false ), $answers );
+	}
+
+	/**
+	 * WooPay's session hooks follow the shopper decision.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_eu_vat_skips_woopay_session_init(): void {
+		EuVatNumber::load();
+		$controller = $this->register_controller( $this->create_service() );
+		$this->assertFalse( has_action( 'wc_ajax_wcpay_init_woopay', array( $controller, 'handle_init_woopay' ) ) );
+		$transport = $this->createMock( Client::class );
+		$transport->expects( $this->never() )->method( 'create_and_confirm_payment_intention' );
+		wc_get_container()->replace( Client::class, $transport );
+		$this->assertFalse( has_action( 'wc_ajax_wcpay_add_to_cart' ) );
+		do_action( 'wc_ajax_wcpay_add_to_cart' );
+	}
 
 	/**
 	 * @testdox Should hide the WooPay button when the base gateway is filtered out of available gateways.

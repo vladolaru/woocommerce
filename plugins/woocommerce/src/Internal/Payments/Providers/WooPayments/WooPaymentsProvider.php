@@ -381,6 +381,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 		// without the gateway enabled, as in the client (client 11.1.0 `includes/class-wc-payments.php:611,649`).
 		foreach ( array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
 			foreach ( array( RequestTypeUtil::FRONT, RequestTypeUtil::ADMIN, RequestTypeUtil::AJAX, RequestTypeUtil::REST, RequestTypeUtil::CRON, RequestTypeUtil::CLI ) as $request ) {
+				$matrix[ $state ][ $request ][] = EuVatNumberIntegration::class;
 				$matrix[ $state ][ $request ][] = SubscriptionsController::class;
 				// A REST server can start in any request, and an internal REST dispatch there must find the provider's routes, as
 				// WooCommerce's own routes and client 11.3.0's do (`includes/class-wc-payments.php:841`). The registrar resolves

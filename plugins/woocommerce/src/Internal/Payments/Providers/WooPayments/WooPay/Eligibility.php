@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\EuVatNumberIntegration;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressPaymentMethodTypes;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPageSurface;
@@ -62,6 +63,15 @@ class Eligibility {
 	 */
 	public function is_woopay_enabled(): bool {
 		return $this->is_woopay_setting_on() && $this->is_woopay_eligible();
+	}
+
+	/**
+	 * Read the merchant's WooPay choice for settings and webhook maintenance.
+	 *
+	 * @return bool
+	 */
+	public function is_woopay_enabled_by_merchant(): bool {
+		return 'yes' === $this->account_service->get_gateway_setting( 'platform_checkout', 'no' ) && $this->is_woopay_eligible();
 	}
 
 	/**
@@ -306,9 +316,7 @@ class Eligibility {
 	 * @return bool
 	 */
 	public function is_woopay_express_checkout_configured_at( string $context ): bool {
-
-		$setting_key = 'express_checkout_' . $this->get_button_location( $context ) . '_methods';
-		$methods     = $this->account_service->get_gateway_setting( $setting_key );
+		$methods = WooPaymentsExpressPaymentMethodTypes::get_display_location_setting( $this->account_service, WooPaymentsExpressPaymentMethodTypes::normalize_context( $context ), true );
 
 		if ( is_array( $methods ) ) {
 			return in_array( 'woopay', $methods, true );
@@ -570,7 +578,8 @@ class Eligibility {
 	 * @return bool
 	 */
 	private function is_woopay_setting_on(): bool {
-		return 'yes' === $this->account_service->get_gateway_setting( 'platform_checkout', 'no' );
+		return ! wc_get_container()->get( EuVatNumberIntegration::class )->suppresses_woopay()
+			&& 'yes' === $this->account_service->get_gateway_setting( 'platform_checkout', 'no' );
 	}
 
 	/**
@@ -609,20 +618,5 @@ class Eligibility {
 	 */
 	private function get_page_surface(): WooPaymentsPageSurface {
 		return wc_get_container()->get( WooPaymentsPageSurface::class );
-	}
-
-	/**
-	 * Get the express checkout location whose settings apply to a context.
-	 *
-	 * The order-pay page is a checkout page for the location settings, as in client 11.1.0, where is_checkout() holds there
-	 * (class-wc-payments-woopay-button-handler.php:273, class-wc-payments-express-checkout-button-helper.php:284-286).
-	 *
-	 * @param string $context Context.
-	 * @return string
-	 */
-	private function get_button_location( string $context ): string {
-		$context = WooPaymentsExpressPaymentMethodTypes::normalize_context( $context );
-
-		return 'pay_for_order' === $context ? 'checkout' : $context;
 	}
 }

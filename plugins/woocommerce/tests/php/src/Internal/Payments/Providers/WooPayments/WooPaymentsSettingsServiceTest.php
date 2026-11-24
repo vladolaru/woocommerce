@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\EuVatNumber;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\DatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\NoticeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\MerchantRestController;
@@ -38,6 +39,7 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 use WP_Error;
 use WP_REST_Request;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\EuVatNumberIntegration;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\RecordingWooPaySessionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\RecordingWooPayAppearanceStore;
@@ -48,6 +50,95 @@ use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\
 class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 
 	use ProviderTextLogAssertions;
+
+	/**
+	 * The gateway REST route used by the admin and WP-CLI, and the account reset, preserve wallet settings.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_eu_vat_gateway_updates_preserve_wallet_choices(): void {
+		EuVatNumber::load();
+		$option  = 'woocommerce_woocommerce_payments_settings';
+		$choices = EuVatNumber::wallet_settings();
+		update_option( $option, $choices );
+		$this->make_builtin_active();
+		$admin = $this->factory->user->create( array( 'role' => 'administrator' ) );
+		$this->assertIsInt( $admin );
+		wp_set_current_user( $admin );
+		WC()->payment_gateways()->payment_gateways = array( $this->create_card_gateway() );
+
+		$request = new WP_REST_Request( 'PUT', '/wc/v3/payment_gateways/woocommerce_payments' );
+		$request->set_body_params( array( 'title' => 'Card payments' ) );
+		$response = rest_do_request( $request );
+		$this->assertSame( 200, $response->get_status(), (string) wp_json_encode( $response->get_data() ) );
+		$this->assertSame( 'Card payments', get_option( $option )['title'] );
+		$this->assertSame( $choices, array_intersect_key( get_option( $option ), $choices ) );
+
+		require_once WC_ABSPATH . 'tests/php/src/Internal/CLI/Migrator/Mocks/MockWPCLI.php';
+		if ( ! function_exists( 'WP_CLI\Utils\get_flag_value' ) ) {
+			require_once WC_ABSPATH . 'tests/cli/features/bootstrap/utils.php';
+		}
+		require_once WC_ABSPATH . 'includes/cli/class-wc-cli-rest-command.php';
+		$command = new \WC_CLI_REST_Command( 'payment_gateway', '/wc/v3/payment_gateways/(?P<id>[\w-]+)', array() );
+		$command->update_item( array( 'woocommerce_payments' ), array( 'title' => 'Credit card' ) );
+		$cli_settings = get_option( $option );
+		$this->assertSame( 'Credit card', $cli_settings['title'] );
+		foreach ( $choices as $key => $value ) {
+			$this->assertSame( $value, $cli_settings[ $key ], $key );
+		}
+
+		wc_get_container()->get( WooPaymentsAccountService::class )->cleanup_after_account_reset();
+		$stored = get_option( $option );
+		$this->assertSame( 'no', $stored['enabled'] );
+		foreach ( $choices as $key => $value ) {
+			$this->assertSame( $value, $stored[ $key ], $key );
+		}
+	}
+
+	/**
+	 * A merchant can read, save and enable wallets while shoppers cannot start them.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_eu_vat_keeps_wallet_choices_on_the_settings_screen(): void {
+		EuVatNumber::load();
+		$choices = EuVatNumber::wallet_settings();
+		update_option( 'woocommerce_woocommerce_payments_settings', $choices );
+		$this->set_whole_settings_account_fields();
+		$account                                       = get_option( 'wcpay_account_data' );
+		$account['data']['platform_checkout_eligible'] = true;
+		update_option( 'wcpay_account_data', $account );
+		set_transient( 'wcpay_fraud_protection_settings', array(), DAY_IN_SECONDS );
+		$this->make_builtin_active();
+
+		$roots = WooPaymentsProvider::get_classes_by_setup_tier()[ WooPaymentsSetupTier::ACTIVE ]['rest'];
+		if ( in_array( EuVatNumberIntegration::class, $roots, true ) ) {
+			wc_get_container()->get( EuVatNumberIntegration::class )->register();
+		}
+		$params = $this->sut->get_settings();
+		$this->assertTrue( $params['is_woopay_enabled'] );
+		$this->assertTrue( $params['is_express_checkout_in_payment_methods_enabled'] );
+		foreach ( array( 'product', 'cart', 'checkout' ) as $location ) {
+			$key = 'express_checkout_' . $location . '_methods';
+			$this->assertSame( $choices[ $key ], $params[ $key ] );
+		}
+		$params['is_debug_log_enabled'] = true;
+		$response                       = $this->post_settings( $params );
+		$this->assertSame( 200, $response->get_status(), (string) wp_json_encode( $response->get_data() ) );
+		$stored = get_option( 'woocommerce_woocommerce_payments_settings' );
+		foreach ( $choices as $key => $value ) {
+			$this->assertSame( $value, $stored[ $key ], $key );
+		}
+
+		$stored['platform_checkout'] = 'no';
+		update_option( 'woocommerce_woocommerce_payments_settings', $stored );
+		$response = $this->post_settings( array( 'is_woopay_enabled' => true ) );
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_settings' )['platform_checkout'] );
+		$this->assertTrue( $response->get_data()['is_woopay_enabled'] );
+	}
 
 	/**
 	 * The System Under Test.

@@ -860,9 +860,8 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( 'is_woopay', true );
 		$order->save();
 
-		// The action fires only while WooPay is on.
 		$woopay_eligibility = $this->createStub( Eligibility::class );
-		$woopay_eligibility->method( 'is_woopay_enabled' )->willReturn( true );
+		$woopay_eligibility->method( 'is_woopay_enabled_by_merchant' )->willReturn( true );
 		$container = wc_get_container();
 		$sync      = new OrderStatusSync();
 		$sync->init( $container->get( WooPaymentsRuntimeArbiter::class ), $woopay_eligibility, $container->get( Client::class ), $container->get( TransientRowLock::class ), $container->get( WooPaymentsAccountService::class ) );

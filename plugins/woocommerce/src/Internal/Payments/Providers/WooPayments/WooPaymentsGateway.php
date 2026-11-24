@@ -763,8 +763,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return bool
 	 */
 	public function is_express_checkout_in_payment_methods_enabled(): bool {
-		return WooPaymentsSettingsService::is_dynamic_checkout_place_order_button_enabled()
-			&& 'yes' === (string) $this->get_account_service()->get_gateway_setting( 'express_checkout_in_payment_methods', 'no' );
+		return WooPaymentsExpressPaymentMethodTypes::is_express_checkout_in_payment_methods_enabled( $this->get_account_service() );
 	}
 
 	/**
