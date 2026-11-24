@@ -1034,11 +1034,13 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 
 		try {
 			$_SERVER['REQUEST_URI'] = $path;
+			RequestContext::set_store_api_address( (bool) WC()->is_store_api_request() );
 
 			$this->assertSame( $coupon, $sut->set_order_coupon( $coupon, 'code', $coupon_item, $order ) );
 			$read = 'another' === $kind ? $this->create_coupon() : $coupon;
 			$this->assertSame( $expected, $sut->get_coupon_amount( $amount, $read ) );
 		} finally {
+			RequestContext::set_store_api_address( false );
 			if ( null === $original_uri ) {
 				unset( $_SERVER['REQUEST_URI'] );
 			} else {
