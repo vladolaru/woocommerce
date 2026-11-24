@@ -106,6 +106,7 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 		$this->assertSame( 1000, \WC_Payments_Utils::prepare_amount( '1000', 'JPY' ) );
 		$this->assertSame( 1000, \WC_Payments_Utils::prepare_amount( '1000', 'jpy' ) );
 		$this->assertSame( -125, \WC_Payments_Utils::prepare_amount( '-1.25' ) );
+		$this->assertSame( 125, \WC_Payments_Utils::prepare_amount( 1.25, null ) );
 	}
 
 	/**
@@ -132,6 +133,7 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	 *           ["jetpack.jsonAPI", "POST", "/rest/v1.2/sites/123/plugins/woocommerce-payments%20woocommerce-payments", true, true, "active=true"]
 	 *           ["jetpack.jsonAPI", "POST", "/rest/v1.2/sites/123/plugins/woocommerce-payments", true, false, "active=false"]
 	 *           ["jetpack.jsonAPI", "POST", "/rest/v1.2/sites/123/plugins/another-plugin/install", true, false]
+	 *           ["jetpack.jsonAPI", "POST", "/rest/v1.2/sites/123/plugins", false, true, "{\"plugins\":[\"another-plugin/another-plugin\"],\"active\":true}"]
 	 *           ["jetpack.jsonAPI", "GET", "/rest/v1.2/sites/123/plugins/woocommerce-payments", true, false]
 	 *           ["jetpack.jsonAPI", "POST", "/rest/v1.2/sites/123/posts/new", true, false]
 	 *           ["another.method", "POST", "/rest/v1.2/sites/123/plugins/new", false, false]

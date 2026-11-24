@@ -24,13 +24,13 @@ class WC_Payments_Utils {
 	 * @deprecated 11.4.0 Removed in WooCommerce 12.0.0.
 	 *
 	 * @param float|string $amount   Amount in major currency units.
-	 * @param string       $currency Currency code.
+	 * @param scalar|null  $currency Currency code.
 	 * @return int
 	 */
 	public static function prepare_amount( $amount, $currency = 'USD' ): int {
 		wc_deprecated_function( __METHOD__, '11.4.0', '' );
 
-		$multiplier = WooPaymentsCurrencyUtils::is_zero_decimal_currency( $currency ) ? 1 : 100;
+		$multiplier = WooPaymentsCurrencyUtils::is_zero_decimal_currency( (string) $currency ) ? 1 : 100;
 		return (int) round( (float) $amount * $multiplier );
 	}
 }
