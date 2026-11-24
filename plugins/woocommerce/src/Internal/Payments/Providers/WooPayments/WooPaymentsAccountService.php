@@ -102,6 +102,13 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	private ?int $recheck_drop_time = null;
 
 	/**
+	 * The tier this request's last drop lowered, as the database held it then, so a restore puts back that tier.
+	 *
+	 * @var string|null
+	 */
+	private ?string $dropped_tier = null;
+
+	/**
 	 * The LegacyProxy instance.
 	 *
 	 * @var LegacyProxy
@@ -472,8 +479,9 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * Put back the account cache row and the setup tier after the platform did not delete the account.
 	 *
 	 * The row comes back marked as never fetched, so the first reader outside cron and AJAX still fetches the account, and a
-	 * fetch that fails serves the restored account. A row that does not read back is deleted. The tier goes back as it was read;
-	 * once it reads back, the re-check the drop scheduled in this request is cancelled, and otherwise it stays to heal the tier.
+	 * fetch that fails serves the restored account. A row that does not read back is deleted. The tier goes back to what this
+	 * request's drop lowered, and is left alone when nothing was dropped; once it reads back, the re-check the drop scheduled
+	 * in this request is cancelled, and otherwise it stays to heal the tier.
 	 *
 	 * @since 11.4.0
 	 *
@@ -492,7 +500,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 
 		$drop_time               = $this->recheck_drop_time;
 		$this->recheck_drop_time = null;
-		if ( null !== $this->setup_tier && null !== $state['tier'] && $this->setup_tier->write_tier( $state['tier'] ) && null !== $drop_time ) {
+		if ( null !== $this->setup_tier && null !== $this->dropped_tier && $this->setup_tier->write_tier( $this->dropped_tier ) && null !== $drop_time ) {
 			wc_get_container()->get( WooPaymentsSetupTierRecheck::class )->cancel( $drop_time );
 		}
 	}
@@ -674,9 +682,10 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		} elseif ( $tier !== $stored && ! ( WooPaymentsSetupTier::CONNECTED === $tier && WooPaymentsSetupTier::ACTIVE === $stored ) && false === $this->setup_tier->raise_from( $tier, $stored ) ) {
 			// Written only over the tier this read saw, so a reader that started before a finished reset cannot raise the
 			// store again. When the tier moved meanwhile, the row is marked so the next request reads the account again.
+			// Only the row this read published is marked; a row another request wrote since is left as it is.
 			$cache_contents = $this->get_account_cache();
 			if ( is_array( $cache_contents ) ) {
-				$this->database_cache->write( WooPaymentsDatabaseCache::ACCOUNT_KEY, array_merge( $cache_contents, array( 'fetched' => 0 ) ) );
+				$this->replace_account_row( maybe_serialize( $cache_contents ), maybe_serialize( array_merge( $cache_contents, array( 'fetched' => 0 ) ) ) );
 			}
 		}
 	}
@@ -708,6 +717,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		if ( ! in_array( $setup_tier->get_stored_tier(), array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true ) ) {
 			return true;
 		}
+		$this->dropped_tier = $setup_tier->get_stored_tier();
 		$this->schedule_recheck_on_drop();
 		$this->database_cache->disable_refresh();
 

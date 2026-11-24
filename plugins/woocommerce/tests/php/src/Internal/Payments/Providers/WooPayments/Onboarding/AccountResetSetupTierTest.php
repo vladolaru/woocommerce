@@ -589,6 +589,74 @@ class AccountResetSetupTierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox G10: a refused reset puts back the tier its own drop lowered, not the one the request read at its start, so a store raised meanwhile keeps offering the card.
+	 */
+	public function test_g10_a_refused_reset_restores_the_tier_its_drop_lowered(): void {
+		global $wpdb;
+
+		$this->store_has_account( 'yes', WooPaymentsSetupTier::ACTIVE );
+		update_option( 'woocommerce_force_ssl_checkout', 'yes' );
+		$this->assertTrue( wc_get_container()->get( WooPaymentsProvider::class )->get_gateway_for_method( 'card' )->is_available(), 'The card is offered first.' );
+		// The request read available; another request raised the store to active since.
+		$this->tier->write_tier( WooPaymentsSetupTier::AVAILABLE );
+		$wpdb->update( $wpdb->options, array( 'option_value' => WooPaymentsSetupTier::ACTIVE ), array( 'option_name' => WooPaymentsSetupTier::OPTION_NAME ) );
+		$this->client->expects( $this->once() )->method( 'delete_account' )->willThrowException( new ApiException( 'Refused live account.', 'bad_request', 400 ) );
+		// The platform still holds the account, as the next request's refresh of the restored row finds.
+		$this->client->method( 'get_account' )->willReturn( $this->account() );
+
+		$this->assertInstanceOf( WP_Error::class, $this->sut->reset_onboarding() );
+
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", WooPaymentsSetupTier::OPTION_NAME ) ) );
+		$this->next_request();
+		$gateway = wc_get_container()->get( WooPaymentsProvider::class )->get_gateway_for_method( 'card' );
+		$this->assertTrue( null !== $gateway && $gateway->is_available(), 'The card is still offered.' );
+	}
+
+	/**
+	 * @testdox K7: a read whose promotion lost to a newer read leaves the newer read's account row as it is, so checkout keeps offering the card.
+	 */
+	public function test_k7_a_lost_promotion_leaves_a_newer_row_alone(): void {
+		global $wpdb;
+
+		$working = $this->store_has_account( 'yes', WooPaymentsSetupTier::ACTIVE );
+		update_option( 'woocommerce_force_ssl_checkout', 'yes' );
+		$this->assertTrue( wc_get_container()->get( WooPaymentsProvider::class )->get_gateway_for_method( 'card' )->is_available(), 'The card is offered first.' );
+		$this->tier->write_tier( WooPaymentsSetupTier::CONNECTED );
+		$older                     = $this->account();
+		$older['payments_enabled'] = false;
+		$newer_published           = false;
+		// The newer read publishes its payable row and raises the tier just before this read's promotion.
+		$newer = static function ( $query ) use ( $wpdb, $working, &$newer_published ) {
+			if ( ! $newer_published && false !== strpos( $query, "SET option_value = 'active'" ) && false !== strpos( $query, WooPaymentsSetupTier::OPTION_NAME ) ) {
+				$newer_published = true;
+				$wpdb->update( $wpdb->options, array( 'option_value' => maybe_serialize( $working ) ), array( 'option_name' => self::ACCOUNT_CACHE_OPTION ) );
+				$wpdb->update( $wpdb->options, array( 'option_value' => WooPaymentsSetupTier::ACTIVE ), array( 'option_name' => WooPaymentsSetupTier::OPTION_NAME ) );
+			}
+			return $query;
+		};
+		add_filter( 'query', $newer );
+
+		try {
+			$this->account_service->cache_account_data( $older );
+		} finally {
+			remove_filter( 'query', $newer );
+		}
+
+		$this->assertTrue( $newer_published );
+		wp_cache_delete( self::ACCOUNT_CACHE_OPTION, 'options' );
+		$this->assertSame( $working, get_option( self::ACCOUNT_CACHE_OPTION ), 'The newer row stands.' );
+		$this->assert_tier_is( WooPaymentsSetupTier::ACTIVE );
+		$this->next_request();
+		add_filter( 'wp_doing_ajax', '__return_true' );
+		try {
+			$gateway = wc_get_container()->get( WooPaymentsProvider::class )->get_gateway_for_method( 'card' );
+			$this->assertTrue( null !== $gateway && $gateway->is_available(), 'The checkout update still offers the card.' );
+		} finally {
+			remove_filter( 'wp_doing_ajax', '__return_true' );
+		}
+	}
+
+	/**
 	 * @testdox G8: once the reset has lowered the tier, an account read later in the same request serves what is stored without a fetch, so nothing raises the reset store again.
 	 */
 	public function test_g8_reads_after_the_drop_do_not_fetch(): void {
