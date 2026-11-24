@@ -810,6 +810,8 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			'Affirm'            => array( 'affirm', 'ch_redirect' ),
 			'Cash App Afterpay' => array( 'afterpay_clearpay', 'ch_redirect' ),
 			'Bancontact'        => array( 'bancontact', 'py_redirect' ),
+			// Registered whatever the Amazon Pay flag, so the return records it where client 11.3.0 with the flag off writes nothing (decided, monitor ruling 2026-11-23).
+			'Amazon Pay'        => array( 'amazon_pay', 'ch_redirect' ),
 			'Alipay (REC-RM)'   => array( 'alipay', 'py_3UJjDMBzWlxcwgpP1P6NMtfy', true ),
 		);
 	}
@@ -943,6 +945,32 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $reloaded );
 		$this->assertSame( OrderStatus::PROCESSING, $reloaded->get_status() );
 		$this->assertSame( 'ch_switched_off', $reloaded->get_meta( '_charge_id', true ) );
+		$this->assertSame( array(), $this->unregistered_type_lines( $logger ) );
+	}
+
+	/**
+	 * @testdox A succeeded return whose charge and intent name no payment method type is still confirmed.
+	 *
+	 * The unregistered-type check needs a type to look up; with none on the charge or the intent it is not an unregistered
+	 * type, and the return confirms the payment as before.
+	 */
+	public function test_handle_wp_confirms_a_succeeded_return_that_names_no_payment_method_type(): void {
+		$order  = $this->create_order( '50.00', 0, true );
+		$intent = $this->successful_payment_intent( $order, 'pi_no_type', 'pm_no_type' );
+		unset( $intent['charges']['data'][0]['payment_method_details']['type'] );
+		$api_client                 = new RedirectReturnApiClientStub();
+		$api_client->payment_intent = $intent;
+		$this->sut                  = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_no_type' );
+		$logger = new RedirectReturnRecordingLogger();
+		add_filter( 'woocommerce_logging_class', static fn() => $logger );
+
+		$this->sut->handle_wp();
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( OrderStatus::PROCESSING, $reloaded->get_status() );
+		$this->assertSame( array( 'pi_no_type', 'ch_return' ), array( $reloaded->get_transaction_id(), $reloaded->get_meta( '_charge_id', true ) ) );
 		$this->assertSame( array(), $this->unregistered_type_lines( $logger ) );
 	}
 
@@ -3078,23 +3106,30 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A requires_action return without an error stays on order-received with the order pending, not failed.
 	 *
-	 * Client 11.1.0 marks the payment started (os:418-427) and does not fail it (gw:2406-2427). Its next-action redirect
-	 * cannot complete on order-received, so native keeps the shopper there until the webhook settles the order (decided,
-	 * monitor ruling on area 2a f18). Confirmation must not report the status as a failure to the redirect return.
+	 * A requires_action PaymentIntent has no charge yet, so client 11.1.0 and 11.3.0 end the return there without failing
+	 * the order or adding a notice (11.1.0 gw:2384-2387, 11.3.0 gw:2685-2688); their next-action redirect runs only for an
+	 * intent with a charge. The shopper stays on order-received until the webhook settles the order (decided, monitor
+	 * ruling on area 2a f18). The return here still records the started payment, which 11.x does not.
 	 */
 	public function test_handle_wp_keeps_requires_action_return_pending_on_order_received(): void {
 		$order                      = $this->create_order();
 		$api_client                 = new RedirectReturnApiClientStub();
 		$api_client->payment_intent = array(
-			'id'             => 'pi_requires_action',
-			'status'         => 'requires_action',
-			'client_secret'  => 'pi_requires_action_secret_example',
-			'currency'       => 'usd',
-			'amount'         => 5000,
-			'customer'       => 'cus_return',
-			'payment_method' => 'pm_requires_action',
-			'metadata'       => array( 'order_id' => $order->get_id() ),
-			'next_action'    => array( 'type' => 'use_stripe_sdk' ),
+			'id'                     => 'pi_requires_action',
+			'status'                 => 'requires_action',
+			'client_secret'          => 'pi_requires_action_secret_example',
+			'currency'               => 'usd',
+			'amount'                 => 5000,
+			'customer'               => 'cus_return',
+			'payment_method'         => 'pm_requires_action',
+			'payment_method_types'   => array( 'card' ),
+			'payment_method_options' => array( 'card' => array( 'request_three_d_secure' => 'automatic' ) ),
+			'metadata'               => array( 'order_id' => $order->get_id() ),
+			'next_action'            => array( 'type' => 'use_stripe_sdk' ),
+			'charges'                => array(
+				'total_count' => 0,
+				'data'        => array(),
+			),
 		);
 		$this->sut                  = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_requires_action' );
@@ -3104,7 +3139,6 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$reloaded = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $reloaded );
 		$this->assertSame( 'pending', $reloaded->get_status() );
-		// An intent that names no payment method type is not left to the webhook as an unregistered one: the return records it.
 		$this->assertSame( array( 'requires_action', 'pi_requires_action' ), array( $reloaded->get_meta( '_intention_status', true ), $reloaded->get_transaction_id() ) );
 		$this->assertSame( array(), wc_get_notices( 'error' ) );
 		$failure_notes = array_filter(

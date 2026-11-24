@@ -422,6 +422,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	public function test_payment_intent_succeeded_completes_an_order_paid_with_an_unregistered_type(): void {
 		$order = $this->create_woopayments_order();
 		$event = $this->create_payment_intent_event( 'payment_intent.succeeded', $order, array( 'payment_method_types' => array( 'twint' ) ) );
+		unset( $event['data']['object']['metadata']['ipp_channel'] );
 
 		$event['data']['object']['charges']['data'][0]['payment_method_details'] = array(
 			'type'  => 'twint',
