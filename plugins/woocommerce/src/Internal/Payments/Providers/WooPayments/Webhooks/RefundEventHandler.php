@@ -214,6 +214,10 @@ class RefundEventHandler {
 				return true;
 			}
 
+			if ( $this->find_manual_record_for_note( $order, $facts ) ) {
+				return true;
+			}
+
 			$exceeds_balance = null !== $token && ( $facts['refunded_amount'] > (float) $order->get_total() || (float) $this->local_refund_amount( $order, $facts['refunded_amount'] ) > (float) $order->get_remaining_refund_amount() );
 			$this->add_unrecorded_refund_note( $order, $facts['refund_id'], $facts['refund_amount'], $facts['currency'], null, $exceeds_balance );
 			return true;
@@ -439,18 +443,13 @@ class RefundEventHandler {
 		}
 
 		// The merchant may have followed the earlier note's advice to record this refund manually after payment.
-		$notes   = wc_get_container()->get( OrderPaymentNotes::class );
-		$note_id = $notes->find_by_identity( $order, 'other_charge|charge.refunded|' . $facts['refund_id'] . '|' . $facts['refund_status'], $this->persistence_vocabulary );
-		$note    = $note_id ? get_comment( $note_id ) : null;
-		$made_at = $note ? strtotime( $note->comment_date_gmt . ' UTC' ) : false;
-		if ( false !== $made_at ) {
-			$manual_row = WooPaymentsRefundAmbiguityService::find_manual_record_row( $order->get_refunds(), $facts['currency'], $facts['refund_amount'], $made_at );
-			if ( $manual_row instanceof WC_Order_Refund ) {
-				$this->add_note_and_metadata_for_created_refund( $order, $manual_row, $facts['refund_id'], $facts['balance_txn_id'], $facts['refund_status'], $facts['refund_amount'], $facts['currency'] );
-				return;
-			}
+		$manual_row = $this->find_manual_record_for_note( $order, $facts );
+		if ( $manual_row instanceof WC_Order_Refund ) {
+			$this->add_note_and_metadata_for_created_refund( $order, $manual_row, $facts['refund_id'], $facts['balance_txn_id'], $facts['refund_status'], $facts['refund_amount'], $facts['currency'] );
+			return;
 		}
 
+		$notes         = wc_get_container()->get( OrderPaymentNotes::class );
 		$report_refund = $this->can_report_refund( $order, $facts['currency'], $facts['refund_status'] );
 		if ( $report_refund && $notes->find_by_identity( $order, 'refund:' . $facts['refund_id'] . ':unrecorded', $this->persistence_vocabulary ) ) {
 			return;
@@ -477,6 +476,25 @@ class RefundEventHandler {
 
 		$this->add_note_and_metadata_for_created_refund( $order, $wc_refund, $facts['refund_id'], $facts['balance_txn_id'], $facts['refund_status'], $facts['refund_amount'], $facts['currency'] );
 		$this->event_order_resolver->log_own_event_on_another_payment_method( $order, 'charge.refunded', $facts['charge_id'] );
+	}
+
+	/**
+	 * Find the manual refund recorded in response to this refund's earlier order note.
+	 *
+	 * @param WC_Order $order Order holding the refund's charge.
+	 * @param array    $facts Parsed refund.
+	 * @phpstan-param RefundFacts $facts
+	 * @return WC_Order_Refund|null Matching manual row, if any.
+	 */
+	private function find_manual_record_for_note( WC_Order $order, array $facts ): ?WC_Order_Refund {
+		$notes   = wc_get_container()->get( OrderPaymentNotes::class );
+		$note_id = $notes->find_by_identity( $order, 'other_charge|charge.refunded|' . $facts['refund_id'] . '|' . $facts['refund_status'], $this->persistence_vocabulary );
+		$note    = $note_id ? get_comment( $note_id ) : null;
+		$made_at = $note ? strtotime( $note->comment_date_gmt . ' UTC' ) : false;
+		if ( false === $made_at ) {
+			return null;
+		}
+		return WooPaymentsRefundAmbiguityService::find_manual_record_row( $order->get_refunds(), $facts['currency'], $facts['refund_amount'], $made_at );
 	}
 
 	/**
