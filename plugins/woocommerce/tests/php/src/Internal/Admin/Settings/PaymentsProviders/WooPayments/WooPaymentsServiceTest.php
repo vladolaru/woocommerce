@@ -674,6 +674,32 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox G7: a reset with no account stored still goes to the built-in onboarding, which decides how to complete it.
+	 */
+	public function test_g7_a_builtin_reset_with_no_account_reaches_the_onboarding_service(): void {
+		$this->mock_woopayments_extension_not_loaded();
+		$adapter = $this->getMockBuilder( WooPaymentsPaymentsSettingsAdapter::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_onboarding_runtime_available', 'is_builtin_onboarding_available', 'get_payment_gateway', 'has_account', 'has_test_account', 'has_live_account' ) )
+			->getMock();
+		$adapter->method( 'is_onboarding_runtime_available' )->willReturn( true );
+		$adapter->method( 'is_builtin_onboarding_available' )->willReturn( true );
+		$adapter->method( 'get_payment_gateway' )->willReturn( new FakePaymentGateway() );
+		$adapter->method( 'has_account' )->willReturn( false );
+		$adapter->method( 'has_test_account' )->willReturn( false );
+		$adapter->method( 'has_live_account' )->willReturn( false );
+		$api_client = $this->getMockBuilder( Client::class )->disableOriginalConstructor()->onlyMethods( array( 'is_available' ) )->getMock();
+		$api_client->method( 'is_available' )->willReturn( true );
+		$onboarding = $this->createMock( OnboardingService::class );
+		$onboarding->expects( $this->once() )->method( 'reset_onboarding' )->willReturn( array( 'success' => true ) );
+		$this->init_sut( $this->mock_providers, $this->mockable_proxy, $adapter, $this->create_extension_runtime(), $api_client, $this->create_account_service(), $onboarding );
+
+		$result = $this->sut->reset_onboarding( 'US' );
+
+		$this->assertTrue( $result['success'] );
+	}
+
+	/**
 	 * Mock the WooPayments extension runtime as not loaded, so the built-in WooPayments owns onboarding.
 	 */
 	private function mock_woopayments_extension_not_loaded(): void {

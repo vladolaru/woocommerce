@@ -207,6 +207,7 @@ class AccountResetSetupTierTest extends WC_Unit_Test_Case {
 		$this->client->expects( $this->once() )->method( 'get_account' )->willThrowException( new ApiException( 'The platform is unavailable.', 'wcpay_platform_error', 503 ) );
 
 		$this->sut->reset_onboarding();
+		$this->next_request();
 
 		$this->assertSame( $this->account(), $this->account_service->get_cached_account_data(), 'The failed fetch serves the restored account.' );
 		$this->assertTrue( get_option( self::ACCOUNT_CACHE_OPTION )['errored'], 'The first reader did fetch the account.' );
@@ -234,6 +235,7 @@ class AccountResetSetupTierTest extends WC_Unit_Test_Case {
 
 		$this->sut->reset_onboarding();
 		$this->assert_tier_is( WooPaymentsSetupTier::ACTIVE );
+		$this->next_request();
 
 		$this->assertSame( array(), $this->account_service->get_cached_account_data() );
 
@@ -418,6 +420,195 @@ class AccountResetSetupTierTest extends WC_Unit_Test_Case {
 		$saved = get_transient( self::TEST_DRIVE_SETTINGS_TRANSIENT );
 		$this->assertIsArray( $saved, 'The restore leaves the methods saved before the call.' );
 		$this->assertSame( array( 'card' ), $saved['enabled_payment_methods'] );
+	}
+
+	/**
+	 * The stores a reset finds with no account ID stored, and what the platform answers: the stored tier, the account row,
+	 * the answer to the delete, the answer to the confirming read (null when none is expected), whether the reset
+	 * completes and the tier it ends at.
+	 *
+	 * @return array<string,array{string|null,array<string,mixed>|null,\Closure,\Closure|null,bool,string|null}>
+	 */
+	public static function provide_stores_with_no_account_stored(): array {
+		$empty     = array(
+			'data'               => array(),
+			'fetched'            => 1,
+			'errored'            => false,
+			'consecutive_errors' => 0,
+		);
+		$deleted   = static fn() => array( 'result' => 'success' );
+		$refused   = static function () {
+			throw new ApiException( 'Unable to delete live accounts which have completed onboarding.', 'bad_request', 400, 'invalid_request_error' );
+		};
+		$not_found = static function () {
+			throw new ApiException( 'No account.', 'wcpay_account_not_found', 401 );
+		};
+		$none      = static fn() => array();
+		$disabled  = static function () {
+			throw new ApiException( 'Onboarding is disabled.', 'wcpay_on_boarding_disabled', 401 );
+		};
+
+		return array(
+			'G2 active with an empty row, deleted'         => array( WooPaymentsSetupTier::ACTIVE, $empty, $deleted, null, true, WooPaymentsSetupTier::AVAILABLE ),
+			'G2 connected with no row, deleted'            => array( WooPaymentsSetupTier::CONNECTED, null, $deleted, null, true, WooPaymentsSetupTier::AVAILABLE ),
+			'G2 active with an empty row, refused live'    => array( WooPaymentsSetupTier::ACTIVE, $empty, $refused, null, false, WooPaymentsSetupTier::ACTIVE ),
+			'G3 available with an empty row, refused live' => array( WooPaymentsSetupTier::AVAILABLE, $empty, $refused, null, false, WooPaymentsSetupTier::AVAILABLE ),
+			'G3 available with an empty row, no account'   => array( WooPaymentsSetupTier::AVAILABLE, $empty, $not_found, $none, true, WooPaymentsSetupTier::AVAILABLE ),
+			'G3 disabled with no row, no account'          => array( WooPaymentsSetupTier::DISABLED, null, $not_found, $none, true, WooPaymentsSetupTier::DISABLED ),
+			'G3 no stored tier and no row, no account'     => array( null, null, $not_found, $none, true, null ),
+			'G3 disabled with no row, onboarding switched off' => array( WooPaymentsSetupTier::DISABLED, null, $not_found, $disabled, false, WooPaymentsSetupTier::DISABLED ),
+		);
+	}
+
+	/**
+	 * @testdox $_dataName: every reset asks the platform, and only its answer completes the reset.
+	 * @dataProvider provide_stores_with_no_account_stored
+	 *
+	 * @param string|null              $tier      The stored tier, or null for none.
+	 * @param array<string,mixed>|null $row       The account row, or null for none.
+	 * @param \Closure                 $answer    The platform's answer to the delete.
+	 * @param \Closure|null            $read      The answer to the confirming read, or null when none is expected.
+	 * @param bool                     $completes Whether the reset completes.
+	 * @param string|null              $expected  The stored tier after the reset, or null for none.
+	 */
+	public function test_a_reset_with_no_account_stored( ?string $tier, ?array $row, \Closure $answer, ?\Closure $read, bool $completes, ?string $expected ): void {
+		update_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array( 'enabled' => 'yes' ) );
+		delete_option( WooPaymentsSetupTier::OPTION_NAME );
+		if ( null !== $tier ) {
+			update_option( WooPaymentsSetupTier::OPTION_NAME, $tier );
+		}
+		delete_option( self::ACCOUNT_CACHE_OPTION );
+		if ( null !== $row ) {
+			update_option( self::ACCOUNT_CACHE_OPTION, $row );
+		}
+		$this->tier->invalidate();
+		$this->client->expects( $this->once() )->method( 'delete_account' )->willReturnCallback( $answer );
+		$confirm = $this->client->expects( null === $read ? $this->never() : $this->once() )->method( 'get_account_in_test_mode' );
+		if ( null !== $read ) {
+			$confirm->willReturnCallback( $read );
+		}
+
+		$result = $this->sut->reset_onboarding();
+
+		$this->tier->invalidate();
+		wp_cache_delete( 'alloptions', 'options' );
+		$this->assertSame( $expected ?? false, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
+		if ( ! $completes ) {
+			$this->assertInstanceOf( WP_Error::class, $result );
+			$this->assertSame( 'yes', get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION )['enabled'], 'The store is unchanged.' );
+			return;
+		}
+		$this->assertTrue( $result['success'] );
+		$this->assertSame( 'no', get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION )['enabled'], 'The clean-up ran.' );
+		$this->assertFalse( get_option( self::ACCOUNT_CACHE_OPTION ) );
+	}
+
+	/**
+	 * @testdox G9: the drop before the delete reads the tier the database holds now, so a tier raised since this request read it is lowered before the platform call.
+	 */
+	public function test_g9_the_drop_reads_the_database_tier(): void {
+		global $wpdb;
+
+		$this->store_has_account( 'yes', WooPaymentsSetupTier::ACTIVE );
+		$this->tier->write_tier( WooPaymentsSetupTier::AVAILABLE );
+		$wpdb->update( $wpdb->options, array( 'option_value' => WooPaymentsSetupTier::ACTIVE ), array( 'option_name' => WooPaymentsSetupTier::OPTION_NAME ) );
+		$tiers = array();
+		$this->client->method( 'delete_account' )->willReturnCallback(
+			static function () use ( $wpdb, &$tiers ): array {
+				$tiers[] = $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", WooPaymentsSetupTier::OPTION_NAME ) );
+				return array( 'result' => 'error' );
+			}
+		);
+
+		$this->sut->reset_onboarding();
+
+		$this->assertSame( array( WooPaymentsSetupTier::AVAILABLE ), $tiers, 'Available in the database during the delete.' );
+	}
+
+	/**
+	 * @testdox I6: a reset that succeeds ends at available although another request wrote connected to the database while the delete was in flight.
+	 */
+	public function test_i6_a_reset_ends_available_over_a_separate_writer(): void {
+		global $wpdb;
+
+		$this->store_has_account( 'yes', WooPaymentsSetupTier::ACTIVE );
+		$this->client->method( 'delete_account' )->willReturnCallback(
+			static function () use ( $wpdb ): array {
+				$wpdb->update( $wpdb->options, array( 'option_value' => WooPaymentsSetupTier::CONNECTED ), array( 'option_name' => WooPaymentsSetupTier::OPTION_NAME ) );
+				return array( 'result' => 'success' );
+			}
+		);
+
+		$this->assertTrue( $this->sut->reset_onboarding()['success'] );
+
+		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", WooPaymentsSetupTier::OPTION_NAME ) ) );
+	}
+
+	/**
+	 * @testdox G4: a reset whose lowered tier does not read back stops before the account row or the platform: the tier and the row stay.
+	 */
+	public function test_g4_a_drop_that_does_not_read_back_stops_the_reset(): void {
+		$row_before = $this->store_has_account( 'yes', WooPaymentsSetupTier::ACTIVE );
+		$this->client->expects( $this->never() )->method( 'delete_account' );
+		add_filter( 'pre_update_option_' . WooPaymentsSetupTier::OPTION_NAME, array( $this, 'keep_old_value' ), 10, 2 );
+
+		try {
+			$result = $this->sut->reset_onboarding();
+		} finally {
+			remove_filter( 'pre_update_option_' . WooPaymentsSetupTier::OPTION_NAME, array( $this, 'keep_old_value' ), 10 );
+		}
+
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertSame( 'An unexpected error happened while resetting onboarding.', $result->get_error_message() );
+		$this->assert_tier_is( WooPaymentsSetupTier::ACTIVE );
+		$this->assertSame( $row_before, get_option( self::ACCOUNT_CACHE_OPTION ), 'The row is untouched.' );
+	}
+
+	/**
+	 * @testdox G5: an account read that publishes during a successful reset's clean-up does not leave the store raised.
+	 */
+	public function test_g5_a_read_published_during_the_clean_up_ends_at_available(): void {
+		$this->store_has_account( 'yes', WooPaymentsSetupTier::ACTIVE );
+		$this->client->method( 'delete_account' )->willReturn( array( 'result' => 'success' ) );
+		$publish = function (): void {
+			remove_all_actions( 'update_option_wcpay_onboarding_test_mode' );
+			$this->account_service->cache_account_data( $this->account() );
+		};
+		// The clean-up writes the onboarding mode after it turns the gateway off.
+		update_option( 'wcpay_onboarding_test_mode', 'yes' );
+		add_action( 'update_option_wcpay_onboarding_test_mode', $publish );
+
+		try {
+			$result = $this->sut->reset_onboarding();
+		} finally {
+			remove_all_actions( 'update_option_wcpay_onboarding_test_mode' );
+		}
+
+		$this->assertTrue( $result['success'] );
+		$this->assert_tier_is( WooPaymentsSetupTier::AVAILABLE );
+	}
+
+	/**
+	 * @testdox G8: once the reset has lowered the tier, an account read later in the same request serves what is stored without a fetch, so nothing raises the reset store again.
+	 */
+	public function test_g8_reads_after_the_drop_do_not_fetch(): void {
+		$this->store_has_account( 'yes', WooPaymentsSetupTier::ACTIVE );
+		$this->client->method( 'delete_account' )->willReturn( array( 'result' => 'success' ) );
+		$this->client->expects( $this->never() )->method( 'get_account' );
+
+		$this->assertTrue( $this->sut->reset_onboarding()['success'] );
+		$this->assertSame( array(), $this->account_service->get_cached_account_data() );
+
+		$this->assert_tier_is( WooPaymentsSetupTier::AVAILABLE );
+	}
+
+	/**
+	 * Start what the next request starts with: the services fresh, the reset's request-wide stop on account refreshes gone.
+	 */
+	private function next_request(): void {
+		wc_get_container()->reset_all_resolved();
+		$this->tier            = wc_get_container()->get( WooPaymentsSetupTier::class );
+		$this->account_service = wc_get_container()->get( WooPaymentsAccountService::class );
 	}
 
 	/**

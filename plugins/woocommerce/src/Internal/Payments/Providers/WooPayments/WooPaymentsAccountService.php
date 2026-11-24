@@ -675,23 +675,34 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Lower the tier to `available` for an explicit drop: the merchant's reset, or a delivered account.deleted event.
+	 * Lower a connected or active tier to `available` for an explicit drop: the merchant's reset, or a delivered
+	 * account.deleted event. The tier is decided as the database holds it now; a lower tier is left as it is.
 	 *
 	 * The re-check is scheduled before a connected or active tier is lowered, so a request that dies after the drop still
-	 * leaves it.
+	 * leaves it. Account reads in the rest of the request serve the stored account, so none raises the tier again.
 	 *
 	 * @since 11.4.0
 	 *
-	 * @return bool Whether `available` reads back.
+	 * @return bool Whether `available` reads back, or the tier was already lower.
 	 */
 	public function drop_to_available(): bool {
-		if ( null === $this->setup_tier || null === $this->runtime_arbiter || ! $this->runtime_arbiter->is_builtin_owner() ) {
+		if ( null === $this->setup_tier || null === $this->runtime_arbiter ) {
+			return true;
+		}
+		if ( ! $this->runtime_arbiter->is_builtin_owner() ) {
 			return false;
 		}
 
 		// Held before the call below, after which static analysis no longer knows the property is set.
 		$setup_tier = $this->setup_tier;
+		// The tier is read past this request's cached options, which another request may have outdated.
+		$this->legacy_proxy->call_function( 'wp_cache_delete', 'alloptions', 'options' );
+		$setup_tier->invalidate();
+		if ( ! in_array( $setup_tier->get_stored_tier(), array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true ) ) {
+			return true;
+		}
 		$this->schedule_recheck_on_drop();
+		$this->database_cache->disable_refresh();
 
 		return $setup_tier->write_tier( WooPaymentsSetupTier::AVAILABLE );
 	}

@@ -1803,9 +1803,10 @@ class WooPaymentsService {
 				'source'       => $source,
 			);
 
-			if ( $this->has_account() ) {
+			// Every built-in reset goes to the onboarding service, which completes it with no platform call when nothing is stored.
+			$onboarding = $this->get_settings_adapter()->get_builtin_onboarding();
+			if ( null !== $onboarding || $this->has_account() ) {
 				// Call the WooPayments API to reset onboarding.
-				$onboarding = $this->get_settings_adapter()->get_builtin_onboarding();
 				if ( null !== $onboarding ) {
 					$response = $onboarding->reset_onboarding();
 				} else {

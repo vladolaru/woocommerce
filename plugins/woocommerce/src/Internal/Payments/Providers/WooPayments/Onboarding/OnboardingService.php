@@ -755,8 +755,15 @@ class OnboardingService {
 	private function delete_account( bool $test_mode ): array {
 		$account_service = $this->get_account_service();
 		$state_before    = $account_service->get_account_state();
-		$account_service->drop_to_available();
-		$account_service->overwrite_cache_with_no_account();
+		// The platform decides every reset: local data cannot tell a store that never had an account from one a reset
+		// left halfway. A connected or active tier drops first, and a stored account reads as none while it is deleted.
+		if ( ! $account_service->drop_to_available() ) {
+			// No message of its own: the caller's failure message is shown.
+			throw new ApiException( '', 'woocommerce_woopayments_reset_tier_unverified', 500 );
+		}
+		if ( ! empty( $account_service->get_stored_account_data()['account_id'] ) ) {
+			$account_service->overwrite_cache_with_no_account();
+		}
 
 		try {
 			$response = $this->get_api_client()->delete_account( $test_mode );
@@ -779,6 +786,8 @@ class OnboardingService {
 			$this->proxy->call_function( 'delete_option', WooPaymentsService::NOX_PROFILE_OPTION_KEY );
 			$this->proxy->call_function( 'delete_option', WooPaymentsService::NOX_ONBOARDING_LOCKED_KEY );
 			wc_get_container()->get( WooPaymentsTokenService::class )->clear_all_cached_payment_methods();
+			// A positive read published during the clean-up does not leave a reset store raised.
+			$account_service->drop_to_available();
 		} else {
 			$this->get_account_service()->restore_account_state( $state_before );
 		}
