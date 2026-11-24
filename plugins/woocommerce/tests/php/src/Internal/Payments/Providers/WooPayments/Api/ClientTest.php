@@ -1928,7 +1928,7 @@ class ClientTest extends WC_Unit_Test_Case {
 	 * @param string|null         $printed_path    API path the warning prints, when it is not the path sent.
 	 */
 	public function test_a_request_params_callback_cannot_change_a_locked_key( callable $send, callable $callback, string $path, array $changed_keys, ?string $caller_key, array $mutable, array $callback_values, ?string $printed_path = null ): void {
-		list( $sut, $http_client ) = $this->make_sut( false );
+		list( $sut, $http_client ) = $this->make_sut( false, array( 'id' => 'obj_answered' ) );
 		$send( $sut );
 		$logger = RecordingWcLogger::install();
 		add_filter( 'wcpay_api_request_params', $callback, 10, 3 );
@@ -2234,7 +2234,7 @@ class ClientTest extends WC_Unit_Test_Case {
 	 * @param string|null $printed_path   API path the warning prints, when it is not the path sent.
 	 */
 	public function test_a_request_headers_callback_cannot_change_the_idempotency_key( callable $send, string $path, bool $replace_header, ?string $printed_path = null ): void {
-		list( $sut, $http_client ) = $this->make_sut( false );
+		list( $sut, $http_client ) = $this->make_sut( false, array( 'id' => 'obj_answered' ) );
 		$logger                    = RecordingWcLogger::install();
 		$built_key                 = null;
 		$callback                  = static function ( array $headers ) use ( &$built_key, $replace_header ): array {
@@ -2316,7 +2316,7 @@ class ClientTest extends WC_Unit_Test_Case {
 	 * includes/class-megurio-subscriptions-for-woocommerce.php:159, callback :2061-2070.
 	 */
 	public function test_a_payment_method_types_callback_still_reaches_the_charge_body(): void {
-		list( $sut, $http_client ) = $this->make_sut( false );
+		list( $sut, $http_client ) = $this->make_sut( false, array( 'id' => 'obj_answered' ) );
 		$logger                    = RecordingWcLogger::install();
 		$callback                  = static function ( $params ) {
 			$params['payment_method_types'] = array( 'card' );
@@ -3202,7 +3202,12 @@ class ClientTest extends WC_Unit_Test_Case {
 		$http_client->response = array(
 			'response' => array( 'code' => 200 ),
 			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode( array( 'data' => array() ) ),
+			'body'     => wp_json_encode(
+				array(
+					'id'   => 're_logged',
+					'data' => array(),
+				)
+			),
 		);
 
 		$sut    = new Client();
@@ -6009,6 +6014,81 @@ class ClientTest extends WC_Unit_Test_Case {
 		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$this->assertSame( array(), $sut->get_account() );
+	}
+
+	/**
+	 * @testdox A $request answered with an empty JSON $shape fails as a timed-out request does, since it names nothing the request made.
+	 *
+	 * The platform answers a charge with the PaymentIntent and a refund with the refund, each with its ID (wpcom
+	 * `wcpay/class-intentions-controller.php:476-488`, `wcpay/class-refunds-controller.php:135-149`).
+	 *
+	 * @testWith ["charge", "object", "{}"]
+	 *           ["charge", "list", "[]"]
+	 *           ["refund", "object", "{}"]
+	 *           ["refund", "list", "[]"]
+	 *
+	 * @param string $request Money request.
+	 * @param string $shape   Shape of the body.
+	 * @param string $body    Response body.
+	 */
+	public function test_a_money_answer_without_its_object_fails_as_a_timeout( string $request, string $shape, string $body ): void {
+		unset( $shape );
+		$timeout               = $this->capture_intent_read_failure( new WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out after 70001 milliseconds' ) );
+		$http_client           = new FakeHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => $body,
+		);
+		$sut                   = new Client();
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
+
+		try {
+			if ( 'charge' === $request ) {
+				$sut->create_and_confirm_payment_intention(
+					array(
+						'amount'         => 1000,
+						'currency'       => 'usd',
+						'payment_method' => 'pm_identity',
+					),
+					'key_identity'
+				);
+			} else {
+				$sut->refund_charge( 'ch_identity', 500, null, 'merchant', 'key_identity' );
+			}
+			$this->fail( 'An answer that names nothing the request made must fail.' );
+		} catch ( ApiException $failure ) {
+			$this->assertSame( $timeout->get_error_code(), $failure->get_error_code(), 'The failure carries the timeout\'s code, so the caller takes its timeout branch.' );
+			$this->assertSame( $timeout->get_http_code(), $failure->get_http_code() );
+			$this->assertTrue( $failure->has_ambiguous_outcome() );
+			$this->assertSame( 'wcpay_unexpected_response_body', $failure->get_error_data()['transport_error_code'] ?? null );
+		}
+		$this->assertSame( 1, $http_client->request_count, 'The answer is not retried.' );
+	}
+
+	/**
+	 * @testdox A refund answered with its ID and no status comes back as answered.
+	 *
+	 * Stripe's refund status is nullable (https://docs.stripe.com/api/refunds/object), and the platform passes the refund
+	 * through as Stripe answers it, so the ID alone names the refund.
+	 */
+	public function test_a_refund_answer_with_its_id_and_no_status_comes_back_as_answered(): void {
+		$answer                = array(
+			'id'     => 're_null_status',
+			'object' => 'refund',
+			'amount' => 500,
+			'status' => null,
+		);
+		$http_client           = new FakeHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => (string) wp_json_encode( $answer ),
+		);
+		$sut                   = new Client();
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
+
+		$this->assertSame( $answer, $sut->refund_charge( 'ch_identity', 500, null, 'merchant', 'key_identity' ) );
 	}
 
 	/**

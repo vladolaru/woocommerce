@@ -319,6 +319,7 @@ class Client {
 	 *                                      refund the call made. An empty key sends no marker, and the request mints one key
 	 *                                      that its transport retries resend.
 	 * @return array<string,mixed>
+	 * @throws ApiException When the request fails, or its answer names no refund.
 	 */
 	public function refund_charge( string $charge_id, ?int $amount, ?string $reason, string $source, string $idempotency_key ): array {
 		$params = array(
@@ -349,7 +350,7 @@ class Client {
 			$params['metadata']['refund_attempt'] = $idempotency_key;
 		}
 
-		return $this->request( $params, 'refunds', 'POST' );
+		return self::answer_naming_what_it_made( $this->request( $params, 'refunds', 'POST' ) );
 	}
 
 	/**
@@ -425,7 +426,7 @@ class Client {
 	 * @param array<string,mixed> $request_data     Intent payload.
 	 * @param string              $idempotency_key  Caller-supplied idempotency key (minted per payment attempt).
 	 * @return array<string,mixed>
-	 * @throws ApiException When the request shape is invalid.
+	 * @throws ApiException When the request shape is invalid, the request fails, or its answer names no intent.
 	 */
 	public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
 		$has_payment_method     = isset( $request_data['payment_method'] ) && '' !== trim( (string) $request_data['payment_method'] );
@@ -440,7 +441,25 @@ class Client {
 		$request_data['capture_method']  = $request_data['capture_method'] ?? 'automatic';
 		$request_data['idempotency_key'] = $idempotency_key;
 
-		return $this->request( $request_data, 'intentions', 'POST' );
+		return self::answer_naming_what_it_made( $this->request( $request_data, 'intentions', 'POST' ) );
+	}
+
+	/**
+	 * Return the answer to a request that moves money only when it names, by ID, the intent or refund the request made.
+	 *
+	 * An answer without one, such as `{}` or `[]`, does not say whether money moved, so it fails as a timeout does and the
+	 * caller keeps what it keeps for one. The status is not read: Stripe's refund status is nullable.
+	 *
+	 * @param array<string,mixed> $answer Decoded answer.
+	 * @return array<string,mixed>
+	 * @throws ApiException When the answer has no ID.
+	 */
+	private static function answer_naming_what_it_made( array $answer ): array {
+		if ( ! isset( $answer['id'] ) || ! is_string( $answer['id'] ) || '' === $answer['id'] ) {
+			throw ApiException::for_unexpected_response_body();
+		}
+
+		return $answer;
 	}
 
 	/**

@@ -889,6 +889,44 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @param array<string,mixed> $answer Transport answer to the charge.
 	 */
 	public function test_charge_answered_with_an_unreadable_body_is_handled_as_a_timeout( array $answer ): void {
+		$this->assert_charge_answer_is_handled_as_a_timeout( $answer );
+	}
+
+	/**
+	 * @testdox A charge answered with $_dataName, which names no intent, fails as a timed-out charge does, keeps its key and ambiguity record, and the shopper's next press sends the same key.
+	 *
+	 * The answer does not say what the request did, so it is no decline: read as one, it would retire the key and the
+	 * record, and the next press could charge again.
+	 *
+	 * @dataProvider provider_charge_answers_without_an_intent
+	 *
+	 * @param array<string,mixed> $answer Transport answer to the charge.
+	 */
+	public function test_charge_answered_without_an_intent_is_handled_as_a_timeout( array $answer ): void {
+		$this->assert_charge_answer_is_handled_as_a_timeout( $answer );
+	}
+
+	/**
+	 * Success-coded JSON answers to a charge that name no intent.
+	 *
+	 * @return array<string,array{0:array<string,mixed>}>
+	 */
+	public function provider_charge_answers_without_an_intent(): array {
+		$json = array( 'content-type' => 'application/json; charset=UTF-8' );
+
+		return array(
+			'an empty JSON object' => array( self::http_raw( 200, $json, '{}' ) ),
+			'an empty JSON list'   => array( self::http_raw( 200, $json, '[]' ) ),
+		);
+	}
+
+	/**
+	 * Assert a charge answered with an answer fails as a timed-out charge does, keeps its key and ambiguity record, and the
+	 * shopper's next press sends the same key.
+	 *
+	 * @param array<string,mixed> $answer Transport answer to the charge.
+	 */
+	private function assert_charge_answer_is_handled_as_a_timeout( array $answer ): void {
 		$timeout                 = new WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out after 70001 milliseconds' );
 		$timeout_http            = new FakeHttpClient();
 		$timeout_http->responses = array( $timeout, $timeout, $timeout, $timeout );
@@ -8298,8 +8336,8 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Ambiguous answers to a refund request: a timeout on every transport try (three retries), a server error, and success-coded
-	 * answers whose body is not the refund's JSON, which the client fails as a timeout.
+	 * Ambiguous answers to a refund request: a timeout on every transport try (three retries), a server error, success-coded
+	 * answers whose body is not the refund's JSON, and success-coded JSON that names no refund, which the client fails as a timeout.
 	 *
 	 * @return array<string,array{array<int,mixed>,int}>
 	 */
@@ -8313,7 +8351,36 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			'a success-coded nothing' => array( array( self::http_raw( 200, array(), '' ) ), 1 ),
 			'a success-coded scalar'  => array( array( self::http_raw( 200, array( 'content-type' => 'application/json' ), 'true' ) ), 1 ),
 			'a cut-short success'     => array( array( self::http_raw( 200, array( 'content-type' => 'application/json' ), '{"id":"re_cut","status":"succ' ) ), 1 ),
+			'an empty JSON object'    => array( array( self::http_raw( 200, array( 'content-type' => 'application/json' ), '{}' ) ), 1 ),
+			'an empty JSON list'      => array( array( self::http_raw( 200, array( 'content-type' => 'application/json' ), '[]' ) ), 1 ),
 		);
+	}
+
+	/**
+	 * @testdox A refund answered with its ID and no status is recorded as a successful refund, with no hold left.
+	 *
+	 * Stripe's refund status is nullable (https://docs.stripe.com/api/refunds/object) and the platform passes the refund
+	 * through as Stripe answers it; client 11.3.0 records any refund its request returns, pending only for `pending`
+	 * (class-wc-payment-gateway-wcpay.php:3333-3366). The refund's ID names it, so the answer is read as before.
+	 */
+	public function test_refund_answered_with_its_id_and_no_status_is_recorded_as_successful(): void {
+		$order                  = $this->create_refund_hold_order();
+		$answer                 = $this->recorded_refund_answer( 're_null_status', 'key_null_status', 555 );
+		$answer['status']       = null;
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array( self::http_json( 200, $answer ) );
+		$provider               = $this->create_refund_hold_provider( $http_client );
+
+		list( $result, $row ) = $this->run_refund( $provider, $order, 5.55 );
+		$refund               = wc_get_order( $row );
+		$refunded             = wc_get_order( $order->get_id() );
+		assert( $refund instanceof WC_Order_Refund && $refunded instanceof WC_Order );
+
+		$this->assertTrue( $result );
+		$this->assertSame( 1, $http_client->request_count );
+		$this->assertSame( 're_null_status', $refund->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( 'successful', $refunded->get_meta( '_wcpay_refund_status', true ) );
+		$this->assertSame( '', self::refund_hold_of( $order ) );
 	}
 
 	/**
