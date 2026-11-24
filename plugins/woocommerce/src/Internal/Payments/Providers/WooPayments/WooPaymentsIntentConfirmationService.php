@@ -381,11 +381,12 @@ class WooPaymentsIntentConfirmationService {
 				$refusing_order = $stored_order;
 				return array( null, null );
 			}
-			// The callback's check before its fetch, repeated: an intent that holds no money and is no longer the order's, because
-			// a later attempt was stored during the fetch, changes nothing, so it cannot fail or re-record that attempt.
-			if ( ! $is_redirect_return && ! WooPaymentsIntentCodec::holds_money( $status ) && ! $this->is_order_intent( $stored_order, (string) ( $intent['id'] ?? '' ) ) ) {
+			// The callback's check before its fetch, and the return's after it, repeated: an intent that holds no money and is no
+			// longer the order's, because a later attempt was stored meanwhile, changes nothing, so it cannot fail, cancel or
+			// re-record that attempt.
+			if ( ! WooPaymentsIntentCodec::holds_money( $status ) && ! $this->is_order_intent( $stored_order, (string) ( $intent['id'] ?? '' ) ) ) {
 				$displayed = true;
-				$this->log_payment_not_own( $stored_order, $intent, false );
+				$this->log_payment_not_own( $stored_order, $intent, $is_redirect_return );
 				return array( null, null );
 			}
 			// A payment the webhook would record as another charge on this order, such as one over a reference the merchant

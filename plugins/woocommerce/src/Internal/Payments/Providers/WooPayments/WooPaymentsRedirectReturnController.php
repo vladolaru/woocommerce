@@ -279,9 +279,23 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 			return;
 		}
 
+		// A PaymentIntent with no charge is left to its webhook and nothing is written here: client 11.1.0
+		// (class-wc-payment-gateway-wcpay.php:2384-2387) and 11.3.0 (:2685-2688) take the type from the charge only.
+		if ( $is_payment_intent && array() === WooPaymentsIntentCodec::latest_charge( $intent ) ) {
+			wc_get_container()->get( WooPaymentsLogger::class )->log(
+				sprintf( 'Redirect return for order #%1$d left to the webhook: payment %2$s has no charge.', $order->get_id(), $intent_id ),
+				'info',
+				array(
+					'order_id'  => $order->get_id(),
+					'intent_id' => $intent_id,
+				)
+			);
+			return;
+		}
+
 		// A payment method type with no registered definition is left to the payment_intent webhook, which settles the order
 		// through its own checks; nothing is written here (client 11.3.0 class-wc-payment-gateway-wcpay.php:2685-2688). The
-		// type is the charge's, or the intent's when it has no charge; an intent that names no type is not caught.
+		// type is the charge's, or a SetupIntent's own; a type that is empty is not caught.
 		$payment_method_type = (string) ( WooPaymentsOrderEffects::compose_payment_method_display_details( $intent )['payment_method_type'] ?? '' );
 		if ( '' !== $payment_method_type && null === $this->payment_method_registry->get( $payment_method_type ) ) {
 			wc_get_container()->get( WooPaymentsLogger::class )->log(

@@ -45,6 +45,9 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderSuccessPage;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRedirectReturnController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentConfirmationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\PaymentIntentEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
@@ -5836,6 +5839,172 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A card checkout sent to a redirect challenge, then a return with the intent $return_status and no charge, leaves the order exactly as checkout wrote it.
+	 *
+	 * The return finds a PaymentIntent with no charge and no error, which client 11.1.0 and 11.3.0 end before any order write
+	 * (11.1.0 gw:2384-2387, 11.3.0 gw:2685-2688): a reload of the return URL before the challenge, or an intent canceled
+	 * while the shopper is away. A canceled intent does not cancel the order on the return.
+	 *
+	 * @testWith ["requires_action"]
+	 *           ["canceled"]
+	 *
+	 * @param string $return_status Status of the intent the return fetches.
+	 */
+	public function test_redirect_return_with_no_charge_leaves_the_order_as_checkout_wrote_it( string $return_status ): void {
+		$order = $this->create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_total( '10.99' );
+		$order->save();
+		$intent  = array(
+			'id'                     => 'pi_challenge',
+			'status'                 => 'requires_action',
+			'amount'                 => 1099,
+			'currency'               => 'usd',
+			'customer'               => 'cus_challenge',
+			'payment_method'         => 'pm_challenge',
+			'payment_method_types'   => array( 'card' ),
+			'payment_method_options' => array( 'card' => array( 'request_three_d_secure' => 'automatic' ) ),
+			'client_secret'          => 'pi_challenge_secret',
+			'metadata'               => array( 'order_id' => (string) $order->get_id() ),
+			'next_action'            => array(
+				'type'            => 'redirect_to_url',
+				'redirect_to_url' => array(
+					'url'        => 'https://hooks.stripe.com/3d_secure_2/hosted?merchant=acct_test',
+					'return_url' => $order->get_checkout_order_received_url(),
+				),
+			),
+			'charges'                => array(
+				'total_count' => 0,
+				'data'        => array(),
+			),
+		);
+		$confirm = WooPaymentsIntentCodec::confirmation_redirect_for( $order->get_id(), 'pi_challenge_secret', 'nonce' );
+		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+			$intent,
+			new WooPaymentsIntentMappingContext( $order->get_checkout_order_received_url(), 'pm_challenge', 'cus_challenge', $confirm )
+		)->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false ) );
+		$gateway = new WooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging( $outcome, wc_get_container()->get( WooPaymentsTokenService::class ) ) );
+		$_POST['wcpay-payment-method'] = 'pm_challenge';
+		$gateway->process_payment( $order->get_id() );
+		$after_checkout = $this->redirect_return_order_snapshot( $order->get_id() );
+		$this->assertSame( array( OrderStatus::PENDING, 'pi_challenge' ), array( $after_checkout['status'], $after_checkout['transaction_id'] ), 'Checkout records the started payment.' );
+		$this->assertContains( array( '_intent_id', 'pi_challenge' ), $after_checkout['meta'] );
+
+		$returned = array_merge( $intent, array( 'status' => $return_status ) );
+		if ( 'canceled' === $return_status ) {
+			unset( $returned['next_action'] );
+			$returned['cancellation_reason'] = 'abandoned';
+		}
+		$this->run_redirect_return( $order, $returned );
+
+		$this->assertSame( $after_checkout, $this->redirect_return_order_snapshot( $order->get_id() ) );
+	}
+
+	/**
+	 * Read what a shopper or merchant sees of an order: status, every meta key and value, transaction ID, payment method,
+	 * its title and the notes.
+	 *
+	 * @param int $order_id Order ID.
+	 * @return array{status:string,meta:array<int,array{0:string,1:mixed}>,transaction_id:string,payment_method:string,payment_method_title:string,notes:string[]}
+	 */
+	private function redirect_return_order_snapshot( int $order_id ): array {
+		$order = wc_get_order( $order_id );
+		$this->assertInstanceOf( WC_Order::class, $order );
+
+		return array(
+			'status'               => $order->get_status(),
+			'meta'                 => array_map( static fn( $meta ): array => array( $meta->key, $meta->value ), array_values( $order->get_meta_data() ) ),
+			'transaction_id'       => $order->get_transaction_id(),
+			'payment_method'       => $order->get_payment_method(),
+			'payment_method_title' => $order->get_payment_method_title(),
+			'notes'                => array_values( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order_id ) ), 'content' ) ),
+		);
+	}
+
+	/**
+	 * Run the redirect return for an order on order-received, with a platform that answers the given intent, through the
+	 * controller as the redirect return tests build it.
+	 *
+	 * @param WC_Order            $order  Order the return names.
+	 * @param array<string,mixed> $intent Intent the platform answers.
+	 */
+	private function run_redirect_return( WC_Order $order, array $intent ): void {
+		$api_client      = new class( $intent ) extends Client {
+			/**
+			 * Intent the platform answers.
+			 *
+			 * @var array<string,mixed>
+			 */
+			private array $intent;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param array<string,mixed> $intent Intent the platform answers.
+			 */
+			public function __construct( array $intent ) {
+				$this->intent = $intent;
+			}
+
+			/**
+			 * Answer the intent.
+			 *
+			 * @param string $intent_id Intent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_payment_intention( string $intent_id ): array {
+				unset( $intent_id );
+				return $this->intent;
+			}
+		};
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_mode', 'get_account_country' ) )
+			->getMock();
+		$account_service->method( 'get_mode' )->willReturn( 'test' );
+		$account_service->method( 'get_account_country' )->willReturn( 'US' );
+		$token_service  = wc_get_container()->get( WooPaymentsTokenService::class );
+		$effect_applier = new WooPaymentsOrderEffectApplier();
+		$effect_applier->init( $token_service, new WooPaymentsOrderDataService(), $account_service, wc_get_container()->get( WooPaymentsOrderNoteService::class ), new PaymentMethodRegistry(), wc_get_container()->get( WooPaymentsActionSchedulerService::class ), wc_get_container()->get( OrderPaymentLifecycleService::class ) );
+		$confirmation_service = new WooPaymentsIntentConfirmationService();
+		$confirmation_service->init( $api_client, wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class ), $token_service, $account_service, $effect_applier );
+		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
+		$controller = new WooPaymentsRedirectReturnController();
+		$controller->init( $arbiter, $confirmation_service, $api_client, $token_service, $this->createMock( WooPaymentsCustomerService::class ), wc_get_container()->get( OrderPaymentLifecycleService::class ), wc_get_container()->get( WooPaymentsOrderNoteService::class ), new PaymentMethodRegistry() );
+
+		global $wp;
+		$original_get                         = $_GET; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Test fixture restores the request globals.
+		$original_method                      = $GLOBALS['_SERVER']['REQUEST_METHOD'] ?? null;
+		$GLOBALS['_SERVER']['REQUEST_METHOD'] = 'GET';
+		$wp->query_vars['order-received']     = $order->get_id();
+		set_query_var( 'order-received', $order->get_id() );
+		add_filter( 'woocommerce_is_order_received_page', '__return_true' );
+		$_GET = array(
+			'wc_payment_method'            => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+			'_wpnonce'                     => wp_create_nonce( WooPaymentsIntentRequestBuilder::redirect_return_nonce_action( $order->get_id() ) ),
+			'payment_intent'               => (string) $intent['id'],
+			'payment_intent_client_secret' => (string) $intent['client_secret'],
+			'key'                          => $order->get_order_key(),
+		);
+
+		try {
+			$controller->handle_wp();
+		} finally {
+			$_GET = $original_get;
+			if ( null === $original_method ) {
+				unset( $GLOBALS['_SERVER']['REQUEST_METHOD'] );
+			} else {
+				$GLOBALS['_SERVER']['REQUEST_METHOD'] = $original_method;
+			}
+			unset( $wp->query_vars['order-received'] );
+			set_query_var( 'order-received', '' );
+			remove_filter( 'woocommerce_is_order_received_page', '__return_true' );
+		}
+	}
+
+	/**
 	 * @testdox A checkout whose platform returns a requires_action PaymentIntent with an error, on an unpaid order holding a succeeded record, fails the order with the intent's own status.
 	 *
 	 * Client 11.3.0's attach leaves a succeeded record's intent info as it is (class-wc-payments-order-service.php:1820-1822),
@@ -6784,7 +6953,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$container->get( WooPaymentsAccountService::class ),
 			$container->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService::class ),
 			$container->get( PaymentMethodRegistry::class ),
-			$container->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService::class ),
+			$container->get( WooPaymentsActionSchedulerService::class ),
 			$container->get( \Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService::class )
 		);
 		$provider = new WooPaymentsProvider();
@@ -10659,7 +10828,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$container->get( WooPaymentsAccountService::class ),
 			$container->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService::class ),
 			$container->get( PaymentMethodRegistry::class ),
-			$container->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService::class ),
+			$container->get( WooPaymentsActionSchedulerService::class ),
 			$container->get( \Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService::class )
 		);
 		$provider = new WooPaymentsProvider();

@@ -254,7 +254,10 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 		$redirect_return = static function ( self $test, WC_Order $order ): string {
 			$intent             = $test->load_recorded_intent( 'platform-3ds-challenge-results.json', 'blocks_challenge_failed' );
 			$intent['metadata'] = array( 'order_id' => (string) $order->get_id() );
-			$account_service    = $test->create_account_service( true );
+			// The redirect return confirms only the intent the order stores, so checkout stored this attempt first.
+			$order->update_meta_data( '_intent_id', (string) $intent['id'] );
+			$order->save();
+			$account_service = $test->create_account_service( true );
 			$test->create_intent_confirmation_service( wc_get_container()->get( Client::class ), null, $account_service )
 				->confirm_fetched_intent_for_order( $order, $intent, false, true );
 

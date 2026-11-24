@@ -2278,6 +2278,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	 * native takes the same path and logs it whatever the logging setting. The notice for a non-API throwable is the
 	 * generic message (decided divergence, monitor ruling 2026-10-04). The intent here is requires_action, which has moved
 	 * no money; an intent that has is covered by test_handle_wp_keeps_the_order_when_confirmation_throws_after_money_moved().
+	 * It carries a charge: 11.1.0 reaches the confirmation on this path only with one (gw:2384-2387).
 	 *
 	 * @param Throwable $failure          What the order payment lifecycle throws.
 	 * @param bool      $logged_always    Whether the failure is logged with debug logging off.
@@ -2294,10 +2295,6 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			array(
 				'status'      => 'requires_action',
 				'next_action' => array( 'type' => 'use_stripe_sdk' ),
-				'charges'     => array(
-					'total_count' => 0,
-					'data'        => array(),
-				),
 			)
 		);
 		$fee_details_note_controller = $this->createMock( WooPaymentsFeeDetailsNoteController::class );
@@ -2833,10 +2830,6 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			array(
 				'status'      => 'requires_action',
 				'next_action' => array( 'type' => 'use_stripe_sdk' ),
-				'charges'     => array(
-					'total_count' => 0,
-					'data'        => array(),
-				),
 			)
 		);
 		$fee_details_note_controller = $this->createMock( WooPaymentsFeeDetailsNoteController::class );
@@ -3104,12 +3097,11 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A requires_action return without an error stays on order-received with the order pending, not failed.
+	 * @testdox A requires_action return without an error writes nothing and stays on order-received with the order pending.
 	 *
-	 * A requires_action PaymentIntent has no charge yet, so client 11.1.0 and 11.3.0 end the return there without failing
-	 * the order or adding a notice (11.1.0 gw:2384-2387, 11.3.0 gw:2685-2688); their next-action redirect runs only for an
-	 * intent with a charge. The shopper stays on order-received until the webhook settles the order (decided, monitor
-	 * ruling on area 2a f18). The return here still records the started payment, which 11.x does not.
+	 * A requires_action PaymentIntent has no charge yet, so client 11.1.0 and 11.3.0 end the return there before any order
+	 * write (11.1.0 gw:2384-2387, 11.3.0 gw:2685-2688); their next-action redirect runs only for an intent with a charge. The
+	 * shopper stays on order-received until the webhook settles the order (decided, monitor ruling on area 2a f18).
 	 */
 	public function test_handle_wp_keeps_requires_action_return_pending_on_order_received(): void {
 		$order                      = $this->create_order();
@@ -3133,19 +3125,340 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		);
 		$this->sut                  = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_requires_action' );
+		$logger = RecordingWcLogger::install();
+		$before = $this->order_meta_snapshot( $order->get_id() );
 
 		$this->sut->handle_wp();
 
 		$reloaded = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $reloaded );
 		$this->assertSame( 'pending', $reloaded->get_status() );
-		$this->assertSame( array( 'requires_action', 'pi_requires_action' ), array( $reloaded->get_meta( '_intention_status', true ), $reloaded->get_transaction_id() ) );
-		$this->assertSame( array(), wc_get_notices( 'error' ) );
-		$failure_notes = array_filter(
-			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
-			static fn( $note ): bool => false !== strpos( $note->content, '<strong>failed</strong>' )
+		$this->assertSame( array( '_intent_id' ), array_values( array_diff( array_column( $before, 0 ), array( '_billing_address_index', '_shipping_address_index' ) ) ), 'The order stores only the intent before the return.' );
+		$this->assertSame( $before, $this->order_meta_snapshot( $order->get_id() ), 'No meta is written.' );
+		$this->assertSame( array( '', '' ), array( $reloaded->get_meta( '_intention_status', true ), $reloaded->get_transaction_id() ) );
+		$this->assertSame( array(), wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertSame( 0, wc_notice_count() );
+		$this->assertSame( array( sprintf( 'Redirect return for order #%d left to the webhook: payment pi_requires_action has no charge.', $order->get_id() ) ), $this->no_charge_lines( $logger ) );
+	}
+
+	/**
+	 * @testdox A $_dataName PaymentIntent return with no charge and no error writes nothing and leaves the order to the webhook.
+	 *
+	 * Client 11.1.0 and 11.3.0 take the payment method type from the charge only and end a return without one before any
+	 * order write (11.1.0 gw:2384-2387, 11.3.0 gw:2685-2688): no token, meta, note, status, notice or cart emptying. A canceled
+	 * intent does not cancel the order there; the payment_intent.canceled event leaves the order as it is too, and the
+	 * hold-stock job's unpaid-order check cancels it. A processing intent with no charge is treated the same, as on 11.x.
+	 *
+	 * @dataProvider provider_no_charge_return_statuses
+	 *
+	 * @param string $status The returned intent's status.
+	 */
+	public function test_handle_wp_writes_nothing_for_a_payment_intent_with_no_charge( string $status ): void {
+		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$order   = $this->create_order( '50.00', $user_id, true );
+		$product = \WC_Helper_Product::create_simple_product();
+		WC()->cart->add_to_cart( $product->get_id() );
+		$api_client                 = new RedirectReturnApiClientStub();
+		$api_client->payment_intent = $this->no_charge_payment_intent( $order, 'pi_no_charge', $status );
+		$token_service              = $this->create_token_service(
+			array(
+				'pm_no_charge' => array(
+					'id'   => 'pm_no_charge',
+					'type' => 'card',
+					'card' => array(
+						'brand' => 'visa',
+						'last4' => '4242',
+					),
+				),
+			)
 		);
-		$this->assertSame( array(), $failure_notes );
+		$this->sut                  = $this->create_controller( true, $this->create_confirmation_service( $api_client, $token_service ), $api_client, $token_service );
+		$this->set_payment_intent_return_request( $order, 'pi_no_charge', true );
+		$cancellations = 0;
+		$count_cancel  = static function () use ( &$cancellations ): void {
+			++$cancellations;
+		};
+		add_action( 'woocommerce_order_status_cancelled', $count_cancel );
+		$logger = RecordingWcLogger::install();
+		$before = $this->order_meta_snapshot( $order->get_id() );
+
+		try {
+			$this->sut->handle_wp();
+		} finally {
+			remove_action( 'woocommerce_order_status_cancelled', $count_cancel );
+		}
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( OrderStatus::PENDING, $reloaded->get_status() );
+		$this->assertSame( 1, $api_client->payment_intent_reads );
+		$this->assertSame( $before, $this->order_meta_snapshot( $order->get_id() ), 'No meta is written.' );
+		$this->assertSame( array( '', WooPaymentsPersistenceVocabulary::GATEWAY_ID ), array( $reloaded->get_transaction_id(), $reloaded->get_payment_method() ) );
+		$this->assertSame( array(), wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'No started, failure or cancellation note.' );
+		$this->assertCount( 0, $reloaded->get_payment_tokens() );
+		$this->assertSame( 0, $cancellations );
+		$this->assertSame( 0, wc_notice_count() );
+		$this->assertSame( 1, WC()->cart->get_cart_contents_count(), 'The cart is not emptied.' );
+		$this->assertCount( 1, $this->no_charge_lines( $logger ) );
+	}
+
+	/**
+	 * PaymentIntent statuses a return can carry with no charge and no error.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public function provider_no_charge_return_statuses(): array {
+		return array(
+			'requires_payment_method' => array( 'requires_payment_method' ),
+			'requires_confirmation'   => array( 'requires_confirmation' ),
+			'canceled'                => array( 'canceled' ),
+			'processing'              => array( 'processing' ),
+		);
+	}
+
+	/**
+	 * @testdox A return of an earlier attempt that holds no money keeps the newer attempt stored during the return: $_dataName.
+	 *
+	 * Attempt B is stored after the return reads the order again and before the confirmation claims it. An attempt with no
+	 * charge ends before the claim and writes nothing; one with a charge is refused under the claim because it is no longer
+	 * the order's intent, with one always-on line labelled as a redirect return. Client 11.3.0 writes there.
+	 *
+	 * @dataProvider provider_returns_superseded_in_the_window
+	 *
+	 * @param string $a_status          Status of the returned attempt A.
+	 * @param bool   $a_failed_charge   Whether A carries a failed charge.
+	 * @param string $b_order_status    Order status B stores.
+	 * @param string $b_intent_status   Intent status B stores.
+	 * @param string $b_charge_id       Charge ID B stores, or '' for none.
+	 * @param int    $refusal_lines     Always-on lines expected for a refused return.
+	 */
+	public function test_handle_wp_keeps_a_newer_attempt_stored_during_the_return( string $a_status, bool $a_failed_charge, string $b_order_status, string $b_intent_status, string $b_charge_id, int $refusal_lines ): void {
+		$order    = $this->create_order( '50.00', 0, true );
+		$intent_a = $this->no_charge_payment_intent( $order, 'pi_attemptA', $a_status );
+		if ( $a_failed_charge ) {
+			$intent_a['charges'] = array(
+				'total_count' => 1,
+				'data'        => array(
+					array(
+						'id'                     => 'ch_attemptA',
+						'status'                 => 'failed',
+						'payment_method'         => 'pm_no_charge',
+						'payment_method_details' => array( 'type' => 'card' ),
+					),
+				),
+			);
+		}
+		$api_client                 = new RedirectReturnApiClientStub();
+		$api_client->payment_intent = $intent_a;
+		$this->set_payment_intent_return_request( $order, 'pi_attemptA' );
+		$notes     = array();
+		$store_b   = static function () use ( $order, $b_order_status, $b_intent_status, $b_charge_id, &$notes ): void {
+			$attempt_b = wc_get_order( $order->get_id() );
+			$attempt_b->set_status( $b_order_status );
+			$attempt_b->set_transaction_id( 'pi_attemptB' );
+			$attempt_b->update_meta_data( '_intent_id', 'pi_attemptB' );
+			$attempt_b->update_meta_data( '_intention_status', $b_intent_status );
+			$attempt_b->update_meta_data( '_payment_method_id', 'pm_attemptB' );
+			$attempt_b->update_meta_data( '_charge_id', $b_charge_id );
+			$attempt_b->save();
+			$attempt_b->add_order_note( 'Attempt B stored.' );
+			$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+		};
+		$this->sut = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client, null, null, $this->create_lifecycle_storing_after_first_read( $store_b ) );
+		$logger    = RecordingWcLogger::install();
+
+		$this->sut->handle_wp();
+		$stored = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $stored );
+		$this->assertContains( 'Attempt B stored.', wp_list_pluck( $notes, 'content' ), 'Attempt B was stored during the return.' );
+		$this->assertSame(
+			array( $b_order_status, 'pi_attemptB', 'pi_attemptB', $b_intent_status, 'pm_attemptB', $b_charge_id ),
+			array(
+				$stored->get_status(),
+				$stored->get_transaction_id(),
+				$stored->get_meta( '_intent_id', true ),
+				$stored->get_meta( '_intention_status', true ),
+				$stored->get_meta( '_payment_method_id', true ),
+				$stored->get_meta( '_charge_id', true ),
+			),
+			'Status, transaction ID, intent, intent status, payment method and charge are attempt B\'s.'
+		);
+		$this->assertEquals( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'No note of attempt A.' );
+		$this->assertSame( $refusal_lines, $this->count_return_left_payment_lines( $logger, 'pi_attemptA' ) );
+	}
+
+	/**
+	 * Earlier attempts returning while a newer one is stored: A's status, A's failed charge, B's order status, B's intent
+	 * status, B's charge, the refusal lines.
+	 *
+	 * @return array<string,array{0:string,1:bool,2:string,3:string,4:string,5:int}>
+	 */
+	public function provider_returns_superseded_in_the_window(): array {
+		return array(
+			'requires_action over an authorization'        => array( 'requires_action', false, OrderStatus::ON_HOLD, 'requires_capture', 'ch_attemptB', 0 ),
+			'requires_payment_method over an authorization' => array( 'requires_payment_method', false, OrderStatus::ON_HOLD, 'requires_capture', 'ch_attemptB', 0 ),
+			'requires_confirmation over an authorization'  => array( 'requires_confirmation', false, OrderStatus::ON_HOLD, 'requires_capture', 'ch_attemptB', 0 ),
+			'canceled over an authorization'               => array( 'canceled', false, OrderStatus::ON_HOLD, 'requires_capture', 'ch_attemptB', 0 ),
+			'canceled over a held captured payment'        => array( 'canceled', false, OrderStatus::ON_HOLD, 'succeeded', 'ch_attemptB', 0 ),
+			'requires_action over a held captured payment' => array( 'requires_action', false, OrderStatus::ON_HOLD, 'succeeded', 'ch_attemptB', 0 ),
+			'requires_action over a started attempt'       => array( 'requires_action', false, OrderStatus::PENDING, 'requires_action', '', 0 ),
+			'canceled over a started attempt'              => array( 'canceled', false, OrderStatus::PENDING, 'requires_action', '', 0 ),
+			'canceled with a failed charge over an authorization' => array( 'canceled', true, OrderStatus::ON_HOLD, 'requires_capture', 'ch_attemptB', 1 ),
+		);
+	}
+
+	/**
+	 * @testdox A zero-total order's canceled SetupIntent returning while a newer SetupIntent is stored keeps the newer one and the order pending.
+	 *
+	 * A SetupIntent carries no charge and still reaches the confirmation; the check under the claim refuses it there, as it
+	 * is no longer the order's intent and holds no money, with one always-on line labelled as a redirect return.
+	 */
+	public function test_handle_wp_keeps_a_newer_setup_intent_stored_during_the_return(): void {
+		$order                    = $this->create_order( '0.00' );
+		$api_client               = new RedirectReturnApiClientStub();
+		$api_client->setup_intent = array(
+			'id'                   => 'seti_attemptA',
+			'status'               => 'canceled',
+			'customer'             => 'cus_setup',
+			'payment_method'       => 'pm_setup',
+			'payment_method_types' => array( 'card' ),
+			'metadata'             => array( 'order_id' => $order->get_id() ),
+		);
+		$this->set_setup_intent_return_request( $order, 'seti_attemptA' );
+		$notes     = array();
+		$store_b   = static function () use ( $order, &$notes ): void {
+			$attempt_b = wc_get_order( $order->get_id() );
+			$attempt_b->update_meta_data( '_intent_id', 'seti_attemptB' );
+			$attempt_b->update_meta_data( '_intention_status', 'requires_action' );
+			$attempt_b->update_meta_data( '_payment_method_id', 'pm_attemptB' );
+			$attempt_b->save();
+			$attempt_b->add_order_note( 'Attempt B started.' );
+			$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+		};
+		$this->sut = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client, null, null, $this->create_lifecycle_storing_after_first_read( $store_b ) );
+		$logger    = RecordingWcLogger::install();
+
+		$this->sut->handle_wp();
+		$stored = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $stored );
+		$this->assertSame(
+			array( OrderStatus::PENDING, 'seti_attemptB', 'requires_action', 'pm_attemptB', '' ),
+			array( $stored->get_status(), $stored->get_meta( '_intent_id', true ), $stored->get_meta( '_intention_status', true ), $stored->get_meta( '_payment_method_id', true ), $stored->get_transaction_id() )
+		);
+		$this->assertEquals( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'No cancellation note.' );
+		$this->assertSame( 1, $this->count_return_left_payment_lines( $logger, 'seti_attemptA' ) );
+	}
+
+	/**
+	 * Build a card PaymentIntent with no charge and no error.
+	 *
+	 * @param WC_Order $order     Order object.
+	 * @param string   $intent_id Intent ID.
+	 * @param string   $status    Intent status.
+	 * @return array<string,mixed>
+	 */
+	private function no_charge_payment_intent( WC_Order $order, string $intent_id, string $status ): array {
+		$intent = array(
+			'id'                     => $intent_id,
+			'status'                 => $status,
+			'client_secret'          => $intent_id . '_secret_example',
+			'currency'               => 'usd',
+			'amount'                 => 5000,
+			'customer'               => 'cus_return',
+			'payment_method'         => 'requires_payment_method' === $status ? null : 'pm_no_charge',
+			'payment_method_types'   => array( 'card' ),
+			'payment_method_options' => array( 'card' => array( 'request_three_d_secure' => 'automatic' ) ),
+			'metadata'               => array( 'order_id' => $order->get_id() ),
+			'charges'                => array(
+				'total_count' => 0,
+				'data'        => array(),
+			),
+		);
+		if ( 'requires_action' === $status ) {
+			$intent['next_action'] = array(
+				'type'            => 'redirect_to_url',
+				'redirect_to_url' => array(
+					'url'        => 'https://hooks.stripe.com/3d_secure_2/hosted?merchant=acct_test',
+					'return_url' => $order->get_checkout_order_received_url(),
+				),
+			);
+		}
+		if ( 'canceled' === $status ) {
+			$intent['cancellation_reason'] = 'abandoned';
+		}
+
+		return $intent;
+	}
+
+	/**
+	 * Create an order payment lifecycle service whose first fresh read runs a callback after it reads.
+	 *
+	 * The redirect return reads the order again after the intent fetch with this service; the callback stores a newer
+	 * attempt after that read and before the confirmation claims the order.
+	 *
+	 * @param callable $after_first_read Callback.
+	 * @return OrderPaymentLifecycleService
+	 */
+	private function create_lifecycle_storing_after_first_read( callable $after_first_read ): OrderPaymentLifecycleService {
+		return new class( $after_first_read ) extends OrderPaymentLifecycleService {
+			/**
+			 * Callback still to run.
+			 *
+			 * @var callable|null
+			 */
+			private $after_first_read;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param callable $after_first_read Callback.
+			 */
+			public function __construct( callable $after_first_read ) {
+				$this->after_first_read = $after_first_read;
+			}
+
+			/**
+			 * Read a fresh copy, then run the callback once.
+			 *
+			 * @param WC_Order $order Order.
+			 * @return WC_Order
+			 */
+			public function get_fresh_order_from_data_store( WC_Order $order ): WC_Order {
+				$fresh = parent::get_fresh_order_from_data_store( $order );
+				if ( null !== $this->after_first_read ) {
+					$callback               = $this->after_first_read;
+					$this->after_first_read = null;
+					$callback();
+				}
+
+				return $fresh;
+			}
+		};
+	}
+
+	/**
+	 * The debug lines of a return left to the webhook because its PaymentIntent has no charge.
+	 *
+	 * @param RecordingWcLogger $logger Recording logger.
+	 * @return string[]
+	 */
+	private function no_charge_lines( RecordingWcLogger $logger ): array {
+		$lines = array_filter( $logger->lines, static fn( array $line ): bool => false !== strpos( $line[1], ' left to the webhook: payment ' ) && false !== strpos( $line[1], ' has no charge.' ) );
+
+		return array_values( array_map( static fn( array $line ): string => $line[1], $lines ) );
+	}
+
+	/**
+	 * Count the always-on lines of a redirect return that left a payment alone because it is not the order's own.
+	 *
+	 * @param RecordingWcLogger $logger    Recording logger.
+	 * @param string            $intent_id The returned intent.
+	 * @return int
+	 */
+	private function count_return_left_payment_lines( RecordingWcLogger $logger, string $intent_id ): int {
+		return count( array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] && 0 === strpos( $line[1], 'redirect return left payment ' . $intent_id . ' alone' ) ) );
 	}
 
 	/**
@@ -3536,6 +3849,86 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			'requires_action'         => array( 'requires_action' ),
 			'canceled'                => array( 'canceled' ),
 		);
+	}
+
+	/**
+	 * @testdox A zero-total order's own succeeded SetupIntent return completes the order, saves the card and records the SetupIntent.
+	 *
+	 * A SetupIntent never carries a charge, so the return's check for a PaymentIntent with no charge must not reach it. A free
+	 * trial whose card needed a challenge is completed on its return, as client 11.3.0 completes it there: the type comes from
+	 * the payment method (class-wc-payment-gateway-wcpay.php:2656-2672), then the token, the attach, the title and the status
+	 * update (:2689-2707).
+	 */
+	public function test_handle_wp_completes_a_zero_total_order_on_its_own_succeeded_setup_intent(): void {
+		$user_id                  = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$order                    = $this->create_order( '0.00', $user_id );
+		$api_client               = new RedirectReturnApiClientStub();
+		$api_client->setup_intent = array(
+			'id'                   => 'seti_trial',
+			'status'               => 'succeeded',
+			'customer'             => 'cus_trial',
+			'payment_method'       => 'pm_trial',
+			'payment_method_types' => array( 'card' ),
+			'metadata'             => array( 'order_id' => $order->get_id() ),
+		);
+		$card                     = array(
+			'brand'     => 'visa',
+			'network'   => 'visa',
+			'funding'   => 'credit',
+			'last4'     => '3155',
+			'exp_month' => 12,
+			'exp_year'  => 2030,
+		);
+		$token_service            = $this->create_token_service(
+			array(
+				'pm_trial' => array(
+					'id'   => 'pm_trial',
+					'type' => 'card',
+					'card' => $card,
+				),
+			)
+		);
+		$this->sut                = $this->create_controller( true, $this->create_confirmation_service( $api_client, $token_service ), $api_client, $token_service, $this->create_customer_service( $user_id, 'cus_trial' ) );
+		$this->set_setup_intent_return_request( $order, 'seti_trial' );
+		$_GET['save_payment_method'] = 'yes';
+		$logger                      = RecordingWcLogger::install();
+
+		$this->sut->handle_wp();
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( OrderStatus::COMPLETED, $reloaded->get_status() );
+		$this->assertSame( array( 'seti_trial', 'Visa credit card' ), array( $reloaded->get_transaction_id(), $reloaded->get_payment_method_title() ) );
+		$this->assertSame(
+			array(
+				array( '_intent_id', 'seti_trial' ),
+				array( '_intention_status', 'succeeded' ),
+				array( '_payment_method_id', 'pm_trial' ),
+				array( '_stripe_customer_id', 'cus_trial' ),
+				array( '_wcpay_intent_currency', 'USD' ),
+				array(
+					'_wcpay_payment_method_details',
+					wp_json_encode(
+						array(
+							'type' => 'card',
+							'card' => $card,
+						)
+					),
+				),
+				array( 'last4', '3155' ),
+				array( '_card_brand', 'visa' ),
+			),
+			array_values( array_filter( $this->order_meta_snapshot( $order->get_id() ), static fn( array $meta ): bool => ! in_array( $meta[0], array( '_billing_address_index', '_shipping_address_index' ), true ) ) )
+		);
+		$token_ids = $reloaded->get_payment_tokens();
+		$this->assertCount( 1, $token_ids );
+		$token = \WC_Payment_Tokens::get( (int) reset( $token_ids ) );
+		$this->assertInstanceOf( \WC_Payment_Token::class, $token );
+		$this->assertSame( array( 'pm_trial', $user_id ), array( $token->get_token(), $token->get_user_id() ) );
+		$notes = wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' );
+		$this->assertContains( 'A payment of ' . wc_price( 0, array( 'currency' => 'USD' ) ) . ' was <strong>successfully charged</strong> using WooPayments (<code>seti_trial</code>).', $notes );
+		$this->assertSame( 0, wc_notice_count() );
+		$this->assertSame( array(), $this->no_charge_lines( $logger ) );
 	}
 
 	/**
