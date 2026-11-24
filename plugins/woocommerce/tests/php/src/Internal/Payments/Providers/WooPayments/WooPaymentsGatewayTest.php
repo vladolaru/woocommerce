@@ -300,6 +300,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
 			->getMock();
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ), wc_get_container()->get( WooPaymentsDatabaseCache::class ) );
 		$account_service->method( 'get_cached_account_data' )->willReturn( $account_data );
 		$account_service->method( 'is_gateway_enabled' )->willReturn( true );
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );

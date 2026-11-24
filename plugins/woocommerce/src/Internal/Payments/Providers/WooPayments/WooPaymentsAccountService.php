@@ -506,6 +506,17 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Run a callback using the stored account even when its cache entry has expired.
+	 *
+	 * @template T
+	 * @param callable(): T $callback Operation to run.
+	 * @return T
+	 */
+	public function run_without_account_refresh( callable $callback ) {
+		return $this->database_cache->run_without_refresh( $callback );
+	}
+
+	/**
 	 * Get the account data stored in the local account cache without forcing a refresh.
 	 *
 	 * @since 11.0.0

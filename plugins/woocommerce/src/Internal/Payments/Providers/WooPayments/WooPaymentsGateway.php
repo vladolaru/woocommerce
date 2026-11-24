@@ -512,7 +512,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	public function get_method_description() {
 		if ( 'card' !== $this->get_payment_method_id() ) {
 			$definition               = $this->payment_method_definition;
-			$country                  = $definition->has_country_specific_description() ? $this->get_account_country() : null;
+			$country                  = $definition->has_country_specific_description() ? $this->get_stored_account_country() : null;
 			$this->method_description = $definition->get_description( $country );
 		}
 
@@ -1964,12 +1964,33 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
+	 * Get the stored country for gateway labels.
+	 *
+	 * @return string
+	 */
+	private function get_stored_account_country(): string {
+		$account = $this->get_account_service();
+		return $account->run_without_account_refresh( array( $account, 'get_account_country_or_us' ) );
+	}
+
+	/**
+	 * Declare the main gateway settings when requested by the core REST controller.
+	 *
+	 * @return void
+	 */
+	public function init_form_fields() {
+		if ( 'card' === $this->get_payment_method_id() ) {
+			$this->form_fields = wc_get_container()->get( WooPaymentsSettingsService::class )->get_gateway_form_fields();
+		}
+	}
+
+	/**
 	 * Get the translated shopper-facing payment method title.
 	 *
 	 * @return string
 	 */
 	private function get_translated_payment_method_title(): string {
-		return $this->payment_method_definition->get_title( $this->get_account_country() );
+		return $this->payment_method_definition->get_title( $this->get_stored_account_country() );
 	}
 
 	/**

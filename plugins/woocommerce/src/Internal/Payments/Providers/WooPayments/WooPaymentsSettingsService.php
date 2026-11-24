@@ -412,16 +412,241 @@ class WooPaymentsSettingsService {
 	}
 
 	/**
-	 * Save a settings page update: capability requests for newly enabled methods, then the fraud and account settings on
-	 * the platform, then the gateway settings in one write; answers the stored settings.
+	 * Get the appearance choices offered for express checkout buttons.
 	 *
-	 * A save that would newly turn on Link and WooPay together is refused with no settings write and no platform settings
-	 * request before the refusal; an expired account cache may be refreshed first, as every settings read does.
+	 * @return array<string,array<string,string>>
+	 */
+	public static function get_button_options(): array {
+		return array(
+			'payment_request_button_type'  => array(
+				'default' => __( 'Only icon', 'woocommerce' ),
+				'buy'     => __( 'Buy', 'woocommerce' ),
+				'donate'  => __( 'Donate', 'woocommerce' ),
+				'book'    => __( 'Book', 'woocommerce' ),
+			),
+			'payment_request_button_theme' => array(
+				'dark'          => __( 'Dark', 'woocommerce' ),
+				'light'         => __( 'Light', 'woocommerce' ),
+				'light-outline' => __( 'Light-Outline', 'woocommerce' ),
+			),
+			'payment_request_button_size'  => array(
+				'small'  => __( 'Small', 'woocommerce' ),
+				'medium' => __( 'Medium', 'woocommerce' ),
+				'large'  => __( 'Large', 'woocommerce' ),
+			),
+		);
+	}
+
+	/**
+	 * Get the card gateway fields exposed by the core payment gateway controllers.
+	 *
+	 * @return array<string,array<string,mixed>>
+	 */
+	public function get_gateway_form_fields(): array {
+		$country        = $this->account_service->run_without_account_refresh( array( $this->account_service, 'get_account_country_or_us' ) );
+		$method_options = array();
+		foreach ( PaymentMethodRegistry::SETTINGS_PAYMENT_METHOD_IDS as $id ) {
+			$definition            = $this->payment_method_registry->get( $id );
+			$method_options[ $id ] = $definition ? $definition->get_title( $country ) : strtoupper( $id );
+		}
+		$button_options  = self::get_button_options();
+		$express_options = array(
+			'payment_request' => __( 'Apple Pay / Google Pay', 'woocommerce' ),
+			'woopay'          => __( 'WooPay', 'woocommerce' ),
+			'amazon_pay'      => __( 'Amazon Pay', 'woocommerce' ),
+			'link'            => __( 'Link', 'woocommerce' ),
+		);
+		$fields          = array(
+			'manual_capture'                    => array(
+				'title'       => __( 'Manual capture', 'woocommerce' ),
+				'label'       => __( 'Issue an authorization on checkout, and capture later.', 'woocommerce' ),
+				'type'        => 'checkbox',
+				'description' => __( 'Charge must be captured within 7 days of authorization, otherwise the authorization and order will be canceled.', 'woocommerce' ),
+			),
+			'saved_cards'                       => array(
+				'title'       => __( 'Saved cards', 'woocommerce' ),
+				'label'       => __( 'Enable payment via saved cards', 'woocommerce' ),
+				'type'        => 'checkbox',
+				'description' => __( 'If enabled, users will be able to pay with a saved card during checkout. Card details are saved on our platform, not on your store.', 'woocommerce' ),
+			),
+			'test_mode'                         => array(
+				'title'       => __( 'Test mode', 'woocommerce' ),
+				'label'       => __( 'Enable test mode', 'woocommerce' ),
+				'type'        => 'checkbox',
+				'description' => __( 'Simulate transactions using test card numbers.', 'woocommerce' ),
+			),
+			'enable_logging'                    => array(
+				'title'       => __( 'Debug log', 'woocommerce' ),
+				'label'       => __( 'When enabled debug notes will be added to the log.', 'woocommerce' ),
+				'type'        => 'checkbox',
+				'description' => '',
+			),
+			'payment_request_button_type'       => array(
+				'title'       => __( 'Button type', 'woocommerce' ),
+				'type'        => 'select',
+				'description' => __( 'Select the button type you would like to show.', 'woocommerce' ),
+				'options'     => $button_options['payment_request_button_type'],
+			),
+			'payment_request_button_theme'      => array(
+				'title'       => __( 'Button theme', 'woocommerce' ),
+				'type'        => 'select',
+				'description' => __( 'Select the button theme you would like to show.', 'woocommerce' ),
+				'options'     => $button_options['payment_request_button_theme'],
+			),
+			'payment_request_button_size'       => array(
+				'title'       => __( 'Size of the button displayed for Express Checkouts', 'woocommerce' ),
+				'type'        => 'select',
+				'description' => __( 'Select the size of the button.', 'woocommerce' ),
+				'options'     => $button_options['payment_request_button_size'],
+			),
+			'express_checkout_product_methods'  => array(
+				'title'   => __( 'Express checkout methods on product page', 'woocommerce' ),
+				'type'    => 'multiselect',
+				'options' => $express_options,
+			),
+			'express_checkout_cart_methods'     => array(
+				'title'   => __( 'Express checkout methods on cart page', 'woocommerce' ),
+				'type'    => 'multiselect',
+				'options' => $express_options,
+			),
+			'express_checkout_checkout_methods' => array(
+				'title'   => __( 'Express checkout methods on checkout page', 'woocommerce' ),
+				'type'    => 'multiselect',
+				'options' => $express_options,
+			),
+			'upe_enabled_payment_method_ids'    => array(
+				'title'   => __( 'Payments accepted on checkout', 'woocommerce' ),
+				'type'    => 'multiselect',
+				'options' => $method_options,
+			),
+		);
+		$defaults        = WooPaymentsSettingsDefaults::all();
+		foreach ( $fields as $key => &$field ) {
+			$field['default'] = $defaults[ $key ];
+		}
+		return $fields;
+	}
+
+	/**
+	 * Read the effective values for a core gateway response without copying them to the option.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public function get_gateway_setting_values(): array {
+		$settings                   = $this->account_service->get_gateway_settings();
+		$settings['test_mode']      = wc_bool_to_string( $this->account_service->is_test_mode_enabled() );
+		$settings['enable_logging'] = wc_bool_to_string( $this->account_service->is_dev_mode_enabled() || $this->is_yes( $settings['enable_logging'] ) );
+		return $settings;
+	}
+
+	/**
+	 * Validate the whole gateway update before passing changed values to the settings save.
+	 *
+	 * @param array<string,mixed>               $posted Posted settings.
+	 * @param array<string,array<string,mixed>> $fields Gateway field definitions.
+	 * @return true|WP_Error
+	 */
+	public function save_gateway_settings( array $posted, array $fields ) {
+		if ( array_key_exists( 'account_statement_descriptor', $posted ) ) {
+			return new WP_Error( 'woocommerce_rest_payment_gateway_setting_unsupported', __( "The customer bank statement can't be changed here. Change it in the WooPayments settings.", 'woocommerce' ), array( 'status' => 400 ) );
+		}
+		$current = $this->get_gateway_setting_values();
+		$params  = array();
+		$mapping = array(
+			'manual_capture'                 => 'is_manual_capture_enabled',
+			'saved_cards'                    => 'is_saved_cards_enabled',
+			'test_mode'                      => 'is_test_mode_enabled',
+			'enable_logging'                 => 'is_debug_log_enabled',
+			'upe_enabled_payment_method_ids' => 'enabled_payment_method_ids',
+		);
+		foreach ( array_intersect_key( $posted, $fields ) as $key => $value ) {
+			$field = $fields[ $key ];
+			$value = $this->validate_gateway_setting( $key, $value, $field );
+			if ( is_wp_error( $value ) ) {
+				return $value;
+			}
+			if ( $current[ $key ] === $value ) {
+				continue;
+			}
+			if ( 'test_mode' === $key && ( $this->account_service->is_dev_mode_enabled() || $this->account_service->is_test_mode_onboarding_enabled() ) ) {
+				$message = $this->account_service->is_dev_mode_enabled()
+					? __( "Test mode can't be changed while WooPayments is in development mode.", 'woocommerce' )
+					: __( 'You are using a test account.', 'woocommerce' );
+				return new WP_Error( 'woocommerce_rest_payment_gateway_setting_locked', $message, array( 'status' => 400 ) );
+			}
+			if ( 'enable_logging' === $key && $this->account_service->is_dev_mode_enabled() ) {
+				return new WP_Error( 'woocommerce_rest_payment_gateway_setting_locked', __( 'Log error messages (defaulted on for test accounts)', 'woocommerce' ), array( 'status' => 400 ) );
+			}
+			$params[ $mapping[ $key ] ?? $key ] = 'checkbox' === $field['type'] ? 'yes' === $value : $value;
+		}
+		if ( empty( $params ) ) {
+			return true;
+		}
+		if ( isset( $params['enabled_payment_method_ids'] ) ) {
+			return $this->save_settings( $params );
+		}
+		return $this->account_service->run_without_account_refresh( fn() => $this->save_settings( $params ) );
+	}
+
+	/**
+	 * Validate a value using the options exposed on the gateway route.
+	 *
+	 * @param string $key Setting key.
+	 * @param mixed  $value Submitted value.
+	 * @param array  $field Field definition.
+	 * @return mixed Validated value or a REST error.
+	 */
+	private function validate_gateway_setting( string $key, $value, array $field ) {
+		switch ( $field['type'] ) {
+			case 'checkbox':
+				if ( empty( $value ) ) {
+					return $field['default'];
+				}
+				if ( in_array( $value, array( 'yes', 'no' ), true ) ) {
+					return $value;
+				}
+				break;
+			case 'select':
+				if ( is_string( $value ) && isset( $field['options'][ $value ] ) ) {
+					return $value;
+				}
+				break;
+			case 'multiselect':
+				if ( is_array( $value ) ) {
+					$valid = array_values( array_filter( $value, static fn( $id ) => is_string( $id ) && isset( $field['options'][ $id ] ) ) );
+					if ( 'upe_enabled_payment_method_ids' !== $key || count( $valid ) === count( $value ) ) {
+						return $valid;
+					}
+				} elseif ( empty( $value ) && 'upe_enabled_payment_method_ids' !== $key ) {
+					return array();
+				}
+				break;
+		}
+		return new WP_Error( 'rest_setting_value_invalid', __( 'An invalid setting value was passed.', 'woocommerce' ), array( 'status' => 400 ) );
+	}
+
+	/**
+	 * Save the settings screen and return its updated data.
 	 *
 	 * @param array<string,mixed> $params Request parameters.
 	 * @return array<string,mixed>|WP_Error
 	 */
 	public function update_settings( array $params ) {
+		$result = $this->save_settings( $params );
+		return is_wp_error( $result ) ? $result : $this->get_settings();
+	}
+
+	/**
+	 * Save a settings page update: capability requests for newly enabled methods, then the fraud and account settings on
+	 * the platform, then the gateway settings in one write.
+	 *
+	 * A save that would newly turn on Link and WooPay together is refused with no settings write and no platform settings
+	 * request before the refusal; an expired account cache may be refreshed first, as every settings read does.
+	 *
+	 * @param array<string,mixed> $params Request parameters.
+	 * @return true|WP_Error
+	 */
+	private function save_settings( array $params ) {
 		$multi_currency_error = $this->get_multi_currency_disable_error( $params );
 		if ( null !== $multi_currency_error ) {
 			return $multi_currency_error;
@@ -584,7 +809,7 @@ class WooPaymentsSettingsService {
 		// includes/admin/class-wc-rest-payments-settings-controller.php:642-643); the scheduled sync hook does not fire here.
 		$this->store_setup_report_controller->handle_wcpay_store_setup_sync();
 
-		return $this->get_settings();
+		return true;
 	}
 
 	/**

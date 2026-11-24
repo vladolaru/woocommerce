@@ -13,6 +13,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAp
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPmPromotionsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudRulesetService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Exception;
 use WP_Error;
 use WP_Http;
@@ -122,6 +124,74 @@ class MerchantRestController extends RestApiControllerBase {
 	 * @var Client
 	 */
 	private Client $api_client;
+
+	/**
+	 * Register the settings screen routes and the core gateway settings handlers.
+	 */
+	public function register() {
+		parent::register();
+		add_filter( 'rest_dispatch_request', array( $this, 'save_core_gateway_settings' ), 10, 4 );
+		add_filter( 'woocommerce_rest_prepare_payment_gateway', array( $this, 'prepare_core_gateway_settings' ), 10, 2 );
+	}
+
+	/**
+	 * Apply changed gateway settings after core grants permission and before its ordinary gateway update.
+	 *
+	 * @param mixed $result  Existing dispatch result.
+	 * @param mixed $request REST request.
+	 * @param mixed $route   Matched route pattern.
+	 * @param mixed $handler Matched endpoint.
+	 * @return mixed Dispatch result or a settings error.
+	 */
+	public function save_core_gateway_settings( $result, $request, $route, $handler ) {
+		if ( null !== $result || ! $request instanceof WP_REST_Request ||
+			! in_array( $request->get_method(), array( 'PUT', 'POST', 'PATCH' ), true ) ||
+			! preg_match( '~^/wc/v[23]/payment_gateways/[^/]+/?$~iD', $request->get_route() ) ||
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $request['id'] || ! is_array( $request['settings'] ) ||
+			! $this->runtime_arbiter->is_builtin_owner() ) {
+			return $result;
+		}
+
+		$callback = $handler['callback'] ?? null;
+		if ( ! is_array( $callback ) || ! ( $callback[0] instanceof \WC_REST_Payment_Gateways_V2_Controller ) || 'update_item' !== $callback[1] ) {
+			return $result;
+		}
+		$gateway = WC()->payment_gateways()->payment_gateways()[ $request['id'] ] ?? null;
+		if ( ! $gateway instanceof WooPaymentsGateway ) {
+			return $result;
+		}
+
+		$fields = $this->settings_service->get_gateway_form_fields();
+		$saved  = $this->settings_service->save_gateway_settings( $request['settings'], $fields );
+		if ( is_wp_error( $saved ) ) {
+			return $saved;
+		}
+		$gateway->init_settings();
+		$request->set_param( 'settings', array_diff_key( $request['settings'], $fields ) );
+		return $result;
+	}
+
+	/**
+	 * Show the effective values without modifying the gateway's settings for subsequent writes.
+	 *
+	 * @param mixed $response Gateway response.
+	 * @param mixed $gateway  Gateway being returned.
+	 * @return mixed Gateway response.
+	 */
+	public function prepare_core_gateway_settings( $response, $gateway ) {
+		if ( ! $response instanceof WP_REST_Response || ! $gateway instanceof WooPaymentsGateway ||
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $gateway->id || ! $this->runtime_arbiter->is_builtin_owner() ) {
+			return $response;
+		}
+
+		$data   = $response->get_data();
+		$values = $this->settings_service->get_gateway_setting_values();
+		foreach ( array_intersect_key( $values, $data['settings'] ?? array() ) as $key => $value ) {
+			$data['settings'][ $key ]['value'] = $value;
+		}
+		$response->set_data( $data );
+		return $response;
+	}
 
 	/**
 	 * Get the WooCommerce REST API namespace for the class.
