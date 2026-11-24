@@ -11,6 +11,30 @@ use WC_Unit_Test_Case;
 class WooPaymentsExtensionFacadePlacementTest extends WC_Unit_Test_Case {
 
 	/**
+	 * @testdox Compatibility members avoid WooCommerce deprecation calls that log on live AJAX and REST requests.
+	 */
+	public function test_compatibility_folders_avoid_live_deprecation_logging(): void {
+		$folders = array( 'includes/legacy/woopayments-compat', 'src/Internal/Payments/Providers/WooPayments/Compat' );
+		$calls   = array();
+		foreach ( $folders as $folder ) {
+			$files = new \RecursiveIteratorIterator( new \RecursiveDirectoryIterator( WC_ABSPATH . $folder, \FilesystemIterator::SKIP_DOTS ) );
+			foreach ( $files as $file ) {
+				if ( 'php' !== $file->getExtension() ) {
+					continue;
+				}
+				$tokens = $this->get_significant_tokens( php_strip_whitespace( $file->getPathname() ) );
+				foreach ( $tokens as $index => $token ) {
+					if ( 0 === strcasecmp( ltrim( $token['text'], '\\' ), 'wc_deprecated_function' ) && $this->tokens_match( $tokens, $index + 1, array( '(' ) ) ) {
+						$calls[] = $file->getPathname();
+						break;
+					}
+				}
+			}
+		}
+		$this->assertSame( array(), $calls );
+	}
+
+	/**
 	 * @testdox Development autoloaders expose only the existing global classes from the WooCommerce tests directory.
 	 */
 	public function test_dev_classmaps_expose_only_known_global_test_classes(): void {

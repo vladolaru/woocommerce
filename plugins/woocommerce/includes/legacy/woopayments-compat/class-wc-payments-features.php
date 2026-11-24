@@ -92,7 +92,7 @@ class WC_Payments_Features {
 	 * @return bool
 	 */
 	public static function are_payments_enabled(): bool {
-		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+		self::warn_compatibility_method( __METHOD__ );
 
 		return wc_get_container()->get( WooPaymentsAccountService::class )->has_working_account();
 	}
@@ -106,7 +106,7 @@ class WC_Payments_Features {
 	 * @return bool
 	 */
 	public static function is_woopay_enabled(): bool {
-		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+		self::warn_compatibility_method( __METHOD__ );
 
 		return '1' === get_option( self::WOOPAY_EXPRESS_CHECKOUT_FLAG_NAME, '1' )
 			&& wc_get_container()->get( Eligibility::class )->is_woopay_enabled();
@@ -116,12 +116,12 @@ class WC_Payments_Features {
 	 * Report whether WooCommerce runs Multi-Currency.
 	 *
 	 * @since 11.4.0
-	 * @deprecated 11.4.0 Removed in WooCommerce 12.0.0.
+	 * @deprecated 11.4.0 Use Automattic\WooCommerce\Utilities\MultiCurrencyUtil::is_active().
 	 *
 	 * @return bool
 	 */
 	public static function is_customer_multi_currency_enabled(): bool {
-		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+		self::warn_compatibility_method( __METHOD__, 'Automattic\WooCommerce\Utilities\MultiCurrencyUtil::is_active()' );
 
 		return wc_get_container()->get( MultiCurrencyRuntimeArbiter::class )->is_builtin_owner();
 	}
@@ -135,7 +135,7 @@ class WC_Payments_Features {
 	 * @return bool
 	 */
 	public static function is_wcpay_subscriptions_eligible(): bool {
-		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+		self::warn_compatibility_method( __METHOD__ );
 
 		return wc_get_container()->get( StripeBillingModule::class )->is_bundled_subscriptions_eligible();
 	}
@@ -149,7 +149,7 @@ class WC_Payments_Features {
 	 * @return bool
 	 */
 	public static function is_woopay_eligible(): bool {
-		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+		self::warn_compatibility_method( __METHOD__ );
 
 		return wc_get_container()->get( Eligibility::class )->is_woopay_eligible();
 	}
@@ -163,7 +163,7 @@ class WC_Payments_Features {
 	 * @return bool
 	 */
 	public static function is_woopay_force_signed_requests_enabled(): bool {
-		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+		self::warn_compatibility_method( __METHOD__ );
 
 		return wc_get_container()->get( Eligibility::class )->is_woopay_force_signed_requests_enabled();
 	}
@@ -177,7 +177,7 @@ class WC_Payments_Features {
 	 * @return bool
 	 */
 	public static function is_documents_section_enabled(): bool {
-		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+		self::warn_compatibility_method( __METHOD__ );
 
 		return wc_get_container()->get( WooPaymentsAccountService::class )->is_documents_enabled();
 	}
@@ -191,7 +191,7 @@ class WC_Payments_Features {
 	 * @return bool
 	 */
 	public static function is_woopay_express_checkout_enabled(): bool {
-		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+		self::warn_compatibility_method( __METHOD__ );
 
 		return '1' === get_option( self::WOOPAY_EXPRESS_CHECKOUT_FLAG_NAME, '1' )
 			&& wc_get_container()->get( Eligibility::class )->is_woopay_eligible();
@@ -206,7 +206,7 @@ class WC_Payments_Features {
 	 * @return bool
 	 */
 	public static function is_woopay_direct_checkout_enabled(): bool {
-		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+		self::warn_compatibility_method( __METHOD__ );
 
 		return '1' === get_option( self::WOOPAY_EXPRESS_CHECKOUT_FLAG_NAME, '1' )
 			&& wc_get_container()->get( Eligibility::class )->is_woopay_direct_checkout_enabled();
@@ -221,7 +221,7 @@ class WC_Payments_Features {
 	 * @return bool
 	 */
 	public static function is_woopay_global_theme_support_eligible(): bool {
-		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+		self::warn_compatibility_method( __METHOD__ );
 
 		return ! empty( wc_get_container()->get( WooPaymentsAccountService::class )->get_cached_account_data()['platform_global_theme_support_enabled'] );
 	}
@@ -235,7 +235,7 @@ class WC_Payments_Features {
 	 * @return bool
 	 */
 	public static function is_frt_review_feature_active(): bool {
-		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+		self::warn_compatibility_method( __METHOD__ );
 
 		return '1' === get_option( 'wcpay_frt_review_feature_active', '0' );
 	}
@@ -249,7 +249,7 @@ class WC_Payments_Features {
 	 * @return bool
 	 */
 	public static function is_fraud_protection_welcome_tour_dismissed(): bool {
-		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+		self::warn_compatibility_method( __METHOD__ );
 
 		return '1' === get_option( 'wcpay_fraud_protection_welcome_tour_dismissed', '0' );
 	}
@@ -263,7 +263,7 @@ class WC_Payments_Features {
 	 * @return bool
 	 */
 	public static function is_stripe_billing_enabled(): bool {
-		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+		self::warn_compatibility_method( __METHOD__ );
 
 		return '1' === get_option( StripeBillingModule::TOGGLE_OPTION, '0' );
 	}
@@ -277,7 +277,7 @@ class WC_Payments_Features {
 	 * @return bool
 	 */
 	public static function is_stripe_billing_eligible(): bool {
-		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+		self::warn_compatibility_method( __METHOD__ );
 
 		return 'US' === ( wc_get_base_location()['country'] ?? '' );
 	}
@@ -291,7 +291,7 @@ class WC_Payments_Features {
 	 * @return bool
 	 */
 	public static function should_use_stripe_billing(): bool {
-		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+		self::warn_compatibility_method( __METHOD__ );
 
 		return '1' === get_option( StripeBillingModule::TOGGLE_OPTION, '0' )
 			&& SubscriptionMethodPolicy::is_woocommerce_subscriptions_active();
@@ -306,7 +306,7 @@ class WC_Payments_Features {
 	 * @return bool
 	 */
 	public static function is_dispute_issuer_evidence_enabled(): bool {
-		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+		self::warn_compatibility_method( __METHOD__ );
 
 		return false;
 	}
@@ -320,7 +320,7 @@ class WC_Payments_Features {
 	 * @return bool
 	 */
 	public static function is_dispute_additional_evidence_types_enabled(): bool {
-		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+		self::warn_compatibility_method( __METHOD__ );
 
 		return true;
 	}
@@ -334,7 +334,7 @@ class WC_Payments_Features {
 	 * @return bool
 	 */
 	public static function is_dispute_outcome_view_enabled(): bool {
-		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+		self::warn_compatibility_method( __METHOD__ );
 
 		return true;
 	}
@@ -348,7 +348,7 @@ class WC_Payments_Features {
 	 * @return bool
 	 */
 	public static function is_dispute_readiness_overview_enabled(): bool {
-		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+		self::warn_compatibility_method( __METHOD__ );
 
 		return true;
 	}
@@ -362,7 +362,7 @@ class WC_Payments_Features {
 	 * @return bool
 	 */
 	public static function is_reports_area_enabled(): bool {
-		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+		self::warn_compatibility_method( __METHOD__ );
 
 		return wc_get_container()->get( WooPaymentsAccountService::class )->is_reports_enabled();
 	}
@@ -376,7 +376,7 @@ class WC_Payments_Features {
 	 * @return bool
 	 */
 	public static function is_next_deposit_notice_dismissed(): bool {
-		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+		self::warn_compatibility_method( __METHOD__ );
 
 		return '1' === get_option( 'wcpay_next_deposit_notice_dismissed', '0' );
 	}
@@ -390,7 +390,7 @@ class WC_Payments_Features {
 	 * @return bool
 	 */
 	public static function is_dynamic_checkout_place_order_button_enabled(): bool {
-		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+		self::warn_compatibility_method( __METHOD__ );
 
 		return WooPaymentsSettingsService::is_dynamic_checkout_place_order_button_enabled();
 	}
@@ -404,7 +404,7 @@ class WC_Payments_Features {
 	 * @return bool
 	 */
 	public static function is_mc_cache_optimized_enabled(): bool {
-		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+		self::warn_compatibility_method( __METHOD__ );
 
 		return true;
 	}
@@ -418,7 +418,7 @@ class WC_Payments_Features {
 	 * @return bool
 	 */
 	public static function is_amazon_pay_enabled(): bool {
-		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+		self::warn_compatibility_method( __METHOD__ );
 
 		return wc_get_container()->get( PaymentMethodRegistry::class )->is_amazon_pay_enabled( wc_get_container()->get( WooPaymentsAccountService::class ) );
 	}
@@ -432,7 +432,7 @@ class WC_Payments_Features {
 	 * @return bool
 	 */
 	public static function is_ece_confirmation_tokens_enabled(): bool {
-		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+		self::warn_compatibility_method( __METHOD__ );
 
 		return wc_get_container()->get( WooPaymentsAccountService::class )->is_ece_confirmation_tokens_enabled();
 	}
@@ -446,7 +446,7 @@ class WC_Payments_Features {
 	 * @return array<string,bool>
 	 */
 	public static function to_array(): array {
-		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+		self::warn_compatibility_method( __METHOD__ );
 
 		return array_filter(
 			array(

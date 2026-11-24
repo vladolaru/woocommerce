@@ -45,7 +45,7 @@ class WooPaymentsModeFacadeTest extends WC_Unit_Test_Case {
 	 */
 	private function read_mode( Mode $mode ): array {
 		foreach ( array( 'is_live', 'is_test', 'is_dev', 'is_test_mode_onboarding', 'get_dev_mode_triggers' ) as $reader ) {
-			$this->setExpectedDeprecated( Mode::class . '::' . $reader );
+			$this->setExpectedIncorrectUsage( Mode::class . '::' . $reader . '()' );
 		}
 		return array( $mode->is_live(), $mode->is_test(), $mode->is_dev(), $mode->is_test_mode_onboarding(), $mode->get_dev_mode_triggers() );
 	}
@@ -55,7 +55,7 @@ class WooPaymentsModeFacadeTest extends WC_Unit_Test_Case {
 	 */
 	public function test_current_mode(): void {
 		$this->load_facades();
-		$this->setExpectedDeprecated( 'WC_Payments::mode' );
+		$this->setExpectedIncorrectUsage( 'WC_Payments::mode()' );
 		add_filter( 'wcpay_dev_mode', '__return_true' );
 		$account = wc_get_container()->get( WooPaymentsAccountService::class );
 		$mode    = WC_Payments::mode();
@@ -81,7 +81,7 @@ class WooPaymentsModeFacadeTest extends WC_Unit_Test_Case {
 	 */
 	public function test_mode_follows_account_after_tier_drop( string $tier, bool $dev_mode ): void {
 		$this->load_facades();
-		$this->setExpectedDeprecated( 'WC_Payments::mode' );
+		$this->setExpectedIncorrectUsage( 'WC_Payments::mode()' );
 		add_filter( 'wcpay_dev_mode', $dev_mode ? '__return_true' : '__return_false' );
 		update_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array( 'test_mode' => 'yes' ) );
 
@@ -125,21 +125,22 @@ class WooPaymentsModeFacadeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Each public facade call emits exactly its own deprecation notice.
+	 * @testdox Each public mode method warns once per request.
 	 */
 	public function test_mode_notices(): void {
 		$this->load_facades();
-		$this->setExpectedDeprecated( 'WC_Payments::mode' );
+		$this->setExpectedIncorrectUsage( 'WC_Payments::mode()' );
 		$notices = array();
 		add_action(
-			'deprecated_function_run',
+			'doing_it_wrong_run',
 			static function ( $name ) use ( &$notices ) {
 				$notices[] = $name;
 			}
 		);
 		$this->read_mode( WC_Payments::mode() );
+		$this->read_mode( WC_Payments::mode() );
 		$this->assertSame(
-			array( 'WC_Payments::mode', Mode::class . '::is_live', Mode::class . '::is_test', Mode::class . '::is_dev', Mode::class . '::is_test_mode_onboarding', Mode::class . '::get_dev_mode_triggers' ),
+			array( 'WC_Payments::mode()', Mode::class . '::is_live()', Mode::class . '::is_test()', Mode::class . '::is_dev()', Mode::class . '::is_test_mode_onboarding()', Mode::class . '::get_dev_mode_triggers()' ),
 			$notices
 		);
 	}
@@ -153,7 +154,7 @@ class WooPaymentsModeFacadeTest extends WC_Unit_Test_Case {
 	 */
 	public function test_settings_provider_mode( bool $extension_owns ): void {
 		$this->load_facades();
-		$this->setExpectedDeprecated( 'WC_Payments::mode' );
+		$this->setExpectedIncorrectUsage( 'WC_Payments::mode()' );
 		$container = wc_get_container();
 		$this->assertTrue( class_exists( WC_Payments::class ) );
 		if ( $extension_owns ) {

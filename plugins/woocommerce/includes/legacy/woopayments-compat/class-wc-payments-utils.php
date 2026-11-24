@@ -6,6 +6,7 @@
 
 declare( strict_types = 1 );
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\WooPaymentsCompatibilityNotice;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
 
 /**
@@ -16,6 +17,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCu
  */
 class WC_Payments_Utils {
 	// phpcs:enable Squiz.Classes.ClassFileName.NoMatch,SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName,Squiz.Classes.ValidClassName.NotCamelCaps
+
+	use WooPaymentsCompatibilityNotice;
 
 	/**
 	 * Round an amount to the integer units used by the extension.
@@ -28,7 +31,7 @@ class WC_Payments_Utils {
 	 * @return int
 	 */
 	public static function prepare_amount( $amount, $currency = 'USD' ): int {
-		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+		self::warn_compatibility_method( __METHOD__ );
 
 		$multiplier = WooPaymentsCurrencyUtils::is_zero_decimal_currency( (string) $currency ) ? 1 : 100;
 		return (int) round( (float) $amount * $multiplier );

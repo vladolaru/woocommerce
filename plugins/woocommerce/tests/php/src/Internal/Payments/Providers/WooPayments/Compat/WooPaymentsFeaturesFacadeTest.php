@@ -74,7 +74,7 @@ class WooPaymentsFeaturesFacadeTest extends WC_Unit_Test_Case {
 	 */
 	public function test_cartflows_woopay_check(): void {
 		$account = $this->load_facades( true );
-		$this->setExpectedDeprecated( 'WC_Payments_Features::is_woopay_eligible' );
+		$this->setExpectedIncorrectUsage( 'WC_Payments_Features::is_woopay_eligible()' );
 		$this->assertTrue( class_exists( 'WC_Payments' ) && class_exists( 'WC_Payments_Features' ) && Features::is_woopay_eligible() );
 
 		$data                               = $account->get_stored_account_data();
@@ -99,7 +99,7 @@ class WooPaymentsFeaturesFacadeTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_next_deposit_notice_dismissed', '1' );
 		update_option( '_wcpay_feature_dynamic_checkout_place_order_button', '1' );
 
-		$answers = array(
+		$answers  = array(
 			'are_payments_enabled'                         => true,
 			'is_woopay_enabled'                            => true,
 			'is_customer_multi_currency_enabled'           => true,
@@ -127,12 +127,21 @@ class WooPaymentsFeaturesFacadeTest extends WC_Unit_Test_Case {
 			'is_amazon_pay_enabled'                        => true,
 			'is_ece_confirmation_tokens_enabled'           => true,
 		);
+		$warnings = array();
+		add_action(
+			'doing_it_wrong_run',
+			static function ( $member, $message, $version ) use ( &$warnings ) {
+				$warnings[] = array( $member, $message, $version );
+			},
+			10,
+			3
+		);
 		foreach ( $answers as $method => $expected ) {
-			$this->setExpectedDeprecated( 'WC_Payments_Features::' . $method );
+			$this->setExpectedIncorrectUsage( 'WC_Payments_Features::' . $method . '()' );
 			$this->assertSame( $expected, Features::$method(), $method );
 		}
 
-		$this->setExpectedDeprecated( 'WC_Payments_Features::to_array' );
+		$this->setExpectedIncorrectUsage( 'WC_Payments_Features::to_array()' );
 		$this->assertSame(
 			array_fill_keys(
 				array( 'multiCurrency', 'woopay', 'documents', 'woopayExpressCheckout', 'isDisputeAdditionalEvidenceTypesEnabled', 'isDisputeOutcomeViewEnabled', 'isDisputeReadinessOverviewEnabled', 'isFRTReviewFeatureActive', 'isDynamicCheckoutPlaceOrderButtonEnabled', 'amazonPay', 'isEceUsingConfirmationTokens' ),
@@ -140,6 +149,17 @@ class WooPaymentsFeaturesFacadeTest extends WC_Unit_Test_Case {
 			),
 			Features::to_array()
 		);
+		$expected_warnings = array();
+		foreach ( array_merge( array_keys( $answers ), array( 'to_array' ) ) as $method ) {
+			Features::$method();
+			$member              = 'WC_Payments_Features::' . $method . '()';
+			$message             = 'is_customer_multi_currency_enabled' === $method
+				? 'Use Automattic\WooCommerce\Utilities\MultiCurrencyUtil::is_active() instead.'
+				: $member . ' is a compatibility shim for the WooPayments extension with no replacement in WooCommerce and will be removed in 12.0.0.';
+			$expected_warnings[] = array( $member, $message, '11.4.0' );
+		}
+		$this->assertSame( $expected_warnings, $warnings );
+
 		update_option( '_wcpay_feature_woopay_express_checkout', '0' );
 		$this->assertFalse( Features::is_woopay_enabled() );
 		$this->assertFalse( Features::is_woopay_express_checkout_enabled() );
@@ -151,7 +171,7 @@ class WooPaymentsFeaturesFacadeTest extends WC_Unit_Test_Case {
 	 */
 	public function test_pricewise_currency_check(): void {
 		$this->load_facades( false );
-		$this->setExpectedDeprecated( 'WC_Payments_Features::is_customer_multi_currency_enabled' );
+		$this->setExpectedIncorrectUsage( 'WC_Payments_Features::is_customer_multi_currency_enabled()' );
 		$this->assertTrue( class_exists( 'WC_Payments_Features' ) && Features::is_customer_multi_currency_enabled() );
 		$this->assertFalse( function_exists( 'WC_Payments_Multi_Currency' ) );
 	}
@@ -162,10 +182,10 @@ class WooPaymentsFeaturesFacadeTest extends WC_Unit_Test_Case {
 	public function test_currency_consumers_follow_module_ownership(): void {
 		$this->load_facades( false );
 		update_option( 'woocommerce_currency', 'USD' );
-		$this->setExpectedDeprecated( 'WC_Payments_Features::is_customer_multi_currency_enabled' );
+		$this->setExpectedIncorrectUsage( 'WC_Payments_Features::is_customer_multi_currency_enabled()' );
 		$this->assertTrue( class_exists( 'WC_Payments_Features' ) && class_exists( MultiCurrency::class ) && Features::is_customer_multi_currency_enabled() );
 		foreach ( array( 'instance', 'get_enabled_currencies', 'get_default_currency' ) as $method ) {
-			$this->setExpectedDeprecated( MultiCurrency::class . '::' . $method );
+			$this->setExpectedIncorrectUsage( MultiCurrency::class . '::' . $method . '()' );
 		}
 		$module = MultiCurrency::instance();
 		$this->assertArrayHasKey( 'USD', $module->get_enabled_currencies() );
@@ -184,7 +204,7 @@ class WooPaymentsFeaturesFacadeTest extends WC_Unit_Test_Case {
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, $enabled ? 'yes' : 'no' );
 		$this->assertTrue( is_callable( array( Features::class, 'is_customer_multi_currency_enabled' ) ) );
 		$this->assertTrue( method_exists( Features::class, 'is_customer_multi_currency_enabled' ) );
-		$this->setExpectedDeprecated( 'WC_Payments_Features::is_customer_multi_currency_enabled' );
+		$this->setExpectedIncorrectUsage( 'WC_Payments_Features::is_customer_multi_currency_enabled()' );
 		$this->assertSame( $enabled, Features::is_customer_multi_currency_enabled() );
 	}
 
@@ -200,7 +220,7 @@ class WooPaymentsFeaturesFacadeTest extends WC_Unit_Test_Case {
 		$tier    = wc_get_container()->get( WooPaymentsSetupTier::class );
 		update_option( '_wcpay_feature_reports_area', '1' );
 		$account->cache_account_data_until_refreshed( array( 'account_id' => 'acct_123' ) );
-		$this->setExpectedDeprecated( 'WC_Payments_Features::' . $method );
+		$this->setExpectedIncorrectUsage( 'WC_Payments_Features::' . $method . '()' );
 		$before_read = Features::$method();
 		$this->assertSame( array(), $account->get_cached_account_data() );
 		$this->assertSame( array( WooPaymentsSetupTier::ACTIVE, $before_read ), array( $tier->get_effective_tier(), Features::$method() ) );

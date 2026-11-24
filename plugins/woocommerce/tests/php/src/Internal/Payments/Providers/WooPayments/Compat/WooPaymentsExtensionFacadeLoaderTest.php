@@ -101,12 +101,25 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	 */
 	public function test_prepare_amount(): void {
 		$this->register_extension_facades();
-		$this->setExpectedDeprecated( 'WC_Payments_Utils::prepare_amount' );
+		$this->setExpectedIncorrectUsage( 'WC_Payments_Utils::prepare_amount()' );
+		$warnings = array();
+		add_action(
+			'doing_it_wrong_run',
+			static function ( $member, $message, $version ) use ( &$warnings ) {
+				$warnings[] = array( $member, $message, $version );
+			},
+			10,
+			3
+		);
 		$this->assertSame( 1001, \WC_Payments_Utils::prepare_amount( 10.005, 'USD' ) );
 		$this->assertSame( 1000, \WC_Payments_Utils::prepare_amount( '1000', 'JPY' ) );
 		$this->assertSame( 1000, \WC_Payments_Utils::prepare_amount( '1000', 'jpy' ) );
 		$this->assertSame( -125, \WC_Payments_Utils::prepare_amount( '-1.25' ) );
 		$this->assertSame( 125, \WC_Payments_Utils::prepare_amount( 1.25, null ) );
+		$this->assertSame(
+			array( array( 'WC_Payments_Utils::prepare_amount()', 'WC_Payments_Utils::prepare_amount() is a compatibility shim for the WooPayments extension with no replacement in WooCommerce and will be removed in 12.0.0.', '11.4.0' ) ),
+			$warnings
+		);
 	}
 
 	/**

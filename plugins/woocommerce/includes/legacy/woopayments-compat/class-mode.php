@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace WCPay\Core;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\WooPaymentsCompatibilityNotice;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 
 /**
@@ -17,6 +18,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
  */
 class Mode {
 
+	use WooPaymentsCompatibilityNotice;
+
 	/**
 	 * Report whether payments use live mode.
 	 *
@@ -26,7 +29,7 @@ class Mode {
 	 * @return bool
 	 */
 	public function is_live(): bool {
-		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+		self::warn_compatibility_method( __METHOD__ );
 
 		return ! wc_get_container()->get( WooPaymentsAccountService::class )->is_test_mode_enabled();
 	}
@@ -40,7 +43,7 @@ class Mode {
 	 * @return bool
 	 */
 	public function is_test(): bool {
-		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+		self::warn_compatibility_method( __METHOD__ );
 
 		return wc_get_container()->get( WooPaymentsAccountService::class )->is_test_mode_enabled();
 	}
@@ -54,7 +57,7 @@ class Mode {
 	 * @return bool
 	 */
 	public function is_test_mode_onboarding(): bool {
-		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+		self::warn_compatibility_method( __METHOD__ );
 
 		return wc_get_container()->get( WooPaymentsAccountService::class )->is_test_mode_onboarding_enabled();
 	}
@@ -68,7 +71,7 @@ class Mode {
 	 * @return bool
 	 */
 	public function is_dev(): bool {
-		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+		self::warn_compatibility_method( __METHOD__ );
 
 		return wc_get_container()->get( WooPaymentsAccountService::class )->is_dev_mode_enabled();
 	}
@@ -82,7 +85,7 @@ class Mode {
 	 * @return string[]
 	 */
 	public function get_dev_mode_triggers(): array {
-		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+		self::warn_compatibility_method( __METHOD__ );
 
 		return wc_get_container()->get( WooPaymentsAccountService::class )->get_dev_mode_triggers();
 	}

@@ -248,7 +248,7 @@ class WooPaymentsLevel3ServiceTest extends WC_Unit_Test_Case {
 		$container->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		$container->get( WooPaymentsSetupTier::class )->write_tier( WooPaymentsSetupTier::ACTIVE );
 		$container->get( WooPaymentsExtensionFacadeLoader::class )->load();
-		$this->setExpectedDeprecated( 'WC_Payments_Utils::prepare_amount' );
+		$this->setExpectedIncorrectUsage( 'WC_Payments_Utils::prepare_amount()' );
 		add_filter(
 			'wcpay_payment_request_level3_data',
 			static function ( $level3_data, $order ) {

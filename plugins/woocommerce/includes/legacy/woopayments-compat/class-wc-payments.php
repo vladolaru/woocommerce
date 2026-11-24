@@ -31,7 +31,7 @@ class WC_Payments {
 	 * @return Mode
 	 */
 	public static function mode() {
-		wc_deprecated_function( __METHOD__, '11.4.0', '' );
+		self::warn_compatibility_method( __METHOD__ );
 
 		static $mode = null;
 		if ( null === $mode ) {
