@@ -119,7 +119,7 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev No public replacement.
+	 * @deprecated 11.4.0 No public replacement.
 	 *
 	 * @return self
 	 */
@@ -140,7 +140,7 @@ class MultiCurrency {
 	 *
 	 * @since 11.0.0
 	 * @since 11.4.0 Added the optional target currency.
-	 * @deprecated 11.4.0-dev No public replacement.
+	 * @deprecated 11.4.0 No public replacement.
 	 *
 	 * @param mixed                      $amount   Price amount.
 	 * @param string                     $type     Price type.
@@ -159,7 +159,7 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev No public replacement.
+	 * @deprecated 11.4.0 No public replacement.
 	 *
 	 * @param float  $amount        Amount.
 	 * @param string $to_currency   Target currency code.
@@ -182,7 +182,7 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev No public replacement.
+	 * @deprecated 11.4.0 No public replacement.
 	 *
 	 * @return MultiCurrencyCurrency
 	 */
@@ -198,7 +198,7 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev No public replacement.
+	 * @deprecated 11.4.0 No public replacement.
 	 *
 	 * @return MultiCurrencyCurrency|null
 	 */
@@ -214,7 +214,7 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev No public replacement.
+	 * @deprecated 11.4.0 No public replacement.
 	 *
 	 * @return bool
 	 */
@@ -230,7 +230,7 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev No public replacement.
+	 * @deprecated 11.4.0 No public replacement.
 	 *
 	 * @return Compatibility
 	 */
@@ -250,7 +250,7 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev No public replacement.
+	 * @deprecated 11.4.0 No public replacement.
 	 *
 	 * @return MultiCurrencyCurrency
 	 */
@@ -266,7 +266,7 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev No public replacement.
+	 * @deprecated 11.4.0 No public replacement.
 	 *
 	 * @return array<string,MultiCurrencyCurrency>
 	 */
@@ -282,7 +282,7 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev No public replacement.
+	 * @deprecated 11.4.0 No public replacement.
 	 *
 	 * @return array<string,MultiCurrencyCurrency>
 	 */
@@ -298,7 +298,7 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev No public replacement.
+	 * @deprecated 11.4.0 No public replacement.
 	 *
 	 * @return bool
 	 */
@@ -314,7 +314,7 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev No public replacement.
+	 * @deprecated 11.4.0 No public replacement.
 	 *
 	 * @return array<string,mixed>
 	 */
@@ -330,7 +330,7 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev No public replacement.
+	 * @deprecated 11.4.0 No public replacement.
 	 *
 	 * @param string $currency_code Currency code.
 	 * @return array<string,mixed>
@@ -355,7 +355,7 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev No public replacement.
+	 * @deprecated 11.4.0 No public replacement.
 	 *
 	 * @return array<string,mixed>
 	 */
@@ -373,7 +373,7 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev No public replacement.
+	 * @deprecated 11.4.0 No public replacement.
 	 *
 	 * @return array<string,mixed>
 	 */
@@ -389,7 +389,7 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev Use (string) get_option( 'wcpay_multi_currency_rendering_mode', 'speed' ) instead.
+	 * @deprecated 11.4.0 Use (string) get_option( 'wcpay_multi_currency_rendering_mode', 'speed' ) instead.
 	 *
 	 * @return string
 	 */
@@ -405,7 +405,7 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev Use 'cache' === (string) get_option( 'wcpay_multi_currency_rendering_mode', 'speed' ) instead.
+	 * @deprecated 11.4.0 Use 'cache' === (string) get_option( 'wcpay_multi_currency_rendering_mode', 'speed' ) instead.
 	 *
 	 * @return bool
 	 */
@@ -421,7 +421,7 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev Use 'yes' === get_option( 'wcpay_multi_currency_enable_auto_currency', 'no' ) instead.
+	 * @deprecated 11.4.0 Use 'yes' === get_option( 'wcpay_multi_currency_enable_auto_currency', 'no' ) instead.
 	 *
 	 * @return bool
 	 */
@@ -437,7 +437,7 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev Use 'yes' === get_option( 'wcpay_multi_currency_enable_storefront_switcher', 'no' ) instead.
+	 * @deprecated 11.4.0 Use 'yes' === get_option( 'wcpay_multi_currency_enable_storefront_switcher', 'no' ) instead.
 	 *
 	 * @return bool
 	 */
@@ -453,7 +453,7 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev Use is_object( WC()->session ) && method_exists( WC()->session, 'has_session' ) && WC()->session->has_session() instead.
+	 * @deprecated 11.4.0 Use is_object( WC()->session ) && method_exists( WC()->session, 'has_session' ) && WC()->session->has_session() instead.
 	 *
 	 * @return bool
 	 */
@@ -472,7 +472,7 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev Use apply_filters( 'wcpay_multi_currency_apply_charm_only_to_products', true ) instead.
+	 * @deprecated 11.4.0 Use apply_filters( 'wcpay_multi_currency_apply_charm_only_to_products', true ) instead.
 	 *
 	 * @return mixed The filtered value, true by default.
 	 */
@@ -495,7 +495,7 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev No public replacement.
+	 * @deprecated 11.4.0 No public replacement.
 	 *
 	 * @param mixed $amount              Amount in the selected currency.
 	 * @param mixed $apply_charm_pricing Whether the selected currency's charm is added.
@@ -513,7 +513,7 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev No public replacement.
+	 * @deprecated 11.4.0 No public replacement.
 	 *
 	 * @return array<string,mixed>|null
 	 */
@@ -532,7 +532,7 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev No public replacement.
+	 * @deprecated 11.4.0 No public replacement.
 	 *
 	 * @return string[]
 	 */
@@ -548,7 +548,7 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev No public replacement.
+	 * @deprecated 11.4.0 No public replacement.
 	 *
 	 * @param mixed $currency_code Currency code.
 	 * @return string|false
@@ -567,7 +567,7 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev Use wc_get_currency_switcher_markup() instead.
+	 * @deprecated 11.4.0 Use wc_get_currency_switcher_markup() instead.
 	 *
 	 * @param array $instance Widget instance settings.
 	 * @param array $args     Widget arguments.
@@ -585,7 +585,7 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev No public replacement.
+	 * @deprecated 11.4.0 No public replacement.
 	 *
 	 * @return bool
 	 */
@@ -605,7 +605,7 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev Use Automattic\WooCommerce\Admin\Notes\Notes::delete_notes_with_name( 'wc-payments-notes-multi-currency-available' ) instead.
+	 * @deprecated 11.4.0 Use Automattic\WooCommerce\Admin\Notes\Notes::delete_notes_with_name( 'wc-payments-notes-multi-currency-available' ) instead.
 	 *
 	 * @return void
 	 */

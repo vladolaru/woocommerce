@@ -30,7 +30,7 @@ class Compatibility {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev Use apply_filters( 'wcpay_multi_currency_override_selected_currency', false ) instead.
+	 * @deprecated 11.4.0 Use apply_filters( 'wcpay_multi_currency_override_selected_currency', false ) instead.
 	 *
 	 * @return mixed
 	 */
@@ -46,7 +46,7 @@ class Compatibility {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev No public replacement.
+	 * @deprecated 11.4.0 No public replacement.
 	 *
 	 * @return bool
 	 */
@@ -62,7 +62,7 @@ class Compatibility {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev No public replacement.
+	 * @deprecated 11.4.0 No public replacement.
 	 *
 	 * @return bool
 	 */
@@ -78,7 +78,7 @@ class Compatibility {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev Use ! $coupon || (bool) apply_filters( 'wcpay_multi_currency_should_convert_coupon_amount', true, $coupon ) instead.
+	 * @deprecated 11.4.0 Use ! $coupon || (bool) apply_filters( 'wcpay_multi_currency_should_convert_coupon_amount', true, $coupon ) instead.
 	 *
 	 * @param mixed $coupon Coupon object.
 	 * @return bool
@@ -95,7 +95,7 @@ class Compatibility {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev Use ! $coupon || (bool) apply_filters( 'wcpay_multi_currency_should_convert_coupon_min_max_amount', true, $coupon ) instead.
+	 * @deprecated 11.4.0 Use ! $coupon || (bool) apply_filters( 'wcpay_multi_currency_should_convert_coupon_min_max_amount', true, $coupon ) instead.
 	 *
 	 * @param mixed $coupon Coupon object.
 	 * @return bool
@@ -124,7 +124,7 @@ class Compatibility {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev Use ! $product || (bool) apply_filters( 'wcpay_multi_currency_should_convert_product_price', true, $product ) instead.
+	 * @deprecated 11.4.0 Use ! $product || (bool) apply_filters( 'wcpay_multi_currency_should_convert_product_price', true, $product ) instead.
 	 *
 	 * @param mixed $product Product object.
 	 * @return bool
@@ -141,7 +141,7 @@ class Compatibility {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev Use ! $shipping_method || (bool) apply_filters( 'wcpay_multi_currency_should_convert_shipping_amount', true, $shipping_method ) instead.
+	 * @deprecated 11.4.0 Use ! $shipping_method || (bool) apply_filters( 'wcpay_multi_currency_should_convert_shipping_amount', true, $shipping_method ) instead.
 	 *
 	 * @param mixed $shipping_method Shipping method object.
 	 * @return bool
@@ -170,7 +170,7 @@ class Compatibility {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.4.0-dev Use (bool) apply_filters( 'wcpay_multi_currency_should_return_store_currency', false ) instead.
+	 * @deprecated 11.4.0 Use (bool) apply_filters( 'wcpay_multi_currency_should_return_store_currency', false ) instead.
 	 *
 	 * @return bool
 	 */

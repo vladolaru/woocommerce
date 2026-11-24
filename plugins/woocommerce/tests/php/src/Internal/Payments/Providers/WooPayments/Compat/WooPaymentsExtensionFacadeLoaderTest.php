@@ -199,6 +199,41 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Each WC_Payments method reports its compatibility warning once per request.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_each_payments_member_warns_once_per_request(): void {
+		$loader = new WooPaymentsExtensionFacadeLoader();
+		$loader->autoload_facade( 'WC_Payments' );
+		$this->setExpectedIncorrectUsage( 'WC_Payments::get_gateway()' );
+		$this->setExpectedIncorrectUsage( 'WC_Payments::hide_gateways_on_settings_page()' );
+
+		$warnings = array();
+		add_action(
+			'doing_it_wrong_run',
+			static function ( $member, $message, $version ) use ( &$warnings ) {
+				$warnings[] = array( $member, $message, $version );
+			},
+			10,
+			3
+		);
+
+		for ( $i = 0; $i < 5; ++$i ) {
+			\WC_Payments::get_gateway();
+		}
+		\WC_Payments::hide_gateways_on_settings_page();
+
+		$this->assertSame(
+			array(
+				array( 'WC_Payments::get_gateway()', esc_html( "Use WC()->payment_gateways()->payment_gateways()['woocommerce_payments'] ?? null instead." ), '11.4.0' ),
+				array( 'WC_Payments::hide_gateways_on_settings_page()', 'WC_Payments::hide_gateways_on_settings_page() is a compatibility shim for the WooPayments extension with no replacement in WooCommerce and will be removed in 12.0.0.', '11.4.0' ),
+			),
+			$warnings
+		);
+	}
+
+	/**
 	 * @testdox The WC_Payments facade returns the container-owned gateway and keeps the extension's Blueprint settings call safe.
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled

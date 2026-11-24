@@ -73,7 +73,7 @@ class WC_Payments_Features {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.2.0
-	 * @deprecated 11.4.0-dev No public replacement.
+	 * @deprecated 11.4.0 No public replacement.
 	 *
 	 * @return bool
 	 */

@@ -41,6 +41,6 @@ trait WooPaymentsCompatibilityNotice {
 			? sprintf( '%s is a compatibility shim for the WooPayments extension with no replacement in WooCommerce and will be removed in 12.0.0.', $member )
 			: sprintf( 'Use %s instead.', $replacement );
 
-		_doing_it_wrong( esc_html( $member ), esc_html( $message ), esc_html( WC()->version ) );
+		_doing_it_wrong( esc_html( $member ), esc_html( $message ), '11.4.0' );
 	}
 }

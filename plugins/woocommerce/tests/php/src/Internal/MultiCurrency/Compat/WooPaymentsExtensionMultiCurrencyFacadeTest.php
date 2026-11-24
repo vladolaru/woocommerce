@@ -652,7 +652,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 		$this->assertCount( 11, $notices );
 		foreach ( $notices as $member => $warnings ) {
 			$message = $replacements[ $member ] ?? "$member is a compatibility shim for the WooPayments extension with no replacement in WooCommerce and will be removed in 12.0.0.";
-			$this->assertSame( array( array( esc_html( $message ), WC()->version ) ), $warnings, $member );
+			$this->assertSame( array( array( esc_html( $message ), '11.4.0' ) ), $warnings, $member );
 		}
 	}
 

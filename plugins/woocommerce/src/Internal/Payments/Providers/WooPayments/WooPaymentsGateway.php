@@ -436,7 +436,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * leaves with the facades in WooCommerce 12.0.0.
 	 *
 	 * @since 11.2.0
-	 * @deprecated 11.4.0-dev Use 'yes' === $gateway->get_option( 'enabled' ) instead.
+	 * @deprecated 11.4.0 Use 'yes' === $gateway->get_option( 'enabled' ) instead.
 	 *
 	 * @return bool
 	 */

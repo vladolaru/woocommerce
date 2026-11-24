@@ -46,7 +46,7 @@ class WC_Payments {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.2.0
-	 * @deprecated 11.4.0-dev Use WC()->payment_gateways()->payment_gateways()['woocommerce_payments'] ?? null instead.
+	 * @deprecated 11.4.0 Use WC()->payment_gateways()->payment_gateways()['woocommerce_payments'] ?? null instead.
 	 *
 	 * @return Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway
 	 */
@@ -62,7 +62,7 @@ class WC_Payments {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.2.0
-	 * @deprecated 11.4.0-dev No public replacement.
+	 * @deprecated 11.4.0 No public replacement.
 	 *
 	 * @return void
 	 */
