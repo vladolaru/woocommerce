@@ -4,7 +4,9 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderStatusChangeConfirmation;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -61,6 +63,8 @@ class WooPaymentsOrderStatusChangeConfirmationExplicitPriceTest extends WC_Unit_
 			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
 		$arbiter->method( 'is_builtin_owner' )->willReturn( $multi_currency_enabled );
+		// Methods left unmocked run for real when an earlier test reset the container's resolutions, so give them their dependencies.
+		$arbiter->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ) );
 		wc_get_container()->replace( MultiCurrencyRuntimeArbiter::class, $arbiter );
 
 		$order = wc_create_order();

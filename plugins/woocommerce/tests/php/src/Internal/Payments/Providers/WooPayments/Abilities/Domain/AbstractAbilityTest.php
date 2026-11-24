@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Abilities\Domain;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Abilities\Domain;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Abilities\AbilityTestCase;
 
 /** Exercise the callbacks with no network or payment dependencies. */
@@ -123,6 +124,8 @@ class AbstractAbilityTest extends AbilityTestCase {
 	public function setUp(): void {
 		parent::setUp();
 		$this->install_root();
+		// The container keeps the tier instance across tests; drop a tier an earlier test read so the registrar reads the tier just stored.
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		add_filter( self::GATE, '__return_true' );
 		$this->original_server     = $GLOBALS['wp_rest_server'] ?? null;
 		$server                    = new \WP_REST_Server();

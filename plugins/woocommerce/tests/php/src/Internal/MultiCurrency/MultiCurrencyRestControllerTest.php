@@ -61,6 +61,17 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	);
 
 	/**
+	 * Set up test fixtures.
+	 */
+	public function setUp(): void {
+		parent::setUp();
+
+		// An earlier test can leave the REST server built; clear it so `rest_get_server()` fires `rest_api_init` again.
+		global $wp_rest_server;
+		$wp_rest_server = null;
+	}
+
+	/**
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
