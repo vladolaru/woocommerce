@@ -44,13 +44,7 @@ final class ExtensionCurrencyBridge {
 		if ( '' === $to ) {
 			$to = self::call( self::call( $extension, 'get_selected_currency' ), 'get_code' );
 		}
-		$currencies = self::call( $extension, 'get_enabled_currencies' );
-		self::enabled_currency( $currencies, $to );
-		if ( '' !== $from ) {
-			self::enabled_currency( $currencies, $from );
-		}
-
-		return self::call( $extension, 'get_raw_conversion', $amount, $to, $from );
+		return self::call_converter( $extension, 'get_raw_conversion', $amount, $to, $from );
 	}
 
 	/**
@@ -60,32 +54,39 @@ final class ExtensionCurrencyBridge {
 	 * @param string $type   Price type.
 	 * @param string $to     Target code, or empty for the selected currency.
 	 * @return float
-	 * @throws InvalidCurrencyException When the target is not enabled.
+	 * @throws InvalidCurrencyException When the target is unavailable.
 	 */
 	public static function convert_price( float $amount, string $type, string $to ): float {
 		$extension = self::extension();
 		$currency  = null;
 		if ( '' !== $to ) {
-			$currencies = self::call( $extension, 'get_enabled_currencies' );
-			$currency   = self::enabled_currency( $currencies, $to );
+			$code     = strtoupper( $to );
+			$currency = self::call( $extension, 'get_enabled_currencies' )[ $code ] ?? null;
+			if ( null === $currency ) {
+				$currency = self::call( $extension, 'get_selected_currency' );
+				if ( self::call( $currency, 'get_code' ) !== $code ) {
+					throw new InvalidCurrencyException( esc_html( 'Currency is not enabled for conversion: ' . $code ) );
+				}
+			}
 		}
-		return self::call( $extension, 'get_price', $amount, $type, $currency );
+		return self::call_converter( $extension, 'get_price', $amount, $type, $currency );
 	}
 
 	/**
-	 * Get the extension's currency object for an explicit code.
+	 * Translate a refusal from the installed extension into the public utility's conversion fallback.
 	 *
-	 * @param array<string,object> $currencies Enabled currencies.
-	 * @param string               $code       Currency code.
-	 * @return object
-	 * @throws InvalidCurrencyException When the code is not enabled.
+	 * @param object|null $extension Extension instance.
+	 * @param string      $method    Conversion method.
+	 * @param mixed       ...$args   Conversion arguments.
+	 * @return float
+	 * @throws InvalidCurrencyException When the extension cannot convert the amount.
 	 */
-	private static function enabled_currency( array $currencies, string $code ): object {
-		$code = strtoupper( $code );
-		if ( ! isset( $currencies[ $code ] ) ) {
-			throw new InvalidCurrencyException( esc_html( 'Currency is not enabled for conversion: ' . $code ) );
+	private static function call_converter( $extension, string $method, ...$args ): float {
+		try {
+			return self::call( $extension, $method, ...$args );
+		} catch ( \Throwable $error ) {
+			throw new InvalidCurrencyException( esc_html( $error->getMessage() ) );
 		}
-		return $currencies[ $code ];
 	}
 
 	/**

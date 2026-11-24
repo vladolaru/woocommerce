@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyException;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 
@@ -74,6 +75,29 @@ class PriceConverter {
 		}
 
 		return $this->price_calculator->get_price( $price, $type, $currency, $apply_charm_only_to_products );
+	}
+
+	/**
+	 * Convert a price to the selected currency or another conversion currency identified by code.
+	 *
+	 * @param mixed  $price Price.
+	 * @param string $type  Price type.
+	 * @param string $code  Target currency code, or empty for the selected currency.
+	 * @return float
+	 * @throws InvalidCurrencyException When the target currency is unavailable.
+	 */
+	public function get_price_for_currency_code( $price, string $type, string $code ): float {
+		if ( '' === $code ) {
+			return $this->get_price( $price, $type );
+		}
+
+		$code     = strtoupper( $code );
+		$state    = $this->state_builder->build();
+		$currency = $state->get_enabled_currencies()[ $code ] ?? $state->get_selected_currency();
+		if ( $currency->get_code() !== $code ) {
+			throw new InvalidCurrencyException( esc_html( 'Currency is not enabled for conversion: ' . $code ) );
+		}
+		return $this->get_price( $price, $type, $currency );
 	}
 
 	/**

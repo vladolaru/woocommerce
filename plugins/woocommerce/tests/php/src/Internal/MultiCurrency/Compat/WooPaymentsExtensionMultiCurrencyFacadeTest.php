@@ -15,6 +15,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySwitcherWidgetController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\LocalizationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Tests\Internal\Compatibility\WooPaymentsCompatibilityNoticeTestTrait;
@@ -417,6 +418,34 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The public replacements use the rate of a selected order currency after the merchant disables it.
+	 */
+	public function test_public_replacements_match_a_held_order_currency(): void {
+		$this->declare_facade();
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		add_filter(
+			'wcpay_multi_currency_override_selected_currency',
+			static function () {
+				StateBuilder::set_order_currency_override( 'GBP' );
+				return 'GBP';
+			}
+		);
+
+		$facade = $this->get_facade();
+		$this->expect_facade_warnings( 'get_selected_currency', 'is_enabled', 'get_raw_conversion', 'get_price' );
+		$held = $facade->get_selected_currency();
+		$this->assertSame( 'GBP', $held->get_code() );
+		$this->assertSame( 0.73, $held->get_rate() );
+		$this->assertArrayNotHasKey( 'GBP', MultiCurrencyUtil::get_enabled_currencies() );
+
+		$this->assertSame( $facade::is_enabled(), MultiCurrencyUtil::is_active() );
+		$this->assertSame( $facade->get_raw_conversion( 10.17, 'gbp', 'USD' ), MultiCurrencyUtil::convert( 10.17, 'gbp', 'USD' ) );
+		$this->assertSame( $facade->get_raw_conversion( 10.17, 'USD', 'gbp' ), MultiCurrencyUtil::convert( 10.17, 'USD', 'gbp' ) );
+		$this->assertSame( $facade->get_price( 10.17, 'tax', $held ), MultiCurrencyUtil::convert_price( 10.17, 'tax', 'gbp' ) );
+		$this->assertSame( $facade->get_price( 10.17, 'tax' ), MultiCurrencyUtil::convert_price( 10.17, 'tax' ) );
+	}
+
+	/**
 	 * @testdox The first public read builds the same currency state that compatibility callers see.
 	 */
 	public function test_public_utility_matches_compatibility_reads_and_raw_conversion(): void {
@@ -729,9 +758,9 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 		}
 
 		$replacements = array(
-			'WCPay\\MultiCurrency\\MultiCurrency::get_price()'                      => 'Use MultiCurrencyUtil::convert_price() instead.',
-			'WCPay\\MultiCurrency\\MultiCurrency::get_raw_conversion()'             => 'Use MultiCurrencyUtil::convert() instead.',
-			'WCPay\\MultiCurrency\\MultiCurrency::is_enabled()'                     => 'Use MultiCurrencyUtil::is_active() instead.',
+			'WCPay\\MultiCurrency\\MultiCurrency::get_price()'                      => 'Use Automattic\WooCommerce\Utilities\MultiCurrencyUtil::convert_price() instead.',
+			'WCPay\\MultiCurrency\\MultiCurrency::get_raw_conversion()'             => 'Use Automattic\WooCommerce\Utilities\MultiCurrencyUtil::convert() instead.',
+			'WCPay\\MultiCurrency\\MultiCurrency::is_enabled()'                     => 'Use Automattic\WooCommerce\Utilities\MultiCurrencyUtil::is_active() instead.',
 			'WCPay\\MultiCurrency\\MultiCurrency::remove_woo_admin_notes()'         => "Use Automattic\\WooCommerce\\Admin\\Notes\\Notes::delete_notes_with_name( 'wc-payments-notes-multi-currency-available' ) instead.",
 			'WCPay\\MultiCurrency\\Compatibility::should_convert_shipping_amount()' => "Use ! \$shipping_method || (bool) apply_filters( 'wcpay_multi_currency_should_convert_shipping_amount', true, \$shipping_method ) instead.",
 		);

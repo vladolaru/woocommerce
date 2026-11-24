@@ -54,18 +54,27 @@ class MultiCurrencyUtilTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An explicitly disabled source or target leaves the amount unchanged and warns the caller.
+	 * @testdox A currency with no rate leaves the amount unchanged and emits one notice per method.
 	 */
-	public function test_disabled_currency(): void {
+	public function test_currency_without_a_rate(): void {
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		update_option( 'woocommerce_currency', 'USD' );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array() );
+		$notices = array();
+		add_action(
+			'doing_it_wrong_run',
+			static function ( $method ) use ( &$notices ) {
+				$notices[] = $method;
+			}
+		);
 		$this->setExpectedIncorrectUsage( MultiCurrencyUtil::class . '::convert()' );
 		$this->setExpectedIncorrectUsage( MultiCurrencyUtil::class . '::convert_price()' );
 
 		$this->assertSame( 7.4, MultiCurrencyUtil::convert( 7.4, 'EUR' ) );
 		$this->assertSame( 7.4, MultiCurrencyUtil::convert( 7.4, 'USD', 'EUR' ) );
 		$this->assertSame( 7.4, MultiCurrencyUtil::convert_price( 7.4, 'shipping', 'EUR' ) );
+		$this->assertSame( 9.5, MultiCurrencyUtil::convert_price( 9.5, 'shipping', 'EUR' ) );
+		$this->assertSame( array( MultiCurrencyUtil::class . '::convert()', MultiCurrencyUtil::class . '::convert_price()' ), $notices );
 	}
 
 	/**
@@ -95,12 +104,16 @@ class MultiCurrencyUtilTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Only the extension owner calls the extension with its selected code and explicit price currency object.
+	 * @testdox The extension converts prices with its selected object and decides which raw conversions it accepts.
+	 *
+	 * @testWith [true]
+	 *           [false]
+	 * @param bool $euro_enabled Whether the selected currency is still enabled.
 	 *
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
-	public function test_extension_owner_delegates(): void {
+	public function test_extension_owner_delegates( bool $euro_enabled ): void {
 		$this->enable_extension();
 		require __DIR__ . '/../Internal/MultiCurrency/Compat/Fixtures/extension-currency-accessor.inc';
 		$euro = $this->getMockBuilder( \stdClass::class )->addMethods( array( 'get_rate', 'get_code' ) )->getMock();
@@ -108,19 +121,29 @@ class MultiCurrencyUtilTest extends WC_Unit_Test_Case {
 		$euro->method( 'get_code' )->willReturn( 'EUR' );
 		$dollar = $this->getMockBuilder( \stdClass::class )->addMethods( array( 'get_rate' ) )->getMock();
 		$dollar->method( 'get_rate' )->willReturn( 1.0 );
-		$extension = $this->getMockBuilder( \stdClass::class )->addMethods( array( 'get_enabled_currencies', 'get_selected_currency', 'get_raw_conversion', 'get_price' ) )->getMock();
-		$extension->method( 'get_enabled_currencies' )->willReturn(
-			array(
-				'USD' => $dollar,
-				'EUR' => $euro,
-			)
-		);
+
+		$extension  = $this->getMockBuilder( \stdClass::class )->addMethods( array( 'get_enabled_currencies', 'get_selected_currency', 'get_raw_conversion', 'get_price' ) )->getMock();
+		$currencies = array( 'USD' => $dollar );
+		$rates      = array( 'USD' => 1.0 );
+		if ( $euro_enabled ) {
+			$currencies['EUR'] = $euro;
+			$rates['EUR']      = 0.75;
+		}
+		$extension->method( 'get_enabled_currencies' )->willReturn( $currencies );
 		$extension->method( 'get_selected_currency' )->willReturn( $euro );
-		$extension->expects( $this->exactly( 2 ) )->method( 'get_raw_conversion' )->willReturnMap(
-			array(
-				array( 10.0, 'EUR', '', 7.5 ),
-				array( 7.5, 'USD', 'EUR', 10.0 ),
-			)
+		$extension->expects( $this->exactly( 3 ) )->method( 'get_raw_conversion' )->willReturnCallback(
+			static function ( $amount, $to, $from ) use ( $euro_enabled ) {
+				if ( 'CHF' === $to ) {
+					throw new \Error( 'Missing rate' );
+				}
+				if ( $euro_enabled && 'EUR' === $to && '' === $from ) {
+					return $amount * 0.75;
+				}
+				if ( $euro_enabled && 'USD' === $to && 'EUR' === $from ) {
+					return $amount / 0.75;
+				}
+				throw new \RuntimeException( 'Currency is unavailable' );
+			}
 		);
 		$extension->expects( $this->exactly( 2 ) )->method( 'get_price' )->willReturnMap(
 			array(
@@ -130,15 +153,12 @@ class MultiCurrencyUtilTest extends WC_Unit_Test_Case {
 		);
 		$GLOBALS['wc_test_multi_currency_extension'] = $extension;
 
-		$this->assertSame(
-			array(
-				'USD' => 1.0,
-				'EUR' => 0.75,
-			),
-			MultiCurrencyUtil::get_enabled_currencies()
-		);
-		$this->assertSame( 7.5, MultiCurrencyUtil::convert( 10 ) );
-		$this->assertSame( 10.0, MultiCurrencyUtil::convert( 7.5, 'USD', 'EUR' ) );
+		$this->assertSame( $rates, MultiCurrencyUtil::get_enabled_currencies() );
+		if ( ! $euro_enabled ) {
+			$this->setExpectedIncorrectUsage( MultiCurrencyUtil::class . '::convert()' );
+		}
+		$this->assertSame( $euro_enabled ? 7.5 : 10.0, MultiCurrencyUtil::convert( 10 ) );
+		$this->assertSame( $euro_enabled ? 10.0 : 7.5, MultiCurrencyUtil::convert( 7.5, 'USD', 'EUR' ) );
 		$this->assertSame( 8.0, MultiCurrencyUtil::convert_price( 10, 'shipping' ) );
 		$this->assertSame( 7.99, MultiCurrencyUtil::convert_price( '10', 'product', 'eur' ) );
 

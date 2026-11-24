@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Utilities;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Compat\ExtensionCurrencyBridge;
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyException;
+use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyRateException;
 use Automattic\WooCommerce\Internal\MultiCurrency\IncorrectUsageNotice;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
@@ -19,6 +20,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
 /**
  * Read currencies and convert amounts using the active Multi-Currency runtime.
  * With neither runtime active, amounts stay unchanged, including on stores using a third-party switcher.
+ * When a currency has no usable rate, conversion returns the amount unchanged and emits a developer notice once per method per request (see get_enabled_currencies() for enabled rates).
  * Use get_woocommerce_currency() for the current display currency.
  *
  * @since 11.4.0
@@ -71,7 +73,7 @@ final class MultiCurrencyUtil {
 	}
 
 	/**
-	 * Convert an amount by exchange rate alone. An unavailable currency leaves the amount unchanged.
+	 * Convert an amount by exchange rate alone.
 	 *
 	 * @since 11.4.0
 	 * @param mixed  $amount Amount to convert using PHP's float cast. Null and strings without a numeric prefix become zero.
@@ -86,16 +88,13 @@ final class MultiCurrencyUtil {
 				case MultiCurrencyRuntimeArbiter::OWNER_EXTENSION:
 					return ExtensionCurrencyBridge::convert( $amount, $to, $from );
 				case MultiCurrencyRuntimeArbiter::OWNER_BUILTIN:
-					$state  = self::state();
-					$source = '' === $from ? $state->get_default_currency() : self::enabled_currency( $state, $from );
-					$target = '' === $to ? $state->get_selected_currency() : self::enabled_currency( $state, $to );
 					return wc_get_container()->get( ServiceFactory::class )->create_price_converter()->get_raw_conversion(
 						$amount,
-						$target->get_code(),
-						$source->get_code()
+						'' === $to ? self::state()->get_selected_currency()->get_code() : $to,
+						'' === $from ? self::state()->get_default_currency()->get_code() : $from
 					);
 			}
-		} catch ( InvalidCurrencyException | \BadMethodCallException $exception ) {
+		} catch ( InvalidCurrencyException | InvalidCurrencyRateException | \BadMethodCallException $exception ) {
 			self::warn_once( __METHOD__, $exception->getMessage() );
 		}
 		return $amount;
@@ -107,7 +106,7 @@ final class MultiCurrencyUtil {
 	 * @since 11.4.0
 	 * @param mixed  $amount Store price converted using PHP's float cast. Null and strings without a numeric prefix become zero.
 	 * @param string $type   One of 'product', 'shipping', 'tax', 'coupon', or 'exchange_rate'.
-	 * @param string $to     Target code, or empty for the selected currency. An unavailable target leaves the price unchanged.
+	 * @param string $to     Target code, or empty for the selected currency.
 	 * @return float
 	 */
 	public static function convert_price( $amount, string $type = 'product', string $to = '' ): float {
@@ -116,33 +115,12 @@ final class MultiCurrencyUtil {
 				case MultiCurrencyRuntimeArbiter::OWNER_EXTENSION:
 					return ExtensionCurrencyBridge::convert_price( (float) $amount, $type, $to );
 				case MultiCurrencyRuntimeArbiter::OWNER_BUILTIN:
-					return wc_get_container()->get( ServiceFactory::class )->create_price_converter()->get_price(
-						$amount,
-						$type,
-						'' === $to ? null : self::enabled_currency( self::state(), $to )
-					);
+					return wc_get_container()->get( ServiceFactory::class )->create_price_converter()->get_price_for_currency_code( $amount, $type, $to );
 			}
 		} catch ( InvalidCurrencyException | \BadMethodCallException $exception ) {
 			self::warn_once( __METHOD__, $exception->getMessage() );
 		}
 		return (float) $amount;
-	}
-
-	/**
-	 * Get an explicitly requested target or source currency.
-	 *
-	 * @param MultiCurrencyState $state Current currency state.
-	 * @param string             $code  Currency code.
-	 * @return MultiCurrencyCurrency
-	 * @throws InvalidCurrencyException When the code is not enabled.
-	 */
-	private static function enabled_currency( MultiCurrencyState $state, string $code ): MultiCurrencyCurrency {
-		$code       = strtoupper( $code );
-		$currencies = $state->get_enabled_currencies();
-		if ( ! isset( $currencies[ $code ] ) ) {
-			throw new InvalidCurrencyException( esc_html( 'Currency is not enabled for conversion: ' . $code ) );
-		}
-		return $currencies[ $code ];
 	}
 
 	/**
