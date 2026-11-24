@@ -27,6 +27,7 @@ The global `WC_Payments_Multi_Currency()` and the classes below serve plugins wr
 | `get_switcher_widget_markup( array $instance = array(), array $args = array() )` | `MultiCurrencySwitcherWidgetController`, the theme template tag's markup. | none known |
 | `is_multi_currency_settings_page()` | `MultiCurrencySettingsController`'s tab check on the current admin screen. | none known |
 | `remove_woo_admin_notes()` (static) | Deletes the inbox notes named `MultiCurrencyAdminNoteController::NOTE_NAME`, the extension's note name. | WooPayments Dev Tools ("clear notes") |
+| Any member not listed in this table | Fails with PHP's own undefined-method error, which names the class and the method; no warning of ours. | none known |
 
 The currencies these members return are the module's `MultiCurrencyCurrency` objects. They answer these methods of the extension's `Currency` class: `get_code()`, `get_id()`, `get_flag()`, `get_is_default()`, `get_name()`, `get_rate()`, `get_charm()`, `get_rounding()`, `get_symbol()`, `get_symbol_position()`, `get_is_zero_decimal()`, `get_last_updated()`, `set_charm()`, `set_rate()`, `set_rounding()`, `set_last_updated()` and `jsonSerialize()`. They do not answer `get_currency_name_from_code()`, a lookup in `get_woocommerce_currencies()` the module never needs, nor the extension's public `$code` and `$rate` properties, which are private here (read them through `get_code()` and `get_rate()`). Their JSON form adds `charm` and `rounding` to the extension's ten keys.
 
