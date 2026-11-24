@@ -10,7 +10,6 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountMilestonesController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsApplePayDomainService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
@@ -94,7 +93,6 @@ class PreflightService {
 		SubscriptionsController::RETRY_AUTHENTICATION_FAILURE_ACTION,
 		// A step left from a tier drop reads the owner and the tier itself when it runs.
 		WooPaymentsSetupTier::RECHECK_HOOK,
-		WooPaymentsAccountService::QUEUED_REFRESH_ACTION,
 		// Stripe Billing migration off Stripe, continued by the built-in WooPayments' migrator after the switch.
 		'wcpay_schedule_subscription_migrations',
 		'wcpay_migrate_subscription',

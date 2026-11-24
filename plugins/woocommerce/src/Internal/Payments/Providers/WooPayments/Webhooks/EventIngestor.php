@@ -192,8 +192,7 @@ class EventIngestor {
 			$event
 		);
 
-		// No account request runs in a delivery; a due account is refreshed afterwards, in the queue.
-		$this->account_service->run_webhook_delivery( fn() => $this->dispatch( $event ) );
+		$this->dispatch( $event );
 	}
 
 	/**

@@ -3,27 +3,19 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\HttpClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PreflightService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\DisputeEventHandler;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\PaymentIntentEventHandler;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookRestController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\OrderStatusSync;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAuthorizationsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudOrderTrackingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIppReceiptEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderAdminActionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderCardInfo;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentDetailsRestController;
@@ -32,12 +24,10 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTerminalPaymentsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
-use Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil;
-use Automattic\WooCommerce\Testing\Tools\TestingContainer;
 use Automattic\WooCommerce\Tests\Internal\Payments\PlatformRequestClaimGuard;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPlatformEvents;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
+use Automattic\WooCommerce\Testing\Tools\TestingContainer;
 use WC_Order;
 use WC_Unit_Test_Case;
 use WP_REST_Request;
@@ -48,9 +38,6 @@ use WP_REST_Response;
  */
 class PlatformRequestClaimTest extends WC_Unit_Test_Case {
 	use WithOrderPaymentClaim;
-
-	/** Hook of the account refresh a webhook delivery queues, named as a string so the rows also run at the parent. */
-	private const REFRESH_HOOK = 'woocommerce_woopayments_queued_account_refresh';
 
 	/** @var FakeHttpClient Platform transport. */
 	private FakeHttpClient $http;
@@ -181,15 +168,15 @@ class PlatformRequestClaimTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Charge expiry reads the expired intent under the event's claim.
+	 * Charge expiry settles the account, then reads the expired intent under the event's claim.
 	 */
-	public function test_expired_charge_reads_the_intent_under_its_claim(): void {
-		$this->store_fresh_account();
+	public function test_expired_charge_reads_the_account_and_intent_under_its_claim(): void {
 		$order = $this->order();
 		$order->update_meta_data( '_charge_id', 'ch_expired' );
 		$order->update_meta_data( '_intent_id', 'pi_expired' );
 		$order->save();
 		$this->http->responses = array(
+			$this->account_response(),
 			$this->response(
 				array(
 					'id'     => 'pi_expired',
@@ -198,7 +185,7 @@ class PlatformRequestClaimTest extends WC_Unit_Test_Case {
 			),
 		);
 		wc_get_container()->get( PaymentIntentEventHandler::class )->process( 'charge.expired', array( 'id' => 'ch_expired' ) );
-		$this->assertSame( array( 'intentions/pi_expired' ), $this->routes() );
+		$this->assertSame( array( 'accounts', 'intentions/pi_expired' ), $this->routes() );
 	}
 
 	/**
@@ -227,10 +214,9 @@ class PlatformRequestClaimTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * An event with no local token looks up the saved methods and the card under its claim.
+	 * An event with no local token looks up the saved methods and the card, then settles its account.
 	 */
-	public function test_recurring_payment_repairs_the_token_under_claim(): void {
-		$this->store_fresh_account();
+	public function test_recurring_payment_repairs_the_token_and_settles_under_claim(): void {
 		WooCommerceSubscriptionsDoubles::load_renewal_detector();
 		$order = $this->order();
 		wp_set_current_user( $order->get_customer_id() );
@@ -255,6 +241,7 @@ class PlatformRequestClaimTest extends WC_Unit_Test_Case {
 					'card' => $card,
 				)
 			),
+			$this->account_response(),
 		);
 		wc_get_container()->get( WooPaymentsOrderCardInfo::class )->register();
 		try {
@@ -291,6 +278,7 @@ class PlatformRequestClaimTest extends WC_Unit_Test_Case {
 		}
 		$this->assertContains( 'payment_methods', $this->routes() );
 		$this->assertContains( 'payment_methods/pm_renewal', $this->routes() );
+		$this->assertContains( 'accounts', $this->routes() );
 		$this->assertNotEmpty( ( new WC_Order( $order->get_id() ) )->get_payment_tokens() );
 	}
 
@@ -455,670 +443,6 @@ class PlatformRequestClaimTest extends WC_Unit_Test_Case {
 		wc_get_container()->get( WooPaymentsOrderAdminActionsController::class )->handle_woocommerce_order_action_cancel_authorization( $order );
 
 		$this->assertSame( array( 'intentions/pi_auth/cancel' ), $this->routes() );
-	}
-
-	/**
-	 * @testdox A $_dataName delivery with the stored account due sends no account request and queues one refresh.
-	 *
-	 * @dataProvider provider_claiming_intent_events
-	 *
-	 * @param string $pair            Recorded payment intent event, or charge_expired.
-	 * @param string $expected_status Order status once the event applies.
-	 */
-	public function test_due_intent_delivery_reads_no_account_and_queues_one_refresh( string $pair, string $expected_status ): void {
-		$this->store_due_account();
-		$order = $this->order();
-		if ( 'charge_expired' === $pair ) {
-			$order->update_meta_data( '_charge_id', 'ch_expired' );
-			$order->update_meta_data( '_intent_id', 'pi_expired' );
-			$order->save();
-			$this->http->responses = array(
-				$this->response(
-					array(
-						'id'     => 'pi_expired',
-						'status' => 'canceled',
-					)
-				),
-			);
-			$event                 = array(
-				'id'   => 'evt_expired',
-				'type' => 'charge.expired',
-				'data' => array( 'object' => array( 'id' => 'ch_expired' ) ),
-			);
-		} else {
-			$event = $this->recorded_intent_event( $pair, $order );
-		}
-
-		$response = $this->deliver( $event );
-
-		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( 'charge_expired' === $pair ? array( 'intentions/pi_expired' ) : array(), $this->routes(), 'The delivery reads the stored account and sends no account request.' );
-		$this->assertSame( $expected_status, $this->status_of( $order ) );
-		$this->assertSame( 1, $this->pending_refresh_jobs() );
-	}
-
-	/**
-	 * Claiming intent events and the status each leaves.
-	 *
-	 * @return array<string,array{string,string}>
-	 */
-	public function provider_claiming_intent_events(): array {
-		return array(
-			'payment_intent.succeeded'                 => array( 'card_checkout_succeeded', 'processing' ),
-			'payment_intent.payment_failed'            => array( 'card_declined_failed', 'failed' ),
-			'payment_intent.amount_capturable_updated' => array( 'manual_capture_amount_capturable_updated', 'on-hold' ),
-			'charge.expired'                           => array( 'charge_expired', 'failed' ),
-		);
-	}
-
-	/**
-	 * @testdox A failed refund for insufficient funds, delivered with the stored account due, writes its note from the stored country and sends no account request.
-	 */
-	public function test_due_failed_refund_reads_no_account(): void {
-		$this->store_due_account();
-		$order = $this->paid_order();
-
-		$response = $this->deliver(
-			array(
-				'id'   => 'evt_refund_failed',
-				'type' => 'charge.refund.updated',
-				'data' => array(
-					'object' => array(
-						'id'             => 're_failed',
-						'charge'         => 'ch_paid',
-						'amount'         => 400,
-						'currency'       => 'usd',
-						'status'         => 'failed',
-						'failure_reason' => 'insufficient_funds',
-					),
-				),
-			)
-		);
-
-		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( array(), $this->routes() );
-		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
-		$this->assertCount( 1, array_filter( $notes, static fn( $note ): bool => false !== strpos( $note->content, 'insufficient funds in your WooPayments balance' ) ) );
-		$this->assertSame( 1, $this->pending_refresh_jobs() );
-	}
-
-	/**
-	 * @testdox A dispute on a $_dataName, delivered with the stored account due, sends no account request.
-	 *
-	 * On a card order, the order's save under the dispute claim reads the account for Sift tracking; on a WooPay order, the
-	 * status change reads it for WooPay eligibility. Each row loads only the listener it is about.
-	 *
-	 * @dataProvider provider_disputed_orders
-	 *
-	 * @param bool $woopay Whether the order was paid with WooPay, with WooPay on.
-	 */
-	public function test_due_dispute_reads_no_account( bool $woopay ): void {
-		$this->store_due_account();
-		$order = $this->paid_order();
-		if ( $woopay ) {
-			$settings                      = get_option( 'woocommerce_woocommerce_payments_settings' );
-			$settings['platform_checkout'] = 'yes';
-			update_option( 'woocommerce_woocommerce_payments_settings', $settings );
-			$order->update_meta_data( 'is_woopay', '1' );
-			$order->save();
-			wc_get_container()->get( OrderStatusSync::class )->register();
-		} else {
-			wc_get_container()->get( WooPaymentsFraudOrderTrackingService::class )->register();
-		}
-
-		$response = $this->deliver(
-			array(
-				'id'   => 'evt_dispute',
-				'type' => 'charge.dispute.created',
-				'data' => array(
-					'object' => array(
-						'id'               => 'dp_due',
-						'charge'           => 'ch_paid',
-						'status'           => 'needs_response',
-						'amount'           => 1000,
-						'reason'           => 'fraudulent',
-						'evidence_details' => array( 'due_by' => 1893456000 ),
-					),
-				),
-			)
-		);
-
-		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( array(), $this->routes() );
-		$this->assertSame( 'on-hold', $this->status_of( $order ) );
-		$this->assertSame( 1, $this->pending_refresh_jobs() );
-	}
-
-	/**
-	 * Disputed orders.
-	 *
-	 * @return array<string,array{bool}>
-	 */
-	public function provider_disputed_orders(): array {
-		return array(
-			'card order'   => array( false ),
-			'WooPay order' => array( true ),
-		);
-	}
-
-	/**
-	 * @testdox The queued refresh fetches the account once, outside any claim, and its listeners start the pull and rewrite the tier.
-	 */
-	public function test_queued_refresh_fetches_the_account_once_and_runs_its_listeners(): void {
-		$this->store_due_account();
-		$order = $this->order();
-		$this->deliver( $this->recorded_intent_event( 'card_checkout_succeeded', $order ) );
-		$account                           = $this->recorded_account();
-		$account['has_more_failed_events'] = true;
-		$this->answer_account_requests( $this->response( $account ) );
-		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::CONNECTED );
-		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
-		wc_get_container()->get( WebhookReliabilityService::class )->register();
-
-		$this->run_pending_refresh_job();
-
-		$this->assertSame( array( 'accounts' ), $this->routes() );
-		$this->assertSame( 0, $this->pending_refresh_jobs() );
-		$this->assertTrue( as_has_scheduled_action( WebhookReliabilityService::WEBHOOK_FETCH_EVENTS_ACTION ), 'The refresh starts the pull of lost pushes.' );
-		$this->assertSame( WooPaymentsSetupTier::ACTIVE, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
-		$stored = get_option( WooPaymentsDatabaseCache::ACCOUNT_KEY );
-		$this->assertFalse( $stored['errored'] );
-		$this->assertGreaterThan( time() - MINUTE_IN_SECONDS, $stored['fetched'] );
-	}
-
-	/**
-	 * @testdox A queued refresh that runs after another request refreshed the account sends no request.
-	 */
-	public function test_queued_refresh_after_another_refresh_sends_no_request(): void {
-		$this->store_due_account();
-		$order = $this->order();
-		$this->deliver( $this->recorded_intent_event( 'card_checkout_succeeded', $order ) );
-		// Another request refreshed the account; this request still holds the expired copy it read.
-		$this->store_fresh_account();
-
-		$this->run_pending_refresh_job();
-
-		$this->assertSame( array(), $this->routes() );
-	}
-
-	/**
-	 * @testdox A failed queued refresh sends one request and stores an errored entry, after which a due delivery the same day queues nothing.
-	 */
-	public function test_failed_queued_refresh_stores_an_errored_entry_for_the_day(): void {
-		$this->store_due_account();
-		$this->deliver( $this->recorded_intent_event( 'card_checkout_succeeded', $this->order() ) );
-		$this->answer_account_requests( $this->response( array( 'error' => array( 'code' => 'server_error' ) ), 500 ) );
-
-		$this->run_pending_refresh_job();
-
-		$this->assertSame( array( 'accounts' ), $this->routes() );
-		$stored = get_option( WooPaymentsDatabaseCache::ACCOUNT_KEY );
-		$this->assertTrue( $stored['errored'] );
-		$this->assertGreaterThan( time() - MINUTE_IN_SECONDS, $stored['fetched'] );
-		$this->reset_container_resolutions();
-
-		$this->deliver( $this->recorded_intent_event( 'card_checkout_succeeded', $this->order() ) );
-
-		$this->assertSame( array( 'accounts' ), $this->routes() );
-		$this->assertSame( 0, $this->pending_refresh_jobs() );
-	}
-
-	/**
-	 * @testdox An event refused by a held claim sends no account request, queues one refresh, and its retry applies it with no request and no second job.
-	 */
-	public function test_refused_due_event_queues_one_refresh_and_its_retry_reads_no_account(): void {
-		$this->store_due_account();
-		$order      = $this->order();
-		$event      = $this->recorded_intent_event( 'card_checkout_succeeded', $order );
-		$lock       = wc_get_container()->get( OrderPaymentLock::class );
-		$vocabulary = new WooPaymentsPersistenceVocabulary();
-		$token      = PlatformRequestClaimGuard::rival_token( $lock->claim( $order, $vocabulary, 'pi_capture', 'capture' ) );
-		$this->assertNotNull( $token );
-		try {
-			$response = $this->deliver( $event );
-		} finally {
-			$lock->release( $order, $vocabulary, $token );
-		}
-
-		$this->assertSame( 500, $response->get_status() );
-		$this->assertSame( array(), $this->routes() );
-		$this->assertSame( 'pending', $this->status_of( $order ) );
-		$this->assertSame( 1, $this->pending_refresh_jobs() );
-		$retries = as_get_scheduled_actions(
-			array(
-				'hook'     => WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION,
-				'status'   => \ActionScheduler_Store::STATUS_PENDING,
-				'per_page' => -1,
-			),
-			'ids'
-		);
-		$this->assertCount( 1, $retries );
-		$this->assertEqualsWithDelta( time(), as_next_scheduled_action( WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION ), 5, 'The store retries a refused delivery at once, as before.' );
-		wc_get_container()->get( WooPaymentsAccountService::class )->register();
-		wc_get_container()->get( WebhookReliabilityService::class )->register();
-
-		\ActionScheduler::runner()->process_action( (int) reset( $retries ), 'WP Cron' );
-
-		$this->assertSame( array(), $this->routes() );
-		$this->assertSame( 'processing', $this->status_of( $order ) );
-		$this->assertSame( 1, $this->pending_refresh_jobs() );
-	}
-
-	/**
-	 * @testdox An event that claims just after another request released the order sends no account request under its claim.
-	 */
-	public function test_due_event_after_a_released_claim_reads_no_account(): void {
-		$this->store_due_account();
-		$order = $this->order();
-		$this->with_order_payment_claim( $order, 'capture', static fn() => null );
-
-		$this->deliver( $this->recorded_intent_event( 'card_checkout_succeeded', $order ) );
-
-		$this->assertSame( array(), $this->routes() );
-		$this->assertSame( 'processing', $this->status_of( $order ) );
-		$this->assertSame( 1, $this->pending_refresh_jobs() );
-	}
-
-	/**
-	 * @testdox A delivery with a fresh stored account sends no account request and queues nothing.
-	 */
-	public function test_fresh_account_delivery_queues_nothing(): void {
-		$this->store_fresh_account();
-
-		$this->deliver( $this->recorded_intent_event( 'card_checkout_succeeded', $this->order() ) );
-
-		$this->assertSame( array(), $this->routes() );
-		$this->assertSame( 0, $this->pending_refresh_jobs() );
-	}
-
-	/**
-	 * @testdox A retried delivery under Action Scheduler with no stored account sends no request, queues nothing, and applies the event.
-	 */
-	public function test_retried_delivery_without_an_account_queues_nothing(): void {
-		$order = $this->order();
-		wc_get_container()->get( WooPaymentsAccountService::class )->handle_action_scheduler_before_execute();
-
-		wc_get_container()->get( EventIngestor::class )->process( $this->recorded_intent_event( 'card_checkout_succeeded', $order ) );
-
-		$this->assertSame( array(), $this->routes() );
-		$this->assertSame( 'processing', $this->status_of( $order ) );
-		$this->assertSame( 0, $this->pending_refresh_jobs() );
-	}
-
-	/**
-	 * @testdox account.updated with the stored account due forces one refresh in its delivery and queues none.
-	 */
-	public function test_account_event_forces_its_refresh_and_queues_none(): void {
-		$this->store_due_account();
-
-		$response = $this->deliver(
-			array(
-				'id'   => 'evt_account',
-				'type' => 'account.updated',
-			)
-		);
-
-		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( array( 'accounts' ), $this->routes() );
-		$this->assertSame( 0, $this->pending_refresh_jobs() );
-	}
-
-	/**
-	 * @testdox A $_dataName delivery with the stored account due sends no request, replies as before, and queues one refresh.
-	 *
-	 * @dataProvider provider_deliveries_without_a_claim
-	 *
-	 * @param array<string,mixed> $event  Event payload.
-	 * @param int                 $status Reply status.
-	 */
-	public function test_due_delivery_without_a_claim_queues_one_refresh( array $event, int $status ): void {
-		$this->store_due_account();
-
-		$response = $this->deliver( $event );
-
-		$this->assertSame( $status, $response->get_status() );
-		$this->assertSame( array(), $this->routes() );
-		$this->assertSame( 1, $this->pending_refresh_jobs() );
-	}
-
-	/**
-	 * @testdox Sequential due deliveries leave one pending refresh job.
-	 */
-	public function test_sequential_due_deliveries_leave_one_pending_refresh(): void {
-		$this->store_due_account();
-
-		foreach ( $this->provider_deliveries_without_a_claim() as list( $event ) ) {
-			$this->deliver( $event );
-		}
-
-		$this->assertSame( array(), $this->routes() );
-		$this->assertSame( 1, $this->pending_refresh_jobs() );
-	}
-
-	/**
-	 * Deliveries that take no order claim, with their reply status.
-	 *
-	 * @return array<string,array{array<string,mixed>,int}>
-	 */
-	public function provider_deliveries_without_a_claim(): array {
-		return array(
-			'notification'            => array(
-				array(
-					'id'   => 'evt_note',
-					'type' => 'wcpay.notification',
-					'data' => array(
-						'title'   => 'Due notification',
-						'content' => 'A notification.',
-					),
-				),
-				200,
-			),
-			'platform check'          => array( array( 'type' => 'test' ), 200 ),
-			'mode mismatch'           => array(
-				array(
-					'id'       => 'evt_live',
-					'type'     => 'payment_intent.succeeded',
-					'livemode' => true,
-					'data'     => array( 'object' => array( 'id' => 'pi_live' ) ),
-				),
-				200,
-			),
-			'payment_intent.canceled' => array(
-				array(
-					'id'   => 'evt_canceled',
-					'type' => 'payment_intent.canceled',
-					'data' => array( 'object' => array( 'id' => 'pi_canceled' ) ),
-				),
-				200,
-			),
-			'invoice.payment_failed'  => array(
-				array(
-					'id'   => 'evt_invoice',
-					'type' => 'invoice.payment_failed',
-					'data' => array( 'object' => array( 'id' => 'in_failed' ) ),
-				),
-				400,
-			),
-		);
-	}
-
-	/**
-	 * @testdox A throwing account refresh listener fails the queued refresh after the entry is stored, and not the event.
-	 */
-	public function test_throwing_refresh_listener_fails_the_job_not_the_event(): void {
-		$this->store_due_account();
-		add_action(
-			'woocommerce_payments_account_refreshed',
-			static function (): void {
-				throw new \RuntimeException( 'Refresh listener failure.' );
-			}
-		);
-		$order = $this->order();
-
-		$response = $this->deliver( $this->recorded_intent_event( 'card_checkout_succeeded', $order ) );
-
-		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( 'processing', $this->status_of( $order ) );
-		$job = $this->run_pending_refresh_job();
-		$this->assertSame( array( 'accounts' ), $this->routes() );
-		$this->assertSame( \ActionScheduler_Store::STATUS_FAILED, \ActionScheduler::store()->get_status( $job ) );
-		$this->assertGreaterThan( time() - MINUTE_IN_SECONDS, get_option( WooPaymentsDatabaseCache::ACCOUNT_KEY )['fetched'] );
-	}
-
-	/**
-	 * @testdox With a throwing account option filter, a $_dataName delivery replies as before and the due check logs one line.
-	 *
-	 * @dataProvider provider_option_filter_throws
-	 *
-	 * @param bool $reads_account Whether the event reads the account.
-	 */
-	public function test_throwing_account_option_filter_replies_as_before( bool $reads_account ): void {
-		$this->enable_logging();
-		$logger = RecordingWcLogger::install();
-		add_filter(
-			'pre_option_' . WooPaymentsDatabaseCache::ACCOUNT_KEY,
-			static function ( $pre ) {
-				if ( false === $pre ) {
-					throw new \RuntimeException( 'Option filter failure.' );
-				}
-				return $pre;
-			}
-		);
-		$event = $reads_account
-			? $this->recorded_intent_event( 'card_checkout_succeeded', $this->order() )
-			: $this->provider_deliveries_without_a_claim()['notification'][0];
-
-		$response = $this->deliver( $event );
-
-		$this->assertSame( $reads_account ? 500 : 200, $response->get_status() );
-		$lines = array_filter( $logger->lines, static fn( array $line ): bool => 'error' === $line[0] && 'WooPayments could not queue the account refresh after a webhook delivery.' === $line[1] );
-		$this->assertCount( 1, $lines );
-		$this->assertSame( 0, $this->pending_refresh_jobs() );
-	}
-
-	/**
-	 * Option filter cases.
-	 *
-	 * @return array<string,array{bool}>
-	 */
-	public function provider_option_filter_throws(): array {
-		return array(
-			'payment_intent.succeeded' => array( true ),
-			'notification'             => array( false ),
-		);
-	}
-
-	/**
-	 * @testdox Without a platform connection, a delivery with the stored account due sends no request and queues nothing.
-	 */
-	public function test_unconnected_due_delivery_queues_nothing(): void {
-		$this->store_due_account();
-		$this->http->connected = false;
-
-		$this->deliver( $this->provider_deliveries_without_a_claim()['notification'][0] );
-
-		$this->assertSame( array(), $this->routes() );
-		$this->assertSame( 0, $this->pending_refresh_jobs() );
-	}
-
-	/**
-	 * @testdox An in-person payment delivered with the stored account due sends no request, and its receipt carries the stored business details.
-	 */
-	public function test_due_in_person_receipt_uses_the_stored_business_details(): void {
-		$this->store_due_account();
-		$order = $this->order();
-		$order->set_billing_email( 'ada@example.test' );
-		$order->save();
-		$recording = wp_json_file_decode( __DIR__ . '/Fixtures/platform-card-present-succeeded-event.json', array( 'associative' => true ) );
-		$event     = $recording['events'][0];
-		$event['data']['object']['metadata']['order_id']  = (string) $order->get_id();
-		$event['data']['object']['metadata']['order_key'] = $order->get_order_key();
-		$event['data']['object']['amount']                = (int) round( 100 * (float) $order->get_total() );
-		$event['data']['object']['amount_received']       = $event['data']['object']['amount'];
-		unset( $event['livemode'] );
-		$email  = new class() extends WooPaymentsIppReceiptEmail {
-			/** @var array<int,array<string,mixed>> Merchant settings of each receipt. */
-			public array $received = array();
-
-			/**
-			 * Record the receipt's merchant settings.
-			 *
-			 * @param WC_Order            $order             Order.
-			 * @param array<string,mixed> $merchant_settings Merchant settings.
-			 * @param array<string,mixed> $charge            Charge.
-			 */
-			public function trigger( WC_Order $order, array $merchant_settings, array $charge ): void {
-				unset( $order, $charge );
-				$this->received[] = $merchant_settings;
-			}
-		};
-		$emails = WC()->mailer()->emails;
-		WC()->mailer()->emails[ WooPaymentsIppReceiptEmail::EMAIL_CLASS_KEY ] = $email;
-		try {
-			$this->deliver( $event );
-		} finally {
-			WC()->mailer()->emails = $emails;
-		}
-
-		$this->assertSame( array(), $this->routes() );
-		$profile = $this->recorded_account()['business_profile'];
-		$this->assertCount( 1, $email->received );
-		$this->assertSame( $profile['name'], $email->received[0]['business_name'] );
-		$this->assertSame( $profile['support_phone'], $email->received[0]['support_info']['phone'] );
-	}
-
-	/**
-	 * @testdox The queued refresh hook loads in cron requests at the $_dataName tier and is on the switch's list of handled queue hooks.
-	 *
-	 * @dataProvider provider_working_tiers
-	 *
-	 * @param string $tier Setup tier.
-	 */
-	public function test_queued_refresh_hook_loads_in_cron( string $tier ): void {
-		$this->assertContains( WooPaymentsAccountService::class, WooPaymentsProvider::get_classes_by_setup_tier()[ $tier ][ RequestTypeUtil::CRON ] );
-		$this->assertContains( WooPaymentsAccountService::class, WooPaymentsProvider::get_classes_by_setup_tier()[ $tier ][ RequestTypeUtil::CLI ] );
-		remove_all_actions( self::REFRESH_HOOK );
-		wc_get_container()->get( WooPaymentsAccountService::class )->register();
-		$this->assertNotFalse( has_action( self::REFRESH_HOOK, array( wc_get_container()->get( WooPaymentsAccountService::class ), 'handle_queued_refresh' ) ) );
-		$this->assertContains( self::REFRESH_HOOK, ( new \ReflectionClassConstant( PreflightService::class, 'BUILTIN_HANDLED_QUEUE_HOOKS' ) )->getValue() );
-	}
-
-	/**
-	 * The tiers the built-in WooPayments takes payments at.
-	 *
-	 * @return array<string,array{string}>
-	 */
-	public function provider_working_tiers(): array {
-		return array(
-			'connected' => array( WooPaymentsSetupTier::CONNECTED ),
-			'active'    => array( WooPaymentsSetupTier::ACTIVE ),
-		);
-	}
-
-	/**
-	 * Deliver an event through the webhook REST route.
-	 *
-	 * @param array<string,mixed> $event Event payload.
-	 * @return WP_REST_Response
-	 */
-	private function deliver( array $event ): WP_REST_Response {
-		/** @var WP_REST_Request<array<string,mixed>> $request */
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/webhook' );
-		$request->set_body_params( $event );
-
-		return wc_get_container()->get( WebhookRestController::class )->handle_webhook( $request );
-	}
-
-	/**
-	 * Count the pending queued account refreshes.
-	 *
-	 * @return int
-	 */
-	private function pending_refresh_jobs(): int {
-		return count(
-			as_get_scheduled_actions(
-				array(
-					'hook'     => self::REFRESH_HOOK,
-					'status'   => \ActionScheduler_Store::STATUS_PENDING,
-					'per_page' => -1,
-				),
-				'ids'
-			)
-		);
-	}
-
-	/**
-	 * Run the one pending queued account refresh as the queue runner does, in a request that loaded the account service.
-	 *
-	 * @return int The action's ID.
-	 */
-	private function run_pending_refresh_job(): int {
-		$ids = as_get_scheduled_actions(
-			array(
-				'hook'     => self::REFRESH_HOOK,
-				'status'   => \ActionScheduler_Store::STATUS_PENDING,
-				'per_page' => -1,
-			),
-			'ids'
-		);
-		$this->assertCount( 1, $ids );
-		$this->http->requests = array();
-		wc_get_container()->get( WooPaymentsAccountService::class )->register();
-
-		\ActionScheduler::runner()->process_action( (int) reset( $ids ), 'WP Cron' );
-
-		return (int) reset( $ids );
-	}
-
-	/**
-	 * A recorded payment intent event for the order, at its total.
-	 *
-	 * @param string   $pair  Recorded entry in Fixtures/platform-payment-intent-events.json.
-	 * @param WC_Order $order Order the event names.
-	 * @return array<string,mixed>
-	 */
-	private function recorded_intent_event( string $pair, WC_Order $order ): array {
-		$event  = RecordedPlatformEvents::body( 'platform-payment-intent-events.json', $pair );
-		$intent = $event['data']['object'];
-		$order->update_meta_data( '_payment_method_id', (string) ( $intent['last_payment_error']['payment_method']['id'] ?? $intent['payment_method'] ) );
-		$order->set_total( sprintf( '%.2f', ( (int) $intent['amount'] ) / 100 ) );
-		$order->save();
-		$event['data']['object']['metadata']['order_id']  = (string) $order->get_id();
-		$event['data']['object']['metadata']['order_key'] = $order->get_order_key();
-
-		return $event;
-	}
-
-	/**
-	 * Create a processing card order paid with intent pi_paid and charge ch_paid.
-	 *
-	 * @return WC_Order
-	 */
-	private function paid_order(): WC_Order {
-		$order = $this->order();
-		$order->set_total( '10.00' );
-		$order->set_status( 'processing' );
-		$order->set_transaction_id( 'pi_paid' );
-		$order->update_meta_data( '_intent_id', 'pi_paid' );
-		$order->update_meta_data( '_charge_id', 'ch_paid' );
-		$order->update_meta_data( '_intention_status', 'succeeded' );
-		$order->save();
-
-		return $order;
-	}
-
-	/**
-	 * The recorded active US account.
-	 *
-	 * @return array<string,mixed>
-	 */
-	private function recorded_account(): array {
-		return wp_json_file_decode( __DIR__ . '/Fixtures/platform-test-drive-account.json', array( 'associative' => true ) )['account'];
-	}
-
-	/**
-	 * Answer every account request with this response, whenever it comes.
-	 *
-	 * @param array $response Transport response.
-	 */
-	private function answer_account_requests( array $response ): void {
-		$http = $this->http;
-		if ( property_exists( $http, 'account' ) ) {
-			$http->account = $response;
-		}
-	}
-
-	/**
-	 * Read the order's stored status.
-	 *
-	 * @param WC_Order $order Order.
-	 * @return string
-	 */
-	private function status_of( WC_Order $order ): string {
-		$stored = wc_get_order( $order->get_id() );
-		$this->assertInstanceOf( WC_Order::class, $stored );
-
-		return $stored->get_status();
 	}
 
 	/**
@@ -1315,24 +639,6 @@ class PlatformRequestClaimTest extends WC_Unit_Test_Case {
 			),
 			false
 		);
-	}
-
-	/**
-	 * Store the recorded US account, fetched two days ago, and answer any account request with it, whenever it comes.
-	 */
-	private function store_due_account(): void {
-		$this->store_expired_account();
-		$this->answer_account_requests( $this->account_response() );
-	}
-
-	/**
-	 * Store the recorded US account, fetched now, so a read serves it.
-	 */
-	private function store_fresh_account(): void {
-		$this->store_expired_account();
-		$stored            = get_option( WooPaymentsDatabaseCache::ACCOUNT_KEY );
-		$stored['fetched'] = time();
-		update_option( WooPaymentsDatabaseCache::ACCOUNT_KEY, $stored, false );
 	}
 
 	/**
