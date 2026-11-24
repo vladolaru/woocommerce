@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 
 /**
@@ -63,10 +64,14 @@ final class ExtensionBoundCurrencyPlugins {
 	 * Check for a currency other than the store currency in the setup the built-in owner will use.
 	 */
 	private static function has_additional_currency(): bool {
-		$handover_pending = MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_EXTENSION === get_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION );
-		$enabled          = $handover_pending
-			? MultiCurrencyFeatureController::has_stored_multi_currency_setup()
-			: 'yes' === get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
+		$last_owner = get_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION );
+		// A handover uses the extension setup. A first-owner seed uses it only when there is no stored feature choice.
+		if ( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_EXTENSION === $last_owner
+			|| ( false === $last_owner && false === get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) ) ) {
+			$enabled = MultiCurrencyFeatureController::has_stored_multi_currency_setup();
+		} else {
+			$enabled = wc_get_container()->get( MultiCurrencyRuntimeArbiter::class )->feature_is_enabled();
+		}
 		if ( ! $enabled ) {
 			return false;
 		}

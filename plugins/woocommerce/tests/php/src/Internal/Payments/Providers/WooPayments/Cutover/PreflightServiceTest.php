@@ -78,18 +78,30 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	 *           ["builtin", "yes", "0", ["USD", "EUR"], true]
 	 *           ["builtin", "yes", "0", ["USD"], false]
 	 *           ["builtin", "no", "1", ["USD", "EUR"], false]
+	 *           [null, null, "1", ["USD", "EUR"], true]
+	 *           [null, "no", "1", ["USD", "EUR"], false]
+	 *           [null, null, "1", ["USD"], false]
 	 *
-	 * @param string   $owner          Last payments owner.
-	 * @param string   $core_feature   Stored core feature choice.
-	 * @param string   $extension_flag Extension feature flag.
-	 * @param string[] $currencies     Enabled currencies.
-	 * @param bool     $held           Whether preflight should hold the switch.
+	 * @param string|null $owner          Last payments owner.
+	 * @param string|null $core_feature   Stored core feature choice.
+	 * @param string      $extension_flag Extension feature flag.
+	 * @param string[]    $currencies     Enabled currencies.
+	 * @param bool        $held           Whether preflight should hold the switch.
 	 */
-	public function test_currency_wait_after_handover( string $owner, string $core_feature, string $extension_flag, array $currencies, bool $held ): void {
+	public function test_currency_wait_after_handover( ?string $owner, ?string $core_feature, string $extension_flag, array $currencies, bool $held ): void {
 		update_option( 'active_plugins', array( 'advanced-coupons-for-woocommerce-free/plugin.php' ) );
 		update_option( 'woocommerce_currency', 'USD' );
-		update_option( 'woocommerce_multi_currency_last_payments_owner', $owner );
-		update_option( 'woocommerce_feature_multi_currency_enabled', $core_feature );
+		$options = array(
+			'woocommerce_multi_currency_last_payments_owner' => $owner,
+			'woocommerce_feature_multi_currency_enabled' => $core_feature,
+		);
+		foreach ( $options as $option => $value ) {
+			if ( null === $value ) {
+				delete_option( $option );
+			} else {
+				update_option( $option, $value );
+			}
+		}
 		update_option( '_wcpay_feature_customer_multi_currency', $extension_flag );
 		update_option( 'wcpay_multi_currency_enabled_currencies', $currencies );
 
