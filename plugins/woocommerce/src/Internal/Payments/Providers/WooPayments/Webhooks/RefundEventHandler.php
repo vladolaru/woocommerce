@@ -21,6 +21,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundAmbiguityService;
 use Automattic\WooCommerce\Internal\Utilities\CurrencyUtil;
 use InvalidArgumentException;
 use RuntimeException;
@@ -389,8 +390,21 @@ class RefundEventHandler {
 			return;
 		}
 
+		// The merchant may have followed the earlier note's advice to record this refund manually after payment.
+		$notes   = wc_get_container()->get( OrderPaymentNotes::class );
+		$note_id = $notes->find_by_identity( $order, 'other_charge|charge.refunded|' . $facts['refund_id'] . '|' . $facts['refund_status'], $this->persistence_vocabulary );
+		$note    = $note_id ? get_comment( $note_id ) : null;
+		$made_at = $note ? strtotime( $note->comment_date_gmt . ' UTC' ) : false;
+		if ( false !== $made_at ) {
+			$manual_row = WooPaymentsRefundAmbiguityService::find_manual_record_row( $order->get_refunds(), $facts['currency'], $facts['refund_amount'], $made_at );
+			if ( $manual_row instanceof WC_Order_Refund ) {
+				$this->add_note_and_metadata_for_created_refund( $order, $manual_row, $facts['refund_id'], $facts['balance_txn_id'], $facts['refund_status'], $facts['refund_amount'], $facts['currency'] );
+				return;
+			}
+		}
+
 		$report_refund = $this->can_report_refund( $order, $facts['currency'], $facts['refund_status'] );
-		if ( $report_refund && wc_get_container()->get( OrderPaymentNotes::class )->find_by_identity( $order, 'refund:' . $facts['refund_id'] . ':unrecorded', $this->persistence_vocabulary ) ) {
+		if ( $report_refund && $notes->find_by_identity( $order, 'refund:' . $facts['refund_id'] . ':unrecorded', $this->persistence_vocabulary ) ) {
 			return;
 		}
 

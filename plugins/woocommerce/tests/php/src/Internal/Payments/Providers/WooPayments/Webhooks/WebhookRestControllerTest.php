@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
+use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -303,7 +304,7 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A charge.refunded push on the charge an unpaid WooPayments order is paying with, made before the order recorded it, is recorded once with a note that says how to add the refund.
+	 * @testdox A refund delivered before payment invites a manual refund, then links that row on redelivery after payment.
 	 *
 	 * The event is the platform's recorded delivery (Fixtures/platform-charge-dispute-events.json, card_charge_refunded_in_full)
 	 * with its metadata naming the order, which stores the charge's payment intent and not the charge.
@@ -332,7 +333,7 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 200, $first->get_status() );
 		$this->assertCount( 1, array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] && 0 === strpos( $line[1], 'other charge recorded:' ) ) );
 		$this->assertSame( 200, $controller->handle_webhook( $this->create_post_request( $event ) )->get_status(), 'A redelivery is answered as handled.' );
-		$order = wc_get_order( $order->get_id() );
+		$order = new WC_Order( $order->get_id() );
 		$this->assertCount( 0, $order->get_refunds() );
 		$this->assertSame( OrderStatus::PENDING, $order->get_status() );
 		$notes = self::order_notes_containing( $order, 're_3URpY0BzWlxcwgpP1T8e7HhY' );
@@ -341,6 +342,32 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 			'A refund of $10.99 (re_3URpY0BzWlxcwgpP1T8e7HhY) was made on WooPayments charge ch_3URpY0BzWlxcwgpP1SUxzwXd before this order recorded a payment. If charge ch_3URpY0BzWlxcwgpP1SUxzwXd is later recorded as this order\'s payment and the refund succeeded, add a manual refund of $10.99.',
 			html_entity_decode( wp_strip_all_tags( $notes[0]->content ), ENT_QUOTES )
 		);
+
+		$order->update_meta_data( '_charge_id', $event['data']['object']['id'] );
+		$order->payment_complete( $event['data']['object']['payment_intent'] );
+		$this->assertTrue( $order->is_paid() );
+		wc_get_container()->get( RefundRowCapture::class )->register();
+		$manual = wc_create_refund(
+			array(
+				'order_id' => $order->get_id(),
+				'amount'   => '10.99',
+			)
+		);
+		$this->assertInstanceOf( \WC_Order_Refund::class, $manual );
+
+		$response = $controller->handle_webhook( $this->create_post_request( $event ) );
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertCount( 0, $this->scheduler->jobs_for( WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION ) );
+		$manual->read_meta_data( true );
+		$this->assertSame( 're_3URpY0BzWlxcwgpP1T8e7HhY', $manual->get_meta( '_wcpay_refund_id' ) );
+
+		$this->assertSame( 200, $controller->handle_webhook( $this->create_post_request( $event ) )->get_status() );
+		$order = new WC_Order( $order->get_id() );
+		$this->assertCount( 1, $order->get_refunds() );
+		$this->assertSame( 10.99, (float) $order->get_total_refunded() );
+		$this->assertSame( OrderStatus::REFUNDED, $order->get_status() );
+		$this->assertCount( 1, self::order_notes_containing( $order, 'was successfully processed' ) );
+		$this->assertCount( 0, self::order_notes_containing( $order, 'more than the order has left to refund' ) );
 	}
 
 	/**

@@ -929,11 +929,16 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 	 * @dataProvider provider_linked_refund_with_its_created_note
 	 *
 	 * @param string $event_status  Refund status the event carries.
-	 * @param string $existing_note Created note on the order: an identity note type (created_successful, created_pending) or 'extension'.
+	 * @param string $existing_note Created note on the order: an identity note type (created_successful, created_pending) or the history that left the note ('extension' or 'manual').
 	 * @param string $refund_status Order refund status before the event.
 	 */
 	public function test_charge_refunded_for_a_linked_refund_with_its_created_note_changes_nothing( string $event_status, string $existing_note, string $refund_status ): void {
-		$order  = $this->create_refundable_order();
+		$order = $this->create_refundable_order();
+		if ( 'manual' === $existing_note ) {
+			wc_get_container()->get( WooPaymentsOrderNoteService::class )->add_note_once( $order, 'Earlier note for re_123.', 'other_charge|charge.refunded|re_123|succeeded' );
+			wc_get_container()->get( RefundRowCapture::class )->register();
+			$existing_note = 'created_successful';
+		}
 		$refund = $this->create_local_refund( $order );
 		$refund->update_meta_data( '_wcpay_refund_id', 're_123' );
 		$refund->update_meta_data( '_wcpay_refund_transaction_id', 'txn_existing' );
@@ -970,6 +975,7 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 			'identity note, succeeded event, successful refund' => array( 'succeeded', 'created_successful', 'successful' ),
 			'identity note, pending event, successful refund'   => array( 'pending', 'created_successful', 'successful' ),
 			'identity note, succeeded event, pending refund'    => array( 'succeeded', 'created_pending', 'pending' ),
+			'linked manual refund after the before-payment note' => array( 'succeeded', 'manual', 'successful' ),
 			'extension note, pending event, successful refund'  => array( 'pending', 'extension', 'successful' ),
 		);
 	}
@@ -1389,6 +1395,110 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 		$this->sut->process( 'charge.refunded', $charge );
 
 		$this->assertCount( 1, $this->get_notes_containing( wc_get_order( $order->get_id() ), 're_123' ) );
+	}
+
+	/**
+	 * @testdox A refund redelivered after the merchant recorded it links the oldest matching row and writes its created note once.
+	 *
+	 * @testWith [40, 1, "succeeded"]
+	 *           [20, 2, "succeeded"]
+	 *           [100, 1, "succeeded"]
+	 *           [40, 1, "pending"]
+	 *
+	 * @param int    $amount    Amount of each manual refund in dollars.
+	 * @param int    $row_count Number of matching rows.
+	 * @param string $status    Provider refund status.
+	 */
+	public function test_redelivery_links_the_manual_refund( int $amount, int $row_count, string $status ): void {
+		wc_get_container()->get( RefundRowCapture::class )->register();
+		$order = $this->create_refundable_order();
+		$order->set_total( '100.00' );
+		$order->save();
+		// The note's identity survives edits and language changes.
+		wc_get_container()->get( WooPaymentsOrderNoteService::class )->add_note_once( $order, 'Earlier note for re_123.', 'other_charge|charge.refunded|re_123|' . $status );
+
+		$manual_rows = array();
+		for ( $i = 0; $i < $row_count; ++$i ) {
+			$manual = wc_create_refund(
+				array(
+					'order_id' => $order->get_id(),
+					'amount'   => $amount,
+				)
+			);
+			$this->assertInstanceOf( WC_Order_Refund::class, $manual );
+			$manual_rows[] = $manual;
+		}
+		$charge                                 = $this->get_successful_refund_charge();
+		$charge['amount']                       = 10000;
+		$charge['refunds']['data'][0]['amount'] = $amount * 100;
+		$charge['refunds']['data'][0]['status'] = $status;
+
+		$this->sut->process( 'charge.refunded', $charge );
+
+		$order = $this->sut->get_fresh_order( $order );
+		$this->assertSame( (float) ( $amount * $row_count ), (float) $order->get_total_refunded() );
+		$this->assertCount( $row_count, $order->get_refunds() );
+		$linked = $manual_rows[0];
+		$linked->read_meta_data( true );
+		$this->assertSame( 're_123', $linked->get_meta( '_wcpay_refund_id' ) );
+		$this->assertSame( 'txn_123', $linked->get_meta( '_wcpay_refund_transaction_id' ) );
+		if ( 2 === $row_count ) {
+			$manual_rows[1]->read_meta_data( true );
+			$this->assertSame( '', $manual_rows[1]->get_meta( '_wcpay_refund_id' ) );
+		}
+		$pending = 'pending' === $status;
+		$this->assertSame( $pending ? 'pending' : 'successful', $order->get_meta( '_wcpay_refund_status' ) );
+		$this->assertCount( 1, $this->get_notes_containing( $order, $pending ? 'is pending' : 'was successfully processed' ) );
+	}
+
+	/**
+	 * @testdox A refund creates its own row when the merchant has not recorded it in response to its note.
+	 *
+	 * @testWith [false, "none"]
+	 *           [false, "matching"]
+	 *           [true, "none"]
+	 *           [true, "wrong amount"]
+	 *           [true, "before note"]
+	 *           [true, "linked elsewhere"]
+	 *           [true, "unmarked"]
+	 *
+	 * @param bool   $has_note Whether the first delivery left a note.
+	 * @param string $history  Existing refund row, if any.
+	 */
+	public function test_redelivery_without_a_matching_manual_refund( bool $has_note, string $history ): void {
+		wc_get_container()->get( RefundRowCapture::class )->register();
+		$order = $this->create_refundable_order();
+		if ( $has_note ) {
+			wc_get_container()->get( WooPaymentsOrderNoteService::class )->add_note_once( $order, 'Earlier note for re_123.', 'other_charge|charge.refunded|re_123|succeeded' );
+		}
+		if ( 'none' !== $history ) {
+			$manual = $this->create_local_refund( $order );
+			switch ( $history ) {
+				case 'wrong amount':
+					$manual->set_amount( '3.00' );
+					break;
+				case 'before note':
+					$manual->set_date_created( time() - DAY_IN_SECONDS );
+					break;
+				case 'linked elsewhere':
+					$manual->update_meta_data( '_wcpay_refund_id', 're_other' );
+					break;
+				case 'unmarked':
+					$manual->delete_meta_data( RefundRowCapture::MANUAL_REFUND_META );
+					break;
+			}
+			$manual->save();
+		}
+
+		$this->sut->process( 'charge.refunded', $this->get_successful_refund_charge() );
+
+		$order = $this->sut->get_fresh_order( $order );
+		$this->assertCount( isset( $manual ) ? 2 : 1, $order->get_refunds() );
+		$this->assertSame( 4.0, (float) $this->get_refund_by_provider_id( $order, 're_123' )->get_amount() );
+		if ( isset( $manual ) ) {
+			$manual->read_meta_data( true );
+			$this->assertSame( 'linked elsewhere' === $history ? 're_other' : '', $manual->get_meta( '_wcpay_refund_id' ) );
+		}
 	}
 
 	/**

@@ -701,17 +701,15 @@ class WooPaymentsRefundAmbiguityService {
 	}
 
 	/**
-	 * Find the manual refund row that records the earlier attempt's refund: marked as a manual record, not refunded through
-	 * the gateway, with no provider refund or lost dispute ID, created at or after the failure, for exactly the refund's
-	 * amount. The oldest one takes the link.
+	 * Find the oldest eligible manual record of this amount created at or after the given time.
 	 *
-	 * @param WC_Order_Refund[] $rows         The order's refunds other than this call's own row.
-	 * @param string            $currency     Order currency.
-	 * @param int               $amount_minor The refund's amount in minor units.
-	 * @param int               $failed_at    Unix time of the first ambiguous failure.
+	 * @param WC_Order_Refund[] $rows          Candidate refund rows.
+	 * @param string            $currency      Currency used for the minor-unit comparison.
+	 * @param int               $amount_minor  The refund's amount in minor units.
+	 * @param int               $created_since Earliest eligible creation time as a Unix timestamp.
 	 * @return WC_Order_Refund|null
 	 */
-	private static function find_manual_record_row( array $rows, string $currency, int $amount_minor, int $failed_at ): ?WC_Order_Refund {
+	public static function find_manual_record_row( array $rows, string $currency, int $amount_minor, int $created_since ): ?WC_Order_Refund {
 		$oldest     = null;
 		$oldest_key = null;
 		foreach ( $rows as $refund ) {
@@ -721,7 +719,7 @@ class WooPaymentsRefundAmbiguityService {
 				&& ! $refund->get_refunded_payment()
 				&& '' === (string) $refund->get_meta( '_wcpay_refund_id', true )
 				&& '' === (string) $refund->get_meta( DisputeEventHandler::LOST_DISPUTE_ID_REFUND_META_KEY, true )
-				&& null !== $created && $created->getTimestamp() >= $failed_at
+				&& null !== $created && $created->getTimestamp() >= $created_since
 				&& WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $refund->get_amount(), $currency ) === $amount_minor
 			) {
 				$key = array( $created->getTimestamp(), $refund->get_id() );
