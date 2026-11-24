@@ -59,6 +59,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Adapte
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\StoreApiRequestHandler;
+use Automattic\WooCommerce\Tests\Internal\Compatibility\WooPaymentsCompatibilityNoticeTestTrait;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\WooPayEnvelopes;
 use Automattic\WooCommerce\StoreApi\Exceptions\RouteException;
 use Automattic\WooCommerce\StoreApi\Legacy as StoreApiLegacy;
@@ -88,6 +89,7 @@ use WC_Payment_Token;
 class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 	use ProviderTextLogAssertions;
+	use WooPaymentsCompatibilityNoticeTestTrait;
 
 	/**
 	 * The cart WC() held before the test, put back in tearDown() for tests that replace or remove it.
@@ -215,9 +217,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * Plugins reach the gateway through the WooPayments extension's `WC_Payments::get_gateway()` and ask it `is_enabled()`
 	 * (Order Subscriptions 1.2.15 WooPaymentsIntegration.php:94, on every admin and storefront page while it is on); the
 	 * extension answers `'yes' === $this->get_option( 'enabled' )` (client 11.1.0 class-wc-payment-gateway-wcpay.php:4659).
-	 * The method is deprecated like the facades it serves, so each call raises the deprecation notice.
 	 *
-	 * @testdox Should tell callers from the compatibility facade whether the gateway is enabled, as the WooPayments extension does, with a deprecation notice: $enabled.
+	 * @testdox Should tell callers from the compatibility facade whether the gateway is enabled, as the WooPayments extension does, with an incorrect usage notice: $enabled.
 	 * @testWith ["yes", true]
 	 *           ["no", false]
 	 *
@@ -225,7 +226,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @param bool   $expected Whether the gateway reports itself enabled.
 	 */
 	public function test_is_enabled_reads_the_enabled_setting( string $enabled, bool $expected ): void {
-		$this->setExpectedDeprecated( WooPaymentsGateway::class . '::is_enabled' );
+		$this->reset_compatibility_notices();
+		$this->setExpectedIncorrectUsage( WooPaymentsGateway::class . '::is_enabled()' );
 		$this->with_gateway_settings(
 			array( 'enabled' => $enabled ),
 			function () use ( $expected ): void {

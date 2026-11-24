@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySwitcherWidgetCon
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\LocalizationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
+use Automattic\WooCommerce\Tests\Internal\Compatibility\WooPaymentsCompatibilityNoticeTestTrait;
 use WC_Unit_Test_Case;
 
 require_once __DIR__ . '/Fixtures/multi-currency-facade-plugin-callers.inc';
@@ -28,6 +29,8 @@ require_once __DIR__ . '/Fixtures/multi-currency-facade-plugin-callers.inc';
  * process, as on a store; the facade's singleton stays too, and reads every service from the container on each call.
  */
 class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
+
+	use WooPaymentsCompatibilityNoticeTestTrait;
 
 	/**
 	 * The session a case may replace.
@@ -77,6 +80,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 	 */
 	public function setUp(): void {
 		parent::setUp();
+		$this->reset_compatibility_notices();
 
 		global $wp_widget_factory;
 		$this->session = WC()->session;
@@ -171,7 +175,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 	public function test_fox_reads_the_enabled_and_store_currencies(): void {
 		$this->declare_facade();
 		$fixture = new MultiCurrencyFacadePluginCallersFixture();
-		$this->expect_facade_deprecations( 'instance', 'get_enabled_currencies', 'get_default_currency' );
+		$this->expect_facade_warnings( 'instance', 'get_enabled_currencies', 'get_default_currency' );
 
 		$this->assertSame( 'Option: Multi-currency of WooPayments plugin by Woo.', $fixture->fox_incompatible_plugin_notice( 'USD' ), 'Two more currencies are enabled.' );
 
@@ -186,7 +190,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 		$this->declare_facade();
 		$facade = $this->get_facade();
 		$state  = wc_get_container()->get( StateBuilderFactory::class )->get_state_builder()->build();
-		$this->expect_facade_deprecations(
+		$this->expect_facade_warnings(
 			'get_enabled_currencies',
 			'get_available_currencies',
 			'has_additional_currencies_enabled',
@@ -257,7 +261,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 	public function test_answers_whether_multi_currency_runs_and_the_explicit_selection(): void {
 		$this->declare_facade();
 		$facade = $this->get_facade();
-		$this->expect_facade_deprecations( 'is_enabled', 'get_explicit_selected_currency' );
+		$this->expect_facade_warnings( 'is_enabled', 'get_explicit_selected_currency' );
 
 		$this->assertTrue( \WCPay\MultiCurrency\MultiCurrency::is_enabled() );
 		$this->assertNull( $facade->get_explicit_selected_currency(), 'Nothing is selected.' );
@@ -276,7 +280,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 
 		$this->declare_facade();
 		$facade = $this->get_facade();
-		$this->expect_facade_deprecations(
+		$this->expect_facade_warnings(
 			'get_settings',
 			'get_public_config',
 			'get_rendering_mode',
@@ -362,7 +366,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_multi_currency_price_rounding_gbp', '0.50' );
 		update_option( 'wcpay_multi_currency_price_charm_gbp', '-0.01' );
 
-		$this->expect_facade_deprecations( 'get_price', 'get_enabled_currencies' );
+		$this->expect_facade_warnings( 'get_price', 'get_enabled_currencies' );
 		$facade = $this->get_facade();
 		$gbp    = $facade->get_enabled_currencies()['GBP'];
 
@@ -384,7 +388,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 		$customer_id = self::factory()->user->create();
 		wp_set_current_user( $customer_id );
 		update_user_meta( $customer_id, 'wcpay_currency', 'EUR' );
-		$this->expect_facade_deprecations( 'adjust_amount_for_selected_currency' );
+		$this->expect_facade_warnings( 'adjust_amount_for_selected_currency' );
 		$facade = $this->get_facade();
 
 		$this->assertSame( 10.99, $facade->adjust_amount_for_selected_currency( 10.2 ) );
@@ -399,7 +403,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 	 */
 	public function test_dev_tools_clears_the_multi_currency_note(): void {
 		$this->declare_facade();
-		$this->expect_facade_deprecations( 'remove_woo_admin_notes' );
+		$this->expect_facade_warnings( 'remove_woo_admin_notes' );
 		foreach ( array( 'wc-payments-notes-multi-currency-available', 'wc-admin-another-note' ) as $name ) {
 			$note = new Note();
 			$note->set_name( $name );
@@ -422,8 +426,8 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 		$customer_id = self::factory()->user->create();
 		wp_set_current_user( $customer_id );
 		update_user_meta( $customer_id, 'wcpay_currency', 'EUR' );
-		$this->expect_facade_deprecations( 'instance', 'get_compatibility', 'get_enabled_currencies', 'get_selected_currency', 'get_default_currency', 'get_raw_conversion' );
-		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\Compatibility::should_disable_currency_switching' );
+		$this->expect_facade_warnings( 'instance', 'get_compatibility', 'get_enabled_currencies', 'get_selected_currency', 'get_default_currency', 'get_raw_conversion' );
+		$this->setExpectedIncorrectUsage( 'WCPay\\MultiCurrency\\Compatibility::should_disable_currency_switching()' );
 		$fixture = new MultiCurrencyFacadePluginCallersFixture();
 
 		$this->assertTrue( $fixture->themify_multi_price_enabled() );
@@ -449,11 +453,10 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 	 */
 	public function test_compatibility_predicates_answer_by_the_module_rules(): void {
 		$this->declare_facade();
-		$this->expect_facade_deprecations( 'get_compatibility' );
-		foreach ( array( 'override_selected_currency', 'should_disable_currency_switching', 'should_convert_coupon_amount', 'should_convert_coupon_min_max_amount', 'should_convert_product_price', 'should_convert_shipping_amount', 'should_return_store_currency' ) as $predicate ) {
-			$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\Compatibility::' . $predicate );
+		$this->expect_facade_warnings( 'get_compatibility' );
+		foreach ( array( 'override_selected_currency', 'should_disable_currency_switching', 'should_hide_widgets', 'should_convert_coupon_amount', 'should_convert_coupon_min_max_amount', 'should_convert_product_price', 'should_convert_shipping_amount', 'should_return_store_currency' ) as $predicate ) {
+			$this->setExpectedIncorrectUsage( 'WCPay\\MultiCurrency\\Compatibility::' . $predicate . '()' );
 		}
-		$this->setExpectedDeprecated( 'should_hide_widgets' );
 		$facade        = $this->get_facade();
 		$compatibility = $facade->get_compatibility();
 		$product       = \WC_Helper_Product::create_simple_product();
@@ -528,7 +531,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 	 */
 	public function test_returned_currencies_answer_the_extension_currency_members(): void {
 		$this->declare_facade();
-		$this->expect_facade_deprecations( 'get_enabled_currencies' );
+		$this->expect_facade_warnings( 'get_enabled_currencies' );
 		$eur = $this->get_facade()->get_enabled_currencies()['EUR'];
 
 		$this->assertSame( 'EUR', $eur->get_code(), 'get_code' );
@@ -580,21 +583,24 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Every facade member's deprecation notice names WooCommerce 11.0.0 and no replacement.
+	 * @testdox Each method warns once per request and identifies its replacement or removal.
 	 */
-	public function test_deprecation_notices_name_no_replacement(): void {
+	public function test_each_member_warns_once_with_its_replacement_or_removal(): void {
 		$this->declare_facade();
 		$notices = array();
 		add_action(
-			'deprecated_function_run',
-			static function ( $function_name, $replacement, $version ) use ( &$notices ) {
-				$notices[ $function_name ] = array( $replacement, $version );
+			'doing_it_wrong_run',
+			static function ( $function_name, $message, $version ) use ( &$notices ) {
+				$notices[ $function_name ][] = array( explode( ' Backtrace: ', $message, 2 )[0], $version );
+				if ( 'WCPay\\MultiCurrency\\MultiCurrency::is_enabled()' === $function_name && 1 === count( $notices[ $function_name ] ) ) {
+					\WCPay\MultiCurrency\MultiCurrency::is_enabled();
+				}
 			},
 			10,
 			3
 		);
-		$this->expect_facade_deprecations( 'get_price', 'get_raw_conversion', 'get_selected_currency', 'get_explicit_selected_currency', 'get_default_currency', 'get_enabled_currencies', 'get_compatibility', 'remove_woo_admin_notes', 'is_enabled' );
-		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\Compatibility::should_convert_shipping_amount' );
+		$this->expect_facade_warnings( 'get_price', 'get_raw_conversion', 'get_selected_currency', 'get_explicit_selected_currency', 'get_default_currency', 'get_enabled_currencies', 'get_compatibility', 'remove_woo_admin_notes', 'is_enabled' );
+		$this->setExpectedIncorrectUsage( 'WCPay\\MultiCurrency\\Compatibility::should_convert_shipping_amount()' );
 
 		$facade = $this->get_facade();
 		$facade->get_price( 10.0, 'product' );
@@ -605,11 +611,18 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 		$facade->get_enabled_currencies();
 		$facade->get_compatibility()->should_convert_shipping_amount();
 		\WCPay\MultiCurrency\MultiCurrency::remove_woo_admin_notes();
-		\WCPay\MultiCurrency\MultiCurrency::is_enabled();
+		for ( $i = 0; $i < 20; ++$i ) {
+			$this->assertTrue( \WCPay\MultiCurrency\MultiCurrency::is_enabled() );
+		}
 
+		$replacements = array(
+			'WCPay\\MultiCurrency\\MultiCurrency::remove_woo_admin_notes()'      => "Use Automattic\\WooCommerce\\Admin\\Notes\\Notes::delete_notes_with_name( 'wc-payments-notes-multi-currency-available' ) instead.",
+			'WCPay\\MultiCurrency\\Compatibility::should_convert_shipping_amount()' => "Use ! \$shipping_method || (bool) apply_filters( 'wcpay_multi_currency_should_convert_shipping_amount', true, \$shipping_method ) instead.",
+		);
 		$this->assertCount( 11, $notices );
-		foreach ( $notices as $function_name => $notice ) {
-			$this->assertSame( array( '', '11.0.0' ), $notice, $function_name );
+		foreach ( $notices as $member => $warnings ) {
+			$message = $replacements[ $member ] ?? "$member is a compatibility shim for the WooPayments extension with no replacement in WooCommerce and will be removed in 12.0.0.";
+			$this->assertSame( array( array( $message, WC()->version ) ), $warnings, $member );
 		}
 	}
 
@@ -637,19 +650,19 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 	 * @return \WCPay\MultiCurrency\MultiCurrency
 	 */
 	private function get_facade() {
-		$this->expect_facade_deprecations( 'instance' );
+		$this->expect_facade_warnings( 'instance' );
 
 		return \WCPay\MultiCurrency\MultiCurrency::instance();
 	}
 
 	/**
-	 * Expect the deprecation notice each named facade member emits.
+	 * Expect the incorrect usage notice for each named facade method.
 	 *
 	 * @param string ...$members Member names.
 	 */
-	private function expect_facade_deprecations( string ...$members ): void {
+	private function expect_facade_warnings( string ...$members ): void {
 		foreach ( $members as $member ) {
-			$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::' . $member );
+			$this->setExpectedIncorrectUsage( 'WCPay\\MultiCurrency\\MultiCurrency::' . $member . '()' );
 		}
 	}
 }

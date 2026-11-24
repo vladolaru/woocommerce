@@ -31,6 +31,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Prefli
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\StoreApiRequestHandler;
 use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
+use Automattic\WooCommerce\Internal\Utilities\WooPaymentsCompatibilityNotice;
 use Exception;
 use Throwable;
 use WC_Order;
@@ -433,12 +434,12 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * leaves with the facades in WooCommerce 12.0.0.
 	 *
 	 * @since 11.2.0
-	 * @deprecated 11.2.0 Removed with the compatibility facades in WooCommerce 12.0.0. Use the gateway's enabled property or is_available().
+	 * @deprecated 11.4.0-dev Use 'yes' === $gateway->get_option( 'enabled' ) instead.
 	 *
 	 * @return bool
 	 */
 	public function is_enabled() {
-		wc_deprecated_function( __METHOD__, '11.2.0', 'the gateway\'s enabled property or is_available()' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__, "'yes' === \$gateway->get_option( 'enabled' )" );
 		return 'yes' === $this->get_option( 'enabled' );
 	}
 

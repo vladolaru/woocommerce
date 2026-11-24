@@ -186,7 +186,7 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 			return;
 		}
 
-		$this->setExpectedDeprecated( 'WC_Payments_Features::is_wcpay_subscriptions_enabled' );
+		$this->setExpectedIncorrectUsage( 'WC_Payments_Features::is_wcpay_subscriptions_enabled()' );
 		$subscriptions_enabled = \WC_Payments_Features::is_wcpay_subscriptions_enabled();
 		$this->assertFalse( $subscriptions_enabled, 'Native subscriptions are provided through the gateway contract, not the plugin feature flag.' );
 		$this->assertTrue( defined( 'WCPAY_VERSION_NUMBER' ), 'The version constant must exist whenever the legacy facade classes exist.' );
@@ -210,12 +210,12 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 			return;
 		}
 
-		$this->setExpectedDeprecated( 'WC_Payments::get_gateway' );
+		$this->setExpectedIncorrectUsage( 'WC_Payments::get_gateway()' );
 		$this->assertSame( wc_get_container()->get( WooPaymentsGateway::class ), \WC_Payments::get_gateway(), 'The facade must expose the same native gateway instance as the dependency-injection container.' );
 
 		$gateways = WC()->payment_gateways->payment_gateways();
 
-		$this->setExpectedDeprecated( 'WC_Payments::hide_gateways_on_settings_page' );
+		$this->setExpectedIncorrectUsage( 'WC_Payments::hide_gateways_on_settings_page()' );
 		$this->assertNull( \WC_Payments::hide_gateways_on_settings_page(), 'The native facade should preserve the plugin method\'s void-like return shape.' );
 		$this->assertSame( $gateways, WC()->payment_gateways->payment_gateways(), 'The native facade must not remove gateways by emulating the unsupported plugin gateway class.' );
 	}

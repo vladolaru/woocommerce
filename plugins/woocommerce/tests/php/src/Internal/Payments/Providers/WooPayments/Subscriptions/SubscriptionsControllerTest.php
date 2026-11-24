@@ -333,7 +333,7 @@ class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 		if ( ! class_exists( 'WC_Payments', false ) ) {
 			require_once WC_ABSPATH . 'includes/legacy/woopayments-compat/class-wc-payments.php';
 		}
-		$this->setExpectedDeprecated( 'WC_Payments::get_gateway' );
+		$this->setExpectedIncorrectUsage( 'WC_Payments::get_gateway()' );
 		$this->assertInstanceOf( WooPaymentsGateway::class, \WC_Payments::get_gateway() );
 		$this->use_order_mode( 'prod' );
 

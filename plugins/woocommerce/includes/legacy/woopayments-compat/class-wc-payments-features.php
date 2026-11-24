@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
+use Automattic\WooCommerce\Internal\Utilities\WooPaymentsCompatibilityNotice;
 
 /**
  * Answers feature checks from plugins written for the WooPayments extension.
@@ -70,12 +71,12 @@ class WC_Payments_Features {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.2.0
-	 * @deprecated 11.2.0 Use the WooPayments gateway's supports() method.
+	 * @deprecated 11.4.0-dev No public replacement.
 	 *
 	 * @return bool
 	 */
 	public static function is_wcpay_subscriptions_enabled() {
-		wc_deprecated_function( 'WC_Payments_Features::is_wcpay_subscriptions_enabled', '11.2.0', 'the built-in WooPayments gateway supports() method' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__ );
 
 		return false;
 	}

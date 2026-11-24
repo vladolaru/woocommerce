@@ -36,7 +36,7 @@ The currencies these members return are the module's `MultiCurrencyCurrency` obj
 | `override_selected_currency()`, `should_disable_currency_switching()`, `should_convert_coupon_amount( $coupon = null )`, `should_convert_product_price( $product = null )`, `should_return_store_currency()` | `IntegrationsController`, which has the same rules and filters. |
 | `should_convert_shipping_amount( $shipping_method = null )` | `true` without a method, else the module's `wcpay_multi_currency_should_convert_shipping_amount` filter with its `true` default. |
 | `should_convert_coupon_min_max_amount( $coupon = null )` | `true` without a coupon, else the module's `wcpay_multi_currency_should_convert_coupon_min_max_amount` filter with its `true` default. |
-| `should_hide_widgets()` | `should_disable_currency_switching()`, with the extension's own 6.5.0 deprecation notice. |
+| `should_hide_widgets()` | The same switching decision as `should_disable_currency_switching()`. |
 
 The class does not extend the extension's `WCPay\MultiCurrency\Compatibility\BaseCompatibility`, so a type check against that class fails.
 
@@ -47,7 +47,7 @@ The class does not extend the extension's `WCPay\MultiCurrency\Compatibility\Bas
 - On `MultiCurrency`: the hook callbacks and lifecycle methods (`__construct`, `init_hooks`, `init`, `init_rest_api`, `init_widgets`, `init_settings_pages`, `enqueue_admin_scripts`, `add_props_to_wcpay_js_config`, `add_woo_admin_notes`, `maybe_update_customer_currencies_option`, `update_selected_currency_by_url`, `update_selected_currency_by_geolocation`, `maybe_auto_enable_cache_rendering_mode`, `display_geolocation_currency_update_notice`, `set_new_customer_currency_meta`, `add_order_meta_on_refund`, `recalculate_cart`, `possible_simulation_activation`, `register_script_with_dependencies`, `get_file_version`), because the module registers its own; the service getters (`get_frontend_prices`, `get_frontend_currencies`, `get_storefront_integration`, `get_currency_switcher_widget`), which return the extension's internal objects; the writes (`set_enabled_currencies`, `update_selected_currency`, `update_single_currency_settings`, `update_settings`), which the settings screen and the switchers own; the settings preview internals (`is_simulation_enabled`, `get_multi_currency_onboarding_simulation_variables`), which have no consumer; `get_backend_formatted_wc_price()`, which has no module rule with the same contract; and `is_initialized()`, for which the module has no fact to report.
 - On `Compatibility`: `init`, `init_compatibility_classes`, `get_compatibility_classes`, and the hook callbacks `attach_order_modifier` and `convert_order_prices`.
 
-Every member emits a deprecation notice with the version 11.0.0 and no replacement, since no public successor exists, with two exceptions: the constants emit no notice, since PHP gives a class constant read no hook, and `Compatibility::should_hide_widgets()` emits the extension's own notice, version 6.5.0 naming `Compatibility::should_disable_currency_switching` (client 11.1.0 `includes/multi-currency/Compatibility.php:99-101`). The Multi-Currency services own all state and conversion math.
+Each method reports incorrect usage once per request with the running WooCommerce version and names its replacement or announces removal in 12.0.0. Reading a class constant emits no notice. The Multi-Currency services own all state and conversion math.
 
 ## Placement rule
 

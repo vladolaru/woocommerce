@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
+use Automattic\WooCommerce\Tests\Internal\Compatibility\WooPaymentsCompatibilityNoticeTestTrait;
 use Automattic\WooCommerce\Tests\Internal\MultiCurrency\ServiceFactories;
 use WC_Unit_Test_Case;
 
@@ -21,6 +22,8 @@ require_once __DIR__ . '/Fixtures/multi-currency-facade-consumers.inc';
  * Tests the native MultiCurrency legacy facade compatibility boundary.
  */
 class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
+
+	use WooPaymentsCompatibilityNoticeTestTrait;
 
 	/**
 	 * Tear down test fixtures.
@@ -35,6 +38,7 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	 * @testdox The core-owned facade preserves grounded extension calls and converts a price exactly once.
 	 */
 	public function test_core_owned_facade_preserves_grounded_extension_calls(): void {
+		$this->reset_compatibility_notices();
 		$failing_price_converter = $this->createMock( PriceConverter::class );
 		$failing_price_converter->method( 'get_price' )->willThrowException( new \RuntimeException( 'Projection failed.' ) );
 		$this->create_loader( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $failing_price_converter );
@@ -67,8 +71,8 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 		$this->assertNull( $get_price->getParameters()[2]->getDefaultValue() );
 		$this->assertSame( 'float', $get_price_type->getName() );
 
-		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::instance' );
-		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::get_price' );
+		$this->setExpectedIncorrectUsage( 'WCPay\\MultiCurrency\\MultiCurrency::instance()' );
+		$this->setExpectedIncorrectUsage( 'WCPay\\MultiCurrency\\MultiCurrency::get_price()' );
 		try {
 			$consumer->get_woopayments_multicurrency_price( 10.0 );
 			$this->fail( 'Expected the projection exception.' );
@@ -79,25 +83,17 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 		$price_converter = $this->create_recording_price_converter( 2.0, 5.0 );
 		$this->create_loader( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $price_converter, $this->create_state_builder( $this->create_state() ) );
 
-		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::instance' );
 		$first_instance = \WCPay\MultiCurrency\MultiCurrency::instance();
-		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::instance' );
 		$this->assertSame( $first_instance, \WCPay\MultiCurrency\MultiCurrency::instance(), 'The compatibility instance should remain stable for the request.' );
 
-		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::get_price' );
 		$this->assertSame( 20.0, $first_instance->get_price( 10.0, 'product' ) );
 
 		$consumer = new MultiCurrencyFacadeConsumerFixture();
-		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::instance' );
-		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::get_selected_currency' );
-		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::get_default_currency' );
-		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::get_raw_conversion' );
+		$this->setExpectedIncorrectUsage( 'WCPay\\MultiCurrency\\MultiCurrency::get_selected_currency()' );
+		$this->setExpectedIncorrectUsage( 'WCPay\\MultiCurrency\\MultiCurrency::get_default_currency()' );
+		$this->setExpectedIncorrectUsage( 'WCPay\\MultiCurrency\\MultiCurrency::get_raw_conversion()' );
 		$this->assertSame( 5.0, $consumer->get_table_rate_base_currency_price( 10.0 ), 'The guarded Table Rate call shape should reach native selected/default state and raw conversion without an undefined method.' );
-		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::get_raw_conversion' );
 		$this->assertSame( 20.0, $first_instance->get_raw_conversion( 10.0, 'EUR' ), 'Omitting the source currency should preserve the plugin facade default of the store currency.' );
-
-		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::instance' );
-		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::get_price' );
 
 		$this->assertSame( 20.0, $consumer->get_woopayments_multicurrency_price( 10.0 ), 'The Deposits call shape converts once: 10.0 at rate 2.0 is 20.0, two conversions would give 40.0.' );
 	}
@@ -129,10 +125,10 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 		);
 		$state_builder = wc_get_container()->get( StateBuilderFactory::class )->get_state_builder();
 		$this->create_loader( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, wc_get_container()->get( ServiceFactory::class )->create_price_converter(), $state_builder );
-		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::instance' );
-		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::get_selected_currency' );
-		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::get_default_currency' );
-		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::get_raw_conversion' );
+		$this->setExpectedIncorrectUsage( 'WCPay\\MultiCurrency\\MultiCurrency::instance()' );
+		$this->setExpectedIncorrectUsage( 'WCPay\\MultiCurrency\\MultiCurrency::get_selected_currency()' );
+		$this->setExpectedIncorrectUsage( 'WCPay\\MultiCurrency\\MultiCurrency::get_default_currency()' );
+		$this->setExpectedIncorrectUsage( 'WCPay\\MultiCurrency\\MultiCurrency::get_raw_conversion()' );
 
 		$subtotal = ( new MultiCurrencyFacadeConsumerFixture() )->get_table_rate_base_currency_price( 73.0 );
 

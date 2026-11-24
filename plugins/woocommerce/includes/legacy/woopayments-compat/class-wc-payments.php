@@ -7,6 +7,7 @@
 declare( strict_types = 1 );
 
 use WCPay\Core\Mode;
+use Automattic\WooCommerce\Internal\Utilities\WooPaymentsCompatibilityNotice;
 
 /**
  * Stands in for the WooPayments extension's WC_Payments class, so extensions that detect WooPayments by it keep working.
@@ -43,12 +44,12 @@ class WC_Payments {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.2.0
-	 * @deprecated 11.2.0 Use the WooPayments gateway via WC()->payment_gateways().
+	 * @deprecated 11.4.0-dev Use WC()->payment_gateways()->payment_gateways()['woocommerce_payments'] ?? null instead.
 	 *
 	 * @return Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway
 	 */
 	public static function get_gateway() {
-		wc_deprecated_function( 'WC_Payments::get_gateway', '11.2.0', 'the built-in WooPayments gateway via WC()->payment_gateways()' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__, "WC()->payment_gateways()->payment_gateways()['woocommerce_payments'] ?? null" );
 
 		return wc_get_container()->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway::class );
 	}
@@ -59,11 +60,11 @@ class WC_Payments {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.2.0
-	 * @deprecated 11.2.0 Use the WooPayments gateway collection via WC()->payment_gateways().
+	 * @deprecated 11.4.0-dev No public replacement.
 	 *
 	 * @return void
 	 */
 	public static function hide_gateways_on_settings_page() {
-		wc_deprecated_function( 'WC_Payments::hide_gateways_on_settings_page', '11.2.0', 'the built-in WooPayments gateway collection via WC()->payment_gateways()' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__ );
 	}
 }

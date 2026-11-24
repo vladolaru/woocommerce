@@ -12,9 +12,11 @@ This folder holds what Woo extensions still expect from the WooPayments extensio
 
 ## Contract
 
+Each compatibility method, including the gateway’s `is_enabled()`, reports incorrect usage once per request with the running WooCommerce version and names its replacement or announces removal in 12.0.0.
+
 | Symbol | Behavior | Known Woo-owned consumers |
 |---|---|---|
-| `WC_Payments` | Existence checks recognize the built-in WooPayments once an account is connected. `get_gateway()` returns the container's `WooPaymentsGateway`, whose `is_enabled()` answers like the extension gateway's for callers that ask it. `hide_gateways_on_settings_page()` does nothing, because there are no secondary gateway classes to hide. Both emit a deprecation notice. | WooCommerce Core Blueprint exporter, All Products for WooCommerce Subscriptions, AutomateWoo, WooCommerce PayPal Payments |
+| `WC_Payments` | Existence checks recognize the built-in WooPayments once an account is connected. `get_gateway()` returns the container's `WooPaymentsGateway`, whose `is_enabled()` answers like the extension gateway's for callers that ask it. `hide_gateways_on_settings_page()` does nothing, because there are no secondary gateway classes to hide. | WooCommerce Core Blueprint exporter, All Products for WooCommerce Subscriptions, AutomateWoo, WooCommerce PayPal Payments |
 | `WC_Payments_Features` | Exposes the extension's 26 feature predicates, its 13 option-name constants, and its filtered `to_array()` of enabled features. Predicates read current account, settings and Multi-Currency ownership even if the account disconnects during the request. The existing bundled subscriptions predicate still returns `false`. Each method emits a deprecation notice. | All Products for WooCommerce Subscriptions, Conditional Shipping and Payments and Payfast (both call `is_customer_multi_currency_enabled()`) |
 | `WC_Payments_Utils` | Exposes only `prepare_amount( $amount, $currency = 'USD' ): int`. It rounds to minor units, preserves zero-decimal currencies and emits a deprecation notice. | Gift Cards |
 | `WC_Payments::mode()` / `WCPay\Core\Mode` | Returns one instance per request. `is_live()`, `is_test()`, `is_dev()`, `is_test_mode_onboarding()` and `get_dev_mode_triggers()` read the current account even if the setup tier drops during the request. Each call emits a deprecation notice. | None known |

@@ -9,6 +9,7 @@ namespace WCPay\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\IntegrationsController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
+use Automattic\WooCommerce\Internal\Utilities\WooPaymentsCompatibilityNotice;
 
 /**
  * Stands in for the WooPayments extension's Multi-Currency compatibility class, which `MultiCurrency::get_compatibility()`
@@ -27,12 +28,12 @@ class Compatibility {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev Use apply_filters( 'wcpay_multi_currency_override_selected_currency', false ) instead.
 	 *
 	 * @return mixed
 	 */
 	public function override_selected_currency() {
-		_deprecated_function( 'WCPay\\MultiCurrency\\Compatibility::override_selected_currency', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__, "apply_filters( 'wcpay_multi_currency_override_selected_currency', false )" );
 
 		return $this->get_controller()->override_selected_currency();
 	}
@@ -43,12 +44,12 @@ class Compatibility {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev No public replacement.
 	 *
 	 * @return bool
 	 */
 	public function should_hide_widgets(): bool {
-		wc_deprecated_function( __FUNCTION__, '6.5.0', 'Compatibility::should_disable_currency_switching' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__ );
 
 		return $this->get_controller()->should_disable_currency_switching();
 	}
@@ -59,12 +60,12 @@ class Compatibility {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev No public replacement.
 	 *
 	 * @return bool
 	 */
 	public function should_disable_currency_switching(): bool {
-		_deprecated_function( 'WCPay\\MultiCurrency\\Compatibility::should_disable_currency_switching', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__ );
 
 		return $this->get_controller()->should_disable_currency_switching();
 	}
@@ -75,13 +76,13 @@ class Compatibility {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev Use ! $coupon || (bool) apply_filters( 'wcpay_multi_currency_should_convert_coupon_amount', true, $coupon ) instead.
 	 *
 	 * @param mixed $coupon Coupon object.
 	 * @return bool
 	 */
 	public function should_convert_coupon_amount( $coupon = null ): bool {
-		_deprecated_function( 'WCPay\\MultiCurrency\\Compatibility::should_convert_coupon_amount', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__, "! \$coupon || (bool) apply_filters( 'wcpay_multi_currency_should_convert_coupon_amount', true, \$coupon )" );
 
 		return $this->get_controller()->should_convert_coupon_amount( $coupon );
 	}
@@ -92,13 +93,13 @@ class Compatibility {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev Use ! $coupon || (bool) apply_filters( 'wcpay_multi_currency_should_convert_coupon_min_max_amount', true, $coupon ) instead.
 	 *
 	 * @param mixed $coupon Coupon object.
 	 * @return bool
 	 */
 	public function should_convert_coupon_min_max_amount( $coupon = null ): bool {
-		_deprecated_function( 'WCPay\\MultiCurrency\\Compatibility::should_convert_coupon_min_max_amount', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__, "! \$coupon || (bool) apply_filters( 'wcpay_multi_currency_should_convert_coupon_min_max_amount', true, \$coupon )" );
 
 		if ( ! $coupon ) {
 			return true;
@@ -121,13 +122,13 @@ class Compatibility {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev Use ! $product || (bool) apply_filters( 'wcpay_multi_currency_should_convert_product_price', true, $product ) instead.
 	 *
 	 * @param mixed $product Product object.
 	 * @return bool
 	 */
 	public function should_convert_product_price( $product = null ): bool {
-		_deprecated_function( 'WCPay\\MultiCurrency\\Compatibility::should_convert_product_price', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__, "! \$product || (bool) apply_filters( 'wcpay_multi_currency_should_convert_product_price', true, \$product )" );
 
 		return $this->get_controller()->should_convert_product_price( $product );
 	}
@@ -138,13 +139,13 @@ class Compatibility {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev Use ! $shipping_method || (bool) apply_filters( 'wcpay_multi_currency_should_convert_shipping_amount', true, $shipping_method ) instead.
 	 *
 	 * @param mixed $shipping_method Shipping method object.
 	 * @return bool
 	 */
 	public function should_convert_shipping_amount( $shipping_method = null ): bool {
-		_deprecated_function( 'WCPay\\MultiCurrency\\Compatibility::should_convert_shipping_amount', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__, "! \$shipping_method || (bool) apply_filters( 'wcpay_multi_currency_should_convert_shipping_amount', true, \$shipping_method )" );
 
 		if ( ! $shipping_method ) {
 			return true;
@@ -167,12 +168,12 @@ class Compatibility {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev Use (bool) apply_filters( 'wcpay_multi_currency_should_return_store_currency', false ) instead.
 	 *
 	 * @return bool
 	 */
 	public function should_return_store_currency(): bool {
-		_deprecated_function( 'WCPay\\MultiCurrency\\Compatibility::should_return_store_currency', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__, "(bool) apply_filters( 'wcpay_multi_currency_should_return_store_currency', false )" );
 
 		return $this->get_controller()->should_return_store_currency();
 	}

@@ -21,6 +21,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\DisplayService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
+use Automattic\WooCommerce\Internal\Utilities\WooPaymentsCompatibilityNotice;
 
 // phpcs:disable SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName -- The WooPayments extension's file and class casing are the compatibility contract.
 /**
@@ -116,12 +117,12 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev No public replacement.
 	 *
 	 * @return self
 	 */
 	public static function instance(): self {
-		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::instance', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__ );
 
 		if ( null === self::$instance ) {
 			self::$instance = new self();
@@ -137,7 +138,7 @@ class MultiCurrency {
 	 *
 	 * @since 11.0.0
 	 * @since 11.4.0 Added the optional target currency.
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev No public replacement.
 	 *
 	 * @param mixed                      $amount   Price amount.
 	 * @param string                     $type     Price type.
@@ -145,7 +146,7 @@ class MultiCurrency {
 	 * @return float
 	 */
 	public function get_price( $amount, string $type, ?MultiCurrencyCurrency $currency = null ): float {
-		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_price', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__ );
 
 		return $this->get_service_factory()->create_price_converter()->get_price( $amount, $type, $currency );
 	}
@@ -156,7 +157,7 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev No public replacement.
 	 *
 	 * @param float  $amount        Amount.
 	 * @param string $to_currency   Target currency code.
@@ -164,7 +165,7 @@ class MultiCurrency {
 	 * @return float
 	 */
 	public function get_raw_conversion( float $amount, string $to_currency, string $from_currency = '' ): float {
-		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_raw_conversion', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__ );
 
 		if ( '' === $from_currency ) {
 			$from_currency = $this->get_state()->get_default_currency()->get_code();
@@ -179,12 +180,12 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev No public replacement.
 	 *
 	 * @return MultiCurrencyCurrency
 	 */
 	public function get_selected_currency(): MultiCurrencyCurrency {
-		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_selected_currency', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__ );
 
 		return $this->get_state()->get_selected_currency();
 	}
@@ -195,12 +196,12 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev No public replacement.
 	 *
 	 * @return MultiCurrencyCurrency|null
 	 */
 	public function get_explicit_selected_currency(): ?MultiCurrencyCurrency {
-		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_explicit_selected_currency', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__ );
 
 		return $this->get_state()->get_explicit_selected_currency();
 	}
@@ -211,12 +212,12 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev No public replacement.
 	 *
 	 * @return bool
 	 */
 	public static function is_enabled(): bool {
-		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::is_enabled', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__ );
 
 		return true;
 	}
@@ -227,12 +228,12 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev No public replacement.
 	 *
 	 * @return Compatibility
 	 */
 	public function get_compatibility(): Compatibility {
-		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_compatibility', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__ );
 
 		if ( null === $this->compatibility ) {
 			$this->compatibility = new Compatibility();
@@ -247,12 +248,12 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev No public replacement.
 	 *
 	 * @return MultiCurrencyCurrency
 	 */
 	public function get_default_currency(): MultiCurrencyCurrency {
-		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_default_currency', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__ );
 
 		return $this->get_state()->get_default_currency();
 	}
@@ -263,12 +264,12 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev No public replacement.
 	 *
 	 * @return array<string,MultiCurrencyCurrency>
 	 */
 	public function get_enabled_currencies(): array {
-		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_enabled_currencies', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__ );
 
 		return $this->get_state()->get_enabled_currencies();
 	}
@@ -279,12 +280,12 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev No public replacement.
 	 *
 	 * @return array<string,MultiCurrencyCurrency>
 	 */
 	public function get_available_currencies(): array {
-		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_available_currencies', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__ );
 
 		return $this->get_state()->get_available_currencies();
 	}
@@ -295,12 +296,12 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev No public replacement.
 	 *
 	 * @return bool
 	 */
 	public function has_additional_currencies_enabled(): bool {
-		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::has_additional_currencies_enabled', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__ );
 
 		return $this->get_state()->has_additional_currencies_enabled();
 	}
@@ -311,12 +312,12 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev No public replacement.
 	 *
 	 * @return array<string,mixed>
 	 */
 	public function get_store_currencies(): array {
-		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_store_currencies', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__ );
 
 		return $this->get_display_service()->get_store_currencies();
 	}
@@ -327,14 +328,14 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev No public replacement.
 	 *
 	 * @param string $currency_code Currency code.
 	 * @return array<string,mixed>
 	 * @throws InvalidCurrencyException When the currency is not available.
 	 */
 	public function get_single_currency_settings( string $currency_code ): array {
-		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_single_currency_settings', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__ );
 
 		if ( ! array_key_exists( strtoupper( $currency_code ), $this->get_state()->get_available_currencies() ) ) {
 			throw new InvalidCurrencyException( esc_html( 'Invalid currency passed to get_single_currency_settings: ' . $currency_code ), 500 );
@@ -352,12 +353,12 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev No public replacement.
 	 *
 	 * @return array<string,mixed>
 	 */
 	public function get_settings(): array {
-		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_settings', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__ );
 
 		$settings = (array) wc_get_container()->get( MultiCurrencyRestController::class )->get_settings()->get_data();
 
@@ -370,12 +371,12 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev No public replacement.
 	 *
 	 * @return array<string,mixed>
 	 */
 	public function get_public_config(): array {
-		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_public_config', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__ );
 
 		return $this->get_display_service()->get_public_config();
 	}
@@ -386,12 +387,12 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev Use (string) get_option( 'wcpay_multi_currency_rendering_mode', 'speed' ) instead.
 	 *
 	 * @return string
 	 */
 	public function get_rendering_mode(): string {
-		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_rendering_mode', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__, "(string) get_option( 'wcpay_multi_currency_rendering_mode', 'speed' )" );
 
 		return (string) get_option( DisplayService::RENDERING_MODE_OPTION, DisplayService::RENDERING_MODE_SPEED );
 	}
@@ -402,12 +403,12 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev Use 'cache' === (string) get_option( 'wcpay_multi_currency_rendering_mode', 'speed' ) instead.
 	 *
 	 * @return bool
 	 */
 	public function is_cache_optimized_mode(): bool {
-		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::is_cache_optimized_mode', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__, "'cache' === (string) get_option( 'wcpay_multi_currency_rendering_mode', 'speed' )" );
 
 		return $this->get_display_service()->is_cache_optimized_mode();
 	}
@@ -418,12 +419,12 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev Use 'yes' === get_option( 'wcpay_multi_currency_enable_auto_currency', 'no' ) instead.
 	 *
 	 * @return bool
 	 */
 	public function is_using_auto_currency_switching(): bool {
-		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::is_using_auto_currency_switching', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__, "'yes' === get_option( 'wcpay_multi_currency_enable_auto_currency', 'no' )" );
 
 		return 'yes' === get_option( StateBuilder::OPTION_PREFIX . '_enable_auto_currency', 'no' );
 	}
@@ -434,12 +435,12 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev Use 'yes' === get_option( 'wcpay_multi_currency_enable_storefront_switcher', 'no' ) instead.
 	 *
 	 * @return bool
 	 */
 	public function is_using_storefront_switcher(): bool {
-		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::is_using_storefront_switcher', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__, "'yes' === get_option( 'wcpay_multi_currency_enable_storefront_switcher', 'no' )" );
 
 		return 'yes' === get_option( StateBuilder::OPTION_PREFIX . '_enable_storefront_switcher', 'no' );
 	}
@@ -450,12 +451,12 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev Use is_object( WC()->session ) && method_exists( WC()->session, 'has_session' ) && WC()->session->has_session() instead.
 	 *
 	 * @return bool
 	 */
 	public function has_active_session(): bool {
-		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::has_active_session', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__, "is_object( WC()->session ) && method_exists( WC()->session, 'has_session' ) && WC()->session->has_session()" );
 
 		$session = WC()->session;
 
@@ -469,12 +470,12 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev Use apply_filters( 'wcpay_multi_currency_apply_charm_only_to_products', true ) instead.
 	 *
 	 * @return mixed The filtered value, true by default.
 	 */
 	public function get_apply_charm_only_to_products() {
-		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_apply_charm_only_to_products', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__, "apply_filters( 'wcpay_multi_currency_apply_charm_only_to_products', true )" );
 
 		/**
 		 * Filters whether charm pricing applies only to product prices; shipping gets it too when false.
@@ -492,14 +493,14 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev No public replacement.
 	 *
 	 * @param mixed $amount              Amount in the selected currency.
 	 * @param mixed $apply_charm_pricing Whether the selected currency's charm is added.
 	 * @return float
 	 */
 	public function adjust_amount_for_selected_currency( $amount, $apply_charm_pricing = true ): float {
-		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::adjust_amount_for_selected_currency', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__ );
 
 		return $this->get_service_factory()->create_price_converter()->adjust_amount_for_selected_currency( $amount, (bool) $apply_charm_pricing );
 	}
@@ -510,12 +511,12 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev No public replacement.
 	 *
 	 * @return array<string,mixed>|null
 	 */
 	public function get_cached_currencies(): ?array {
-		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_cached_currencies', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__ );
 
 		$this->get_state();
 		$cached = ( new DatabaseCache() )->get( DatabaseCache::CURRENCIES_KEY, true );
@@ -529,12 +530,12 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev No public replacement.
 	 *
 	 * @return string[]
 	 */
 	public function get_all_customer_currencies(): array {
-		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_all_customer_currencies', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__ );
 
 		return $this->get_state()->get_customer_currencies();
 	}
@@ -545,13 +546,13 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev No public replacement.
 	 *
 	 * @param mixed $currency_code Currency code.
 	 * @return string|false
 	 */
 	public function validate_currency_code( $currency_code ) {
-		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::validate_currency_code', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__ );
 
 		$currency_code = strtoupper( (string) $currency_code );
 
@@ -564,14 +565,14 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev Use wc_get_currency_switcher_markup() instead.
 	 *
 	 * @param array $instance Widget instance settings.
 	 * @param array $args     Widget arguments.
 	 * @return string
 	 */
 	public function get_switcher_widget_markup( array $instance = array(), array $args = array() ): string {
-		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_switcher_widget_markup', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__, 'wc_get_currency_switcher_markup()' );
 
 		return wc_get_container()->get( MultiCurrencySwitcherWidgetController::class )->get_switcher_widget_markup( $instance, $args );
 	}
@@ -582,14 +583,14 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev No public replacement.
 	 *
 	 * @return bool
 	 */
 	public function is_multi_currency_settings_page(): bool {
 		global $current_tab, $current_screen;
 
-		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::is_multi_currency_settings_page', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__ );
 
 		$screen_base = is_object( $current_screen ) && isset( $current_screen->base ) && is_string( $current_screen->base ) ? $current_screen->base : null;
 
@@ -602,12 +603,12 @@ class MultiCurrency {
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 No public replacement.
+	 * @deprecated 11.4.0-dev Use Automattic\WooCommerce\Admin\Notes\Notes::delete_notes_with_name( 'wc-payments-notes-multi-currency-available' ) instead.
 	 *
 	 * @return void
 	 */
 	public static function remove_woo_admin_notes() {
-		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::remove_woo_admin_notes', '11.0.0', '' );
+		WooPaymentsCompatibilityNotice::warn( __METHOD__, "Automattic\\WooCommerce\\Admin\\Notes\\Notes::delete_notes_with_name( 'wc-payments-notes-multi-currency-available' )" );
 
 		Notes::delete_notes_with_name( MultiCurrencyAdminNoteController::NOTE_NAME );
 	}
