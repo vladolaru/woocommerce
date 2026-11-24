@@ -313,6 +313,37 @@ class StateBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should retry the currency filter after a caught exception and cache the successful result.
+	 */
+	public function test_available_currency_filter_recovers_after_exception(): void {
+		$builder   = $this->create_builder_with_provider_currencies();
+		$exception = new \RuntimeException( 'Currency filter failed.' );
+		$calls     = 0;
+		add_filter(
+			'wcpay_multi_currency_available_currencies',
+			static function () use ( &$calls, $exception ) {
+				if ( 1 === ++$calls ) {
+					throw $exception;
+				}
+				return array( 'GBP' );
+			}
+		);
+
+		try {
+			$builder->build();
+			$this->fail( 'The filter exception should reach the caller.' );
+		} catch ( \RuntimeException $caught ) {
+			$this->assertSame( $exception, $caught );
+		}
+
+		$state = $builder->build();
+		$this->assertSame( array( 'USD', 'GBP' ), array_keys( $state->get_available_currencies() ) );
+		$this->assertSame( $state, $builder->build() );
+		$this->assertSame( array( 'GBP' ), $builder->get_usable_currency_codes() );
+		$this->assertSame( 2, $calls );
+	}
+
+	/**
 	 * Removing a provider currency excludes it even when the merchant has set a manual rate.
 	 *
 	 * @testWith ["automatic"]
