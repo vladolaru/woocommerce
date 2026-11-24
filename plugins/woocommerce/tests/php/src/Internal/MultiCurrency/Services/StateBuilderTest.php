@@ -275,6 +275,44 @@ class StateBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * A filter can read the available currencies before deciding which ones to keep.
+	 */
+	public function test_available_currency_filter_can_read_state(): void {
+		$provider     = $this->create_available_rate_provider(
+			array(
+				'eur' => 0.91,
+				'gbp' => 0.82,
+				'jpy' => 151.0,
+			),
+			array( 'eur', 'GBP', 'EUR', 'XYZ' )
+		);
+		$builder      = $this->create_builder( $provider );
+		$calls        = 0;
+		$nested_state = array();
+		$nested_codes = array();
+		add_filter(
+			'wcpay_multi_currency_available_currencies',
+			static function () use ( $builder, &$calls, &$nested_state, &$nested_codes ) {
+				if ( ++$calls > 1 ) {
+					return array(); // Bound recursion if the filter fires during its own state read.
+				}
+
+				$nested_state = array_keys( $builder->build()->get_available_currencies() );
+				$nested_codes = $builder->get_usable_currency_codes();
+				return array( 'GBP' );
+			}
+		);
+
+		$codes = $builder->get_usable_currency_codes();
+
+		$this->assertSame( 1, $calls );
+		$this->assertSame( array( 'EUR', 'GBP' ), $nested_codes );
+		$this->assertSame( array( 'USD', 'EUR', 'GBP' ), $nested_state );
+		$this->assertSame( array( 'GBP' ), $codes );
+		$this->assertSame( array( 'USD', 'GBP' ), array_keys( $builder->build()->get_available_currencies() ) );
+	}
+
+	/**
 	 * Removing a provider currency excludes it even when the merchant has set a manual rate.
 	 *
 	 * @testWith ["automatic"]

@@ -258,8 +258,9 @@ class StateBuilder {
 			return $this->disabled_override_currencies[ $override_code ];
 		};
 
+		// A state read inside the currency list filter uses temporary, unfiltered codes.
 		$this->cached_state            = new MultiCurrencyState( $available, $enabled, $default, $selected, fn(): array => $this->get_or_store_customer_currencies( array_keys( $available ) ) );
-		$this->cached_state_generation = $current_generation;
+		$this->cached_state_generation = doing_filter( self::FILTER_AVAILABLE_CURRENCIES ) ? -1 : $current_generation;
 
 		return $this->cached_state;
 	}
@@ -350,6 +351,7 @@ class StateBuilder {
 			? $this->rate_service->get_supported_currency_codes()
 			: array_keys( $currencies );
 
+		$inside_filter = doing_filter( self::FILTER_AVAILABLE_CURRENCIES );
 		/**
 		 * Filters the available currency codes before Multi-Currency looks up their rates.
 		 *
@@ -358,7 +360,7 @@ class StateBuilder {
 		 * @param string[] $base_codes Provider-supported codes, or all WooCommerce codes without an available provider.
 		 * @return string[] WooCommerce currency codes to make available when they have a rate.
 		 */
-		$filtered = apply_filters( self::FILTER_AVAILABLE_CURRENCIES, $base_codes );
+		$filtered = $inside_filter ? $base_codes : apply_filters( self::FILTER_AVAILABLE_CURRENCIES, $base_codes );
 		$usable   = array();
 		foreach ( is_array( $filtered ) ? $filtered : $base_codes as $code ) {
 			if ( is_string( $code ) && isset( $currencies[ $code ] ) ) {
@@ -368,7 +370,7 @@ class StateBuilder {
 
 		$this->usable_currency_codes     = array_keys( $usable );
 		$this->removed_currency_codes    = array_diff( $base_codes, $this->usable_currency_codes );
-		$this->currency_codes_generation = $generation;
+		$this->currency_codes_generation = $inside_filter ? -1 : $generation;
 
 		return $this->usable_currency_codes;
 	}
