@@ -6,6 +6,7 @@ import apiFetch from '@wordpress/api-fetch';
 /**
  * Internal dependencies
  */
+import { fetchSummary } from '../fetch-summary';
 import type {
 	WooPaymentsCapitalLoan,
 	WooPaymentsCapitalLoansResponse,
@@ -16,10 +17,9 @@ const CAPITAL_PATH = '/wc/v3/payments/capital';
 
 export const getWooPaymentsCapitalActiveLoanSummary =
 	(): Promise< WooPaymentsCapitalSummary > =>
-		apiFetch< WooPaymentsCapitalSummary >( {
-			path: `${ CAPITAL_PATH }/active_loan_summary`,
-			method: 'GET',
-		} );
+		fetchSummary< WooPaymentsCapitalSummary >(
+			`${ CAPITAL_PATH }/active_loan_summary`
+		);
 
 export const getWooPaymentsCapitalLoans = async (): Promise<
 	WooPaymentsCapitalLoan[]

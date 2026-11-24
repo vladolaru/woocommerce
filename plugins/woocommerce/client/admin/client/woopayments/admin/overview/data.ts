@@ -7,6 +7,7 @@ import apiFetch from '@wordpress/api-fetch';
  * Internal dependencies
  */
 import { encodePathSegment } from '../../path-segment';
+import { fetchSummary } from '../fetch-summary';
 import type {
 	WooPaymentsDeposit,
 	WooPaymentsDepositsListResponse,
@@ -94,10 +95,9 @@ export const getWooPaymentsRecentDeposits = (
 export const getWooPaymentsDepositsSummary = async (
 	query: WooPaymentsDepositsQuery = {}
 ): Promise< WooPaymentsDepositsSummary > =>
-	apiFetch< WooPaymentsDepositsSummary >( {
-		path: buildPathWithQuery( `${ DEPOSITS_PATH }/summary`, query ),
-		method: 'GET',
-	} );
+	fetchSummary< WooPaymentsDepositsSummary >(
+		buildPathWithQuery( `${ DEPOSITS_PATH }/summary`, query )
+	);
 
 export const requestWooPaymentsDepositsExport = async (
 	query: WooPaymentsDepositsQuery = {}

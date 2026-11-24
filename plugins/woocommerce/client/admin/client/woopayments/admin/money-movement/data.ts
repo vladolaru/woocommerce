@@ -7,6 +7,7 @@ import apiFetch from '@wordpress/api-fetch';
  * Internal dependencies
  */
 import { encodePathSegment } from '../../path-segment';
+import { fetchSummary } from '../fetch-summary';
 import type {
 	WooPaymentsAuthorization,
 	WooPaymentsAuthorizationActionResponse,
@@ -57,13 +58,12 @@ export const getWooPaymentsTransactions = (
 export const getWooPaymentsTransactionsSummary = (
 	query: WooPaymentsMoneyMovementQuery = {}
 ): Promise< Record< string, unknown > > =>
-	apiFetch< Record< string, unknown > >( {
-		path: buildSettledTransactionsApiPath(
+	fetchSummary< Record< string, unknown > >(
+		buildSettledTransactionsApiPath(
 			`${ PAYMENTS_PATH }/transactions/summary`,
 			query
-		),
-		method: 'GET',
-	} );
+		)
+	);
 
 export const getWooPaymentsTransaction = async (
 	transactionId: string
@@ -160,13 +160,12 @@ export const getWooPaymentsAuthorizations = (
 export const getWooPaymentsAuthorizationsSummary = (
 	query: WooPaymentsAuthorizationQuery = {}
 ): Promise< WooPaymentsAuthorizationsSummary > =>
-	apiFetch< WooPaymentsAuthorizationsSummary >( {
-		path: buildAuthorizationsPath(
+	fetchSummary< WooPaymentsAuthorizationsSummary >(
+		buildAuthorizationsPath(
 			`${ PAYMENTS_PATH }/authorizations/summary`,
 			query
-		),
-		method: 'GET',
-	} );
+		)
+	);
 
 export const getWooPaymentsAuthorization = async (
 	paymentIntentId: string
@@ -282,13 +281,9 @@ export const getWooPaymentsDisputes = (
 export const getWooPaymentsDisputesSummary = (
 	query: WooPaymentsMoneyMovementQuery = {}
 ): Promise< Record< string, unknown > > =>
-	apiFetch< Record< string, unknown > >( {
-		path: buildPathWithQuery(
-			`${ PAYMENTS_PATH }/disputes/summary`,
-			query
-		),
-		method: 'GET',
-	} );
+	fetchSummary< Record< string, unknown > >(
+		buildPathWithQuery( `${ PAYMENTS_PATH }/disputes/summary`, query )
+	);
 
 export const getWooPaymentsDispute = async (
 	disputeId: string

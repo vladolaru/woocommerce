@@ -349,33 +349,49 @@ describe( 'WooPaymentsCapitalPage', () => {
 
 	// Client 11.2.0 `capital/index.tsx:216-230` and `data/capital/resolvers.ts:31-40`: the summary fails alone, with a
 	// snackbar, and the loan list still loads.
-	it( 'keeps the loan list when the active loan summary fails', async () => {
-		setHasActiveLoan( true );
-		mockCapitalApi();
-		const loadLoans = mockApiFetch.getMockImplementation();
-		mockApiFetch.mockImplementation( ( ( options ) =>
-			options?.path === SUMMARY_PATH
-				? Promise.reject( new Error( 'Summary unavailable.' ) )
-				: loadLoans?.( options ) ) as typeof apiFetch );
+	it.each( [
+		[ 'empty', () => Promise.resolve( undefined ) ],
+		[ 'null', () => Promise.resolve( null ) ],
+		[
+			'rejected',
+			() => Promise.reject( new Error( 'Summary unavailable.' ) ),
+		],
+	] as const )(
+		'keeps the loan list when the active loan summary is %s',
+		async ( result, readSummary ) => {
+			setHasActiveLoan( true );
+			mockCapitalApi();
+			const loadLoans = mockApiFetch.getMockImplementation();
+			mockApiFetch.mockImplementation( ( ( options ) =>
+				options?.path === SUMMARY_PATH
+					? readSummary()
+					: loadLoans?.( options ) ) as typeof apiFetch );
 
-		render( <WooPaymentsCapitalPage /> );
+			render( <WooPaymentsCapitalPage /> );
 
-		expect(
-			await screen.findByRole( 'link', {
-				name: 'View transactions for loan loan_test',
-			} )
-		).toBeInTheDocument();
-		expect( screen.getByRole( 'status' ) ).toHaveTextContent(
-			'Capital Loans loaded.'
-		);
-		expect( screen.queryByRole( 'alert' ) ).not.toBeInTheDocument();
-		expect(
-			screen.queryByRole( 'heading', { name: 'Active loan overview' } )
-		).not.toBeInTheDocument();
-		expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
-			'Error retrieving the active loan summary.'
-		);
-	} );
+			expect(
+				await screen.findByRole( 'link', {
+					name: 'View transactions for loan loan_test',
+				} )
+			).toBeInTheDocument();
+			expect( screen.getByRole( 'status' ) ).toHaveTextContent(
+				'Capital Loans loaded.'
+			);
+			expect( screen.queryByRole( 'alert' ) ).not.toBeInTheDocument();
+			expect(
+				screen.queryByRole( 'heading', {
+					name: 'Active loan overview',
+				} )
+			).not.toBeInTheDocument();
+			if ( result === 'rejected' ) {
+				expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
+					'Error retrieving the active loan summary.'
+				);
+			} else {
+				expect( mockCreateErrorNotice ).not.toHaveBeenCalled();
+			}
+		}
+	);
 
 	it( 'requests no active loan summary for an account without an active loan', async () => {
 		setHasActiveLoan( false );
