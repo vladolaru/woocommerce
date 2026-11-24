@@ -12,6 +12,7 @@ use Exception;
 use WC_Order;
 use WC_Order_Item_Product;
 use WC_Product;
+use WP_REST_Response;
 
 /**
  * Adds WooCommerce order details to the platform's transaction, charge, dispute and payment intent answers, maps
@@ -125,6 +126,22 @@ class WooPaymentsOrderDetailsService {
 		$charge_id = $this->get_charge_id_from_entity( $transaction );
 
 		return $this->add_detail_order_info( $transaction, $charge_id );
+	}
+
+	/**
+	 * Preserve the JSON object shape of empty metadata on a standalone charge or dispute.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param array<string,mixed> $details Enriched resource.
+	 * @return WP_REST_Response
+	 */
+	public function build_detail_read_response( array $details ): WP_REST_Response {
+		if ( array() === ( $details['metadata'] ?? null ) ) {
+			$details['metadata'] = new \stdClass();
+		}
+
+		return new WP_REST_Response( $details );
 	}
 
 	/**

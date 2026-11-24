@@ -559,9 +559,11 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 		$order = $this->create_order_with_charge( 'ch_detail', 'pi_detail' );
 
 		$this->api_client->response = array(
-			'id'     => 'dp_detail',
-			'charge' => array(
+			'id'       => 'dp_detail',
+			'metadata' => array(),
+			'charge'   => array(
 				'id'              => 'ch_detail',
+				'metadata'        => array(),
 				'billing_details' => array(
 					'address' => array(
 						'line1'       => '2 Market Street',
@@ -582,6 +584,8 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( $order->get_id(), $data['order']['id'] );
 		$this->assertSame( 'physical_product', $data['order']['suggested_product_type'] );
 		$this->assertStringContainsString( '2 Market Street', $data['charge']['billing_details']['formatted_address'] );
+		$this->assertSame( array(), $data['charge']['metadata'] );
+		$this->assertSame( '{}', wp_json_encode( $data['metadata'] ) );
 	}
 
 	/**

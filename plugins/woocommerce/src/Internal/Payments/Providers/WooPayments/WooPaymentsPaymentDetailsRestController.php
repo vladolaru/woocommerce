@@ -131,7 +131,7 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 	 */
 	public function get_charge( WP_REST_Request $request ) {
 		try {
-			return new WP_REST_Response(
+			return $this->order_service->build_detail_read_response(
 				$this->order_service->enrich_charge_response(
 					$this->api_client->get_charge( (string) $request->get_param( 'charge_id' ) )
 				)

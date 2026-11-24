@@ -143,6 +143,30 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$this->assertSame( 'ch_test', $this->api_client->last_call['charge_id'] );
 		$this->assertSame( 'txn_test', $data['balance_transaction']['id'] );
 		$this->assertSame( $order->get_id(), $data['order']['id'] );
+		$this->assertArrayNotHasKey( 'metadata', $data );
+	}
+
+	/**
+	 * @testWith ["{}"]
+	 *           ["{\"order_id\":\"42\"}"]
+	 *           ["null"]
+	 *           ["[\"first\"]"]
+	 *
+	 * @param string $json Metadata as supplied by the platform and expected on the wire.
+	 */
+	public function test_charge_detail_preserves_metadata_json( string $json ): void {
+		$this->api_client->response = array(
+			'id'       => 'ch_detail',
+			'metadata' => json_decode( $json, true ),
+		);
+		$this->create_payment_details_controller()->register_routes();
+
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/charges/ch_detail' ) );
+		$data     = $response->get_data();
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertArrayHasKey( 'metadata', $data );
+		$this->assertSame( $json, wp_json_encode( $data['metadata'] ) );
 	}
 
 	/**
@@ -244,11 +268,13 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$order = $this->create_order_with_charge( 'ch_test', 'pi_test' );
 
 		$this->api_client->response = array(
-			'id'      => 'pi_test',
-			'charges' => array(
+			'id'       => 'pi_test',
+			'metadata' => array(),
+			'charges'  => array(
 				'data' => array(
 					array(
 						'id'                  => 'ch_test',
+						'metadata'            => array(),
 						'balance_transaction' => array( 'id' => 'txn_test' ),
 					),
 				),
@@ -266,6 +292,8 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$this->assertSame( 'txn_test', $data['charges']['data'][0]['balance_transaction']['id'] );
 		$this->assertSame( $order->get_id(), $data['order']['id'] );
 		$this->assertSame( $order->get_id(), $data['charges']['data'][0]['order']['id'] );
+		$this->assertSame( array(), $data['metadata'] );
+		$this->assertSame( array(), $data['charges']['data'][0]['metadata'] );
 	}
 
 	/**

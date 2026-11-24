@@ -151,7 +151,7 @@ class WooPaymentsDisputesRestController extends RestApiControllerBase {
 	 */
 	public function get_dispute( WP_REST_Request $request ) {
 		try {
-			return new WP_REST_Response(
+			return $this->order_service->build_detail_read_response(
 				$this->order_service->enrich_dispute_response(
 					$this->api_client->get_dispute( (string) $request->get_param( 'dispute_id' ) )
 				)
