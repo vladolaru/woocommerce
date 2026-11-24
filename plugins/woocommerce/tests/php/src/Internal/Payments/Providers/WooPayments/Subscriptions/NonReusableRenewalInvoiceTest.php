@@ -307,35 +307,64 @@ class NonReusableRenewalInvoiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An early-renewal iDEAL order dispatched to the gateway hook is left alone; the due renewal that follows is invoiced and made manual.
+	 * @testdox An early-renewal iDEAL order that meets every other condition (on-hold subscription, its latest renewal, pending and unpaid) is left alone when dispatched; another subscription's due renewal in the same request is invoiced and made manual.
 	 */
 	public function test_an_early_renewal_is_skipped_and_the_due_one_is_not(): void {
-		$subscription = $this->create_subscription();
+		$early_subscription = $this->create_subscription();
+		$early_subscription->update_status( 'on-hold' );
+		$due_subscription = $this->create_subscription();
 		$this->bootstrap( RequestTypeUtil::FRONT );
 
 		// The early-renewal modal marks and saves its order, then fires the gateway hook (class-wcs-early-renewal-modal-handler.php:249-253).
-		$early = ScheduledRenewalDoubles::create_renewal_order( wc_get_order( $subscription->get_id() ) );
-		$early->update_meta_data( '_subscription_renewal_early', $subscription->get_id() );
+		$early = ScheduledRenewalDoubles::create_renewal_order( wc_get_order( $early_subscription->get_id() ) );
+		$early->update_meta_data( '_subscription_renewal_early', $early_subscription->get_id() );
 		$early->set_status( 'pending' );
 		$early->save();
+		$this->assertSame( $early->get_id(), $this->last_renewal( $early_subscription )->get_id(), 'The early order is the latest renewal.' );
 		WC()->payment_gateways();
 		do_action( 'woocommerce_scheduled_subscription_payment_' . self::IDEAL, $early->get_total(), $early );
 
 		$early = wc_get_order( $early->get_id() );
 		$this->assertSame( self::IDEAL, $early->get_payment_method() );
 		$this->assertSame( array(), $this->note_texts( $early ) );
-		$this->assertFalse( wc_get_order( $subscription->get_id() )->get_requires_manual_renewal() );
-		$this->assertSame( 0, $this->count_notes( wc_get_order( $subscription->get_id() ), self::FORCE_MANUAL_NOTE ) );
+		$this->assertFalse( wc_get_order( $early_subscription->get_id() )->get_requires_manual_renewal() );
+		$this->assertSame( 0, $this->count_notes( wc_get_order( $early_subscription->get_id() ), self::FORCE_MANUAL_NOTE ) );
 		$this->assertSame( array(), $this->invoiced_order_ids() );
+
+		$this->run_action( self::RENEWAL_ACTION, array( 'subscription_id' => $due_subscription->get_id() ) );
+
+		$due = $this->last_renewal( $due_subscription );
+		$this->assertSame( array( $due->get_id() ), $this->invoiced_order_ids() );
+		$this->assertTrue( wc_get_order( $due_subscription->get_id() )->get_requires_manual_renewal() );
+		$this->assertSame( array(), $this->transport->requests );
+	}
+
+	/**
+	 * @testdox A due iDEAL renewal whose total an earlier listener sets to zero on its own copy gets no conversion and no invoice.
+	 */
+	public function test_a_renewal_left_with_nothing_to_pay_is_left_alone(): void {
+		$subscription = $this->create_subscription();
+		$this->bootstrap( RequestTypeUtil::CRON );
+		add_action(
+			'woocommerce_scheduled_subscription_payment_' . self::IDEAL,
+			static function ( $amount, $renewal ): void {
+				unset( $amount );
+				$copy = wc_get_order( $renewal->get_id() );
+				$copy->set_total( '0' );
+				$copy->save();
+			},
+			5,
+			2
+		);
 
 		$this->run_action( self::RENEWAL_ACTION, array( 'subscription_id' => $subscription->get_id() ) );
 
-		$due = $this->last_renewal( $subscription );
-		$this->assertNotSame( $early->get_id(), $due->get_id() );
-		$this->assertSame( array( $due->get_id() ), $this->invoiced_order_ids() );
-		$this->assertTrue( wc_get_order( $subscription->get_id() )->get_requires_manual_renewal() );
-		$this->assertSame( self::IDEAL, wc_get_order( $early->get_id() )->get_payment_method() );
-		$this->assertSame( array(), $this->transport->requests );
+		$renewal = $this->last_renewal( $subscription );
+		$this->assertSame( array( 'pending', '0.00' ), array( $renewal->get_status(), $renewal->get_total() ) );
+		$this->assertFalse( wc_get_order( $subscription->get_id() )->get_requires_manual_renewal() );
+		$this->assertSame( 0, $this->count_notes( wc_get_order( $subscription->get_id() ), self::FORCE_MANUAL_NOTE ) );
+		$this->assertSame( self::IDEAL, $renewal->get_payment_method() );
+		$this->assertSame( array(), $this->invoiced_order_ids() );
 	}
 
 	/**

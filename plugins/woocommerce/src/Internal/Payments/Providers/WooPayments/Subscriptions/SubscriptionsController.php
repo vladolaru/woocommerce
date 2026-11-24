@@ -853,8 +853,9 @@ class SubscriptionsController implements RegisterHooksInterface {
 		}
 
 		// Only a due renewal as Subscriptions leaves it: the subscription on hold or pending, and this order its latest
-		// renewal, pending or failed, which the invoice's pay link can settle.
+		// renewal, still to pay and pending or failed, which the invoice's pay link can settle.
 		if ( ! $subscription->has_status( array( 'on-hold', 'pending' ) )
+			|| ! $renewal_order->needs_payment()
 			|| ! $renewal_order->has_status( array( OrderStatus::PENDING, OrderStatus::FAILED ) )
 			|| ! function_exists( 'wcs_is_order_last_renewal_of_subscription' )
 			|| ! wcs_is_order_last_renewal_of_subscription( $renewal_order, $subscription ) ) {
