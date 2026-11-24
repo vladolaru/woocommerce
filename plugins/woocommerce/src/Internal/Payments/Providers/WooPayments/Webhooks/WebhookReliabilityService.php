@@ -8,6 +8,10 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
+use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingEventHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
@@ -317,7 +321,7 @@ class WebhookReliabilityService implements RegisterHooksInterface {
 			$type     = is_string( $event['type'] ?? null ) ? $event['type'] : 'unknown type';
 			if ( $attempts >= count( self::RETRY_DELAYS_SECONDS ) || ! $this->event_ingestor->is_retried_lock_refusal( $event ) ) {
 				$this->delete_failed_event( $event_id );
-				$this->note_dropped_refund( $event );
+				$this->note_dropped_event( $event_id, $event );
 				wc_get_logger()->error(
 					sprintf( 'WooPayments webhook event %1$s (%2$s) was dropped after %3$d retries: no job will process it again.', $event_id, $type, $attempts ),
 					array(
@@ -376,7 +380,7 @@ class WebhookReliabilityService implements RegisterHooksInterface {
 	/**
 	 * Schedule the next attempt for a failed event, or drop it and log an error when no attempt is left.
 	 *
-	 * An event the order payment lock refused on every attempt also leaves a note on its order, so the merchant sees
+	 * A dropped update also leaves a note when its handler can identify an order, so the merchant sees
 	 * that a payment update did not reach it. The dropped event is not kept: the platform marks a listed event as fetched
 	 * and the queued copy is deleted here, so the note and the error line naming the event are the trail.
 	 *
@@ -395,10 +399,7 @@ class WebhookReliabilityService implements RegisterHooksInterface {
 	private function schedule_retry_or_give_up( string $event_id, array $event, int $attempts, \Throwable $exception, int $brought_forward ): void {
 		if ( $attempts >= count( self::RETRY_DELAYS_SECONDS ) ) {
 			$this->delete_failed_event( $event_id );
-			// The note goes first: it contains its own failures.
-			if ( ! $this->note_dropped_refund( $event ) && $exception instanceof OrderPaymentLockRefusedException ) {
-				$this->add_lock_refusal_note( $exception->get_order_id(), $event_id );
-			}
+			$this->note_dropped_event( $event_id, $event, $exception instanceof OrderPaymentLockRefusedException ? $exception : null );
 			wc_get_logger()->error(
 				sprintf(
 					'WooPayments webhook event %1$s (%2$s) could not be processed after %3$d retries and was dropped.',
@@ -458,35 +459,98 @@ class WebhookReliabilityService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Note on an order that a payment platform event could not be applied because its payment lock stayed held.
+	 * Leave one diagnostic per dropped update, whether the worker and sweep run in turn or overlap.
 	 *
-	 * @param int    $order_id Order the event belongs to.
-	 * @param string $event_id Dropped event ID.
+	 * @param string                                $event_id Event ID.
+	 * @param array<string,mixed>                   $event    Dropped event.
+	 * @param OrderPaymentLockRefusedException|null $refusal  Final lock refusal, when known.
 	 */
-	private function add_lock_refusal_note( int $order_id, string $event_id ): void {
-		// The note is a diagnostic: a failure writing it must not replace the refusal the caller is handling.
+	private function note_dropped_event( string $event_id, array $event, ?OrderPaymentLockRefusedException $refusal = null ): void {
 		try {
-			$order = wc_get_order( $order_id );
+			if ( $this->note_dropped_refund( $event ) ) {
+				return;
+			}
+			$order = $refusal ? wc_get_order( $refusal->get_order_id() ) : $this->find_dropped_event_order( $event );
 			if ( ! $order instanceof \WC_Order ) {
 				return;
 			}
 
-			// One note per event, however often the same refused event is delivered or run again.
-			wc_get_container()->get( WooPaymentsOrderNoteService::class )->add_note_once(
-				$order,
-				sprintf(
-					/* translators: %s: Payment platform event ID. */
-					__( 'A WooPayments update for this order (event %s) could not be applied, because another payment operation kept the order locked. Check the payment in your WooPayments dashboard.', 'woocommerce' ),
-					$event_id
-				),
-				'woopayments_lock_refused_event:' . $event_id
-			);
+			// The order's payment lock may still be held. Serialize only the diagnostic for this event.
+			$lock  = wc_get_container()->get( TransientRowLock::class );
+			$key   = 'woopayments_dropped_event_' . md5( $event_id );
+			$token = wp_generate_uuid4();
+			if ( ! $lock->claim( $key, $token, MINUTE_IN_SECONDS ) ) {
+				return;
+			}
+			try {
+				$this->add_dropped_event_note( $order, $event_id, $event, null !== $refusal );
+			} finally {
+				$lock->release( $key, $token );
+			}
 		} catch ( \Throwable $exception ) {
 			wc_get_logger()->error(
-				sprintf( 'Could not note the lock-refused WooPayments webhook event %s on its order.', $event_id ),
+				$refusal ? sprintf( 'Could not note the lock-refused WooPayments webhook event %s on its order.', $event_id ) : sprintf( 'Could not note the dropped WooPayments webhook event %s on its order.', $event_id ),
 				array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => WooPaymentsLogger::SOURCE ) )
 			);
 		}
+	}
+
+	/**
+	 * Prefer an existing outcome when another delivery has already left its note.
+	 *
+	 * @param \WC_Order           $order    Order the handler resolved.
+	 * @param string              $event_id Event ID.
+	 * @param array<string,mixed> $event    Dropped event.
+	 * @param bool                $locked   Whether the final worker attempt was refused the order lock.
+	 */
+	private function add_dropped_event_note( \WC_Order $order, string $event_id, array $event, bool $locked ): void {
+		$notes         = wc_get_container()->get( OrderPaymentNotes::class );
+		$vocabulary    = wc_get_container()->get( WooPaymentsPersistenceVocabulary::class );
+		$lock_identity = 'woopayments_lock_refused_event:' . $event_id;
+		$drop_identity = 'woopayments_dropped_event:' . $event_id;
+		if ( $notes->find_by_identity( $order, $locked ? $drop_identity : $lock_identity, $vocabulary ) ) {
+			return;
+		}
+		if ( 'charge.refund.updated' === ( $event['type'] ?? '' ) && is_array( $event['data']['object'] ?? null ) && wc_get_container()->get( RefundEventHandler::class )->has_refund_update_note( $order, $event['data']['object'] ) ) {
+			return;
+		}
+
+		$message = $locked
+			/* translators: %s: Payment platform event ID. */
+			? __( 'A WooPayments update for this order (event %s) could not be applied, because another payment operation kept the order locked. Check the payment in your WooPayments dashboard.', 'woocommerce' )
+			/* translators: %s: Payment platform event ID. */
+			: __( 'A WooPayments update for this order (event %s) could not be applied. Check the payment in your WooPayments dashboard.', 'woocommerce' );
+		wc_get_container()->get( WooPaymentsOrderNoteService::class )->add_note_once( $order, sprintf( $message, $event_id ), $locked ? $lock_identity : $drop_identity );
+	}
+
+	/**
+	 * Use the handler's order lookup without applying the event.
+	 *
+	 * @param array<string,mixed> $event Dropped event.
+	 * @return \WC_Order|null
+	 */
+	private function find_dropped_event_order( array $event ): ?\WC_Order {
+		$type   = $event['type'] ?? '';
+		$object = $event['data']['object'] ?? null;
+		if ( ! is_string( $type ) || ! is_array( $object ) ) {
+			return null;
+		}
+
+		if ( $this->event_ingestor->is_webhook_mode_mismatch( $event ) ) {
+			return null;
+		}
+		$container = wc_get_container();
+		$payment   = $container->get( PaymentIntentEventHandler::class );
+		if ( $payment->is_supported_event( $type ) ) {
+			return $payment->find_event_order( $type, $object );
+		}
+		if ( 'charge.refund.updated' === $type || $container->get( DisputeEventHandler::class )->is_supported_event( $type ) || $container->get( EarlyFraudWarningEventHandler::class )->is_supported_event( $type ) ) {
+			return $container->get( EventOrderResolver::class )->find_order_by_charge_id( $object['charge'] ?? '' );
+		}
+		if ( in_array( $type, array( 'invoice.paid', 'invoice.payment_failed', 'invoice.upcoming' ), true ) && $container->get( StripeBillingModule::class )->is_loaded() ) {
+			return $container->get( StripeBillingEventHandler::class )->find_existing_invoice_order( $type, $object );
+		}
+		return null;
 	}
 
 	/**

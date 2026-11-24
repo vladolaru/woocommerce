@@ -352,10 +352,12 @@ class EventIngestor {
 	 *
 	 * Client 11.1.0 `class-wc-payments-webhook-processing-service.php:268-290` skips the event and logs the same line.
 	 *
+	 * @since 11.4.0
+	 *
 	 * @param array<string,mixed> $event Event payload.
 	 * @return bool
 	 */
-	private function is_webhook_mode_mismatch( array $event ): bool {
+	public function is_webhook_mode_mismatch( array $event ): bool {
 		if ( ! array_key_exists( 'livemode', $event ) ) {
 			return false;
 		}

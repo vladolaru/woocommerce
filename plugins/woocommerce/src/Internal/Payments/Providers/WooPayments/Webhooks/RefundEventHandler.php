@@ -225,6 +225,54 @@ class RefundEventHandler {
 	}
 
 	/**
+	 * Whether the update already has its refund outcome on the order.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param WC_Order            $order  Order holding the refund's charge.
+	 * @param array<string,mixed> $refund Provider refund update.
+	 * @return bool
+	 */
+	public function has_refund_update_note( WC_Order $order, array $refund ): bool {
+		$id     = $refund['id'] ?? '';
+		$status = $refund['status'] ?? '';
+		if ( ! is_string( $id ) || '' === $id || ! in_array( $status, array( 'succeeded', 'failed', 'canceled' ), true ) ) {
+			return false;
+		}
+		$notes = wc_get_container()->get( OrderPaymentNotes::class );
+		if ( $notes->find_by_identity( $order, 'other_charge|charge.refund.updated|' . $id . '|' . $status, $this->persistence_vocabulary ) ) {
+			return true;
+		}
+		$identity = 'refund:' . $id . ':' . ( 'succeeded' === $status ? 'created_successful' : $status );
+		if ( $notes->find_by_identity( $order, $identity, $this->persistence_vocabulary ) ) {
+			return true;
+		}
+
+		// Notes inherited from the extension can have only their original wording.
+		if ( 'succeeded' === $status ) {
+			if ( $notes->find_by_identity( $order, 'refund:' . $id . ':unrecorded', $this->persistence_vocabulary ) ) {
+				return true;
+			}
+			$row = $this->get_refund_by_provider_refund_id( $order, $id );
+			if ( ! $row ) {
+				return false;
+			}
+			$candidates = $this->get_created_refund_note_candidates( $order, $row, $id, false );
+		} else {
+			$reason = $this->get_optional_string( $refund, 'failure_reason' );
+			if ( 'failed' === $status && 'insufficient_funds' === $reason ) {
+				// The balance note names no refund. Only its private identity can match this update.
+				return false;
+			}
+			if ( ! is_numeric( $refund['amount'] ?? null ) || ! is_string( $refund['currency'] ?? null ) || '' === $refund['currency'] ) {
+				return false;
+			}
+			$candidates = $this->get_failed_refund_note_candidates( $order, $id, (int) $refund['amount'], $refund['currency'], 'canceled' === $status, $reason );
+		}
+		return 0 < $notes->find_by_content( $order, $candidates[0], $candidates );
+	}
+
+	/**
 	 * Whether the refund represents money moved in this order's currency.
 	 *
 	 * @param WC_Order $order    Order being refunded.
@@ -622,12 +670,10 @@ class RefundEventHandler {
 			$note_id = $notes->find_by_identity( $order, $identity, $this->persistence_vocabulary );
 			$note    = null;
 		} else {
-			$service     = wc_get_container()->get( WooPaymentsOrderNoteService::class );
-			$major_units = WooPaymentsCurrencyUtils::amount_from_minor_units( $amount, $currency );
-			$price       = WooPaymentsCurrencyUtils::format_explicit_order_price( $major_units, $currency, $order );
-			$note        = $this->get_failed_refund_note( $price, $refund_id, $is_cancelled, $failure_reason );
-			$equivalents = $service->extension_failed_refund_notes( $order, $price, $major_units, $currency, $refund_id, $is_cancelled, $failure_reason );
-			$note_id     = $service->find_note( $order, $note, $identity, $equivalents );
+			$service    = wc_get_container()->get( WooPaymentsOrderNoteService::class );
+			$candidates = $this->get_failed_refund_note_candidates( $order, $refund_id, $amount, $currency, $is_cancelled, $failure_reason );
+			$note       = $candidates[0];
+			$note_id    = $service->find_note( $order, $note, $identity, $candidates );
 			if ( $note_id > 0 ) {
 				$service->record_note_identity( $note_id, $identity );
 			}
@@ -676,6 +722,25 @@ class RefundEventHandler {
 			$wc_refund->get_reason(),
 			$is_pending
 		);
+	}
+
+	/**
+	 * Get the native and extension wordings that identify this failed or canceled refund.
+	 *
+	 * @param WC_Order $order          Refunded order.
+	 * @param string   $refund_id      Provider refund ID.
+	 * @param int      $amount         Amount in minor units.
+	 * @param string   $currency       Refund currency.
+	 * @param bool     $is_cancelled   Whether the refund was canceled.
+	 * @param string   $failure_reason Provider failure reason.
+	 * @return string[]
+	 */
+	private function get_failed_refund_note_candidates( WC_Order $order, string $refund_id, int $amount, string $currency, bool $is_cancelled, string $failure_reason ): array {
+		$major_units = WooPaymentsCurrencyUtils::amount_from_minor_units( $amount, $currency );
+		$price       = WooPaymentsCurrencyUtils::format_explicit_order_price( $major_units, $currency, $order );
+		$equivalents = wc_get_container()->get( WooPaymentsOrderNoteService::class )->extension_failed_refund_notes( $order, $price, $major_units, $currency, $refund_id, $is_cancelled, $failure_reason );
+		array_unshift( $equivalents, $this->get_failed_refund_note( $price, $refund_id, $is_cancelled, $failure_reason ) );
+		return $equivalents;
 	}
 
 	/**

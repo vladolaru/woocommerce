@@ -171,6 +171,32 @@ class StripeBillingEventHandler {
 	}
 
 	/**
+	 * Find the subscription or existing renewal a dropped invoice event would update.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param string              $type    Invoice event type.
+	 * @param array<string,mixed> $invoice Invoice object.
+	 * @return WC_Order|null
+	 */
+	public function find_existing_invoice_order( string $type, array $invoice ): ?WC_Order {
+		$subscription_id = $invoice['subscription'] ?? null;
+		if ( ! is_string( $subscription_id ) || '' === $subscription_id || SubscriptionMethodPolicy::is_duplicate_site() ) {
+			return null;
+		}
+		$subscription = $this->subscription_service->get_subscription_from_wcpay_subscription_id( $subscription_id );
+		if ( ! $subscription || 'invoice.upcoming' === $type ) {
+			return $subscription;
+		}
+
+		$invoice_id = $invoice['id'] ?? null;
+		if ( ! is_string( $invoice_id ) || '' === $invoice_id || ( 'invoice.paid' === $type && $this->invoice_service->get_subscription_invoice_id( $subscription ) === $invoice_id ) || ( 'invoice.payment_failed' === $type && ! $this->subscription_service->is_wcpay_subscription( $subscription ) ) ) {
+			return null;
+		}
+		return $this->find_existing_renewal_order( $invoice_id );
+	}
+
+	/**
 	 * Bring a subscription in line with its Stripe subscription before Stripe bills it: next payment date and items.
 	 *
 	 * @param array<string,mixed> $event Event payload.
@@ -893,7 +919,7 @@ class StripeBillingEventHandler {
 	 * @throws StripeBillingException When the renewal order cannot be created.
 	 */
 	private function get_or_create_renewal_order( WC_Order $subscription, string $invoice_id, string $error_message ): WC_Order {
-		$order = wc_get_order( $this->invoice_service->get_order_id_by_invoice_id( $invoice_id ) );
+		$order = $this->find_existing_renewal_order( $invoice_id );
 		if ( $order instanceof WC_Order ) {
 			return $order;
 		}
@@ -908,6 +934,18 @@ class StripeBillingEventHandler {
 		$this->invoice_service->set_order_invoice_id( $order, $invoice_id );
 
 		return $order;
+	}
+
+	/**
+	 * Find the renewal already linked to an invoice.
+	 *
+	 * @param string $invoice_id Invoice ID.
+	 * @return WC_Order|null
+	 */
+	private function find_existing_renewal_order( string $invoice_id ): ?WC_Order {
+		$order_id = $this->invoice_service->get_order_id_by_invoice_id( $invoice_id );
+		$order    = $order_id ? wc_get_order( $order_id ) : null;
+		return $order instanceof WC_Order ? $order : null;
 	}
 
 	/**

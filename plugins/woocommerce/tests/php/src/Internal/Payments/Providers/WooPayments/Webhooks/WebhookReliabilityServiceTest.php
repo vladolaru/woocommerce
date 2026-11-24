@@ -27,6 +27,7 @@ use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingActionSchedulerService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Unit_Test_Case;
 
 /**
@@ -1887,6 +1888,262 @@ class WebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_charge_id', 'ch_order' );
 		$order->save();
 		return $order;
+	}
+
+	/** @return \WC_Order Order referenced by the queued update. */
+	private function order_for_dropped_update(): \WC_Order {
+		$order = new \WC_Order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->update_meta_data( '_intent_id', 'pi_order' );
+		$order->update_meta_data( '_charge_id', 'ch_order' );
+		$order->save();
+		return $order;
+	}
+
+	/**
+	 * @testdox A terminal drop identifies its update even after the note text changes.
+	 * @testWith ["sweep", "payment_intent.succeeded", "pi_order"]
+	 *           ["worker", "payment_intent.payment_failed", "pi_order"]
+	 *           ["sweep", "payment_intent.amount_capturable_updated", "pi_order"]
+	 *           ["sweep", "charge.expired", "ch_metadata"]
+	 *           ["sweep", "charge.dispute.created", "dp_order"]
+	 *           ["sweep", "charge.dispute.updated", "dp_order"]
+	 *           ["sweep", "charge.dispute.closed", "dp_order"]
+	 *           ["sweep", "charge.dispute.funds_reinstated", "dp_order"]
+	 *           ["sweep", "charge.dispute.funds_withdrawn", "dp_order"]
+	 *           ["sweep", "radar.early_fraud_warning.created", "issfr_order"]
+	 *           ["sweep", "radar.early_fraud_warning.updated", "issfr_order"]
+	 *           ["sweep", "charge.refund.updated", "re_order"]
+	 * @param string $path      Worker or sweep.
+	 * @param string $type      Event type.
+	 * @param string $object_id Platform object ID.
+	 */
+	public function test_dropped_update_note( string $path, string $type, string $object_id ): void {
+		$order  = $this->order_for_dropped_update();
+		$object = array(
+			'id'       => $object_id,
+			'charge'   => 'ch_order',
+			'amount'   => 400,
+			'currency' => 'usd',
+			'status'   => 'charge.refund.updated' === $type ? 'failed' : 'requires_capture',
+		);
+		if ( 'charge.expired' === $type ) {
+			$object['metadata'] = array( 'order_id' => $order->get_id() );
+		}
+		$failure = new \RuntimeException( 'Processing failed.' );
+		$service = $this->create_service( new RecordingActionSchedulerService(), new StaticFailedEventsApiClient(), new ThrowingEventIngestor( $failure ) );
+		$store   = new QueuedEventRows();
+		$key     = ( new WooPaymentsPersistenceVocabulary() )->get_note_identity_meta_key();
+		foreach ( array( 'evt_drop', 'evt_drop', 'evt_next' ) as $delivery => $id ) {
+			$event = array(
+				'id'   => $id,
+				'type' => $type,
+				'data' => array( 'object' => $object ),
+				WebhookReliabilityService::RETRY_ATTEMPTS_EVENT_KEY => 3,
+			);
+			$store->set_event( $id, $event, time() - 2 * DAY_IN_SECONDS );
+			if ( 'worker' === $path ) {
+				try {
+					$service->process_event( $id );
+					$this->fail( 'Action Scheduler must receive the final failure.' );
+				} catch ( \RuntimeException $exception ) {
+					$this->assertSame( $failure, $exception );
+				}
+			} else {
+				$service->sweep_queued_events();
+			}
+			$this->assertNull( $store->get_row( $id ) );
+			$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+			$this->assertCount( 2 === $delivery ? 2 : 1, $notes );
+			if ( 1 !== $delivery ) {
+				$this->assertSame( "A WooPayments update for this order (event $id) could not be applied. Check the payment in your WooPayments dashboard.", $notes[0]->content );
+				$this->assertSame( hash( 'sha256', 'woopayments_dropped_event:' . $id ), get_comment_meta( $notes[0]->id, $key, true ) );
+				wp_update_comment(
+					array(
+						'comment_ID'      => $notes[0]->id,
+						'comment_content' => 'Edited order note.',
+					)
+				);
+			}
+		}
+	}
+
+	/**
+	 * @testdox A dropped update leaves existing lock and refund outcomes alone and ignores unrelated metadata.
+	 * @testWith ["charge.dispute.updated", "woopayments_lock_refused_event:evt_drop"]
+	 *           ["charge.refund.updated", "refund:re_order:failed"]
+	 *           ["charge.refund.updated", "other_charge|charge.refund.updated|re_order|failed"]
+	 *           ["payment_intent.canceled", ""]
+	 *           ["account.updated", ""]
+	 *           ["wcpay.notification", ""]
+	 *           ["charge.dispute.closed", ""]
+	 * @param string $type     Event type.
+	 * @param string $identity Prior note identity, or empty when no order should match.
+	 */
+	public function test_dropped_update_keeps_existing_history( string $type, string $identity ): void {
+		$order  = $this->order_for_dropped_update();
+		$before = array();
+		if ( '' !== $identity ) {
+			$key = ( new WooPaymentsPersistenceVocabulary() )->get_note_identity_meta_key();
+			$order->add_order_note( 'Existing outcome.', 0, false, array( $key => hash( 'sha256', $identity ) ) );
+			$before[] = 'Existing outcome.';
+		}
+		$object = array(
+			'id'       => 're_order',
+			'charge'   => '' === $identity ? 'ch_other' : 'ch_order',
+			'metadata' => array( 'order_id' => $order->get_id() ),
+			'status'   => 'failed',
+		);
+		$event  = array(
+			'id'   => 'evt_drop',
+			'type' => $type,
+			'data' => array( 'object' => $object ),
+			WebhookReliabilityService::RETRY_ATTEMPTS_EVENT_KEY => 3,
+		);
+		$store  = new QueuedEventRows();
+		$store->set_event( 'evt_drop', $event, time() - 2 * DAY_IN_SECONDS );
+		$this->sut->sweep_queued_events();
+		$this->assertNull( $store->get_row( 'evt_drop' ) );
+		$this->assertSame( $before, wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ) );
+	}
+
+	/**
+	 * @testdox A lost invoice job notes only the existing order its billing handler updates.
+	 * @testWith ["invoice.paid"]
+	 *           ["invoice.payment_failed"]
+	 *           ["invoice.upcoming"]
+	 * @param string $type Invoice event type.
+	 */
+	public function test_dropped_update_invoice( string $type ): void {
+		WooCommerceSubscriptionsDoubles::load();
+		$module = $this->createStub( StripeBillingModule::class );
+		$module->method( 'is_loaded' )->willReturn( true );
+		$container = $GLOBALS['wc_container'];
+		$this->assertInstanceOf( \Automattic\WooCommerce\Testing\Tools\TestingContainer::class, $container );
+		$container->replace( StripeBillingModule::class, $module );
+		$subscription = $this->order_for_dropped_update();
+		$subscription->update_meta_data( '_wcpay_subscription_id', 'sub_order' );
+		$subscription->save();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ][] = $subscription->get_id();
+		$renewal = new \WC_Order();
+		$renewal->update_meta_data( '_wcpay_billing_invoice_id', 'in_order' );
+		$renewal->save();
+		$store = new QueuedEventRows();
+		$event = array(
+			'id'   => 'evt_invoice',
+			'type' => $type,
+			'data' => array(
+				'object' => array(
+					'id'           => 'in_order',
+					'subscription' => 'sub_order',
+				),
+			),
+			WebhookReliabilityService::RETRY_ATTEMPTS_EVENT_KEY => 'invoice.paid' === $type ? 3 : 0,
+		);
+		try {
+			$store->set_event( 'evt_invoice', $event, time() - 2 * DAY_IN_SECONDS );
+			$this->sut->sweep_queued_events();
+			$expected = array( 'A WooPayments update for this order (event evt_invoice) could not be applied. Check the payment in your WooPayments dashboard.' );
+			$this->assertSame( 'invoice.upcoming' === $type ? $expected : array(), wp_list_pluck( wc_get_order_notes( array( 'order_id' => $subscription->get_id() ) ), 'content' ) );
+			$this->assertSame( 'invoice.upcoming' === $type ? array() : $expected, wp_list_pluck( wc_get_order_notes( array( 'order_id' => $renewal->get_id() ) ), 'content' ) );
+			$this->assertNull( $store->get_row( 'evt_invoice' ) );
+		} finally {
+			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] );
+		}
+	}
+
+	/** @testdox A redelivery overlapping the note insert leaves only the original event note. */
+	public function test_dropped_update_overlapping_sweeps(): void {
+		$order   = $this->order_for_dropped_update();
+		$event   = array(
+			'id'   => 'evt_drop',
+			'type' => 'payment_intent.succeeded',
+			'data' => array( 'object' => array( 'id' => 'pi_order' ) ),
+			WebhookReliabilityService::RETRY_ATTEMPTS_EVENT_KEY => 3,
+		);
+		$store   = new QueuedEventRows();
+		$sweep   = function () use ( $store, $event ) {
+			$store->set_event( 'evt_drop', $event, time() - 2 * DAY_IN_SECONDS );
+			$this->sut->sweep_queued_events();
+		};
+		$overlap = function ( $data ) use ( &$overlap, $sweep ) {
+			remove_filter( 'woocommerce_new_order_note_data', $overlap );
+			$sweep();
+			return $data;
+		};
+		add_filter( 'woocommerce_new_order_note_data', $overlap );
+		try {
+			$sweep();
+		} finally {
+			remove_filter( 'woocommerce_new_order_note_data', $overlap );
+		}
+		$this->assertSame( array( 'A WooPayments update for this order (event evt_drop) could not be applied. Check the payment in your WooPayments dashboard.' ), wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ) );
+		$this->assertNull( $store->get_row( 'evt_drop' ) );
+	}
+
+	/** @testdox A failed refund already explained by the extension needs no dropped-update note. */
+	public function test_dropped_update_preserves_legacy_refund_note(): void {
+		$order  = $this->order_for_dropped_update();
+		$refund = array(
+			'id'             => 're_order',
+			'charge'         => 'ch_order',
+			'status'         => 'failed',
+			'failure_reason' => 'declined',
+			'amount'         => 400,
+			'currency'       => 'usd',
+		);
+		$price  = WooPaymentsCurrencyUtils::format_explicit_order_price( 4, 'usd', $order );
+		$note   = "A refund of $price was <strong>unsuccessful</strong> using WooPayments (<code>re_order</code>): The refund was declined by the card issuer.";
+		$order->add_order_note( $note );
+		$store = new QueuedEventRows();
+		$store->set_event(
+			'evt_drop',
+			array(
+				'id'   => 'evt_drop',
+				'type' => 'charge.refund.updated',
+				'data' => array( 'object' => $refund ),
+				WebhookReliabilityService::RETRY_ATTEMPTS_EVENT_KEY => 3,
+			),
+			time() - 2 * DAY_IN_SECONDS
+		);
+		$this->sut->sweep_queued_events();
+		$this->assertSame( array( $note ), wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ) );
+	}
+
+	/**
+	 * @testdox A failing terminal note cannot keep the queued row or replace the worker failure.
+	 * @testWith ["woocommerce_new_order_note_data"]
+	 *           ["woocommerce_order_note_added"]
+	 * @param string $hook Order note hook that fails.
+	 */
+	public function test_dropped_update_note_write_failure( string $hook ): void {
+		$this->order_for_dropped_update();
+		$failure = new \RuntimeException( 'Processing failed.' );
+		$service = $this->create_service( new RecordingActionSchedulerService(), new StaticFailedEventsApiClient(), new ThrowingEventIngestor( $failure ) );
+		$event   = array(
+			'id'   => 'evt_drop',
+			'type' => 'payment_intent.succeeded',
+			'data' => array( 'object' => array( 'id' => 'pi_order' ) ),
+			WebhookReliabilityService::RETRY_ATTEMPTS_EVENT_KEY => 3,
+		);
+		$store   = new QueuedEventRows();
+		$store->set_event( 'evt_drop', $event );
+		$attempted = false;
+		$throw     = static function () use ( &$attempted ) {
+			$attempted = true;
+			throw new \RuntimeException( 'Note write failed.' );
+		};
+		add_action( $hook, $throw );
+		try {
+			$service->process_event( 'evt_drop' );
+			$this->fail( 'The worker failure must reach Action Scheduler.' );
+		} catch ( \RuntimeException $exception ) {
+			$this->assertSame( $failure, $exception );
+		} finally {
+			remove_action( $hook, $throw );
+		}
+		$this->assertTrue( $attempted );
+		$this->assertNull( $store->get_row( 'evt_drop' ) );
 	}
 
 	/**

@@ -242,32 +242,12 @@ class PaymentIntentEventHandler {
 	 * @throws OrderPaymentLockRefusedException When another operation holds the order payment lock; nothing is written.
 	 */
 	public function process( string $event_type, array $event_object ): void {
-		// Client 11.3.0 only clears the authorization summary caches on a canceled intent and resolves no order
-		// (class-wc-payments-webhook-processing-service.php:416-420).
-		if ( 'payment_intent.canceled' === $event_type ) {
+		if ( in_array( $event_type, array( 'payment_intent.canceled', 'payment_intent.amount_capturable_updated' ), true ) ) {
 			$this->admin_menu_badge_service->invalidate_authorization_summary_caches();
-			return;
-		}
-
-		// Client 11.3.0 clears the caches for every authorization, then leaves in-person payments, which their own flow
-		// updates, and any intent not awaiting capture (class-wc-payments-webhook-processing-service.php:437-451).
-		if ( 'payment_intent.amount_capturable_updated' === $event_type ) {
-			$this->admin_menu_badge_service->invalidate_authorization_summary_caches();
-			if ( ! $this->is_online_authorization( $event_object ) ) {
-				return;
-			}
 		}
 
 		$record_only = false;
-		if ( 'charge.expired' === $event_type ) {
-			$order = $this->event_order_resolver->find_order_by_charge_id( $this->get_object_id( $event_object ) );
-			if ( ! $order instanceof WC_Order ) {
-				$order       = $this->event_order_resolver->find_order_from_charge_metadata( $event_object );
-				$record_only = true;
-			}
-		} else {
-			$order = $this->event_order_resolver->find_order_for_intent_event( $event_object );
-		}
+		$order       = $this->find_event_order( $event_type, $event_object, $record_only );
 		if ( ! $order instanceof WC_Order ) {
 			return;
 		}
@@ -282,6 +262,33 @@ class PaymentIntentEventHandler {
 		if ( ! in_array( $event_type, array( 'payment_intent.payment_failed', 'payment_intent.amount_capturable_updated' ), true ) ) {
 			$this->admin_menu_badge_service->invalidate_authorization_summary_caches();
 		}
+	}
+
+	/**
+	 * Resolve an intent or expired charge to the order its handler would update or annotate.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param string              $event_type   Supported payment event type.
+	 * @param array<string,mixed> $event_object Intent or charge.
+	 * @param bool                $record_only  Whether only the charge metadata matched.
+	 * @return WC_Order|null
+	 */
+	public function find_event_order( string $event_type, array $event_object, bool &$record_only = false ): ?WC_Order {
+		$record_only = false;
+		if ( 'payment_intent.canceled' === $event_type || ( 'payment_intent.amount_capturable_updated' === $event_type && ! $this->is_online_authorization( $event_object ) ) ) {
+			return null;
+		}
+		if ( 'charge.expired' !== $event_type ) {
+			return $this->event_order_resolver->find_order_for_intent_event( $event_object );
+		}
+
+		$order = $this->event_order_resolver->find_order_by_charge_id( $this->get_object_id( $event_object ) );
+		if ( $order instanceof WC_Order ) {
+			return $order;
+		}
+		$record_only = true;
+		return $this->event_order_resolver->find_order_from_charge_metadata( $event_object );
 	}
 
 	/**
