@@ -191,6 +191,21 @@ class WooPaymentsDatabaseCache {
 	}
 
 	/**
+	 * Read the stored contents past this request's copy and the object cache, and keep them for the rest of the request.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param string $key Cache key.
+	 * @return array<string,mixed>|false The stored contents, or false when there are none.
+	 */
+	public function get_stored_contents( string $key ) {
+		unset( $this->contents[ get_current_blog_id() ][ $key ] );
+		$this->legacy_proxy->call_function( 'wp_cache_delete', $key, 'options' );
+
+		return $this->get_contents( $key );
+	}
+
+	/**
 	 * Tell whether cache contents should be refreshed.
 	 *
 	 * Cron, AJAX and Action Scheduler requests never refresh unless forced, like client 11.1.0
@@ -217,6 +232,20 @@ class WooPaymentsDatabaseCache {
 			return false;
 		}
 
+		return $this->is_due( $key, $cache_contents, $validate_data );
+	}
+
+	/**
+	 * Tell whether cache contents are due for a refresh: missing, malformed, invalid or past their TTL, also in a request that never refreshes.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param string   $key            Cache key.
+	 * @param mixed    $cache_contents Stored contents.
+	 * @param callable $validate_data  Tells whether cached data can be served.
+	 * @return bool
+	 */
+	public function is_due( string $key, $cache_contents, callable $validate_data ): bool {
 		if ( false === $cache_contents ) {
 			return true;
 		}

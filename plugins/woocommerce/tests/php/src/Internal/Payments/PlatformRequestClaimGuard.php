@@ -20,9 +20,9 @@ final class PlatformRequestClaimGuard {
 	 * and every listed provider caller > callee pair. The money operations and their decision reads come first.
 	 * No row lets checkout, capture, payment intent creation or terminal capture read the account: each entry point
 	 * reads it once before its claim, so the Level 3 lookup and the composition data settler read it from memory.
-	 * The webhooks' two account reads are the remaining stated exceptions, until events read the account before their claim.
+	 * No webhook delivery reads the account from the platform; the account events force their refresh with no claim held.
 	 *
-	 * Stated limit: the cached account is checked for expiry on every read. When it expires between the read before
+	 * Stated limit, for the entry points above: the cached account is checked for expiry on every read. When it expires between the read before
 	 * the claim and a read under it, the later read fetches the account under the claim. That is about 1 in 2,500 admin
 	 * captures and 1 in 30,000 front-end payments, and it costs about a second of hold. Closing it would change what the
 	 * account cache means for every reader in a request, so it is not closed. No test moves the clock between the reads.
@@ -63,11 +63,9 @@ final class PlatformRequestClaimGuard {
 		array( 'checkout', 'POST subscriptions/{id}', 'StripeBilling/StripeBillingSubscriptionService::update_wcpay_subscription_payment_method>update_subscription', 'StripeBilling/StripeBillingApi::update_subscription>send_array' ),
 		array( 'payment status update', 'GET intentions/{id}', 'Webhooks/PaymentIntentEventHandler::build_lifecycle_event>get_payment_intention' ),
 		array( 'dispute webhook', 'GET disputes/{id}/summary', 'Webhooks/DisputeEventHandler::get_lost_dispute_amount>get_dispute_summary', 'Webhooks/DisputeEventHandler::get_dispute_summary>get_dispute_summary' ),
-		array( 'payment status update', 'GET accounts', 'WooPaymentsCompositionDataSettler::run_settled>get_cached_account_data', 'Webhooks/PaymentIntentEventHandler::apply_succeeded_payment_intent>run_settled', 'WooPaymentsAccountService::fetch_account_data>get_account' ),
 		array( 'payment status update', 'GET payment_methods', 'Webhooks/PaymentIntentEventHandler::apply_succeeded_payment_intent>repair_recurring_order_token', 'WooPaymentsCustomerService::get_payment_methods_for_customer>get_payment_methods' ),
 		array( 'payment status update', 'GET payment_methods/{id}', 'Webhooks/PaymentIntentEventHandler::apply_succeeded_payment_intent>repair_recurring_order_token', 'WooPaymentsPaymentMethodDetailsService::fetch_payment_method_details>get_payment_method' ),
 		array( '*', 'GET payment_methods/{id}', 'WooPaymentsOrderCardInfo::handle_order_payment_card_info>fetch_payment_method_details', '@failed-email' ),
-		array( 'payment status update', 'GET accounts', 'Webhooks/PaymentIntentEventHandler::process_order_payment_event>run_settled', 'WooPaymentsCompositionDataSettler::run_settled>get_cached_account_data', 'WooPaymentsAccountService::fetch_account_data>get_account' ),
 		array( 'capture', 'GET accounts/fraud_services', 'WooPaymentsFraudOrderTrackingService::handle_woocommerce_update_order>is_sift_tracking_enabled', 'WooPaymentsFraudService::get_cached_public_config>fetch_public_fraud_services_config' ),
 	);
 

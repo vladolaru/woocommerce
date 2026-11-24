@@ -28,6 +28,7 @@ use Automattic\WooCommerce\Utilities\OrderUtil;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\HttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingApi;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingEventHandler;
@@ -39,6 +40,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventOrderResolver;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\OtherChargeRecorder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\PaymentIntentEventHandler;
@@ -47,6 +49,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderAdminActionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use Automattic\WooCommerce\Testing\Tools\TestingContainer;
 use Automattic\WooCommerce\Tests\Internal\MultiCurrency\ServiceFactories;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
@@ -668,6 +671,99 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		);
 		$renewal = wc_get_order( $renewal->get_id() );
 		$this->assertSame( array( 'cancelled', self::RENEWAL_INTENT_ID, self::RENEWAL_CHARGE_ID, 'succeeded', self::RENEWAL_INTENT_ID ), array( $renewal->get_status(), $renewal->get_meta( '_intent_id', true ), $renewal->get_meta( '_charge_id', true ), $renewal->get_meta( '_intention_status', true ), $renewal->get_transaction_id() ) );
+	}
+
+	/**
+	 * @testdox A paid invoice for $_dataName, delivered with the stored account due, sends no account request and queues one refresh.
+	 *
+	 * The delivery goes through the ingestor with the Stripe Billing module loaded. The pending renewal is paid through the
+	 * succeeded intent, which settles the account under the claim; the cancelled renewal records the payment, which reads
+	 * the account currency under the claim.
+	 *
+	 * @dataProvider provider_due_paid_invoices
+	 *
+	 * @param bool $cancelled Whether the renewal was cancelled after a declined attempt.
+	 */
+	public function test_due_paid_invoice_delivery_reads_no_account( bool $cancelled ): void {
+		$platform           = new FakeHttpClient();
+		$account            = wp_json_file_decode( dirname( __DIR__ ) . '/Fixtures/platform-test-drive-account.json', array( 'associative' => true ) )['account'];
+		$platform->response = array(
+			'body'     => wp_json_encode( $account ),
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+		);
+		update_option( 'wcpay_onboarding_test_mode', 'yes' );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'               => $account,
+				'fetched'            => time() - 2 * DAY_IN_SECONDS,
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			),
+			false
+		);
+		$container = wc_get_container();
+		$this->assertInstanceOf( TestingContainer::class, $container );
+		$container->replace( HttpClient::class, $platform );
+		$this->reset_container_resolutions();
+		$handler = new \ReflectionProperty( StripeBillingEventHandler::class, 'payment_intent_event_handler' );
+		$handler->setAccessible( true );
+		$handler->setValue( $this->sut, $container->get( PaymentIntentEventHandler::class ) );
+		$container->replace( StripeBillingEventHandler::class, $this->sut );
+		$module = $this->createMock( StripeBillingModule::class );
+		$module->method( 'is_loaded' )->willReturn( true );
+		$module->method( 'is_stripe_billing_enabled' )->willReturn( true );
+		$module->method( 'handle_invoice_event' )->willReturnCallback( fn( array $event ) => $this->sut->handle_event( $event ) );
+		$container->replace( StripeBillingModule::class, $module );
+
+		if ( $cancelled ) {
+			$subscription = $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID, array(), 'on-hold' );
+			$renewal      = $this->create_unpaid_renewal_order( $subscription, '24.90' );
+			$renewal->update_meta_data( '_intent_id', 'pi_declined' );
+			$renewal->update_meta_data( '_intention_status', 'requires_payment_method' );
+			$renewal->set_transaction_id( 'pi_declined' );
+			$renewal->set_status( 'cancelled' );
+			$renewal->save();
+		} else {
+			$this->create_subscription( self::CLOCK_SUBSCRIPTION_ID );
+		}
+		$this->queue_response( 200, $this->get_renewal_intent() );
+		$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
+
+		try {
+			$container->get( EventIngestor::class )->process( $this->get_event( 'invoice_paid_renewal' ) );
+		} finally {
+			// The services built over the platform transport must not outlive the test.
+			$this->reset_container_replacements();
+			$this->reset_container_resolutions();
+		}
+
+		$this->assertSame( array(), $platform->requests, 'The delivery reads the stored account and sends no account request.' );
+		$orders = $this->get_renewal_orders( self::RENEWAL_INVOICE_ID );
+		$this->assertCount( 1, $orders );
+		$this->assertSame( array( $cancelled ? 'cancelled' : 'processing', self::RENEWAL_INTENT_ID, 'succeeded' ), array( $orders[0]->get_status(), $orders[0]->get_meta( '_intent_id', true ), $orders[0]->get_meta( '_intention_status', true ) ) );
+		$pending = as_get_scheduled_actions(
+			array(
+				'hook'     => 'woocommerce_woopayments_queued_account_refresh',
+				'status'   => \ActionScheduler_Store::STATUS_PENDING,
+				'per_page' => -1,
+			),
+			'ids'
+		);
+		$this->assertCount( 1, $pending );
+	}
+
+	/**
+	 * Renewals a paid invoice reaches.
+	 *
+	 * @return array<string,array{bool}>
+	 */
+	public function provider_due_paid_invoices(): array {
+		return array(
+			'a pending renewal'                         => array( false ),
+			'a cancelled renewal with a charged intent' => array( true ),
+		);
 	}
 
 	/**

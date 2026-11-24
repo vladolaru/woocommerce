@@ -82,6 +82,9 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	/** Re-check outcome: the account row was written; the tier write failed. */
 	public const RECHECK_TIER_WRITE_FAILED = 'tier_write_failed';
 
+	/** Action Scheduler hook of the forced account refresh a webhook delivery queues when the stored account is due. */
+	public const QUEUED_REFRESH_ACTION = 'woocommerce_woopayments_queued_account_refresh';
+
 	private const DEV_MODE_ENVIRONMENTS = array(
 		'development',
 		'staging',
@@ -165,6 +168,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 */
 	public function register() {
 		add_action( 'action_scheduler_before_execute', array( $this, 'handle_action_scheduler_before_execute' ) );
+		add_action( self::QUEUED_REFRESH_ACTION, array( $this, 'handle_queued_refresh' ) );
 
 		add_filter( 'allowed_redirect_hosts', array( $this, 'allowed_redirect_hosts' ) );
 
@@ -268,6 +272,76 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 */
 	public function refresh_account_data(): array {
 		return $this->get_cached_account_data( true );
+	}
+
+	/**
+	 * Run a webhook delivery on the stored account, then queue one forced refresh when the stored account is due.
+	 *
+	 * Nothing in the delivery refreshes the account, so no account request runs before or under an order claim; a forced
+	 * refresh, an account event's, still fetches. The queued refresh runs later in the queue, outside every claim, and keeps
+	 * the refreshed listeners running, such as the one that starts the pull of events whose push was lost.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @internal
+	 *
+	 * @param callable $delivery Handles the delivery.
+	 * @return void
+	 */
+	public function run_webhook_delivery( callable $delivery ): void {
+		try {
+			$this->database_cache->run_without_refresh( $delivery );
+		} finally {
+			$this->queue_refresh_when_due();
+		}
+	}
+
+	/**
+	 * Refresh the account from the queued job, unless the stored account is no longer due.
+	 *
+	 * The account is read past this request's copy, so a refresh another request stored since the job was queued leaves
+	 * nothing to do. The job takes no order claim.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @internal
+	 *
+	 * @return void
+	 */
+	public function handle_queued_refresh(): void {
+		$cache_contents = $this->database_cache->get_stored_contents( WooPaymentsDatabaseCache::ACCOUNT_KEY );
+		if ( ! $this->database_cache->is_due( WooPaymentsDatabaseCache::ACCOUNT_KEY, $cache_contents, fn( $data ): bool => $this->is_servable_account( $data ) ) ) {
+			return;
+		}
+
+		$this->refresh_account_data();
+	}
+
+	/**
+	 * Queue one forced refresh when this request would refresh the stored account, keeping one already pending.
+	 *
+	 * Reads only the stored account. A request that never refreshes, such as an Action Scheduler job, queues nothing.
+	 * A failure is logged and never fails the delivery.
+	 *
+	 * @return void
+	 */
+	private function queue_refresh_when_due(): void {
+		try {
+			if (
+				! $this->should_refresh_account_cache( $this->get_account_cache(), false )
+				|| ! $this->is_connection_state_known()
+				|| ! $this->is_platform_connected()
+			) {
+				return;
+			}
+
+			wc_get_container()->get( WooPaymentsActionSchedulerService::class )->schedule_job( self::QUEUED_REFRESH_ACTION );
+		} catch ( \Throwable $e ) {
+			wc_get_logger()->error(
+				'WooPayments could not queue the account refresh after a webhook delivery.',
+				array_merge( WooPaymentsLogger::get_failure_context( $e ), array( 'source' => WooPaymentsLogger::SOURCE ) )
+			);
+		}
 	}
 
 	/**
@@ -971,13 +1045,21 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		return $this->database_cache->should_refresh(
 			WooPaymentsDatabaseCache::ACCOUNT_KEY,
 			$cache_contents,
-			function ( $data ): bool {
-				$this->ensure_onboarding_test_mode_for_dev_mode( $data );
-
-				return $this->is_valid_cached_account( $data );
-			},
+			fn( $data ): bool => $this->is_servable_account( $data ),
 			$force_refresh
 		);
+	}
+
+	/**
+	 * Tell whether cached account data can be served, after turning onboarding test mode on where dev mode needs it.
+	 *
+	 * @param mixed $data Cached account data.
+	 * @return bool
+	 */
+	private function is_servable_account( $data ): bool {
+		$this->ensure_onboarding_test_mode_for_dev_mode( $data );
+
+		return $this->is_valid_cached_account( $data );
 	}
 
 	/**
