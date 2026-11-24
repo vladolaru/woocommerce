@@ -2818,6 +2818,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( null === $account_data ? array( 'is_test_mode_enabled', 'get_gateway_setting' ) : array( 'is_test_mode_enabled', 'get_gateway_setting', 'get_cached_account_data' ) )
 			->getMock();
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ), wc_get_container()->get( WooPaymentsDatabaseCache::class ) );
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
 		$account_service->method( 'get_gateway_setting' )->willReturn( $enabled_method_ids );
 		if ( null !== $account_data ) {
