@@ -753,14 +753,21 @@ class OnboardingService {
 	 * @throws ApiException When account deletion fails.
 	 */
 	private function delete_account( bool $test_mode ): array {
-		$state_before = $this->get_account_service()->get_account_state();
-		$this->get_account_service()->overwrite_cache_with_no_account();
+		$account_service = $this->get_account_service();
+		$state_before    = $account_service->get_account_state();
+		$account_service->drop_to_available();
+		$account_service->overwrite_cache_with_no_account();
 
 		try {
 			$response = $this->get_api_client()->delete_account( $test_mode );
 		} catch ( ApiException $e ) {
-			$this->get_account_service()->restore_account_state( $state_before );
-			throw $e;
+			// The platform refuses with not-found both for an account moved to another site and for one in the other
+			// mode, so one account read that sees both kinds decides: only no account completes the reset here.
+			if ( 'wcpay_account_not_found' !== $e->get_error_code() || ! $account_service->is_account_absent() ) {
+				$account_service->restore_account_state( $state_before );
+				throw $e;
+			}
+			$response = array( 'result' => 'success' );
 		}
 
 		$success = 'success' === ( $response['result'] ?? '' );

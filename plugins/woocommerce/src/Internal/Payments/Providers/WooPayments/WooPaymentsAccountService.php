@@ -626,19 +626,21 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 
 		$cache_contents = $this->legacy_proxy->call_function( 'get_option', WooPaymentsDatabaseCache::ACCOUNT_KEY );
 
-		$this->sync_setup_tier( is_array( $cache_contents ) ? ( $cache_contents['data'] ?? null ) : null, $extension_owns_payments );
+		$this->sync_setup_tier( is_array( $cache_contents ) ? ( $cache_contents['data'] ?? null ) : null, $extension_owns_payments, false );
 	}
 
 	/**
 	 * Write the setup tier for this account data.
 	 *
-	 * Nothing is written while the WooPayments feature is off. Missing account data keeps the stored tier unless the
-	 * WooPayments extension owns payments.
+	 * Nothing is written while the WooPayments feature is off. An account read never lowers a connected or active tier:
+	 * no account lifts only a low tier to `available`, missing account data keeps the stored tier, and an ordinary read
+	 * keeps `active` over a gateway setting that reads off. Only drop_to_available() lowers a set-up tier.
 	 *
 	 * @param mixed $account_data            Last persisted account data.
 	 * @param bool  $extension_owns_payments True while the WooPayments extension takes payments.
+	 * @param bool  $is_read                 Whether an account read wrote the data, rather than the switch back from the extension.
 	 */
-	private function sync_setup_tier( $account_data, bool $extension_owns_payments ): void {
+	private function sync_setup_tier( $account_data, bool $extension_owns_payments, bool $is_read = true ): void {
 		if ( null === $this->setup_tier || null === $this->runtime_arbiter ) {
 			return;
 		}
@@ -647,13 +649,15 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( $extension_owns_payments || array() === $account_data ) {
-			// Held before the call below, after which static analysis no longer knows the property is set.
-			$setup_tier = $this->setup_tier;
-			if ( ! $extension_owns_payments ) {
-				$this->schedule_recheck_on_drop();
+		if ( $extension_owns_payments ) {
+			$this->setup_tier->write_tier( WooPaymentsSetupTier::AVAILABLE );
+			return;
+		}
+
+		if ( array() === $account_data ) {
+			if ( WooPaymentsSetupTier::DISABLED === $this->setup_tier->get_stored_tier() ) {
+				$this->setup_tier->raise_to_available();
 			}
-			$setup_tier->write_tier( WooPaymentsSetupTier::AVAILABLE );
 			return;
 		}
 
@@ -661,10 +665,49 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 			return;
 		}
 
-		$settings = $this->get_stored_gateway_settings();
-		$this->setup_tier->write_tier(
-			'yes' === ( $settings['enabled'] ?? null ) ? WooPaymentsSetupTier::ACTIVE : WooPaymentsSetupTier::CONNECTED
-		);
+		$tier = 'yes' === ( $this->get_stored_gateway_settings()['enabled'] ?? null ) ? WooPaymentsSetupTier::ACTIVE : WooPaymentsSetupTier::CONNECTED;
+		if ( $is_read && WooPaymentsSetupTier::CONNECTED === $tier && WooPaymentsSetupTier::ACTIVE === $this->setup_tier->get_stored_tier() ) {
+			return;
+		}
+		$this->setup_tier->write_tier( $tier );
+	}
+
+	/**
+	 * Lower the tier to `available` for an explicit drop: the merchant's reset, or a delivered account.deleted event.
+	 *
+	 * The re-check is scheduled before a connected or active tier is lowered, so a request that dies after the drop still
+	 * leaves it.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return bool Whether `available` reads back.
+	 */
+	public function drop_to_available(): bool {
+		if ( null === $this->setup_tier || null === $this->runtime_arbiter || ! $this->runtime_arbiter->is_builtin_owner() ) {
+			return false;
+		}
+
+		// Held before the call below, after which static analysis no longer knows the property is set.
+		$setup_tier = $this->setup_tier;
+		$this->schedule_recheck_on_drop();
+
+		return $setup_tier->write_tier( WooPaymentsSetupTier::AVAILABLE );
+	}
+
+	/**
+	 * Tell whether the platform holds no account for the site, from one account read in test mode, which sees a live and a
+	 * sandbox account alike. Only an empty answer counts: a refusal, onboarding disabled or a failed read reads as present.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return bool
+	 */
+	public function is_account_absent(): bool {
+		try {
+			return array() === $this->get_api_client()->get_account_in_test_mode();
+		} catch ( \Throwable $e ) {
+			return false;
+		}
 	}
 
 	/**

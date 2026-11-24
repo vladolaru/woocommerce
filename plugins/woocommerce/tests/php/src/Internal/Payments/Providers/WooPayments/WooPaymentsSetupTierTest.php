@@ -275,7 +275,7 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A verified account write connects, while a verified empty reset disconnects.
+	 * @testdox A verified account write connects, a verified empty write keeps the connection, and only the explicit drop disconnects.
 	 */
 	public function test_account_writer_connects_and_disconnects(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'no' ) );
@@ -284,6 +284,9 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 		$this->assertSame( WooPaymentsSetupTier::CONNECTED, $this->state->get_effective_tier() );
 
 		$this->account_service->overwrite_cache_with_no_account();
+		$this->assertSame( WooPaymentsSetupTier::CONNECTED, $this->state->get_effective_tier() );
+
+		$this->assertTrue( $this->account_service->drop_to_available() );
 		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->state->get_effective_tier() );
 	}
 

@@ -235,6 +235,7 @@ class AbilitiesRegistrarTest extends AbilityTestCase {
 
 		$tier = wc_get_container()->get( WooPaymentsSetupTier::class );
 		try {
+			wc_get_container()->get( WooPaymentsAccountService::class )->drop_to_available();
 			wc_get_container()->get( WooPaymentsAccountService::class )->overwrite_cache_with_no_account();
 			$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $tier->get_effective_tier() );
 			add_filter( 'rest_pre_dispatch', static fn() => new \WP_Error( 'unexpected_dispatch', 'A disconnected read reached REST.' ) );

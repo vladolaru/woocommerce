@@ -254,18 +254,47 @@ final class WooPaymentsSetupTier {
 	 * @return bool|null True when written, false when the stored tier was no longer `available`, null when the write failed.
 	 */
 	public function raise_from_available( string $tier ): ?bool {
-		global $wpdb;
-
 		if ( ! in_array( $tier, array( self::CONNECTED, self::ACTIVE ), true ) ) {
 			return false;
 		}
+
+		return $this->raise( $tier, self::AVAILABLE );
+	}
+
+	/**
+	 * Raise a stored `disabled` tier, or a missing one, to `available`, only while the database still holds that low value.
+	 *
+	 * An empty account answer moves only a store that was never set up; a tier raised since it was read is left as it is.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return bool|null True when written, false when the stored tier was not `disabled` or missing, null when the write failed.
+	 */
+	public function raise_to_available(): ?bool {
+		if ( add_option( self::OPTION_NAME, self::AVAILABLE, '', true ) ) {
+			$this->invalidate();
+			return true;
+		}
+
+		return $this->raise( self::AVAILABLE, self::DISABLED );
+	}
+
+	/**
+	 * Write a tier only while the database holds the given lower one, then drop the request memo and the cached options.
+	 *
+	 * @param string $tier Setup tier to write.
+	 * @param string $from Setup tier the database must still hold.
+	 * @return bool|null True when written, false when the stored tier was not `$from`, null when the write failed.
+	 */
+	private function raise( string $tier, string $from ): ?bool {
+		global $wpdb;
 
 		$updated = $wpdb->query(
 			$wpdb->prepare(
 				"UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s AND option_value = %s",
 				$tier,
 				self::OPTION_NAME,
-				self::AVAILABLE
+				$from
 			)
 		);
 		wp_cache_delete( 'alloptions', 'options' );

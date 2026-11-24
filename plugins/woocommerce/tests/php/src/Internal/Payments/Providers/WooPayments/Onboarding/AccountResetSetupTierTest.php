@@ -220,10 +220,15 @@ class AccountResetSetupTierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox F4 control: after a timeout the platform did carry out, the restored row is marked as never fetched, so the first foreground account read refetches it, finds no account and lowers the tier to available in that request.
+	 * @testdox F4 control: after a timeout the platform did carry out, the restored row is marked as never fetched, so the first foreground account read refetches it and finds no account; the read keeps the active tier and checkout offers nothing.
 	 */
-	public function test_f4_after_a_timeout_the_platform_carried_out_the_next_read_lowers_the_tier(): void {
+	public function test_f4_after_a_timeout_the_platform_carried_out_the_next_read_keeps_the_tier(): void {
 		$this->store_has_account( 'yes', WooPaymentsSetupTier::ACTIVE );
+		// A live account needs HTTPS at checkout; the card is offered before the reset.
+		update_option( 'woocommerce_force_ssl_checkout', 'yes' );
+		wc_get_container()->reset_all_resolved();
+		$gateway = wc_get_container()->get( WooPaymentsProvider::class )->get_gateway_for_method( 'card' );
+		$this->assertTrue( null !== $gateway && $gateway->is_available(), 'Checkout offers the card first.' );
 		$this->client->method( 'delete_account' )->willThrowException( new ApiException( 'Http request failed. Reason: cURL error 28: Operation timed out', 'wcpay_http_request_failed', 500 ) );
 		$this->client->method( 'get_account' )->willThrowException( new ApiException( 'No account.', 'wcpay_account_not_found', 404 ) );
 
@@ -232,8 +237,122 @@ class AccountResetSetupTierTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array(), $this->account_service->get_cached_account_data() );
 
+		$this->assert_tier_is( WooPaymentsSetupTier::ACTIVE );
+		wc_get_container()->reset_all_resolved();
+		$gateway = wc_get_container()->get( WooPaymentsProvider::class )->get_gateway_for_method( 'card' );
+		$this->assertTrue( null === $gateway || ! $gateway->is_available(), 'Checkout offers nothing with no account.' );
+	}
+
+	/**
+	 * @testdox K6: an empty account read on a store already at available writes no tier and keeps the cached options.
+	 */
+	public function test_k6_an_empty_read_at_available_writes_nothing(): void {
+		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::AVAILABLE );
+		$this->tier->invalidate();
+		wp_load_alloptions();
+		$this->client->method( 'get_account' )->willReturn( array() );
+		$writes = 0;
+		$count  = static function ( $query ) use ( &$writes ) {
+			if ( false !== strpos( $query, WooPaymentsSetupTier::OPTION_NAME ) && 0 !== stripos( ltrim( $query ), 'SELECT' ) ) {
+				++$writes;
+			}
+			return $query;
+		};
+		add_filter( 'query', $count );
+
+		try {
+			$this->account_service->get_cached_account_data( true );
+		} finally {
+			remove_filter( 'query', $count );
+		}
+
+		$this->assertSame( 0, $writes, 'No tier write.' );
+		$this->assertNotFalse( wp_cache_get( 'alloptions', 'options' ), 'The cached options stay.' );
 		$this->assert_tier_is( WooPaymentsSetupTier::AVAILABLE );
-		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->tier->get_effective_tier(), 'A deleted account is not offered as connected.' );
+	}
+
+	/**
+	 * The delete refusals, each with what the one plain account read after it answers.
+	 *
+	 * @return array<string,array{ApiException,\Closure|null,int,bool}>
+	 */
+	public static function provide_delete_refusals(): array {
+		$not_found = static fn() => new ApiException( 'No account.', 'wcpay_account_not_found', 401 );
+
+		return array(
+			'D2 not found, and the read answers empty'     => array( $not_found(), static fn() => array(), 1, true ),
+			'D6 not found, and the read is refused as not found' => array(
+				$not_found(),
+				static function () {
+					throw new ApiException( 'No account.', 'wcpay_account_not_found', 404 );
+				},
+				1,
+				false,
+			),
+			'D6 not found, and the read answers onboarding disabled' => array(
+				$not_found(),
+				static function () {
+					throw new ApiException( 'Onboarding is disabled.', 'wcpay_on_boarding_disabled', 401 );
+				},
+				1,
+				false,
+			),
+			'D3 not found, and the read finds the account' => array(
+				$not_found(),
+				static fn() => array(
+					'account_id'           => 'acct_123',
+					'is_live'              => true,
+					'payments_enabled'     => true,
+					'details_submitted'    => true,
+					'live_publishable_key' => 'pk_live_123',
+				),
+				1,
+				false,
+			),
+			'D4 not found, and the read fails'             => array(
+				$not_found(),
+				static function () {
+					throw new ApiException( 'The platform is unavailable.', 'wcpay_platform_error', 503 );
+				},
+				1,
+				false,
+			),
+			'D5 another 401 refusal, with no read'         => array( new ApiException( 'Unauthorized.', 'wcpay_authorization_failure', 401 ), null, 0, false ),
+			'D5 onboarding disabled, with no read'         => array( new ApiException( 'Disabled.', 'wcpay_on_boarding_disabled', 401 ), null, 0, false ),
+		);
+	}
+
+	/**
+	 * @testdox D2 to D6: a reset refused with $_dataName: the reset completes and keeps available only when the one account read in test mode answers empty; otherwise the tier and the row go back.
+	 * @dataProvider provide_delete_refusals
+	 *
+	 * @param ApiException  $refusal    The delete's refusal.
+	 * @param \Closure|null $read       What the plain account read answers or throws, or null for no read.
+	 * @param int           $reads      How many plain account reads the reset sends.
+	 * @param bool          $completes  Whether the reset completes.
+	 */
+	public function test_a_not_found_refusal_is_confirmed_by_one_account_read( ApiException $refusal, ?\Closure $read, int $reads, bool $completes ): void {
+		$this->store_has_account( 'yes', WooPaymentsSetupTier::ACTIVE );
+		$row_before = get_option( self::ACCOUNT_CACHE_OPTION );
+		$this->client->expects( $this->once() )->method( 'delete_account' )->willThrowException( $refusal );
+		$plain = $this->client->expects( $this->exactly( $reads ) )->method( 'get_account_in_test_mode' );
+		if ( null !== $read ) {
+			$plain->willReturnCallback( $read );
+		}
+
+		$result = $this->sut->reset_onboarding();
+
+		if ( $completes ) {
+			$this->assertTrue( $result['success'] );
+			$this->assert_tier_is( WooPaymentsSetupTier::AVAILABLE );
+			$this->assertSame( 'no', get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION )['enabled'], 'The clean-up ran.' );
+			$this->assertFalse( get_option( self::ACCOUNT_CACHE_OPTION ), 'The clean-up emptied the cache.' );
+			return;
+		}
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assert_tier_is( WooPaymentsSetupTier::ACTIVE );
+		$this->assert_row_put_back( $row_before );
+		$this->assertSame( 'yes', get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION )['enabled'] );
 	}
 
 	/**

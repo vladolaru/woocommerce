@@ -18,6 +18,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\Recon
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\OnboardingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService;
@@ -148,7 +149,7 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox R3: a drop from active schedules four steps at +15 min, +1 h 15, +7 h 15 and +31 h 15, before the tier write: with that write throwing, the steps exist.
+	 * @testdox R3: an explicit drop from active schedules four steps at +15 min, +1 h 15, +7 h 15 and +31 h 15, before the tier write: with that write throwing, the steps exist.
 	 */
 	public function test_r3_a_drop_schedules_four_steps_before_the_tier_write(): void {
 		$this->store_has_account( 'yes' );
@@ -159,7 +160,10 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 		$before = time();
 
 		try {
-			$this->account_service->overwrite_cache_with_no_account();
+			$this->account_service->drop_to_available();
+			$this->fail( 'The tier write was meant to throw.' );
+		} catch ( \RuntimeException $e ) {
+			unset( $e );
 		} finally {
 			remove_filter( 'pre_update_option_' . WooPaymentsSetupTier::OPTION_NAME, $throw );
 		}
@@ -177,26 +181,29 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @return array<string,array{string,bool}>
+	 * @return array<string,array{string,bool,string}>
 	 */
 	public static function provide_reads_that_schedule_nothing(): array {
 		return array(
-			'a first not-found from disabled'          => array( WooPaymentsSetupTier::DISABLED, false ),
-			'a not-found from available'               => array( WooPaymentsSetupTier::AVAILABLE, false ),
-			'a drop while the extension owns payments' => array( WooPaymentsSetupTier::ACTIVE, true ),
+			'a first not-found from disabled'              => array( WooPaymentsSetupTier::DISABLED, false, WooPaymentsSetupTier::AVAILABLE ),
+			'a not-found from available'                   => array( WooPaymentsSetupTier::AVAILABLE, false, WooPaymentsSetupTier::AVAILABLE ),
+			'a not-found while the extension owns payments' => array( WooPaymentsSetupTier::ACTIVE, true, WooPaymentsSetupTier::AVAILABLE ),
+			'K1 a not-found at active, which keeps active' => array( WooPaymentsSetupTier::ACTIVE, false, WooPaymentsSetupTier::ACTIVE ),
+			'K1 a not-found at connected, which keeps it too' => array( WooPaymentsSetupTier::CONNECTED, false, WooPaymentsSetupTier::CONNECTED ),
 		);
 	}
 
 	/**
-	 * @testdox R4: no steps for $_dataName.
+	 * @testdox R4: no steps for $_dataName; the stored tier ends at $expected_tier.
 	 * @dataProvider provide_reads_that_schedule_nothing
 	 *
 	 * @param string $stored_tier     The stored tier before the read.
 	 * @param bool   $extension_owner Whether the extension owns payments.
+	 * @param string $expected_tier   The stored tier after the read.
 	 */
-	public function test_r4_no_steps_without_a_built_in_drop_from_a_set_up_tier( string $stored_tier, bool $extension_owner ): void {
-		if ( WooPaymentsSetupTier::ACTIVE === $stored_tier ) {
-			$this->store_has_account( 'yes' );
+	public function test_r4_no_steps_without_a_built_in_drop_from_a_set_up_tier( string $stored_tier, bool $extension_owner, string $expected_tier ): void {
+		if ( in_array( $stored_tier, array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true ) ) {
+			$this->store_has_account( WooPaymentsSetupTier::ACTIVE === $stored_tier ? 'yes' : 'no' );
 		} else {
 			update_option( WooPaymentsSetupTier::OPTION_NAME, $stored_tier );
 		}
@@ -205,11 +212,105 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 		}
 		$this->arbiter->invalidate();
 		$this->tier->invalidate();
+		$this->client->answer = static function () {
+			throw new ApiException( 'No account.', 'wcpay_account_not_found', 404 );
+		};
 
-		$this->account_service->overwrite_cache_with_no_account();
+		$this->assertSame( array(), $this->account_service->get_cached_account_data( true ) );
 
 		$this->assertSame( array(), $this->pending_steps() );
+		$this->assertSame( array(), $this->stored_row()['data'], 'The empty answer is stored.' );
+		$this->assertSame( $expected_tier, $this->stored_tier() );
+	}
+
+	/**
+	 * @testdox K2: an empty answer on a store with no stored tier writes available, autoloaded.
+	 */
+	public function test_k2_an_empty_answer_with_no_stored_tier_writes_available(): void {
+		delete_option( WooPaymentsSetupTier::OPTION_NAME );
+		$this->tier->invalidate();
+
+		$this->account_service->get_cached_account_data( true );
+
 		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->stored_tier() );
+		$this->assertArrayHasKey( WooPaymentsSetupTier::OPTION_NAME, wp_load_alloptions( true ) );
+	}
+
+	/**
+	 * @testdox K3: a tier another request raised while an empty answer was on its way stands: the empty write lifts only a low tier.
+	 */
+	public function test_k3_a_raise_during_an_empty_read_stands(): void {
+		global $wpdb;
+
+		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::DISABLED );
+		$this->tier->invalidate();
+		$this->assertSame( WooPaymentsSetupTier::DISABLED, $this->tier->get_stored_tier(), 'The request remembers disabled.' );
+		$this->client->answer = static function () use ( $wpdb ): array {
+			$wpdb->update( $wpdb->options, array( 'option_value' => WooPaymentsSetupTier::CONNECTED ), array( 'option_name' => WooPaymentsSetupTier::OPTION_NAME ) );
+			return array();
+		};
+
+		$this->account_service->get_cached_account_data( true );
+
+		$this->assertSame( WooPaymentsSetupTier::CONNECTED, $this->stored_tier() );
+	}
+
+	/**
+	 * @testdox K4: an ordinary account read keeps active over a gateway setting that reads off; the switch back from the extension follows the setting.
+	 */
+	public function test_k4_an_account_read_keeps_active_over_a_stale_gateway_setting(): void {
+		global $wpdb;
+
+		$this->store_has_account( 'yes' );
+		// Written past the settings hooks, as the extension or a failed tier write can leave it.
+		$wpdb->update( $wpdb->options, array( 'option_value' => maybe_serialize( array( 'enabled' => 'no' ) ) ), array( 'option_name' => WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION ) );
+		wp_cache_delete( 'alloptions', 'options' );
+		wp_cache_delete( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, 'options' );
+		$this->client->answer = fn() => $this->account();
+
+		$this->account_service->get_cached_account_data( true );
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $this->stored_tier(), 'The read keeps active.' );
+
+		$this->account_service->sync_setup_tier_from_options( false );
+		$this->assertSame( WooPaymentsSetupTier::CONNECTED, $this->stored_tier(), 'The switch back follows the setting.' );
+	}
+
+	/**
+	 * @testdox K5: while the extension owns payments the explicit drop writes no tier and schedules nothing.
+	 */
+	public function test_k5_the_explicit_drop_writes_nothing_while_the_extension_owns_payments(): void {
+		$this->store_has_account( 'yes' );
+		update_option( 'active_plugins', array( 'woocommerce-payments/woocommerce-payments.php' ) );
+		$this->arbiter->invalidate();
+
+		$this->assertFalse( $this->account_service->drop_to_available() );
+
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $this->stored_tier() );
+		$this->assertSame( array(), $this->pending_steps() );
+	}
+
+	/**
+	 * @testdox D1: a delivered account.deleted drops active to available before the clean-up writes the gateway setting, schedules the four steps, and its empty refresh keeps available.
+	 */
+	public function test_d1_account_deleted_drops_the_tier_before_the_clean_up(): void {
+		$this->store_has_account( 'yes' );
+		$tiers_at_gateway_write = array();
+		$record                 = function () use ( &$tiers_at_gateway_write ): void {
+			$tiers_at_gateway_write[] = $this->stored_tier();
+		};
+		add_action( 'update_option_' . WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, $record );
+
+		try {
+			wc_get_container()->get( WooPaymentsAccountEventHandler::class )->process( 'account.deleted' );
+		} finally {
+			remove_action( 'update_option_' . WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, $record );
+		}
+
+		$this->assertSame( array( WooPaymentsSetupTier::AVAILABLE ), $tiers_at_gateway_write, 'Available before the clean-up.' );
+		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->stored_tier() );
+		$this->assertSame( array(), $this->stored_row()['data'], 'The refresh stored no account.' );
+		$this->assertCount( 4, $this->pending_steps() );
+		$this->assertSame( 'no', get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION )['enabled'] );
 	}
 
 	/**
@@ -854,7 +955,7 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::ACTIVE );
 		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->tier->get_stored_tier(), 'The memo still holds available.' );
 
-		$this->account_service->overwrite_cache_with_no_account();
+		$this->account_service->drop_to_available();
 
 		$this->assertCount( 4, $this->pending_steps(), 'The drop from active scheduled its steps.' );
 		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->stored_tier() );
@@ -1488,7 +1589,7 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 		$this->arbiter->invalidate();
 		$this->tier->invalidate();
 		$this->store_has_account( 'yes' );
-		$this->account_service->overwrite_cache_with_no_account();
+		$this->account_service->drop_to_available();
 
 		$this->assertCount( 4, $this->pending_steps() );
 	}
@@ -1564,7 +1665,7 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An account read answered with $_dataName leaves the stored account, the tier and the payment method as a timed-out read does; the platform's empty list still means no account.
+	 * @testdox An account read answered with $_dataName leaves the stored account, the tier and the payment method as a timed-out read does; the platform's empty list still means no account, and keeps the tier.
 	 * @dataProvider provide_unreadable_account_answers
 	 *
 	 * @param string $answer     The platform's answer.
@@ -1591,7 +1692,7 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 		$row = $this->stored_row();
 		if ( $no_account ) {
 			$this->assertSame( array(), $row['data'] );
-			$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->stored_tier() );
+			$this->assertSame( WooPaymentsSetupTier::ACTIVE, $this->stored_tier(), 'An account read never lowers the tier.' );
 			return;
 		}
 		$this->assertSame( $stored, $row['data'], 'The stored account is kept.' );
@@ -1853,8 +1954,9 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Drop a store with a connected account to available through a no-account read, and get the drop's time. Without the
-	 * re-check nothing is scheduled; the four steps are then scheduled here, so the rows still run them.
+	 * Drop a store with a connected account to available through the explicit drop a reset or a delivered account.deleted
+	 * makes, with the account row emptied, and get the drop's time. Without the re-check nothing is scheduled; the four
+	 * steps are then scheduled here, so the rows still run them.
 	 *
 	 * @param string $enabled The gateway's enabled setting.
 	 * @return int
@@ -1863,6 +1965,7 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 		global $wpdb;
 
 		$this->store_has_account( $enabled );
+		$this->account_service->drop_to_available();
 		$this->account_service->overwrite_cache_with_no_account();
 		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->stored_tier() );
 		// A step runs at least 15 minutes after the drop, so a row rewritten by a step never has the drop's bytes.

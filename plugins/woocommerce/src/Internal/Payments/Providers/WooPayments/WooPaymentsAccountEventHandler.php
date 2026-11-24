@@ -75,6 +75,8 @@ class WooPaymentsAccountEventHandler {
 				$this->token_service->clear_all_cached_payment_methods();
 				return;
 			case 'account.deleted':
+				// The tier drops first: an account read no longer lowers it, and the clean-up's gateway write then moves no tier.
+				$this->account_service->drop_to_available();
 				$this->account_service->cleanup_after_account_reset();
 				// The webhook also clears the NOX onboarding profile and lock (client 11.1.0
 				// includes/class-wc-payments-webhook-processing-service.php:210-215).

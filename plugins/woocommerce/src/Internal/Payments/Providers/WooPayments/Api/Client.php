@@ -2220,6 +2220,18 @@ class Client {
 	}
 
 	/**
+	 * Retrieve the connected WooPayments account in test mode, which the platform answers for a live and a sandbox
+	 * account alike, without changing the shopper's session.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return array<string,mixed> The account, or an empty array when the platform holds no account for the site.
+	 */
+	public function get_account_in_test_mode(): array {
+		return $this->request( array( 'test_mode' => true ), self::ACCOUNTS_API, 'GET', true, false, true, true, false, false, null, false );
+	}
+
+	/**
 	 * Upload a file through the platform's files endpoint.
 	 *
 	 * @param WP_REST_Request $request Request object.

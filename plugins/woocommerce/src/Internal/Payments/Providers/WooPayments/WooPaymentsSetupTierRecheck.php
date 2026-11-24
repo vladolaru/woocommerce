@@ -13,8 +13,9 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
  *
  * The drop schedules four Action Scheduler steps, 15 minutes, 1 h 15, 7 h 15 and 31 h 15 after it, each with the drop time
  * and its own number as arguments. A step only raises the tier, through WooPaymentsAccountService::recheck_low_tier();
- * lowering stays with the foreground account reads. A step that settles the tier removes this drop's later steps; a step
- * that cannot settle it leaves them. The step that ends the schedule logs exactly one line, whatever the logging setting.
+ * only an explicit drop lowers it (WooPaymentsAccountService::drop_to_available()). A step that settles the tier removes
+ * this drop's later steps; a step that cannot settle it leaves them. The step that ends the schedule logs exactly one
+ * line, whatever the logging setting.
  *
  * A step that settles the tier also schedules one look a minute later, as step 0 of the same drop. On a store with a
  * persistent object cache, a request that loaded the options from the database just before a raise can put them back into
