@@ -15,8 +15,9 @@ use WC_Order;
 /**
  * Stands in for WooCommerce Subscriptions 9.4.1 `WCS_Email_Customer_Renewal_Invoice`
  * (includes/core/emails/class-wcs-email-customer-renewal-invoice.php:48-117): the same two listeners and the same
- * trigger, which sends to the order's billing email only while the email is enabled. Its subject and body are short
- * test texts; the body carries the order's pay link.
+ * trigger, which sends to the order's billing email only while the email is enabled. Its subject is a short test text;
+ * its body carries the order's pay link and its totals rows, as the stock templates print them
+ * (templates/emails/customer-renewal-invoice.php:21-35, templates/emails/email-order-details.php:78).
  */
 class RenewalInvoiceEmailDouble extends WC_Email {
 
@@ -79,16 +80,25 @@ class RenewalInvoiceEmailDouble extends WC_Email {
 	}
 
 	/**
-	 * Get the HTML body: the order's pay link.
+	 * Get the HTML body: the order's pay link and totals rows.
 	 *
 	 * @return string
 	 */
 	public function get_content_html() {
-		return $this->object instanceof WC_Order ? 'Pay for this renewal: ' . $this->object->get_checkout_payment_url() : '';
+		if ( ! $this->object instanceof WC_Order ) {
+			return '';
+		}
+
+		$rows = array();
+		foreach ( $this->object->get_order_item_totals() as $total ) {
+			$rows[] = $total['label'] . ' ' . $total['value'];
+		}
+
+		return 'Pay for this renewal: ' . $this->object->get_checkout_payment_url() . "\n" . implode( "\n", $rows );
 	}
 
 	/**
-	 * Get the plain body: the order's pay link.
+	 * Get the plain body: the order's pay link and totals rows.
 	 *
 	 * @return string
 	 */

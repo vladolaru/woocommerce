@@ -17,6 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOutcomeApplyException;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingSubscriptionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -827,8 +828,8 @@ class SubscriptionsController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Hand a due renewal on a method WooPayments cannot charge again to the shopper: make the subscription manual, send
-	 * Subscriptions' renewal invoice and clear the gateway from the pending order. Nothing is charged; the shopper pays
+	 * Hand a due renewal on a method WooPayments cannot charge again to the shopper: make the subscription manual, clear
+	 * the gateway from the pending order and send Subscriptions' renewal invoice. Nothing is charged; the shopper pays
 	 * the same order from the invoice's link.
 	 *
 	 * @internal
@@ -847,7 +848,16 @@ class SubscriptionsController implements RegisterHooksInterface {
 		// Read both again: an earlier callback, or this one on a second controller instance, may have handled the order.
 		$renewal_order = wc_get_order( $renewal_order->get_id() );
 		$subscription  = $renewal_order instanceof WC_Order ? $this->get_subscription_for_renewal_order( $renewal_order ) : null;
-		if ( null === $subscription || ! $renewal_order->needs_payment() || ! is_callable( array( $subscription, 'is_manual' ) ) || $subscription->is_manual() ) {
+		if ( null === $subscription || ! is_callable( array( $subscription, 'is_manual' ) ) || $subscription->is_manual() ) {
+			return;
+		}
+
+		// Only a due renewal as Subscriptions leaves it: the subscription on hold or pending, and this order its latest
+		// renewal, pending or failed, which the invoice's pay link can settle.
+		if ( ! $subscription->has_status( array( 'on-hold', 'pending' ) )
+			|| ! $renewal_order->has_status( array( OrderStatus::PENDING, OrderStatus::FAILED ) )
+			|| ! function_exists( 'wcs_is_order_last_renewal_of_subscription' )
+			|| ! wcs_is_order_last_renewal_of_subscription( $renewal_order, $subscription ) ) {
 			return;
 		}
 
@@ -856,19 +866,26 @@ class SubscriptionsController implements RegisterHooksInterface {
 			return;
 		}
 
-		// Convert first: if a later step throws, Subscriptions' rerun of the action finds a manual subscription and sends
-		// no second invoice. The invoice goes through its own trigger, since the authentication email can remove the
-		// trigger's listeners for the rest of the request.
+		// Stripe can still bill a subscription that holds its Stripe subscription ID until the cancellation is confirmed,
+		// so asking the shopper to pay here could collect the renewal twice.
+		if ( '' !== wc_get_container()->get( StripeBillingSubscriptionService::class )->get_wcpay_subscription_id( $subscription ) ) {
+			return;
+		}
+
+		// Convert first, so a later dispatch of this order, such as the merchant's Retry Renewal Payment, finds a manual
+		// subscription and sends no second invoice. The gateway is cleared before the invoice, which then shows no payment
+		// method, as Subscriptions' manual invoice does. The invoice goes through its own trigger, since the authentication
+		// email can remove the trigger's listeners for the rest of the request.
 		$this->maybe_force_subscription_to_manual( $subscription );
+
+		$renewal_order->set_payment_method( '' );
+		$renewal_order->save();
 
 		$emails  = WC()->mailer()->get_emails();
 		$invoice = $emails['WCS_Email_Customer_Renewal_Invoice'] ?? null;
 		if ( is_object( $invoice ) && is_callable( array( $invoice, 'trigger' ) ) ) {
 			$invoice->trigger( $renewal_order->get_id(), $renewal_order );
 		}
-
-		$renewal_order->set_payment_method( '' );
-		$renewal_order->save();
 	}
 
 	/**

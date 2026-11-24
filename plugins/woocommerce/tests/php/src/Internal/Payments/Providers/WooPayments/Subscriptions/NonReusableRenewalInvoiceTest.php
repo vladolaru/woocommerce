@@ -366,27 +366,35 @@ class NonReusableRenewalInvoiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A renewal stalled before the fix offers "Retry Renewal Payment" in an admin request; applying it once keeps the same pending order, clears its gateway, makes the subscription manual, sends one invoice and withdraws the action.
+	 * @testdox A renewal stalled before the fix, the subscription $status and the order $order_status, offers "Retry Renewal Payment" in an admin request; applying it once keeps the same order, clears its gateway, makes the subscription manual, sends one invoice and withdraws the action.
+	 * @testWith ["on-hold", "pending"]
+	 *           ["pending", "pending"]
+	 *           ["on-hold", "failed"]
+	 *
+	 * @param string $status       Subscription status.
+	 * @param string $order_status Renewal order status.
 	 */
-	public function test_the_merchant_retry_recovers_a_stalled_renewal(): void {
+	public function test_the_merchant_retry_recovers_a_stalled_renewal( string $status, string $order_status ): void {
 		$subscription = $this->create_subscription();
-		$subscription->update_status( 'on-hold', 'Subscription renewal payment due:' );
+		$subscription->update_status( $status, 'Subscription renewal payment due:' );
 		$renewal = ScheduledRenewalDoubles::create_renewal_order( wc_get_order( $subscription->get_id() ) );
-		$renewal->set_status( 'pending' );
+		$renewal->set_status( $order_status );
 		$renewal->save();
 		$this->bootstrap( RequestTypeUtil::ADMIN );
 		WC()->payment_gateways();
 		$renewal = wc_get_order( $renewal->get_id() );
 
 		$this->assertTrue( ScheduledRenewalDoubles::can_renewal_order_be_retried( $renewal ), 'The order screen offers the retry.' );
+		$notes_before = count( $this->note_texts( $renewal ) );
 		ScheduledRenewalDoubles::process_retry_renewal_payment_action_request( $renewal );
 
 		$renewal      = wc_get_order( $renewal->get_id() );
 		$subscription = wc_get_order( $subscription->get_id() );
 		$this->assertSame( array( $renewal->get_id() ), $this->renewal_order_ids( $subscription ), 'No new order.' );
-		$this->assertSame( 'pending', $renewal->get_status() );
+		$this->assertSame( $order_status, $renewal->get_status() );
 		$this->assertSame( '', $renewal->get_payment_method() );
-		$this->assertSame( array( self::INVOICE_SENT_NOTE, ScheduledRenewalDoubles::ADMIN_RETRY_NOTE ), $this->note_texts( $renewal ) );
+		$notes = $this->note_texts( $renewal );
+		$this->assertSame( array( self::INVOICE_SENT_NOTE, ScheduledRenewalDoubles::ADMIN_RETRY_NOTE ), array_slice( $notes, 0, count( $notes ) - $notes_before ), 'The retry adds only its own note and the email record.' );
 		$this->assertTrue( $subscription->get_requires_manual_renewal() );
 		$this->assertSame( 1, $this->count_notes( $subscription, self::FORCE_MANUAL_NOTE ) );
 		$this->assertSame( array( $renewal->get_id() ), $this->invoiced_order_ids() );
@@ -395,7 +403,7 @@ class NonReusableRenewalInvoiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A queued retry of a failed card renewal, after the merchant moved the subscription to iDEAL, makes it manual and invoices the original order once more, with no charge and no further retry.
+	 * @testdox A queued retry of a failed card renewal, after the merchant moved the subscription to iDEAL, makes it manual and invoices the original order, with no charge and no further retry.
 	 */
 	public function test_a_queued_retry_after_a_move_to_ideal_invoices_the_order(): void {
 		$subscription = $this->create_subscription( self::CARD );
@@ -403,8 +411,6 @@ class NonReusableRenewalInvoiceTest extends WC_Unit_Test_Case {
 		$failed->set_status( 'failed' );
 		$failed->save();
 		wc_get_order( $subscription->get_id() )->update_status( 'on-hold' );
-		// The retry rule's own email to the shopper about the failure went out earlier.
-		wp_mail( self::SHOPPER_EMAIL, 'Automatic payment failed for renewal order ' . $failed->get_order_number(), 'We will retry.' );
 		$this->bootstrap( RequestTypeUtil::ADMIN );
 		WC()->payment_gateways();
 		$moved = wc_get_order( $subscription->get_id() );
@@ -419,16 +425,15 @@ class NonReusableRenewalInvoiceTest extends WC_Unit_Test_Case {
 		$subscription = wc_get_order( $subscription->get_id() );
 		$this->assertTrue( $subscription->get_requires_manual_renewal() );
 		$this->assertSame( array( $failed->get_id() ), $this->renewal_order_ids( $subscription ) );
-		$this->assertTrue( $failed->needs_payment(), 'The order still needs payment, so Subscriptions records the retry as failed.' );
+		$this->assertSame( 'pending', $failed->get_status(), 'The same order, still to pay.' );
 		$this->assertSame( '', $failed->get_payment_method() );
-		$this->assertContains( 'Automatic payment failed for renewal order ' . $failed->get_order_number(), $shopper_mail, 'The earlier notice went out.' );
 		$this->assertSame( array_merge( $shopper_mail, array( 'Invoice for renewal order ' . $failed->get_order_number() ) ), $this->subjects_to( self::SHOPPER_EMAIL ), 'One more email: the invoice.' );
 		$this->assertSame( array(), $this->transport->requests );
 		$this->assertSame( array(), $this->pending( self::RETRY_ACTION ) );
 	}
 
 	/**
-	 * @testdox The callback reads the order again: an order a listener before it paid on its own copy is left alone, and a second controller instance on the same hook adds nothing.
+	 * @testdox The callback reads the order again: an order a listener before it moved to bank transfer on its own copy is left alone, and a second controller instance on the same hook adds nothing.
 	 */
 	public function test_the_callback_reads_the_order_and_subscription_again(): void {
 		$paid_first = $this->create_subscription();
@@ -438,7 +443,7 @@ class NonReusableRenewalInvoiceTest extends WC_Unit_Test_Case {
 			unset( $amount );
 			if ( in_array( $paid_first->get_id(), array_map( static fn( $s ) => $s->get_id(), wcs_get_subscriptions_for_renewal_order( $renewal->get_id() ) ), true ) ) {
 				$copy = wc_get_order( $renewal->get_id() );
-				$copy->set_status( 'processing' );
+				$copy->set_payment_method( 'bacs' );
 				$copy->save();
 			}
 		};
@@ -447,7 +452,7 @@ class NonReusableRenewalInvoiceTest extends WC_Unit_Test_Case {
 		$this->run_action( self::RENEWAL_ACTION, array( 'subscription_id' => $paid_first->get_id() ) );
 
 		$this->assertFalse( wc_get_order( $paid_first->get_id() )->get_requires_manual_renewal() );
-		$this->assertSame( self::IDEAL, $this->last_renewal( $paid_first )->get_payment_method() );
+		$this->assertSame( 'bacs', $this->last_renewal( $paid_first )->get_payment_method() );
 		$this->assertSame( array(), $this->invoiced_order_ids() );
 
 		remove_action( 'woocommerce_scheduled_subscription_payment_' . self::IDEAL, $pay_first, 5 );
@@ -460,10 +465,11 @@ class NonReusableRenewalInvoiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A pending iDEAL order of a subscription already made manual, dispatched to the hook again, gets no second note, invoice or change.
+	 * @testdox The latest pending iDEAL order of an on-hold subscription already made manual, dispatched to the hook again, gets no second note, invoice or change.
 	 */
 	public function test_an_already_converted_subscription_gets_nothing_more(): void {
 		$subscription = $this->create_subscription();
+		$subscription->update_status( 'on-hold' );
 		$this->bootstrap( RequestTypeUtil::CRON );
 		$controller = wc_get_container()->get( SubscriptionsController::class );
 		$controller->maybe_force_subscription_to_manual( wc_get_order( $subscription->get_id() ) );
@@ -479,9 +485,9 @@ class NonReusableRenewalInvoiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox When saving the manual subscription throws once, Subscriptions' single rerun of the action sends one invoice in all.
+	 * @testdox When saving the manual subscription throws, the due action fails with no invoice sent, and the merchant's later Retry Renewal Payment converts and invoices once: one invoice in all.
 	 */
-	public function test_a_rerun_after_a_failed_conversion_sends_one_invoice(): void {
+	public function test_a_failed_conversion_sends_no_invoice_until_a_later_dispatch(): void {
 		$subscription = $this->create_subscription();
 		$this->bootstrap( RequestTypeUtil::CRON );
 		$failures = 0;
@@ -496,13 +502,110 @@ class NonReusableRenewalInvoiceTest extends WC_Unit_Test_Case {
 			}
 		);
 
-		$first = $this->run_action( self::RENEWAL_ACTION, array( 'subscription_id' => $subscription->get_id() ) );
-		// Subscriptions runs a failed scheduled-payment action once more (class-wcs-failed-scheduled-action-manager.php:24-25).
-		$second = $this->run_action( self::RENEWAL_ACTION, array( 'subscription_id' => $subscription->get_id() ) );
+		$this->assertSame( ActionScheduler_Store::STATUS_FAILED, $this->run_action( self::RENEWAL_ACTION, array( 'subscription_id' => $subscription->get_id() ) ) );
+		$renewal = $this->last_renewal( $subscription );
+		$this->assertSame( array(), $this->invoiced_order_ids() );
+		$this->assertFalse( wc_get_order( $subscription->get_id() )->get_requires_manual_renewal() );
+		$this->assertTrue( ScheduledRenewalDoubles::can_renewal_order_be_retried( $renewal ), 'Subscriptions still offers the retry.' );
 
-		$this->assertSame( array( ActionScheduler_Store::STATUS_FAILED, ActionScheduler_Store::STATUS_COMPLETE ), array( $first, $second ) );
+		ScheduledRenewalDoubles::process_retry_renewal_payment_action_request( $renewal );
+
 		$this->assertTrue( wc_get_order( $subscription->get_id() )->get_requires_manual_renewal() );
-		$this->assertSame( array( $this->last_renewal( $subscription )->get_id() ), $this->invoiced_order_ids() );
+		$this->assertSame( array( $renewal->get_id() ), $this->invoiced_order_ids() );
+	}
+
+	/**
+	 * @testdox A subscription that still holds its Stripe subscription ID is left alone at its due iDEAL renewal: no conversion, invoice or change to the order.
+	 */
+	public function test_a_subscription_holding_a_stripe_subscription_id_is_left_alone(): void {
+		$subscription = $this->create_subscription();
+		$subscription->update_meta_data( '_wcpay_subscription_id', 'sub_1UfFy0J4W8z6ZKLBstripe' );
+		$subscription->save();
+		$this->bootstrap( RequestTypeUtil::CRON );
+
+		$this->run_action( self::RENEWAL_ACTION, array( 'subscription_id' => $subscription->get_id() ) );
+
+		$this->assertFalse( wc_get_order( $subscription->get_id() )->get_requires_manual_renewal() );
+		$this->assertSame( 0, $this->count_notes( wc_get_order( $subscription->get_id() ), self::FORCE_MANUAL_NOTE ) );
+		$this->assertSame( self::IDEAL, $this->last_renewal( $subscription )->get_payment_method() );
+		$this->assertSame( array(), $this->invoiced_order_ids() );
+	}
+
+	/**
+	 * @testdox The merchant's retry of an old pending order after the subscription was reactivated changes nothing.
+	 */
+	public function test_a_retry_of_a_reactivated_subscriptions_old_order_changes_nothing(): void {
+		$subscription = $this->create_subscription();
+		$subscription->update_status( 'on-hold' );
+		$renewal = ScheduledRenewalDoubles::create_renewal_order( wc_get_order( $subscription->get_id() ) );
+		$renewal->set_status( 'pending' );
+		$renewal->save();
+		wc_get_order( $subscription->get_id() )->update_status( 'active' );
+		$this->bootstrap( RequestTypeUtil::ADMIN );
+		WC()->payment_gateways();
+
+		ScheduledRenewalDoubles::process_retry_renewal_payment_action_request( wc_get_order( $renewal->get_id() ) );
+
+		$this->assertSame( array( 'active', false ), array( wc_get_order( $subscription->get_id() )->get_status(), wc_get_order( $subscription->get_id() )->get_requires_manual_renewal() ) );
+		$this->assertSame( self::IDEAL, wc_get_order( $renewal->get_id() )->get_payment_method() );
+		$this->assertSame( array(), $this->invoiced_order_ids() );
+	}
+
+	/**
+	 * @testdox The merchant's retry of the older of two outstanding renewals changes nothing, and the latest still offers the retry.
+	 */
+	public function test_a_retry_of_an_older_renewal_changes_nothing(): void {
+		$subscription = $this->create_subscription();
+		$subscription->update_status( 'on-hold' );
+		$older  = ScheduledRenewalDoubles::create_renewal_order( wc_get_order( $subscription->get_id() ) );
+		$latest = ScheduledRenewalDoubles::create_renewal_order( wc_get_order( $subscription->get_id() ) );
+		$this->bootstrap( RequestTypeUtil::ADMIN );
+		WC()->payment_gateways();
+
+		ScheduledRenewalDoubles::process_retry_renewal_payment_action_request( wc_get_order( $older->get_id() ) );
+
+		$this->assertFalse( wc_get_order( $subscription->get_id() )->get_requires_manual_renewal() );
+		$this->assertSame( self::IDEAL, wc_get_order( $older->get_id() )->get_payment_method() );
+		$this->assertSame( array(), $this->invoiced_order_ids() );
+		$this->assertTrue( ScheduledRenewalDoubles::can_renewal_order_be_retried( wc_get_order( $latest->get_id() ) ) );
+	}
+
+	/**
+	 * @testdox The merchant's retry of the latest renewal in another status a store made payable (on hold) changes nothing: the invoice would carry no pay link.
+	 */
+	public function test_a_retry_of_an_order_in_another_payable_status_changes_nothing(): void {
+		$subscription = $this->create_subscription();
+		$subscription->update_status( 'on-hold' );
+		$renewal = ScheduledRenewalDoubles::create_renewal_order( wc_get_order( $subscription->get_id() ) );
+		$renewal->set_status( 'on-hold' );
+		$renewal->save();
+		add_filter(
+			'woocommerce_valid_order_statuses_for_payment',
+			static fn( $statuses ) => array_merge( (array) $statuses, array( 'on-hold' ) )
+		);
+		$this->bootstrap( RequestTypeUtil::ADMIN );
+		WC()->payment_gateways();
+		$this->assertTrue( ScheduledRenewalDoubles::can_renewal_order_be_retried( wc_get_order( $renewal->get_id() ) ), 'The order screen offers the retry.' );
+
+		ScheduledRenewalDoubles::process_retry_renewal_payment_action_request( wc_get_order( $renewal->get_id() ) );
+
+		$this->assertFalse( wc_get_order( $subscription->get_id() )->get_requires_manual_renewal() );
+		$this->assertSame( self::IDEAL, wc_get_order( $renewal->get_id() )->get_payment_method() );
+		$this->assertSame( array(), $this->invoiced_order_ids() );
+	}
+
+	/**
+	 * @testdox The invoice for a due iDEAL renewal shows the order's totals with no payment method line, as Subscriptions' manual invoice does.
+	 */
+	public function test_the_invoice_shows_no_payment_method(): void {
+		$subscription = $this->create_subscription();
+		$this->bootstrap( RequestTypeUtil::CRON );
+
+		$this->run_action( self::RENEWAL_ACTION, array( 'subscription_id' => $subscription->get_id() ) );
+
+		$body = (string) $this->invoice_mail()['message'];
+		$this->assertStringContainsString( 'Total:', $body, 'The invoice shows the totals.' );
+		$this->assertStringNotContainsString( 'Payment method:', $body );
 	}
 
 	/**
