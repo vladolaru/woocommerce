@@ -879,6 +879,30 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox An unreadable charge response records the payment service's error on the order.
+	 */
+	public function test_unreadable_charge_response_records_the_reason_on_the_order(): void {
+		$order                 = $this->create_woopayments_order();
+		$http_client           = new FakeHttpClient();
+		$http_client->response = self::http_raw( 200, array(), '' );
+		$gateway               = $this->create_gateway_with_real_duplicate_guard( $http_client );
+
+		$_POST['wcpay-payment-method'] = 'pm_card_visa';
+		try {
+			$gateway->process_payment( $order->get_id() );
+		} finally {
+			unset( $_POST['wcpay-payment-method'] );
+		}
+
+		$notes = self::note_texts_containing( $order, '<strong>failed</strong>' );
+		$this->assertCount( 1, $notes );
+		$this->assertSame(
+			"A payment of \$10.00 failed to complete with the following message: Http request failed. Reason: The payment service's response could not be read.",
+			html_entity_decode( wp_strip_all_tags( $notes[0] ), ENT_QUOTES )
+		);
+	}
+
+	/**
 	 * @testdox A charge answered with $_dataName fails as a timed-out charge does, keeps its key and ambiguity record, and the shopper's next press sends the same key.
 	 *
 	 * The platform may have charged before its answer was spoiled, so nothing is decided on it: the outcome, the shopper's

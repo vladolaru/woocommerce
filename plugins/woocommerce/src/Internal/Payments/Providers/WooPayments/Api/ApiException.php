@@ -116,7 +116,7 @@ class ApiException extends RuntimeException {
 			sprintf(
 				/* translators: %1$s: original error message. */
 				__( 'Http request failed. Reason: %1$s', 'woocommerce' ),
-				__( 'WooPayments answered with a body that is not the JSON its endpoint returns.', 'woocommerce' )
+				__( "The payment service's response could not be read.", 'woocommerce' )
 			),
 			'wcpay_http_request_failed',
 			500,

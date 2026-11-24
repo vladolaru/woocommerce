@@ -5433,7 +5433,7 @@ class ClientTest extends WC_Unit_Test_Case {
 	 * request path.
 	 *
 	 * @testdox Should reject a promotions response with status $status whose JSON body cannot be decoded.
-	 * @testWith [200, "Http request failed. Reason: WooPayments answered with a body that is not the JSON its endpoint returns."]
+	 * @testWith [200, "Http request failed. Reason: The payment service's response could not be read."]
 	 *           [201, "Unable to decode response from WooPayments."]
 	 *
 	 * @param int    $status  HTTP status of the response.
