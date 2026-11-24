@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\PaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\MerchantRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\HttpClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
@@ -395,6 +396,69 @@ class WooPaymentsGatewayRestSettingsTest extends WC_Unit_Test_Case {
 		$this->assertSame( $option, $gateways['woocommerce_payments']['settings']['upe_enabled_payment_method_ids']['options']['afterpay_clearpay'] ?? null );
 		$this->assertSame( 'WooPayments (' . $brand . ')', $gateways['woocommerce_payments_afterpay_clearpay']['method_title'] );
 		$this->assertSame( 'warm' === $state ? array() : array( 'GET accounts' ), $this->calls );
+	}
+
+	/**
+	 * Give the account entry a stored token flag past its expiry, or remove it, with the platform answering the opposite.
+	 *
+	 * @param bool|null $stored_disabled Stored `ece_confirmation_tokens_disabled`, or null for no stored account.
+	 */
+	private function store_token_flag( ?bool $stored_disabled ): void {
+		$this->account['ece_confirmation_tokens_disabled'] = false === $stored_disabled;
+		$cache = wc_get_container()->get( WooPaymentsDatabaseCache::class );
+		if ( null === $stored_disabled ) {
+			$cache->delete( WooPaymentsDatabaseCache::ACCOUNT_KEY );
+			return;
+		}
+		$entry = $cache->get_contents( WooPaymentsDatabaseCache::ACCOUNT_KEY );
+		$entry['data']['ece_confirmation_tokens_disabled'] = $stored_disabled;
+		$cache->write( WooPaymentsDatabaseCache::ACCOUNT_KEY, $entry );
+	}
+
+	/**
+	 * Registering the gateways on an expired or missing account entry makes no account request.
+	 *
+	 * @testWith [false]
+	 *           [true]
+	 *           [null]
+	 * @param bool|null $stored_disabled Stored `ece_confirmation_tokens_disabled`, or null for no stored account.
+	 */
+	public function test_gateway_registration_on_an_expired_account_makes_no_account_request( ?bool $stored_disabled ): void {
+		$this->boot_routes();
+		$this->store_token_flag( $stored_disabled );
+		WC()->payment_gateways()->payment_gateways = array();
+		$this->calls                               = array();
+		WC()->payment_gateways()->init();
+		$this->assertSame( array(), $this->calls );
+	}
+
+	/**
+	 * The token flag answers what is stored, as Amazon Pay's listing does, until an ordinary refresh brings the platform's flag.
+	 *
+	 * @testWith [false]
+	 *           [true]
+	 *           [null]
+	 * @param bool|null $stored_disabled Stored `ece_confirmation_tokens_disabled`, or null for no stored account.
+	 */
+	public function test_token_flag_answers_the_stored_flag( ?bool $stored_disabled ): void {
+		$this->boot_routes();
+		$this->store_token_flag( $stored_disabled );
+		$stored_enabled = false === $stored_disabled;
+		$account        = wc_get_container()->get( WooPaymentsAccountService::class );
+		$this->calls    = array();
+		$this->assertSame( $stored_enabled, $account->is_ece_confirmation_tokens_enabled() );
+		WC()->payment_gateways()->payment_gateways = array();
+		WC()->payment_gateways()->init();
+		$this->assertSame( $stored_enabled, isset( WC()->payment_gateways()->payment_gateways()['woocommerce_payments_amazon_pay'] ) );
+		$this->assertSame( array(), $this->calls );
+
+		$account->get_cached_account_data();
+		$this->assertSame( array( 'GET accounts' ), $this->calls );
+		$platform_enabled = empty( $this->account['ece_confirmation_tokens_disabled'] );
+		$this->assertSame( $platform_enabled, $account->is_ece_confirmation_tokens_enabled() );
+		$registered = wc_get_container()->get( PaymentMethodRegistry::class )->get_registered( $account );
+		$this->assertSame( $platform_enabled, isset( $registered['amazon_pay'] ) );
+		$this->assertSame( array( 'GET accounts' ), $this->calls );
 	}
 
 	/** Checkout availability and icons can still refresh a stale account. */

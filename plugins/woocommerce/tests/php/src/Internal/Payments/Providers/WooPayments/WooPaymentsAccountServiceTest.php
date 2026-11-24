@@ -1642,6 +1642,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_cached_account_data' ) )
 			->getMock();
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ), wc_get_container()->get( WooPaymentsDatabaseCache::class ) );
 		$account_service->method( 'get_cached_account_data' )->willReturn( $account_data );
 
 		$this->assertSame( $expected, $account_service->is_ece_confirmation_tokens_enabled() );

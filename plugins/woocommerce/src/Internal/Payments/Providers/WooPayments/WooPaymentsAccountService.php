@@ -1135,15 +1135,16 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether ECE confirmation tokens are enabled: an account is cached and does not turn them off, as client 11.1.0
-	 * `WC_Payments_Features::is_ece_confirmation_tokens_enabled()` (class-wc-payments-features.php:438-442).
+	 * Tell whether ECE confirmation tokens are enabled: an account is stored and does not turn them off. It reads the stored
+	 * account even past its expiry and never fetches it, as client 11.3.0 `WC_Payments_Features::is_ece_confirmation_tokens_enabled()`
+	 * does (class-wc-payments-features.php:463-466, class-database-cache.php:213-224).
 	 *
 	 * @since 11.2.0
 	 *
 	 * @return bool
 	 */
 	public function is_ece_confirmation_tokens_enabled(): bool {
-		$account_data = $this->get_cached_account_data();
+		$account_data = $this->run_without_account_refresh( array( $this, 'get_cached_account_data' ) );
 
 		return array() !== $account_data && empty( $account_data['ece_confirmation_tokens_disabled'] );
 	}
