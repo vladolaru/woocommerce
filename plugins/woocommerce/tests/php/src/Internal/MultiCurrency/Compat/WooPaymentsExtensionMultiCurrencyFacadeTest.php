@@ -3,6 +3,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Compat;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\WooCommerceNameYourPrice;
 use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Internal\MultiCurrency\Compat\WooPaymentsExtensionFacadeLoader;
@@ -64,13 +66,11 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 	 */
 	public function test_name_your_price_limits_use_one_conversion(): void {
 		$this->declare_facade();
-		$singleton                     = require dirname( __DIR__ ) . '/Integrations/Fixtures/name-your-price-cart.inc';
-		$GLOBALS['wc_name_your_price'] = $singleton;
-		class_alias( get_class( $singleton ), 'WC_Name_Your_Price' );
+		$this->load_name_your_price_fixture();
 		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.88' );
 		update_option( 'wcpay_multi_currency_price_rounding_eur', '1.00' );
 		add_filter( 'wcpay_multi_currency_override_selected_currency', static fn() => 'EUR' );
-		wc_get_container()->get( \Automattic\WooCommerce\Internal\MultiCurrency\Integrations\WooCommerceNameYourPrice::class )->register();
+		wc_get_container()->get( WooCommerceNameYourPrice::class )->register();
 		$this->assertTrue( function_exists( 'WC_Payments_Multi_Currency' ) );
 		$this->setExpectedIncorrectUsage( 'WC_Payments_Multi_Currency()' );
 		$this->expect_facade_warnings( 'get_price' );
@@ -81,6 +81,84 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 		$this->assertSame( 22.0, $minimum );
 		$this->assertSame( 44.0, apply_filters( 'wc_nyp_raw_suggested_price', 50.0 ) );
 		$this->assertSame( 88.0, apply_filters( 'wc_nyp_raw_maximum_price', 100.0 ) );
+	}
+
+	/**
+	 * @testdox Session restore removes the unavailable EUR price and keeps a line convertible to held EUR.
+	 * @testWith [false]
+	 *           [true]
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 *
+	 * @param bool $held Whether EUR is held as the selected currency.
+	 */
+	public function test_name_your_price_session_after_disabling_eur( bool $held ): void {
+		$this->prepare_name_your_price_cart( $held );
+		$product = \WC_Helper_Product::create_simple_product();
+		WC()->session->set(
+			'cart',
+			array(
+				'nyp' => array(
+					'product_id'   => $product->get_id(),
+					'variation_id' => 0,
+					'quantity'     => 1,
+					'nyp'          => 15.0,
+					'nyp_original' => 15.0,
+					'nyp_currency' => $held ? 'USD' : 'EUR',
+				),
+			)
+		);
+
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
+		( new \WC_Cart_Session( WC()->cart ) )->get_cart_from_session();
+
+		$lines = WC()->cart->get_cart();
+		if ( $held ) {
+			$this->assertArrayHasKey( 'nyp', $lines );
+			$this->assertSame( 13.5, $lines['nyp']['nyp'] );
+			$this->assertSame( 15.0, $lines['nyp']['nyp_original'] );
+		} else {
+			$this->assertArrayNotHasKey( 'nyp', $lines );
+			$this->assertStringContainsString( $product->get_name(), wc_get_notices( 'error' )[0]['notice'] );
+		}
+	}
+
+	/**
+	 * @testdox Order again skips only the unconvertible NYP line and accepts a conversion to held EUR.
+	 * @testWith [false]
+	 *           [true]
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 *
+	 * @param bool $held Whether EUR is held as the selected currency.
+	 */
+	public function test_name_your_price_reorder_after_disabling_eur( bool $held ): void {
+		$this->prepare_name_your_price_cart( $held );
+		$customer = \WC_Helper_Customer::create_customer();
+		wp_set_current_user( $customer->get_id() );
+		$product  = \WC_Helper_Product::create_simple_product();
+		$ordinary = \WC_Helper_Product::create_simple_product();
+		$order    = new \WC_Order();
+		$order->set_customer_id( $customer->get_id() );
+		$order->set_currency( $held ? 'USD' : 'EUR' );
+		$order->stage_product_item( $product )->add_meta_data( '_wc_nyp_price', '15.00' );
+		$order->stage_product_item( $ordinary );
+		$order->set_status( OrderStatus::COMPLETED );
+		$order->save();
+
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
+		$populate = new \ReflectionMethod( \WC_Cart_Session::class, 'populate_cart_from_order' );
+		$populate->setAccessible( true );
+		$cart  = $populate->invoke( new \WC_Cart_Session( WC()->cart ), $order->get_id(), array() );
+		$lines = array_column( $cart, null, 'product_id' );
+		$this->assertArrayHasKey( $ordinary->get_id(), $lines );
+		if ( $held ) {
+			$this->assertArrayHasKey( $product->get_id(), $lines );
+			$this->assertSame( 13.5, $lines[ $product->get_id() ]['nyp'] );
+			$this->assertSame( 15.0, $lines[ $product->get_id() ]['nyp_original'] );
+		} else {
+			$this->assertArrayNotHasKey( $product->get_id(), $lines );
+		}
 	}
 
 	/**
@@ -1059,6 +1137,74 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 			$message = $replacements[ $member ] ?? "$member is a compatibility shim for the WooPayments extension with no replacement in WooCommerce and will be removed in 12.0.0.";
 			$this->assertSame( array( array( esc_html( $message ), '11.4.0' ) ), $warnings, $member );
 		}
+	}
+
+	/** Load the Name Your Price singleton in this test's isolated PHP process. */
+	private function load_name_your_price_fixture(): void {
+		$singleton = require dirname( __DIR__ ) . '/Integrations/Fixtures/name-your-price-cart.inc';
+		$this->assertIsObject( $singleton );
+		$GLOBALS['wc_name_your_price'] = $singleton;
+		class_alias( get_class( $singleton ), 'WC_Name_Your_Price' );
+	}
+
+	/**
+	 * Model the Name Your Price 4.0.1 cart callbacks with their real priorities and the WooPayments facade.
+	 *
+	 * @param bool $held Whether an order holds the disabled EUR currency.
+	 */
+	private function prepare_name_your_price_cart( bool $held ): void {
+		$this->declare_facade();
+		$this->load_name_your_price_fixture();
+		wc_get_container()->get( WooCommerceNameYourPrice::class )->register();
+		if ( $held ) {
+			add_filter(
+				'wcpay_multi_currency_override_selected_currency',
+				static function () {
+					StateBuilder::set_order_currency_override( 'EUR' );
+					return 'EUR';
+				}
+			);
+		}
+		$convert = function ( $amount, $from ) {
+			$this->setExpectedIncorrectUsage( 'WC_Payments_Multi_Currency()' );
+			$this->expect_facade_warnings( 'get_selected_currency', 'get_raw_conversion' );
+			$facade = WC_Payments_Multi_Currency();
+			$to     = $facade->get_selected_currency()->get_code();
+			return $to === $from ? $amount : $facade->get_raw_conversion( $amount, $to, $from );
+		};
+		add_filter(
+			'woocommerce_order_again_cart_item_data',
+			static function ( $line, $item ) {
+				$price = $item->get_meta( '_wc_nyp_price' );
+				return is_numeric( $price ) ? array( 'nyp' => (float) $price ) + $line : $line;
+			},
+			5,
+			2
+		);
+		add_filter(
+			'woocommerce_order_again_cart_item_data',
+			static function ( $line, $item, $order ) use ( $convert ) {
+				if ( isset( $line['nyp'] ) && is_numeric( $line['nyp'] ) ) {
+					$line['nyp_currency'] = $order->get_currency();
+					$line['nyp_original'] = $line['nyp'];
+					$line['nyp']          = $convert( $line['nyp'], $line['nyp_currency'] );
+				}
+				return $line;
+			},
+			10,
+			3
+		);
+		add_filter(
+			'woocommerce_get_cart_item_from_session',
+			static function ( $line ) use ( $convert ) {
+				if ( isset( $line['nyp_original'], $line['nyp_currency'] ) ) {
+					$line['nyp'] = $convert( $line['nyp_original'], $line['nyp_currency'] );
+					$line['data']->set_price( $line['nyp'] );
+				}
+				return $line;
+			},
+			20
+		);
 	}
 
 	/**

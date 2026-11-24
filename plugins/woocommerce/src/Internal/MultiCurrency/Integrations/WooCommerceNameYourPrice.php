@@ -27,6 +27,8 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
  */
 class WooCommerceNameYourPrice implements RegisterHooksInterface {
 
+	private const SKIP_REORDER_KEY = '_wc_multi_currency_skip_nyp_reorder';
+
 	private const NYP_CURRENCY_META_KEY = '_wcpay_multi_currency_nyp_currency';
 
 	/**
@@ -105,9 +107,11 @@ class WooCommerceNameYourPrice implements RegisterHooksInterface {
 			return;
 		}
 
+		add_filter( 'woocommerce_pre_remove_cart_item_from_session', array( $this, 'remove_unconvertible_cart_item' ), 10, 4 );
+
 		// Name Your Price registers its own WooPayments conversions from 4.0.0.
-		$nyp = function_exists( 'WC_Name_Your_Price' ) ? \WC_Name_Your_Price() : null;
-		if ( isset( $nyp->version ) && version_compare( $nyp->version, '4.0.0', '>=' ) ) {
+		if ( $this->nyp_handles_conversions() ) {
+			add_filter( 'woocommerce_order_again_cart_item_data', array( $this, 'guard_reordered_cart_item' ), 9, 3 );
 			return;
 		}
 
@@ -116,10 +120,59 @@ class WooCommerceNameYourPrice implements RegisterHooksInterface {
 		add_filter( 'wc_nyp_raw_suggested_price', array( $this, 'get_nyp_prices' ) );
 		add_filter( 'woocommerce_add_cart_item_data', array( $this, 'add_initial_currency' ), 20, 3 );
 		add_filter( 'woocommerce_get_cart_item_from_session', array( $this, 'convert_cart_currency' ), 20, 2 );
-		add_filter( 'woocommerce_pre_remove_cart_item_from_session', array( $this, 'remove_unconvertible_cart_item' ), 10, 4 );
 		add_filter( StateBuilder::FILTER_PREFIX . 'should_convert_product_price', array( $this, 'should_convert_product_price' ), 50, 2 );
 		add_filter( 'wc_nyp_edit_in_cart_args', array( $this, 'edit_in_cart_args' ), 10, 2 );
 		add_filter( 'wc_nyp_get_initial_price', array( $this, 'get_initial_price' ), 10, 3 );
+	}
+
+	/**
+	 * Whether Name Your Price registers its own WooPayments conversions.
+	 */
+	private function nyp_handles_conversions(): bool {
+		$nyp = function_exists( 'WC_Name_Your_Price' ) ? \WC_Name_Your_Price() : null;
+		return isset( $nyp->version ) && version_compare( $nyp->version, '4.0.0', '>=' );
+	}
+
+	/**
+	 * Check a reordered line after Name Your Price restores its amount and before it tries to convert it.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $line  Cart item data.
+	 * @param mixed $item  Original order item.
+	 * @param mixed $order Original order.
+	 * @return mixed
+	 */
+	public function guard_reordered_cart_item( $line, $item, $order ) {
+		if ( ! is_array( $line ) || ! is_numeric( $line['nyp'] ?? null ) || ! $order instanceof \WC_Order || '' === $order->get_currency() ) {
+			return $line;
+		}
+		if ( $this->can_convert_from( $order->get_currency() ) ) {
+			return $line;
+		}
+
+		// Without the amount NYP skips conversion. Cart validation then skips just this order item.
+		unset( $line['nyp'] );
+		$line[ self::SKIP_REORDER_KEY ] = true;
+		add_filter( 'woocommerce_add_to_cart_validation', array( $this, 'validate_reordered_cart_item' ), 10, 6 );
+		return $line;
+	}
+
+	/**
+	 * Skip a reordered item marked by the currency guard.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $valid        Result of earlier validation.
+	 * @param mixed $product_id   Product ID.
+	 * @param mixed $quantity     Quantity.
+	 * @param mixed $variation_id Variation ID.
+	 * @param mixed $variations   Variation attributes.
+	 * @param mixed $line         Cart item data, when provided.
+	 * @return mixed
+	 */
+	public function validate_reordered_cart_item( $valid, $product_id, $quantity, $variation_id = 0, $variations = array(), $line = array() ) {
+		return is_array( $line ) && ! empty( $line[ self::SKIP_REORDER_KEY ] ) ? false : $valid;
 	}
 
 	/**
@@ -213,29 +266,46 @@ class WooCommerceNameYourPrice implements RegisterHooksInterface {
 			return $remove;
 		}
 
-		$selected_currency_code = $this->get_selected_currency_code();
-		if ( $values['nyp_currency'] === $selected_currency_code ) {
+		if ( $this->can_convert_from( (string) $values['nyp_currency'] ) ) {
 			return $remove;
 		}
 
-		try {
-			$this->get_price_converter()->get_raw_conversion( (float) $values['nyp_original'], $selected_currency_code, (string) $values['nyp_currency'] );
-			return $remove;
-		} catch ( InvalidCurrencyException | InvalidCurrencyRateException $e ) {
-			// Notice functions load with the front-end includes or wc_load_cart(), not when code calls WC()->initialize_cart() directly.
-			if ( $product instanceof \WC_Product && function_exists( 'wc_add_notice' ) ) {
-				wc_add_notice(
-					sprintf(
-						/* translators: %1$s: product name. %2$s: product permalink. */
-						__( '%1$s has been removed from your cart because its price was entered in a currency this store no longer accepts. You can add it back to your cart <a href="%2$s">here</a>.', 'woocommerce' ),
-						esc_html( $product->get_name() ),
-						esc_url( $product->get_permalink() )
-					),
-					'error'
-				);
-			}
+		// Notice functions load with the front-end includes or wc_load_cart(), not when code calls WC()->initialize_cart() directly.
+		if ( $product instanceof \WC_Product && function_exists( 'wc_add_notice' ) ) {
+			wc_add_notice(
+				sprintf(
+					/* translators: %1$s: product name. %2$s: product permalink. */
+					__( '%1$s has been removed from your cart because its price was entered in a currency this store no longer accepts. You can add it back to your cart <a href="%2$s">here</a>.', 'woocommerce' ),
+					esc_html( $product->get_name() ),
+					esc_url( $product->get_permalink() )
+				),
+				'error'
+			);
+		}
+		return true;
+	}
 
+	/**
+	 * Check the same raw conversion as the price callback, including a selected currency held by an order.
+	 *
+	 * @param string $source Currency in which the price was entered.
+	 */
+	private function can_convert_from( string $source ): bool {
+		$state    = $this->get_state_builder()->build();
+		$selected = $state->get_selected_currency()->get_code();
+		if ( $selected === $source ) {
 			return true;
+		}
+
+		// The facade uses the store currency when Name Your Price passes an empty source code.
+		if ( '' === $source && $this->nyp_handles_conversions() ) {
+			$source = $state->get_default_currency()->get_code();
+		}
+		try {
+			$this->get_price_converter()->get_raw_conversion( 1.0, $selected, $source );
+			return true;
+		} catch ( InvalidCurrencyException | InvalidCurrencyRateException $e ) {
+			return false;
 		}
 	}
 
