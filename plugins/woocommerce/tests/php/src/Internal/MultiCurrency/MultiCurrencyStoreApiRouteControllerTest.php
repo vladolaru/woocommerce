@@ -380,21 +380,23 @@ class MultiCurrencyStoreApiRouteControllerTest extends WC_Unit_Test_Case {
 	 * Client 11.3.0 `tests/unit/multi-currency/test-class-multi-currency.php:2429-2499`: WordPress serves a `rest_route` posted to
 	 * any URL, which core does not treat as a REST request.
 	 *
-	 * @param string $rest_route_in_body          The posted `rest_route`, or '' for none.
-	 * @param bool   $expected_store_api_request  Whether the route runs as a Store API request.
+	 * @param string $route_namespace REST namespace.
+	 * @param string $path            Resource path in that namespace.
+	 * @param bool   $posted          Whether the route is posted to the page.
 	 */
-	public function test_classifies_a_store_api_route_dispatched_on_a_page_url( string $rest_route_in_body, bool $expected_store_api_request ): void {
-		if ( '' !== $rest_route_in_body ) {
-			$_POST['rest_route'] = $rest_route_in_body;
+	public function test_classifies_a_store_api_route_dispatched_on_a_page_url( string $route_namespace, string $path, bool $posted ): void {
+		$route = '/' . $route_namespace . $path;
+		if ( $posted ) {
+			$_POST['rest_route'] = $route;
 		}
 		$this->start_request( '/', self::SHOP_REFERER );
 		$request_context = wc_get_container()->get( RequestContext::class );
 		$seen            = array();
 		$this->register_routes(
-			static function () use ( &$seen, $request_context ): void {
+			static function () use ( &$seen, $request_context, $route_namespace, $path ): void {
 				register_rest_route(
-					'wc/store/v1',
-					'/mc-page-stub',
+					$route_namespace,
+					$path,
 					array(
 						'methods'             => 'POST',
 						'callback'            => static function () use ( &$seen, $request_context ) {
@@ -412,12 +414,12 @@ class MultiCurrencyStoreApiRouteControllerTest extends WC_Unit_Test_Case {
 			}
 		);
 
-		rest_do_request( new WP_REST_Request( 'POST', '/wc/store/v1/mc-page-stub' ) );
+		rest_do_request( new WP_REST_Request( 'POST', $route ) );
 
-		$this->assertSame( $expected_store_api_request, $seen[0], 'The route runs as a Store API request only when the request posted it.' );
+		$this->assertSame( $posted, $seen[0], 'The route runs as a Store API request only when the request posted it.' );
 		// The internal dispatch is a control for the classification only: its page also follows the loaded session, so a
 		// currency assertion there could not fail.
-		if ( $expected_store_api_request ) {
+		if ( $posted ) {
 			$this->assertSame( 'EUR', $seen[1], "The page's currency follows the session the route loaded." );
 		}
 		$this->assertFalse( $request_context->is_store_api_request(), 'The request is not left a Store API request.' );
@@ -426,12 +428,13 @@ class MultiCurrencyStoreApiRouteControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * A Store API route posted as `rest_route` on a page URL, and one dispatched internally on a page.
 	 *
-	 * @return array<string,array{string,bool}>
+	 * @return array<string,array{string,string,bool}>
 	 */
 	public function provide_store_api_routes_dispatched_on_a_page_url(): array {
 		return array(
-			'rest_route in the request'          => array( '/wc/store/v1/mc-page-stub', true ),
-			'internal dispatch on a normal page' => array( '', false ),
+			'rest_route in the request'          => array( 'wc/store/v1', '/mc-page-stub', true ),
+			'posted agentic checkout route'      => array( 'wc/ucp/v1', '/carts', true ),
+			'internal dispatch on a normal page' => array( 'wc/store/v1', '/mc-page-stub', false ),
 		);
 	}
 

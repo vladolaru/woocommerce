@@ -39,6 +39,7 @@ class RequestContextTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tear_down(): void {
+		RequestContext::set_store_api_address( false );
 		$_REQUEST = $this->original_request;
 		$_SERVER  = $this->original_server;
 
@@ -202,8 +203,7 @@ class RequestContextTest extends WC_Unit_Test_Case {
 	 * @param string|null $rest_route  The rest_route query argument, or null when absent.
 	 */
 	public function test_detects_store_api_and_rest_requests_without_resolving_woocommerce_singleton( string $method, string $request_uri, ?string $rest_route ): void {
-		$sentinel = $this->install_woocommerce_singleton_sentinel();
-		$sut      = new class() extends RequestContext {
+		$sut = new class() extends RequestContext {
 			/**
 			 * Expose REST request detection for testing.
 			 *
@@ -219,6 +219,8 @@ class RequestContextTest extends WC_Unit_Test_Case {
 			$_GET['rest_route'] = $rest_route;
 		}
 
+		RequestContext::set_store_api_address( (bool) WC()->is_store_api_request() );
+		$sentinel = $this->install_woocommerce_singleton_sentinel();
 		try {
 			$this->assertTrue( $sut->$method(), 'The request should be detected from the request URI or the rest_route argument.' );
 		} finally {
@@ -257,19 +259,21 @@ class RequestContextTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a request context test double.
 	 *
-	 * @param bool      $is_admin    Whether the request is admin.
-	 * @param bool      $doing_cron  Whether cron is running.
-	 * @param bool      $is_rest     Whether this is a REST request.
-	 * @param bool|null $is_store_api Store API result, or null to use URI fallback.
+	 * @param bool $is_admin     Whether the request is admin.
+	 * @param bool $doing_cron   Whether cron is running.
+	 * @param bool $is_rest      Whether this is a REST request.
+	 * @param bool $is_store_api Whether this is a Store API request.
 	 * @return RequestContext
 	 */
 	private function create_context(
 		bool $is_admin = false,
 		bool $doing_cron = false,
 		bool $is_rest = false,
-		?bool $is_store_api = false
+		bool $is_store_api = false
 	): RequestContext {
-		return new class( $is_admin, $doing_cron, $is_rest, $is_store_api ) extends RequestContext {
+		RequestContext::set_store_api_address( $is_store_api );
+
+		return new class( $is_admin, $doing_cron, $is_rest ) extends RequestContext {
 			/**
 			 * Whether the request is admin.
 			 *
@@ -292,25 +296,16 @@ class RequestContextTest extends WC_Unit_Test_Case {
 			private bool $is_rest;
 
 			/**
-			 * Store API result.
-			 *
-			 * @var bool|null
-			 */
-			private ?bool $is_store_api;
-
-			/**
 			 * Constructor.
 			 *
-			 * @param bool      $is_admin    Whether the request is admin.
-			 * @param bool      $doing_cron  Whether cron is running.
-			 * @param bool      $is_rest     Whether this is a REST request.
-			 * @param bool|null $is_store_api Store API result, or null to use URI fallback.
+			 * @param bool $is_admin   Whether the request is admin.
+			 * @param bool $doing_cron Whether cron is running.
+			 * @param bool $is_rest    Whether this is a REST request.
 			 */
-			public function __construct( bool $is_admin, bool $doing_cron, bool $is_rest, ?bool $is_store_api ) {
-				$this->is_admin     = $is_admin;
-				$this->doing_cron   = $doing_cron;
-				$this->is_rest      = $is_rest;
-				$this->is_store_api = $is_store_api;
+			public function __construct( bool $is_admin, bool $doing_cron, bool $is_rest ) {
+				$this->is_admin   = $is_admin;
+				$this->doing_cron = $doing_cron;
+				$this->is_rest    = $is_rest;
 			}
 
 			/**
@@ -338,15 +333,6 @@ class RequestContextTest extends WC_Unit_Test_Case {
 			 */
 			public function is_wc_rest_api_request(): bool {
 				return $this->is_rest;
-			}
-
-			/**
-			 * Get the WooCommerce Store API request result.
-			 *
-			 * @return bool|null
-			 */
-			protected function get_wc_store_api_request(): ?bool {
-				return $this->is_store_api;
 			}
 		};
 	}

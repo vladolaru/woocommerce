@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 use Automattic\WooCommerce\Container;
 use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\UsageDetector;
 use Automattic\WooCommerce\Internal\MultiCurrency\Shadow\MultiCurrencyShadowMode;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -194,10 +195,11 @@ final class MultiCurrencyBootstrap {
 	 *
 	 * @since 11.2.0
 	 *
-	 * @param Container|RuntimeContainer $container    Runtime dependency container.
-	 * @param string                     $request_type The request type, one of the RequestTypeUtil constants.
+	 * @param Container|RuntimeContainer $container         Runtime dependency container.
+	 * @param string                     $request_type      The request type, one of the RequestTypeUtil constants.
+	 * @param bool                       $store_api_address Whether WooCommerce classified the request address as Store API.
 	 */
-	public function register( $container, string $request_type ): void {
+	public function register( $container, string $request_type, bool $store_api_address = false ): void {
 		$arbiter = $container->get( MultiCurrencyRuntimeArbiter::class );
 		// Before the arbiter reads the feature option, so the first request after the extension stops owning payments runs on the handed-over value.
 		MultiCurrencyFeatureController::sync_payments_owner( $arbiter->is_payments_extension_owner(), $arbiter->is_payments_builtin_owner() );
@@ -209,6 +211,8 @@ final class MultiCurrencyBootstrap {
 		if ( MultiCurrencyRuntimeArbiter::OWNER_NONE === $owner ) {
 			return;
 		}
+
+		RequestContext::set_store_api_address( $store_api_address );
 
 		if ( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION === $owner ) {
 			/**

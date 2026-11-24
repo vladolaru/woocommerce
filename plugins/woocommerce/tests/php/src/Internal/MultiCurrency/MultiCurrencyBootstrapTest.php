@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyBootstrap;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyExplicitPriceController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRestRequestOverrideController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\WooCommerceSubscriptions;
@@ -84,6 +85,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 
 	/** Clear the WP_CLI override the CLI case sets, the subscription globals, and the services and screen a booted request leaves behind. */
 	public function tearDown(): void {
+		RequestContext::set_store_api_address( false );
 		remove_action( FeaturesController::FEATURE_ENABLED_CHANGED_ACTION, array( MultiCurrencyFeatureController::class, 'mirror_extension_flag' ), 10 );
 		$this->delete_handover_options();
 		unset( $GLOBALS['wcs_subscription'], $GLOBALS['wcs_subscription_loads'] );
@@ -498,6 +500,53 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		);
 	}
 
+	/**
+	 * @testdox Should use WooCommerce's Store API classification when registering currency overrides.
+	 *
+	 * @testWith ["/sample-page/?x=/wp-json/wc/store/v1/cart", false]
+	 *           ["/wp-json/wc/ucp/v1/carts", true, false]
+	 *           ["/?rest_route=/wc/ucp/v1/carts", true]
+	 *           ["/shop/wp-json/wc/store/v1/cart", true]
+	 *           ["/shop/?rest_route=/wc/store/v1/cart", true]
+	 *           ["/wp-json/wc/v3/orders", false, true]
+	 *
+	 * @param string    $uri           Request URI at startup.
+	 * @param bool      $is_store_api  Expected Store API classification.
+	 * @param bool|null $has_overrides Whether to expect currency overrides on the REST route, when checked.
+	 */
+	public function test_store_api_address_at_startup( string $uri, bool $is_store_api, ?bool $has_overrides = null ): void {
+		$this->give_multi_currency_to_core( true );
+		$container       = wc_get_container();
+		$original_server = $_SERVER;
+		try {
+			$_SERVER['REQUEST_URI'] = $uri;
+			wp_parse_str( (string) wp_parse_url( $uri, PHP_URL_QUERY ), $query );
+			$_GET = $query;
+			$load = new \ReflectionMethod( \WooCommerce::class, 'load_payments_and_multi_currency' );
+			$load->setAccessible( true );
+			$load->invoke( WC(), $container );
+
+			$this->assertSame( $is_store_api, $container->get( RequestContext::class )->is_store_api_request() );
+			if ( null !== $has_overrides ) {
+				$overrides = $container->get( MultiCurrencyRestRequestOverrideController::class );
+				$this->assertSame( $has_overrides, (bool) has_filter( StateBuilder::FILTER_OVERRIDE_SELECTED_CURRENCY, array( $overrides, 'get_store_currency_code' ) ) );
+			}
+		} finally {
+			$_SERVER = $original_server;
+			$_GET    = array();
+		}
+	}
+
+	/** @testdox Should share the Store API address with request contexts created outside the container. */
+	public function test_shares_the_store_api_address_with_new_contexts(): void {
+		$this->give_multi_currency_to_core( true );
+		$container = wc_get_container();
+		( new MultiCurrencyBootstrap( static fn(): array => array() ) )->register( $container, 'rest', true );
+
+		$this->assertTrue( $container->get( RequestContext::class )->is_store_api_request() );
+		$this->assertTrue( ( new RequestContext() )->is_store_api_request() );
+	}
+
 	/** @testdox Should retain core roots when no provider roots are configured. */
 	public function test_empty_provider_resolver_keeps_core_registration_providerless(): void {
 		$container = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, false );
@@ -526,11 +575,12 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		add_filter( 'wcpay_multi_currency_should_output_explicit_price', '__return_true' );
 
 		try {
-			$sut->register( $container, 'front' );
+			$sut->register( $container, 'front', true );
 		} finally {
 			remove_filter( 'wcpay_multi_currency_should_output_explicit_price', '__return_true' );
 		}
 
+		$this->assertFalse( ( new RequestContext() )->is_store_api_request() );
 		$this->assertSame( array( MultiCurrencyRuntimeArbiter::class ), $container->resolved );
 		$this->assertSame( 0, $resolver_calls );
 		$this->assertFalse( has_filter( 'woocommerce_cart_total' ) );

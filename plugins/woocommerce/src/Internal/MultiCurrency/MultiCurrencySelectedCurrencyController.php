@@ -168,7 +168,7 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	public function handle_store_api_rest_pre_dispatch( $result, $server, $request ) {
 		unset( $server );
 
-		if ( ! $request instanceof \WP_REST_Request || 0 !== strpos( $request->get_route(), '/wc/store/' ) ) {
+		if ( ! $request instanceof \WP_REST_Request || ! RequestContext::is_store_api_route( $request->get_route() ) ) {
 			return $result;
 		}
 

@@ -20,6 +20,16 @@ class RequestContext {
 	 */
 	private const SETTINGS_PREVIEW_FLAG = 'is_mc_onboarding_simulation';
 
+	/** REST route prefixes that use the shopper's currency. */
+	private const STORE_API_ROUTE_PREFIXES = array( '/wc/store/', '/wc/ucp/' );
+
+	/**
+	 * Whether WooCommerce classified the request address as Store API at startup.
+	 *
+	 * @var bool
+	 */
+	private static bool $store_api_address = false;
+
 	/**
 	 * Whether WordPress has matched this request, or a request batched or dispatched in it, to a Store API route its URL did
 	 * not name, until that request's callbacks have run.
@@ -47,27 +57,32 @@ class RequestContext {
 	 * @since 11.0.0
 	 */
 	public function is_store_api_request(): bool {
-		if ( $this->matched_store_api_route ) {
-			return true;
+		return $this->matched_store_api_route || self::$store_api_address;
+	}
+
+	/**
+	 * Share WooCommerce's startup classification with all request contexts.
+	 *
+	 * @param bool $store_api_address Whether the request address names the Store API.
+	 */
+	public static function set_store_api_address( bool $store_api_address ): void {
+		self::$store_api_address = $store_api_address;
+	}
+
+	/**
+	 * Tell whether WordPress matched a route in a Store API namespace.
+	 *
+	 * @param string $route Matched REST route.
+	 * @return bool
+	 */
+	public static function is_store_api_route( string $route ): bool {
+		foreach ( self::STORE_API_ROUTE_PREFIXES as $prefix ) {
+			if ( 0 === stripos( $route, $prefix ) ) {
+				return true;
+			}
 		}
 
-		$wc_store_api_request = $this->get_wc_store_api_request();
-		if ( null !== $wc_store_api_request ) {
-			return $wc_store_api_request;
-		}
-
-		$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
-		if ( '' !== $request_uri && false !== strpos( $request_uri, trailingslashit( rest_get_url_prefix() ) . 'wc/store/' ) ) {
-			return true;
-		}
-
-		if ( ! isset( $_GET['rest_route'] ) || ! is_string( $_GET['rest_route'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-			return false;
-		}
-
-		$rest_route = rawurldecode( esc_url_raw( wp_unslash( $_GET['rest_route'] ) ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-
-		return 0 === strpos( $rest_route, '/wc/store/' );
+		return false;
 	}
 
 	/**
@@ -310,14 +325,5 @@ class RequestContext {
 		 * @param bool $is_rest_api_request Whether this is a WooCommerce REST API request.
 		 */
 		return (bool) apply_filters( 'woocommerce_is_rest_api_request', $is_rest_api_request );
-	}
-
-	/**
-	 * Return a fixed Store API answer; production returns null, so the request path decides.
-	 *
-	 * @return bool|null Store API result, or null when unavailable.
-	 */
-	protected function get_wc_store_api_request(): ?bool {
-		return null;
 	}
 }

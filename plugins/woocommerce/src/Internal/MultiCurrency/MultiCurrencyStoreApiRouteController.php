@@ -142,7 +142,7 @@ class MultiCurrencyStoreApiRouteController implements RegisterHooksInterface {
 	public function handle_rest_request_before_callbacks( $response, $handler, $request ) {
 		unset( $handler );
 
-		if ( ! $request instanceof \WP_REST_Request || $this->request_context->is_store_api_request() || 0 !== stripos( $request->get_route(), '/wc/store/' ) ) {
+		if ( ! $request instanceof \WP_REST_Request || $this->request_context->is_store_api_request() || ! RequestContext::is_store_api_route( $request->get_route() ) ) {
 			return $response;
 		}
 
