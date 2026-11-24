@@ -78,6 +78,7 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	 *           ["builtin", "yes", "0", ["USD", "EUR"], true]
 	 *           ["builtin", "yes", "0", ["USD"], false]
 	 *           ["builtin", "no", "1", ["USD", "EUR"], false]
+	 *           ["builtin", null, "1", ["USD", "EUR"], false]
 	 *           [null, null, "1", ["USD", "EUR"], true]
 	 *           [null, "no", "1", ["USD", "EUR"], false]
 	 *           [null, null, "1", ["USD"], false]
