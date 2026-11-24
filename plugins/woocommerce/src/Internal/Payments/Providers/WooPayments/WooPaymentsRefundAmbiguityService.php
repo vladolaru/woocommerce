@@ -701,7 +701,9 @@ class WooPaymentsRefundAmbiguityService {
 	}
 
 	/**
-	 * Find the oldest eligible manual record of this amount created at or after the given time.
+	 * Find the oldest refund row for the exact amount created at or after the given time.
+	 * The row must be marked as a manual record, with no provider refund ID or lost dispute ID.
+	 * Refunds issued through the gateway are ineligible.
 	 *
 	 * @param WC_Order_Refund[] $rows          Candidate refund rows.
 	 * @param string            $currency      Currency used for the minor-unit comparison.
