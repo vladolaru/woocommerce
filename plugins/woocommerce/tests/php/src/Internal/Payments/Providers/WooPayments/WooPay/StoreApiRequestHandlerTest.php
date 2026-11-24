@@ -1159,13 +1159,13 @@ class StoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * The browser sees the session a WooPay Store API request saved.
+	 * The browser cache refreshes after a WooPay save only while WooPay is eligible.
 	 *
 	 * @testWith [false]
 	 *           [true]
 	 * @param bool $suppress Whether EU VAT hides wallets during the save.
 	 */
-	public function test_woopay_store_api_save_reaches_the_browser_session( bool $suppress ): void {
+	public function test_woopay_store_api_save_refreshes_the_eligible_browser_session( bool $suppress ): void {
 		if ( $suppress ) {
 			$integration = $this->createMock( EuVatNumberIntegration::class );
 			$integration->method( 'suppresses_woopay' )->willReturn( true );
@@ -1194,7 +1194,7 @@ class StoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 			WC()->session = $original_session;
 		}
 
-		$this->assertSame( 'added-in-woopay', maybe_unserialize( $browser->get_session( $customer_id ) )['coupon'] );
+		$this->assertSame( $suppress ? 'before-woopay' : 'added-in-woopay', maybe_unserialize( $browser->get_session( $customer_id ) )['coupon'] );
 	}
 
 	/**

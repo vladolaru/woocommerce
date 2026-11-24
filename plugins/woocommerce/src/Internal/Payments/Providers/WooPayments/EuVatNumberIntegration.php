@@ -17,11 +17,11 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  */
 class EuVatNumberIntegration implements RegisterHooksInterface {
 	/**
-	 * Wallet restrictions by site for this request.
+	 * Wallet restriction for this request.
 	 *
-	 * @var array<int,string>
+	 * @var string|null
 	 */
-	private $restrictions = array();
+	private $restriction;
 
 	/**
 	 * Expose EU VAT Number's express-pay setting on connected stores.
@@ -65,44 +65,22 @@ class EuVatNumberIntegration implements RegisterHooksInterface {
 			return '';
 		}
 
-		if ( is_multisite() && ms_is_switched() && ! $this->is_active_on_switched_site() ) {
-			return '';
-		}
-
-		$site = get_current_blog_id();
-		if ( ! isset( $this->restrictions[ $site ] ) ) {
+		if ( null === $this->restriction ) {
 			// Option callbacks made by the plugin can also ask which wallets are configured.
-			$this->restrictions[ $site ] = '';
+			$this->restriction = '';
 
 			$decide = array( 'WC_EU_VAT_Number_Init', 'should_prevent_incompatible_payment_methods' );
 			if ( is_callable( $decide ) ) {
-				$this->restrictions[ $site ] = $decide() ? 'all' : '';
+				$this->restriction = $decide() ? 'all' : '';
 			} else {
 				// Before 3.2.2, EU VAT disabled WooPay only, and prevention defaulted to off.
 				$prevent = 'no' !== get_option( 'woocommerce_eu_vat_number_b2b', 'no' )
 					&& 'no' !== get_option( 'woocommerce_eu_vat_number_prevent_incompatible_payment_methods', 'no' );
 
-				$this->restrictions[ $site ] = $prevent ? 'woopay' : '';
+				$this->restriction = $prevent ? 'woopay' : '';
 			}
 		}
 
-		return $this->restrictions[ $site ];
-	}
-
-	/**
-	 * Switching sites changes the active plugin lists while the original site's classes stay loaded.
-	 */
-	private function is_active_on_switched_site(): bool {
-		if ( ! defined( 'WC_EU_VAT_FILE' ) ) {
-			return false;
-		}
-
-		$plugin = plugin_basename( WC_EU_VAT_FILE );
-		if ( in_array( $plugin, (array) get_option( 'active_plugins', array() ), true ) ) {
-			return true;
-		}
-
-		$site = get_site();
-		return $site && isset( get_network_option( (int) $site->site_id, 'active_sitewide_plugins', array() )[ $plugin ] );
+		return $this->restriction;
 	}
 }

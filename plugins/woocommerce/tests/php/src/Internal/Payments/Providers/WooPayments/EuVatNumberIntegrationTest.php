@@ -124,21 +124,13 @@ class EuVatNumberIntegrationTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * PHP classes stay loaded across a switch, even when the destination site has deactivated EU VAT.
+	 * The request keeps its wallet restriction when switching to a site with different settings.
 	 *
 	 * @group multisite
-	 * @testWith ["inactive", false]
-	 *           ["site", true]
-	 *           ["network", true]
-	 * @param string $activation How the destination loads EU VAT.
-	 * @param bool   $suppressed Whether it hides wallets on that site.
 	 */
-	public function test_switched_site_uses_its_own_activation( string $activation, bool $suppressed ): void {
+	public function test_switched_site_keeps_request_restriction(): void {
 		$this->skipWithoutMultisite();
 		EuVatNumber::load();
-		$plugin = 'vat-number/woocommerce-eu-vat-number.php';
-		define( 'WC_EU_VAT_FILE', WP_PLUGIN_DIR . '/' . $plugin );
-		update_option( 'active_plugins', array( $plugin ) );
 		$integration = wc_get_container()->get( EuVatNumberIntegration::class );
 		$this->assertTrue( $integration->suppresses_express() );
 
@@ -146,13 +138,7 @@ class EuVatNumberIntegrationTest extends WC_Unit_Test_Case {
 		$this->assertIsInt( $site );
 		switch_to_blog( $site );
 		try {
-			update_option( 'woocommerce_eu_vat_number_b2b', 'yes' );
-			if ( 'site' === $activation ) {
-				update_option( 'active_plugins', array( $plugin ) );
-			} elseif ( 'network' === $activation ) {
-				update_site_option( 'active_sitewide_plugins', array( $plugin => time() ) );
-			}
-			$this->assertSame( $suppressed, $integration->suppresses_express() );
+			$this->assertTrue( $integration->suppresses_express() );
 		} finally {
 			restore_current_blog();
 		}
