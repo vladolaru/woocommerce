@@ -28,6 +28,9 @@ class WooPaymentsPaymentOperationService {
 	/**
 	 * Order meta key holding the charge idempotency key, kept until a definitive outcome.
 	 *
+	 * Only the store's own charge attempt clears the key, kept time and ambiguity record under its order payment lock.
+	 * Clearing them anywhere else can remove the key another attempt still needs to avoid a second charge.
+	 *
 	 * @var string
 	 * @since 11.2.0
 	 */
