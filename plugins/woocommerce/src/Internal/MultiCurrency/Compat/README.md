@@ -1,6 +1,6 @@
 # WooPayments extension Multi-Currency compatibility
 
-This folder holds what plugins written for the WooPayments extension call in its `WCPay\MultiCurrency` namespace, answered by WooCommerce's Multi-Currency while it runs Multi-Currency: the `MultiCurrency` class and the `Compatibility` class its `get_compatibility()` returns. `WooPaymentsExtensionFacadeLoader` declares both only after active plugins have loaded (`plugins_loaded` priority 0) and only when `MultiCurrencyRuntimeArbiter::is_builtin_owner()` is true; while the WooPayments extension runs Multi-Currency, the namespace is the extension's own. The facade class files live in `includes/legacy/woopayments-multi-currency-compat/` (see the placement rule). The extension's other classes and globals live in the separate [payments compatibility boundary](../../Payments/Providers/WooPayments/Compat/README.md). It is removed in WooCommerce 12.0.0.
+This folder holds what plugins written for the WooPayments extension call in its `WCPay\MultiCurrency` namespace, answered by WooCommerce's Multi-Currency while it runs Multi-Currency: the `MultiCurrency` class and the `Compatibility` class its `get_compatibility()` returns. `WooPaymentsExtensionFacadeLoader` declares both only after active plugins have loaded (`plugins_loaded` priority 0) and only when `MultiCurrencyRuntimeArbiter::is_builtin_owner()` is true; while the WooPayments extension runs Multi-Currency, the namespace is the extension's own. The facade class files live in `includes/legacy/woopayments-multi-currency-compat/` (see the placement rule). The extension's other classes and globals live in the separate [payments compatibility boundary](../../Payments/Providers/WooPayments/Compat/README.md). The facades are removed in WooCommerce 12.0.0.
 
 The facades exist to spare these plugins a fatal error, not to emulate the extension: they answer every member the Multi-Currency module has a real answer for, from the module's own state, services and rules, and declare nothing else.
 
@@ -53,13 +53,17 @@ Each method reports incorrect usage once per request with the running WooCommerc
 
 `WooPaymentsExtensionFacadePlacementTest` requires every global `WC_Payments*` or namespaced `WCPay\` type declaration to live in `includes/legacy/woopayments-compat/` or `includes/legacy/woopayments-multi-currency-compat/`, outside every tree Composer scans for its classmaps: `src/` and `includes/rest-api/`, and `tests/php/src/` for development installs. The Jetpack autoloader's optimized classmap, built on every `composer install` and for the release zip, maps each class it finds in those trees whatever its namespace, so a facade placed there would be declared on first use on every store, including stores where the WooPayments extension runs; outside them, only the loaders can declare the facades. Test fixtures that declare the extension's class names use the `.fixture` extension, which Composer does not scan. The test also requires exactly one composition-root registration for each compatibility loader. A new compatibility surface belongs here only for a consumer contract observed in a plugin, and it must call the Multi-Currency services.
 
+## Public currency utility on extension-owned sites
+
+When the runtime arbiter selects the extension, `MultiCurrencyUtil` uses `ExtensionCurrencyBridge` to read enabled rates and convert amounts through the extension's accessor. Remove the bridge, its utility branches and its extension-specific tests when the WooPayments extension no longer runs Multi-Currency.
+
 ## Removed in WooCommerce 12.0.0
 
 Remove these pieces together once supported extensions no longer call the `WCPay\MultiCurrency` namespace:
 
-- This `Compat/` folder and the facade files in `includes/legacy/woopayments-multi-currency-compat/`.
+- The facade loader and compatibility notice trait in this folder and the facade files in `includes/legacy/woopayments-multi-currency-compat/`.
 - The one registration line, `WooPaymentsExtensionFacadeLoader::register()` in `includes/class-woocommerce.php`.
-- The tests and their fixtures in `tests/php/src/Internal/MultiCurrency/Compat/`.
+- The facade tests and their fixtures in `tests/php/src/Internal/MultiCurrency/Compat/`.
 - This boundary's expected symbols and loader entries in `WooPaymentsExtensionFacadePlacementTest`.
 - The `$apply_charm_pricing` argument of `PriceConverter::adjust_amount_for_selected_currency()` and `PriceCalculator::get_adjusted_amount()`, which only the facade passes as false.
 - The WooPayments extension's asset handles registered as aliases outside this folder: `wcpay-multi-currency-async-renderer` (script and style, `MultiCurrencyAsyncPriceRendererController::COMPAT_SCRIPT_HANDLE`), the switcher block's editor script handle (`MultiCurrencySwitcherBlockController::COMPAT_EDITOR_SCRIPT_HANDLE`) and `WCPAY_MULTI_CURRENCY_ANALYTICS` (`MultiCurrencyAnalyticsController`).

@@ -18,6 +18,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Tests\Internal\Compatibility\WooPaymentsCompatibilityNoticeTestTrait;
+use Automattic\WooCommerce\Utilities\MultiCurrencyUtil;
 use WC_Unit_Test_Case;
 
 require_once __DIR__ . '/Fixtures/multi-currency-facade-plugin-callers.inc';
@@ -371,9 +372,50 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 		$facade = $this->get_facade();
 		$gbp    = $facade->get_enabled_currencies()['GBP'];
 
+		$this->assertSame( $explicit_price, MultiCurrencyUtil::convert_price( 10.17, $type, 'gbp' ) );
+		$this->assertSame( $selected_price, MultiCurrencyUtil::convert_price( 10.17, $type ) );
 		$this->assertSame( $explicit_price, $facade->get_price( 10.17, $type, $gbp ), 'An explicit target uses GBP.' );
 		$this->assertSame( $selected_price, $facade->get_price( 10.17, $type ), 'An omitted target uses EUR.' );
 		$this->assertSame( $selected_price, $facade->get_price( 10.17, $type, null ), 'A null target uses EUR.' );
+	}
+
+	/**
+	 * @testdox The first public read builds the same currency state that compatibility callers see.
+	 */
+	public function test_public_utility_matches_compatibility_reads_and_raw_conversion(): void {
+		$this->declare_facade();
+		$customer_id = self::factory()->user->create();
+		$this->assertIsInt( $customer_id );
+		update_user_meta( $customer_id, 'wcpay_currency', 'EUR' );
+		wp_set_current_user( $customer_id );
+
+		$this->reset_container_resolutions();
+		$rates = MultiCurrencyUtil::get_enabled_currencies();
+		$this->assertSame(
+			array(
+				'USD' => 1.0,
+				'EUR' => 0.9,
+				'GBP' => 0.73,
+			),
+			$rates
+		);
+
+		$facade = $this->get_facade();
+		$this->expect_facade_warnings( 'is_enabled', 'get_default_currency', 'get_enabled_currencies', 'has_additional_currencies_enabled', 'get_raw_conversion' );
+		$this->assertSame( $facade::is_enabled(), MultiCurrencyUtil::is_active() );
+		$this->assertSame( $facade->get_default_currency()->get_code(), MultiCurrencyUtil::get_store_currency() );
+		$this->assertSame( $facade->has_additional_currencies_enabled(), count( $rates ) > 1 );
+		foreach ( $facade->get_enabled_currencies() as $code => $currency ) {
+			$this->assertSame( $currency->get_rate(), $rates[ $code ] );
+		}
+
+		$this->assertSame( $facade->get_raw_conversion( 10.17, 'EUR' ), MultiCurrencyUtil::convert( 10.17 ) );
+		$this->assertSame( $facade->get_raw_conversion( 10.17, 'GBP', 'EUR' ), MultiCurrencyUtil::convert( 10.17, 'gbp', 'eur' ) );
+
+		update_option( 'wcpay_multi_currency_enabled_currencies', array() );
+		$this->assertTrue( MultiCurrencyUtil::is_active() );
+		$this->assertSame( array( 'USD' => 1.0 ), MultiCurrencyUtil::get_enabled_currencies() );
+		$this->assertSame( $facade->has_additional_currencies_enabled(), count( MultiCurrencyUtil::get_enabled_currencies() ) > 1 );
 	}
 
 	/**
@@ -394,6 +436,10 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 10.99, $facade->adjust_amount_for_selected_currency( 10.2 ) );
 		$this->assertSame( 11.0, $facade->adjust_amount_for_selected_currency( 10.2, false ) );
+
+		$converted = MultiCurrencyUtil::convert( 10.2 );
+		$this->assertSame( 9.99, MultiCurrencyUtil::convert_price( 10.2 ) );
+		$this->assertSame( $facade->adjust_amount_for_selected_currency( $converted ), MultiCurrencyUtil::convert_price( 10.2 ) );
 	}
 
 	/**

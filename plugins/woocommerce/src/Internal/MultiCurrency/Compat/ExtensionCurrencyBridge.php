@@ -1,0 +1,115 @@
+<?php
+/**
+ * ExtensionCurrencyBridge class file.
+ */
+
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Internal\MultiCurrency\Compat;
+
+use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyException;
+
+/**
+ * Reads rates and converts amounts while the extension owns Multi-Currency.
+ *
+ * @internal
+ * @since 11.4.0
+ */
+final class ExtensionCurrencyBridge {
+
+	/**
+	 * Get the enabled currencies' rates.
+	 *
+	 * @return array<string,float>
+	 */
+	public static function get_rates(): array {
+		$currencies = self::call( self::extension(), 'get_enabled_currencies' );
+		$rates      = array();
+		foreach ( $currencies as $code => $currency ) {
+			$rates[ $code ] = (float) self::call( $currency, 'get_rate' );
+		}
+		return $rates;
+	}
+
+	/**
+	 * Convert at the extension's raw rate.
+	 *
+	 * @param float  $amount Amount to convert.
+	 * @param string $to     Target code, or empty for the selected currency.
+	 * @param string $from   Source code, or empty for the store currency.
+	 * @return float
+	 */
+	public static function convert( float $amount, string $to, string $from ): float {
+		$extension = self::extension();
+		if ( '' === $to ) {
+			$to = self::call( self::call( $extension, 'get_selected_currency' ), 'get_code' );
+		}
+		$currencies = self::call( $extension, 'get_enabled_currencies' );
+		self::enabled_currency( $currencies, $to );
+		if ( '' !== $from ) {
+			self::enabled_currency( $currencies, $from );
+		}
+
+		return self::call( $extension, 'get_raw_conversion', $amount, $to, $from );
+	}
+
+	/**
+	 * Convert a price with the extension's price rules.
+	 *
+	 * @param float  $amount Amount in store currency.
+	 * @param string $type   Price type.
+	 * @param string $to     Target code, or empty for the selected currency.
+	 * @return float
+	 * @throws InvalidCurrencyException When the target is not enabled.
+	 */
+	public static function convert_price( float $amount, string $type, string $to ): float {
+		$extension = self::extension();
+		$currency  = null;
+		if ( '' !== $to ) {
+			$currencies = self::call( $extension, 'get_enabled_currencies' );
+			$currency   = self::enabled_currency( $currencies, $to );
+		}
+		return self::call( $extension, 'get_price', $amount, $type, $currency );
+	}
+
+	/**
+	 * Get the extension's currency object for an explicit code.
+	 *
+	 * @param array<string,object> $currencies Enabled currencies.
+	 * @param string               $code       Currency code.
+	 * @return object
+	 * @throws InvalidCurrencyException When the code is not enabled.
+	 */
+	private static function enabled_currency( array $currencies, string $code ): object {
+		$code = strtoupper( $code );
+		if ( ! isset( $currencies[ $code ] ) ) {
+			throw new InvalidCurrencyException( esc_html( 'Currency is not enabled for conversion: ' . $code ) );
+		}
+		return $currencies[ $code ];
+	}
+
+	/**
+	 * Get the extension's instance when its accessor has loaded.
+	 *
+	 * @return object|null
+	 */
+	private static function extension() {
+		return function_exists( 'WC_Payments_Multi_Currency' ) ? WC_Payments_Multi_Currency() : null;
+	}
+
+	/**
+	 * Call a public extension method when the installed version provides it.
+	 *
+	 * @param object|null $instance Extension instance or currency.
+	 * @param string      $method   Public method name.
+	 * @param mixed       ...$args  Method arguments.
+	 * @return mixed
+	 * @throws \BadMethodCallException When the extension cannot answer.
+	 */
+	private static function call( $instance, string $method, ...$args ) {
+		if ( ! is_object( $instance ) || ! method_exists( $instance, $method ) || ! is_callable( array( $instance, $method ) ) ) {
+			throw new \BadMethodCallException( esc_html( 'The Multi-Currency extension cannot provide ' . $method . '().' ) );
+		}
+		return $instance->$method( ...$args );
+	}
+}
