@@ -160,6 +160,30 @@ class PerSiteActivationControllerTest extends WC_Unit_Test_Case {
 		$this->assertNotEmpty( $site_limits );
 		$this->assertSame( array( 0 ), array_values( array_unique( $site_limits ) ), 'Every site of the network is read, beyond the default page of sites.' );
 		$this->assertSame( array( "activate:$main:yes", "activate:$feature:yes", "activate:$archived:yes", 'deactivate' ), $this->calls, 'Each site is activated while the extension still runs for every site, and the network deactivation comes last.' );
+		$_GET[ PerSiteActivationController::QUERY_DONE ] = '1';
+		$this->assertStringContainsString( 'WooPayments is now active on each site.', $this->render_notice( $this->create_sut() ) );
+	}
+
+	/**
+	 * @testdox When the network deactivation does not take, the result offers per-site activation again and logs the error.
+	 * @group multisite
+	 */
+	public function test_result_offers_activation_again_when_the_extension_stays_network_active(): void {
+		$this->skip_unless_multisite();
+		$this->arrange_site( get_current_blog_id(), true, true );
+		$this->activate_for_every_site();
+		add_filter( 'pre_update_site_option_active_sitewide_plugins', static fn( $value, $old_value ) => $old_value, 10, 2 );
+		$logger = RecordingWcLogger::install();
+
+		$result = $this->create_sut()->convert();
+
+		$this->assertSame( array(), $result['failed'] ?? null );
+		$this->assertSame( array( array( 'error', 'WooPayments per-site activation could not deactivate the network-wide WooPayments extension.', 'woopayments-cutover' ) ), $logger->get_errors() );
+		$_GET[ PerSiteActivationController::QUERY_DONE ] = '1';
+		$notice = $this->render_notice( $this->create_sut() );
+		$this->assertStringNotContainsString( 'WooPayments is now active on each site.', $notice );
+		$this->assertStringContainsString( 'No site can switch while the WooPayments extension is active for the whole network.', $notice );
+		$this->assertStringContainsString( 'Activate WooPayments per site</a>', $notice );
 	}
 
 	/**

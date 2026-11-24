@@ -441,6 +441,13 @@ class PerSiteActivationController implements RegisterHooksInterface {
 		if ( ! $this->is_conversion_offered() ) {
 			return;
 		}
+		$this->output_conversion_offer();
+	}
+
+	/**
+	 * Show the notice and button for converting a network activation.
+	 */
+	private function output_conversion_offer(): void {
 		?>
 		<div class="notice notice-info">
 			<p><?php esc_html_e( 'WooPayments is now part of WooCommerce, and each site switches to it on its own. No site can switch while the WooPayments extension is active for the whole network. Activate WooPayments per site so each site\'s administrators can start their switch.', 'woocommerce' ); ?></p>
@@ -626,6 +633,8 @@ class PerSiteActivationController implements RegisterHooksInterface {
 				<p><?php self::output_button(); ?></p>
 			</div>
 			<?php
+		} elseif ( $this->preflight_service->is_woopayments_network_active() ) {
+			$this->output_conversion_offer();
 		} else {
 			echo '<div class="notice notice-success"><p>' . esc_html__( 'WooPayments is now active on each site. Each site\'s administrators can start their switch.', 'woocommerce' ) . '</p></div>';
 		}
