@@ -382,7 +382,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	 * @param mixed $display_refunded Whether refunded values are displayed.
 	 * @return mixed
 	 */
-	public function maybe_clear_order_currency_after_formatted_order_total( $formatted_total, $order, $tax_display, $display_refunded ) {
+	public function maybe_clear_order_currency_after_formatted_order_total( $formatted_total, $order, $tax_display = '', $display_refunded = true ) {
 		unset( $order, $tax_display, $display_refunded );
 
 		if ( null !== $this->order_currency && $this->order_context_service->should_use_order_currency() ) {

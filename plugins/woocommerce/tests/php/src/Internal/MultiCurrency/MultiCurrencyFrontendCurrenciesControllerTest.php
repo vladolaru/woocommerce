@@ -393,6 +393,18 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should preserve the formatted refund total when the refund supplies only two filter arguments.
+	 */
+	public function test_preserves_formatted_refund_total(): void {
+		$this->register_on_real_services( array() );
+		$refund = new \WC_Order_Refund();
+		$refund->set_currency( 'USD' );
+		$refund->set_total( '-42.50' );
+
+		$this->assertSame( wc_price( -42.50, array( 'currency' => 'USD' ) ), $refund->get_formatted_order_total() );
+	}
+
+	/**
 	 * @testdox Should clear order currency after formatted order total.
 	 */
 	public function test_clears_order_currency_after_formatted_order_total(): void {
