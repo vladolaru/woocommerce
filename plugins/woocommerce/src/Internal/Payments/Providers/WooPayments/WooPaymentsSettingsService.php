@@ -571,11 +571,11 @@ class WooPaymentsSettingsService {
 			if ( 'test_mode' === $key && ( $this->account_service->is_dev_mode_enabled() || $this->account_service->is_test_mode_onboarding_enabled() ) ) {
 				$message = $this->account_service->is_dev_mode_enabled()
 					? __( "Test mode can't be changed while WooPayments is in development mode.", 'woocommerce' )
-					: __( 'You are using a test account.', 'woocommerce' );
+					: __( "Test mode can't be turned off while you are using a test account.", 'woocommerce' );
 				return new WP_Error( 'woocommerce_rest_payment_gateway_setting_locked', $message, array( 'status' => 400 ) );
 			}
 			if ( 'enable_logging' === $key && $this->account_service->is_dev_mode_enabled() ) {
-				return new WP_Error( 'woocommerce_rest_payment_gateway_setting_locked', __( 'Log error messages (defaulted on for test accounts)', 'woocommerce' ), array( 'status' => 400 ) );
+				return new WP_Error( 'woocommerce_rest_payment_gateway_setting_locked', __( "Logging can't be turned off while WooPayments is in development mode.", 'woocommerce' ), array( 'status' => 400 ) );
 			}
 			$params[ $mapping[ $key ] ?? $key ] = 'checkbox' === $field['type'] ? 'yes' === $value : $value;
 		}

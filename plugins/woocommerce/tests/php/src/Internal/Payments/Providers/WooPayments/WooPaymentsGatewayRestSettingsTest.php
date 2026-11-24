@@ -355,18 +355,22 @@ class WooPaymentsGatewayRestSettingsTest extends WC_Unit_Test_Case {
 	 *
 	 * @testWith [{"manual_capture":"maybe"}, "rest_setting_value_invalid"]
 	 *           [{"manual_capture":"yes","payment_request_button_theme":"neon"}, "rest_setting_value_invalid"]
-	 *           [{"account_statement_descriptor":"EXAMPLE"}, "woocommerce_rest_payment_gateway_setting_unsupported"]
+	 *           [{"account_statement_descriptor":"EXAMPLE"}, "woocommerce_rest_payment_gateway_setting_unsupported", "The customer bank statement can't be changed here. Change it in the WooPayments settings."]
 	 *           [{"upe_enabled_payment_method_ids":["card","bitcoin"]}, "rest_setting_value_invalid"]
-	 * @param array  $settings Posted gateway values.
-	 * @param string $code Expected REST error.
+	 * @param array       $settings Posted gateway values.
+	 * @param string      $code Expected REST error.
+	 * @param string|null $message Expected gateway refusal message, when applicable.
 	 */
-	public function test_rejected_gateway_settings( array $settings, string $code ): void {
+	public function test_rejected_gateway_settings( array $settings, string $code, ?string $message = null ): void {
 		$this->boot_routes();
 		$this->register_gateways();
 		$before   = $this->stored_settings_bytes();
 		$response = $this->dispatch( 'PUT', self::ROUTE, array( 'settings' => $settings ) );
 		$this->assertSame( 400, $response->get_status() );
 		$this->assertSame( $code, $response->get_data()['code'] );
+		if ( null !== $message ) {
+			$this->assertSame( $message, $response->get_data()['message'] );
+		}
 		$this->assertSame( $before, $this->stored_settings_bytes() );
 		$this->assertSame( array(), $this->calls );
 	}
@@ -495,11 +499,14 @@ class WooPaymentsGatewayRestSettingsTest extends WC_Unit_Test_Case {
 	/**
 	 * Forced mode values are reported to the merchant and stay out of the row.
 	 *
-	 * @testWith [true]
-	 *           [false]
-	 * @param bool $dev Development mode, otherwise test-mode onboarding.
+	 * @testWith [true, "test_mode", "Test mode can't be changed while WooPayments is in development mode."]
+	 *           [false, "test_mode", "Test mode can't be turned off while you are using a test account."]
+	 *           [true, "enable_logging", "Logging can't be turned off while WooPayments is in development mode."]
+	 * @param bool   $dev Development mode, otherwise test-mode onboarding.
+	 * @param string $key Locked gateway setting.
+	 * @param string $message Expected refusal message.
 	 */
-	public function test_locked_modes( bool $dev ): void {
+	public function test_locked_modes( bool $dev, string $key, string $message ): void {
 		$this->boot_routes( $dev );
 		add_filter( 'wcpay_test_mode_onboarding', '__return_true' );
 		update_option(
@@ -514,15 +521,13 @@ class WooPaymentsGatewayRestSettingsTest extends WC_Unit_Test_Case {
 		$values = $this->dispatch( 'GET', self::ROUTE )->get_data()['settings'];
 		$this->assertSame( 'yes', $values['test_mode']['value'] ?? null );
 		$this->assertSame( $dev ? 'yes' : 'no', $values['enable_logging']['value'] );
-		$keys = $dev ? array( 'test_mode', 'enable_logging' ) : array( 'test_mode' );
-		foreach ( $keys as $key ) {
-			$response = $this->dispatch( 'PUT', self::ROUTE, array( 'settings' => array( $key => 'no' ) ) );
-			$this->assertSame( 400, $response->get_status() );
-			$this->assertSame( 'woocommerce_rest_payment_gateway_setting_locked', $response->get_data()['code'] );
-			$this->assertSame( $before, $this->stored_settings_bytes() );
-			$this->assertSame( 200, $this->dispatch( 'PUT', self::ROUTE, array( 'settings' => array( $key => 'yes' ) ) )->get_status() );
-			$this->assertSame( $before, $this->stored_settings_bytes() );
-		}
+		$response = $this->dispatch( 'PUT', self::ROUTE, array( 'settings' => array( $key => 'no' ) ) );
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( 'woocommerce_rest_payment_gateway_setting_locked', $response->get_data()['code'] );
+		$this->assertSame( $message, $response->get_data()['message'] );
+		$this->assertSame( $before, $this->stored_settings_bytes() );
+		$this->assertSame( 200, $this->dispatch( 'PUT', self::ROUTE, array( 'settings' => array( $key => 'yes' ) ) )->get_status() );
+		$this->assertSame( $before, $this->stored_settings_bytes() );
 	}
 
 	/** An ordinary gateway toggle cannot persist forced test mode or debug logging. */
