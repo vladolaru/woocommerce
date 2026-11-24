@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\WooPay
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Testing\Tools\TestingContainer;
@@ -24,21 +25,20 @@ use WC_Unit_Test_Case;
 class WooPaymentsModeFacadeTest extends WC_Unit_Test_Case {
 
 	/**
-	 * Register the production loader while the built-in owns an active store.
+	 * Run the facade loader on a store owned by the built-in.
+	 *
+	 * @param string $tier Setup tier for this request.
 	 */
-	public function setUp(): void {
-		parent::setUp();
+	private function load_facades( string $tier = WooPaymentsSetupTier::ACTIVE ): void {
 		$container = wc_get_container();
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$container->get( WooPaymentsRuntimeArbiter::class )->invalidate();
-		$container->get( WooPaymentsSetupTier::class )->write_tier( WooPaymentsSetupTier::ACTIVE );
+		$container->get( WooPaymentsSetupTier::class )->write_tier( $tier );
 		$container->get( WooPaymentsExtensionFacadeLoader::class )->load();
-
-		$this->setExpectedDeprecated( 'WC_Payments::mode' );
 	}
 
 	/**
-	 * Read the five answers in the same order on active and dormant stores.
+	 * Read the five mode answers exposed to integrations.
 	 *
 	 * @param Mode $mode The mode returned to an integration.
 	 * @return array
@@ -54,6 +54,8 @@ class WooPaymentsModeFacadeTest extends WC_Unit_Test_Case {
 	 * @testdox Integrations share one mode object and see the account's current answers on every read.
 	 */
 	public function test_current_mode(): void {
+		$this->load_facades();
+		$this->setExpectedDeprecated( 'WC_Payments::mode' );
 		add_filter( 'wcpay_dev_mode', '__return_true' );
 		$account = wc_get_container()->get( WooPaymentsAccountService::class );
 		$mode    = WC_Payments::mode();
@@ -70,26 +72,55 @@ class WooPaymentsModeFacadeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An integration holding the mode object can keep reading it after the store becomes dormant.
+	 * @testdox A mode object keeps reporting the account's mode after the setup tier drops.
+	 * @testWith ["disabled", true]
+	 *           ["available", false]
+	 *
+	 * @param string $tier     Setup tier after the drop.
+	 * @param bool   $dev_mode Whether development mode enables test payments.
+	 */
+	public function test_mode_follows_account_after_tier_drop( string $tier, bool $dev_mode ): void {
+		$this->load_facades();
+		$this->setExpectedDeprecated( 'WC_Payments::mode' );
+		add_filter( 'wcpay_dev_mode', $dev_mode ? '__return_true' : '__return_false' );
+		update_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array( 'test_mode' => 'yes' ) );
+
+		$mode     = WC_Payments::mode();
+		$account  = wc_get_container()->get( WooPaymentsAccountService::class );
+		$expected = array( false, true, $dev_mode, $dev_mode, $account->get_dev_mode_triggers() );
+		$this->assertSame( $expected, $this->read_mode( $mode ) );
+
+		$setup = wc_get_container()->get( WooPaymentsSetupTier::class );
+		$setup->write_tier( $tier );
+		$this->assertSame( $tier, $setup->get_effective_tier() );
+		$this->assertSame( $expected, $this->read_mode( $mode ) );
+	}
+
+	/**
+	 * @testdox On a dormant request the facade loader leaves Mode unloaded and the account service unresolved.
 	 * @testWith ["disabled"]
 	 *           ["available"]
 	 *
 	 * @param string $tier Dormant setup tier.
 	 */
-	public function test_dormant_mode( string $tier ): void {
-		$mode      = WC_Payments::mode();
-		$container = wc_get_container();
-		$setup     = $container->get( WooPaymentsSetupTier::class );
-		$setup->write_tier( $tier );
-		$this->assertSame( $tier, $setup->get_effective_tier() );
+	public function test_loader_leaves_mode_dormant( string $tier ): void {
+		$original_container = wc_get_container();
+		$container          = new class( $original_container ) extends TestingContainer {
+			/** Check whether any dependency has resolved the account in this request. */
+			public function has_resolved_account(): bool {
+				return isset( $this->resolved_cache[ WooPaymentsAccountService::class ] );
+			}
+		};
 
-		$guard = $this->createMock( TestingContainer::class );
-		$guard->method( 'get' )->with( $this->logicalNot( $this->equalTo( WooPaymentsAccountService::class ) ) )->willReturnCallback( array( $container, 'get' ) );
-		$GLOBALS['wc_container'] = $guard;
+		$GLOBALS['wc_container'] = $container;
 		try {
-			$this->assertSame( array( true, false, false, false, array() ), $this->read_mode( $mode ) );
+			$this->load_facades( $tier );
+			$this->assertFalse( class_exists( WC_Payments::class ) );
+			$this->assertFalse( class_exists( Mode::class ) );
+			$this->assertNotContains( WC_ABSPATH . 'includes/legacy/woopayments-compat/class-mode.php', get_included_files() );
+			$this->assertFalse( $container->has_resolved_account() );
 		} finally {
-			$GLOBALS['wc_container'] = $container;
+			$GLOBALS['wc_container'] = $original_container;
 		}
 	}
 
@@ -97,6 +128,8 @@ class WooPaymentsModeFacadeTest extends WC_Unit_Test_Case {
 	 * @testdox Each public facade call emits exactly its own deprecation notice.
 	 */
 	public function test_mode_notices(): void {
+		$this->load_facades();
+		$this->setExpectedDeprecated( 'WC_Payments::mode' );
 		$notices = array();
 		add_action(
 			'deprecated_function_run',
@@ -119,6 +152,8 @@ class WooPaymentsModeFacadeTest extends WC_Unit_Test_Case {
 	 * @param bool $extension_owns Whether the extension supplies its mode service.
 	 */
 	public function test_settings_provider_mode( bool $extension_owns ): void {
+		$this->load_facades();
+		$this->setExpectedDeprecated( 'WC_Payments::mode' );
 		$container = wc_get_container();
 		$this->assertTrue( class_exists( WC_Payments::class ) );
 		if ( $extension_owns ) {
