@@ -809,7 +809,8 @@ class DisputeEventHandler {
 	 *
 	 * The change runs only when the disputed charge is the order's own payment; a dispute on another charge is recorded
 	 * instead, with one note and one warning line, and the order keeps its status. A change that applied on an order whose
-	 * payment method is not a WooPayments one is logged.
+	 * payment method is not a WooPayments one is logged. An unpaid order that no longer stores the disputed charge is
+	 * checked first (is_disputed_charge_stored_on_no_order()).
 	 *
 	 * @param WC_Order                $order        Order the event resolved to.
 	 * @param string                  $event_type   Event type.
@@ -819,6 +820,7 @@ class DisputeEventHandler {
 	 * @param string                  $message      What the event says happened, for a dispute update on another charge.
 	 * @return bool What the change returned, or false when the dispute was recorded.
 	 * @throws OrderPaymentLockRefusedException When another operation holds the order payment lock; nothing has been written.
+	 * @throws RuntimeException When an unpaid order no longer stores the disputed charge and an order stores it; nothing has been written.
 	 */
 	private function run_under_dispute_lock( WC_Order $order, string $event_type, array $event_object, string $charge_id, callable $change, string $message = '' ): bool {
 		$dispute_id = isset( $event_object['id'] ) && is_scalar( $event_object['id'] ) ? (string) $event_object['id'] : '';
@@ -828,7 +830,7 @@ class DisputeEventHandler {
 			$fresh_order = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
 			$resolver    = $this->event_order_resolver;
 			$intent_id   = $resolver->get_event_intent_id( $event_object, $fresh_order );
-			if ( ! $resolver->is_own_payment_for_event( $fresh_order, $event_object, $charge_id ) ) {
+			if ( $this->is_disputed_charge_stored_on_no_order( $fresh_order, $charge_id ) || ! $resolver->is_own_payment_for_event( $fresh_order, $event_object, $charge_id ) ) {
 				$this->other_charge_recorder->record(
 					$fresh_order,
 					$event_type,
@@ -854,6 +856,30 @@ class DisputeEventHandler {
 		} finally {
 			$this->order_payment_lock->release( $order, $this->persistence_vocabulary, $lock_token );
 		}
+	}
+
+	/**
+	 * Tell whether an unpaid order read under the lock no longer stores the disputed charge, and no order stores it.
+	 *
+	 * Another attempt's record can replace an unpaid order's charge between the look-up and the claim. The dispute is then
+	 * recorded as another charge's when no order stores the charge, and retried when one does, so the retry's look-up finds
+	 * that order. A paid order is left to the ownership rule, whose transaction ID check decides.
+	 *
+	 * @param WC_Order $order     Order read under the order payment lock.
+	 * @param string   $charge_id Disputed charge ID.
+	 * @return bool
+	 * @throws RuntimeException When an order stores the disputed charge; nothing has been written.
+	 */
+	private function is_disputed_charge_stored_on_no_order( WC_Order $order, string $charge_id ): bool {
+		if ( $this->event_order_resolver->is_paid_for_ownership( $order ) || $charge_id === (string) $order->get_meta( '_charge_id', true ) ) {
+			return false;
+		}
+
+		if ( null !== $this->event_order_resolver->find_order_by_charge_id( $charge_id ) ) {
+			throw new RuntimeException( esc_html( sprintf( 'WooPayments order no longer stores the disputed charge ID, which another order stores: %s', $charge_id ) ) );
+		}
+
+		return true;
 	}
 
 	/**
