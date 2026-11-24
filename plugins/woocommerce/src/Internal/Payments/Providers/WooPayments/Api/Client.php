@@ -1953,7 +1953,7 @@ class Client {
 			array(
 				'headers'    => $headers,
 				'user-agent' => $this->get_user_agent(),
-				'timeout'    => self::REQUEST_TIMEOUT_SECONDS,
+				'timeout'    => 5,
 				'sslverify'  => true,
 			)
 		);

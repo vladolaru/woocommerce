@@ -338,14 +338,61 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should default to a bare stripe service entry when neither account nor public config is available.
+	 * @testdox The public config fetch respects the $context request context.
+	 *
+	 * @testWith ["front", 1]
+	 *           ["admin", 1]
+	 *           ["REST", 1]
+	 *           ["cron", 0]
+	 *           ["AJAX", 0]
+	 *           ["Action Scheduler", 0]
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 *
+	 * @param string $context           WordPress request context.
+	 * @param int    $expected_requests Expected public HTTP requests.
 	 */
-	public function test_defaults_to_stripe_service_when_nothing_available(): void {
+	public function test_public_config_fetch_by_request_context( string $context, int $expected_requests ): void {
+		$this->intercept_public_config_request( new WP_Error( 'http_request_failed' ) );
+		switch ( $context ) {
+			case 'admin':
+				set_current_screen( 'dashboard' );
+				break;
+			case 'REST':
+				define( 'REST_REQUEST', true );
+				break;
+			case 'cron':
+				define( 'DOING_CRON', true );
+				break;
+			case 'AJAX':
+				define( 'DOING_AJAX', true );
+				break;
+			case 'Action Scheduler':
+				/** This action is documented in the Action Scheduler library (ActionScheduler_Abstract_QueueRunner). */
+				do_action( 'action_scheduler_before_execute', 1, 'WP CLI' );
+				break;
+		}
+
+		$this->make_sut()->get_fraud_services_config();
+
+		$this->assertCount( $expected_requests, $this->intercepted_request_urls );
+	}
+
+	/**
+	 * @testdox Should use the Stripe fallback for a day after a failed public config request.
+	 */
+	public function test_failed_public_config_fetch_falls_back_to_stripe_for_a_day(): void {
 		$this->intercept_public_config_request( new WP_Error( 'http_request_failed', 'no route to platform' ) );
 
-		$config = $this->make_sut()->get_fraud_services_config();
+		$before = time();
+		$sut    = $this->make_sut();
+		$this->assertSame( array( 'stripe' => array() ), $sut->get_fraud_services_config() );
+		$sut->get_fraud_services_config();
+		$this->assertCount( 1, $this->intercepted_request_urls );
 
-		$this->assertSame( array( 'stripe' => array() ), $config );
+		$expires = (int) get_option( '_transient_timeout_woocommerce_woopayments_public_fraud_services' );
+		$this->assertGreaterThanOrEqual( $before + DAY_IN_SECONDS, $expires );
+		$this->assertLessThanOrEqual( time() + DAY_IN_SECONDS, $expires );
 	}
 
 	/**

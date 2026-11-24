@@ -4371,6 +4371,7 @@ class ClientTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'stripe' => array() ), $result );
 		$this->assertStringEndsWith( '/wpcom/v2/wcpay/accounts/fraud_services', $captured_url );
 		$this->assertSame( WooPaymentsClientVersion::get_user_agent(), $captured_args['user-agent'] );
+		$this->assertSame( 5, $captured_args['timeout'] );
 	}
 
 	/**

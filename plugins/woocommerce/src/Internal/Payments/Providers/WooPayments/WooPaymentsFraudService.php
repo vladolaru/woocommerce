@@ -43,11 +43,6 @@ class WooPaymentsFraudService implements RegisterHooksInterface {
 	private const PUBLIC_CONFIG_FAILURE_SENTINEL = 'fetch-failed';
 
 	/**
-	 * How long a failed public-config fetch suppresses retries.
-	 */
-	private const PUBLIC_CONFIG_FAILURE_TTL = 5 * MINUTE_IN_SECONDS;
-
-	/**
 	 * Account service.
 	 *
 	 * @var WooPaymentsAccountService
@@ -323,10 +318,15 @@ class WooPaymentsFraudService implements RegisterHooksInterface {
 			return null;
 		}
 
+		/** This action is documented in the Action Scheduler library (ActionScheduler_Abstract_QueueRunner). */
+		if ( defined( 'DOING_CRON' ) || wp_doing_ajax() || did_action( 'action_scheduler_before_execute' ) > 0 ) {
+			return null;
+		}
+
 		// Stated lock exception: saving the captured order can fetch public Sift configuration when its cache is cold.
 		$fetched = $this->api_client->fetch_public_fraud_services_config();
 		if ( ! is_array( $fetched ) ) {
-			set_transient( self::PUBLIC_CONFIG_TRANSIENT, self::PUBLIC_CONFIG_FAILURE_SENTINEL, self::PUBLIC_CONFIG_FAILURE_TTL );
+			set_transient( self::PUBLIC_CONFIG_TRANSIENT, self::PUBLIC_CONFIG_FAILURE_SENTINEL, DAY_IN_SECONDS );
 
 			return null;
 		}
