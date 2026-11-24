@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Compat;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\MultiCurrency\Compat\WooPaymentsExtensionFacadeLoader;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\LocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
@@ -80,6 +81,7 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
+		Constants::clear_single_constant( 'WP_SANDBOX_SCRAPING' );
 		$this->reset_container_replacements();
 
 		parent::tearDown();
@@ -240,6 +242,8 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	 * @param StateBuilder|null $state_builder   State builder; the request's shared builder by default.
 	 */
 	private function create_loader( string $owner, PriceConverter $price_converter, ?StateBuilder $state_builder = null ): void {
+		// An earlier activate_plugin() leaves the sandbox constant defined for the rest of the suite.
+		Constants::set_constant( 'WP_SANDBOX_SCRAPING', false );
 		$loader = new WooPaymentsExtensionFacadeLoader();
 		$loader->init( $this->create_arbiter( $owner ) );
 		$loader->register();

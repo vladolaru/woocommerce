@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Compat;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\WooCommerceNameYourPrice;
 use Automattic\WooCommerce\Admin\Notes\Note;
@@ -31,8 +32,8 @@ require_once __DIR__ . '/Fixtures/multi-currency-facade-plugin-callers.inc';
  * Tests the members of the `WCPay\MultiCurrency\MultiCurrency` facade on a store where WooCommerce runs Multi-Currency,
  * through the calls the plugins that use them make.
  *
- * PHP cannot undeclare the facade classes, so the class declares them once and they stay declared for the rest of the
- * process, as on a store; the facade's singleton stays too, and reads every service from the container on each call.
+ * Each test loads the facade for an ordinary request. PHP keeps its declarations and singleton for the rest of the
+ * process, and the singleton reads its services from the container on each call.
  */
 class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 
@@ -408,28 +409,6 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 	private array $cookies = array();
 
 	/**
-	 * Declare the facade as the loader does at `plugins_loaded` while WooCommerce runs Multi-Currency.
-	 */
-	public static function setUpBeforeClass(): void {
-		parent::setUpBeforeClass();
-
-		$loader = new WooPaymentsExtensionFacadeLoader();
-		$loader->init(
-			new class() extends MultiCurrencyRuntimeArbiter {
-				/**
-				 * WooCommerce runs Multi-Currency.
-				 *
-				 * @return string
-				 */
-				public function get_runtime_owner(): string {
-					return self::OWNER_BUILTIN;
-				}
-			}
-		);
-		$loader->load();
-	}
-
-	/**
 	 * Keep the session, the request cookies and the registered widgets a case may change.
 	 */
 	public function setUp(): void {
@@ -448,6 +427,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 	public function tearDown(): void {
 		global $wp_widget_factory, $current_tab;
 
+		Constants::clear_single_constant( 'WP_SANDBOX_SCRAPING' );
 		WC()->session               = $this->session;
 		$_COOKIE                    = $this->cookies;
 		$wp_widget_factory->widgets = $this->widgets;
@@ -1060,6 +1040,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 			$this->markTestSkipped( 'This test requires WP_DEBUG to be off.' );
 		}
 
+		$this->declare_facade();
 		$gateway                = wc_get_container()->get( WooPaymentsGateway::class );
 		$_SERVER['REQUEST_URI'] = $path;
 		if ( false !== strpos( $path, 'ajax' ) ) {
@@ -1212,6 +1193,8 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 	 * facade as the loader does at `plugins_loaded`.
 	 */
 	private function declare_facade(): void {
+		// An earlier activate_plugin() leaves the sandbox constant defined for the rest of the suite.
+		Constants::set_constant( 'WP_SANDBOX_SCRAPING', false );
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		update_option( 'woocommerce_currency', 'USD' );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR', 'GBP' ) );
