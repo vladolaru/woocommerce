@@ -135,9 +135,10 @@ final class SubmitDisputeEvidence extends AbstractAbility {
 	 * Check the input, then send the evidence through the dispute update route.
 	 *
 	 * Only a `submit` that reaches this method as the boolean `true` submits. Through the REST run endpoint, WordPress 7.1
-	 * and later turn `"true"`, `"1"` and `1` into `true`, and `"false"`, `"0"` and `0` into `false`, before this runs;
-	 * earlier versions and PHP callers pass them as sent, so those strings save a draft. Every form meant as a draft saves a
-	 * draft. Object-shaped `evidence` and `metadata` are kept, and the metadata limits apply to them.
+	 * and later turn `"true"`, `"1"` and `1` into `true`, and `"false"`, `"0"` and `0` into `false`, before this runs.
+	 * From WordPress 7.2, the Abilities API converts `"true"`, `"1"` and `1` to boolean `true` before this check, so
+	 * callers passing them submit. Every form meant as a draft saves a draft. Object-shaped `evidence` and `metadata`
+	 * are kept, and the metadata limits apply to them.
 	 *
 	 * @since 11.4.0
 	 *

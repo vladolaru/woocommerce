@@ -109,20 +109,46 @@ class SubmitDisputeEvidenceTest extends AbilityTestCase {
 	}
 
 	/**
-	 * @testdox Reading submit as a boolean cast or a yes-like string would submit "$_dataName" evidence to the card network.
-	 * @testWith [true, true]
-	 *           ["true", false]
-	 *           ["1", false]
-	 *           [1, false]
-	 *           ["false", false]
-	 *           ["0", false]
+	 * @testdox Evidence submits only when the Abilities API passes boolean true to the callback.
+	 * @dataProvider submit_values
 	 *
-	 * @param mixed $submit   Caller's submit value, which passes the boolean schema.
+	 * @param array $input    Optional submit argument.
 	 * @param bool  $expected Whether the update submits.
 	 */
-	public function test_only_boolean_true_submits( $submit, bool $expected ): void {
+	public function test_only_boolean_true_submits( array $input, bool $expected ): void {
 		$this->respond_in_turn( $this->dispute(), $this->dispute() );
 
+		$result = $this->sut->execute( array( 'dispute_id' => 'du_test' ) + $input );
+
+		$this->assertIsArray( $result );
+		$this->assertSame( $expected, $this->sent_body()['submit'] );
+	}
+
+	/** Accepted submit values and whether they submit the evidence. */
+	public static function submit_values(): array {
+		$submits_from_72 = version_compare( get_bloginfo( 'version' ), '7.2-alpha', '>=' );
+
+		return array(
+			'boolean true'  => array( array( 'submit' => true ), true ),
+			'string true'   => array( array( 'submit' => 'true' ), $submits_from_72 ),
+			'string one'    => array( array( 'submit' => '1' ), $submits_from_72 ),
+			'integer one'   => array( array( 'submit' => 1 ), $submits_from_72 ),
+			'boolean false' => array( array( 'submit' => false ), false ),
+			'string false'  => array( array( 'submit' => 'false' ), false ),
+			'string zero'   => array( array( 'submit' => '0' ), false ),
+			'integer zero'  => array( array( 'submit' => 0 ), false ),
+			'omitted'       => array( array(), false ),
+		);
+	}
+
+	/**
+	 * @testdox An empty string or null submit value is refused before any request.
+	 * @testWith [""]
+	 *           [null]
+	 *
+	 * @param string|null $submit Invalid submit value.
+	 */
+	public function test_invalid_submit_sends_nothing( ?string $submit ): void {
 		$result = $this->sut->execute(
 			array(
 				'dispute_id' => 'du_test',
@@ -130,8 +156,9 @@ class SubmitDisputeEvidenceTest extends AbilityTestCase {
 			)
 		);
 
-		$this->assertIsArray( $result );
-		$this->assertSame( $expected, $this->sent_body()['submit'] );
+		$this->assertWPError( $result );
+		$this->assertSame( 'ability_invalid_input', $result->get_error_code() );
+		$this->assertSame( 0, $this->http->request_count );
 	}
 
 	/**
