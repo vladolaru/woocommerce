@@ -341,10 +341,10 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 	 * @testdox An account write stores the tier for who owns payments: $_dataName.
 	 * @dataProvider provide_tier_sync_owners
 	 *
-	 * @param bool   $extension_owns Whether the WooPayments extension owns payments.
-	 * @param string $expected       The tier the account write stores.
+	 * @param bool        $extension_owns Whether the WooPayments extension owns payments.
+	 * @param string|null $expected       The tier the account write stores, or null when it leaves the stored value.
 	 */
-	public function test_account_write_stores_the_tier_for_the_owner( bool $extension_owns, string $expected ): void {
+	public function test_account_write_stores_the_tier_for_the_owner( bool $extension_owns, ?string $expected ): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
 		// The minimal account data, the account id (client 11.1.0 includes/class-wc-payments-account.php:164-171).
 		$data = array( 'account_id' => 'acct_plugin' );
@@ -352,20 +352,22 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 			$this->make_extension_own_the_runtime();
 		}
 
+		$before = get_option( WooPaymentsSetupTier::OPTION_NAME );
+
 		$this->account_service->cache_account_data( $data );
 
-		$this->assertSame( $expected, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
+		$this->assertSame( $expected ?? $before, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
 	}
 
 	/**
 	 * Who owns payments when the account is written, and the tier the write stores.
 	 *
-	 * @return array<string,array{0:bool,1:string}>
+	 * @return array<string,array{0:bool,1:string|null}>
 	 */
 	public function provide_tier_sync_owners(): array {
 		return array(
 			'the built-in WooPayments owns payments'  => array( false, WooPaymentsSetupTier::ACTIVE ),
-			'the WooPayments extension owns payments' => array( true, WooPaymentsSetupTier::AVAILABLE ),
+			'the WooPayments extension owns payments' => array( true, null ),
 		);
 	}
 

@@ -17,6 +17,11 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
  * this drop's later steps; a step that cannot settle it leaves them. The step that ends the schedule logs exactly one
  * line, whatever the logging setting.
  *
+ * An ordinary account read that finds no account on a connected or active store books one follow-up read, 15 minutes
+ * later, as KEPT_STEP with the tier in place of the drop time (WooPaymentsAccountService::reread_kept_tier()). It never
+ * changes the tier, schedules nothing after it and stores nothing; it logs one line with its outcome. The next such
+ * read books the next one.
+ *
  * A step that settles the tier also schedules one look a minute later, as step 0 of the same drop. On a store with a
  * persistent object cache, a request that loaded the options from the database just before a raise can put them back into
  * the cache just after it, and every request then runs at the lowest tier. The look compares the tier in the cached options
@@ -41,6 +46,9 @@ class WooPaymentsSetupTierRecheck {
 
 	/** The look's step number: it runs after a step settled the tier, and is not one of the four steps. */
 	public const LOOK_STEP = 0;
+
+	/** The follow-up read's step number, for a connected or active store whose ordinary read found no account. */
+	public const KEPT_STEP = -1;
 
 	/** Seconds from a settled step to its look, past the queue run that settled it. */
 	private const LOOK_DELAY = MINUTE_IN_SECONDS;
@@ -162,6 +170,19 @@ class WooPaymentsSetupTierRecheck {
 	}
 
 	/**
+	 * Book the follow-up read of a kept tier 15 minutes from now, unless one is already waiting.
+	 *
+	 * @param string $tier The stored tier the follow-up expects.
+	 */
+	public function schedule_follow_up( string $tier ): void {
+		try {
+			$this->action_scheduler->schedule_job( WooPaymentsSetupTier::RECHECK_HOOK, array( $tier, self::KEPT_STEP ), time() + self::STEP_OFFSETS[1] );
+		} catch ( \Throwable $e ) {
+			$this->log( 'warning', 'could not schedule the follow-up read of a connected store with no account', 0 );
+		}
+	}
+
+	/**
 	 * Cancel a drop's steps after a refused reset put the tier back, with one line.
 	 *
 	 * @param int $drop_time When the tier dropped.
@@ -177,10 +198,14 @@ class WooPaymentsSetupTierRecheck {
 	 *
 	 * @internal
 	 *
-	 * @param mixed $drop_time When the tier dropped.
-	 * @param mixed $step      The step's number, from 1, or the look's.
+	 * @param mixed $drop_time When the tier dropped, or the tier a follow-up read expects.
+	 * @param mixed $step      The step's number, from 1, the look's or the follow-up's.
 	 */
 	public function handle( $drop_time, $step ): void {
+		if ( is_string( $drop_time ) && is_numeric( $step ) && self::KEPT_STEP === (int) $step ) {
+			$this->log( 'info', 'follow-up read of a connected store with no account ended: ' . $this->account_service->reread_kept_tier( $drop_time ), 0 );
+			return;
+		}
 		if ( ! is_numeric( $drop_time ) || ! is_numeric( $step ) ) {
 			return;
 		}

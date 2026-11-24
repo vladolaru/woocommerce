@@ -963,7 +963,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'source' => 'rollback' ), $after['step_log'][0]['context'] ?? null );
 		$this->assertSame( 0, $this->scheduler->get_scheduled_action_id( $record['generation'], $record['attempt'] + 1 ), 'The superseded attempt is cancelled.' );
 		$this->assertSame( 0, $this->scheduler->get_scheduled_action_id( $after['generation'], 1 ), 'The rollback generation waits for a fresh merchant start.' );
-		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, get_option( WooPaymentsSetupTier::OPTION_NAME ), 'The tier follows the extension again.' );
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, get_option( WooPaymentsSetupTier::OPTION_NAME ), 'The stored tier stays while the extension owns payments.' );
 
 		// The superseded attempt, delivered anyway, does nothing: no deactivation and no data migration.
 		$this->start_fresh_request();
@@ -1177,7 +1177,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'awaiting_merchant_start', $after['current_step'] );
 		$this->assertSame( array( 'source' => 'rollback' ), $after['step_log'][0]['context'] ?? null );
 		$this->assertArrayNotHasKey( StateStore::HANDED_OVER_AT_KEY, $after, 'A new generation has no hand-over time.' );
-		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, get_option( WooPaymentsSetupTier::OPTION_NAME ), 'The tier follows the extension, not the built-in WooPayments.' );
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, get_option( WooPaymentsSetupTier::OPTION_NAME ), 'The stored tier stays while the extension owns payments.' );
 		$this->assertSame( 0, $this->scheduler->get_scheduled_action_id( $record['generation'], $record['attempt'] + 2 ), 'No further attempt of the switch is scheduled.' );
 		$this->assertSame( 0, $this->scheduler->get_scheduled_action_id( $after['generation'], 1 ), 'The rollback waits for a fresh merchant start.' );
 		if ( 'a retry finalize whose activation lost the write lock' === $shape ) {

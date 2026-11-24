@@ -56,6 +56,9 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 	/** The look's step number, after a step settled the tier. */
 	private const LOOK = 0;
 
+	/** The follow-up read's step number, after an empty read on a connected or active store. */
+	private const FOLLOW_UP = -1;
+
 	private const OFFSETS = array(
 		1 => 15 * MINUTE_IN_SECONDS,
 		2 => 75 * MINUTE_IN_SECONDS,
@@ -187,7 +190,7 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 		return array(
 			'a first not-found from disabled'              => array( WooPaymentsSetupTier::DISABLED, false, WooPaymentsSetupTier::AVAILABLE ),
 			'a not-found from available'                   => array( WooPaymentsSetupTier::AVAILABLE, false, WooPaymentsSetupTier::AVAILABLE ),
-			'a not-found while the extension owns payments' => array( WooPaymentsSetupTier::ACTIVE, true, WooPaymentsSetupTier::AVAILABLE ),
+			'X1 a not-found while the extension owns payments, which keeps the stored tier' => array( WooPaymentsSetupTier::ACTIVE, true, WooPaymentsSetupTier::ACTIVE ),
 			'K1 a not-found at active, which keeps active' => array( WooPaymentsSetupTier::ACTIVE, false, WooPaymentsSetupTier::ACTIVE ),
 			'K1 a not-found at connected, which keeps it too' => array( WooPaymentsSetupTier::CONNECTED, false, WooPaymentsSetupTier::CONNECTED ),
 		);
@@ -287,6 +290,177 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $this->stored_tier() );
 		$this->assertSame( array(), $this->pending_steps() );
+	}
+
+	/**
+	 * @testdox X2: a roll back to the extension keeps the stored active tier; the switch back with an empty row keeps it and books no follow-up, and the next ordinary empty read books one.
+	 */
+	public function test_x2_a_stay_on_the_extension_keeps_the_stored_tier(): void {
+		$this->store_has_account( 'yes' );
+
+		$this->account_service->sync_setup_tier_from_options( true );
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $this->stored_tier(), 'The stay keeps active.' );
+
+		update_option(
+			self::ROW,
+			array(
+				'data'               => array(),
+				'fetched'            => time(),
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			)
+		);
+		$this->account_service->sync_setup_tier_from_options( false );
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $this->stored_tier(), 'The switch back keeps active.' );
+		$this->assertSame( array(), $this->pending_follow_ups(), 'The switch back books nothing.' );
+
+		$this->account_service->get_cached_account_data( true );
+		$this->assertCount( 1, $this->pending_follow_ups(), 'The next ordinary empty read books the follow-up.' );
+	}
+
+	/**
+	 * @testdox F1: an ordinary empty read at active books one follow-up read 15 minutes later for active, and a second empty read books no other.
+	 */
+	public function test_f1_an_empty_read_at_a_kept_tier_books_one_follow_up(): void {
+		$this->store_has_account( 'yes' );
+		$before = time();
+
+		$this->account_service->get_cached_account_data( true );
+		$this->account_service->get_cached_account_data( true );
+
+		$follow_ups = $this->pending_follow_ups();
+		$this->assertCount( 1, $follow_ups );
+		$this->assertSame( array( WooPaymentsSetupTier::ACTIVE, self::FOLLOW_UP ), $follow_ups[0]['args'] );
+		$this->assertGreaterThanOrEqual( $before + 15 * MINUTE_IN_SECONDS, $follow_ups[0]['date'] );
+		$this->assertLessThanOrEqual( time() + 15 * MINUTE_IN_SECONDS, $follow_ups[0]['date'] );
+		$this->assertSame( array(), $this->pending_steps(), 'No low-tier steps.' );
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $this->stored_tier() );
+	}
+
+	/**
+	 * @testdox F5: an empty read on a store waiting for its switch from the extension books no follow-up, whatever tier it stores.
+	 */
+	public function test_f5_an_empty_read_while_nothing_owns_payments_books_nothing(): void {
+		$this->store_has_account( 'yes' );
+		update_option( WooPaymentsRuntimeArbiter::EXTENSION_VERSION_OPTION, '11.3.0' );
+		$this->arbiter->invalidate();
+		$this->assertTrue( $this->arbiter->is_awaiting_switch() );
+
+		$this->account_service->get_cached_account_data( true );
+
+		$this->assertSame( array(), $this->pending_follow_ups() );
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $this->stored_tier() );
+	}
+
+	/**
+	 * @testdox F2: the follow-up, run by Action Scheduler at a kept tier, reads once; a found account replaces the empty row, marked as never fetched, and the tier stays active with nothing scheduled after.
+	 */
+	public function test_f2_a_follow_up_that_finds_the_account_stores_it(): void {
+		$this->store_has_account( 'yes' );
+		$this->account_service->get_cached_account_data( true );
+		$this->client->answer = fn() => $this->account();
+
+		$this->assertSame( ActionScheduler_Store::STATUS_COMPLETE, $this->run_follow_up() );
+
+		$this->assertSame( 1, $this->client->plain_gets );
+		$row = $this->stored_row();
+		$this->assertSame( $this->account(), $row['data'] );
+		$this->assertSame( 0, $row['fetched'], 'The first foreground read refreshes it.' );
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $this->stored_tier() );
+		$this->assertSame( array(), $this->pending_actions(), 'Nothing is scheduled after it.' );
+	}
+
+	/**
+	 * @testdox F6: a follow-up never raises the tier: an explicit drop that lands during its read stays at available.
+	 */
+	public function test_f6_a_follow_up_never_raises_the_tier(): void {
+		$this->store_has_account( 'yes' );
+		$this->account_service->get_cached_account_data( true );
+		$this->client->answer = function (): array {
+			$this->account_service->drop_to_available();
+			return $this->account();
+		};
+
+		$this->run_follow_up();
+
+		$this->assertSame( 1, $this->client->plain_gets );
+		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->stored_tier() );
+	}
+
+	/**
+	 * @testdox F7: on a connected store an empty read books the follow-up for connected, and the follow-up stores the account found, with the tier left connected and one outcome line.
+	 */
+	public function test_f7_a_connected_store_gets_its_follow_up(): void {
+		$this->store_has_account( 'no' );
+		$this->account_service->get_cached_account_data( true );
+		$this->assertSame( array( WooPaymentsSetupTier::CONNECTED, self::FOLLOW_UP ), $this->pending_follow_ups()[0]['args'] ?? null );
+		$this->client->answer = fn() => $this->account();
+		$this->logger->lines  = array();
+
+		$this->assertSame( ActionScheduler_Store::STATUS_COMPLETE, $this->run_follow_up() );
+
+		$this->assertSame( 1, $this->client->plain_gets );
+		$this->assertSame( $this->account(), $this->stored_row()['data'] );
+		$this->assertSame( WooPaymentsSetupTier::CONNECTED, $this->stored_tier() );
+		$this->assertSame( array( array( 'info', 'The WooPayments setup tier re-check follow-up read of a connected store with no account ended: row_refreshed.' ) ), $this->recheck_lines() );
+	}
+
+	/**
+	 * @testdox F3: a follow-up that finds no account writes nothing and schedules nothing, and stores no trace: the next ordinary empty read books the next follow-up.
+	 */
+	public function test_f3_a_follow_up_with_no_account_leaves_everything_and_the_next_read_books_again(): void {
+		$this->store_has_account( 'yes' );
+		$this->account_service->get_cached_account_data( true );
+		$row_before = $this->raw_row();
+		$options    = wp_load_alloptions( true );
+
+		$this->assertSame( ActionScheduler_Store::STATUS_COMPLETE, $this->run_follow_up() );
+
+		$this->assertSame( 1, $this->client->plain_gets );
+		$this->assertSame( $row_before, $this->raw_row() );
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $this->stored_tier() );
+		$this->assertSame( array(), $this->pending_actions() );
+		$this->assertSame( array_keys( $options ), array_keys( wp_load_alloptions( true ) ), 'No option is added.' );
+		$this->assertSame( array( array( 'info', 'The WooPayments setup tier re-check follow-up read of a connected store with no account ended: no_account.' ) ), $this->recheck_lines(), 'One outcome line.' );
+
+		$this->account_service->get_cached_account_data( true );
+		$this->assertCount( 1, $this->pending_follow_ups(), 'The next empty read books the next follow-up.' );
+	}
+
+	/**
+	 * @testdox F4: a follow-up reads nothing when $_dataName.
+	 * @testWith ["the tier moved to connected"]
+	 *           ["the row holds an account again"]
+	 *           ["the extension owns payments"]
+	 *
+	 * @param string $change What changed before the follow-up ran.
+	 */
+	public function test_f4_a_follow_up_reads_nothing_once_the_store_moved( string $change ): void {
+		$this->store_has_account( 'yes' );
+		$this->account_service->get_cached_account_data( true );
+		$follow_up = $this->pending_follow_ups()[0]['args'];
+		if ( 'the tier moved to connected' === $change ) {
+			update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::CONNECTED );
+		} elseif ( 'the row holds an account again' === $change ) {
+			update_option(
+				self::ROW,
+				array(
+					'data'               => $this->account(),
+					'fetched'            => time(),
+					'errored'            => false,
+					'consecutive_errors' => 0,
+				)
+			);
+		} else {
+			update_option( 'active_plugins', array( 'woocommerce-payments/woocommerce-payments.php' ) );
+		}
+		$this->client->answer = fn() => $this->account();
+		$row_before           = $this->raw_row();
+
+		wc_get_container()->get( WooPaymentsSetupTierRecheck::class )->handle( $follow_up[0], $follow_up[1] );
+
+		$this->assertSame( 0, $this->client->plain_gets );
+		$this->assertSame( $row_before, $this->raw_row() );
 	}
 
 	/**
@@ -2050,6 +2224,35 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Run the one pending follow-up read through Action Scheduler in a cron request that loaded the store's tier, and get
+	 * the action's status after.
+	 *
+	 * @return string
+	 */
+	private function run_follow_up(): string {
+		$ids = as_get_scheduled_actions(
+			array(
+				'hook'   => self::HOOK,
+				'status' => ActionScheduler_Store::STATUS_PENDING,
+			),
+			'ids'
+		);
+		$this->assertCount( 1, $ids, 'One follow-up is pending.' );
+		$this->arbiter->invalidate();
+		$this->tier->invalidate();
+		add_filter( 'wp_doing_cron', '__return_true' );
+		try {
+			$this->bootstrap()->register( $this->make_container(), 'cron' );
+			$id = (int) reset( $ids );
+			ActionScheduler::runner()->process_action( $id, 'WP Cron' );
+		} finally {
+			remove_filter( 'wp_doing_cron', '__return_true' );
+		}
+
+		return ActionScheduler::store()->get_status( $id );
+	}
+
+	/**
 	 * Run a no-op action through Action Scheduler.
 	 */
 	private function run_noop_action(): void {
@@ -2067,9 +2270,34 @@ class WooPaymentsSetupTierRecheckTest extends WC_Unit_Test_Case {
 		return array_values(
 			array_filter(
 				$this->pending_actions(),
-				static fn( array $action ): bool => self::LOOK !== $action['args'][1]
+				static fn( array $action ): bool => ! in_array( $action['args'][1], array( self::LOOK, self::FOLLOW_UP ), true )
 			)
 		);
+	}
+
+	/**
+	 * Get the pending follow-up reads of a kept tier, each with its arguments and time.
+	 *
+	 * @return array<int,array{args:array<int,mixed>,date:int}>
+	 */
+	private function pending_follow_ups(): array {
+		$follow_ups = array();
+		foreach ( as_get_scheduled_actions(
+			array(
+				'hook'     => self::HOOK,
+				'status'   => ActionScheduler_Store::STATUS_PENDING,
+				'per_page' => -1,
+			)
+		) as $action ) {
+			if ( self::FOLLOW_UP === (int) ( $action->get_args()[1] ?? null ) ) {
+				$follow_ups[] = array(
+					'args' => $action->get_args(),
+					'date' => $action->get_schedule()->get_date()->getTimestamp(),
+				);
+			}
+		}
+
+		return $follow_ups;
 	}
 
 	/**

@@ -67,6 +67,9 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	/** Re-check outcome: the account row changed during the read, so nothing was written. */
 	public const RECHECK_ROW_CHANGED = 'row_changed';
 
+	/** Re-check outcome: the follow-up read of a connected or active store found an account ID already stored, so it read nothing. */
+	public const RECHECK_ACCOUNT_STORED = 'account_stored';
+
 	/** Re-check outcome: the account row and the tier were written, the tier as `active`. */
 	public const RECHECK_RAISED_ACTIVE = 'raised_active';
 
@@ -615,9 +618,9 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 *
 	 * @since 11.2.0
 	 *
-	 * @param bool $extension_owns_payments True while the WooPayments extension takes payments: the store then reads
-	 *                                      `available`. False derives `connected` or `active` from the account and the
-	 *                                      gateway's enabled setting.
+	 * @param bool $extension_owns_payments True while the WooPayments extension takes payments: the stored tier stays as
+	 *                                      it is, and the store reads `available`. False derives `connected` or `active`
+	 *                                      from an account with an ID and the gateway's enabled setting.
 	 */
 	public function sync_setup_tier_from_options( bool $extension_owns_payments ): void {
 		if ( null === $this->setup_tier || null === $this->runtime_arbiter ) {
@@ -632,9 +635,10 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	/**
 	 * Write the setup tier for this account data.
 	 *
-	 * Nothing is written while the WooPayments feature is off. An account read never lowers a connected or active tier:
-	 * no account lifts only a low tier to `available`, missing account data keeps the stored tier, and an ordinary read
-	 * keeps `active` over a gateway setting that reads off. Only drop_to_available() lowers a set-up tier.
+	 * Nothing is written while the WooPayments feature is off or the WooPayments extension owns payments. An account read
+	 * never lowers a connected or active tier: no account lifts only a low tier to `available`, missing account data keeps
+	 * the stored tier, and an ordinary read keeps `active` over a gateway setting that reads off. Only drop_to_available()
+	 * lowers a set-up tier. An ordinary read that finds no account on a connected or active store books one follow-up read.
 	 *
 	 * @param mixed $account_data            Last persisted account data.
 	 * @param bool  $extension_owns_payments True while the WooPayments extension takes payments.
@@ -645,17 +649,15 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( ! $this->runtime_arbiter->is_builtin_enabled() ) {
-			return;
-		}
-
-		if ( $extension_owns_payments ) {
-			$this->setup_tier->write_tier( WooPaymentsSetupTier::AVAILABLE );
+		if ( ! $this->runtime_arbiter->is_builtin_enabled() || $extension_owns_payments ) {
 			return;
 		}
 
 		if ( array() === $account_data ) {
-			if ( WooPaymentsSetupTier::DISABLED === $this->setup_tier->get_stored_tier() ) {
+			$tier = $this->setup_tier->get_stored_tier();
+			if ( $is_read && in_array( $tier, array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true ) && $this->runtime_arbiter->is_builtin_owner() ) {
+				wc_get_container()->get( WooPaymentsSetupTierRecheck::class )->schedule_follow_up( $tier );
+			} elseif ( WooPaymentsSetupTier::DISABLED === $tier ) {
 				$this->setup_tier->raise_to_available();
 			}
 			return;
@@ -747,6 +749,30 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @return string One of the RECHECK_* outcomes.
 	 */
 	public function recheck_low_tier(): string {
+		return $this->recheck( null );
+	}
+
+	/**
+	 * Read the account once for a connected or active store whose ordinary read found no account, and store an account
+	 * found the way recheck_low_tier() does, without touching the tier. It reads nothing once the tier has moved or the
+	 * row holds an account ID again, and with no row to compare against.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param string $kept_tier The tier the follow-up was booked for.
+	 * @return string One of the RECHECK_* outcomes.
+	 */
+	public function reread_kept_tier( string $kept_tier ): string {
+		return $this->recheck( $kept_tier );
+	}
+
+	/**
+	 * Run the low-tier re-check, or the follow-up read of a kept tier.
+	 *
+	 * @param string|null $kept_tier The kept tier the follow-up expects, or null for a low-tier step.
+	 * @return string One of the RECHECK_* outcomes.
+	 */
+	private function recheck( ?string $kept_tier ): string {
 		if ( null === $this->setup_tier || null === $this->runtime_arbiter ) {
 			return self::RECHECK_NOT_OWNER;
 		}
@@ -759,7 +785,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		$this->legacy_proxy->call_function( 'wp_cache_delete', 'alloptions', 'options' );
 		$this->legacy_proxy->call_function( 'wp_cache_delete', WooPaymentsSetupTier::OPTION_NAME, 'options' );
 		$this->setup_tier->invalidate();
-		if ( WooPaymentsSetupTier::AVAILABLE !== $this->setup_tier->get_stored_tier() ) {
+		if ( ( $kept_tier ?? WooPaymentsSetupTier::AVAILABLE ) !== $this->setup_tier->get_stored_tier() ) {
 			return self::RECHECK_TIER_MOVED;
 		}
 
@@ -767,6 +793,10 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		$seen_row = $this->read_account_row();
 		if ( null === $seen_row ) {
 			return self::RECHECK_NO_ROW;
+		}
+		$seen = maybe_unserialize( $seen_row );
+		if ( null !== $kept_tier && is_array( $seen ) && is_array( $seen['data'] ?? null ) && $this->has_account_id( $seen['data'] ) ) {
+			return self::RECHECK_ACCOUNT_STORED;
 		}
 
 		$account_data = $this->fetch_account_data( true );
@@ -790,6 +820,9 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		$cache_contents['fetched'] = 0;
 		if ( ! $this->replace_account_row( $seen_row, maybe_serialize( $cache_contents ) ) ) {
 			return self::RECHECK_ROW_CHANGED;
+		}
+		if ( null !== $kept_tier ) {
+			return self::RECHECK_ROW_REFRESHED;
 		}
 
 		$this->legacy_proxy->call_function( 'wp_cache_delete', 'alloptions', 'options' );
