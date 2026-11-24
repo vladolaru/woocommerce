@@ -15,8 +15,9 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
  * While the built-in WooPayments owns payments with an account connected (the connected and active setup tiers), defines
- * `WCPAY_VERSION_NUMBER` and declares the extension's `WC_Payments`, `WC_Payments_Features` and `WC_Payments_Utils` classes on first
- * use, except in a request that is activating the extension. Below that tier these symbols are absent, as with the feature off.
+ * `WCPAY_VERSION_NUMBER` and declares the extension's `WC_Payments`, `WC_Payments_Features`, `WC_Payments_Utils` and `WCPay\Core\Mode`
+ * classes on first use, except in a request that is activating the extension. Below that tier these symbols are absent, as with the
+ * feature off.
  *
  * Removed in WooCommerce 12.0.0.
  *
