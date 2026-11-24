@@ -339,7 +339,7 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$notes = self::order_notes_containing( $order, 're_3URpY0BzWlxcwgpP1T8e7HhY' );
 		$this->assertCount( 1, $notes, 'One note, however often the refund is delivered.' );
 		$this->assertSame(
-			'A refund of $10.99 (re_3URpY0BzWlxcwgpP1T8e7HhY) was made on WooPayments charge ch_3URpY0BzWlxcwgpP1SUxzwXd before this order recorded a payment. If charge ch_3URpY0BzWlxcwgpP1SUxzwXd is later recorded as this order\'s payment and the refund succeeded, add a manual refund of $10.99.',
+			'A refund of $10.99 (re_3URpY0BzWlxcwgpP1T8e7HhY) was made on WooPayments charge ch_3URpY0BzWlxcwgpP1SUxzwXd before this order recorded a payment. If charge ch_3URpY0BzWlxcwgpP1SUxzwXd is later recorded as this order\'s payment and the refund succeeded, the customer already has $10.99 back although this order may not show it. Do not refund it again from this order.',
 			html_entity_decode( wp_strip_all_tags( $notes[0]->content ), ENT_QUOTES )
 		);
 

@@ -442,7 +442,7 @@ class RefundEventHandler {
 			return;
 		}
 
-		// The merchant may have followed the earlier note's advice to record this refund manually after payment.
+		// On redelivery, link a matching manual refund recorded through the REST route or on the order screen after a failed refund.
 		$manual_row = $this->find_manual_record_for_note( $order, $facts );
 		if ( $manual_row instanceof WC_Order_Refund ) {
 			$this->add_note_and_metadata_for_created_refund( $order, $manual_row, $facts['refund_id'], $facts['balance_txn_id'], $facts['refund_status'], $facts['refund_amount'], $facts['currency'] );

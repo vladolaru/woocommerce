@@ -1360,7 +1360,7 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 				return $order;
 			};
 		};
-		$before = 'A refund of $4.00 (re_123) was made on WooPayments charge ch_unheld before this order recorded a payment. If charge ch_unheld is later recorded as this order\'s payment and the refund succeeded, add a manual refund of $4.00.';
+		$before = 'A refund of $4.00 (re_123) was made on WooPayments charge ch_unheld before this order recorded a payment. If charge ch_unheld is later recorded as this order\'s payment and the refund succeeded, the customer already has $4.00 back although this order may not show it. Do not refund it again from this order.';
 		$today  = 'A refund of $4.00 (re_123) was made on WooPayments charge ch_unheld, which does not pay this order. No refund was added to the order.';
 
 		return array(

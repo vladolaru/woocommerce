@@ -615,7 +615,7 @@ class WooPaymentsOrderNoteService {
 				$format = __( 'A refund of %1$s (<code>%2$s</code>) was made on WooPayments charge <a>%3$s</a>, which does not pay this order. No refund was added to the order.', 'woocommerce' );
 				if ( 'before_payment' === ( $facts['wording'] ?? '' ) ) {
 					/* translators: %1$s: refunded amount, %2$s: WooPayments refund ID, %3$s: WooPayments charge ID, %4$s: transaction URL. */
-					$format = __( 'A refund of %1$s (<code>%2$s</code>) was made on WooPayments charge <a>%3$s</a> before this order recorded a payment. If charge <code>%3$s</code> is later recorded as this order\'s payment and the refund succeeded, add a manual refund of %1$s.', 'woocommerce' );
+					$format = __( 'A refund of %1$s (<code>%2$s</code>) was made on WooPayments charge <a>%3$s</a> before this order recorded a payment. If charge <code>%3$s</code> is later recorded as this order\'s payment and the refund succeeded, the customer already has %1$s back although this order may not show it. Do not refund it again from this order.', 'woocommerce' );
 				}
 				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, array_merge( $link( '%4$s' ), array( 'code' => '<code>' ) ) ), $amount, esc_html( $refund_id ), esc_html( $charge_id ), $transaction_url );
 
