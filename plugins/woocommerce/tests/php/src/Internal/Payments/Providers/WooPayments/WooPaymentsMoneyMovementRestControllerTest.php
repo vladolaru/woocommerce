@@ -34,6 +34,7 @@ use WP_REST_Request;
 class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case {
 
 	use WooPaymentsMoneyMovementControllerTestTrait;
+	use UnresolvedCheckoutChargeTestTrait;
 
 	/**
 	 * Recording API client.
@@ -1709,6 +1710,71 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$before = $this->card_snapshot( $order, array() );
 		wc_get_container()->get( PaymentIntentEventHandler::class )->process( 'payment_intent.amount_capturable_updated', $answer );
 		$this->assertSame( $before, $this->card_snapshot( $order, array() ) );
+	}
+
+	/**
+	 * @testdox A $event_type event leaves the order $order_status and preserves the unresolved checkout charge.
+	 *
+	 * @testWith ["payment_intent.succeeded", "succeeded", "processing"]
+	 *           ["payment_intent.succeeded", "succeeded", "on-hold", 999]
+	 *           ["payment_intent.amount_capturable_updated", "requires_capture", "on-hold"]
+	 *           ["payment_intent.payment_failed", "requires_payment_method", "failed"]
+	 *
+	 * @param string $event_type    Platform event type.
+	 * @param string $intent_status Intent status the event carries.
+	 * @param string $order_status  Expected order status after the event.
+	 * @param int    $amount        Payment amount in cents against an order total of 1234.
+	 */
+	public function test_payment_event_preserves_the_unresolved_checkout_charge( string $event_type, string $intent_status, string $order_status, int $amount = 1234 ): void {
+		$order           = $this->order_for_card_answer( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$expected        = $this->store_unresolved_checkout_charge( $order );
+		$event           = $this->card_answer( $order, $intent_status );
+		$event['amount'] = $amount;
+		if ( 'payment_intent.payment_failed' === $event_type ) {
+			$order->update_meta_data( '_intent_id', 'pi_answer' );
+			$order->update_meta_data( '_intention_status', 'requires_action' );
+			$order->update_meta_data( '_payment_method_id', 'pm_card' );
+			$order->save();
+			$event['last_payment_error'] = array(
+				'code'           => 'card_declined',
+				'message'        => 'Your card was declined.',
+				'payment_method' => array(
+					'id'   => 'pm_card',
+					'type' => 'card',
+				),
+			);
+		}
+
+		wc_get_container()->get( PaymentIntentEventHandler::class )->process( $event_type, $event );
+
+		$fresh = $this->stored_card_order( $order );
+		$this->assertSame( $order_status, $fresh->get_status() );
+		$this->assert_unresolved_checkout_charge( $expected, $fresh );
+	}
+
+	/**
+	 * @testdox An event refused under the checkout lock preserves the pending order and its unresolved charge.
+	 */
+	public function test_payment_event_refused_under_a_checkout_claim_keeps_the_unresolved_checkout_charge(): void {
+		$order      = $this->order_for_card_answer( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$expected   = $this->store_unresolved_checkout_charge( $order );
+		$lock       = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		$token      = $lock->claim( $order, $vocabulary, $expected[ WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META ], 'checkout' );
+		$this->assertNotNull( $token );
+		$refused = false;
+		try {
+			wc_get_container()->get( PaymentIntentEventHandler::class )->process( 'payment_intent.succeeded', $this->card_answer( $order ) );
+		} catch ( OrderPaymentLockRefusedException $exception ) {
+			$refused = true;
+		} finally {
+			$lock->release( $order, $vocabulary, (string) $token );
+		}
+
+		$this->assertTrue( $refused );
+		$fresh = $this->stored_card_order( $order );
+		$this->assertSame( 'pending', $fresh->get_status() );
+		$this->assert_unresolved_checkout_charge( $expected, $fresh );
 	}
 
 	/** Treating a processing answer as success pays an order before the payment has settled. */

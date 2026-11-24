@@ -38,6 +38,7 @@ use WC_Unit_Test_Case;
 class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 
 	use OrderPaymentLockTestTrait;
+	use UnresolvedCheckoutChargeTestTrait;
 
 	/**
 	 * The recorded completed 3DS intent of REC-3DS-2 (`Fixtures/platform-3ds-challenge-results.json`, `classic_checkout_challenge_completed`).
@@ -657,6 +658,51 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( '3220', $reloaded->get_meta( 'last4', true ) );
 		$this->assertCount( 1, array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $note ): bool => false !== strpos( $note, 'successfully charged' ) ) );
 		$this->assertCount( 0, $this->get_not_own_lines( $logger ) );
+	}
+
+	/**
+	 * @testdox A $intent_status intent confirmed by the $entry leaves the order $order_status and preserves the unresolved checkout charge.
+	 *
+	 * @testWith ["3DS return", "succeeded", "completed"]
+	 *           ["redirect return", "succeeded", "completed"]
+	 *           ["3DS return", "requires_capture", "on-hold"]
+	 *           ["redirect return", "requires_capture", "on-hold"]
+	 *
+	 * @param string $entry         `3DS return` or `redirect return`.
+	 * @param string $intent_status Intent status the return reads.
+	 * @param string $order_status  Order status after the confirmation.
+	 */
+	public function test_a_confirmed_payment_preserves_the_unresolved_checkout_charge( string $entry, string $intent_status, string $order_status ): void {
+		$order = $this->create_woopayments_order( '10.99' );
+		$order->set_transaction_id( self::RECORDED_INTENT );
+		$order->update_meta_data( '_intent_id', self::RECORDED_INTENT );
+		$order->update_meta_data( '_intention_status', 'requires_action' );
+		$expected = $this->store_unresolved_checkout_charge( $order );
+		$sut      = $this->create_intent_confirmation_service( wc_get_container()->get( Client::class ), null, $this->create_account_service( false ) );
+
+		$sut->confirm_fetched_intent_for_order( $order, $this->own_rule_intent( $order, $intent_status ), false, 'redirect return' === $entry );
+
+		$reloaded = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( $order_status, $reloaded->get_status() );
+		$this->assert_unresolved_checkout_charge( $expected, $reloaded );
+	}
+
+	/**
+	 * @testdox Applying an attached intent pays the order and preserves the unresolved checkout charge.
+	 */
+	public function test_attached_payment_preserves_the_unresolved_checkout_charge(): void {
+		$order = $this->create_woopayments_order( '10.99' );
+		$order->update_meta_data( '_intent_id', self::RECORDED_INTENT );
+		$expected = $this->store_unresolved_checkout_charge( $order );
+		$sut      = $this->create_intent_confirmation_service( wc_get_container()->get( Client::class ), null, $this->create_account_service( false ) );
+
+		$sut->apply_attached_payment_intent( $order, $this->own_rule_intent( $order ) );
+
+		$reloaded = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'completed', $reloaded->get_status() );
+		$this->assert_unresolved_checkout_charge( $expected, $reloaded );
 	}
 
 	/**
