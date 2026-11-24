@@ -50,6 +50,7 @@ class WooPaymentsExtensionFacadePlacementTest extends WC_Unit_Test_Case {
 		$expected_symbols = array(
 			$plugin_directory . '/includes/legacy/woopayments-compat/class-wc-payments.php'                => array( 'WC_Payments' ),
 			$plugin_directory . '/includes/legacy/woopayments-compat/class-wc-payments-features.php'       => array( 'WC_Payments_Features' ),
+			$plugin_directory . '/includes/legacy/woopayments-compat/class-wc-payments-utils.php'          => array( 'WC_Payments_Utils' ),
 			$plugin_directory . '/includes/legacy/woopayments-multi-currency-compat/MultiCurrency.php'     => array( 'WCPay\\MultiCurrency\\MultiCurrency' ),
 			$plugin_directory . '/includes/legacy/woopayments-multi-currency-compat/Compatibility.php'     => array( 'WCPay\\MultiCurrency\\Compatibility' ),
 		);

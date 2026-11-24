@@ -16,6 +16,7 @@ class StripeBillingPlacementTest extends WC_Unit_Test_Case {
 	 * Files outside the module that may reference it, one line each (the seams in `StripeBilling/README.md`).
 	 */
 	private const SEAM_FILES = array(
+		'includes/legacy/woopayments-compat/class-wc-payments-features.php',
 		'src/Internal/Payments/Providers/WooPayments/WooPaymentsProvider.php',
 		'src/Internal/Payments/Providers/WooPayments/WooPaymentsGateway.php',
 		'src/Internal/Payments/Providers/WooPayments/Subscriptions/SubscriptionsController.php',

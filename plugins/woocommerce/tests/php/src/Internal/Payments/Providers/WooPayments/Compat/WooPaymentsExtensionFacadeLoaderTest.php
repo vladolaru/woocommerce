@@ -9,6 +9,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\WooPay
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use WC_Unit_Test_Case;
 
 /**
@@ -90,6 +91,82 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 			}
 		} finally {
 			parent::tearDown();
+		}
+	}
+
+	/**
+	 * @testdox The legacy amount helper rounds once and preserves zero-decimal currencies.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_prepare_amount(): void {
+		$this->register_extension_facades();
+		$this->setExpectedDeprecated( 'WC_Payments_Utils::prepare_amount' );
+		$this->assertSame( 1001, \WC_Payments_Utils::prepare_amount( 10.005, 'USD' ) );
+		$this->assertSame( 1000, \WC_Payments_Utils::prepare_amount( '1000', 'JPY' ) );
+		$this->assertSame( 1000, \WC_Payments_Utils::prepare_amount( '1000', 'jpy' ) );
+		$this->assertSame( -125, \WC_Payments_Utils::prepare_amount( '-1.25' ) );
+	}
+
+	/**
+	 * @testdox The country and order-lock probes still skip the extension's APIs.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_country_and_lock_probes(): void {
+		$this->register_extension_facades();
+		class_exists( 'WC_Payments_Utils' );
+		$this->assertNull( wc_get_container()->get( WooPaymentsExtensionRuntime::class )->get_supported_countries() );
+		foreach ( array( 'lock_order_payment', 'unlock_order_payment', 'is_order_locked' ) as $method ) {
+			$this->assertFalse( method_exists( 'WC_Payments_Utils', $method ), $method );
+		}
+		$this->assertFalse( class_exists( 'WC_Payments_Order_Service' ) );
+	}
+
+	/**
+	 * @testdox Jetpack plugin installation and activation leave the extension free to declare its own classes.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 * @testWith ["jetpack.jsonAPI", "POST", "/rest/v1.2/sites/123/plugins/woocommerce-payments%2Fwoocommerce-payments", true, true]
+	 *           ["jetpack.jsonAPI", "POST", "/rest/v1.1/sites/123/plugins/woocommerce-payments/install", false, true]
+	 *           ["jetpack.jsonAPI", "POST", "/rest/v1.2/sites/123/plugins/woocommerce-payments%20woocommerce-payments", true, true, "active=true"]
+	 *           ["jetpack.jsonAPI", "POST", "/rest/v1.2/sites/123/plugins/woocommerce-payments", true, false, "active=false"]
+	 *           ["jetpack.jsonAPI", "POST", "/rest/v1.2/sites/123/plugins/another-plugin/install", true, false]
+	 *           ["jetpack.jsonAPI", "GET", "/rest/v1.2/sites/123/plugins/woocommerce-payments", true, false]
+	 *           ["jetpack.jsonAPI", "POST", "/rest/v1.2/sites/123/posts/new", true, false]
+	 *           ["another.method", "POST", "/rest/v1.2/sites/123/plugins/new", false, false]
+	 *
+	 * @param string $method    XML-RPC method.
+	 * @param string $verb      Inner API method.
+	 * @param string $path      Inner API path.
+	 * @param bool   $multicall Whether the call is in a system.multicall envelope.
+	 * @param bool   $activates Whether the request can load the extension.
+	 * @param string $body      Inner JSON or form body.
+	 */
+	public function test_remote_plugin_management( string $method, string $verb, string $path, bool $multicall, bool $activates, string $body = '{"active":true}' ): void {
+		require_once ABSPATH . Constants::get_constant( 'WPINC' ) . '/class-IXR.php';
+		$this->set_request( array(), array(), null, array( 'XMLRPC_REQUEST' => true ) );
+		$args    = array( array( $verb, $path, $body, 123, array(), 'en_US' ), array() );
+		$payload = array(
+			'methodName' => $method,
+			'params'     => $args,
+		);
+		$call    = $multicall
+			? new \IXR_Request( 'system.multicall', array( array( $payload ) ) )
+			: new \IXR_Request( $method, $args );
+
+		$previous = $GLOBALS['HTTP_RAW_POST_DATA'] ?? null;
+		try {
+			$GLOBALS['HTTP_RAW_POST_DATA'] = $call->getXml(); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- The request body set by xmlrpc.php before plugins load.
+			$this->register_extension_facades();
+			$this->assertSame( ! $activates, in_array( array( $this->loader, 'autoload_facade' ), $this->registered_autoloaders(), true ) );
+		} finally {
+			if ( null === $previous ) {
+				unset( $GLOBALS['HTTP_RAW_POST_DATA'] );
+			} else {
+				$GLOBALS['HTTP_RAW_POST_DATA'] = $previous; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restore the original request.
+			}
+			Constants::clear_single_constant( 'XMLRPC_REQUEST' );
 		}
 	}
 
@@ -235,12 +312,14 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 			$this->assertFalse( in_array( array( $this->loader, 'autoload_facade' ), $this->registered_autoloaders(), true ), 'The loader must register no facade autoloader below the connected tier.' );
 			$this->assertFalse( class_exists( 'WC_Payments' ), 'A consumer probing WC_Payments must find nothing below the connected tier.' );
 			$this->assertFalse( class_exists( 'WC_Payments_Features' ), 'A consumer probing WC_Payments_Features must find nothing below the connected tier.' );
+			$this->assertFalse( class_exists( 'WC_Payments_Utils' ), 'A consumer probing WC_Payments_Utils must find nothing below the connected tier.' );
 			$this->assertFalse( defined( 'WCPAY_VERSION_NUMBER' ), 'The version constant must stay undefined below the connected tier.' );
 			return;
 		}
 
 		$this->assertTrue( class_exists( 'WC_Payments' ), 'A consumer probing WC_Payments must find the facade on the connected and active tiers.' );
 		$this->assertTrue( class_exists( 'WC_Payments_Features' ), 'A consumer probing WC_Payments_Features must find the facade on the connected and active tiers.' );
+		$this->assertTrue( class_exists( 'WC_Payments_Utils' ), 'A consumer probing WC_Payments_Utils must find the facade on the connected and active tiers.' );
 		$this->assertTrue( defined( 'WCPAY_VERSION_NUMBER' ), 'The version constant must exist where the facade classes do.' );
 		if ( defined( 'WCPAY_VERSION_NUMBER' ) ) {
 			$this->assertSame( WooPaymentsClientVersion::VERSION, WCPAY_VERSION_NUMBER );

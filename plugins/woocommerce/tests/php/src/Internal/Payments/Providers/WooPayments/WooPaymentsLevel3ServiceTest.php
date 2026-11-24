@@ -3,8 +3,12 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\WooPaymentsExtensionFacadeLoader;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLevel3Service;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use WC_Helper_Product;
 use WC_Order;
 use WC_Order_Item_Fee;
@@ -233,28 +237,42 @@ class WooPaymentsLevel3ServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should keep filtered Level 3 data that balances with the order total.
 	 *
-	 * Client 11.3.0 test "filtered level3 data that balances is kept": a gift card paid 10.00 outside the line items.
+	 * Gift Cards subtracts the amount paid by gift card through the WooPayments amount callback.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_filtered_level3_data_that_balances_is_kept(): void {
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$container = wc_get_container();
+		$container->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		$container->get( WooPaymentsSetupTier::class )->write_tier( WooPaymentsSetupTier::ACTIVE );
+		$container->get( WooPaymentsExtensionFacadeLoader::class )->load();
+		$this->setExpectedDeprecated( 'WC_Payments_Utils::prepare_amount' );
 		add_filter(
 			'wcpay_payment_request_level3_data',
-			static function ( $level3_data ) {
+			static function ( $level3_data, $order ) {
 				$level3_data['line_items'][] = (object) array(
 					'product_code'        => 'gift-card',
-					'product_description' => 'Gift card',
+					'product_description' => 'WCGC ' . $order->get_id(),
 					'unit_cost'           => 0,
 					'quantity'            => 1,
 					'tax_amount'          => 0,
-					'discount_amount'     => 1000,
+					'discount_amount'     => call_user_func( array( 'WC_Payments_Utils', 'prepare_amount' ), 5, $order->get_currency() ),
 				);
 				return $level3_data;
-			}
+			},
+			10,
+			2
 		);
 
-		$level3 = $this->make_sut( 'US' )->get_data_from_order( $this->make_order( array( array( 'Beanie', 1, 18.0, 2.7 ) ), 48.7 ) );
+		$order = $this->make_order( array( array( 'Beanie', 1, 18.0, 2.7 ) ), 53.7 );
+		$order->save();
+		$level3 = $this->make_sut( 'US' )->get_data_from_order( $order );
 
 		$this->assertCount( 2, $level3['line_items'] );
-		$this->assertSame( 'gift-card', $level3['line_items'][1]->product_code );
+		$this->assertSame( 'WCGC ' . $order->get_id(), $level3['line_items'][1]->product_description );
+		$this->assertSame( 500, $level3['line_items'][1]->discount_amount );
 	}
 
 	/**

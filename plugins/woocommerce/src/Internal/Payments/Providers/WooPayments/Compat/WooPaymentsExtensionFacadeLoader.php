@@ -15,8 +15,8 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
  * While the built-in WooPayments owns payments with an account connected (the connected and active setup tiers), defines
- * `WCPAY_VERSION_NUMBER` and declares the WooPayments extension's `WC_Payments` and `WC_Payments_Features` classes on first
- * use, except in a request that is activating the extension. Below that tier the three are absent, as with the feature off.
+ * `WCPAY_VERSION_NUMBER` and declares the extension's `WC_Payments`, `WC_Payments_Features` and `WC_Payments_Utils` classes on first
+ * use, except in a request that is activating the extension. Below that tier these symbols are absent, as with the feature off.
  *
  * Removed in WooCommerce 12.0.0.
  *
@@ -31,6 +31,7 @@ class WooPaymentsExtensionFacadeLoader implements RegisterHooksInterface {
 	private const FACADE_FILES = array(
 		'WC_Payments'          => 'class-wc-payments.php',
 		'WC_Payments_Features' => 'class-wc-payments-features.php',
+		'WC_Payments_Utils'    => 'class-wc-payments-utils.php',
 	);
 
 	/**
@@ -80,7 +81,7 @@ class WooPaymentsExtensionFacadeLoader implements RegisterHooksInterface {
 	 * Below the connected tier other plugins see no WooPayments, as on a store with the feature off: until an account is
 	 * connected the built-in takes no card payment, so no plugin should hide its own card methods for it.
 	 *
-	 * The two classes are declared on first use through an autoloader, so a request that activates WooPayments without
+	 * The classes are declared on first use through an autoloader, so a request that activates WooPayments without
 	 * anything asking for them first leaves the names to the extension's own declarations. Requests recognized as a
 	 * WooPayments activation get no facades at all, since a consumer probing the class earlier in the same request would
 	 * otherwise declare it before the extension does.
@@ -155,7 +156,90 @@ class WooPaymentsExtensionFacadeLoader implements RegisterHooksInterface {
 			return true;
 		}
 
-		return $this->is_plugins_rest_mutation_request( $request );
+		return $this->is_plugins_rest_mutation_request( $request ) || $this->is_jetpack_plugin_request();
+	}
+
+	/**
+	 * Recognize plugin installation and activation through Jetpack's JSON API, including batched XML-RPC calls.
+	 */
+	private function is_jetpack_plugin_request(): bool {
+		if ( ! Constants::is_true( 'XMLRPC_REQUEST' ) ) {
+			return false;
+		}
+
+		// xmlrpc.php reads the body before it loads WordPress. Leave ordinary XML-RPC requests, including uploads, alone.
+		$body = $GLOBALS['HTTP_RAW_POST_DATA'] ?? null;
+		if ( ! is_string( $body ) || ! str_contains( $body, 'jetpack.jsonAPI' ) ) {
+			return false;
+		}
+
+		require_once ABSPATH . Constants::get_constant( 'WPINC' ) . '/class-IXR.php';
+		$message = new \IXR_Message( $body );
+		if ( ! $message->parse() ) {
+			return false;
+		}
+		$method = $message->methodName; // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- WordPress IXR_Message property.
+		$calls  = 'system.multicall' === $method ? ( $message->params[0] ?? null ) : array(
+			array(
+				'methodName' => $method,
+				'params'     => $message->params,
+			),
+		);
+		if ( ! is_array( $calls ) ) {
+			return false;
+		}
+		foreach ( $calls as $call ) {
+			if ( ! is_array( $call ) || 'jetpack.jsonAPI' !== ( $call['methodName'] ?? null ) || ! is_array( $call['params'] ?? null ) ) {
+				continue;
+			}
+			$args = $call['params'][0] ?? null;
+			if ( ! is_array( $args ) || 'POST' !== ( $args[0] ?? null ) ) {
+				continue;
+			}
+			if ( $this->is_jetpack_plugin_mutation( $args ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Tell whether a Jetpack plugins POST can install or activate WooPayments.
+	 *
+	 * @param array $args JSON API arguments from the XML-RPC call.
+	 */
+	private function is_jetpack_plugin_mutation( array $args ): bool {
+		$url  = $args[1] ?? null;
+		$path = is_string( $url ) ? wp_parse_url( $url, PHP_URL_PATH ) : null;
+		if ( ! is_string( $path ) || ! preg_match( '~/sites/[^/]+/plugins(?:/([^/]+))?(/install)?/?$~', $path, $matches ) ) {
+			return false;
+		}
+
+		// A zip install does not identify the plugin until the archive is unpacked.
+		$plugin = str_replace( ' ', '/', urldecode( $matches[1] ?? '' ) );
+		if ( 'new' === $plugin ) {
+			return true;
+		}
+		if ( '' !== $plugin && ! $this->request_targets_woopayments( array( 'plugins' => array( $plugin, $plugin . '.php' ) ) ) ) {
+			return false;
+		}
+		if ( isset( $matches[2] ) ) {
+			return true;
+		}
+
+		// Jetpack accepts both JSON and form bodies. A secure body is retrieved by Jetpack later in the request.
+		$body = $args[2] ?? null;
+		if ( ! is_string( $body ) ) {
+			return false;
+		}
+		$input = json_decode( $body, true );
+		if ( ! is_array( $input ) ) {
+			$input = array();
+			parse_str( $body, $input );
+		}
+		$active = $input['active'] ?? false;
+		return isset( $input['secure_key'] ) || 'install' === ( $input['action'] ?? null )
+			|| ( is_scalar( $active ) && in_array( strtolower( (string) $active ), array( '1', 'true', 't' ), true ) );
 	}
 
 	/**

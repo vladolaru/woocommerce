@@ -17,7 +17,7 @@ The one exception is `StripeBillingMigrator`, built with `new` on every request 
 
 ## Boundary
 
-Code outside this folder names only `StripeBillingModule`, and only in these seams, each a one-line delegation that does nothing when the module is not loaded:
+Code outside this folder names only `StripeBillingModule`, and only at the points listed below. The compatibility facade can read eligibility and the stored toggle even when the module has attached no hooks.
 
 | Seam | File | What it does |
 |---|---|---|
@@ -30,6 +30,7 @@ Code outside this folder names only `StripeBillingModule`, and only in these sea
 | S7 | `WooPaymentsSettingsService.php`, `MerchantRestController.php` | the Stripe Billing settings fields, the toggle write, and the bundled subscriptions flag, its eligibility and its turn-off |
 | S8 | `Cutover/BundledSubscriptionsGuard.php` | cutover rules for stores with Stripe Billing data |
 | S9 | `WooPaymentsFeeDetailsNoteController.php` | asks the module to schedule the first-invoice job when the payment's success or capture note is added |
+| Compatibility facade | `includes/legacy/woopayments-compat/class-wc-payments-features.php` | reads bundled subscription eligibility and the Stripe Billing option name for extension feature checks |
 
 The Stripe Billing fee context on payment intents is not a seam: the module sets `payment_context` through the existing `wcpay_metadata_from_order` filter.
 
@@ -39,4 +40,4 @@ Code inside this folder may use provider services from the container, the paymen
 
 ## Extraction
 
-To move Stripe Billing out of WooCommerce: delete this folder, revert the nine seams, remove the module root from the provider's bootstrap matrix, and delete `StripeBillingPlacementTest`.
+To move Stripe Billing out of WooCommerce: delete this folder, remove the references listed above, remove the module root from the provider's bootstrap matrix, and delete `StripeBillingPlacementTest`.
