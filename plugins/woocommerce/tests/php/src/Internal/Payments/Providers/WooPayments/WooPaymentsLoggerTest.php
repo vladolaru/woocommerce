@@ -423,6 +423,97 @@ class WooPaymentsLoggerTest extends WC_Unit_Test_Case {
 		);
 	}
 
+	/**
+	 * @testdox The logger does not resolve the current user while the current user is being decided.
+	 */
+	public function test_logger_does_not_resolve_the_user_while_the_user_is_being_decided(): void {
+		$user_id = self::factory()->user->create();
+		$sut     = $this->make_logger();
+
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$decided_with_logging_off = $this->decide_user_while_logging( $sut, $user_id );
+
+		self::enable_woopayments_debug_logging();
+		$logger                  = RecordingWcLogger::install();
+		$decided_with_logging_on = $this->decide_user_while_logging( $sut, $user_id );
+
+		$this->assertSame( 1, $decided_with_logging_off['entries'] );
+		$this->assertSame( 1, $decided_with_logging_on['entries'] );
+		$this->assertSame( $decided_with_logging_off['user_id'], $decided_with_logging_on['user_id'] );
+		$this->assertSame( $user_id, $decided_with_logging_on['user_id'] );
+		$this->assertCount( 1, array_keys( array_column( $logger->lines, 1 ), 'Logged while the user is decided.', true ) );
+		$this->assertSame( '--', $this->get_logged_context( $logger, 'Logged while the user is decided.' )['WP_USER'] );
+	}
+
+	/**
+	 * @testdox Once the user is decided, a line names the decided user, as before.
+	 */
+	public function test_logger_names_the_user_once_the_user_is_decided(): void {
+		self::enable_woopayments_debug_logging();
+		$user_id = self::factory()->user->create();
+		$sut     = $this->make_logger();
+		$this->decide_user_while_logging( $sut, $user_id );
+		$logger = RecordingWcLogger::install();
+
+		$sut->log( 'Logged after the user is decided.' );
+
+		$this->assertSame( '#' . $user_id, $this->get_logged_context( $logger, 'Logged after the user is decided.' )['WP_USER'] );
+	}
+
+	/**
+	 * Make a logger on a fresh account service.
+	 *
+	 * @return WooPaymentsLogger
+	 */
+	private function make_logger(): WooPaymentsLogger {
+		$account_service = new WooPaymentsAccountService();
+		$database_cache  = new WooPaymentsDatabaseCache();
+		$database_cache->init( wc_get_container()->get( LegacyProxy::class ) );
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ), $database_cache );
+		$sut = new WooPaymentsLogger();
+		$sut->init( $account_service );
+
+		return $sut;
+	}
+
+	/**
+	 * Decide the current user afresh and log a line while the current user is being decided.
+	 *
+	 * The callback counts its entries and logs on the first five only.
+	 *
+	 * @param WooPaymentsLogger $sut     Logger.
+	 * @param int               $user_id User ID the callback decides.
+	 * @return array{entries:int,user_id:int}
+	 */
+	private function decide_user_while_logging( WooPaymentsLogger $sut, int $user_id ): array {
+		global $current_user;
+
+		$entries  = 0;
+		$callback = static function ( $user ) use ( $sut, $user_id, &$entries ) {
+			unset( $user );
+			++$entries;
+			if ( $entries <= 5 ) {
+				$sut->log( 'Logged while the user is decided.' );
+			}
+
+			return $user_id;
+		};
+
+		$current_user = null; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Lets WordPress decide the user again.
+		add_filter( 'determine_current_user', $callback, 20 );
+		try {
+			$decided = wp_get_current_user()->ID;
+		} finally {
+			remove_filter( 'determine_current_user', $callback, 20 );
+		}
+
+		return array(
+			'entries' => $entries,
+			'user_id' => (int) $decided,
+		);
+	}
+
 	/** @return array<string,array{string,bool,bool}> */
 	public static function logging_states(): array {
 		return array(

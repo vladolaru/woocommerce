@@ -260,12 +260,13 @@ class WooPaymentsLogger {
 	 *
 	 * The referrer and the request's query string are left out: on order-pay pages they carry the order key. The user is
 	 * read only after `init`, when WordPress has loaded and settled it, and named by ID, as client 11.3.0
-	 * `src/Internal/LoggerContext.php:162` does.
+	 * `src/Internal/LoggerContext.php:162` does. The logger does not resolve the current user while the current user
+	 * is being decided.
 	 *
 	 * @return array<string,string>
 	 */
 	private function get_request_context(): array {
-		$user = did_action( 'init' ) ? wp_get_current_user() : null;
+		$user = did_action( 'init' ) && ! doing_filter( 'determine_current_user' ) ? wp_get_current_user() : null;
 		// phpcs:disable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Sanitized below, as client 11.1.0 does (src/Internal/LoggerContext.php:143-144).
 		$user_agent  = isset( $_SERVER['HTTP_USER_AGENT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ) : '--';
 		$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? wp_parse_url( sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ), PHP_URL_PATH ) : '--';
