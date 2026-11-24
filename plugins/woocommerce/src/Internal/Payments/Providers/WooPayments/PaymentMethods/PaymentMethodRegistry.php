@@ -84,6 +84,20 @@ class PaymentMethodRegistry {
 	private array $definitions = array();
 
 	/**
+	 * Get every definition, Amazon Pay included, keyed by payment method ID in WooPayments' display order, without
+	 * reading the account.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return array<string,PaymentMethodDefinition>
+	 */
+	public function get_all(): array {
+		$this->initialize_definitions();
+
+		return $this->definitions;
+	}
+
+	/**
 	 * Get the definitions WooPayments registers on this store, keyed by payment method ID in WooPayments' display order.
 	 *
 	 * Every definition, with Amazon Pay only while its feature is on. The availability filter does not apply here: it

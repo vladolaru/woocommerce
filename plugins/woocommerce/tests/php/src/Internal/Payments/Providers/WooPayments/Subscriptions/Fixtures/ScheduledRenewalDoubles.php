@@ -24,6 +24,7 @@ use WC_Order;
  *   (includes/gateways/class-wc-subscriptions-payment-gateways.php:68-122).
  * - `woocommerce_scheduled_subscription_payment_retry`: the payment step of `WCS_Retry_Manager::maybe_retry_payment()`
  *   (includes/payment-retry/class-wcs-retry-manager.php:340-377).
+ * - `wcs_order_contains_early_renewal()`, the Customer Renewal Invoice and the order screen's "Retry Renewal Payment".
  *
  * A renewal order is created for subscriptions with a total; the zero-total branch is left out. The test's hook snapshot
  * removes the callbacks when the test ends.
@@ -35,6 +36,12 @@ final class ScheduledRenewalDoubles {
 
 	/** WooCommerce Subscriptions' note when a retry finds a manual subscription. */
 	public const RETRY_SKIPPED_NOTE = 'Renewal payment retry skipped - related subscription has changed to manual renewal.';
+
+	/** WooCommerce Subscriptions' note when the merchant retries a renewal from the order screen. */
+	public const ADMIN_RETRY_NOTE = 'Retry renewal payment action requested by admin.';
+
+	/** The key WooCommerce Subscriptions lists its Customer Renewal Invoice under in the mailer. */
+	public const RENEWAL_INVOICE_EMAIL = 'WCS_Email_Customer_Renewal_Invoice';
 
 	/**
 	 * Meta the stand-in subscription keeps that WooCommerce Subscriptions stores as subscription properties, so it is not
@@ -55,6 +62,72 @@ final class ScheduledRenewalDoubles {
 		// A paid renewal reactivates its subscription, and a failed one puts it on hold, as in WooCommerce Subscriptions.
 		WooCommerceSubscriptionsDoubles::activate_subscriptions_on_renewal_payment();
 		add_filter( 'woocommerce_order_status_changed', 'WC_Subscriptions_Renewal_Order::maybe_record_subscription_payment', 10, 3 );
+
+		if ( ! function_exists( 'wcs_order_contains_early_renewal' ) ) {
+			// Stands in for 9.4.1 `includes/core/wcs-order-functions.php:1059-1075`: an order the early-renewal modal marked.
+			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its early-renewal check.
+			eval( 'namespace { function wcs_order_contains_early_renewal( $order ) { $order = is_object( $order ) ? $order : wc_get_order( $order ); $is_early_renewal = $order instanceof WC_Order && absint( $order->get_meta( "_subscription_renewal_early", true ) ) > 0; return apply_filters( "woocommerce_subscriptions_is_early_renewal_order", $is_early_renewal, $order ); } }' );
+		}
+	}
+
+	/**
+	 * List the Customer Renewal Invoice stand-in in the mailer under Subscriptions' key, as
+	 * `WC_Subscriptions_Email::add_emails()` does at priority 10 (includes/core/class-wc-subscriptions-email.php:37,69-74).
+	 * The mailer reads it when it is next built.
+	 */
+	public static function load_renewal_invoice_email(): void {
+		add_filter( 'woocommerce_email_classes', array( self::class, 'add_renewal_invoice_email' ), 10, 1 );
+	}
+
+	/**
+	 * Add the Customer Renewal Invoice stand-in to the mailer's emails.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $email_classes Email classes.
+	 * @return mixed
+	 */
+	public static function add_renewal_invoice_email( $email_classes ) {
+		if ( is_array( $email_classes ) ) {
+			$email_classes[ self::RENEWAL_INVOICE_EMAIL ] = new RenewalInvoiceEmailDouble();
+		}
+
+		return $email_classes;
+	}
+
+	/**
+	 * Tell whether the order screen offers "Retry Renewal Payment", as `WCS_Admin_Meta_Boxes::can_renewal_order_be_retried()`
+	 * decides (includes/core/admin/class-wcs-admin-meta-boxes.php:401-417): a renewal that needs payment and names a gateway
+	 * with a scheduled-payment listener, whose subscription supports date changes and renews automatically.
+	 *
+	 * @param WC_Order $order Renewal order.
+	 * @return bool
+	 */
+	public static function can_renewal_order_be_retried( WC_Order $order ): bool {
+		$subscriptions = wcs_get_subscriptions_for_renewal_order( $order->get_id() );
+		if ( empty( $subscriptions ) || ! $order->needs_payment() || '' === $order->get_payment_method() ) {
+			return false;
+		}
+
+		$gateway          = wc_get_payment_gateway_by_order( $order );
+		$gateway_supports = isset( $gateway->id ) && false !== has_action( 'woocommerce_scheduled_subscription_payment_' . $gateway->id );
+		$subscription     = reset( $subscriptions );
+
+		return $gateway_supports && $subscription->payment_method_supports( 'subscription_date_changes' ) && ! $subscription->is_manual();
+	}
+
+	/**
+	 * Apply "Retry Renewal Payment" from the order screen, as `WCS_Admin_Meta_Boxes::process_retry_renewal_payment_action_request()`
+	 * does (includes/core/admin/class-wcs-admin-meta-boxes.php:377-385).
+	 *
+	 * @param WC_Order $order Renewal order.
+	 */
+	public static function process_retry_renewal_payment_action_request( WC_Order $order ): void {
+		if ( self::can_renewal_order_be_retried( $order ) ) {
+			WC()->payment_gateways();
+			$order->add_order_note( self::ADMIN_RETRY_NOTE, 0, true );
+			do_action( 'woocommerce_scheduled_subscription_payment_' . $order->get_payment_method(), $order->get_total(), $order );
+		}
 	}
 
 	/**

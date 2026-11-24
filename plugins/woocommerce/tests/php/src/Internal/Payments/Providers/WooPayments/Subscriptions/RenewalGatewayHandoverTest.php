@@ -928,6 +928,41 @@ class RenewalGatewayHandoverTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox N30, the recorded limit: an iDEAL renewal due after a card renewal's hand-over in the same request finds iDEAL listed, so Subscriptions fires its gateway hook, which nothing hears at this tier: the subscription stays automatic and on hold, its order pending on iDEAL, with no invoice and no charge.
+	 */
+	public function test_n30_an_ideal_renewal_after_a_hand_over_stays_stalled(): void {
+		ScheduledRenewalDoubles::load_renewal_invoice_email();
+		$this->build_mailer_in_this_request();
+		$invoices = array();
+		add_filter(
+			'pre_wp_mail',
+			static function ( $short_circuit, array $atts ) use ( &$invoices ) {
+				if ( 0 === strpos( (string) $atts['subject'], 'Invoice for renewal order ' ) ) {
+					$invoices[] = $atts['subject'];
+				}
+
+				return $short_circuit;
+			},
+			10,
+			2
+		);
+		$card  = $this->create_subscription();
+		$ideal = $this->create_subscription( 'woocommerce_payments_ideal' );
+		$this->bootstrap( RequestTypeUtil::CRON );
+
+		$this->run_action( self::RENEWAL_ACTION, array( 'subscription_id' => $card->get_id() ) );
+		$this->run_action( self::RENEWAL_ACTION, array( 'subscription_id' => $ideal->get_id() ) );
+
+		$renewal      = $this->last_renewal( $ideal );
+		$subscription = wc_get_order( $ideal->get_id() );
+		$this->assertSame( array( $this->last_renewal( $card )->get_id() ), $this->charged_order_ids(), 'Only the card renewal is charged.' );
+		$this->assertFalse( has_action( 'woocommerce_scheduled_subscription_payment_woocommerce_payments_ideal' ) );
+		$this->assertSame( array( 'on-hold', false ), array( $subscription->get_status(), $subscription->get_requires_manual_renewal() ) );
+		$this->assertSame( array( 'pending', 'woocommerce_payments_ideal' ), array( $renewal->get_status(), $renewal->get_payment_method() ) );
+		$this->assertSame( array(), $invoices );
+	}
+
+	/**
 	 * @testdox A hand-over leaves no WooPayments callback on Action Scheduler's recurring-actions hook, so it schedules no recurring work.
 	 */
 	public function test_the_hand_over_schedules_no_recurring_work(): void {

@@ -15,6 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcomeApplyException;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
@@ -29,6 +30,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -112,6 +114,18 @@ class SubscriptionsController implements RegisterHooksInterface {
 		foreach ( SubscriptionMethodPolicy::get_reusable_gateway_ids() as $gateway_id ) {
 			add_action( 'woocommerce_scheduled_subscription_payment_' . $gateway_id, array( $this, 'scheduled_subscription_payment' ), 10, 2 );
 			add_action( 'woocommerce_subscription_failing_payment_method_updated_' . $gateway_id, array( $this, 'update_failing_payment_method' ), 10, 2 );
+		}
+
+		// Only connected and active stores, the tiers this controller is registered for, invoice a due renewal on a method
+		// WooPayments cannot charge again. A card facade or a lowest-tier renewal hand-over attaches none of these.
+		$tier = wc_get_container()->get( WooPaymentsSetupTier::class )->get_effective_tier();
+		if ( WooPaymentsSetupTier::CONNECTED === $tier || WooPaymentsSetupTier::ACTIVE === $tier ) {
+			foreach ( wc_get_container()->get( PaymentMethodRegistry::class )->get_all() as $definition ) {
+				$gateway_id = 'card' === $definition->get_id() ? WooPaymentsPersistenceVocabulary::GATEWAY_ID : WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . $definition->get_id();
+				if ( $definition->should_publish_gateway() && ! SubscriptionMethodPolicy::is_reusable_gateway_id( $gateway_id ) ) {
+					add_action( 'woocommerce_scheduled_subscription_payment_' . $gateway_id, array( $this, 'invoice_non_reusable_renewal' ), 10, 2 );
+				}
+			}
 		}
 
 		wc_get_container()->get( SubscriptionAdminPaymentMethodHandler::class )->register_hooks();
@@ -810,6 +824,51 @@ class SubscriptionsController implements RegisterHooksInterface {
 		}
 
 		$this->get_token_service()->attach_token_to_order( $subscription, $token );
+	}
+
+	/**
+	 * Hand a due renewal on a method WooPayments cannot charge again to the shopper: make the subscription manual, send
+	 * Subscriptions' renewal invoice and clear the gateway from the pending order. Nothing is charged; the shopper pays
+	 * the same order from the invoice's link.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $amount        Renewal amount.
+	 * @param mixed $renewal_order Renewal order.
+	 * @return void
+	 */
+	public function invoice_non_reusable_renewal( $amount, $renewal_order ): void {
+		unset( $amount );
+
+		if ( ! $renewal_order instanceof WC_Order || ( function_exists( 'wcs_order_contains_early_renewal' ) && wcs_order_contains_early_renewal( $renewal_order ) ) ) {
+			return;
+		}
+
+		// Read both again: an earlier callback, or this one on a second controller instance, may have handled the order.
+		$renewal_order = wc_get_order( $renewal_order->get_id() );
+		$subscription  = $renewal_order instanceof WC_Order ? $this->get_subscription_for_renewal_order( $renewal_order ) : null;
+		if ( null === $subscription || ! $renewal_order->needs_payment() || ! is_callable( array( $subscription, 'is_manual' ) ) || $subscription->is_manual() ) {
+			return;
+		}
+
+		$gateway_id = $renewal_order->get_payment_method();
+		if ( $subscription->get_payment_method() !== $gateway_id || ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( $gateway_id ) || SubscriptionMethodPolicy::is_reusable_gateway_id( $gateway_id ) ) {
+			return;
+		}
+
+		// Convert first: if a later step throws, Subscriptions' rerun of the action finds a manual subscription and sends
+		// no second invoice. The invoice goes through its own trigger, since the authentication email can remove the
+		// trigger's listeners for the rest of the request.
+		$this->maybe_force_subscription_to_manual( $subscription );
+
+		$emails  = WC()->mailer()->get_emails();
+		$invoice = $emails['WCS_Email_Customer_Renewal_Invoice'] ?? null;
+		if ( is_object( $invoice ) && is_callable( array( $invoice, 'trigger' ) ) ) {
+			$invoice->trigger( $renewal_order->get_id(), $renewal_order );
+		}
+
+		$renewal_order->set_payment_method( '' );
+		$renewal_order->save();
 	}
 
 	/**
