@@ -32,6 +32,8 @@ class StateBuilderTest extends WC_Unit_Test_Case {
 		'wcpay_multi_currency_enabled_currencies',
 		'wcpay_multi_currency_exchange_rate_gbp',
 		'wcpay_multi_currency_manual_rate_gbp',
+		'wcpay_multi_currency_exchange_rate_brl',
+		'wcpay_multi_currency_manual_rate_brl',
 		'wcpay_multi_currency_price_rounding_gbp',
 		'wcpay_multi_currency_price_charm_gbp',
 		'wcpay_multi_currency_exchange_rate_eur',
@@ -247,6 +249,88 @@ class StateBuilderTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array( 'USD', 'GBP' ), array_keys( $state->get_enabled_currencies() ) );
 		$this->assertSame( 0.82, $state->get_enabled_currencies()['GBP']->get_rate() );
+	}
+
+	/**
+	 * An identity filter receives the provider's WooCommerce codes once and keeps the same rates.
+	 */
+	public function test_available_currency_filter_receives_provider_codes_once(): void {
+		$received = array();
+		add_filter(
+			'wcpay_multi_currency_available_currencies',
+			static function ( $codes ) use ( &$received ) {
+				$received[] = $codes;
+				return $codes;
+			}
+		);
+		$builder = $this->create_builder_with_provider_currencies();
+		update_option( StateBuilder::ENABLED_CURRENCIES_OPTION, array( 'BRL', 'EUR', 'GBP' ) );
+
+		$state = $builder->build();
+		$this->assertSame( array( 'USD', 'BRL', 'EUR', 'GBP' ), array_keys( $state->get_available_currencies() ) );
+		$this->assertSame( array( 'USD', 'BRL', 'EUR', 'GBP' ), array_keys( $state->get_enabled_currencies() ) );
+		$this->assertSame( 5.12, $state->get_enabled_currencies()['BRL']->get_rate() );
+		$builder->build();
+		$this->assertSame( array( array( 'EUR', 'GBP', 'BRL' ) ), $received );
+	}
+
+	/**
+	 * Removing a provider currency excludes it even when the merchant has set a manual rate.
+	 *
+	 * @testWith ["automatic"]
+	 *           ["manual"]
+	 * @param string $rate_type Exchange rate setting for BRL.
+	 */
+	public function test_available_currency_filter_removes_provider_currency( string $rate_type ): void {
+		update_option( StateBuilder::ENABLED_CURRENCIES_OPTION, array( 'BRL', 'EUR', 'GBP', 'JPY' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_brl', $rate_type );
+		update_option( 'wcpay_multi_currency_manual_rate_brl', '5.25' );
+		// A manual currency outside the provider's list was never removed by the filter.
+		update_option( 'wcpay_multi_currency_exchange_rate_jpy', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_jpy', '151' );
+		add_filter( 'wcpay_multi_currency_available_currencies', static fn( $codes ) => array_diff( $codes, array( 'BRL' ) ) );
+
+		$state = $this->create_builder_with_provider_currencies()->build();
+
+		$this->assertSame( array( 'USD', 'EUR', 'JPY', 'GBP' ), array_keys( $state->get_available_currencies() ) );
+		$this->assertSame( array( 'USD', 'EUR', 'JPY', 'GBP' ), array_keys( $state->get_enabled_currencies() ) );
+	}
+
+	/**
+	 * Without a provider the filter can still remove a manual currency.
+	 */
+	public function test_available_currency_filter_removes_manual_currency_without_provider(): void {
+		update_option( StateBuilder::ENABLED_CURRENCIES_OPTION, array( 'EUR' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.91' );
+		add_filter( 'wcpay_multi_currency_available_currencies', static fn( $codes ) => array_diff( $codes, array( 'EUR' ) ) );
+
+		$state = $this->create_builder()->build();
+
+		$this->assertSame( array( 'USD' ), array_keys( $state->get_available_currencies() ) );
+		$this->assertSame( array( 'USD' ), array_keys( $state->get_enabled_currencies() ) );
+	}
+
+	/**
+	 * The store currency and currencies with usable rates survive the filter's return checks.
+	 *
+	 * @testWith [null, {"eur":0.91,"gbp":0.82}, ["USD","EUR","GBP"]]
+	 *           [["EUR","eur","XYZ",123,null,[]], {"eur":0.91}, ["USD","EUR"]]
+	 *           [[], {}, ["USD"]]
+	 *           [["EUR","JPY"], {"eur":0.91}, ["USD","EUR"]]
+	 * @param mixed               $returned Filter result.
+	 * @param array<string,float> $rates Cached provider rates.
+	 * @param string[]            $expected Expected available and enabled codes.
+	 */
+	public function test_available_currency_filter_checks_return_and_rates( $returned, array $rates, array $expected ): void {
+		update_option( StateBuilder::ENABLED_CURRENCIES_OPTION, array( 'EUR', 'GBP', 'JPY' ) );
+		add_filter( 'wcpay_multi_currency_available_currencies', static fn() => $returned );
+
+		$state = $this->create_builder( $this->create_available_rate_provider( $rates, array( 'eur', 'gbp', 'brl' ) ) )->build();
+
+		$this->assertSame( 'USD', $state->get_default_currency()->get_code() );
+		$this->assertSame( $expected, array_keys( $state->get_available_currencies() ) );
+		$this->assertSame( $expected, array_keys( $state->get_enabled_currencies() ) );
 	}
 
 	/**
@@ -737,6 +821,18 @@ class StateBuilderTest extends WC_Unit_Test_Case {
 		foreach ( $this->option_keys as $option_key ) {
 			delete_option( $option_key );
 		}
+	}
+
+	/**
+	 * Create a builder with rates for the provider's three supported currencies.
+	 */
+	private function create_builder_with_provider_currencies(): StateBuilder {
+		$rates = array(
+			'eur' => 0.91,
+			'gbp' => 0.82,
+			'brl' => 5.12,
+		);
+		return $this->create_builder( $this->create_available_rate_provider( $rates, array_keys( $rates ) ) );
 	}
 
 	/**

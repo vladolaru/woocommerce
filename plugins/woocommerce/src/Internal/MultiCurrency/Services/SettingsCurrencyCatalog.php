@@ -97,8 +97,7 @@ final class SettingsCurrencyCatalog {
 	}
 
 	/**
-	 * Tell whether a code can be enabled: a WooCommerce currency, limited to the
-	 * store currency and the rate provider's supported currencies when a provider is available.
+	 * Tell whether the store currency or a filtered catalog currency can be enabled.
 	 *
 	 * @param string $currency_code Currency code.
 	 * @return bool
@@ -110,17 +109,12 @@ final class SettingsCurrencyCatalog {
 	/**
 	 * Get the codes that can be enabled, keyed by code.
 	 *
-	 * Without an available rate provider every WooCommerce currency qualifies; with one, its supported currencies
-	 * and the store currency (client 11.1.0 `MultiCurrency::get_account_available_currencies()`, the provider in the account's place).
+	 * The store currency always qualifies, even when the available currencies filter omits it.
 	 *
 	 * @return array<string,true>
 	 */
 	private function get_catalog_code_lookup(): array {
-		if ( ! $this->rate_service->has_available_provider() ) {
-			return array_fill_keys( array_map( 'strtoupper', array_keys( get_woocommerce_currencies() ) ), true );
-		}
-
-		$codes   = $this->rate_service->get_supported_currency_codes();
+		$codes   = $this->state_builder->get_usable_currency_codes();
 		$codes[] = strtoupper( (string) get_option( 'woocommerce_currency', 'USD' ) );
 
 		return array_fill_keys( $codes, true );

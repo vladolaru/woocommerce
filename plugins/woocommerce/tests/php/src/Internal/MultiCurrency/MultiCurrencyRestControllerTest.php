@@ -735,7 +735,8 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 		?CacheRenderingService $cache_rendering_service = null,
 		array $supported_currencies = array()
 	): MultiCurrencyRestController {
-		$state_builder = $state_builder ?? $this->create_state_builder();
+		$rate_service  = RateServices::with( null === $provider_available ? null : $this->create_rate_provider( $provider_available, $supported_currencies ) );
+		$state_builder = $state_builder ?? $this->create_state_builder( array( 'USD', 'EUR', 'GBP' ), array( 'USD', 'EUR' ), $rate_service );
 		$controller    = new MultiCurrencyRestController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
@@ -743,7 +744,7 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 			ServiceFactories::with(
 				$this,
 				array(
-					'create_settings_currency_catalog' => $this->create_settings_currency_catalog( $state_builder, $provider_available, $supported_currencies ),
+					'create_settings_currency_catalog' => new SettingsCurrencyCatalog( $this->create_localization_service(), $state_builder, $rate_service ),
 					'create_display_service'           => $this->create_display_service( $cache_optimized_mode ),
 				)
 			),
@@ -772,22 +773,6 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 				return 'LSCWP_V' === $name;
 			}
 		};
-	}
-
-	/**
-	 * Create a static settings catalog for the controller.
-	 *
-	 * @param StateBuilder $state_builder      State builder.
-	 * @param bool|null    $provider_available Whether a registered provider is available.
-	 * @param string[]     $supported_currencies Currencies the provider supports; empty means all.
-	 * @return SettingsCurrencyCatalog
-	 */
-	private function create_settings_currency_catalog( StateBuilder $state_builder, ?bool $provider_available, array $supported_currencies = array() ): SettingsCurrencyCatalog {
-		return new SettingsCurrencyCatalog(
-			$this->create_localization_service(),
-			$state_builder,
-			RateServices::with( null === $provider_available ? null : $this->create_rate_provider( $provider_available, $supported_currencies ) )
-		);
 	}
 
 	/**
@@ -900,13 +885,15 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a state builder test double.
 	 *
-	 * @param string[] $available_codes Available currency codes.
-	 * @param string[] $enabled_codes   Enabled currency codes.
+	 * @param string[]         $available_codes Available currency codes.
+	 * @param string[]         $enabled_codes   Enabled currency codes.
+	 * @param RateService|null $rate_service    Rate service shared with the catalog.
 	 * @return StateBuilder
 	 */
 	private function create_state_builder(
 		array $available_codes = array( 'USD', 'EUR', 'GBP' ),
-		array $enabled_codes = array( 'USD', 'EUR' )
+		array $enabled_codes = array( 'USD', 'EUR' ),
+		?RateService $rate_service = null
 	): StateBuilder {
 		$localization = $this->create_localization_service();
 		$available    = array();
@@ -922,22 +909,13 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 
 		$state = new MultiCurrencyState( $available, $enabled, $available['USD'], $enabled['EUR'] ?? $available['USD'] );
 
-		return new class( $state ) extends StateBuilder {
+		$builder        = new class( $localization, $rate_service ?? RateServices::with(), new DatabaseCache() ) extends StateBuilder {
 			/**
 			 * State snapshot.
 			 *
 			 * @var MultiCurrencyState
 			 */
-			private MultiCurrencyState $state;
-
-			/**
-			 * Constructor.
-			 *
-			 * @param MultiCurrencyState $state State snapshot.
-			 */
-			public function __construct( MultiCurrencyState $state ) {
-				$this->state = $state;
-			}
+			public MultiCurrencyState $state;
 
 			/**
 			 * Build the state.
@@ -955,6 +933,8 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 				// This fixed-state test double has no cache or collaborators to invalidate.
 			}
 		};
+		$builder->state = $state;
+		return $builder;
 	}
 
 	/**

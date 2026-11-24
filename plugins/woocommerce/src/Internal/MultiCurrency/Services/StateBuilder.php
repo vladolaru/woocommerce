@@ -34,6 +34,7 @@ class StateBuilder {
 	 */
 	public const ENABLED_CURRENCIES_OPTION = 'wcpay_multi_currency_enabled_currencies';
 
+	public const FILTER_AVAILABLE_CURRENCIES       = 'wcpay_multi_currency_available_currencies';
 	public const FILTER_OVERRIDE_SELECTED_CURRENCY = 'wcpay_multi_currency_override_selected_currency';
 
 	/**
@@ -63,6 +64,27 @@ class StateBuilder {
 	 * @var MultiCurrencyState|null
 	 */
 	private ?MultiCurrencyState $cached_state = null;
+
+	/**
+	 * Filtered currency codes shared by runtime and settings.
+	 *
+	 * @var string[]
+	 */
+	private array $usable_currency_codes = array();
+
+	/**
+	 * Provider or WooCommerce codes explicitly removed by the filter.
+	 *
+	 * @var string[]
+	 */
+	private array $removed_currency_codes = array();
+
+	/**
+	 * Invalidation generation of the filtered codes.
+	 *
+	 * @var int
+	 */
+	private int $currency_codes_generation = -1;
 
 	/**
 	 * Per-build memo of manual-rate flags keyed by currency code.
@@ -169,15 +191,16 @@ class StateBuilder {
 			return $this->build_without_other_currencies( $default, $current_generation );
 		}
 
+		$usable_codes  = $this->get_usable_currency_codes();
 		$available     = array_merge(
 			array( $default_code => $default ),
-			$this->get_cached_currency_rates( $default_code )
+			$this->get_cached_currency_rates( $default_code, $usable_codes )
 		);
 		$enabled       = array( $default_code => $default );
 		$enabled_codes = $this->get_enabled_currency_codes( $default_code );
 
 		foreach ( $enabled_codes as $currency_code ) {
-			if ( $default_code === $currency_code || ! $this->is_valid_currency_code( $currency_code ) ) {
+			if ( $default_code === $currency_code || ! $this->is_valid_currency_code( $currency_code ) || in_array( $currency_code, $this->removed_currency_codes, true ) ) {
 				continue;
 			}
 
@@ -310,33 +333,73 @@ class StateBuilder {
 	}
 
 	/**
+	 * Get the filtered WooCommerce currency codes, including codes still awaiting a rate.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return string[]
+	 */
+	public function get_usable_currency_codes(): array {
+		$generation = $this->state_invalidator->get_generation();
+		if ( $generation === $this->currency_codes_generation ) {
+			return $this->usable_currency_codes;
+		}
+
+		$currencies = get_woocommerce_currencies();
+		$base_codes = $this->rate_service->has_available_provider()
+			? $this->rate_service->get_supported_currency_codes()
+			: array_keys( $currencies );
+
+		/**
+		 * Filters the available currency codes before Multi-Currency looks up their rates.
+		 *
+		 * @since 11.4.0
+		 *
+		 * @param string[] $base_codes Provider-supported codes, or all WooCommerce codes without an available provider.
+		 * @return string[] WooCommerce currency codes to make available when they have a rate.
+		 */
+		$filtered = apply_filters( self::FILTER_AVAILABLE_CURRENCIES, $base_codes );
+		$usable   = array();
+		foreach ( is_array( $filtered ) ? $filtered : $base_codes as $code ) {
+			if ( is_string( $code ) && isset( $currencies[ $code ] ) ) {
+				$usable[ $code ] = true;
+			}
+		}
+
+		$this->usable_currency_codes     = array_keys( $usable );
+		$this->removed_currency_codes    = array_diff( $base_codes, $this->usable_currency_codes );
+		$this->currency_codes_generation = $generation;
+
+		return $this->usable_currency_codes;
+	}
+
+	/**
 	 * Get cached automatic currency rates.
 	 *
-	 * @param string $default_code Default currency code.
+	 * @param string   $default_code Default currency code.
+	 * @param string[] $usable_codes Filtered WooCommerce currency codes.
 	 * @return array<string,MultiCurrencyCurrency>
 	 */
-	private function get_cached_currency_rates( string $default_code ): array {
+	private function get_cached_currency_rates( string $default_code, array $usable_codes ): array {
 		$cache_data = $this->get_cached_currency_data( $default_code );
 		if ( ! is_array( $cache_data ) || ! isset( $cache_data['currencies'] ) || ! is_array( $cache_data['currencies'] ) ) {
 			return array();
 		}
 
-		$last_updated          = isset( $cache_data['updated'] ) && is_numeric( $cache_data['updated'] )
+		$last_updated = isset( $cache_data['updated'] ) && is_numeric( $cache_data['updated'] )
 			? (int) $cache_data['updated']
 			: null;
-		$currencies            = array();
-		$supported_code_lookup = $this->rate_service->has_available_provider()
-			? array_fill_keys( $this->rate_service->get_supported_currency_codes(), true )
-			: null;
+		$currencies   = array();
+		$usable       = array_fill_keys( $usable_codes, true );
 
 		foreach ( $cache_data['currencies'] as $currency_code => $rate ) {
 			$currency_code = strtoupper( (string) $currency_code );
 
-			if ( null !== $supported_code_lookup && ! isset( $supported_code_lookup[ $currency_code ] ) ) {
+			if ( ! isset( $usable[ $currency_code ] ) ) {
 				continue;
 			}
 
-			if ( $default_code === $currency_code || ! $this->is_valid_currency_code( $currency_code ) || ! is_numeric( $rate ) || 0 >= (float) $rate ) {
+			if ( $default_code === $currency_code || ! is_numeric( $rate ) || 0 >= (float) $rate ) {
 				continue;
 			}
 

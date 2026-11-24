@@ -7,6 +7,8 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvide
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\LocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\DatabaseCache;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RateService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\SettingsCurrencyCatalog;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use WC_Unit_Test_Case;
@@ -100,6 +102,35 @@ class SettingsCurrencyCatalogTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Settings and the save check share the runtime filter, including added codes awaiting rates.
+	 */
+	public function test_available_currency_filter_limits_catalog_and_save_check(): void {
+		update_option( StateBuilder::ENABLED_CURRENCIES_OPTION, array( 'BRL', 'EUR' ) );
+		$calls = 0;
+		add_filter(
+			'wcpay_multi_currency_available_currencies',
+			static function ( $codes ) use ( &$calls ) {
+				++$calls;
+				return array_merge( array_diff( $codes, array( 'BRL' ) ), array( 'JPY', 'EUR', 'eur', 'XYZ', 123, null, array() ) );
+			}
+		);
+		$localization = $this->create_localization();
+		$rate_service = RateServices::with( $this->create_provider( true, array( 'eur', 'gbp', 'brl' ) ) );
+		$builder      = new StateBuilder( $localization, $rate_service, new DatabaseCache() );
+		$catalog      = new SettingsCurrencyCatalog( $localization, $builder, $rate_service );
+		$currencies   = $catalog->get_store_currencies();
+
+		$this->assertArrayNotHasKey( 'BRL', $currencies['available'] );
+		$this->assertSame( array( 'EUR' ), $catalog->get_configured_currency_codes() );
+		$this->assertFalse( $catalog->contains( 'BRL' ) );
+		$this->assertTrue( $catalog->contains( 'JPY' ) );
+		$this->assertNull( $currencies['available']['JPY']['rate'] );
+		$this->assertSame( 0.91, $currencies['available']['EUR']['rate'] );
+		$this->assertSame( array( 'EUR', 'GBP', 'JPY' ), $builder->get_usable_currency_codes() );
+		$this->assertSame( 1, $calls );
+	}
+
+	/**
 	 * @testdox Should keep the WooCommerce-wide catalog while the registered provider is unavailable.
 	 */
 	public function test_keeps_the_woocommerce_catalog_during_a_provider_outage(): void {
@@ -181,21 +212,23 @@ class SettingsCurrencyCatalogTest extends WC_Unit_Test_Case {
 	 * @return SettingsCurrencyCatalog
 	 */
 	private function create_catalog( array $available_codes = array( 'USD' ), array $enabled_codes = array( 'USD' ), ?bool $provider_state = null, array $supported = array() ): SettingsCurrencyCatalog {
+		$rate_service = RateServices::with( null === $provider_state ? null : $this->create_provider( $provider_state, $supported ) );
 		return new SettingsCurrencyCatalog(
 			$this->create_localization(),
-			$this->create_state_builder( $available_codes, $enabled_codes ),
-			RateServices::with( null === $provider_state ? null : $this->create_provider( $provider_state, $supported ) )
+			$this->create_state_builder( $available_codes, $enabled_codes, $rate_service ),
+			$rate_service
 		);
 	}
 
 	/**
 	 * Create a fixed state builder.
 	 *
-	 * @param string[] $available_codes Available currency codes.
-	 * @param string[] $enabled_codes   Enabled currency codes.
+	 * @param string[]    $available_codes Available currency codes.
+	 * @param string[]    $enabled_codes   Enabled currency codes.
+	 * @param RateService $rate_service    Rate service shared with the catalog.
 	 * @return StateBuilder
 	 */
-	private function create_state_builder( array $available_codes, array $enabled_codes ): StateBuilder {
+	private function create_state_builder( array $available_codes, array $enabled_codes, RateService $rate_service ): StateBuilder {
 		$localization = $this->create_localization();
 		$available    = array();
 		foreach ( $available_codes as $currency_code ) {
@@ -212,16 +245,9 @@ class SettingsCurrencyCatalogTest extends WC_Unit_Test_Case {
 
 		$state = new MultiCurrencyState( $available, $enabled, $available['USD'], $enabled['EUR'] ?? $available['USD'] );
 
-		return new class( $state ) extends StateBuilder {
+		$builder        = new class( $localization, $rate_service, new DatabaseCache() ) extends StateBuilder {
 			/** @var MultiCurrencyState */
-			private MultiCurrencyState $state;
-
-			/**
-			 * @param MultiCurrencyState $state State snapshot.
-			 */
-			public function __construct( MultiCurrencyState $state ) {
-				$this->state = $state;
-			}
+			public MultiCurrencyState $state;
 
 			/**
 			 * @return MultiCurrencyState
@@ -230,6 +256,8 @@ class SettingsCurrencyCatalogTest extends WC_Unit_Test_Case {
 				return $this->state;
 			}
 		};
+		$builder->state = $state;
+		return $builder;
 	}
 
 	/**
@@ -284,7 +312,11 @@ class SettingsCurrencyCatalogTest extends WC_Unit_Test_Case {
 			public function get_currency_rates( string $currency_from, ?array $currencies_to = null ): array {
 				unset( $currency_from, $currencies_to );
 
-				return array();
+				return array(
+					'eur' => 0.91,
+					'gbp' => 0.82,
+					'brl' => 5.12,
+				);
 			}
 		};
 	}
