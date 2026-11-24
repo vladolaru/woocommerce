@@ -60,11 +60,14 @@ final class ExtensionBoundCurrencyPlugins {
 	}
 
 	/**
-	 * Check the extension's saved settings before the built-in owner is selected.
+	 * Check for a currency other than the store currency in the setup the built-in owner will use.
 	 */
 	private static function has_additional_currency(): bool {
-		if ( '1' !== (string) get_option( MultiCurrencyFeatureController::WOOPAYMENTS_MULTI_CURRENCY_FLAG_OPTION, '1' )
-			|| 'no' === get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) ) {
+		$handover_pending = MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_EXTENSION === get_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION );
+		$enabled          = $handover_pending
+			? MultiCurrencyFeatureController::has_stored_multi_currency_setup()
+			: 'yes' === get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
+		if ( ! $enabled ) {
 			return false;
 		}
 		$store = strtoupper( (string) get_option( 'woocommerce_currency', 'USD' ) );

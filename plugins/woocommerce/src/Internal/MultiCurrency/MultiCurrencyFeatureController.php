@@ -241,9 +241,10 @@ class MultiCurrencyFeatureController {
 	 * Tell whether Multi-Currency setup is stored: enabled currencies or the setup-completed option, with the WooPayments
 	 * Multi-Currency flag on.
 	 *
-	 * @return bool
+	 * @internal
+	 * @since 11.4.0
 	 */
-	private static function has_stored_multi_currency_setup(): bool {
+	public static function has_stored_multi_currency_setup(): bool {
 		$enabled_currencies = get_option( StateBuilder::ENABLED_CURRENCIES_OPTION, array() );
 		$has_prior_use      = ( is_array( $enabled_currencies ) && ! empty( $enabled_currencies ) )
 			|| filter_var( get_option( self::SETUP_COMPLETED_OPTION, false ), FILTER_VALIDATE_BOOLEAN );

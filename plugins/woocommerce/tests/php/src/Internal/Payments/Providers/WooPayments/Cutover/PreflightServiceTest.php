@@ -50,7 +50,7 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_currency', 'USD' );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
 		update_option( '_wcpay_feature_customer_multi_currency', '1' );
-		delete_option( 'woocommerce_feature_multi_currency_enabled' );
+		update_option( 'woocommerce_multi_currency_last_payments_owner', 'extension' );
 		$held = array( 'extension_currency_plugin_active' );
 		$this->assertSame( $held, $this->create_sut()->get_failures(), 'The worker sees the stored activation even on a filtered request.' );
 		remove_filter( 'option_active_plugins', '__return_empty_array' );
@@ -58,11 +58,6 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 		$filtered = static fn() => $files;
 		add_filter( 'option_active_plugins', $filtered );
 		$this->assertSame( $held, $this->create_sut()->get_failures(), 'A filtered-only active plugin also holds.' );
-		// Independent overrides model carried-over state even when the normal settings writer synchronizes the flags.
-		$core_off = static fn() => 'no';
-		add_filter( 'pre_option_woocommerce_feature_multi_currency_enabled', $core_off );
-		$this->assertSame( $always ? $held : array(), $this->create_sut()->get_failures() );
-		remove_filter( 'pre_option_woocommerce_feature_multi_currency_enabled', $core_off );
 		$extension_off = static fn() => '0';
 		add_filter( 'pre_option__wcpay_feature_customer_multi_currency', $extension_off );
 		$this->assertSame( $always ? $held : array(), $this->create_sut()->get_failures() );
@@ -75,6 +70,30 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 		update_option( 'active_plugins', array( 'easy-product-bundles-for-woocommerce/plugin.php' ) );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
 		$this->assertSame( array(), $this->create_sut()->get_failures() );
+	}
+
+	/**
+	 * @testdox The currency wait follows the feature setting that will apply after handover.
+	 * @testWith ["extension", "no", "1", ["USD", "EUR"], true]
+	 *           ["builtin", "yes", "0", ["USD", "EUR"], true]
+	 *           ["builtin", "yes", "0", ["USD"], false]
+	 *           ["builtin", "no", "1", ["USD", "EUR"], false]
+	 *
+	 * @param string   $owner          Last payments owner.
+	 * @param string   $core_feature   Stored core feature choice.
+	 * @param string   $extension_flag Extension feature flag.
+	 * @param string[] $currencies     Enabled currencies.
+	 * @param bool     $held           Whether preflight should hold the switch.
+	 */
+	public function test_currency_wait_after_handover( string $owner, string $core_feature, string $extension_flag, array $currencies, bool $held ): void {
+		update_option( 'active_plugins', array( 'advanced-coupons-for-woocommerce-free/plugin.php' ) );
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'woocommerce_multi_currency_last_payments_owner', $owner );
+		update_option( 'woocommerce_feature_multi_currency_enabled', $core_feature );
+		update_option( '_wcpay_feature_customer_multi_currency', $extension_flag );
+		update_option( 'wcpay_multi_currency_enabled_currencies', $currencies );
+
+		$this->assertSame( $held ? array( 'extension_currency_plugin_active' ) : array(), $this->create_sut()->get_failures() );
 	}
 
 	/**
