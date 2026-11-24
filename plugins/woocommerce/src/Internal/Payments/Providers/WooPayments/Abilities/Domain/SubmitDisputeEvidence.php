@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Abilities\Domain;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Abilities\DisputeIdentifier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use WP_Error;
@@ -28,9 +29,6 @@ final class SubmitDisputeEvidence extends AbstractAbility {
 
 	/** Longest metadata value, in bytes. */
 	private const MAX_METADATA_VALUE_LENGTH = 500;
-
-	/** IDs the dispute update route serves: word characters only, and not the fixed sibling routes matched before it. */
-	private const DISPUTE_ID_PATTERN = '/\A(?!(?:summary|download)\z)\w+\z/i';
 
 	/**
 	 * Get the public WordPress ability name.
@@ -136,8 +134,10 @@ final class SubmitDisputeEvidence extends AbstractAbility {
 	/**
 	 * Check the input, then send the evidence through the dispute update route.
 	 *
-	 * WordPress validates ability input but does not coerce it, so only the boolean `true` submits; a string such as
-	 * `"true"` saves a draft.
+	 * Only a `submit` that reaches this method as the boolean `true` submits. Through the REST run endpoint, WordPress 7.1
+	 * and later turn `"true"`, `"1"` and `1` into `true`, and `"false"`, `"0"` and `0` into `false`, before this runs;
+	 * earlier versions and PHP callers pass them as sent, so those strings save a draft. Every form meant as a draft saves a
+	 * draft. Object-shaped `evidence` and `metadata` are kept, and the metadata limits apply to them.
 	 *
 	 * @since 11.4.0
 	 *
@@ -150,9 +150,9 @@ final class SubmitDisputeEvidence extends AbstractAbility {
 		}
 
 		$dispute_id = $input['dispute_id'];
-		$evidence   = ( isset( $input['evidence'] ) && is_array( $input['evidence'] ) ) ? $input['evidence'] : array();
+		$evidence   = isset( $input['evidence'] ) ? rest_sanitize_object( $input['evidence'] ) : array();
 		$submit     = true === ( $input['submit'] ?? false );
-		$metadata   = ( isset( $input['metadata'] ) && is_array( $input['metadata'] ) ) ? $input['metadata'] : array();
+		$metadata   = isset( $input['metadata'] ) ? rest_sanitize_object( $input['metadata'] ) : array();
 
 		if ( count( $metadata ) > self::MAX_METADATA_KEYS ) {
 			return new WP_Error( 'wcpay_too_many_metadata_keys', __( 'Metadata may not contain more than 10 keys.', 'woocommerce' ) );
@@ -167,7 +167,7 @@ final class SubmitDisputeEvidence extends AbstractAbility {
 			}
 		}
 
-		if ( 1 !== preg_match( self::DISPUTE_ID_PATTERN, $dispute_id ) ) {
+		if ( ! DisputeIdentifier::is_accepted( $dispute_id ) ) {
 			return new WP_Error( 'wcpay_dispute_evidence_failed', __( 'Route param validation failed.', 'woocommerce' ) );
 		}
 

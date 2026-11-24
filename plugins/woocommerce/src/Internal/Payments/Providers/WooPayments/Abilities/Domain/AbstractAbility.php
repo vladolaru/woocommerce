@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Abiliti
 use Automattic\WooCommerce\Abilities\AbilityDefinition;
 use Automattic\WooCommerce\Internal\Abilities\Domain\AbstractDomainAbility;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Abilities\AbilitiesRegistrar;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -258,8 +259,13 @@ abstract class AbstractAbility extends AbstractDomainAbility implements AbilityD
 		}
 		if ( is_wp_error( $response ) ) {
 			// The route and the code only: the message can hold the provider's text, which no ability log line carries.
+			// WordPress's own REST codes stay; any other code can come from the provider and is logged only when listed.
+			$code = (string) $response->get_error_code();
+			if ( 0 !== strpos( $code, 'rest_' ) ) {
+				$code = WooPaymentsLogger::get_loggable_error_code( $code );
+			}
 			wc_get_logger()->error(
-				sprintf( 'AbilitiesRegistrar delegation failed [%s %s] (%s)', $http_method, $route, $response->get_error_code() ),
+				sprintf( 'AbilitiesRegistrar delegation failed [%s %s] (%s)', $http_method, $route, $code ),
 				array( 'source' => 'woopayments-abilities' )
 			);
 			return $response;

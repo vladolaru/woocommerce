@@ -7,6 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Abilities\Domain;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Abilities\DisputeIdentifier;
+
 /**
  * Get dispute by ID.
  *
@@ -49,7 +51,7 @@ final class GetDispute extends AbstractAbility {
 	public static function execute( $input = null ) {
 		$params = (array) $input;
 		$id     = $params[ self::ID_FIELD ] ?? null;
-		if ( is_string( $id ) && '' !== $id && ! preg_match( '/\A(?!summary\z)\w+\z/i', $id ) ) {
+		if ( is_string( $id ) && '' !== $id && ! DisputeIdentifier::is_accepted( $id ) ) {
 			return new \WP_Error( 'wcpay_invalid_dispute_id', __( 'Enter a valid dispute ID.', 'woocommerce' ), array( 'status' => 400 ) );
 		}
 		return parent::execute( $params );

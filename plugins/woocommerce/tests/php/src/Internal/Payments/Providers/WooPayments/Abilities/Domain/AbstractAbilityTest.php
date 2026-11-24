@@ -332,17 +332,27 @@ class AbstractAbilityTest extends AbilityTestCase {
 
 	/**
 	 * A debug-gated provider logger loses REST failures when debug logging is off. The line holds the route and the code but
-	 * not the route's message, which can carry provider text; the caller still receives the message in the error.
+	 * not the route's message, which can carry provider text; the caller still receives the message in the error. A code
+	 * outside the logger's list can also come from the provider, so it is logged as `unknown_error`; WordPress's own REST
+	 * codes stay as they are.
 	 *
-	 * @testdox Delegation errors are logged under woopayments-abilities with debug logging off, without the route's message.
+	 * @testdox Delegation errors are logged under woopayments-abilities with debug logging off, without the route's message, with $_dataName.
+	 * @testWith ["account_error", "unknown_error"]
+	 *           ["resource_missing", "resource_missing"]
+	 *           ["rest_custom_refusal", "rest_custom_refusal"]
+	 *
+	 * @param string $code     Route error code.
+	 * @param string $log_code Code the line holds.
 	 */
-	public function test_delegation_log(): void {
+	public function test_delegation_log( string $code, string $log_code ): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
 		$logger = $this->createMock( \WC_Logger_Interface::class );
-		$logger->expects( $this->once() )->method( 'error' )->with( 'AbilitiesRegistrar delegation failed [GET /wc/v3/payments/accounts] (account_error)', array( 'source' => 'woopayments-abilities' ) );
+		$logger->expects( $this->once() )->method( 'error' )->with( "AbilitiesRegistrar delegation failed [GET /wc/v3/payments/accounts] ($log_code)", array( 'source' => 'woopayments-abilities' ) );
 		add_filter( 'woocommerce_logging_class', static fn() => $logger );
-		$this->bodies['accounts'] = new \WP_Error( 'account_error', 'Unavailable', array( 'status' => 503 ) );
-		$this->assertWPError( $this->ability( 'get-account' )->execute() );
+		$this->bodies['accounts'] = new \WP_Error( $code, 'Unavailable', array( 'status' => 503 ) );
+		$error                    = $this->ability( 'get-account' )->execute();
+		$this->assertWPError( $error );
+		$this->assertSame( $code, $error->get_error_code() );
 	}
 
 	/**

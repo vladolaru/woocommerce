@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Abilities\Domain;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Abilities\DisputeIdentifier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Abilities\Domain\SubmitDisputeEvidence;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\HttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
@@ -228,6 +229,8 @@ class SubmitDisputeEvidenceTest extends AbilityTestCase {
 	 *           ["du-1"]
 	 *           ["du 1"]
 	 *           ["du_1\n"]
+	 *           ["status_counts"]
+	 *           ["STATUS_COUNTS"]
 	 *
 	 * @param string $dispute_id Caller's dispute ID.
 	 */
@@ -306,6 +309,9 @@ class SubmitDisputeEvidenceTest extends AbilityTestCase {
 			}
 		}
 		$this->assertSame( array( array( 'error', "Dispute evidence submission failed ($log_code).", 'woopayments-abilities' ) ), $own_lines );
+		if ( 'exception' !== $failing ) {
+			$this->assertContains( array( 'error', "AbilitiesRegistrar delegation failed [POST /wc/v3/payments/disputes/du_test] ($log_code)", 'woopayments-abilities' ), $logger->lines );
+		}
 	}
 
 	/**
@@ -395,6 +401,169 @@ class SubmitDisputeEvidenceTest extends AbilityTestCase {
 			array_keys( $record['input_schema']['properties']['evidence']['properties'] ),
 			array_keys( $this->sut->get_input_schema()['properties']['evidence']['properties'] )
 		);
+	}
+
+	/**
+	 * @testdox Every fixed route name under the disputes base, taken from the registered routes, is refused as a dispute ID by both dispute abilities.
+	 */
+	public function test_registered_route_names_are_refused_as_dispute_ids(): void {
+		$base  = '/wc/v3/payments/disputes/';
+		$names = array();
+		foreach ( array_keys( rest_get_server()->get_routes( 'wc/v3' ) ) as $route ) {
+			if ( 0 !== strpos( $route, $base ) ) {
+				continue;
+			}
+			$segment = explode( '/', substr( $route, strlen( $base ) ) )[0];
+			if ( 1 === preg_match( '/\A\w+\z/', $segment ) ) {
+				$names[ $segment ] = true;
+			}
+		}
+		$this->assertNotEmpty( $names );
+
+		foreach ( array_keys( $names ) as $name ) {
+			foreach ( array( $name, strtoupper( $name ) ) as $dispute_id ) {
+				$this->assertFalse( DisputeIdentifier::is_accepted( $dispute_id ), $dispute_id );
+				$submitted = $this->sut->execute( array( 'dispute_id' => $dispute_id ) );
+				$this->assertWPError( $submitted, $dispute_id );
+				$this->assertSame( 'wcpay_dispute_evidence_failed', $submitted->get_error_code(), $dispute_id );
+				$read = wp_get_ability( self::PREFIX . 'get-dispute' )->execute( array( 'dispute_id' => $dispute_id ) );
+				$this->assertWPError( $read, $dispute_id );
+				$this->assertSame( 'wcpay_invalid_dispute_id', $read->get_error_code(), $dispute_id );
+			}
+		}
+		$this->assertSame( 0, $this->http->request_count );
+	}
+
+	/**
+	 * @testdox The dispute read refuses "$_dataName" with no request.
+	 * @testWith ["download"]
+	 *           ["Download"]
+	 *           ["status_counts"]
+	 *           ["Status_Counts"]
+	 *
+	 * @param string $dispute_id Fixed route name sent as a dispute ID.
+	 */
+	public function test_dispute_read_refuses_fixed_route_names( string $dispute_id ): void {
+		$this->respond_in_turn( $this->dispute() );
+
+		$result = wp_get_ability( self::PREFIX . 'get-dispute' )->execute( array( 'dispute_id' => $dispute_id ) );
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'wcpay_invalid_dispute_id', $result->get_error_code() );
+		$this->assertSame( array( 'status' => 400 ), $result->get_error_data() );
+		$this->assertSame( 0, $this->http->request_count );
+	}
+
+	/**
+	 * @testdox The dispute read still sends one lookup for "$_dataName", an ID it accepted before.
+	 * @testWith ["du_test"]
+	 *           ["dp_legacy"]
+	 *           ["DU_UPPER"]
+	 *           ["123"]
+	 *           ["_"]
+	 *           ["summaryx"]
+	 *           ["xdownload"]
+	 *           ["status_counts_1"]
+	 *
+	 * @param string $dispute_id Dispute ID the read accepted before.
+	 */
+	public function test_dispute_read_unchanged_for_accepted_ids( string $dispute_id ): void {
+		$this->respond_in_turn( $this->dispute( array( 'id' => $dispute_id ) ) );
+
+		$result = wp_get_ability( self::PREFIX . 'get-dispute' )->execute( array( 'dispute_id' => $dispute_id ) );
+
+		$this->assertIsArray( $result );
+		$this->assertSame( $dispute_id, $result['id'] );
+		$this->assertSame( array( 'GET' ), array_column( $this->http->requests, 'method' ) );
+		$this->assertSame( array( '/sites/123/wcpay/disputes/' . $dispute_id . '?test_mode=0' ), array_column( $this->http->requests, 'path' ) );
+	}
+
+	/**
+	 * @testdox A submit with object-shaped evidence and metadata sends what the caller gave, not empty evidence.
+	 */
+	public function test_submit_keeps_object_evidence(): void {
+		$this->respond_in_turn( $this->dispute(), $this->dispute( array( 'status' => 'under_review' ) ) );
+
+		$result = $this->sut->execute(
+			array(
+				'dispute_id' => 'du_test',
+				'evidence'   => (object) array(
+					'product_description' => 'Real evidence',
+					'receipt'             => 'file_test',
+				),
+				'metadata'   => (object) array( 'note' => 'kept' ),
+				'submit'     => true,
+			)
+		);
+
+		$this->assertIsArray( $result );
+		$body = $this->sent_body();
+		$this->assertTrue( $body['submit'] );
+		$this->assertSame(
+			array(
+				'product_description' => 'Real evidence',
+				'receipt'             => 'file_test',
+			),
+			$body['evidence']
+		);
+		$this->assertSame( array( 'note' => 'kept' ), $body['metadata'] );
+	}
+
+	/**
+	 * @testdox The metadata limits apply to object-shaped metadata: $_dataName.
+	 * @dataProvider object_metadata_refusals
+	 *
+	 * @param \stdClass $metadata Metadata sent as an object.
+	 * @param string    $code     Expected refusal.
+	 * @param bool      $direct   Whether to call the method directly, past the schema's key count.
+	 */
+	public function test_object_metadata_limits_apply( \stdClass $metadata, string $code, bool $direct ): void {
+		$input  = array(
+			'dispute_id' => 'du_test',
+			'metadata'   => $metadata,
+			'submit'     => true,
+		);
+		$result = $direct ? SubmitDisputeEvidence::execute( $input ) : $this->sut->execute( $input );
+
+		$this->assertWPError( $result );
+		$this->assertSame( $code, $result->get_error_code() );
+		$this->assertSame( 0, $this->http->request_count );
+	}
+
+	/** Object-shaped metadata each limit refuses. */
+	public static function object_metadata_refusals(): array {
+		return array(
+			'eleven keys'    => array( (object) array_fill_keys( range( 'a', 'k' ), 'v' ), 'wcpay_too_many_metadata_keys', true ),
+			'41-byte key'    => array( (object) array( str_repeat( 'k', 41 ) => 'v' ), 'wcpay_invalid_metadata_key', false ),
+			'501-byte value' => array( (object) array( 'k' => str_repeat( 'v', 501 ) ), 'wcpay_invalid_metadata_value', false ),
+		);
+	}
+
+	/**
+	 * @testdox Through the REST run endpoint, submit sent as $label saves a draft.
+	 * @testWith ["\"false\"", "false"]
+	 *           ["\"0\"", "0"]
+	 *           ["0", 0]
+	 *           ["false", false]
+	 *           ["omitted", null]
+	 *
+	 * @param string $label  Form of the value, for the test name.
+	 * @param mixed  $submit Value sent, or null to leave the key out.
+	 */
+	public function test_rest_draft_forms_stay_drafts( string $label, $submit ): void {
+		$this->respond_in_turn( $this->dispute(), $this->dispute() );
+		$input = array( 'dispute_id' => 'du_test' );
+		if ( null !== $submit ) {
+			$input['submit'] = $submit;
+		}
+		$request = new \WP_REST_Request( 'POST', '/wp-abilities/v1/abilities/' . self::NAME . '/run' );
+		$request->set_header( 'content-type', 'application/json' );
+		$request->set_body( wp_json_encode( array( 'input' => $input ) ) );
+
+		$response = rest_do_request( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertFalse( $this->sent_body()['submit'] );
 	}
 
 	/**
