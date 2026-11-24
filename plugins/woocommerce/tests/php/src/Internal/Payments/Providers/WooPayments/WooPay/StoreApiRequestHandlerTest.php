@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\EuVatNumberIntegration;
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
@@ -1158,12 +1159,18 @@ class StoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The browser sees the session a WooPay Store API request saved, even with a persistent object cache.
+	 * The browser sees the session a WooPay Store API request saved.
 	 *
-	 * Client 11.1.0 class-woopay-store-api-session-handler.php:108-125 refreshes the cache entry the browser's
-	 * WC_Session_Handler::get_session() reads first.
+	 * @testWith [false]
+	 *           [true]
+	 * @param bool $suppress Whether EU VAT hides wallets during the save.
 	 */
-	public function test_woopay_store_api_save_reaches_the_browser_session(): void {
+	public function test_woopay_store_api_save_reaches_the_browser_session( bool $suppress ): void {
+		if ( $suppress ) {
+			$integration = $this->createMock( EuVatNumberIntegration::class );
+			$integration->method( 'suppresses_woopay' )->willReturn( true );
+			wc_get_container()->replace( EuVatNumberIntegration::class, $integration );
+		}
 		$customer_id = 't_' . wp_generate_password( 30, false );
 		$browser     = new \WC_Session_Handler();
 		// The browser's handler cached the session before the shopper went to WooPay.

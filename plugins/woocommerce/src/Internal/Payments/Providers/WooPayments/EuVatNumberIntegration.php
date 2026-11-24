@@ -60,9 +60,18 @@ class EuVatNumberIntegration implements RegisterHooksInterface {
 			return '';
 		}
 
+		// EU VAT reads its filters before installing the settings mask. Wallets queried there still see their configuration.
+		if ( doing_filter( 'wc_eu_vat_prevent_incompatible_payment_methods' ) ) {
+			return '';
+		}
+
+		if ( is_multisite() && ms_is_switched() && ! $this->is_active_on_switched_site() ) {
+			return '';
+		}
+
 		$site = get_current_blog_id();
 		if ( ! isset( $this->restrictions[ $site ] ) ) {
-			// A callback on EU VAT's decision filter can itself ask which wallets are configured.
+			// Option callbacks made by the plugin can also ask which wallets are configured.
 			$this->restrictions[ $site ] = '';
 
 			$decide = array( 'WC_EU_VAT_Number_Init', 'should_prevent_incompatible_payment_methods' );
@@ -78,5 +87,22 @@ class EuVatNumberIntegration implements RegisterHooksInterface {
 		}
 
 		return $this->restrictions[ $site ];
+	}
+
+	/**
+	 * Switching sites changes the active plugin lists while the original site's classes stay loaded.
+	 */
+	private function is_active_on_switched_site(): bool {
+		if ( ! defined( 'WC_EU_VAT_FILE' ) ) {
+			return false;
+		}
+
+		$plugin = plugin_basename( WC_EU_VAT_FILE );
+		if ( in_array( $plugin, (array) get_option( 'active_plugins', array() ), true ) ) {
+			return true;
+		}
+
+		$site = get_site();
+		return $site && isset( get_network_option( (int) $site->site_id, 'active_sitewide_plugins', array() )[ $plugin ] );
 	}
 }

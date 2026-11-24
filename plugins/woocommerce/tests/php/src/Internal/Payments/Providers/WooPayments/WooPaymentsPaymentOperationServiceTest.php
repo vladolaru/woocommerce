@@ -103,20 +103,22 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
-	 * @testWith ["Amazon Pay", "card", "shipping", ["card","amazon_pay"], ["card","amazon_pay"]]
-	 *           ["Amazon Pay billing tax: not the suppression's; existing difference, recorded separately", "card", "billing", ["card","amazon_pay"], ["card"]]
-	 *           ["Apple Pay", "card", "shipping", ["card"], ["card"]]
-	 *           ["Google Pay", "card", "shipping", ["card"], ["card"]]
-	 *           ["split Apple Pay", "apple_pay", "shipping", ["card"], []]
-	 *           ["split Google Pay", "google_pay", "shipping", ["card"], []]
+	 * @testWith ["Amazon Pay", "card", "shipping", ["card","amazon_pay"], ["card","amazon_pay"], "no"]
+	 *           ["Amazon Pay", "card", "shipping", ["card","amazon_pay"], ["card","amazon_pay"], "yes"]
+	 *           ["Amazon Pay billing tax: not the suppression's; existing difference, recorded separately", "card", "billing", ["card","amazon_pay"], ["card"], "no"]
+	 *           ["Apple Pay", "card", "shipping", ["card"], ["card"], "no"]
+	 *           ["Google Pay", "card", "shipping", ["card"], ["card"], "no"]
+	 *           ["split Apple Pay", "apple_pay", "shipping", ["card"], [], "yes"]
+	 *           ["split Google Pay", "google_pay", "shipping", ["card"], [], "yes"]
 	 *
 	 * @param string   $wallet    Wallet credential used at checkout.
 	 * @param string   $method    Gateway selected at placement.
 	 * @param string   $tax_basis Address used for taxes.
 	 * @param string[] $submitted Stripe types sent by the shopper.
 	 * @param string[] $expected  Stripe types in the request, or empty if the gateway is unavailable.
+	 * @param string   $placement Stored list placement.
 	 */
-	public function test_eu_vat_checkout_transport( string $wallet, string $method, string $tax_basis, array $submitted, array $expected ): void {
+	public function test_eu_vat_checkout_transport( string $wallet, string $method, string $tax_basis, array $submitted, array $expected, string $placement ): void {
 		EuVatNumber::load();
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
@@ -131,7 +133,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		}
 		$settings = array(
 			'enabled'                             => 'yes',
-			'express_checkout_in_payment_methods' => 'card' === $method ? 'no' : 'yes',
+			'express_checkout_in_payment_methods' => $placement,
 			'express_checkout_checkout_methods'   => array( 'payment_request', 'amazon_pay' ),
 			'upe_enabled_payment_method_ids'      => array( 'card', 'amazon_pay', 'apple_pay', 'google_pay' ),
 		);

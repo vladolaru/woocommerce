@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\EuVatNumber;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -121,14 +122,21 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should apply each event's schema and eligibility within the first twenty entries on $route.
-	 * @testWith ["REST"]
-	 *           ["AJAX"]
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 * @testWith ["REST", false]
+	 *           ["AJAX", false]
+	 *           ["REST", true]
 	 * @param string $route Shopper entry point.
+	 * @param bool   $suppress WooPay is configured but EU VAT suppresses it.
 	 */
-	public function test_batch_schema_and_gates( string $route ): void {
+	public function test_batch_schema_and_gates( string $route, bool $suppress ): void {
+		if ( $suppress ) {
+			EuVatNumber::load();
+		}
 		update_option( 'woocommerce_default_country', 'US:CA' );
 		update_option( 'woocommerce_allow_tracking', 'yes' );
-		$sut      = $this->create_controller( $this->create_account_service( true, true, false ) );
+		$sut      = $this->create_controller( $this->create_account_service( true, true, $suppress ) );
 		$events   = array(
 			array(
 				'event'      => 'cart_page_view',
@@ -581,6 +589,32 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 0, $direct_calls );
 		$this->assertFalse( has_action( 'wp_footer', array( $sut, 'enqueue_frontend_events_script' ) ) );
 		$this->assertFalse( wp_script_is( 'wc-woopayments-frontend-tracks', 'enqueued' ) );
+	}
+
+	/**
+	 * A suppressed cart still queues its page view and excludes WooPay clicks from the browser event list.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_suppressed_cart_localizes_only_all_store_events(): void {
+		EuVatNumber::load();
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		$sut = $this->create_controller();
+		$sut->queue_user_event( 'cart_page_view' );
+		$sut->track_proceed_to_checkout_clicks( '__return_true' );
+		$sut->enqueue_frontend_events_script();
+
+		$data = (string) wp_scripts()->get_data( 'wc-woopayments-frontend-tracks', 'data' );
+		if ( 1 !== preg_match( '/^var wc_woopayments_frontend_tracks_params = (\{.*\});$/s', $data, $matches ) ) {
+			$this->fail( 'Missing frontend tracking settings.' );
+		}
+		$params = json_decode( $matches[1], true );
+		$this->assertSame( 'cart_page_view', $params['events'][0]['event'] );
+		$this->assertContains( 'cart_page_view', $params['allowedEvents'] );
+		$this->assertNotContains( 'proceed_to_checkout_button_click', $params['allowedEvents'] );
+		$this->assertNull( $params['proceedToCheckout'] );
 	}
 
 	/**

@@ -715,7 +715,7 @@ class StoreApiRequestHandler {
 	 * @since 11.2.0
 	 */
 	public function refresh_woopay_browser_session_cache(): void {
-		if ( ! $this->is_request_from_woopay() || ! WooPaymentsStoreApiRequestUtils::is_store_api_request() || ! $this->woopay_eligibility->is_woopay_enabled() ) {
+		if ( ! $this->is_request_from_woopay() || ! WooPaymentsStoreApiRequestUtils::is_store_api_request() ) {
 			return;
 		}
 

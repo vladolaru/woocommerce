@@ -29,7 +29,9 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionService;
 use Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\EuVatNumber;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\PageSurfaceReplacement;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\WooPayEnvelopes;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use WC_Unit_Test_Case;
@@ -1650,6 +1652,34 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Nothing on the page can use the WooPay session value under EU VAT suppression.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 * @testWith [true]
+	 *           [false]
+	 * @param bool $suppress Whether EU VAT suppresses WooPay.
+	 */
+	public function test_block_minimum_session_with_eu_vat( bool $suppress ): void {
+		EuVatNumber::load();
+		update_option( 'woocommerce_eu_vat_number_prevent_incompatible_payment_methods', $suppress ? 'yes' : 'no' );
+		WooPayEnvelopes::connect_store();
+		$account_data = self::ACCOUNT_A + array( 'platform_checkout_eligible' => true );
+		$account      = $this->create_checkout_account( $account_data, EuVatNumber::wallet_settings() );
+		wc_get_container()->replace( WooPaymentsAccountService::class, $account );
+		$assets      = $this->create_checkout_assets( $account, wc_get_container()->get( SessionService::class ) );
+		$integration = $this->create_registered_integration( false, false, null, $assets );
+		$session     = $integration->get_payment_method_data()['woopayMinimumSessionData'];
+
+		if ( $suppress ) {
+			$this->assertSame( array(), $session );
+		} else {
+			$this->assertSame( 12345, $session['blog_id'] ?? null );
+			$this->assertNotEmpty( $session['data']['session'] ?? '' );
+		}
+	}
+
+	/**
 	 * Connected account A's cached data.
 	 */
 	private const ACCOUNT_A = array(
@@ -1841,9 +1871,10 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 * Its mode, publishable key, account ID and payment readiness come from the real methods.
 	 *
 	 * @param array<string,mixed> $account_data Cached account data, read by reference.
+	 * @param array<string,mixed> $settings     Gateway settings.
 	 * @return WooPaymentsAccountService
 	 */
-	private function create_checkout_account( array &$account_data ): WooPaymentsAccountService {
+	private function create_checkout_account( array &$account_data, array $settings = array() ): WooPaymentsAccountService {
 		$account = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_cached_account_data', 'get_gateway_setting', 'is_test_mode_onboarding_enabled' ) )
@@ -1854,10 +1885,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 			}
 		);
 		$account->method( 'get_gateway_setting' )->willReturnCallback(
-			static function ( string $key, $fallback = null ) {
-				unset( $key );
-				return $fallback;
-			}
+			static fn( string $key, $fallback = null ) => $settings[ $key ] ?? $fallback
 		);
 		$account->method( 'is_test_mode_onboarding_enabled' )->willReturn( false );
 

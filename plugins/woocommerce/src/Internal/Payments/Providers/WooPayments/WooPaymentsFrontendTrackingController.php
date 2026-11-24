@@ -1030,7 +1030,8 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 		$account_data = $this->account_service->get_cached_account_data();
 
 		return 'yes' === $this->account_service->get_gateway_setting( 'platform_checkout', 'no' )
-			&& ! empty( $account_data['platform_checkout_eligible'] );
+			&& ! empty( $account_data['platform_checkout_eligible'] )
+			&& ! wc_get_container()->get( EuVatNumberIntegration::class )->suppresses_woopay();
 	}
 
 	/**

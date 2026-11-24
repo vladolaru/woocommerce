@@ -610,7 +610,7 @@ class WooPaymentsIntentRequestBuilder {
 		$express_context = isset( $provider_data[ WooPaymentsExpressPaymentMethodTypes::PROVIDER_CONTEXT_KEY ] ) && is_scalar( $provider_data[ WooPaymentsExpressPaymentMethodTypes::PROVIDER_CONTEXT_KEY ] )
 			? (string) $provider_data[ WooPaymentsExpressPaymentMethodTypes::PROVIDER_CONTEXT_KEY ]
 			: 'checkout';
-		// The same resolver as the express buttons, so the charge accepts exactly what the buttons offered.
+		// A wallet started before EU VAT hid its button can still submit its credential. Validate it against the stored location.
 		$allowed_types   = WooPaymentsExpressPaymentMethodTypes::get_payment_method_types_for_charge( $this->account_service, $express_context, $currency );
 		$validated_types = WooPaymentsExpressPaymentMethodTypes::validate_submitted_payment_method_types( $submitted_types, $allowed_types );
 

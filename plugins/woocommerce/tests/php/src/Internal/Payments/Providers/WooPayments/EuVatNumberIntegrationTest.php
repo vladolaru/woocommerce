@@ -97,6 +97,69 @@ class EuVatNumberIntegrationTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * A gateway read inside EU VAT's own decision sees the configured wallets and cannot fix the later answer.
+	 *
+	 * @testWith [true]
+	 *           [false]
+	 * @param bool $prevent Final decision after inspecting the location.
+	 */
+	public function test_plugin_initiated_decision_reads_configured_wallets( bool $prevent ): void {
+		EuVatNumber::load();
+		$choices = EuVatNumber::wallet_settings();
+		update_option( 'woocommerce_woocommerce_payments_settings', $choices );
+		$account = wc_get_container()->get( WooPaymentsAccountService::class );
+		$calls   = 0;
+		add_filter(
+			'wc_eu_vat_prevent_incompatible_payment_methods',
+			function () use ( $account, $choices, $prevent, &$calls ) {
+				++$calls;
+				$this->assertSame( $choices['express_checkout_cart_methods'], WooPaymentsExpressPaymentMethodTypes::get_configured_methods_for_context( $account, 'cart' ) );
+				return $prevent;
+			}
+		);
+
+		$this->assertSame( $prevent, EuVatNumber::should_prevent_incompatible_payment_methods() );
+		$this->assertSame( 1, $calls );
+		$this->assertSame( $prevent ? array() : $choices['express_checkout_cart_methods'], WooPaymentsExpressPaymentMethodTypes::get_configured_methods_for_context( $account, 'cart' ) );
+	}
+
+	/**
+	 * PHP classes stay loaded across a switch, even when the destination site has deactivated EU VAT.
+	 *
+	 * @group multisite
+	 * @testWith ["inactive", false]
+	 *           ["site", true]
+	 *           ["network", true]
+	 * @param string $activation How the destination loads EU VAT.
+	 * @param bool   $suppressed Whether it hides wallets on that site.
+	 */
+	public function test_switched_site_uses_its_own_activation( string $activation, bool $suppressed ): void {
+		$this->skipWithoutMultisite();
+		EuVatNumber::load();
+		$plugin = 'vat-number/woocommerce-eu-vat-number.php';
+		define( 'WC_EU_VAT_FILE', WP_PLUGIN_DIR . '/' . $plugin );
+		update_option( 'active_plugins', array( $plugin ) );
+		$integration = wc_get_container()->get( EuVatNumberIntegration::class );
+		$this->assertTrue( $integration->suppresses_express() );
+
+		$site = self::factory()->blog->create();
+		$this->assertIsInt( $site );
+		switch_to_blog( $site );
+		try {
+			update_option( 'woocommerce_eu_vat_number_b2b', 'yes' );
+			if ( 'site' === $activation ) {
+				update_option( 'active_plugins', array( $plugin ) );
+			} elseif ( 'network' === $activation ) {
+				update_site_option( 'active_sitewide_plugins', array( $plugin => time() ) );
+			}
+			$this->assertSame( $suppressed, $integration->suppresses_express() );
+		} finally {
+			restore_current_blog();
+		}
+		$this->assertTrue( $integration->suppresses_express() );
+	}
+
+	/**
 	 * The integration registers only the supported-gateway answer, and only on a set-up built-in store.
 	 *
 	 * @testWith ["connected", true]
