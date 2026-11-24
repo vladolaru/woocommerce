@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
 use WC_Order;
@@ -96,6 +97,13 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	private WooPaymentsOrderNoteService $note_service;
 
 	/**
+	 * WooPayments payment method definitions.
+	 *
+	 * @var PaymentMethodRegistry
+	 */
+	private PaymentMethodRegistry $payment_method_registry;
+
+	/**
 	 * Initialize the controller.
 	 *
 	 * @internal
@@ -107,8 +115,9 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 * @param WooPaymentsCustomerService           $customer_service            WooPayments customer service.
 	 * @param OrderPaymentLifecycleService         $lifecycle_service           Payment lifecycle service.
 	 * @param WooPaymentsOrderNoteService          $note_service                WooPayments order note service.
+	 * @param PaymentMethodRegistry                $payment_method_registry     WooPayments payment method definitions.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsIntentConfirmationService $intent_confirmation_service, Client $api_client, WooPaymentsTokenService $token_service, WooPaymentsCustomerService $customer_service, OrderPaymentLifecycleService $lifecycle_service, WooPaymentsOrderNoteService $note_service ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsIntentConfirmationService $intent_confirmation_service, Client $api_client, WooPaymentsTokenService $token_service, WooPaymentsCustomerService $customer_service, OrderPaymentLifecycleService $lifecycle_service, WooPaymentsOrderNoteService $note_service, PaymentMethodRegistry $payment_method_registry ): void {
 		$this->arbiter                     = $arbiter;
 		$this->intent_confirmation_service = $intent_confirmation_service;
 		$this->api_client                  = $api_client;
@@ -116,6 +125,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 		$this->customer_service            = $customer_service;
 		$this->lifecycle_service           = $lifecycle_service;
 		$this->note_service                = $note_service;
+		$this->payment_method_registry     = $payment_method_registry;
 	}
 
 	/**
@@ -266,6 +276,22 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 				return;
 			}
 			$this->fail_and_return_to_checkout( $fresh_order, $intent_id, $intent_status, $message, $message, (array) $intent_error );
+			return;
+		}
+
+		// A payment method type with no registered definition is left to the payment_intent webhook, which settles the order
+		// through its own checks; nothing is written here (client 11.3.0 class-wc-payment-gateway-wcpay.php:2685-2688). The
+		// type is the charge's, or the intent's when it has no charge; an intent that names no type is not caught.
+		$payment_method_type = (string) ( WooPaymentsOrderEffects::compose_payment_method_display_details( $intent )['payment_method_type'] ?? '' );
+		if ( '' !== $payment_method_type && null === $this->payment_method_registry->get( $payment_method_type ) ) {
+			wc_get_container()->get( WooPaymentsLogger::class )->log(
+				sprintf( 'Redirect return for order #%1$d left to the webhook: payment method type %2$s is not registered.', $order->get_id(), $payment_method_type ),
+				'info',
+				array(
+					'order_id'  => $order->get_id(),
+					'intent_id' => $intent_id,
+				)
+			);
 			return;
 		}
 
@@ -508,10 +534,11 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 				$this->lifecycle_service->apply_under_lock( $fresh_order, $failure, $persistence_vocabulary );
 			}
 		} catch ( Throwable $failure ) {
-			// The order should be failed but is not, so support needs this line whatever the logging setting. Client 11.1.0's
-			// mark_payment_failed() in its catch (gw:2440) has no catch of its own, so the same failure is visible there.
+			// The failure or the decline note may be missing from the order, so support needs this line whatever the logging
+			// setting. Client 11.1.0's mark_payment_failed() in its catch (gw:2440) has no catch of its own, so the same
+			// failure is visible there.
 			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable_always(
-				sprintf( 'Failing order #%1$d after its redirect return raised %2$s. The order may not show the failure.', $order->get_id(), get_class( $failure ) ),
+				sprintf( 'Recording the failed redirect return on order #%1$d raised %2$s. The order may not show the failure.', $order->get_id(), get_class( $failure ) ),
 				$failure,
 				array(
 					'order_id'  => $order->get_id(),

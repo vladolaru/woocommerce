@@ -414,6 +414,31 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox payment_intent.succeeded completes a pending order whose charge has a payment method type with no registered definition.
+	 *
+	 * The redirect return leaves such an order to this event, as client 11.3.0 does (class-wc-payment-gateway-wcpay.php:2685-2688),
+	 * so the event has to settle it: the webhook's only registry check is the buy now, pay later failure check.
+	 */
+	public function test_payment_intent_succeeded_completes_an_order_paid_with_an_unregistered_type(): void {
+		$order = $this->create_woopayments_order();
+		$event = $this->create_payment_intent_event( 'payment_intent.succeeded', $order, array( 'payment_method_types' => array( 'twint' ) ) );
+
+		$event['data']['object']['charges']['data'][0]['payment_method_details'] = array(
+			'type'  => 'twint',
+			'twint' => array(),
+		);
+
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertTrue( $order->is_paid(), 'The event completes the payment.' );
+		$this->assertSame( 'pi_123', $order->get_transaction_id() );
+		$this->assertSame( 'ch_123', $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $order->get_payment_method() );
+	}
+
+	/**
 	 * @testdox A $event_type delivery refused by a held order payment lock fails, and a later delivery applies it once the lock is free.
 	 * The events are the ones the platform forwarded for a card checkout, a card decline and a manual-capture authorization (Fixtures/platform-payment-intent-events.json).
 	 *

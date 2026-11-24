@@ -836,6 +836,213 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A succeeded return whose charge has a payment method type with no registered definition writes nothing and is left to the webhook.
+	 *
+	 * Client 11.3.0 takes the type from the charge, looks it up in its payment method map after the error check and returns
+	 * when the map does not hold it (class-wc-payment-gateway-wcpay.php:2646-2650, :2685-2688): no token, meta, note, status
+	 * or notice, and the cart is not emptied. The payment_intent.succeeded event settles the order. One debug line names the type.
+	 */
+	public function test_handle_wp_leaves_a_payment_of_an_unregistered_type_to_the_webhook(): void {
+		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$order   = $this->create_order( '50.00', $user_id, true );
+		$product = \WC_Helper_Product::create_simple_product();
+		WC()->cart->add_to_cart( $product->get_id() );
+		$api_client                 = new RedirectReturnApiClientStub();
+		$api_client->payment_intent = $this->redirect_method_payment_intent( $order, 'pi_twint', 'twint', 'ch_twint' );
+		$token_service              = $this->create_token_service(
+			array(
+				'pm_twint' => array(
+					'id'   => 'pm_twint',
+					'type' => 'twint',
+				),
+			)
+		);
+		$this->sut                  = $this->create_controller( true, $this->create_confirmation_service( $api_client, $token_service ), $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_twint', true );
+		$logger = new RedirectReturnRecordingLogger();
+		add_filter( 'woocommerce_logging_class', static fn() => $logger );
+		$before = $this->order_meta_snapshot( $order->get_id() );
+
+		$this->sut->handle_wp();
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( OrderStatus::PENDING, $reloaded->get_status() );
+		$this->assertSame( 1, $api_client->payment_intent_reads );
+		$this->assertSame( $before, $this->order_meta_snapshot( $order->get_id() ), 'No meta is written.' );
+		$this->assertSame( array( '', WooPaymentsPersistenceVocabulary::GATEWAY_ID ), array( $reloaded->get_transaction_id(), $reloaded->get_payment_method() ) );
+		$this->assertSame( array(), wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertCount( 0, $reloaded->get_payment_tokens() );
+		$this->assertSame( array(), \WC_Payment_Tokens::get_customer_tokens( $user_id ) );
+		$this->assertSame( 0, wc_notice_count() );
+		$this->assertSame( 1, WC()->cart->get_cart_contents_count(), 'The cart is not emptied.' );
+		$this->assertSame( array( sprintf( 'Redirect return for order #%d left to the webhook: payment method type twint is not registered.', $order->get_id() ) ), $this->unregistered_type_lines( $logger ) );
+	}
+
+	/**
+	 * @testdox A zero-total order's succeeded SetupIntent of a payment method type with no registered definition writes nothing.
+	 *
+	 * The type is the SetupIntent's own, as it carries no charge; the check is the PaymentIntent return's.
+	 */
+	public function test_handle_wp_leaves_a_setup_intent_of_an_unregistered_type_to_the_webhook(): void {
+		$order                    = $this->create_order( '0.00' );
+		$api_client               = new RedirectReturnApiClientStub();
+		$api_client->setup_intent = array(
+			'id'                   => 'seti_twint',
+			'status'               => 'succeeded',
+			'customer'             => 'cus_twint',
+			'payment_method'       => 'pm_twint',
+			'payment_method_types' => array( 'twint' ),
+			'metadata'             => array( 'order_id' => $order->get_id() ),
+		);
+		$this->sut                = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client, null, $this->create_customer_service( 0, '' ) );
+		$this->set_setup_intent_return_request( $order, 'seti_twint' );
+		$logger = new RedirectReturnRecordingLogger();
+		add_filter( 'woocommerce_logging_class', static fn() => $logger );
+		$before = $this->order_meta_snapshot( $order->get_id() );
+
+		$this->sut->handle_wp();
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( OrderStatus::PENDING, $reloaded->get_status() );
+		$this->assertSame( 1, $api_client->setup_intent_reads );
+		$this->assertSame( $before, $this->order_meta_snapshot( $order->get_id() ), 'No meta is written.' );
+		$this->assertSame( array(), wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertSame( 0, wc_notice_count() );
+		$this->assertCount( 1, $this->unregistered_type_lines( $logger ) );
+	}
+
+	/**
+	 * @testdox A return of a registered payment method that was switched off after the redirect is still confirmed.
+	 *
+	 * Registered is not the same as enabled: client 11.3.0's map holds every registered definition whether the method is
+	 * enabled or not (class-wc-payments.php:592-617, :1228-1233), and so does the registry here.
+	 */
+	public function test_handle_wp_confirms_a_registered_payment_method_switched_off_after_the_redirect(): void {
+		$order = $this->create_order( '50.00', 0, true );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'alipay' );
+		$order->save();
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'enable_logging'                 => 'yes',
+				'upe_enabled_payment_method_ids' => array( 'card' ),
+			)
+		);
+		$api_client                 = new RedirectReturnApiClientStub();
+		$api_client->payment_intent = $this->redirect_method_payment_intent( $order, 'pi_switched_off', 'alipay', 'ch_switched_off' );
+		$this->sut                  = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_switched_off' );
+		$logger = new RedirectReturnRecordingLogger();
+		add_filter( 'woocommerce_logging_class', static fn() => $logger );
+
+		$this->sut->handle_wp();
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( OrderStatus::PROCESSING, $reloaded->get_status() );
+		$this->assertSame( 'ch_switched_off', $reloaded->get_meta( '_charge_id', true ) );
+		$this->assertSame( array(), $this->unregistered_type_lines( $logger ) );
+	}
+
+	/**
+	 * @testdox A return of a payment method type with no registered definition that carries an intent error is still recorded: $_dataName.
+	 *
+	 * The error check comes first, as in client 11.3.0 (class-wc-payment-gateway-wcpay.php:2675-2684 before :2685-2688): a
+	 * decline fails the order, and a retryable decline adds the declined-payment note and leaves the order pending.
+	 *
+	 * @dataProvider provider_unregistered_type_intent_errors
+	 *
+	 * @param string $code         The error's code.
+	 * @param string $decline_code The error's decline code.
+	 * @param bool   $retryable    Whether the decline is retryable.
+	 */
+	public function test_handle_wp_records_the_intent_error_of_an_unregistered_type( string $code, string $decline_code, bool $retryable ): void {
+		$order                      = $this->create_order();
+		$api_client                 = new RedirectReturnApiClientStub();
+		$api_client->payment_intent = array(
+			'id'                   => 'pi_twint_error',
+			'status'               => 'requires_payment_method',
+			'currency'             => 'usd',
+			'amount'               => 5000,
+			'customer'             => 'cus_return',
+			'payment_method'       => null,
+			'payment_method_types' => array( 'twint' ),
+			'metadata'             => array( 'order_id' => $order->get_id() ),
+			'charges'              => array(
+				'total_count' => 1,
+				'data'        => array(
+					array(
+						'id'                     => 'ch_twint_error',
+						'status'                 => 'failed',
+						'payment_method_details' => array( 'type' => 'twint' ),
+					),
+				),
+			),
+			'last_payment_error'   => array(
+				'type'         => 'card_error',
+				'code'         => $code,
+				'decline_code' => $decline_code,
+				'message'      => 'The provider declined the payment.',
+			),
+		);
+		$this->sut                  = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_twint_error' );
+		$logger = new RedirectReturnRecordingLogger();
+		add_filter( 'woocommerce_logging_class', static fn() => $logger );
+
+		$location = $this->handle_wp_expecting_redirect();
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( $retryable ? $order->get_checkout_payment_url() : wc_get_checkout_url(), $location );
+		$this->assertSame( $retryable ? OrderStatus::PENDING : OrderStatus::FAILED, $reloaded->get_status() );
+		$this->assert_failed_note_with_message( $reloaded, 'pi_twint_error', 'With the following message: <code>The provider declined the payment.</code>. Decline code: <code>' . $decline_code . '</code>.' );
+		$this->assertSame( array(), $this->unregistered_type_lines( $logger ) );
+	}
+
+	/**
+	 * Intent errors on a return of an unregistered payment method type: code, decline code, retryable.
+	 *
+	 * @return array<string,array{0:string,1:string,2:bool}>
+	 */
+	public function provider_unregistered_type_intent_errors(): array {
+		return array(
+			'a decline'           => array( 'card_declined', 'generic_decline', false ),
+			'a retryable decline' => array( 'payment_method_provider_decline', 'partner_generic_decline', true ),
+		);
+	}
+
+	/**
+	 * Read an order's stored meta, fresh from the data store, as key and value pairs.
+	 *
+	 * @param int $order_id Order ID.
+	 * @return array<int,array{0:string,1:mixed}>
+	 */
+	private function order_meta_snapshot( int $order_id ): array {
+		$order = wc_get_order( $order_id );
+		$this->assertInstanceOf( WC_Order::class, $order );
+
+		return array_map( static fn( $meta ): array => array( $meta->key, $meta->value ), array_values( $order->get_meta_data() ) );
+	}
+
+	/**
+	 * The guard's lines for an unregistered payment method type.
+	 *
+	 * @param RedirectReturnRecordingLogger $logger Recording logger.
+	 * @return string[]
+	 */
+	private function unregistered_type_lines( RedirectReturnRecordingLogger $logger ): array {
+		$lines = array_filter(
+			$logger->info_calls,
+			static fn( array $call ): bool => WooPaymentsLogger::SOURCE === ( $call['context']['source'] ?? '' ) && false !== strpos( (string) $call['message'], 'is not registered' )
+		);
+
+		return array_values( array_map( static fn( array $call ): string => (string) $call['message'], $lines ) );
+	}
+
+	/**
 	 * @testdox A redirect return is a no-op that neither fetches nor confirms the intent nor terminates the request: $_dataName.
 	 *
 	 * @dataProvider provider_ignored_redirect_requests
@@ -1929,13 +2136,65 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $write_failures, 'One line, written with debug logging off.' );
 		$this->assertSame( WooPaymentsLogger::SOURCE, $write_failures[0]['context']['source'] ?? '' );
 		$this->assertSame( $order->get_id(), $write_failures[0]['context']['order_id'] ?? null );
-		$this->assertSame( sprintf( 'Failing order #%d after its redirect return raised RuntimeException. The order may not show the failure.', $order->get_id() ), $write_failures[0]['message'] );
+		$this->assertSame( sprintf( 'Recording the failed redirect return on order #%d raised RuntimeException. The order may not show the failure.', $order->get_id() ), $write_failures[0]['message'] );
 		$this->assertSame( array( 0, 404, 'resource_missing' ), array( $write_failures[0]['context']['code'] ?? null, $write_failures[0]['context']['http_status'] ?? null, $write_failures[0]['context']['error_code'] ?? null ) );
 		$this->assertNotSame( '', $write_failures[0]['context']['trace'] ?? '' );
 		$written = (string) wp_json_encode( $write_failures[0] );
 		foreach ( array_merge( array( 'Database write failed' ), self::$provider_leak_fragments ) as $fragment ) {
 			$this->assertStringNotContainsString( $fragment, $written );
 		}
+	}
+
+	/**
+	 * @testdox A decline-note write that throws on a retryable decline is logged whatever the logging setting, and the order stays pending.
+	 *
+	 * The always-on line names the recording of the failed return, which on this branch is the declined-payment note, not a
+	 * failed status.
+	 */
+	public function test_handle_wp_always_logs_a_retryable_decline_note_write_that_throws(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$order                      = $this->create_order();
+		$api_client                 = new RedirectReturnApiClientStub();
+		$api_client->payment_intent = array(
+			'id'                 => 'pi_note_throws',
+			'status'             => 'requires_payment_method',
+			'currency'           => 'usd',
+			'amount'             => 5000,
+			'customer'           => 'cus_return',
+			'payment_method'     => null,
+			'metadata'           => array( 'order_id' => $order->get_id() ),
+			'last_payment_error' => array(
+				'type'         => 'invalid_request_error',
+				'code'         => 'payment_method_provider_decline',
+				'decline_code' => 'partner_generic_decline',
+				'message'      => 'The provider declined the payment.',
+			),
+		);
+		$note_service               = $this->getMockBuilder( WooPaymentsOrderNoteService::class )->onlyMethods( array( 'add_note_once' ) )->getMock();
+		$note_service->method( 'add_note_once' )->willThrowException( new \RuntimeException( 'Note write failed.' ) );
+		$logger = new RedirectReturnRecordingLogger();
+		add_filter( 'woocommerce_logging_class', static fn() => $logger );
+		$this->sut = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client, null, null, null, $note_service );
+		$this->set_payment_intent_return_request( $order, 'pi_note_throws' );
+
+		$location = $this->handle_wp_expecting_redirect();
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertSame( $order->get_checkout_payment_url(), $location );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( OrderStatus::PENDING, $reloaded->get_status() );
+		$write_failures = array_values(
+			array_filter(
+				$logger->error_calls,
+				static fn( array $call ): bool => \RuntimeException::class === ( $call['context']['exception'] ?? '' )
+			)
+		);
+		$this->assertSame(
+			array( sprintf( 'Recording the failed redirect return on order #%d raised RuntimeException. The order may not show the failure.', $order->get_id() ) ),
+			array_column( $write_failures, 'message' ),
+			'One line, written with debug logging off.'
+		);
 	}
 
 	/**
@@ -2842,7 +3101,11 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 
 		$this->sut->handle_wp();
 
-		$this->assertSame( 'pending', wc_get_order( $order->get_id() )->get_status() );
+		$reloaded = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'pending', $reloaded->get_status() );
+		// An intent that names no payment method type is not left to the webhook as an unregistered one: the return records it.
+		$this->assertSame( array( 'requires_action', 'pi_requires_action' ), array( $reloaded->get_meta( '_intention_status', true ), $reloaded->get_transaction_id() ) );
 		$this->assertSame( array(), wc_get_notices( 'error' ) );
 		$failure_notes = array_filter(
 			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
@@ -3539,9 +3802,10 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsTokenService|null              $token_service        Token service.
 	 * @param WooPaymentsCustomerService|null           $customer_service     Customer service.
 	 * @param OrderPaymentLifecycleService|null         $lifecycle_service    Order payment lifecycle service, or the container's.
+	 * @param WooPaymentsOrderNoteService|null          $note_service         Order note service, or the container's.
 	 * @return WooPaymentsRedirectReturnController
 	 */
-	private function create_controller( bool $builtin_owner, ?WooPaymentsIntentConfirmationService $confirmation_service = null, ?Client $api_client = null, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsCustomerService $customer_service = null, ?OrderPaymentLifecycleService $lifecycle_service = null ): WooPaymentsRedirectReturnController {
+	private function create_controller( bool $builtin_owner, ?WooPaymentsIntentConfirmationService $confirmation_service = null, ?Client $api_client = null, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsCustomerService $customer_service = null, ?OrderPaymentLifecycleService $lifecycle_service = null, ?WooPaymentsOrderNoteService $note_service = null ): WooPaymentsRedirectReturnController {
 		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
 		$arbiter->method( 'is_builtin_owner' )->willReturn( $builtin_owner );
 
@@ -3553,7 +3817,8 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			$token_service ?? $this->createMock( WooPaymentsTokenService::class ),
 			$customer_service ?? $this->createMock( WooPaymentsCustomerService::class ),
 			$lifecycle_service ?? wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			wc_get_container()->get( WooPaymentsOrderNoteService::class )
+			$note_service ?? wc_get_container()->get( WooPaymentsOrderNoteService::class ),
+			new PaymentMethodRegistry()
 		);
 
 		return $controller;
