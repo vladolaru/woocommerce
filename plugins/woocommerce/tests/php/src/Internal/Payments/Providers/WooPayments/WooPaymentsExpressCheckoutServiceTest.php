@@ -1476,38 +1476,59 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should show checkout payment request buttons from the location settings, or from Apple Pay and Google Pay's own settings when the location settings are absent: $_dataName.
-	 * @dataProvider provide_payment_request_settings_sources
+	 * @testdox Should offer only available wallets while preserving the location setting: $_dataName.
+	 * @dataProvider provide_wallet_locations
 	 *
-	 * @param array<string,mixed> $settings   Gateway settings, without the defaults.
-	 * @param bool                $wallets_on Whether Apple Pay and Google Pay are enabled in their own settings.
+	 * @param string        $context    Express checkout location.
+	 * @param bool          $wallets_on Whether the card wallets are enabled.
+	 * @param string[]|null $listed     Stored location list, or null if never saved.
+	 * @param string[]      $offered    Expected enabled express methods.
+	 * @param string[]      $types      Expected Stripe payment method types.
 	 */
-	public function test_payment_request_reads_the_location_or_the_wallet_gateway_settings( array $settings, bool $wallets_on ): void {
-		$this->set_up_virtual_product_context( 'checkout' );
-		$sut = $this->create_service( $settings, true, array(), false );
-		if ( $wallets_on ) {
-			$this->set_wallet_gateway_settings( true );
+	public function test_wallet_availability_at_location( string $context, bool $wallets_on, ?array $listed, array $offered, array $types ): void {
+		$this->set_up_virtual_product_context( $context );
+		$this->set_wallet_gateway_settings( $wallets_on );
+		$amazon_pay = in_array( 'amazon_pay', $listed ?? array(), true );
+		$settings   = array(
+			'enabled'                        => 'yes',
+			'upe_enabled_payment_method_ids' => $amazon_pay ? array( 'card', 'amazon_pay' ) : array( 'card' ),
+		);
+		if ( null !== $listed ) {
+			$settings[ 'express_checkout_' . $context . '_methods' ] = $listed;
 		}
+		$account_data    = array( 'ece_confirmation_tokens_disabled' => false );
+		$account_service = $this->create_account_service( $settings, $account_data );
+		$sut             = $this->create_service( $settings, true, $account_data, false );
+		$params          = $sut->get_express_checkout_params( $context );
 
-		$this->assertTrue( $sut->should_show_payment_request_button( 'checkout' ) );
+		$this->assertSame( $wallets_on || $amazon_pay, $sut->is_express_checkout_enabled( $context ) );
+		$this->assertSame( $wallets_on || $amazon_pay, $sut->is_express_checkout_available() );
+		$this->assertSame( $listed ?? array( 'payment_request' ), $params['methods_enabled_at_location'] );
+		$this->assertSame( $offered, $params['enabled_methods'] );
+		$this->assertSame( $types, $params['payment_method_types'] );
+		$this->assertSame( $types, WooPaymentsExpressPaymentMethodTypes::get_payment_method_types_for_charge( $account_service, $context, 'USD' ) );
+		$this->assertSame( array() !== $types, $sut->should_show_payment_request_button( $context ) );
+		$this->assertSame( array() !== $types, $sut->should_load_express_checkout_scripts( $context ) );
 	}
 
 	/**
-	 * Payment request settings sources.
+	 * Locations retain their configured methods when the merchant disables a wallet.
 	 *
-	 * @return array<string,array{0:array<string,mixed>,1:bool}>
+	 * @return array<string,array{string,bool,string[]|null,string[],string[]}>
 	 */
-	public function provide_payment_request_settings_sources(): array {
+	public function provide_wallet_locations(): array {
+		$wallet = array( 'payment_request' );
+		$card   = array( 'card' );
+
 		return array(
-			'location settings, wallet settings untouched' => array(
-				array(
-					'express_checkout_product_methods'  => array(),
-					'express_checkout_cart_methods'     => array(),
-					'express_checkout_checkout_methods' => array( 'payment_request' ),
-				),
-				false,
-			),
-			'no location settings, a wallet enabled'       => array( array(), true ),
+			'wallets on and listed'        => array( 'checkout', true, $wallet, $wallet, $card ),
+			'wallets off at product'       => array( 'product', false, $wallet, array(), array() ),
+			'wallets off at cart'          => array( 'cart', false, $wallet, array(), array() ),
+			'wallets off at checkout'      => array( 'checkout', false, $wallet, array(), array() ),
+			'wallets on and unlisted'      => array( 'checkout', true, array(), array(), array() ),
+			'wallets off and unlisted'     => array( 'checkout', false, array(), array(), array() ),
+			'wallets off, Amazon Pay on'   => array( 'checkout', false, array( 'payment_request', 'woopay', 'amazon_pay' ), array( 'woopay', 'amazon_pay' ), array( 'amazon_pay' ) ),
+			'wallets on, location unsaved' => array( 'checkout', true, null, $wallet, $card ),
 		);
 	}
 
@@ -1917,6 +1938,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should reject a submitted Amazon Pay payment type once the merchant switched Amazon Pay off.
 	 */
 	public function test_payment_time_allowlist_rejects_amazon_pay_the_merchant_switched_off(): void {
+		$this->set_wallet_gateway_settings( true );
 		$settings = array(
 			'enabled'                           => 'yes',
 			'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),

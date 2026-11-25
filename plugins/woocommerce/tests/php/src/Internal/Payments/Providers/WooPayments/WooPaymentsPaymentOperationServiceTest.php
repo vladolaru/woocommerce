@@ -5294,6 +5294,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @param string[]            $expected      Payment method types sent.
 	 */
 	public function test_charge_sends_the_allowed_express_payment_method_types( bool $test_mode, array $settings, array $account_data, string $currency, array $options, array $provider_data, array $expected ): void {
+		update_option( 'woocommerce_woocommerce_payments_google_pay_settings', array( 'enabled' => 'yes' ) );
 		foreach ( $options as $option => $value ) {
 			update_option( $option, $value );
 		}

@@ -1155,10 +1155,27 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	 * @param string              $expected_capture Expected capture_method.
 	 */
 	public function test_charge_asks_for_manual_capture_only_when_every_declared_method_can_capture_later( string $gateway_id, array $provider_data, array $enabled_methods, string $manual_capture, array $expected_types, string $expected_capture ): void {
+		update_option( 'woocommerce_woocommerce_payments_apple_pay_settings', array( 'enabled' => 'yes' ) );
 		$request = $this->build_capture_request( $gateway_id, $provider_data, $enabled_methods, $manual_capture, new PaymentMethodRegistry() );
 
 		$this->assertSame( $expected_types, $request['payment_method_types'] );
 		$this->assertSame( $expected_capture, $request['capture_method'] );
+	}
+
+	/**
+	 * @testdox A wallet submitted after the wallets are switched off uses the card gateway's types, including Link.
+	 */
+	public function test_disabled_wallet_charge_falls_back_to_card_types(): void {
+		update_option( 'woocommerce_woocommerce_payments_apple_pay_settings', array( 'enabled' => 'no' ) );
+		update_option( 'woocommerce_woocommerce_payments_google_pay_settings', array( 'enabled' => 'no' ) );
+		$submitted = array(
+			'express_payment_method_types' => array( 'card' ),
+			'express_checkout_context'     => 'checkout',
+		);
+
+		$request = $this->build_capture_request( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $submitted, array( 'card', 'link' ), 'no', new PaymentMethodRegistry() );
+
+		$this->assertSame( array( 'card', 'link' ), $request['payment_method_types'] );
 	}
 
 	/**

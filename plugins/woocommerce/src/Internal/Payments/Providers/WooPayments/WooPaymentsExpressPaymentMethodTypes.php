@@ -121,6 +121,10 @@ class WooPaymentsExpressPaymentMethodTypes {
 			array_filter(
 				$methods,
 				static function ( string $method ) use ( $account_service, $context, $currency ): bool {
+					if ( self::EXPRESS_METHOD_PAYMENT_REQUEST === $method ) {
+						return $account_service->is_payment_request_enabled();
+					}
+
 					return self::EXPRESS_METHOD_AMAZON_PAY !== $method || self::is_amazon_pay_usable( $account_service, $context, $currency );
 				}
 			)
