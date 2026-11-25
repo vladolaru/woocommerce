@@ -110,6 +110,7 @@ class WooPaymentsHookNamesContractTest extends WC_Unit_Test_Case {
 		'wcpay_get_transactions_summary_request'           => 'Request-framework or other non-contract filter, a changelog item',
 		'wcpay_is_wcpay_subscriptions_enabled'             => 'Request-framework or other non-contract filter, a changelog item',
 		'wcpay_list_charge_refunds_request'                => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_logger_context_url_query_keys_to_keep'      => 'The built-in logs only the request path and omits the referrer, so it deliberately skips this filter. There are no query values to keep.',
 		'wcpay_order_intent_id_updated'                    => 'Request-framework or other non-contract filter, a changelog item',
 		'wcpay_order_payment_method_id_updated'            => 'Request-framework or other non-contract filter, a changelog item',
 		'wcpay_payment_fields_upe'                         => 'Request-framework or other non-contract filter, a changelog item',

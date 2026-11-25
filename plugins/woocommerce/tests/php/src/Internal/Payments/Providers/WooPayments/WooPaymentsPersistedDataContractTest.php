@@ -77,27 +77,27 @@ class WooPaymentsPersistedDataContractTest extends WC_Unit_Test_Case {
 	 */
 	private const ALLOWED_DIFFERENCES = array(
 		'wcpay_check_subscriptions_eligibility_after_onboarding' => 'data/consumer-map/consumer-map.md:67 (cosmetic options are changelog items).',
-		'wcpay_menu_badge_hidden'                     => 'data/consumer-map/consumer-map.md:67 (cosmetic options are changelog items).',
-		'wcpay_should_redirect_to_onboarding'         => 'data/consumer-map/consumer-map.md:67 (cosmetic options are changelog items).',
-		'wcpay_survey_payment_overview_submitted'     => 'data/consumer-map/consumer-map.md:67 (cosmetic options are changelog items).',
-		'wcpay_error_message'                         => 'plan.md T.7 Step 6 (d): superseded by the NOX wcpay-connection-error query arg.',
-		'wcpay_has_affected_auth_fee_orders'          => "The built-in keeps the canceled-authorization note's check in its own option and never reads, writes or deletes the extension's.",
-		'wcpay_check_affected_auth_fee_orders'        => "The built-in runs that check on its own hook and does not handle the extension's.",
-		'wcpay_kyc_completion_date'                   => 'Client 11.3.0 retired the post-KYC reminder emails and no longer writes it (includes/class-wc-payments-account.php, deprecated KYC_COMPLETION_DATE_OPTION).',
-		'wcpay_kyc_submitted_date'                    => 'Client 11.3.0 retired the post-KYC reminder emails and no longer writes it (includes/class-wc-payments-account.php, deprecated KYC_SUBMITTED_DATE_OPTION).',
-		'wcpay_post_kyc_activation_email_sent_stages' => 'Client 11.3.0 retired the post-KYC reminder emails and leaves the stored value unread (includes/migrations/class-retire-post-kyc-activation-emails.php).',
-		'wcpay_post_kyc_activation_emails_scheduled'  => 'Client 11.3.0 retired the post-KYC reminder emails and leaves the stored value unread (includes/migrations/class-retire-post-kyc-activation-emails.php).',
-		'wcpay_test_mode_enabled_date'                => 'Client 11.3.0 retired the test-to-live notice and no longer writes it (includes/class-wc-payments-onboarding-service.php, deprecated TEST_MODE_ENABLED_DATE_OPTION).',
-		'wcpay_test_to_live_eligible'                 => 'Client 11.3.0 retired the test-to-live notice; its one-hour cache is no longer read and expires (includes/migrations/class-retire-post-kyc-activation-emails.php).',
-		'wcpay_post_kyc_activation_eligible'          => 'Client 11.3.0 retired the post-KYC notice; its one-hour cache is no longer read and expires (includes/migrations/class-retire-post-kyc-activation-emails.php).',
+		'wcpay_menu_badge_hidden'                 => 'data/consumer-map/consumer-map.md:67 (cosmetic options are changelog items).',
+		'wcpay_should_redirect_to_onboarding'     => 'data/consumer-map/consumer-map.md:67 (cosmetic options are changelog items).',
+		'wcpay_survey_payment_overview_submitted' => 'data/consumer-map/consumer-map.md:67 (cosmetic options are changelog items).',
+		'wcpay_error_message'                     => 'The built-in passes the connection error in the wcpay-connection-error query argument.',
+		'wcpay_has_affected_auth_fee_orders'      => "The built-in keeps the canceled-authorization note's check in its own option and never reads, writes or deletes the extension's.",
+		'wcpay_check_affected_auth_fee_orders'    => "The built-in runs that check on its own hook and does not handle the extension's.",
+		'wcpay_kyc_completion_date'               => 'Client 11.3.0 retired the post-KYC reminder emails and no longer writes it (includes/class-wc-payments-account.php, deprecated KYC_COMPLETION_DATE_OPTION).',
+		'wcpay_kyc_submitted_date'                => 'Client 11.3.0 retired the post-KYC reminder emails and no longer writes it (includes/class-wc-payments-account.php, deprecated KYC_SUBMITTED_DATE_OPTION).',
+		'wcpay_test_mode_enabled_date'            => 'Client 11.3.0 retired the test-to-live notice and no longer writes it (includes/class-wc-payments-onboarding-service.php, deprecated TEST_MODE_ENABLED_DATE_OPTION).',
+		'wcpay_test_to_live_eligible'             => 'Client 11.3.0 retired the test-to-live notice; its one-hour cache is no longer read and expires (includes/migrations/class-retire-post-kyc-activation-emails.php).',
+		'wcpay_post_kyc_activation_eligible'      => 'Client 11.3.0 retired the post-KYC notice; its one-hour cache is no longer read and expires (includes/migrations/class-retire-post-kyc-activation-emails.php).',
 	);
 
 	/**
-	 * Fixture keys client 11.1.0 itself only reads, so a native reader is parity.
+	 * Fixture keys the WooPayments extension only reads, so a native reader is parity.
 	 *
 	 * @var array<string,string>
 	 */
 	private const WOOPAYMENTS_EXTENSION_READ_ONLY_KEYS = array(
+		'coupon_data'                          => 'WooCommerce core wrote this on coupon order items in 8.6.2 (includes/class-wc-checkout.php:701). The extension and the built-in only read it.',
+		'coupon_info'                          => 'WooCommerce core writes this on coupon order items (includes/class-wc-checkout.php:1029). The extension and the built-in only read it.',
 		'wcpay_frt_review_feature_active'      => 'Client 11.1.0 only reads it (class-wc-payments-features.php:262); the platform or support sets it.',
 		'wcpay_session_rate_limiter_disabled_' => 'Client 11.1.0 only reads it (class-session-rate-limiter.php:92); support sets it by hand.',
 		'_intent_status'                       => 'Client 11.1.0 only reads it (class-wc-rest-payments-charges-controller.php:89); older plugin versions wrote it.',
