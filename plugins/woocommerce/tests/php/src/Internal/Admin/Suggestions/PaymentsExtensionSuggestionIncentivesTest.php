@@ -190,6 +190,7 @@ class PaymentsExtensionSuggestionIncentivesTest extends WC_Unit_Test_Case {
 	 * Test get_incentives when there is no incentive provider.
 	 */
 	public function test_get_incentives_no_provider() {
+		// Arrange.
 		$before = did_filter( 'pre_option' );
 		$this->sut->init( new WooPaymentsExtensionRuntime(), wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter::class ) );
 		$this->sut
@@ -201,6 +202,7 @@ class PaymentsExtensionSuggestionIncentivesTest extends WC_Unit_Test_Case {
 		// Act.
 		$incentives = $this->sut->get_incentives( 'suggestion1', 'RO' );
 
+		// Assert.
 		$this->assertSame( $before, did_filter( 'pre_option' ) );
 		$this->assertSame( array(), $incentives );
 	}

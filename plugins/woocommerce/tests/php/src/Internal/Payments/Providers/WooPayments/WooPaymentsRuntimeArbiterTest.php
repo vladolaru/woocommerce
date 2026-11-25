@@ -264,6 +264,7 @@ class WooPaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner() );
 		$blog_id = self::factory()->blog->create();
+		$this->assertIsInt( $blog_id );
 		try {
 			switch_to_blog( $blog_id );
 			$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner() );

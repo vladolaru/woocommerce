@@ -68,7 +68,11 @@ class WooPayments extends Incentive {
 	 */
 	private ?array $incentives_memo = null;
 
-	/** @var mixed Transient value already read for the next ordinary lookup. */
+	/**
+	 * Promotion transient already read for the next ordinary lookup.
+	 *
+	 * @var mixed
+	 */
 	private $lookup_cache;
 
 	/**
@@ -114,11 +118,9 @@ class WooPayments extends Incentive {
 	 */
 	public function is_visible( string $id, string $country_code, bool $skip_extension_active_check = false ): bool {
 		$cold_lookup = null === $this->incentives_memo;
-		if ( ! $skip_extension_active_check && $cold_lookup && null !== $this->arbiter
-			&& ( ! $this->user_has_caps() || $this->skip_waiting_store_lookup() ) ) {
+		if ( ! $skip_extension_active_check && $cold_lookup && null !== $this->arbiter && ( ! $this->user_has_caps() || $this->skip_waiting_store_lookup() ) ) {
 			return false;
 		}
-
 		// Always skip the extension active check since we will check below.
 		if ( false === parent::is_visible( $id, $country_code, true ) ) {
 			return false;
@@ -127,7 +129,6 @@ class WooPayments extends Incentive {
 		if ( ! $skip_extension_active_check && ! $cold_lookup && null !== $this->arbiter && $this->arbiter->is_awaiting_switch() ) {
 			return false;
 		}
-
 		// Instead of just extension active, we check if WooPayments is active and has an account.
 		if ( ! $skip_extension_active_check && $this->is_extension_active() && $this->has_wcpay_account_data() ) {
 			return false;
@@ -200,6 +201,7 @@ class WooPayments extends Incentive {
 			return $this->incentives_memo;
 		}
 
+		// Get the cached data.
 		$cache              = $this->lookup_cache ?? get_transient( $this->cache_transient_name );
 		$this->lookup_cache = null;
 

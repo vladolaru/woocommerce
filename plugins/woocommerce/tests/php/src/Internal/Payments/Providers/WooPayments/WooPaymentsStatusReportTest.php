@@ -281,8 +281,6 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Readiness follows the current record on extension-owned and waiting stores.
-	 *
 	 * @testWith ["pending", "awaiting_merchant_start", true]
 	 *           ["pending", "queued", false]
 	 *           ["running", "claimed", false]
@@ -295,7 +293,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	 * @param bool   $expected Whether an extension owner sees readiness.
 	 */
 	public function test_readiness_follows_current_record( string $state, string $step, bool $expected ): void {
-		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		$this->login_as_administrator();
 		foreach ( array( true, false ) as $extension ) {
 			$this->set_store_shape( 'yes', $extension, true, WooPaymentsSetupTier::AVAILABLE );
 			$classification = array(
@@ -331,7 +329,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 					update_option( ReconciliationJob::ADMIN_CLASSIFICATION_OPTION, $classification );
 					$this->assertSame( array(), $sut->add_site_status_tests( array() ) );
 					$job->refresh_notice_record();
-					$this->assertArrayHasKey( 'woocommerce_woopayments_cutover', $sut->add_site_status_tests( array() )['async'] );
+					$this->assertArrayHasKey( 'woocommerce_woopayments_cutover', $sut->add_site_status_tests( array( 'async' => array() ) )['async'] );
 				}
 			}
 		}

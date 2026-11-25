@@ -296,7 +296,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		delete_transient( Incentive::PREFIX . $id . '_cache' );
 		add_filter( 'pre_http_request', $this->response_mock_ref, 10, 3 );
 		if ( ! $manager ) {
-			wp_set_current_user( self::factory()->user->create( array( 'role' => 'customer' ) ) );
+			$this->login_as_role( 'customer' );
 		}
 		$this->extension_runtime->expects( $this->never() )->method( 'has_live_cached_account_data' );
 		$counts = static fn() => array( did_filter( 'pre_option' ), did_filter( 'pre_http_request' ), did_action( 'added_option' ), did_action( 'updated_option' ) );
@@ -309,7 +309,9 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		} else {
 			$this->assertFalse( $sut->is_incentive_visible( 'incentive1', $id, 'US' ) );
 		}
-		$before[0] += ( 'list' === $reader ? 0 : $cap_reads ) + ( $manager ? 1 : 0 );
+		// The feature check reads one option. A database-backed transient also reads its timeout and value.
+		$lookup_reads = wp_using_ext_object_cache() ? 1 : 3;
+		$before[0]   += ( 'list' === $reader ? 0 : $cap_reads ) + ( $manager ? $lookup_reads : 0 );
 		$this->assertSame( $before, $counts() );
 		if ( $manager ) {
 			update_option( Incentive::PREFIX . $id . '_store_had_woopayments', 'no' );

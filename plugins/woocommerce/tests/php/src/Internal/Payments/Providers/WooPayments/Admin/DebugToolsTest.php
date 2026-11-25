@@ -92,9 +92,11 @@ class DebugToolsTest extends WC_Unit_Test_Case {
 			$controller = $this->getMockBuilder( \WC_REST_System_Status_Tools_V2_Controller::class )->onlyMethods( array( 'get_tools', 'execute_tool' ) )->getMock();
 			$controller->method( 'get_tools' )->willReturn( $tools );
 			$controller->expects( $this->never() )->method( 'execute_tool' );
-			$request       = new \WP_REST_Request( 'PUT' );
-			$request['id'] = 'delete_wcpay_test_orders';
-			$this->assertSame( 404, $controller->update_item( $request )->get_error_data()['status'] );
+			$request = new \WP_REST_Request( 'PUT' );
+			$request->set_param( 'id', 'delete_wcpay_test_orders' );
+			$error = $controller->update_item( $request );
+			$this->assertInstanceOf( \WP_Error::class, $error );
+			$this->assertSame( 404, $error->get_error_data()['status'] );
 		}
 		foreach ( array_diff( $expected_ids, $input_ids ) as $tool_id ) {
 			$this->assertIsCallable( $tools[ $tool_id ]['callback'], $tool_id );
