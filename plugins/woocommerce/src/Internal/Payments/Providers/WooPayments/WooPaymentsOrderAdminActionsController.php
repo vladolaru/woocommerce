@@ -336,7 +336,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 		}
 
 		$state        = self::get_unpaid_payment_state( $order );
-		$reads_intent = 0 === strpos( $state['intent_id'], 'pi_' ) && 'canceled' !== $state['intent_status'];
+		$reads_intent = 0 === strpos( $state['intent_id'], 'pi_' ) && WooPaymentsIntentStatus::CANCELED !== $state['intent_status'];
 		if ( ! $reads_intent && '' === $state['charge_key'] ) {
 			return $should_cancel;
 		}
@@ -369,7 +369,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 			return false;
 		}
 
-		if ( 'requires_action' === (string) ( $intent['status'] ?? '' ) && self::is_within_unpaid_order_window( $order )
+		if ( WooPaymentsIntentStatus::REQUIRES_ACTION === (string) ( $intent['status'] ?? '' ) && self::is_within_unpaid_order_window( $order )
 			&& WooPaymentsIntentCodec::intent_belongs_to_order( $intent, $order )
 			&& function_exists( 'wcs_order_contains_subscription' ) && wcs_order_contains_subscription( $order, 'parent' ) ) {
 			// Subscriptions never brings back a subscription whose first order was cancelled, even when that order is paid later.
@@ -433,7 +433,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 */
 	private static function holds_or_may_take_money( array $intent ): bool {
 		return null !== WooPaymentsChargeAmbiguityService::find_intent_with_money( array( $intent ) )
-			|| ( 'requires_action' === (string) ( $intent['status'] ?? '' ) && WooPaymentsIntentCodec::is_offline_payment_method_intent( $intent ) );
+			|| ( WooPaymentsIntentStatus::REQUIRES_ACTION === (string) ( $intent['status'] ?? '' ) && WooPaymentsIntentCodec::is_offline_payment_method_intent( $intent ) );
 	}
 
 	/**
@@ -652,7 +652,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 		if ( '' === $intent_id ) {
 			return null;
 		}
-		if ( ! $read_required && 'requires_capture' === $stored_status ) {
+		if ( ! $read_required && WooPaymentsIntentStatus::REQUIRES_CAPTURE === $stored_status ) {
 			return '';
 		}
 		if ( in_array( $stored_status, WooPaymentsPaymentOperationService::SETTLED_INTENT_STATUSES, true ) ) {
@@ -669,7 +669,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 
 		$live_status = isset( $intent['status'] ) && is_string( $intent['status'] ) ? $intent['status'] : '';
 		$charge      = WooPaymentsIntentCodec::latest_charge( $intent );
-		if ( 'requires_capture' === $live_status && ! empty( $charge ) && empty( $charge['captured'] ) && 'succeeded' === ( $charge['status'] ?? '' ) ) {
+		if ( WooPaymentsIntentStatus::REQUIRES_CAPTURE === $live_status && ! empty( $charge ) && empty( $charge['captured'] ) && 'succeeded' === ( $charge['status'] ?? '' ) ) {
 			return $intent_id;
 		}
 
@@ -717,7 +717,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_authorized_woopayments_order( WC_Order $order ): bool {
-		if ( ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) || 'requires_capture' !== (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true ) ) {
+		if ( ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) || WooPaymentsIntentStatus::REQUIRES_CAPTURE !== (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true ) ) {
 			return false;
 		}
 

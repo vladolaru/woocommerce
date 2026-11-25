@@ -82,7 +82,7 @@ class WooPaymentsAmountMismatchHold {
 	public function decide_hold( WC_Order $order, array $intent, ?string $stored_intent_id = null ): ?array {
 		$intent_id = isset( $intent['id'] ) && is_scalar( $intent['id'] ) ? (string) $intent['id'] : '';
 		if (
-			'succeeded' !== ( $intent['status'] ?? '' )
+			WooPaymentsIntentStatus::SUCCEEDED !== ( $intent['status'] ?? '' )
 			|| 'setup_intent' === ( $intent['object'] ?? '' )
 			|| 0 === strpos( $intent_id, 'seti_' )
 			|| WooPaymentsOrderEffects::captures_the_authorization( $order, $intent, $stored_intent_id )

@@ -60,7 +60,7 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 	 * Stored statuses that claim the attempt took money: client 11.3.0's Intent_Status::AUTHORIZED_STATUSES
 	 * (includes/constants/class-intent-status.php:35-39).
 	 */
-	private const AUTHORIZED_STATUSES = array( 'succeeded', 'requires_capture', 'processing' );
+	private const AUTHORIZED_STATUSES = array( WooPaymentsIntentStatus::SUCCEEDED, WooPaymentsIntentStatus::REQUIRES_CAPTURE, WooPaymentsIntentStatus::PROCESSING );
 
 	/**
 	 * The values client 11.3.0 deletes (class-wc-payments-order-service.php:1313-1317): the charge, fee, net, currency
@@ -310,7 +310,7 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 			return false;
 		}
 
-		$waits_for_authentication = 0 === strpos( $intent_id, 'pi_' ) && 'requires_action' === $status;
+		$waits_for_authentication = 0 === strpos( $intent_id, 'pi_' ) && WooPaymentsIntentStatus::REQUIRES_ACTION === $status;
 		$this->remove_payment_details( $order, $intent_id, $waits_for_authentication );
 
 		return true;
@@ -573,10 +573,10 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 		} elseif ( WooPaymentsIntentCodec::is_fully_refunded( $intent ) ) {
 			/* translators: %1$s: the ID of a WooPayments payment. */
 			$message = __( 'When the customer checked out with another payment method, the WooPayments payment <a>%1$s</a> recorded on this order had been refunded in full. If both payments end up made, one of them needs a refund.', 'woocommerce' );
-		} elseif ( 'requires_capture' === $intent['status'] ) {
+		} elseif ( WooPaymentsIntentStatus::REQUIRES_CAPTURE === $intent['status'] ) {
 			/* translators: %1$s: the ID of a WooPayments payment. */
 			$message = __( 'When the customer checked out with another payment method, the WooPayments payment <a>%1$s</a> recorded on this order was authorized and not captured. If both payments end up made, one of them needs a refund.', 'woocommerce' );
-		} elseif ( 'processing' === $intent['status'] ) {
+		} elseif ( WooPaymentsIntentStatus::PROCESSING === $intent['status'] ) {
 			/* translators: %1$s: the ID of a WooPayments payment. */
 			$message = __( 'When the customer checked out with another payment method, the WooPayments payment <a>%1$s</a> recorded on this order was still being processed. If both payments end up made, one of them needs a refund.', 'woocommerce' );
 		} else {

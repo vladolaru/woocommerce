@@ -152,7 +152,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	 *
 	 * @var string
 	 */
-	const CANCELED_INTENT_STATUS = 'canceled';
+	const CANCELED_INTENT_STATUS = WooPaymentsIntentStatus::CANCELED;
 
 	/**
 	 * Register the batch, dry-run and check handlers.

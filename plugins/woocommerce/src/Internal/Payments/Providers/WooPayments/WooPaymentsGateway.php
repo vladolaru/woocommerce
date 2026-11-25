@@ -88,9 +88,9 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * so an order links to its transaction under the same conditions.
 	 */
 	private const AUTHORIZED_INTENTION_STATUSES = array(
-		'succeeded',
-		'requires_capture',
-		'processing',
+		WooPaymentsIntentStatus::SUCCEEDED,
+		WooPaymentsIntentStatus::REQUIRES_CAPTURE,
+		WooPaymentsIntentStatus::PROCESSING,
 	);
 
 	/**
@@ -977,7 +977,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 			$setup_intent = $this->get_api_client()->get_setup_intention( $setup_intent_id );
 			$status       = isset( $setup_intent['status'] ) ? (string) $setup_intent['status'] : '';
-			if ( 'succeeded' !== $status ) {
+			if ( WooPaymentsIntentStatus::SUCCEEDED !== $status ) {
 				return $this->add_payment_method_error( __( 'Failed to add the provided payment method. Please try again later.', 'woocommerce' ) );
 			}
 
@@ -1730,7 +1730,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return bool
 	 */
 	public static function has_uncaptured_payment( WC_Order $order ): bool {
-		return 'requires_capture' === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true );
+		return WooPaymentsIntentStatus::REQUIRES_CAPTURE === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true );
 	}
 
 	/**
@@ -2664,7 +2664,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return bool
 	 */
 	private function has_succeeded_intent( WC_Order $order ): bool {
-		return 'succeeded' === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true )
+		return WooPaymentsIntentStatus::SUCCEEDED === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true )
 			&& 0 === strpos( (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true ), 'pi_' );
 	}
 
@@ -2675,7 +2675,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @param WC_Order $order Order being paid.
 	 */
 	private function log_stored_success_without_a_payment( WC_Order $order ): void {
-		if ( 'succeeded' !== (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true ) ) {
+		if ( WooPaymentsIntentStatus::SUCCEEDED !== (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true ) ) {
 			return;
 		}
 
@@ -2888,7 +2888,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return false;
 		}
 
-		return 'succeeded' === ( ( new WooPaymentsOutcomeMetadataMapper() )->get_outcome_meta( $exception->get_outcome() )[ WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY ] ?? '' );
+		return WooPaymentsIntentStatus::SUCCEEDED === ( ( new WooPaymentsOutcomeMetadataMapper() )->get_outcome_meta( $exception->get_outcome() )[ WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY ] ?? '' );
 	}
 
 	/**

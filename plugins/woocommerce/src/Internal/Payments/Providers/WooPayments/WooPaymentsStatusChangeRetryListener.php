@@ -173,7 +173,7 @@ class WooPaymentsStatusChangeRetryListener implements RegisterHooksInterface {
 		$stored_status  = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true );
 		$read_intent_id = is_string( $intent_id ) ? $intent_id : '';
 		$is_unperformed = '' === $read_intent_id
-			? 'requires_capture' === $stored_status
+			? WooPaymentsIntentStatus::REQUIRES_CAPTURE === $stored_status
 			: $read_intent_id === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true ) && ! in_array( $stored_status, WooPaymentsPaymentOperationService::SETTLED_INTENT_STATUSES, true );
 		if ( ! $is_unperformed ) {
 			return;

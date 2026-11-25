@@ -164,7 +164,7 @@ class WooPaymentsOrderStatusChangeController implements RegisterHooksInterface {
 	 */
 	public function render_transaction_fee_row( $order_id = 0 ): void {
 		$order = wc_get_order( $order_id );
-		if ( ! $order instanceof WC_Order || 'requires_capture' === $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY ) ) {
+		if ( ! $order instanceof WC_Order || WooPaymentsIntentStatus::REQUIRES_CAPTURE === $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY ) ) {
 			return;
 		}
 

@@ -262,7 +262,7 @@ class WooPaymentsIntentConfirmationService {
 			WooPaymentsIntentCodec::first_charge_id( $intent ),
 			$resolver->get_stand_in_intent_id(
 				$intent_id,
-				'succeeded' === $status && 0 === strpos( $intent_id, 'pi_' ),
+				WooPaymentsIntentStatus::SUCCEEDED === $status && 0 === strpos( $intent_id, 'pi_' ),
 				wc_get_container()->get( OrderPaymentLifecycleService::class )->has_paid_status( $order )
 			)
 		);
@@ -350,7 +350,7 @@ class WooPaymentsIntentConfirmationService {
 			}
 
 			// A $0 SetupIntent's card details come from the platform, so they are read before the order payment lock is claimed.
-			if ( 0.0 >= (float) $order->get_total() && 'succeeded' === $status && 0 === strpos( (string) ( $intent['id'] ?? '' ), 'seti_' ) && $token_save_result['token'] instanceof \WC_Payment_Token ) {
+			if ( 0.0 >= (float) $order->get_total() && WooPaymentsIntentStatus::SUCCEEDED === $status && 0 === strpos( (string) ( $intent['id'] ?? '' ), 'seti_' ) && $token_save_result['token'] instanceof \WC_Payment_Token ) {
 				$setup_payment_details = $token_save_result['payment_method_details'];
 				if ( empty( $setup_payment_details ) ) {
 					$setup_payment_details = $this->order_effect_applier->get_same_method_payment_method_details( $order, WooPaymentsIntentCodec::result_payment_method_id( $intent ), $previous_payment_method_id );
@@ -465,7 +465,7 @@ class WooPaymentsIntentConfirmationService {
 	 * @param PaymentLifecycleEvent $event        Refused lifecycle event.
 	 */
 	private function attach_charge_details_after_refusal( WC_Order $stored_order, PaymentLifecycleEvent $event ): void {
-		if ( 'succeeded' === (string) $stored_order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true ) || (string) $stored_order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true ) !== (string) $event->get_payment_reference() ) {
+		if ( WooPaymentsIntentStatus::SUCCEEDED === (string) $stored_order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true ) || (string) $stored_order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true ) !== (string) $event->get_payment_reference() ) {
 			return;
 		}
 
@@ -621,7 +621,7 @@ class WooPaymentsIntentConfirmationService {
 			// Client update_order_status() completes a $0 order itself with a plain note; its order service then sees a paid order
 			// and writes no success note, so no fee job either (gw:4248-4275, os:2747-2764).
 			$note_candidates = $order->is_paid() ? array() : wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_zero_amount_setup_success_note_candidates( $order, $intent_id );
-		} elseif ( ! $is_setup && 'requires_payment_method' === (string) ( $intent['status'] ?? '' ) && ! $order->has_status( OrderStatus::FAILED ) ) {
+		} elseif ( ! $is_setup && WooPaymentsIntentStatus::REQUIRES_PAYMENT_METHOD === (string) ( $intent['status'] ?? '' ) && ! $order->has_status( OrderStatus::FAILED ) ) {
 			// Client update_order_status_from_intent() fails the order with its own note (os:418-422 → mark_payment_failed(),
 			// which adds nothing to an order already failed, os:469-472). The note shares the payment_intent.payment_failed
 			// webhook note's identity, so whichever runs second adds none.
@@ -636,7 +636,7 @@ class WooPaymentsIntentConfirmationService {
 		}
 
 		$intent_meta = ( new WooPaymentsOutcomeMetadataMapper() )->get_outcome_meta( $outcome );
-		if ( ! $is_setup && 'requires_payment_method' === ( $intent['status'] ?? '' ) ) {
+		if ( ! $is_setup && WooPaymentsIntentStatus::REQUIRES_PAYMENT_METHOD === ( $intent['status'] ?? '' ) ) {
 			$intent_meta += WooPaymentsOrderEffects::failed_payment_method_details_meta( $intent );
 		}
 		if ( ( $intent['status'] ?? '' ) !== $provider_status ) {

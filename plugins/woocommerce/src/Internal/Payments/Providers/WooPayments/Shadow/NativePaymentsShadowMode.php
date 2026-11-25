@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Shadow;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentStatus;
 use Automattic\WooCommerce\Container;
 use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
@@ -495,7 +496,7 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	private function get_projected_intent_meta( WC_Order $order, array $intent, string $order_mode ): array {
 		$status          = (string) ( $intent['status'] ?? '' );
 		$charge          = WooPaymentsIntentCodec::latest_charge( $intent );
-		$settlement_meta = ! empty( $charge ) && in_array( $status, array( 'processing', 'requires_capture', 'succeeded' ), true )
+		$settlement_meta = ! empty( $charge ) && in_array( $status, array( WooPaymentsIntentStatus::PROCESSING, WooPaymentsIntentStatus::REQUIRES_CAPTURE, WooPaymentsIntentStatus::SUCCEEDED ), true )
 			? $this->order_data_service->get_settlement_exchange_rate_order_meta(
 				$order,
 				$charge,

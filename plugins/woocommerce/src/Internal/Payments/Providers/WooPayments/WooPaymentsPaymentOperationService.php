@@ -137,7 +137,7 @@ class WooPaymentsPaymentOperationService {
 	 * Stored intent statuses that say a bank step was started: the shopper can still finish it in the browser, and Stripe
 	 * takes the money before the store hears of it.
 	 */
-	private const STARTED_INTENT_STATUSES = array( 'requires_action', 'requires_confirmation' );
+	private const STARTED_INTENT_STATUSES = array( WooPaymentsIntentStatus::REQUIRES_ACTION, WooPaymentsIntentStatus::REQUIRES_CONFIRMATION );
 
 	/**
 	 * Tier of a charge refused over an unread payment whose stored record shows money held or on its way, named in the log.
@@ -168,7 +168,7 @@ class WooPaymentsPaymentOperationService {
 	 *
 	 * @since 11.2.0
 	 */
-	public const SETTLED_INTENT_STATUSES = array( 'succeeded', 'canceled' );
+	public const SETTLED_INTENT_STATUSES = array( WooPaymentsIntentStatus::SUCCEEDED, WooPaymentsIntentStatus::CANCELED );
 
 	/**
 	 * Outcome data key marking a definitive charge failure.
@@ -640,7 +640,7 @@ class WooPaymentsPaymentOperationService {
 					// re-fetches the intent: a canceled intent means the authorization expired,
 					// and the effect plan carries it so the expired note and failed status land.
 					$expired_intent = $this->refetch_intent_after_failure( $intent_id );
-					if ( null !== $expired_intent && 'canceled' === (string) ( $expired_intent['status'] ?? '' ) ) {
+					if ( null !== $expired_intent && WooPaymentsIntentStatus::CANCELED === (string) ( $expired_intent['status'] ?? '' ) ) {
 						return $outcome->with_effect_plan( WooPaymentsOrderEffectPlan::for_capture_expired( $expired_intent ) );
 					}
 
@@ -718,7 +718,7 @@ class WooPaymentsPaymentOperationService {
 					// the transport error): a re-fetched canceled intent is a completed cancel,
 					// as in client 11.1.0's cancel_authorization() (class-wc-payment-gateway-wcpay.php:4083-4102).
 					$intent = $this->refetch_intent_after_failure( $intent_id );
-					if ( null !== $intent && 'canceled' === (string) ( $intent['status'] ?? '' ) ) {
+					if ( null !== $intent && WooPaymentsIntentStatus::CANCELED === (string) ( $intent['status'] ?? '' ) ) {
 						return $this->cancel_outcome( $context, $intent );
 					}
 
@@ -1744,7 +1744,7 @@ class WooPaymentsPaymentOperationService {
 
 		$meta[ WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY ] = 'block';
 		$meta[ WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY ]  = 'block';
-		$meta[ WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY ]     = 'canceled';
+		$meta[ WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY ]     = WooPaymentsIntentStatus::CANCELED;
 		if ( array() !== $ruleset_results ) {
 			$meta[ WooPaymentsPersistenceVocabulary::FRAUD_RULESET_RESULTS_META_KEY ] = (string) wp_json_encode( $ruleset_results );
 		}
@@ -2373,7 +2373,7 @@ class WooPaymentsPaymentOperationService {
 	private function log_operation_on_an_order_naming_two_intents( WC_Order $order, string $operation, string $intent_id ): void {
 		$transaction_id   = (string) $order->get_transaction_id();
 		$stored_intent_id = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true );
-		if ( '' === $transaction_id || '' === $stored_intent_id || $transaction_id === $stored_intent_id || 'requires_capture' !== (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true ) ) {
+		if ( '' === $transaction_id || '' === $stored_intent_id || $transaction_id === $stored_intent_id || WooPaymentsIntentStatus::REQUIRES_CAPTURE !== (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true ) ) {
 			return;
 		}
 

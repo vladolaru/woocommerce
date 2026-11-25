@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentStatus;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
@@ -71,7 +72,7 @@ class PaymentIntentEventHandler {
 	/**
 	 * Payment intent statuses a log line names as they are (https://docs.stripe.com/api/payment_intents/object#payment_intent_object-status).
 	 */
-	private const LOGGABLE_INTENT_STATUSES = array( 'requires_payment_method', 'requires_confirmation', 'requires_action', 'processing', 'requires_capture', 'canceled', 'succeeded' );
+	private const LOGGABLE_INTENT_STATUSES = array( WooPaymentsIntentStatus::REQUIRES_PAYMENT_METHOD, WooPaymentsIntentStatus::REQUIRES_CONFIRMATION, WooPaymentsIntentStatus::REQUIRES_ACTION, WooPaymentsIntentStatus::PROCESSING, WooPaymentsIntentStatus::REQUIRES_CAPTURE, WooPaymentsIntentStatus::CANCELED, WooPaymentsIntentStatus::SUCCEEDED );
 
 	/**
 	 * Order lifecycle service.
@@ -595,7 +596,7 @@ class PaymentIntentEventHandler {
 	 * @param string              $stored_intent_id The intent the order stored before the event.
 	 */
 	private function log_success_not_a_capture_of_the_stored_authorization( WC_Order $order, array $payment_intent, string $stored_intent_id ): void {
-		if ( 'requires_capture' !== (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true ) || WooPaymentsOrderEffects::captures_the_authorization( $order, $payment_intent, $stored_intent_id ) ) {
+		if ( WooPaymentsIntentStatus::REQUIRES_CAPTURE !== (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true ) || WooPaymentsOrderEffects::captures_the_authorization( $order, $payment_intent, $stored_intent_id ) ) {
 			return;
 		}
 
@@ -636,7 +637,7 @@ class PaymentIntentEventHandler {
 	 * @param array<string,mixed> $payment_intent Provider payment intent object.
 	 */
 	public function record_succeeded_payment_intent_under_lock( WC_Order $order, array $payment_intent ): void {
-		if ( 'succeeded' === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true ) ) {
+		if ( WooPaymentsIntentStatus::SUCCEEDED === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true ) ) {
 			return;
 		}
 
@@ -676,7 +677,7 @@ class PaymentIntentEventHandler {
 		$stored_status = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true );
 		$this->set_succeeded_payment_intent_meta( $order, $payment_intent );
 		if ( $another_attempt || ( $reports_intent_status && $this->lifecycle_service->has_paid_status( $order ) ) ) {
-			$order->update_meta_data( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, 'succeeded' );
+			$order->update_meta_data( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, WooPaymentsIntentStatus::SUCCEEDED );
 		}
 		$order->save();
 
@@ -814,7 +815,7 @@ class PaymentIntentEventHandler {
 	 * @return bool
 	 */
 	private function is_online_authorization( array $payment_intent ): bool {
-		return 'requires_capture' === ( $payment_intent['status'] ?? null ) && ! WooPaymentsIntentCodec::is_in_person_charge( WooPaymentsIntentCodec::first_charge( $payment_intent ) );
+		return WooPaymentsIntentStatus::REQUIRES_CAPTURE === ( $payment_intent['status'] ?? null ) && ! WooPaymentsIntentCodec::is_in_person_charge( WooPaymentsIntentCodec::first_charge( $payment_intent ) );
 	}
 
 	/**

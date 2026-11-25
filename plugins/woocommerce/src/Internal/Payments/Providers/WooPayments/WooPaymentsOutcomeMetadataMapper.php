@@ -81,7 +81,7 @@ final class WooPaymentsOutcomeMetadataMapper implements ProviderOutcomeMetadataM
 	public function get_failed_capture_or_cancel_outcome_meta( PaymentOutcome $outcome ): array {
 		$meta = $this->get_outcome_meta( $outcome );
 		if ( ! isset( $outcome->get_data()[ self::OUTCOME_META_KEY ][ WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY ] ) ) {
-			$meta[ WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY ] = 'requires_capture';
+			$meta[ WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY ] = WooPaymentsIntentStatus::REQUIRES_CAPTURE;
 		}
 		ksort( $meta );
 
@@ -98,23 +98,23 @@ final class WooPaymentsOutcomeMetadataMapper implements ProviderOutcomeMetadataM
 		switch ( $outcome->get_status() ) {
 			case PaymentOutcome::STATUS_COMPLETED:
 			case PaymentOutcome::STATUS_NO_EXTERNAL_PAYMENT:
-				return 'succeeded';
+				return WooPaymentsIntentStatus::SUCCEEDED;
 
 			case PaymentOutcome::STATUS_AUTHORIZED:
-				return 'requires_capture';
+				return WooPaymentsIntentStatus::REQUIRES_CAPTURE;
 
 			case PaymentOutcome::STATUS_PENDING_ASYNC:
-				return 'processing';
+				return WooPaymentsIntentStatus::PROCESSING;
 
 			case PaymentOutcome::STATUS_REQUIRES_REDIRECT:
 			case PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION:
-				return 'requires_action';
+				return WooPaymentsIntentStatus::REQUIRES_ACTION;
 
 			case PaymentOutcome::STATUS_FAILED:
-				return 'requires_payment_method';
+				return WooPaymentsIntentStatus::REQUIRES_PAYMENT_METHOD;
 
 			case PaymentOutcome::STATUS_CANCELED:
-				return 'canceled';
+				return WooPaymentsIntentStatus::CANCELED;
 		}
 
 		return '';

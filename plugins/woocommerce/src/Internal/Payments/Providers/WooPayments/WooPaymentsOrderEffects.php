@@ -264,12 +264,12 @@ class WooPaymentsOrderEffects {
 			$meta[ WooPaymentsPersistenceVocabulary::CHARGE_RISK_LEVEL_META_KEY ] = (string) $charge['outcome']['risk_level'];
 		}
 
-		if ( 'succeeded' === $status ) {
+		if ( WooPaymentsIntentStatus::SUCCEEDED === $status ) {
 			$meta = array_merge( $meta, self::completed_charge_meta( $intent, $charge, $settlement_meta, true, $was_held_for_review, $is_capture ) );
-		} elseif ( in_array( $status, array( 'requires_capture', 'processing' ), true ) ) {
+		} elseif ( in_array( $status, array( WooPaymentsIntentStatus::REQUIRES_CAPTURE, WooPaymentsIntentStatus::PROCESSING ), true ) ) {
 			$meta[ WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY ] = $status;
 			$meta = array_merge( $meta, self::authorized_charge_meta( $intent, $charge, $settlement_meta, false, true ) );
-		} elseif ( in_array( $status, array( 'requires_action', 'requires_confirmation' ), true ) ) {
+		} elseif ( in_array( $status, array( WooPaymentsIntentStatus::REQUIRES_ACTION, WooPaymentsIntentStatus::REQUIRES_CONFIRMATION ), true ) ) {
 			$meta = array_merge( $meta, self::started_payment_meta( $intent, $order_currency ) );
 		}
 
@@ -363,7 +363,7 @@ class WooPaymentsOrderEffects {
 	 */
 	public static function started_payment_meta( array $intent, string $order_currency ): array {
 		return array(
-			WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY             => isset( $intent['status'] ) ? (string) $intent['status'] : 'requires_action',
+			WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY             => isset( $intent['status'] ) ? (string) $intent['status'] : WooPaymentsIntentStatus::REQUIRES_ACTION,
 			WooPaymentsPersistenceVocabulary::INTENT_CURRENCY_META_KEY        => strtoupper( isset( $intent['currency'] ) ? (string) $intent['currency'] : $order_currency ),
 			WooPaymentsPersistenceVocabulary::PAYMENT_TRANSACTION_ID_META_KEY => '',
 			WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY    => self::is_card_intent( $intent ) ? 'payment_started' : 'not_card',
@@ -408,7 +408,7 @@ class WooPaymentsOrderEffects {
 	 * @return array<string,string>
 	 */
 	public static function failed_capture_meta(): array {
-		return array( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY => 'requires_capture' );
+		return array( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY => WooPaymentsIntentStatus::REQUIRES_CAPTURE );
 	}
 
 	/**
@@ -520,8 +520,8 @@ class WooPaymentsOrderEffects {
 		$charge    = WooPaymentsIntentCodec::latest_charge( $intent );
 		$charge_id = isset( $charge['id'] ) && is_scalar( $charge['id'] ) ? (string) $charge['id'] : '';
 
-		return 'succeeded' === (string) ( $intent['status'] ?? '' )
-			&& 'requires_capture' === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true )
+		return WooPaymentsIntentStatus::SUCCEEDED === (string) ( $intent['status'] ?? '' )
+			&& WooPaymentsIntentStatus::REQUIRES_CAPTURE === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true )
 			&& '' !== $intent_id
 			&& ( $stored_intent_id ?? (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true ) ) === $intent_id
 			&& self::transaction_id_names_payment( $order, $intent_id, $charge_id );

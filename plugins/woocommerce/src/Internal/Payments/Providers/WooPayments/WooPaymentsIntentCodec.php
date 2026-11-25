@@ -57,15 +57,15 @@ class WooPaymentsIntentCodec {
 		}
 
 		switch ( $status ) {
-			case 'succeeded':
+			case WooPaymentsIntentStatus::SUCCEEDED:
 				return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, $intent_id, '', $payment_method_id, $customer_id, $data );
 
-			case 'requires_capture':
-			case 'processing':
+			case WooPaymentsIntentStatus::REQUIRES_CAPTURE:
+			case WooPaymentsIntentStatus::PROCESSING:
 				return new PaymentOutcome( PaymentOutcome::STATUS_AUTHORIZED, $intent_id, '', $payment_method_id, $customer_id, self::with_authorized_intent_status( $data, $status, $intent_type ) );
 
-			case 'requires_action':
-			case 'requires_confirmation':
+			case WooPaymentsIntentStatus::REQUIRES_ACTION:
+			case WooPaymentsIntentStatus::REQUIRES_CONFIRMATION:
 				$provider_redirect = $context->get_provider_redirect_url();
 				if ( '' !== $provider_redirect ) {
 					$data[ PaymentOutcome::DATA_CHECKOUT_REDIRECT ] = $provider_redirect;
@@ -103,7 +103,7 @@ class WooPaymentsIntentCodec {
 					$data
 				);
 
-			case 'canceled':
+			case WooPaymentsIntentStatus::CANCELED:
 				return new PaymentOutcome( PaymentOutcome::STATUS_CANCELED, $intent_id, '', $payment_method_id, $customer_id, $data );
 		}
 
@@ -136,12 +136,12 @@ class WooPaymentsIntentCodec {
 	 */
 	public static function intent_for_order_status_update( array $intent, bool $is_setup ): array {
 		$status = isset( $intent['status'] ) ? (string) $intent['status'] : '';
-		if ( ! in_array( $status, array( 'requires_action', 'requires_payment_method' ), true ) ) {
+		if ( ! in_array( $status, array( WooPaymentsIntentStatus::REQUIRES_ACTION, WooPaymentsIntentStatus::REQUIRES_PAYMENT_METHOD ), true ) ) {
 			return $intent;
 		}
 
 		$error            = $is_setup ? null : ( $intent['last_payment_error'] ?? null );
-		$intent['status'] = empty( $error ) ? 'requires_action' : 'requires_payment_method';
+		$intent['status'] = empty( $error ) ? WooPaymentsIntentStatus::REQUIRES_ACTION : WooPaymentsIntentStatus::REQUIRES_PAYMENT_METHOD;
 
 		return $intent;
 	}
@@ -159,11 +159,11 @@ class WooPaymentsIntentCodec {
 		$error_code = isset( $result['error_code'] ) ? (string) $result['error_code'] : '';
 		$message    = isset( $result['message'] ) ? (string) $result['message'] : '';
 
-		if ( 'succeeded' === $status ) {
+		if ( WooPaymentsIntentStatus::SUCCEEDED === $status ) {
 			return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, $intent_id );
 		}
 
-		if ( 'requires_capture' === $status && '' === $message ) {
+		if ( WooPaymentsIntentStatus::REQUIRES_CAPTURE === $status && '' === $message ) {
 			return new PaymentOutcome( PaymentOutcome::STATUS_AUTHORIZED, $intent_id );
 		}
 
@@ -249,7 +249,7 @@ class WooPaymentsIntentCodec {
 		$intent_id = isset( $result['id'] ) ? (string) $result['id'] : '';
 		$message   = isset( $result['message'] ) ? (string) $result['message'] : '';
 
-		if ( 'canceled' === $status ) {
+		if ( WooPaymentsIntentStatus::CANCELED === $status ) {
 			return new PaymentOutcome( PaymentOutcome::STATUS_CANCELED, $intent_id );
 		}
 
@@ -400,7 +400,7 @@ class WooPaymentsIntentCodec {
 	 * @return bool
 	 */
 	public static function holds_money( string $status ): bool {
-		return in_array( $status, array( 'succeeded', 'requires_capture', 'processing' ), true );
+		return in_array( $status, array( WooPaymentsIntentStatus::SUCCEEDED, WooPaymentsIntentStatus::REQUIRES_CAPTURE, WooPaymentsIntentStatus::PROCESSING ), true );
 	}
 
 	/**
@@ -558,7 +558,7 @@ class WooPaymentsIntentCodec {
 	public static function requires_confirmation_redirect( array $intention, string $provider_redirect_url ): bool {
 		$status = isset( $intention['status'] ) ? (string) $intention['status'] : '';
 
-		return in_array( $status, array( 'requires_action', 'requires_confirmation' ), true )
+		return in_array( $status, array( WooPaymentsIntentStatus::REQUIRES_ACTION, WooPaymentsIntentStatus::REQUIRES_CONFIRMATION ), true )
 			&& '' === $provider_redirect_url
 			&& ! self::has_multibanco_voucher( $intention );
 	}

@@ -270,7 +270,7 @@ class WooPaymentsCardReadersRestController extends RestApiControllerBase {
 
 		try {
 			$intent = $this->api_client->get_payment_intention( $intent_id );
-			if ( 'succeeded' !== (string) ( $intent['status'] ?? '' ) ) {
+			if ( WooPaymentsIntentStatus::SUCCEEDED !== (string) ( $intent['status'] ?? '' ) ) {
 				throw new \RuntimeException( __( 'Invalid payment intent', 'woocommerce' ) );
 			}
 

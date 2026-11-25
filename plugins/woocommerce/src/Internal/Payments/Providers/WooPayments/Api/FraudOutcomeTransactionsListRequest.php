@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
@@ -284,7 +285,7 @@ class FraudOutcomeTransactionsListRequest extends PaginatedListRequest {
 		$fraud_meta_box_type = isset( $outcome['fraud_meta_box_type'] ) && is_scalar( $outcome['fraud_meta_box_type'] ) ? (string) $outcome['fraud_meta_box_type'] : '';
 
 		if ( 'review' === $status ) {
-			return 'requires_capture' === $intent_status && empty( $manual_review ) && 'review' === $fraud_meta_box_type;
+			return WooPaymentsIntentStatus::REQUIRES_CAPTURE === $intent_status && empty( $manual_review ) && 'review' === $fraud_meta_box_type;
 		}
 
 		if ( 'block' === $status ) {

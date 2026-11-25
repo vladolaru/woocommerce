@@ -195,7 +195,7 @@ class WooPaymentsOrderEffectApplier {
 					}
 				}
 				$provider_result = $plan->get_provider_result();
-				if ( PaymentOutcome::STATUS_COMPLETED === $outcome->get_status() && 'succeeded' === (string) ( $provider_result['status'] ?? '' ) && 0 === strpos( (string) ( $provider_result['id'] ?? '' ), 'seti_' ) ) {
+				if ( PaymentOutcome::STATUS_COMPLETED === $outcome->get_status() && WooPaymentsIntentStatus::SUCCEEDED === (string) ( $provider_result['status'] ?? '' ) && 0 === strpos( (string) ( $provider_result['id'] ?? '' ), 'seti_' ) ) {
 					if ( empty( $payment_method_details ) && '' !== $outcome->get_payment_method_id() ) {
 						$payment_method_details = $this->get_same_method_payment_method_details( $context->get_order(), $outcome->get_payment_method_id(), $previous_payment_method_id );
 						if ( empty( $payment_method_details ) ) {
@@ -248,7 +248,7 @@ class WooPaymentsOrderEffectApplier {
 					return $outcome;
 				}
 
-				if ( PaymentOutcome::STATUS_COMPLETED === $outcome->get_status() && 'succeeded' === (string) ( $provider_result['status'] ?? '' ) && 0 === strpos( $setup_intent_id, 'seti_' ) ) {
+				if ( PaymentOutcome::STATUS_COMPLETED === $outcome->get_status() && WooPaymentsIntentStatus::SUCCEEDED === (string) ( $provider_result['status'] ?? '' ) && 0 === strpos( $setup_intent_id, 'seti_' ) ) {
 					// Client 11.1.0's process_payment() also ends in update_order_status_from_intent() (gw:2204), so the success note is written here too.
 					return $this->merge_effect_data_into_outcome( $outcome, $this->compose_setup_intent_note_data( $order, $outcome, $provider_result ), $plan );
 				}
@@ -377,15 +377,15 @@ class WooPaymentsOrderEffectApplier {
 	private function dispatch_returned_payment_intent( PaymentOperationContext $context, PaymentOutcome $outcome, WooPaymentsOrderEffectPlan $plan ): PaymentOutcome {
 		$result = $plan->get_provider_result();
 		$status = (string) ( $result['status'] ?? '' );
-		if ( ! in_array( $status, array( 'requires_action', 'requires_payment_method' ), true ) ) {
+		if ( ! in_array( $status, array( WooPaymentsIntentStatus::REQUIRES_ACTION, WooPaymentsIntentStatus::REQUIRES_PAYMENT_METHOD ), true ) ) {
 			return PaymentOutcome::STATUS_FAILED === $outcome->get_status() ? $this->compose_returned_payment_intent_failure( $context->get_order(), $outcome, $plan ) : $outcome;
 		}
-		if ( 'requires_action' === $status && self::is_merchant_initiated( $context ) ) {
+		if ( WooPaymentsIntentStatus::REQUIRES_ACTION === $status && self::is_merchant_initiated( $context ) ) {
 			return $outcome;
 		}
 
 		$classified = (string) ( WooPaymentsIntentCodec::intent_for_order_status_update( $result, false )['status'] ?? '' );
-		if ( 'requires_payment_method' === $classified ) {
+		if ( WooPaymentsIntentStatus::REQUIRES_PAYMENT_METHOD === $classified ) {
 			return $this->compose_returned_payment_intent_failure( $context->get_order(), $outcome, $plan );
 		}
 
@@ -517,7 +517,7 @@ class WooPaymentsOrderEffectApplier {
 	 */
 	private function compose_payment_intent_outcome( PaymentOperationContext $context, PaymentOutcome $outcome, WooPaymentsOrderEffectPlan $plan, array $meta, bool $is_merchant_initiated ): PaymentOutcome {
 		$result     = $plan->get_provider_result();
-		$hold       = 'succeeded' === (string) ( $result['status'] ?? '' ) ? wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->decide_hold( $context->get_order(), $result ) : null;
+		$hold       = WooPaymentsIntentStatus::SUCCEEDED === (string) ( $result['status'] ?? '' ) ? wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->decide_hold( $context->get_order(), $result ) : null;
 		$is_started = PaymentLifecycleEvent::STATUS_STARTED === PaymentLifecycleEvent::status_for_outcome( $outcome );
 
 		return $this->merge_effect_data_into_outcome(
@@ -641,9 +641,9 @@ class WooPaymentsOrderEffectApplier {
 	 */
 	private function compose_waiting_effect_data( WC_Order $order, array $result, array $meta, bool $is_started, bool $is_merchant_initiated ): array {
 		switch ( (string) ( $result['status'] ?? '' ) ) {
-			case 'requires_action':
+			case WooPaymentsIntentStatus::REQUIRES_ACTION:
 				return $this->compose_started_effect_data( $order, $result, $meta, $is_started, $is_merchant_initiated );
-			case 'requires_confirmation':
+			case WooPaymentsIntentStatus::REQUIRES_CONFIRMATION:
 				return array( PaymentOutcome::DATA_NO_ORDER_CHANGE => true );
 		}
 
@@ -674,7 +674,7 @@ class WooPaymentsOrderEffectApplier {
 	public function attach_intent_info( WC_Order $order, string $intent_id, array $meta, array $beside_keys = array(), bool $allow_update_on_success = false ): bool {
 		$keys    = $beside_keys;
 		$delete  = array();
-		$records = $allow_update_on_success || 'succeeded' !== (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true );
+		$records = $allow_update_on_success || WooPaymentsIntentStatus::SUCCEEDED !== (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true );
 		if ( $records ) {
 			$order->set_transaction_id( $intent_id );
 			$keys = array_merge( self::INTENT_INFO_META_KEYS, $beside_keys );
@@ -790,7 +790,7 @@ class WooPaymentsOrderEffectApplier {
 			$effect_data[ PaymentOutcome::DATA_NOTE ]             = $hold['notes'][0];
 			$effect_data[ PaymentOutcome::DATA_NOTE_TYPE ]        = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_HELD;
 			$effect_data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] = $hold['notes'];
-		} elseif ( 'succeeded' === $status && WooPaymentsOrderEffects::captures_the_authorization( $order, $result ) ) {
+		} elseif ( WooPaymentsIntentStatus::SUCCEEDED === $status && WooPaymentsOrderEffects::captures_the_authorization( $order, $result ) ) {
 			// The order stores this intent's authorization and its transaction ID names it, so the payment completes the order
 			// as its capture (client 11.3.0 class-wc-payments-order-service.php:484-485, :2193-2219), as the
 			// payment_intent.succeeded webhook does.
@@ -803,7 +803,7 @@ class WooPaymentsOrderEffectApplier {
 			$effect_data[ PaymentOutcome::DATA_NOTE ]             = $note_candidates[0];
 			$effect_data[ PaymentOutcome::DATA_NOTE_TYPE ]        = PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS;
 			$effect_data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] = $note_candidates;
-		} elseif ( 'succeeded' === $status ) {
+		} elseif ( WooPaymentsIntentStatus::SUCCEEDED === $status ) {
 			$note_candidates                                      = $this->note_service->format_payment_success_note_candidates(
 				$order,
 				$intent_id,
@@ -813,7 +813,7 @@ class WooPaymentsOrderEffectApplier {
 			$effect_data[ PaymentOutcome::DATA_NOTE ]             = $note_candidates[0];
 			$effect_data[ PaymentOutcome::DATA_NOTE_TYPE ]        = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS;
 			$effect_data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] = $note_candidates;
-		} elseif ( in_array( $status, array( 'requires_capture', 'processing' ), true ) && '' !== $intent_id ) {
+		} elseif ( in_array( $status, array( WooPaymentsIntentStatus::REQUIRES_CAPTURE, WooPaymentsIntentStatus::PROCESSING ), true ) && '' !== $intent_id ) {
 			$metadata      = isset( $result['metadata'] ) && is_array( $result['metadata'] ) ? $result['metadata'] : array();
 			$fraud_outcome = isset( $metadata['fraud_outcome'] ) && is_string( $metadata['fraud_outcome'] ) ? $metadata['fraud_outcome'] : '';
 			if ( 'review' === $fraud_outcome ) {
@@ -889,7 +889,7 @@ class WooPaymentsOrderEffectApplier {
 		$intent_id = '' !== $outcome->get_provider_payment_id() ? $outcome->get_provider_payment_id() : (string) ( $result['id'] ?? '' );
 		$charge_id = isset( $charge['id'] ) ? (string) $charge['id'] : (string) $order->get_meta( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY, true );
 
-		if ( PaymentOutcome::STATUS_COMPLETED === $outcome->get_status() && 'succeeded' === (string) ( $result['status'] ?? '' ) ) {
+		if ( PaymentOutcome::STATUS_COMPLETED === $outcome->get_status() && WooPaymentsIntentStatus::SUCCEEDED === (string) ( $result['status'] ?? '' ) ) {
 			$settlement_meta = empty( $charge )
 				? array()
 				: $this->order_data_service->get_settlement_exchange_rate_order_meta( $order, $charge, $this->account_service->get_account_default_currency() );
@@ -958,7 +958,7 @@ class WooPaymentsOrderEffectApplier {
 		$intent_id       = '' !== $outcome->get_provider_payment_id() ? $outcome->get_provider_payment_id() : (string) ( $result['id'] ?? '' );
 		$charge_id       = isset( $charge['id'] ) ? (string) $charge['id'] : (string) $order->get_meta( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY, true );
 		$note_candidates = $this->note_service->format_capture_expired_note_candidates( $intent_id, $charge_id );
-		$meta            = array( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY => 'canceled' );
+		$meta            = array( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY => WooPaymentsIntentStatus::CANCELED );
 		if ( '' !== $charge_id ) {
 			$meta[ WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY ] = $charge_id;
 		}
@@ -987,7 +987,7 @@ class WooPaymentsOrderEffectApplier {
 	 */
 	private function compose_cancel_effect_data( WC_Order $order, PaymentOutcome $outcome, array $result, bool $writes_fraud_meta ): array {
 		$provider_status = (string) ( $result['status'] ?? '' );
-		if ( PaymentOutcome::STATUS_FAILED === $outcome->get_status() && '' !== $provider_status && 'canceled' !== $provider_status ) {
+		if ( PaymentOutcome::STATUS_FAILED === $outcome->get_status() && '' !== $provider_status && WooPaymentsIntentStatus::CANCELED !== $provider_status ) {
 			// The cancel failed but the intent was re-read: record the status the
 			// provider still reports and the failure note, as client 11.1.0's
 			// cancel_authorization() does (class-wc-payment-gateway-wcpay.php:4069), so the admin actions reflect reality.
@@ -1003,7 +1003,7 @@ class WooPaymentsOrderEffectApplier {
 			);
 		}
 
-		if ( PaymentOutcome::STATUS_CANCELED !== $outcome->get_status() || 'canceled' !== $provider_status ) {
+		if ( PaymentOutcome::STATUS_CANCELED !== $outcome->get_status() || WooPaymentsIntentStatus::CANCELED !== $provider_status ) {
 			return array();
 		}
 

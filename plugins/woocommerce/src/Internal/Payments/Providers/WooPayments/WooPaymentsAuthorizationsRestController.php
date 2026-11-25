@@ -253,7 +253,7 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 
 		return new WP_REST_Response(
 			array(
-				'status' => 'capture' === $action ? 'succeeded' : 'canceled',
+				'status' => 'capture' === $action ? WooPaymentsIntentStatus::SUCCEEDED : WooPaymentsIntentStatus::CANCELED,
 				'id'     => '' !== $outcome->get_provider_payment_id() ? $outcome->get_provider_payment_id() : $payment_intent_id,
 			)
 		);
@@ -408,7 +408,7 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 		}
 
 		$status = isset( $intent['status'] ) && is_scalar( $intent['status'] ) ? (string) $intent['status'] : '';
-		if ( 'requires_capture' !== $status ) {
+		if ( WooPaymentsIntentStatus::REQUIRES_CAPTURE !== $status ) {
 			return new WP_Error(
 				'wcpay_payment_uncapturable',
 				'capture' === $action ? __( 'The payment cannot be captured', 'woocommerce' ) : __( 'The payment cannot be canceled', 'woocommerce' ),

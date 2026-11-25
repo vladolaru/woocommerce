@@ -181,7 +181,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 		$data = $outcome->get_data();
 		$meta = isset( $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ) && is_array( $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ) ? $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] : array();
 
-		if ( 'requires_action' === ( $meta[ WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY ] ?? '' ) && in_array( $payment_method_id, self::OFFLINE_PAYMENT_METHODS, true ) ) {
+		if ( WooPaymentsIntentStatus::REQUIRES_ACTION === ( $meta[ WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY ] ?? '' ) && in_array( $payment_method_id, self::OFFLINE_PAYMENT_METHODS, true ) ) {
 			$this->remove_session_processing_order( $order_id );
 		}
 	}
@@ -317,7 +317,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 			return new WP_Error( self::ERROR_DISPUTED_INTENT, __( "This order's payment is under review. Please contact the store.", 'woocommerce' ) );
 		}
 
-		if ( 'succeeded' === $intent['status'] ) {
+		if ( WooPaymentsIntentStatus::SUCCEEDED === $intent['status'] ) {
 			$this->remove_session_processing_order( $order->get_id() );
 		}
 
@@ -401,7 +401,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	 * @return bool
 	 */
 	public static function refuses_unread_attached_payment( Throwable $failure, WC_Order $order ): bool {
-		return ! $failure instanceof Exception || 'succeeded' === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true );
+		return ! $failure instanceof Exception || WooPaymentsIntentStatus::SUCCEEDED === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true );
 	}
 
 	/**

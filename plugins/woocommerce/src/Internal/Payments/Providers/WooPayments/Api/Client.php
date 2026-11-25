@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentStatus;
 use Automattic\Jetpack\Connection\Client as Jetpack_Connection_Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCompatibilityData;
@@ -2933,7 +2934,7 @@ class Client {
 				$error_data['payment_intent'] = $error['payment_intent'];
 			}
 
-			if ( 'amount_too_large' === $error_code && 'requires_capture' === $payment_intent_status ) {
+			if ( 'amount_too_large' === $error_code && WooPaymentsIntentStatus::REQUIRES_CAPTURE === $payment_intent_status ) {
 				// Client 11.1.0 replaces the raw API message (wc-payment-api/class-wc-payments-api-client.php:2859-2864)
 				// so the merchant is not prompted to
 				// contact support when over-capturing an authorized amount.

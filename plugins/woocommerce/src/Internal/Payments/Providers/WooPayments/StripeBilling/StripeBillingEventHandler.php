@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentStatus;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
@@ -414,7 +415,7 @@ class StripeBillingEventHandler {
 		$already_recorded = $intent_id === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true )
 			|| WooPaymentsOrderEffects::transaction_id_names_payment( $order, $intent_id, $charge_id );
 		$recorded_unpaid  = false;
-		$was_succeeded    = 'succeeded' === $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true );
+		$was_succeeded    = WooPaymentsIntentStatus::SUCCEEDED === $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true );
 
 		if ( null === $authorization && ! $already_recorded && $this->cannot_refund_the_invoice_amount( $order, $intent_id, $amount_paid ) ) {
 			// A refund from this order would be refused, so its charge is left to its transaction page, which then refunds at the platform.
@@ -554,7 +555,7 @@ class StripeBillingEventHandler {
 	private function stores_one_uncaptured_authorization( WC_Order $order ): bool {
 		$stored_intent_id = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true );
 
-		return 'requires_capture' === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true )
+		return WooPaymentsIntentStatus::REQUIRES_CAPTURE === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true )
 			&& '' !== $stored_intent_id
 			&& $stored_intent_id === (string) $order->get_transaction_id();
 	}

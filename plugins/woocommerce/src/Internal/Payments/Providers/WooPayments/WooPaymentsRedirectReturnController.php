@@ -348,7 +348,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 */
 	private function leave_return_for_webhook_after_failed_fetch( WC_Order $order, string $intent_id ): bool {
 		$redirect_status = $this->get_query_string( 'redirect_status' );
-		if ( ! in_array( $redirect_status, array( 'succeeded', 'processing' ), true ) ) {
+		if ( ! in_array( $redirect_status, array( WooPaymentsIntentStatus::SUCCEEDED, WooPaymentsIntentStatus::PROCESSING ), true ) ) {
 			return false;
 		}
 
@@ -691,7 +691,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	private function is_successful_setup_intent_return(): bool {
 		return '' !== $this->get_query_string( 'setup_intent' )
 			&& '' !== $this->get_query_string( 'setup_intent_client_secret' )
-			&& 'succeeded' === $this->get_query_string( 'redirect_status' );
+			&& WooPaymentsIntentStatus::SUCCEEDED === $this->get_query_string( 'redirect_status' );
 	}
 
 	/**

@@ -280,7 +280,7 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 					return $text;
 				}
 
-				$should_show_failure = 'requires_payment_method' === (string) ( $intent['status'] ?? '' ) && ! empty( $intent['last_payment_error'] );
+				$should_show_failure = WooPaymentsIntentStatus::REQUIRES_PAYMENT_METHOD === (string) ( $intent['status'] ?? '' ) && ! empty( $intent['last_payment_error'] );
 			}
 		}
 

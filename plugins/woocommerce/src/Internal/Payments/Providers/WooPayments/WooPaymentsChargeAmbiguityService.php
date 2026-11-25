@@ -200,7 +200,7 @@ class WooPaymentsChargeAmbiguityService {
 	 * @return bool
 	 */
 	private static function may_hold_or_take_money( array $intent ): bool {
-		return null !== self::find_intent_with_money( array( $intent ) ) || ( 'requires_action' === (string) ( $intent['status'] ?? '' ) && WooPaymentsIntentCodec::is_offline_payment_method_intent( $intent ) );
+		return null !== self::find_intent_with_money( array( $intent ) ) || ( WooPaymentsIntentStatus::REQUIRES_ACTION === (string) ( $intent['status'] ?? '' ) && WooPaymentsIntentCodec::is_offline_payment_method_intent( $intent ) );
 	}
 
 	/**

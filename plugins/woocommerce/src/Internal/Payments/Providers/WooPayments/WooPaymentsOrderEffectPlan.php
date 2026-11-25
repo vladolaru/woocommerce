@@ -193,7 +193,7 @@ class WooPaymentsOrderEffectPlan {
 		return new self(
 			self::TYPE_SETUP_INTENT,
 			$provider_result,
-			'succeeded' === $status,
+			WooPaymentsIntentStatus::SUCCEEDED === $status,
 			$is_recurring,
 			$setup_meta
 		);

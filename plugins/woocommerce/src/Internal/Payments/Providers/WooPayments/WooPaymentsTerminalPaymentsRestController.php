@@ -457,7 +457,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 				return new WP_Error( 'wcpay_payment_uncapturable', __( 'The payment cannot be captured', 'woocommerce' ), array( 'status' => 409 ) );
 			}
 			// A reader that captured the payment itself (Interac) has charged the card before any write below.
-			$payment_captured = 'succeeded' === $status;
+			$payment_captured = WooPaymentsIntentStatus::SUCCEEDED === $status;
 
 			// The in-person method and channel are set before any status change, so the order emails and core's POS email checks
 			// see them (client 11.1.0 `includes/admin/class-wc-rest-payments-orders-controller.php:209-215`).
@@ -479,7 +479,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 					list( $intent_event ) = wc_get_container()->get( WooPaymentsIntentConfirmationService::class )->build_lifecycle_event_from_intent( $intent, $order );
 					wc_get_container()->get( WooPaymentsOrderEffectApplier::class )->attach_intent_info( $order, $intent_id, $intent_event->get_meta_to_update() );
 
-					if ( 'succeeded' !== $status ) {
+					if ( WooPaymentsIntentStatus::SUCCEEDED !== $status ) {
 						WooPaymentsTracks::record_wcadmin_event( 'wcpay_merchant_captured_auth' );
 						// The client first records the authorization: on hold, with the authorized note (class-wc-rest-payments-orders-controller.php:217, class-wc-payments-order-service.php:1612-1628).
 						$this->apply_terminal_lifecycle_event( $order, $intent, $intent_id, PaymentLifecycleEvent::STATUS_AUTHORIZED );
@@ -487,7 +487,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 				}
 			);
 			try {
-				$result = 'succeeded' === $status
+				$result = WooPaymentsIntentStatus::SUCCEEDED === $status
 					? $intent
 					: $this->api_client->capture_intention(
 						$intent_id,
@@ -503,7 +503,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 				}
 			}
 
-			if ( 'succeeded' !== (string) ( $result['status'] ?? '' ) ) {
+			if ( WooPaymentsIntentStatus::SUCCEEDED !== (string) ( $result['status'] ?? '' ) ) {
 				$this->record_failed_terminal_capture( $order, $intent_id, isset( $result['message'] ) ? (string) $result['message'] : '' );
 
 				return $this->get_terminal_capture_error( $result );
@@ -515,13 +515,13 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 					$this->get_lifecycle_service()->reread_order_from_data_store( $order );
 
 					// The capture note, or the payment note for an intent the reader already captured (Interac), completes the payment as on the client (class-wc-payments-order-service.php:1582, :1659-1685); writing it schedules the Fee details job.
-					$this->apply_terminal_lifecycle_event( $order, $result, $intent_id, PaymentLifecycleEvent::STATUS_COMPLETED, 'succeeded' === $status );
+					$this->apply_terminal_lifecycle_event( $order, $result, $intent_id, PaymentLifecycleEvent::STATUS_COMPLETED, WooPaymentsIntentStatus::SUCCEEDED === $status );
 				}
 			);
 			// The captured status is stored before the generated card is saved, as the client's capture stores it
 			// (class-wc-payments-order-service.php:529-532, :3443-3448), so when a later step fails, the app's retry finds the
 			// payment captured and is refused (class-wc-rest-payments-orders-controller.php:187-194).
-			$order->update_meta_data( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, 'succeeded' );
+			$order->update_meta_data( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, WooPaymentsIntentStatus::SUCCEEDED );
 			$order->save_meta_data();
 			$this->save_generated_card_for_subscriptions( $order, $intent );
 			$this->mark_terminal_payment_completed( $order, $result, $intent_id );
@@ -628,7 +628,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 		$stored_status = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true );
 		$stored_intent = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true );
 
-		if ( in_array( $stored_status, array( 'succeeded', 'canceled', 'processing' ), true ) ) {
+		if ( in_array( $stored_status, array( WooPaymentsIntentStatus::SUCCEEDED, WooPaymentsIntentStatus::CANCELED, WooPaymentsIntentStatus::PROCESSING ), true ) ) {
 			return new WP_Error( 'wcpay_payment_uncapturable', __( 'The payment cannot be captured for completed or processed orders.', 'woocommerce' ), array( 'status' => 409 ) );
 		}
 
@@ -738,7 +738,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 			// The captured status is saved before the completion, so a hook on the completion that moves an order needing no
 			// processing to Completed finds the payment captured: the end state the client's hook reaches by reading the intent.
 			$meta = array_merge(
-				array( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY => 'succeeded' ),
+				array( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY => WooPaymentsIntentStatus::SUCCEEDED ),
 				$this->order_data_service->get_settlement_exchange_rate_order_meta( $order, $charge, $this->account_service->get_account_default_currency() ),
 				WooPaymentsOrderEffects::attached_fee_meta( $charge )
 			);
@@ -936,11 +936,11 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 		}
 
 		$status = (string) ( $intent['status'] ?? '' );
-		if ( 'succeeded' === $status ) {
+		if ( WooPaymentsIntentStatus::SUCCEEDED === $status ) {
 			return $intent;
 		}
 
-		if ( 'canceled' === $status ) {
+		if ( WooPaymentsIntentStatus::CANCELED === $status ) {
 			$this->record_expired_terminal_capture( $order, $intent_id );
 
 			return null;
@@ -974,7 +974,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 					$order->update_meta_data( WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY, 'review_failed' );
 				}
 
-				$order->update_meta_data( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, 'requires_capture' );
+				$order->update_meta_data( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, WooPaymentsIntentStatus::REQUIRES_CAPTURE );
 				$order->save();
 			}
 		);
@@ -1002,7 +1002,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 					$order->update_meta_data( WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY, 'review_expired' );
 				}
 
-				$order->update_meta_data( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, 'canceled' );
+				$order->update_meta_data( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, WooPaymentsIntentStatus::CANCELED );
 				$order->update_status( 'failed' );
 			}
 		);

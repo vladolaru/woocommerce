@@ -247,9 +247,9 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 						$lifecycle->reread_order_from_data_store( $order );
 						$writer = wc_get_container()->get( PaymentIntentEventHandler::class );
 						$status = $intent['status'] ?? '';
-						if ( 'succeeded' === $status ) {
+						if ( WooPaymentsIntentStatus::SUCCEEDED === $status ) {
 							$writer->apply_succeeded_payment_intent_under_lock( $order, $intent );
-						} elseif ( 'requires_capture' === $status ) {
+						} elseif ( WooPaymentsIntentStatus::REQUIRES_CAPTURE === $status ) {
 							$writer->apply_authorization_under_lock_for_answer( $order, $intent );
 						}
 					}

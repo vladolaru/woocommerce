@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentStatus;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
@@ -879,7 +880,7 @@ class RefundEventHandler {
 		}
 
 		$intent_order = 'succeeded' === $status ? $this->event_order_resolver->find_order_by_event_intent( $refund ) : null;
-		if ( $intent_order instanceof WC_Order && 'canceled' === (string) $intent_order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true ) ) {
+		if ( $intent_order instanceof WC_Order && WooPaymentsIntentStatus::CANCELED === (string) $intent_order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true ) ) {
 			$this->log_cancelled_intent_order( $refund_id, $charge_id, $this->event_order_resolver->get_event_intent_id( $refund, $intent_order ), $intent_order->get_id() );
 			return null;
 		}
