@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\RateService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\DebugTools;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\HttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PreflightService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\ReconciliationJob;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\StateStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\CurrencyRateProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
@@ -139,7 +140,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function can_offer_switch(): bool {
-		return ( $this->arbiter->is_extension_owner() && $this->arbiter->is_builtin_enabled() ) || $this->arbiter->is_awaiting_switch();
+		return $this->arbiter->can_offer_switch();
 	}
 
 	/**
@@ -150,6 +151,12 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 */
 	public function add_site_status_tests( $tests ) {
 		if ( ! is_array( $tests ) || ! $this->can_offer_switch() ) {
+			return $tests;
+		}
+
+		$record = $this->get_cutover_state_store()->get_record();
+		if ( null !== $record && StateStore::STATE_DONE !== $record['state']
+			&& ( StateStore::STATE_PENDING !== $record['state'] || ! wc_get_container()->get( ReconciliationJob::class )->is_awaiting_start( $record ) ) ) {
 			return $tests;
 		}
 

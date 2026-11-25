@@ -127,15 +127,12 @@ class NoticesPassthrough implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether the store can switch to the built-in WooPayments: the extension owns payments, or nothing does because the
-	 * store waits for its switch.
+	 * Tell whether to keep switch notices on the Payments tab.
 	 *
 	 * @return bool
 	 */
 	private function can_switch(): bool {
-		$arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
-
-		return $arbiter->is_extension_owner() || $arbiter->is_awaiting_switch();
+		return wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->can_offer_switch();
 	}
 
 	/**

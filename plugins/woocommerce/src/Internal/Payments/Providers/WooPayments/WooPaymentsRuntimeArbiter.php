@@ -200,6 +200,15 @@ class WooPaymentsRuntimeArbiter {
 	}
 
 	/**
+	 * Whether the extension owner or a store awaiting handover can be offered the switch.
+	 *
+	 * @since 11.4.0
+	 */
+	public function can_offer_switch(): bool {
+		return ! $this->is_builtin_owner() && $this->is_builtin_enabled();
+	}
+
+	/**
 	 * Tell whether the built-in WooPayments is enabled for this site: the WooPayments feature is on.
 	 *
 	 * This is the enabled setting, independent of ownership: the built-in WooPayments can be enabled

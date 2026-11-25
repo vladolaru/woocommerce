@@ -271,6 +271,13 @@ class WooPaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 
 			$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner() );
 			$this->assertSame( 2, $feature_reads, 'Each blog should resolve and retain its own owner decision.' );
+			$this->assertFalse( $this->sut->can_offer_switch() );
+			switch_to_blog( $blog_id );
+			update_option( WooPaymentsRuntimeArbiter::EXTENSION_VERSION_OPTION, '11.1.0' );
+			$this->sut->invalidate();
+			$this->assertTrue( $this->sut->can_offer_switch() );
+			restore_current_blog();
+			$this->assertFalse( $this->sut->can_offer_switch() );
 		} finally {
 			while ( ms_is_switched() ) {
 				restore_current_blog();

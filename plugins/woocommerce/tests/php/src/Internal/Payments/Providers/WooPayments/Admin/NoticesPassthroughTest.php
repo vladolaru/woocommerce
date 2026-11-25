@@ -147,6 +147,7 @@ class NoticesPassthroughTest extends WC_Unit_Test_Case {
 	 * @testdox On the Payments tab itself only the switch notice is kept, and only on a store that can switch ($_dataName).
 	 * @testWith ["a store waiting for its switch", true, false]
 	 *           ["a store on the extension", true, true]
+	 *           ["feature disabled after bootstrap", true, true]
 	 *           ["a store that never ran the extension", false, false]
 	 *
 	 * @param string $label            Case label.
@@ -154,7 +155,7 @@ class NoticesPassthroughTest extends WC_Unit_Test_Case {
 	 * @param bool   $extension_active Whether the extension is active.
 	 */
 	public function test_keeps_the_switch_notice_on_the_payments_tab_only_while_the_store_can_switch( string $label, bool $extension_ran, bool $extension_active ): void {
-		unset( $label );
+		$turn_off = 'feature disabled after bootstrap' === $label;
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::ACTIVE );
 		update_option( StateStore::OPTION_NAME, StateStore::ABSENT_RECORD );
@@ -177,6 +178,9 @@ class NoticesPassthroughTest extends WC_Unit_Test_Case {
 			$loaded = wc_get_container()->get( NoticesPassthrough::class );
 			$loaded->register();
 		}
+		if ( $turn_off ) {
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
+		}
 		$this->open_payments_tab( '' );
 
 		try {
@@ -189,7 +193,7 @@ class NoticesPassthroughTest extends WC_Unit_Test_Case {
 			$tier->invalidate();
 		}
 
-		$this->assertSame( $extension_ran ? 10 : false, has_action( 'admin_notices', array( $this->cutover_notices, 'output_admin_notices' ) ), 'The switch notice.' );
+		$this->assertSame( $extension_ran && ! $turn_off ? 10 : false, has_action( 'admin_notices', array( $this->cutover_notices, 'output_admin_notices' ) ), 'The switch notice.' );
 		$this->assertFalse( has_action( 'admin_notices', array( $this->currency_notice, 'display_isk_decimal_notice' ) ), 'Only the switch notice is kept on the Payments tab.' );
 	}
 

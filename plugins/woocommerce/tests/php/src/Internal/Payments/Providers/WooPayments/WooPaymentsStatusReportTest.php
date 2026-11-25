@@ -14,7 +14,9 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiExcept
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\HttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\CutoverController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PreflightService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\ReconciliationJob;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\StateStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\DebugTools;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStatusReport;
@@ -276,6 +278,63 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$tests = $this->get_sut()->add_site_status_tests( array( 'async' => array() ) );
 
 		$this->assertSame( $expected, isset( $tests['async']['woocommerce_woopayments_cutover'] ) );
+	}
+
+	/**
+	 * Readiness follows the current record on extension-owned and waiting stores.
+	 *
+	 * @testWith ["pending", "awaiting_merchant_start", true]
+	 *           ["pending", "queued", false]
+	 *           ["running", "claimed", false]
+	 *           ["deferred", "deferred", false]
+	 *           ["excluded", "excluded", false]
+	 *           ["done", "done", true]
+	 *
+	 * @param string $state    Stored state.
+	 * @param string $step     Current step.
+	 * @param bool   $expected Whether an extension owner sees readiness.
+	 */
+	public function test_readiness_follows_current_record( string $state, string $step, bool $expected ): void {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		foreach ( array( true, false ) as $extension ) {
+			$this->set_store_shape( 'yes', $extension, true, WooPaymentsSetupTier::AVAILABLE );
+			$classification = array(
+				'key'        => 'none',
+				'present'    => true,
+				'expires_at' => time() + HOUR_IN_SECONDS,
+			);
+			update_option( ReconciliationJob::ADMIN_CLASSIFICATION_OPTION, $classification );
+			$job                    = wc_get_container()->get( ReconciliationJob::class );
+			$record                 = $job->refresh_notice_record();
+			$record['state']        = $state;
+			$record['current_step'] = $step;
+			if ( StateStore::STATE_RUNNING === $state ) {
+				$record['lease_token']      = 'worker';
+				$record['lease_expires_at'] = time() + 60;
+			} elseif ( StateStore::STATE_DEFERRED === $state ) {
+				$record['next_attempt_at'] = time() + 60;
+			}
+			update_option( StateStore::OPTION_NAME, $record );
+			wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+			$sut   = $this->get_sut();
+			$tests = $sut->add_site_status_tests( array() );
+			$this->assertSame( $expected && ( $extension || StateStore::STATE_DONE !== $state ), isset( $tests['async']['woocommerce_woopayments_cutover'] ) );
+			$this->assertSame( $record, ( new StateStore() )->get_record() );
+			if ( in_array( $state, array( StateStore::STATE_RUNNING, StateStore::STATE_EXCLUDED ), true ) ) {
+				$classification['key'] = $record['generation'] . ':' . $record['revision'];
+				update_option( ReconciliationJob::ADMIN_CLASSIFICATION_OPTION, $classification );
+				ob_start();
+				wc_get_container()->get( CutoverController::class )->output_admin_notices();
+				$this->assertStringContainsString( StateStore::STATE_RUNNING === $state ? 'is switching' : 'Stripe Billing', (string) ob_get_clean() );
+				if ( StateStore::STATE_EXCLUDED === $state ) {
+					$classification['present'] = false;
+					update_option( ReconciliationJob::ADMIN_CLASSIFICATION_OPTION, $classification );
+					$this->assertSame( array(), $sut->add_site_status_tests( array() ) );
+					$job->refresh_notice_record();
+					$this->assertArrayHasKey( 'woocommerce_woopayments_cutover', $sut->add_site_status_tests( array() )['async'] );
+				}
+			}
+		}
 	}
 
 	/**
