@@ -476,11 +476,15 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 			? WooPaymentsPaymentMethodType::CARD
 			: substr( $gateway_id, strlen( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX ) );
 
-		// Link payments go through the card gateway; detect them by the order's last payment token, as client 11.2.0
-		// does (class-wc-payments-order-success-page.php:205-218).
 		if ( WooPaymentsPaymentMethodType::CARD === $payment_method_id ) {
-			$token_ids = $order->get_payment_tokens();
-			if ( ! empty( $token_ids ) && WC_Payment_Tokens::get( end( $token_ids ) ) instanceof LinkToken && null !== $this->payment_method_registry->get( WooPaymentsPaymentMethodType::LINK ) ) {
+			$stored_details = $order->get_meta( WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_DETAILS_META_KEY, true );
+			$details        = is_string( $stored_details ) ? json_decode( $stored_details, true ) : null;
+			$is_link        = WooPaymentsPaymentMethodType::LINK === ( $details['type'] ?? null );
+			if ( ! $is_link ) {
+				$token_ids = $order->get_payment_tokens();
+				$is_link   = ! empty( $token_ids ) && WC_Payment_Tokens::get( end( $token_ids ) ) instanceof LinkToken;
+			}
+			if ( $is_link && null !== $this->payment_method_registry->get( WooPaymentsPaymentMethodType::LINK ) ) {
 				$payment_method_id = WooPaymentsPaymentMethodType::LINK;
 			}
 		}
@@ -825,9 +829,7 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	 * @return string
 	 */
 	private function render_definition_title( PaymentMethodDefinition $definition, WC_Order $order, bool $is_express = false ): string {
-		// Express titles read no country, as client 11.2.0 show_express_checkout_payment_method_name() does
-		// (class-wc-payments-order-success-page.php:245-262); only the LPM title is localized (:333-372).
-		$account_country = $is_express ? null : $this->account_service->get_account_country();
+		$account_country = $this->account_service->get_account_country();
 		$icon_url        = WC()->plugin_url() . '/' . ltrim( $definition->get_icon_asset_path( $account_country ), '/' );
 		$dark_icon_url   = WC()->plugin_url() . '/' . ltrim( $definition->get_dark_icon_asset_path( $account_country ), '/' );
 

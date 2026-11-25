@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodType;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
@@ -515,36 +516,38 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Client 11.2.0 `show_express_checkout_payment_method_name()` (`class-wc-payments-order-success-page.php:245-262`) reads the
-	 * icon and the title with no country, so a GB account's express Link payment shows the Link logo and "Link", where
-	 * the GB checkout form says "Onelink" (`LinkDefinition.php:64-70`, `:152-158`).
+	 * @testdox A tokenless Link charge shows the account's logo and name on the thank-you page.
 	 *
-	 * @testdox Should show the Link logo and title for an express Link payment on a GB account.
+	 * @dataProvider provider_saved_link_token_payments
+	 *
+	 * @param string $account_country Merchant account country.
+	 * @param string $icon_fragment   Expected logo path.
+	 * @param string $expected_alt    Accessible name.
 	 */
-	public function test_express_link_payment_on_a_gb_account_shows_link(): void {
-		$page  = $this->create_page( null, null, 'GB' );
-		$order = wc_create_order();
-		$this->assertInstanceOf( WC_Order::class, $order );
+	public function test_tokenless_link_charge_shows_account_logo( string $account_country, string $icon_fragment, string $expected_alt ): void {
+		$page  = $this->create_page( null, null, $account_country );
+		$order = new WC_Order();
 		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
-		$order->update_meta_data( '_wcpay_express_checkout_payment_method', 'link' );
+		$order->set_payment_method_title( 'Original title' );
+		$order->update_meta_data( WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_DETAILS_META_KEY, wp_json_encode( array( 'type' => WooPaymentsPaymentMethodType::LINK ) ) );
 		$order->save();
 		add_filter( 'woocommerce_is_order_received_page', '__return_true' );
 
-		try {
-			$title = $page->filter_payment_method_title( 'Link (WooPayments)', $order );
-		} finally {
-			remove_filter( 'woocommerce_is_order_received_page', '__return_true' );
-		}
+		$title = $page->filter_payment_method_title( 'Original title', $order );
+		$this->assertStringContainsString( $icon_fragment, $title );
+		$this->assertStringContainsString( 'alt="' . $expected_alt . '"', $title );
+		$this->assertStringContainsString( 'wc-payment-lpm-logo--link', $title );
 
-		$this->assertStringContainsString( '/assets/images/payment-methods/link-color.svg', $title );
-		$this->assertStringContainsString( 'alt="Link"', $title );
+		$order->update_meta_data( WooPaymentsPersistenceVocabulary::EXPRESS_CHECKOUT_PAYMENT_METHOD_META_KEY, WooPaymentsPaymentMethodType::LINK );
+		$order->save();
+		$title = $page->filter_payment_method_title( 'Original title', $order );
+		$this->assertStringContainsString( $icon_fragment, $title );
+		$this->assertStringContainsString( 'alt="' . $expected_alt . '"', $title );
+		$this->assertStringContainsString( 'wc-payment-card-logo', $title );
+		$this->assertSame( 'Original title', wc_get_order( $order->get_id() )->get_payment_method_title( 'edit' ) );
 	}
 
 	/**
-	 * Client 11.2.0 detects a Link payment on the card gateway by the order's last payment token and renders it as a
-	 * local payment method (`class-wc-payments-order-success-page.php:205-226`). Native's text names the logo it shows
-	 * (Onelink in GB), where the client's LPM text reads no country (`:369`).
-	 *
 	 * @testdox Should show a card-gateway payment with a saved Link token as Link on the thank-you page: $_dataName.
 	 *
 	 * @dataProvider provider_saved_link_token_payments
@@ -565,6 +568,9 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 		$order = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		if ( 'GB' === $account_country ) {
+			$order->update_meta_data( WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_DETAILS_META_KEY, '{invalid' );
+		}
 		$order->add_payment_token( $token );
 		$order->save();
 		add_filter( 'woocommerce_is_order_received_page', '__return_true' );
@@ -578,6 +584,23 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 'wc-payment-lpm-logo--link', $title );
 		$this->assertStringContainsString( $icon_fragment, $title );
 		$this->assertStringContainsString( 'alt="' . $expected_alt . '"', $title );
+	}
+
+	/**
+	 * @testdox An ordinary card keeps its title when charge details are missing or malformed.
+	 *
+	 * @testWith [""]
+	 *           ["{invalid"]
+	 *
+	 * @param string $details Stored charge details.
+	 */
+	public function test_unrecognized_details_keep_card_title( string $details ): void {
+		$order = new WC_Order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->update_meta_data( WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_DETAILS_META_KEY, $details );
+		add_filter( 'woocommerce_is_order_received_page', '__return_true' );
+
+		$this->assertSame( 'Visa credit card', $this->create_page()->filter_payment_method_title( 'Visa credit card', $order ) );
 	}
 
 	/**
