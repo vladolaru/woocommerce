@@ -42,6 +42,27 @@ final class WooCommerce_Native_Payments_Perf_Probe {
 	 */
 	private $http_requests = 0;
 
+	/** @var int Number of nested HTTP attempts in progress. */
+	private $http_depth = 0;
+
+	/** @var float Monotonic start of the outermost HTTP attempt, in nanoseconds. */
+	private $http_started = 0;
+
+	/** @var float Total elapsed time inside HTTP calls, in milliseconds. */
+	private $outbound_ms = 0.0;
+
+	/** @var string REST webhook route, including when dispatched by a platform proxy. */
+	private $webhook_route = '';
+
+	/** @var string Order fingerprint of a successfully delivered payment event. */
+	private $event_order = '';
+
+	/** @var int Depth of the account request currently being proxied, or zero. */
+	private $account_depth = 0;
+
+	/** @var int Account refresh attempts, excluding nested proxy redirects. */
+	private $account_reads = 0;
+
 	/**
 	 * The state selected for local attribution, or an empty string.
 	 *
@@ -297,6 +318,13 @@ final class WooCommerce_Native_Payments_Perf_Probe {
 	 * @return void
 	 */
 	public function register(): void {
+		if ( defined( 'WC_NATIVE_PERF_TWIN' ) && WC_NATIVE_PERF_TWIN ) {
+			if ( ( ! defined( 'WP_CLI' ) || ! WP_CLI ) && '1' !== sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_WC_PERF_OFF'] ?? '' ) ) ) {
+				$this->register_twin_probe();
+			}
+			return;
+		}
+
 		// A WP-Cron run spawned mid-sample drains the snapshot's pending Action Scheduler work, making every
 		// later request of that sample cheaper; keep each sample on the imported snapshot instead (T.12b).
 		if ( ! defined( 'DISABLE_WP_CRON' ) ) {
@@ -318,6 +346,187 @@ final class WooCommerce_Native_Payments_Perf_Probe {
 		add_action( 'plugins_loaded', array( $this, 'make_reference_plugin_win' ), PHP_INT_MIN );
 		add_action( 'wp', array( $this, 'measure_gateway_resolution_queries' ), PHP_INT_MIN );
 		add_action( 'shutdown', array( $this, 'send_measurement_header' ), 0 );
+	}
+
+	/**
+	 * Observe the real owner without forcing gateway resolution or collecting SQL.
+	 */
+	private function register_twin_probe(): void {
+		ob_start();
+		add_filter( 'woocommerce_load_payment_providers', array( $this, 'observe_bootstrap' ) );
+		add_filter( 'pre_http_request', array( $this, 'start_http_wait' ), PHP_INT_MIN, 3 );
+		add_filter( 'pre_http_request', array( $this, 'finish_short_circuit' ), PHP_INT_MAX );
+		add_action( 'http_api_debug', array( $this, 'finish_http_wait' ), PHP_INT_MIN );
+		add_filter( 'rest_request_after_callbacks', array( $this, 'observe_webhook_result' ), PHP_INT_MAX, 3 );
+
+		// Keep headers writable while other shutdown callbacks finish their work.
+		$flush_buffers = remove_action( 'shutdown', 'wp_ob_end_flush_all', 1 );
+		add_action( 'shutdown', array( $this, 'send_twin_measurement' ), PHP_INT_MAX );
+		if ( $flush_buffers ) {
+			add_action( 'shutdown', 'wp_ob_end_flush_all', PHP_INT_MAX );
+		}
+	}
+
+	/**
+	 * Count bootstrap checks without changing the decision.
+	 *
+	 * @param mixed $enabled Current bootstrap decision.
+	 * @return mixed Unchanged decision.
+	 */
+	public function observe_bootstrap( $enabled ) {
+		++$this->bootstrap_calls;
+		return $enabled;
+	}
+
+	/**
+	 * Start one interval for the whole call, including any requests made by a local proxy.
+	 *
+	 * @param mixed $preempt Current short-circuit response.
+	 * @param mixed $args    HTTP arguments.
+	 * @param mixed $url     Outbound URL.
+	 * @return mixed Unchanged response.
+	 */
+	public function start_http_wait( $preempt, $args, $url ) {
+		if ( 0 === $this->http_depth ) {
+			$this->http_started = hrtime( true );
+		}
+		++$this->http_depth;
+		if ( 0 === $this->account_depth && 'GET' === ( $args['method'] ?? '' ) && is_string( $url ) && preg_match( '~/(?:wcpay|transact)/accounts/?$~', (string) wp_parse_url( $url, PHP_URL_PATH ) ) ) {
+			$this->account_depth = $this->http_depth;
+			++$this->account_reads;
+		}
+		++$this->http_requests;
+		return $preempt;
+	}
+
+	/**
+	 * WordPress returns preemptive responses before firing http_api_debug.
+	 *
+	 * @param mixed $preempt Current short-circuit response.
+	 * @return mixed Unchanged response.
+	 */
+	public function finish_short_circuit( $preempt ) {
+		if ( false !== $preempt ) {
+			$this->finish_http_wait();
+		}
+		return $preempt;
+	}
+
+	/**
+	 * Close the outermost interval after a response, including transport errors.
+	 */
+	public function finish_http_wait(): void {
+		if ( 0 === $this->http_depth ) {
+			return;
+		}
+		if ( $this->account_depth === $this->http_depth ) {
+			$this->account_depth = 0;
+		}
+		--$this->http_depth;
+		if ( 0 === $this->http_depth ) {
+			$this->outbound_ms += ( hrtime( true ) - $this->http_started ) / 1e6;
+		}
+	}
+
+	/**
+	 * Correlate paid orders with successful platform deliveries without logging payment data.
+	 *
+	 * @param mixed $response REST response.
+	 * @param mixed $_handler Matched handler.
+	 * @param mixed $request  REST request.
+	 * @return mixed Unchanged response.
+	 */
+	public function observe_webhook_result( $response, $_handler, $request ) {
+		if ( ! $request instanceof WP_REST_Request || 'POST' !== $request->get_method() || '/wc/v3/payments/webhook' !== rtrim( $request->get_route(), '/' ) ) {
+			return $response;
+		}
+		$this->webhook_route = '/wc/v3/payments/webhook';
+		if ( $response instanceof WP_REST_Response && 200 === $response->get_status() && 'success' === ( $response->get_data()['result'] ?? '' ) ) {
+			$event    = $request->get_json_params() ?? $request->get_body_params();
+			$object   = $event['data']['object'] ?? array();
+			$order_id = $object['metadata']['order_id'] ?? $object['charges']['data'][0]['metadata']['order_id'] ?? null;
+			if ( 'payment_intent.succeeded' === ( $event['type'] ?? '' ) && is_scalar( $order_id ) && ctype_digit( (string) $order_id ) ) {
+				$this->event_order = hash( 'sha256', (string) $order_id );
+			}
+		}
+		return $response;
+	}
+
+	/**
+	 * Keep known route segments and replace dynamic values without recording arbitrary request data.
+	 *
+	 * @return string Normalized route.
+	 */
+	private function twin_route(): string {
+		global $post, $wp;
+
+		if ( '' !== $this->webhook_route ) {
+			return $this->webhook_route;
+		}
+
+		$uri   = esc_url_raw( wp_unslash( $_SERVER['REQUEST_URI'] ?? '/' ) );
+		$path  = $wp->query_vars['rest_route'] ?? wp_parse_url( $uri, PHP_URL_PATH );
+		$query = array();
+		wp_parse_str( (string) wp_parse_url( $uri, PHP_URL_QUERY ), $query );
+		if ( is_string( $query['wc-ajax'] ?? null ) ) {
+			$path = '/wc-ajax/' . $query['wc-ajax'];
+		} elseif ( isset( $query['add-to-cart'] ) ) {
+			$path = '/add-to-cart';
+		} elseif ( ( isset( $query['p'] ) || isset( $query['page_id'] ) ) && $post instanceof WP_Post ) {
+			$path = '/' . $post->post_name;
+		} elseif ( is_string( $query['page'] ?? null ) && is_admin() ) {
+			$path .= '/' . $query['page'];
+			foreach ( array( 'tab', 'section', 'action', 'path' ) as $key ) {
+				if ( is_string( $query[ $key ] ?? null ) ) {
+					$path .= '/' . trim( $query[ $key ], '/' );
+				}
+			}
+		}
+
+		$segments = explode( '/', trim( (string) $path, '/' ) );
+		$known    = explode(
+			' ',
+			'wp-json wc v1 v2 v3 v4 store cart checkout shop product canvas-tote perf-classic-cart perf-classic-checkout ' .
+			'wc-ajax add_to_cart add-to-cart update_order_review add-item update-item items order-received my-account payment-methods ' .
+			'payments webhook transactions deposits payouts disputes accounts charges details settings woopayments overview woocommerce_payments ' .
+			'wp-admin admin.php admin-ajax.php index.php plugins.php edit.php post.php xmlrpc.php wc-admin wc-orders wc-settings edit'
+		);
+		foreach ( $segments as &$segment ) {
+			if ( '' !== $segment && ! in_array( $segment, $known, true ) ) {
+				$segment = ':value';
+			}
+		}
+		return '/' . implode( '/', $segments );
+	}
+
+	/**
+	 * Write the same measurement to the HTTP response and PHP log, including platform-initiated requests.
+	 */
+	public function send_twin_measurement(): void {
+		$end    = microtime( true );
+		$php_ms = round( ( $end - floatval( wp_unslash( $_SERVER['REQUEST_TIME_FLOAT'] ?? $end ) ) ) * 1000, 3 );
+		if ( $this->http_depth > 0 ) {
+			// A request can terminate inside a transport or preemption callback.
+			$this->outbound_ms += ( hrtime( true ) - $this->http_started ) / 1e6;
+		}
+		$outbound_ms = min( $php_ms, round( $this->outbound_ms, 3 ) );
+		$owner       = defined( 'WCPAY_PLUGIN_FILE' ) ? 'plugin' : 'native';
+		$state       = 'plugin' === $owner ? 'active_plugin' : 'active_native';
+		$line        = $this->measurement( $state, 'active', $owner ) . sprintf(
+			';request_id=%s;route=%s;php_ms=%.3F;outbound_ms=%.3F;store_ms=%.3F;account_reads=%d',
+			wp_generate_uuid4(),
+			$this->twin_route(),
+			$php_ms,
+			$outbound_ms,
+			$php_ms - $outbound_ms,
+			$this->account_reads
+		);
+		if ( '' !== $this->event_order ) {
+			$line .= ';event_order=' . $this->event_order;
+		}
+		header( 'X-WooCommerce-Native-Payments-Probe: ' . $line );
+		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- The runner reads PHP logs for requests delivered by the platform.
+		error_log( 'X-WooCommerce-Native-Payments-Probe: ' . $line );
 	}
 
 	/**
@@ -463,7 +672,6 @@ final class WooCommerce_Native_Payments_Perf_Probe {
 	 * @return void
 	 */
 	public function send_measurement_header(): void {
-		global $wp_filter;
 
 		$tiers = array(
 			'baseline_noop' => 'noop',
@@ -479,7 +687,21 @@ final class WooCommerce_Native_Payments_Perf_Probe {
 			header( 'X-WooCommerce-Native-Payments-Probe: error=attribution-artifacts' );
 			return;
 		}
-		header( sprintf( 'X-WooCommerce-Native-Payments-Probe: state=%s;tier=%s;owner=%s;bootstrap_calls=%d;queries=%d;used_peak_bytes=%d;hooks=%d;files=%d;http=%d;gateway_first_queries=%d;gateway_second_queries=%d', $state, $tiers[ $state ], $owner, $this->bootstrap_calls, get_num_queries(), memory_get_peak_usage( false ), count( $wp_filter ), count( get_included_files() ), $this->http_requests, $this->gateway_first_queries, $this->gateway_second_queries ) );
+		header( 'X-WooCommerce-Native-Payments-Probe: ' . $this->measurement( $state, $tiers[ $state ], $owner ) );
+	}
+
+	/**
+	 * Format the fields consumed by the original gate in their original order.
+	 *
+	 * @param string $state Control state.
+	 * @param string $tier  Account tier.
+	 * @param string $owner Gateway owner.
+	 * @return string Gate measurement.
+	 */
+	private function measurement( string $state, string $tier, string $owner ): string {
+		global $wp_filter;
+
+		return sprintf( 'state=%s;tier=%s;owner=%s;bootstrap_calls=%d;queries=%d;used_peak_bytes=%d;hooks=%d;files=%d;http=%d;gateway_first_queries=%d;gateway_second_queries=%d', $state, $tier, $owner, $this->bootstrap_calls, get_num_queries(), memory_get_peak_usage( false ), count( $wp_filter ), count( get_included_files() ), $this->http_requests, $this->gateway_first_queries, $this->gateway_second_queries );
 	}
 
 	/**
