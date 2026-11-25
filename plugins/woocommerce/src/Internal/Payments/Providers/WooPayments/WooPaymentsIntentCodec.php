@@ -661,7 +661,7 @@ class WooPaymentsIntentCodec {
 	 * @return bool
 	 */
 	public static function is_in_person_charge( array $charge ): bool {
-		return in_array( $charge['payment_method_details']['type'] ?? '', array( 'card_present', 'interac_present' ), true );
+		return in_array( $charge['payment_method_details']['type'] ?? '', array( WooPaymentsPaymentMethodType::CARD_PRESENT, WooPaymentsPaymentMethodType::INTERAC_PRESENT ), true );
 	}
 
 	/**

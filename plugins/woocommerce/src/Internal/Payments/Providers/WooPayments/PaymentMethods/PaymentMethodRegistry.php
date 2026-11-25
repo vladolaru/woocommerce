@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodType;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 
 /**
@@ -49,31 +50,31 @@ class PaymentMethodRegistry {
 	/**
 	 * Payment methods WooPayments discontinued: they have no definition here, and settings that still name them are cleaned when a store switches to the built-in WooPayments.
 	 */
-	public const DISCONTINUED_PAYMENT_METHOD_IDS = array( 'giropay', 'sofort' );
+	public const DISCONTINUED_PAYMENT_METHOD_IDS = array( WooPaymentsPaymentMethodType::GIROPAY, WooPaymentsPaymentMethodType::SOFORT );
 
 	/**
 	 * Payment method IDs the WooPayments settings accept and report.
 	 */
 	public const SETTINGS_PAYMENT_METHOD_IDS = array(
-		'alipay',
-		'amazon_pay',
-		'apple_pay',
-		'au_becs_debit',
-		'bancontact',
-		'card',
-		'eps',
-		'google_pay',
-		'grabpay',
-		'ideal',
-		'jcb',
-		'klarna',
-		'link',
-		'multibanco',
-		'p24',
-		'sepa_debit',
-		'wechat_pay',
-		'affirm',
-		'afterpay_clearpay',
+		WooPaymentsPaymentMethodType::ALIPAY,
+		WooPaymentsPaymentMethodType::AMAZON_PAY,
+		WooPaymentsPaymentMethodType::APPLE_PAY,
+		WooPaymentsPaymentMethodType::AU_BECS_DEBIT,
+		WooPaymentsPaymentMethodType::BANCONTACT,
+		WooPaymentsPaymentMethodType::CARD,
+		WooPaymentsPaymentMethodType::EPS,
+		WooPaymentsPaymentMethodType::GOOGLE_PAY,
+		WooPaymentsPaymentMethodType::GRABPAY,
+		WooPaymentsPaymentMethodType::IDEAL,
+		WooPaymentsPaymentMethodType::JCB,
+		WooPaymentsPaymentMethodType::KLARNA,
+		WooPaymentsPaymentMethodType::LINK,
+		WooPaymentsPaymentMethodType::MULTIBANCO,
+		WooPaymentsPaymentMethodType::P24,
+		WooPaymentsPaymentMethodType::SEPA_DEBIT,
+		WooPaymentsPaymentMethodType::WECHAT_PAY,
+		WooPaymentsPaymentMethodType::AFFIRM,
+		WooPaymentsPaymentMethodType::AFTERPAY_CLEARPAY,
 	);
 
 	/**
@@ -116,7 +117,7 @@ class PaymentMethodRegistry {
 			? $account_service->is_ece_confirmation_tokens_enabled_in_stored_account()
 			: $this->is_amazon_pay_enabled( $account_service );
 		if ( ! $amazon_pay_enabled ) {
-			unset( $definitions['amazon_pay'] );
+			unset( $definitions[ WooPaymentsPaymentMethodType::AMAZON_PAY ] );
 		}
 
 		return $definitions;
@@ -148,7 +149,7 @@ class PaymentMethodRegistry {
 	 * @return bool
 	 */
 	public function is_link_folded_into_card( WooPaymentsAccountService $account_service, string $currency ): bool {
-		$method_ids = $account_service->get_gateway_setting( 'upe_enabled_payment_method_ids', array( 'card' ) );
+		$method_ids = $account_service->get_gateway_setting( 'upe_enabled_payment_method_ids', array( WooPaymentsPaymentMethodType::CARD ) );
 
 		$enabled_method_ids = array();
 		foreach ( (array) $method_ids as $method_id ) {
@@ -157,11 +158,11 @@ class PaymentMethodRegistry {
 			}
 		}
 
-		if ( ! in_array( 'card', $enabled_method_ids, true ) || ! in_array( 'link', $enabled_method_ids, true ) ) {
+		if ( ! in_array( WooPaymentsPaymentMethodType::CARD, $enabled_method_ids, true ) || ! in_array( WooPaymentsPaymentMethodType::LINK, $enabled_method_ids, true ) ) {
 			return false;
 		}
 
-		$link_definition = $this->get( 'link' );
+		$link_definition = $this->get( WooPaymentsPaymentMethodType::LINK );
 		if ( null === $link_definition || ! $link_definition->is_available_for( $currency, $account_service->get_account_country() ) ) {
 			return false;
 		}
@@ -169,7 +170,7 @@ class PaymentMethodRegistry {
 		$account_data = $account_service->get_cached_account_data();
 		$fees         = is_array( $account_data['fees'] ?? null ) ? $account_data['fees'] : array();
 
-		return $account_service->is_capability_active( $link_definition->get_account_capability_key() ) && array_key_exists( 'link', $fees );
+		return $account_service->is_capability_active( $link_definition->get_account_capability_key() ) && array_key_exists( WooPaymentsPaymentMethodType::LINK, $fees );
 	}
 
 	/**
@@ -188,8 +189,8 @@ class PaymentMethodRegistry {
 		$account_data  = $account_service->get_cached_account_data();
 		$fee_ids       = is_array( $account_data['fees'] ?? null ) ? array_map( 'strval', array_keys( $account_data['fees'] ) ) : array();
 
-		if ( in_array( 'card', $fee_ids, true ) ) {
-			foreach ( array( 'google_pay', 'apple_pay' ) as $wallet_id ) {
+		if ( in_array( WooPaymentsPaymentMethodType::CARD, $fee_ids, true ) ) {
+			foreach ( array( WooPaymentsPaymentMethodType::GOOGLE_PAY, WooPaymentsPaymentMethodType::APPLE_PAY ) as $wallet_id ) {
 				if ( in_array( $wallet_id, $available_ids, true ) ) {
 					$fee_ids[] = $wallet_id;
 				}
@@ -324,9 +325,9 @@ class PaymentMethodRegistry {
 	private function get_definition_configs(): array {
 		return array(
 			array(
-				'id'                         => 'card',
+				'id'                         => WooPaymentsPaymentMethodType::CARD,
 				'stripe_id'                  => 'card_payments',
-				'stripe_payment_method_type' => 'card',
+				'stripe_payment_method_type' => WooPaymentsPaymentMethodType::CARD,
 				'title'                      => 'Card',
 				'description'                => 'Let your customers pay with major credit and debit cards without leaving your store.',
 				'currencies'                 => array(),
@@ -341,9 +342,9 @@ class PaymentMethodRegistry {
 				'settings_icon'              => 'assets/images/payment-methods/generic-card-black.svg',
 			),
 			array(
-				'id'                         => 'affirm',
+				'id'                         => WooPaymentsPaymentMethodType::AFFIRM,
 				'stripe_id'                  => 'affirm_payments',
-				'stripe_payment_method_type' => 'affirm',
+				'stripe_payment_method_type' => WooPaymentsPaymentMethodType::AFFIRM,
 				'title'                      => 'Affirm',
 				'description'                => 'Allow customers to pay over time with Affirm.',
 				'currencies'                 => array( 'USD', 'CAD' ),
@@ -373,9 +374,9 @@ class PaymentMethodRegistry {
 				),
 			),
 			array(
-				'id'                         => 'afterpay_clearpay',
+				'id'                         => WooPaymentsPaymentMethodType::AFTERPAY_CLEARPAY,
 				'stripe_id'                  => 'afterpay_clearpay_payments',
-				'stripe_payment_method_type' => 'afterpay_clearpay',
+				'stripe_payment_method_type' => WooPaymentsPaymentMethodType::AFTERPAY_CLEARPAY,
 				'title'                      => 'Afterpay',
 				'titles_by_country'          => array(
 					'GB' => 'Clearpay',
@@ -442,9 +443,9 @@ class PaymentMethodRegistry {
 				),
 			),
 			array(
-				'id'                         => 'alipay',
+				'id'                         => WooPaymentsPaymentMethodType::ALIPAY,
 				'stripe_id'                  => 'alipay_payments',
-				'stripe_payment_method_type' => 'alipay',
+				'stripe_payment_method_type' => WooPaymentsPaymentMethodType::ALIPAY,
 				'title'                      => 'Alipay',
 				'description'                => 'A digital wallet for customers with mainland China Alipay accounts. Regional versions like AlipayHK are not supported.',
 				'currencies'                 => array( 'USD' ),
@@ -474,9 +475,9 @@ class PaymentMethodRegistry {
 				'icon'                       => 'assets/images/payment-methods/alipay-logo-color.svg',
 			),
 			array(
-				'id'                         => 'bancontact',
+				'id'                         => WooPaymentsPaymentMethodType::BANCONTACT,
 				'stripe_id'                  => 'bancontact_payments',
-				'stripe_payment_method_type' => 'bancontact',
+				'stripe_payment_method_type' => WooPaymentsPaymentMethodType::BANCONTACT,
 				'title'                      => 'Bancontact',
 				'description'                => 'Bancontact is a bank redirect payment method offered by more than 80% of online businesses in Belgium.',
 				'currencies'                 => array( 'EUR' ),
@@ -485,9 +486,9 @@ class PaymentMethodRegistry {
 				'icon'                       => 'assets/images/payment-methods/bancontact-color.svg',
 			),
 			array(
-				'id'                         => 'au_becs_debit',
+				'id'                         => WooPaymentsPaymentMethodType::AU_BECS_DEBIT,
 				'stripe_id'                  => 'au_becs_debit_payments',
-				'stripe_payment_method_type' => 'au_becs_debit',
+				'stripe_payment_method_type' => WooPaymentsPaymentMethodType::AU_BECS_DEBIT,
 				'title'                      => 'BECS Direct Debit',
 				'description'                => 'Bulk Electronic Clearing System — Accept secure bank transfer from Australia.',
 				'currencies'                 => array( 'AUD' ),
@@ -496,9 +497,9 @@ class PaymentMethodRegistry {
 				'icon'                       => 'assets/images/payment-methods/bank-debit-color.svg',
 			),
 			array(
-				'id'                         => 'eps',
+				'id'                         => WooPaymentsPaymentMethodType::EPS,
 				'stripe_id'                  => 'eps_payments',
-				'stripe_payment_method_type' => 'eps',
+				'stripe_payment_method_type' => WooPaymentsPaymentMethodType::EPS,
 				'title'                      => 'EPS',
 				'description'                => 'Accept your payment with EPS — a common payment method in Austria.',
 				'currencies'                 => array( 'EUR' ),
@@ -508,9 +509,9 @@ class PaymentMethodRegistry {
 				'icon'                       => 'assets/images/payment-methods/eps-color.svg',
 			),
 			array(
-				'id'                         => 'grabpay',
+				'id'                         => WooPaymentsPaymentMethodType::GRABPAY,
 				'stripe_id'                  => 'grabpay_payments',
-				'stripe_payment_method_type' => 'grabpay',
+				'stripe_payment_method_type' => WooPaymentsPaymentMethodType::GRABPAY,
 				'title'                      => 'GrabPay',
 				'description'                => 'A popular digital wallet for cashless payments in Singapore.',
 				'currencies'                 => array( 'SGD' ),
@@ -522,9 +523,9 @@ class PaymentMethodRegistry {
 				'icon'                       => 'assets/images/payment-methods/grabpay-color.svg',
 			),
 			array(
-				'id'                         => 'ideal',
+				'id'                         => WooPaymentsPaymentMethodType::IDEAL,
 				'stripe_id'                  => 'ideal_payments',
-				'stripe_payment_method_type' => 'ideal',
+				'stripe_payment_method_type' => WooPaymentsPaymentMethodType::IDEAL,
 				'title'                      => 'iDEAL | Wero',
 				'description'                => "Expand your business with iDEAL | Wero — Netherlands's most popular payment method.",
 				'currencies'                 => array( 'EUR' ),
@@ -536,10 +537,10 @@ class PaymentMethodRegistry {
 				'settings_icon'              => 'assets/images/payment-methods/ideal-wero.svg',
 			),
 			array(
-				'id'                         => 'link',
+				'id'                         => WooPaymentsPaymentMethodType::LINK,
 				'publish_gateway'            => false,
 				'stripe_id'                  => 'link_payments',
-				'stripe_payment_method_type' => 'link',
+				'stripe_payment_method_type' => WooPaymentsPaymentMethodType::LINK,
 				'title'                      => 'Link',
 				'titles_by_country'          => array(
 					'GB' => 'Onelink',
@@ -560,9 +561,9 @@ class PaymentMethodRegistry {
 				),
 			),
 			array(
-				'id'                         => 'multibanco',
+				'id'                         => WooPaymentsPaymentMethodType::MULTIBANCO,
 				'stripe_id'                  => 'multibanco_payments',
-				'stripe_payment_method_type' => 'multibanco',
+				'stripe_payment_method_type' => WooPaymentsPaymentMethodType::MULTIBANCO,
 				'title'                      => 'Multibanco',
 				'description'                => 'A voucher based payment method for your customers in Portugal.',
 				'currencies'                 => array( 'EUR' ),
@@ -573,9 +574,9 @@ class PaymentMethodRegistry {
 				'settings_icon'              => 'assets/images/payment-methods/multibanco-color.svg',
 			),
 			array(
-				'id'                         => 'klarna',
+				'id'                         => WooPaymentsPaymentMethodType::KLARNA,
 				'stripe_id'                  => 'klarna_payments',
-				'stripe_payment_method_type' => 'klarna',
+				'stripe_payment_method_type' => WooPaymentsPaymentMethodType::KLARNA,
 				'title'                      => 'Klarna',
 				'description'                => 'Offer flexible ways to pay with Klarna: in full, later, or over time.',
 				'currencies'                 => array( 'USD', 'GBP', 'EUR', 'DKK', 'NOK', 'SEK' ),
@@ -660,10 +661,10 @@ class PaymentMethodRegistry {
 				),
 			),
 			array(
-				'id'                         => 'p24',
+				'id'                         => WooPaymentsPaymentMethodType::P24,
 				'offered_to_new_accounts'    => false,
 				'stripe_id'                  => 'p24_payments',
-				'stripe_payment_method_type' => 'p24',
+				'stripe_payment_method_type' => WooPaymentsPaymentMethodType::P24,
 				'title'                      => 'Przelewy24 (P24)',
 				'description'                => 'Accept payments with Przelewy24 (P24), the most popular payment method in Poland.',
 				'currencies'                 => array( 'EUR', 'PLN' ),
@@ -672,9 +673,9 @@ class PaymentMethodRegistry {
 				'icon'                       => 'assets/images/payment-methods/p24-color.svg',
 			),
 			array(
-				'id'                         => 'sepa_debit',
+				'id'                         => WooPaymentsPaymentMethodType::SEPA_DEBIT,
 				'stripe_id'                  => 'sepa_debit_payments',
-				'stripe_payment_method_type' => 'sepa_debit',
+				'stripe_payment_method_type' => WooPaymentsPaymentMethodType::SEPA_DEBIT,
 				'title'                      => 'SEPA Direct Debit',
 				'description'                => 'Reach 500 million customers and over 20 million businesses across the European Union.',
 				'currencies'                 => array( 'EUR' ),
@@ -683,9 +684,9 @@ class PaymentMethodRegistry {
 				'icon'                       => 'assets/images/payment-methods/sepa-debit-color.svg',
 			),
 			array(
-				'id'                         => 'wechat_pay',
+				'id'                         => WooPaymentsPaymentMethodType::WECHAT_PAY,
 				'stripe_id'                  => 'wechat_pay_payments',
-				'stripe_payment_method_type' => 'wechat_pay',
+				'stripe_payment_method_type' => WooPaymentsPaymentMethodType::WECHAT_PAY,
 				'title'                      => 'WeChat Pay',
 				'description'                => 'A digital wallet for customers with mainland China WeChat Pay wallets. Regional versions like WeChat Pay HK are not supported.',
 				'currencies'                 => array( 'USD' ),
@@ -717,10 +718,10 @@ class PaymentMethodRegistry {
 				'icon'                       => 'assets/images/payment-methods/wechat-pay.svg',
 			),
 			array(
-				'id'                         => 'apple_pay',
+				'id'                         => WooPaymentsPaymentMethodType::APPLE_PAY,
 				'account_capability_key'     => 'card_payments',
 				'stripe_id'                  => 'apple_pay_payments',
-				'stripe_payment_method_type' => 'card',
+				'stripe_payment_method_type' => WooPaymentsPaymentMethodType::CARD,
 				'title'                      => 'Apple Pay',
 				'description'                => 'Apple Pay is an easy and secure way for customers to pay on your store.',
 				'currencies'                 => array(),
@@ -735,10 +736,10 @@ class PaymentMethodRegistry {
 				'icon'                       => 'assets/images/payment-methods/apple-pay-color.svg',
 			),
 			array(
-				'id'                         => 'google_pay',
+				'id'                         => WooPaymentsPaymentMethodType::GOOGLE_PAY,
 				'account_capability_key'     => 'card_payments',
 				'stripe_id'                  => 'google_pay_payments',
-				'stripe_payment_method_type' => 'card',
+				'stripe_payment_method_type' => WooPaymentsPaymentMethodType::CARD,
 				'title'                      => 'Google Pay',
 				'description'                => 'Offer customers a fast, secure checkout experience with Google Pay.',
 				'currencies'                 => array(),
@@ -753,9 +754,9 @@ class PaymentMethodRegistry {
 				'icon'                       => 'assets/images/payment-methods/google-pay-color.svg',
 			),
 			array(
-				'id'                         => 'amazon_pay',
+				'id'                         => WooPaymentsPaymentMethodType::AMAZON_PAY,
 				'stripe_id'                  => 'amazon_pay_payments',
-				'stripe_payment_method_type' => 'amazon_pay',
+				'stripe_payment_method_type' => WooPaymentsPaymentMethodType::AMAZON_PAY,
 				'title'                      => 'Amazon Pay',
 				'description'                => 'Offer customers a fast, secure checkout experience with Amazon Pay.',
 				'currencies'                 => array( 'USD' ),

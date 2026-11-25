@@ -33,24 +33,24 @@ class WooPaymentsDuplicateGatewayMethodsService {
 	 * (`includes/class-duplicates-detection-service.php:85-111`).
 	 */
 	private const DUPLICATE_PAYMENT_METHOD_KEYWORDS = array(
-		'card'              => array( 'credit_card', 'creditcard', 'cc', 'card' ),
-		'affirm'            => array( 'affirm' ),
-		'afterpay_clearpay' => array( 'afterpay', 'clearpay' ),
-		'alipay'            => array( 'alipay' ),
-		'bancontact'        => array( 'bancontact' ),
-		'au_becs_debit'     => array( 'becs' ),
-		'eps'               => array( 'eps' ),
-		'grabpay'           => array( 'grabpay', 'grab_pay', 'grab' ),
-		'ideal'             => array( 'ideal' ),
-		'link'              => array( 'link' ),
-		'multibanco'        => array( 'multibanco' ),
-		'klarna'            => array( 'klarna' ),
-		'p24'               => array( 'p24', 'przelewy24' ),
-		'sepa_debit'        => array( 'sepa' ),
-		'wechat_pay'        => array( 'wechat_pay', 'wechatpay' ),
-		'apple_pay'         => array( 'apple_pay', 'applepay' ),
-		'google_pay'        => array( 'google_pay', 'googlepay', 'gpay' ),
-		'amazon_pay'        => array( 'amazon_pay', 'amazonpay', 'amazon' ),
+		WooPaymentsPaymentMethodType::CARD              => array( 'credit_card', 'creditcard', 'cc', 'card' ),
+		WooPaymentsPaymentMethodType::AFFIRM            => array( 'affirm' ),
+		WooPaymentsPaymentMethodType::AFTERPAY_CLEARPAY => array( 'afterpay', 'clearpay' ),
+		WooPaymentsPaymentMethodType::ALIPAY            => array( 'alipay' ),
+		WooPaymentsPaymentMethodType::BANCONTACT        => array( 'bancontact' ),
+		WooPaymentsPaymentMethodType::AU_BECS_DEBIT     => array( 'becs' ),
+		WooPaymentsPaymentMethodType::EPS               => array( 'eps' ),
+		WooPaymentsPaymentMethodType::GRABPAY           => array( 'grabpay', 'grab_pay', 'grab' ),
+		WooPaymentsPaymentMethodType::IDEAL             => array( 'ideal' ),
+		WooPaymentsPaymentMethodType::LINK              => array( 'link' ),
+		WooPaymentsPaymentMethodType::MULTIBANCO        => array( 'multibanco' ),
+		WooPaymentsPaymentMethodType::KLARNA            => array( 'klarna' ),
+		WooPaymentsPaymentMethodType::P24               => array( 'p24', 'przelewy24' ),
+		WooPaymentsPaymentMethodType::SEPA_DEBIT        => array( 'sepa' ),
+		WooPaymentsPaymentMethodType::WECHAT_PAY        => array( 'wechat_pay', 'wechatpay' ),
+		WooPaymentsPaymentMethodType::APPLE_PAY         => array( 'apple_pay', 'applepay' ),
+		WooPaymentsPaymentMethodType::GOOGLE_PAY        => array( 'google_pay', 'googlepay', 'gpay' ),
+		WooPaymentsPaymentMethodType::AMAZON_PAY        => array( 'amazon_pay', 'amazonpay', 'amazon' ),
 	);
 
 	private const PAYMENT_REQUEST_DUPLICATE_METHOD_ID = 'apple_pay_google_pay';
@@ -205,7 +205,7 @@ class WooPaymentsDuplicateGatewayMethodsService {
 	 */
 	private function get_duplicate_payment_method_id_for_gateway( string $gateway_id ): string {
 		if ( WooPaymentsPersistenceVocabulary::GATEWAY_ID === $gateway_id ) {
-			return 'card';
+			return WooPaymentsPaymentMethodType::CARD;
 		}
 
 		if ( 0 === strpos( $gateway_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX ) ) {
@@ -215,7 +215,7 @@ class WooPaymentsDuplicateGatewayMethodsService {
 		}
 
 		if ( in_array( $gateway_id, self::DUPLICATE_CARD_GATEWAY_IDS, true ) ) {
-			return 'card';
+			return WooPaymentsPaymentMethodType::CARD;
 		}
 
 		foreach ( self::DUPLICATE_PAYMENT_METHOD_KEYWORDS as $payment_method_id => $keywords ) {

@@ -60,12 +60,12 @@ final class WooPaymentsSettingsDefaults {
 			'payment_request_button_height'     => '44',
 			'payment_request_button_label'      => __( 'Buy now', 'woocommerce' ),
 			'payment_request_button_locations'  => array( 'product', 'cart', 'checkout' ),
-			'upe_enabled_payment_method_ids'    => array( 'card' ),
+			'upe_enabled_payment_method_ids'    => array( WooPaymentsPaymentMethodType::CARD ),
 			'payment_request_button_size'       => 'medium',
 			'platform_checkout_custom_message'  => __( 'By placing this order, you agree to our [terms] and understand our [privacy_policy].', 'woocommerce' ),
-			'express_checkout_product_methods'  => array( 'payment_request', 'woopay', 'amazon_pay' ),
-			'express_checkout_cart_methods'     => array( 'payment_request', 'woopay', 'amazon_pay' ),
-			'express_checkout_checkout_methods' => array( 'payment_request', 'woopay', 'amazon_pay' ),
+			'express_checkout_product_methods'  => array( WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_PAYMENT_REQUEST, WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_WOOPAY, WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_AMAZON_PAY ),
+			'express_checkout_cart_methods'     => array( WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_PAYMENT_REQUEST, WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_WOOPAY, WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_AMAZON_PAY ),
+			'express_checkout_checkout_methods' => array( WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_PAYMENT_REQUEST, WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_WOOPAY, WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_AMAZON_PAY ),
 		);
 	}
 }

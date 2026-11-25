@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodType;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySettingsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodDefinition;
@@ -28,7 +29,7 @@ class PaymentMethodsMap implements RegisterHooksInterface {
 	/**
 	 * Methods the map never lists: they take any currency.
 	 */
-	private const METHODS_WITHOUT_CURRENCY_NEEDS = array( 'card', 'card_present', 'link' );
+	private const METHODS_WITHOUT_CURRENCY_NEEDS = array( WooPaymentsPaymentMethodType::CARD, WooPaymentsPaymentMethodType::CARD_PRESENT, WooPaymentsPaymentMethodType::LINK );
 
 	/**
 	 * Payments runtime owner arbiter.

@@ -225,8 +225,8 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	public function get_status_data(): array {
 		$account_connected         = $this->get_account_service()->has_account();
 		$enabled_payment_methods   = $this->get_enabled_payment_methods();
-		$payment_request_locations = $this->get_express_checkout_method_locations( 'payment_request' );
-		$woopay_locations          = $this->get_express_checkout_method_locations( 'woopay' );
+		$payment_request_locations = $this->get_express_checkout_method_locations( WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_PAYMENT_REQUEST );
+		$woopay_locations          = $this->get_express_checkout_method_locations( WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_WOOPAY );
 		$multi_currency_enabled    = $this->is_multi_currency_running();
 		$woopay_setting            = $this->get_account_service()->get_gateway_setting( 'platform_checkout', 'no' );
 
@@ -474,7 +474,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 				'WooPay',
 				__( 'WooPay Express Checkout', 'woocommerce' ),
 				__( 'Whether the new WooPay Express Checkout is enabled or not.', 'woocommerce' ),
-				$this->format_woopayments_express_checkout_status( 'yes' === $account_service->get_gateway_setting( 'platform_checkout' ), $this->get_express_checkout_method_locations( 'woopay' ) )
+				$this->format_woopayments_express_checkout_status( 'yes' === $account_service->get_gateway_setting( 'platform_checkout' ), $this->get_express_checkout_method_locations( WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_WOOPAY ) )
 			);
 			$rows[] = $this->status_row(
 				'WooPay Incompatible Extensions',
@@ -488,7 +488,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			'Apple Pay / Google Pay',
 			__( 'Apple Pay / Google Pay Express Checkout', 'woocommerce' ),
 			__( 'Whether the store has Payment Request enabled or not.', 'woocommerce' ),
-			$this->format_woopayments_express_checkout_status( $account_service->is_payment_request_enabled(), $this->get_express_checkout_method_locations( 'payment_request' ) )
+			$this->format_woopayments_express_checkout_status( $account_service->is_payment_request_enabled(), $this->get_express_checkout_method_locations( WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_PAYMENT_REQUEST ) )
 		);
 		$rows[] = $this->status_row(
 			'Fraud Protection Level',
@@ -625,9 +625,9 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 * @return string[]
 	 */
 	private function get_enabled_payment_methods(): array {
-		$methods = $this->get_account_service()->get_gateway_setting( 'upe_enabled_payment_method_ids', array( 'card' ) );
+		$methods = $this->get_account_service()->get_gateway_setting( 'upe_enabled_payment_method_ids', array( WooPaymentsPaymentMethodType::CARD ) );
 
-		return $this->sanitize_string_list( is_array( $methods ) ? $methods : array( 'card' ) );
+		return $this->sanitize_string_list( is_array( $methods ) ? $methods : array( WooPaymentsPaymentMethodType::CARD ) );
 	}
 
 	/**

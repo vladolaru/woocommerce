@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodType;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -372,7 +373,7 @@ class OverviewService {
 	 */
 	private function get_enabled_payment_method_ids(): array {
 		$enabled_ids = $this->account_service->get_gateway_setting( 'upe_enabled_payment_method_ids' );
-		$enabled_ids = is_array( $enabled_ids ) ? $enabled_ids : array( 'card' );
+		$enabled_ids = is_array( $enabled_ids ) ? $enabled_ids : array( WooPaymentsPaymentMethodType::CARD );
 
 		$sanitized_ids = array();
 		foreach ( $enabled_ids as $enabled_id ) {

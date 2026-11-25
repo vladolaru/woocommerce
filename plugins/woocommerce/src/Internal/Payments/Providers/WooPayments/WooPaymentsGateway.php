@@ -266,7 +266,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		$this->payment_method_definition = $payment_method_definition ?? $this->get_default_payment_method_definition();
 		$payment_method_id               = $this->payment_method_definition->get_id();
 
-		$this->id                 = 'card' === $payment_method_id ? WooPaymentsPersistenceVocabulary::GATEWAY_ID : WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . $payment_method_id;
+		$this->id                 = WooPaymentsPaymentMethodType::CARD === $payment_method_id ? WooPaymentsPersistenceVocabulary::GATEWAY_ID : WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . $payment_method_id;
 		$this->title              = $this->payment_method_definition->get_title();
 		$this->method_title       = $this->get_untranslated_method_title();
 		$this->method_description = self::METHOD_DESCRIPTION;
@@ -510,7 +510,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return string
 	 */
 	public function get_method_description() {
-		if ( 'card' !== $this->get_payment_method_id() ) {
+		if ( WooPaymentsPaymentMethodType::CARD !== $this->get_payment_method_id() ) {
 			$definition               = $this->payment_method_definition;
 			$country                  = $definition->has_country_specific_description() ? $this->get_stored_account_country() : null;
 			$this->method_description = $definition->get_description( $country );
@@ -636,7 +636,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		if ( $this->get_account_service()->is_manual_capture_enabled() && ! $this->payment_method_supports( PaymentMethodRegistry::CAPTURE_LATER ) ) {
 			return false;
 		}
-		if ( 'card' !== $this->get_payment_method_id() && ! $this->get_account_service()->is_gateway_enabled() ) {
+		if ( WooPaymentsPaymentMethodType::CARD !== $this->get_payment_method_id() && ! $this->get_account_service()->is_gateway_enabled() ) {
 			return false;
 		}
 		if ( ! $this->get_provider()->can_process_payments() || ! $this->get_account_service()->is_capability_active( $this->payment_method_definition->get_account_capability_key() ) ) {
@@ -662,9 +662,9 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 		// The card gateway is offered only while card is among the methods enabled at checkout, card when no list is stored or the
 		// stored list is '' (client 11.1.0 `includes/class-wc-payment-gateway-wcpay.php:941`, `:4682-4689`, on the card gateway's own settings).
-		if ( 'card' === $this->get_payment_method_id() ) {
-			$enabled_method_ids = $this->get_account_service()->get_gateway_setting( 'upe_enabled_payment_method_ids', array( 'card' ) );
-			if ( ! in_array( 'card', '' === $enabled_method_ids ? array( 'card' ) : (array) $enabled_method_ids, true ) ) {
+		if ( WooPaymentsPaymentMethodType::CARD === $this->get_payment_method_id() ) {
+			$enabled_method_ids = $this->get_account_service()->get_gateway_setting( 'upe_enabled_payment_method_ids', array( WooPaymentsPaymentMethodType::CARD ) );
+			if ( ! in_array( WooPaymentsPaymentMethodType::CARD, '' === $enabled_method_ids ? array( WooPaymentsPaymentMethodType::CARD ) : (array) $enabled_method_ids, true ) ) {
 				return false;
 			}
 		}
@@ -860,7 +860,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		echo '<div id="woopayments-checkout-form" class="woopayments-checkout-form wcpay-upe-form" data-payment-method-type="' . esc_attr( $payment_method_type ) . '" data-wcpay-config="' . esc_attr( $json_config ) . '">';
 
 		if ( ! empty( $config['testMode'] ) ) {
-			$testing_instructions = $config['paymentMethodsConfig']['card']['testingInstructions'] ?? '';
+			$testing_instructions = $config['paymentMethodsConfig'][ WooPaymentsPaymentMethodType::CARD ]['testingInstructions'] ?? '';
 			if ( is_string( $testing_instructions ) && '' !== $testing_instructions ) {
 				echo '<p class="woopayments-test-mode-instructions testmode-info">';
 				echo wp_kses_post( $testing_instructions );
@@ -898,7 +898,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return $this->supports;
 		}
 
-		$card_gateway = $this->get_provider()->get_gateway_for_method( 'card' );
+		$card_gateway = $this->get_provider()->get_gateway_for_method( WooPaymentsPaymentMethodType::CARD );
 
 		return null === $card_gateway ? array() : $card_gateway->supports;
 	}
@@ -913,7 +913,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 */
 	public function save_payment_method_checkbox() {
 		$force_checked = $this->cart_contains_subscription() || $this->is_subscription_change_payment_form();
-		$should_hide   = $force_checked || ( 'card' === $this->get_payment_method_id() && $this->get_woopay_eligibility()->should_use_stripe_platform_on_checkout_page() );
+		$should_hide   = $force_checked || ( WooPaymentsPaymentMethodType::CARD === $this->get_payment_method_id() && $this->get_woopay_eligibility()->should_use_stripe_platform_on_checkout_page() );
 
 		$html = sprintf(
 			'<p class="form-row woocommerce-SavedPaymentMethods-saveNew">
@@ -1202,7 +1202,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			);
 		}
 
-		if ( 'card' !== $this->get_payment_method_id() ) {
+		if ( WooPaymentsPaymentMethodType::CARD !== $this->get_payment_method_id() ) {
 			$account_country = $this->get_account_country();
 			$icon_asset_path = $this->payment_method_definition->get_icon_asset_path( $account_country );
 
@@ -1352,7 +1352,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 */
 	private function is_bnpl_order_pay_available(): bool {
 		$payment_method_id = $this->get_payment_method_id();
-		if ( ! in_array( $payment_method_id, array( 'affirm', 'afterpay_clearpay' ), true ) ) {
+		if ( ! in_array( $payment_method_id, array( WooPaymentsPaymentMethodType::AFFIRM, WooPaymentsPaymentMethodType::AFTERPAY_CLEARPAY ), true ) ) {
 			return true;
 		}
 
@@ -1366,7 +1366,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return false;
 		}
 
-		return 'affirm' !== $payment_method_id || '' !== $address['name'];
+		return WooPaymentsPaymentMethodType::AFFIRM !== $payment_method_id || '' !== $address['name'];
 	}
 
 	/**
@@ -1896,7 +1896,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @throws \RuntimeException When the registry does not contain the card definition.
 	 */
 	private function get_default_payment_method_definition(): PaymentMethodDefinition {
-		$definition = ( new PaymentMethodRegistry() )->get( 'card' );
+		$definition = ( new PaymentMethodRegistry() )->get( WooPaymentsPaymentMethodType::CARD );
 
 		if ( null === $definition ) {
 			throw new \RuntimeException( 'The WooPayments card payment method definition is missing.' );
@@ -1911,7 +1911,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return string
 	 */
 	private function get_untranslated_method_title(): string {
-		if ( 'card' === $this->get_payment_method_id() ) {
+		if ( WooPaymentsPaymentMethodType::CARD === $this->get_payment_method_id() ) {
 			return self::METHOD_TITLE;
 		}
 
@@ -1979,7 +1979,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return void
 	 */
 	public function init_form_fields() {
-		if ( 'card' === $this->get_payment_method_id() ) {
+		if ( WooPaymentsPaymentMethodType::CARD === $this->get_payment_method_id() ) {
 			$this->form_fields = wc_get_container()->get( WooPaymentsSettingsService::class )->get_gateway_form_fields();
 		}
 	}
@@ -1999,7 +1999,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return string
 	 */
 	private function get_translated_method_title(): string {
-		if ( 'card' === $this->get_payment_method_id() ) {
+		if ( WooPaymentsPaymentMethodType::CARD === $this->get_payment_method_id() ) {
 			return __( 'WooPayments', 'woocommerce' );
 		}
 
@@ -3145,7 +3145,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		// Client 11.1.0 woopay/services/class-checkout-service.php:65-83 never treats an express payment, a saved
 		// payment method or a non-card method as platform-created. The browser field only says which account
 		// tokenized a new card, so it counts only for that case.
-		$platform_value = ( '' === $express_types_value && ( '' === $token_value || 'new' === $token_value ) && 'card' === $this->payment_method_definition->get_id() )
+		$platform_value = ( '' === $express_types_value && ( '' === $token_value || 'new' === $token_value ) && WooPaymentsPaymentMethodType::CARD === $this->payment_method_definition->get_id() )
 			? $this->sanitize_post_string( WooPaymentsPlatformPaymentMethodContext::CHECKOUT_FIELD )
 			: '';
 

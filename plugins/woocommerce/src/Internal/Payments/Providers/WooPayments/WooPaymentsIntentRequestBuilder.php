@@ -208,7 +208,7 @@ class WooPaymentsIntentRequestBuilder {
 			$request_data['return_url'] = self::redirect_return_url( $order, $save_payment_method );
 		}
 
-		if ( 'afterpay_clearpay' === $this->payment_method_type_from_gateway_id( $context->get_gateway_id() ) ) {
+		if ( WooPaymentsPaymentMethodType::AFTERPAY_CLEARPAY === $this->payment_method_type_from_gateway_id( $context->get_gateway_id() ) ) {
 			$request_data['shipping'] = $this->get_afterpay_shipping_data( $order );
 		}
 
@@ -581,10 +581,10 @@ class WooPaymentsIntentRequestBuilder {
 			// A Link credential rides on the card rails: the intent must declare card
 			// alongside link, and link stays declared even when the checkout fold is
 			// off — the token was valid when saved and must keep renewing.
-			if ( 'link' === $saved_payment_method_type ) {
+			if ( WooPaymentsPaymentMethodType::LINK === $saved_payment_method_type ) {
 				$types = $this->card_payment_method_types( $currency );
-				if ( ! in_array( 'link', $types, true ) ) {
-					$types[] = 'link';
+				if ( ! in_array( WooPaymentsPaymentMethodType::LINK, $types, true ) ) {
+					$types[] = WooPaymentsPaymentMethodType::LINK;
 				}
 
 				return $types;
@@ -601,7 +601,7 @@ class WooPaymentsIntentRequestBuilder {
 
 		$split_gateway_payment_method_type = $this->payment_method_type_from_gateway_id( $context->get_gateway_id() );
 		if ( '' !== $split_gateway_payment_method_type ) {
-			return 'card' === $split_gateway_payment_method_type
+			return WooPaymentsPaymentMethodType::CARD === $split_gateway_payment_method_type
 				? $this->card_payment_method_types( $currency )
 				: array( $split_gateway_payment_method_type );
 		}
@@ -630,7 +630,7 @@ class WooPaymentsIntentRequestBuilder {
 	 */
 	private function card_payment_method_types( string $currency ): array {
 		if ( $this->payment_method_registry->is_link_folded_into_card( $this->account_service, $currency ) ) {
-			return array( WooPaymentsExpressPaymentMethodTypes::STRIPE_TYPE_CARD, 'link' );
+			return array( WooPaymentsExpressPaymentMethodTypes::STRIPE_TYPE_CARD, WooPaymentsPaymentMethodType::LINK );
 		}
 
 		return array( WooPaymentsExpressPaymentMethodTypes::STRIPE_TYPE_CARD );
@@ -691,7 +691,7 @@ class WooPaymentsIntentRequestBuilder {
 	 */
 	private function can_capture_later( array $payment_method_types ): bool {
 		foreach ( $payment_method_types as $payment_method_type ) {
-			if ( 'link' === $payment_method_type ) {
+			if ( WooPaymentsPaymentMethodType::LINK === $payment_method_type ) {
 				continue;
 			}
 
@@ -711,7 +711,7 @@ class WooPaymentsIntentRequestBuilder {
 	 * @return bool
 	 */
 	private static function is_mandate_data_required( array $payment_method_types ): bool {
-		return in_array( 'sepa_debit', $payment_method_types, true ) || in_array( 'link', $payment_method_types, true );
+		return in_array( WooPaymentsPaymentMethodType::SEPA_DEBIT, $payment_method_types, true ) || in_array( WooPaymentsPaymentMethodType::LINK, $payment_method_types, true );
 	}
 
 	/**
@@ -721,7 +721,7 @@ class WooPaymentsIntentRequestBuilder {
 	 * @return bool
 	 */
 	private static function is_redirect_return_url_required( array $payment_method_types ): bool {
-		return in_array( 'amazon_pay', $payment_method_types, true )
+		return in_array( WooPaymentsPaymentMethodType::AMAZON_PAY, $payment_method_types, true )
 			|| ( 1 === count( $payment_method_types ) && WooPaymentsExpressPaymentMethodTypes::STRIPE_TYPE_CARD !== ( $payment_method_types[0] ?? '' ) );
 	}
 

@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodType;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
@@ -121,7 +122,7 @@ class SubscriptionsController implements RegisterHooksInterface {
 		$tier = wc_get_container()->get( WooPaymentsSetupTier::class )->get_effective_tier();
 		if ( WooPaymentsSetupTier::CONNECTED === $tier || WooPaymentsSetupTier::ACTIVE === $tier ) {
 			foreach ( wc_get_container()->get( PaymentMethodRegistry::class )->get_all() as $definition ) {
-				$gateway_id = 'card' === $definition->get_id() ? WooPaymentsPersistenceVocabulary::GATEWAY_ID : WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . $definition->get_id();
+				$gateway_id = WooPaymentsPaymentMethodType::CARD === $definition->get_id() ? WooPaymentsPersistenceVocabulary::GATEWAY_ID : WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . $definition->get_id();
 				if ( $definition->should_publish_gateway() && ! SubscriptionMethodPolicy::is_reusable_gateway_id( $gateway_id ) ) {
 					add_action( 'woocommerce_scheduled_subscription_payment_' . $gateway_id, array( $this, 'invoice_non_reusable_renewal' ), 10, 2 );
 				}

@@ -182,7 +182,7 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 		$codes       = array();
 
 		foreach ( $enabled_ids as $payment_method_id ) {
-			if ( ! is_string( $payment_method_id ) || in_array( $payment_method_id, array( 'card', 'card_present', 'link' ), true ) ) {
+			if ( ! is_string( $payment_method_id ) || in_array( $payment_method_id, array( WooPaymentsPaymentMethodType::CARD, WooPaymentsPaymentMethodType::CARD_PRESENT, WooPaymentsPaymentMethodType::LINK ), true ) ) {
 				continue;
 			}
 
@@ -339,8 +339,8 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 		$provider_capabilities_disabled   = $this->map_payment_methods_to_capabilities( $payment_methods_disabled );
 		$provider_capabilities_available  = array_values( array_unique( array_merge( $provider_capabilities_enabled, $provider_capabilities_disabled ) ) );
 		$express_checkout_payment_methods = $settings['express_checkout_in_payment_methods'] ?? false;
-		$payment_request_locations        = $this->get_express_checkout_method_locations( $settings, 'payment_request' );
-		$woopay_locations                 = $this->get_express_checkout_method_locations( $settings, 'woopay' );
+		$payment_request_locations        = $this->get_express_checkout_method_locations( $settings, WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_PAYMENT_REQUEST );
+		$woopay_locations                 = $this->get_express_checkout_method_locations( $settings, WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_WOOPAY );
 
 		return array(
 			'gateway'                                     => array(
@@ -437,9 +437,9 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 	 * @return string[]
 	 */
 	private function get_payment_methods_enabled(): array {
-		$enabled = $this->account_service->get_gateway_setting( 'upe_enabled_payment_method_ids', array( 'card' ) );
+		$enabled = $this->account_service->get_gateway_setting( 'upe_enabled_payment_method_ids', array( WooPaymentsPaymentMethodType::CARD ) );
 
-		return $this->sanitize_string_list( '' === $enabled ? array( 'card' ) : $enabled );
+		return $this->sanitize_string_list( '' === $enabled ? array( WooPaymentsPaymentMethodType::CARD ) : $enabled );
 	}
 
 	/**
@@ -455,27 +455,27 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 	 */
 	private function map_payment_methods_to_capabilities( array $payment_method_ids ): array {
 		$map          = array(
-			'alipay'            => 'alipay_payments',
-			'amazon_pay'        => 'amazon_pay_payments',
-			'apple_pay'         => 'card_payments',
-			'au_becs_debit'     => 'au_becs_debit_payments',
-			'bancontact'        => 'bancontact_payments',
-			'card'              => 'card_payments',
-			'eps'               => 'eps_payments',
-			'giropay'           => 'giropay_payments',
-			'google_pay'        => 'card_payments',
-			'grabpay'           => 'grabpay_payments',
-			'ideal'             => 'ideal_payments',
-			'jcb'               => 'jcb_payments',
-			'klarna'            => 'klarna_payments',
-			'link'              => 'link_payments',
-			'multibanco'        => 'multibanco_payments',
-			'p24'               => 'p24_payments',
-			'sepa_debit'        => 'sepa_debit_payments',
-			'sofort'            => 'sofort_payments',
-			'wechat_pay'        => 'wechat_pay_payments',
-			'affirm'            => 'affirm_payments',
-			'afterpay_clearpay' => 'afterpay_clearpay_payments',
+			WooPaymentsPaymentMethodType::ALIPAY        => 'alipay_payments',
+			WooPaymentsPaymentMethodType::AMAZON_PAY    => 'amazon_pay_payments',
+			WooPaymentsPaymentMethodType::APPLE_PAY     => 'card_payments',
+			WooPaymentsPaymentMethodType::AU_BECS_DEBIT => 'au_becs_debit_payments',
+			WooPaymentsPaymentMethodType::BANCONTACT    => 'bancontact_payments',
+			WooPaymentsPaymentMethodType::CARD          => 'card_payments',
+			WooPaymentsPaymentMethodType::EPS           => 'eps_payments',
+			WooPaymentsPaymentMethodType::GIROPAY       => 'giropay_payments',
+			WooPaymentsPaymentMethodType::GOOGLE_PAY    => 'card_payments',
+			WooPaymentsPaymentMethodType::GRABPAY       => 'grabpay_payments',
+			WooPaymentsPaymentMethodType::IDEAL         => 'ideal_payments',
+			WooPaymentsPaymentMethodType::JCB           => 'jcb_payments',
+			WooPaymentsPaymentMethodType::KLARNA        => 'klarna_payments',
+			WooPaymentsPaymentMethodType::LINK          => 'link_payments',
+			WooPaymentsPaymentMethodType::MULTIBANCO    => 'multibanco_payments',
+			WooPaymentsPaymentMethodType::P24           => 'p24_payments',
+			WooPaymentsPaymentMethodType::SEPA_DEBIT    => 'sepa_debit_payments',
+			WooPaymentsPaymentMethodType::SOFORT        => 'sofort_payments',
+			WooPaymentsPaymentMethodType::WECHAT_PAY    => 'wechat_pay_payments',
+			WooPaymentsPaymentMethodType::AFFIRM        => 'affirm_payments',
+			WooPaymentsPaymentMethodType::AFTERPAY_CLEARPAY => 'afterpay_clearpay_payments',
 		);
 		$capabilities = array();
 

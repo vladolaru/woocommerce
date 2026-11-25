@@ -47,22 +47,22 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	 */
 	public const UPDATE_SAVED_PAYMENT_METHOD_ACTION = 'wcpay_update_saved_payment_method';
 
-	private const PAYMENT_METHOD_TYPE_CARD = 'card';
+	private const PAYMENT_METHOD_TYPE_CARD = WooPaymentsPaymentMethodType::CARD;
 
-	private const PAYMENT_METHOD_TYPE_CARD_PRESENT = 'card_present';
+	private const PAYMENT_METHOD_TYPE_CARD_PRESENT = WooPaymentsPaymentMethodType::CARD_PRESENT;
 
-	private const PAYMENT_METHOD_TYPE_SEPA = 'sepa_debit';
+	private const PAYMENT_METHOD_TYPE_SEPA = WooPaymentsPaymentMethodType::SEPA_DEBIT;
 
-	private const PAYMENT_METHOD_TYPE_LINK = 'link';
+	private const PAYMENT_METHOD_TYPE_LINK = WooPaymentsPaymentMethodType::LINK;
 
-	private const PAYMENT_METHOD_TYPE_AMAZON_PAY = 'amazon_pay';
+	private const PAYMENT_METHOD_TYPE_AMAZON_PAY = WooPaymentsPaymentMethodType::AMAZON_PAY;
 
 	private const GATEWAY_IDS_BY_PAYMENT_METHOD_TYPE = array(
 		self::PAYMENT_METHOD_TYPE_CARD         => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 		self::PAYMENT_METHOD_TYPE_CARD_PRESENT => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 		self::PAYMENT_METHOD_TYPE_LINK         => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
-		self::PAYMENT_METHOD_TYPE_SEPA         => WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'sepa_debit',
-		self::PAYMENT_METHOD_TYPE_AMAZON_PAY   => WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'amazon_pay',
+		self::PAYMENT_METHOD_TYPE_SEPA         => WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . WooPaymentsPaymentMethodType::SEPA_DEBIT,
+		self::PAYMENT_METHOD_TYPE_AMAZON_PAY   => WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . WooPaymentsPaymentMethodType::AMAZON_PAY,
 	);
 
 	private const RECONCILABLE_PAYMENT_METHOD_TYPES = array(
@@ -1433,11 +1433,11 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	private function get_card_details( array $payment_method ): array {
 		$type = isset( $payment_method['type'] ) ? (string) $payment_method['type'] : '';
 
-		if ( 'card' === $type && isset( $payment_method['card'] ) && is_array( $payment_method['card'] ) ) {
+		if ( WooPaymentsPaymentMethodType::CARD === $type && isset( $payment_method['card'] ) && is_array( $payment_method['card'] ) ) {
 			return $payment_method['card'];
 		}
 
-		if ( 'card_present' === $type && isset( $payment_method['card_present'] ) && is_array( $payment_method['card_present'] ) ) {
+		if ( WooPaymentsPaymentMethodType::CARD_PRESENT === $type && isset( $payment_method['card_present'] ) && is_array( $payment_method['card_present'] ) ) {
 			return $payment_method['card_present'];
 		}
 

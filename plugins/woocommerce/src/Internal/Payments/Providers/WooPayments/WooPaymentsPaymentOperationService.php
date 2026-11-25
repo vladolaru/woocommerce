@@ -463,7 +463,7 @@ class WooPaymentsPaymentOperationService {
 			}
 		}
 
-		return 'interac_present' === ( $details['type'] ?? null );
+		return WooPaymentsPaymentMethodType::INTERAC_PRESENT === ( $details['type'] ?? null );
 	}
 
 	/**
@@ -2499,7 +2499,7 @@ class WooPaymentsPaymentOperationService {
 	 * @return array<string,mixed>
 	 */
 	private function capture_level3_data( \WC_Order $order ): array {
-		if ( false !== strpos( (string) $order->get_payment_method(), 'amazon_pay' ) ) {
+		if ( false !== strpos( (string) $order->get_payment_method(), WooPaymentsPaymentMethodType::AMAZON_PAY ) ) {
 			return array();
 		}
 

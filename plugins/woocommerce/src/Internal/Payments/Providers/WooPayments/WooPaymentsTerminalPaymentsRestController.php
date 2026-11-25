@@ -579,14 +579,14 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 	private function get_terminal_intent_payment_methods( WP_REST_Request $request ): array {
 		$payment_methods = $request->get_param( 'payment_methods' );
 		if ( null === $payment_methods ) {
-			return array( 'card_present' );
+			return array( WooPaymentsPaymentMethodType::CARD_PRESENT );
 		}
 
 		if ( ! is_array( $payment_methods ) ) {
 			throw new \UnexpectedValueException( 'Invalid terminal payment methods.' );
 		}
 
-		$allowed = array( 'card_present', 'interac_present' );
+		$allowed = array( WooPaymentsPaymentMethodType::CARD_PRESENT, WooPaymentsPaymentMethodType::INTERAC_PRESENT );
 		foreach ( $payment_methods as $payment_method ) {
 			if ( ! in_array( $payment_method, $allowed, true ) ) {
 				throw new \UnexpectedValueException( 'Unsupported terminal payment method.' );

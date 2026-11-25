@@ -481,7 +481,7 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 		$account_id_for_intent_confirmation = apply_filters( 'wc_payments_account_id_for_intent_confirmation', '' );
 		$account_id_for_intent_confirmation = is_string( $account_id_for_intent_confirmation ) ? $account_id_for_intent_confirmation : '';
 		$shared_script_config               = $this->get_shared_script_config();
-		$card_definition                    = $this->payment_method_registry->get( 'card' );
+		$card_definition                    = $this->payment_method_registry->get( WooPaymentsPaymentMethodType::CARD );
 		$config                             = array(
 			'publishableKey'                           => $this->get_account_service()->get_publishable_key(),
 			'accountId'                                => $this->get_account_service()->get_account_id(),
@@ -722,9 +722,9 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 		// filter has run. The Blocks checkout script renders this value via dangerouslySetInnerHTML,
 		// so escaping it here (server-side, post-filter) prevents third-party filter mutations from
 		// shipping raw HTML - such as <script> tags - to the browser.
-		if ( isset( $data['paymentMethodsConfig']['card']['testingInstructions'] )
-			&& is_string( $data['paymentMethodsConfig']['card']['testingInstructions'] ) ) {
-			$data['paymentMethodsConfig']['card']['testingInstructions'] = wp_kses_post( $data['paymentMethodsConfig']['card']['testingInstructions'] );
+		if ( isset( $data['paymentMethodsConfig'][ WooPaymentsPaymentMethodType::CARD ]['testingInstructions'] )
+			&& is_string( $data['paymentMethodsConfig'][ WooPaymentsPaymentMethodType::CARD ]['testingInstructions'] ) ) {
+			$data['paymentMethodsConfig'][ WooPaymentsPaymentMethodType::CARD ]['testingInstructions'] = wp_kses_post( $data['paymentMethodsConfig'][ WooPaymentsPaymentMethodType::CARD ]['testingInstructions'] );
 		}
 
 		if ( ! empty( $data['isWooPayEnabled'] ) ) {
@@ -1133,7 +1133,7 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 	 * @return string
 	 */
 	private function get_gateway_id_for_payment_method_definition( ?PaymentMethodDefinition $payment_method_definition = null ): string {
-		if ( null === $payment_method_definition || 'card' === $payment_method_definition->get_id() ) {
+		if ( null === $payment_method_definition || WooPaymentsPaymentMethodType::CARD === $payment_method_definition->get_id() ) {
 			return WooPaymentsPersistenceVocabulary::GATEWAY_ID;
 		}
 
@@ -1161,21 +1161,21 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 	 * @return array<string,array<string,mixed>>
 	 */
 	private function get_payment_methods_config( bool $saved_cards_enabled, ?PaymentMethodDefinition $payment_method_definition, string $currency ): array {
-		if ( null !== $payment_method_definition && 'card' !== $payment_method_definition->get_id() ) {
+		if ( null !== $payment_method_definition && WooPaymentsPaymentMethodType::CARD !== $payment_method_definition->get_id() ) {
 			return array(
 				$payment_method_definition->get_id() => $this->get_payment_method_config( $payment_method_definition, $saved_cards_enabled ),
 			);
 		}
 
-		if ( ! in_array( 'card', $this->get_enabled_payment_method_ids(), true ) ) {
+		if ( ! in_array( WooPaymentsPaymentMethodType::CARD, $this->get_enabled_payment_method_ids(), true ) ) {
 			return array();
 		}
 
-		$card_definition = $this->payment_method_registry->get( 'card' );
+		$card_definition = $this->payment_method_registry->get( WooPaymentsPaymentMethodType::CARD );
 		$account_country = $this->get_account_service()->get_account_country_or_us();
 		$config          = array(
-			'card' => array(
-				'id'                     => 'card',
+			WooPaymentsPaymentMethodType::CARD => array(
+				'id'                     => WooPaymentsPaymentMethodType::CARD,
 				'gatewayId'              => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'title'                  => __( 'Card', 'woocommerce' ),
 				'label'                  => __( 'Card', 'woocommerce' ),
@@ -1194,9 +1194,9 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 		);
 
 		if ( $this->should_fold_link_into_card( $currency ) ) {
-			$link_definition = $this->payment_method_registry->get( 'link' );
+			$link_definition = $this->payment_method_registry->get( WooPaymentsPaymentMethodType::LINK );
 			if ( null !== $link_definition ) {
-				$config['link'] = $this->get_payment_method_config( $link_definition, $saved_cards_enabled );
+				$config[ WooPaymentsPaymentMethodType::LINK ] = $this->get_payment_method_config( $link_definition, $saved_cards_enabled );
 			}
 		}
 
@@ -1213,14 +1213,14 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 	 */
 	private function get_payment_list_wallets_config( bool $saved_cards_enabled, ?PaymentMethodDefinition $payment_method_definition, string $currency ): array {
 		if (
-			( null !== $payment_method_definition && 'card' !== $payment_method_definition->get_id() )
+			( null !== $payment_method_definition && WooPaymentsPaymentMethodType::CARD !== $payment_method_definition->get_id() )
 			|| ! $this->is_express_checkout_in_payment_methods_enabled()
 		) {
 			return array();
 		}
 
 		$config = array();
-		foreach ( array( 'apple_pay', 'google_pay' ) as $payment_method_id ) {
+		foreach ( array( WooPaymentsPaymentMethodType::APPLE_PAY, WooPaymentsPaymentMethodType::GOOGLE_PAY ) as $payment_method_id ) {
 			$definition = $this->payment_method_registry->get( $payment_method_id );
 			if (
 				null === $definition
@@ -1293,8 +1293,8 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 	 */
 	private function get_enabled_payment_method_ids(): array {
 		// Card when none were ever stored; a stored empty list stays empty (client 11.1.0 get_upe_enabled_payment_method_ids()).
-		$method_ids = $this->get_account_service()->get_gateway_setting( 'upe_enabled_payment_method_ids', array( 'card' ) );
-		$method_ids = '' === $method_ids ? array( 'card' ) : $method_ids;
+		$method_ids = $this->get_account_service()->get_gateway_setting( 'upe_enabled_payment_method_ids', array( WooPaymentsPaymentMethodType::CARD ) );
+		$method_ids = '' === $method_ids ? array( WooPaymentsPaymentMethodType::CARD ) : $method_ids;
 
 		$normalized = array();
 		foreach ( is_array( $method_ids ) ? $method_ids : array() as $method_id ) {
@@ -1425,8 +1425,8 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 	 * @return string[]
 	 */
 	private function get_payment_method_types_for_definition( ?PaymentMethodDefinition $payment_method_definition, array $payment_methods_config ): array {
-		if ( null === $payment_method_definition || 'card' === $payment_method_definition->get_id() ) {
-			return isset( $payment_methods_config['link'] ) ? array( 'card', 'link' ) : array( 'card' );
+		if ( null === $payment_method_definition || WooPaymentsPaymentMethodType::CARD === $payment_method_definition->get_id() ) {
+			return isset( $payment_methods_config[ WooPaymentsPaymentMethodType::LINK ] ) ? array( WooPaymentsPaymentMethodType::CARD, WooPaymentsPaymentMethodType::LINK ) : array( WooPaymentsPaymentMethodType::CARD );
 		}
 
 		return array( $payment_method_definition->get_stripe_payment_method_type() );
@@ -1439,7 +1439,7 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 	 * @return string
 	 */
 	private function get_blocks_payment_method_title( ?PaymentMethodDefinition $payment_method_definition = null ): string {
-		if ( null === $payment_method_definition || 'card' === $payment_method_definition->get_id() ) {
+		if ( null === $payment_method_definition || WooPaymentsPaymentMethodType::CARD === $payment_method_definition->get_id() ) {
 			return __( 'Card', 'woocommerce' );
 		}
 
@@ -1453,7 +1453,7 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 	 * @return string
 	 */
 	private function get_blocks_payment_method_description( ?PaymentMethodDefinition $payment_method_definition = null ): string {
-		if ( null === $payment_method_definition || 'card' === $payment_method_definition->get_id() ) {
+		if ( null === $payment_method_definition || WooPaymentsPaymentMethodType::CARD === $payment_method_definition->get_id() ) {
 			return __( 'Pay securely using WooPayments.', 'woocommerce' );
 		}
 

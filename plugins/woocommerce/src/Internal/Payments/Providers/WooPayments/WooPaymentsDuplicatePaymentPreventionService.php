@@ -82,7 +82,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	 *
 	 * Client 11.1.0's Payment_Method::OFFLINE_PAYMENT_METHODS (`includes/constants/class-payment-method.php:61-63`).
 	 */
-	public const OFFLINE_PAYMENT_METHODS = array( 'multibanco' );
+	public const OFFLINE_PAYMENT_METHODS = array( WooPaymentsPaymentMethodType::MULTIBANCO );
 
 	/**
 	 * WooCommerce session.

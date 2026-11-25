@@ -518,7 +518,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 			return $this->active_bnpl_payment_method_ids;
 		}
 
-		$enabled_payment_methods = $this->account_service->get_gateway_setting( 'upe_enabled_payment_method_ids', array( 'card' ) );
+		$enabled_payment_methods = $this->account_service->get_gateway_setting( 'upe_enabled_payment_method_ids', array( WooPaymentsPaymentMethodType::CARD ) );
 		if ( ! is_array( $enabled_payment_methods ) ) {
 			$this->active_bnpl_payment_method_ids = array();
 

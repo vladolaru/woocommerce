@@ -723,7 +723,7 @@ class WooPaymentsPmPromotionsService {
 	 */
 	private function get_enabled_payment_method_ids(): array {
 		$enabled = $this->account_service->get_gateway_setting( 'upe_enabled_payment_method_ids' );
-		$enabled = '' === $enabled ? array( 'card' ) : $enabled;
+		$enabled = '' === $enabled ? array( WooPaymentsPaymentMethodType::CARD ) : $enabled;
 
 		return $this->sanitize_payment_method_ids( is_array( $enabled ) ? $enabled : array() );
 	}

@@ -116,8 +116,8 @@ class WooPaymentsCustomersRestController extends RestApiControllerBase {
 	 * @return string[]
 	 */
 	private function get_enabled_payment_method_types(): array {
-		$payment_method_types = $this->account_service->get_gateway_setting( 'upe_enabled_payment_method_ids', array( 'card' ) );
-		$payment_method_types = '' === $payment_method_types ? array( 'card' ) : $payment_method_types;
+		$payment_method_types = $this->account_service->get_gateway_setting( 'upe_enabled_payment_method_ids', array( WooPaymentsPaymentMethodType::CARD ) );
+		$payment_method_types = '' === $payment_method_types ? array( WooPaymentsPaymentMethodType::CARD ) : $payment_method_types;
 		$types                = array();
 
 		foreach ( (array) $payment_method_types as $type ) {

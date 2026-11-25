@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodType;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Order;
@@ -112,7 +113,7 @@ final class SubscriptionMethodPolicy {
 	public static function get_reusable_gateway_ids(): array {
 		return array(
 			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
-			WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'amazon_pay',
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . WooPaymentsPaymentMethodType::AMAZON_PAY,
 		);
 	}
 

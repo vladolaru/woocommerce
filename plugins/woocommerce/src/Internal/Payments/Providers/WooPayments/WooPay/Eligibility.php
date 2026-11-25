@@ -319,7 +319,7 @@ class Eligibility {
 		$methods = WooPaymentsExpressPaymentMethodTypes::get_display_location_setting( $this->account_service, WooPaymentsExpressPaymentMethodTypes::normalize_context( $context ), true );
 
 		if ( is_array( $methods ) ) {
-			return in_array( 'woopay', $methods, true );
+			return in_array( WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_WOOPAY, $methods, true );
 		}
 
 		// A list stored as an empty string, or any other non-array, selects no method; only a list stored as null reads the WooPay setting.

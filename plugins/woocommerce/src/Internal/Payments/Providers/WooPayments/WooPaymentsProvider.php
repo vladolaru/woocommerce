@@ -835,7 +835,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 					static function ( PaymentMethodDefinition $definition ): string {
 						$payment_method_id = $definition->get_id();
 
-						return sprintf( 'woocommerce_%s_settings', 'card' === $payment_method_id ? WooPaymentsPersistenceVocabulary::GATEWAY_ID : WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . $payment_method_id );
+						return sprintf( 'woocommerce_%s_settings', WooPaymentsPaymentMethodType::CARD === $payment_method_id ? WooPaymentsPersistenceVocabulary::GATEWAY_ID : WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . $payment_method_id );
 					},
 					$definitions
 				)
@@ -847,7 +847,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 		// The card gateway is read from the container when needed: the container builds it with this provider, so the
 		// provider cannot take it in init().
 		foreach ( $definitions as $definition ) {
-			$gateways[ $definition->get_id() ] = 'card' === $definition->get_id()
+			$gateways[ $definition->get_id() ] = WooPaymentsPaymentMethodType::CARD === $definition->get_id()
 				? wc_get_container()->get( WooPaymentsGateway::class )
 				: new WooPaymentsGateway( $definition );
 		}
@@ -865,7 +865,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 		$payment_method_or_gateway_id = strtolower( trim( $payment_method_or_gateway_id ) );
 
 		if ( WooPaymentsPersistenceVocabulary::GATEWAY_ID === $payment_method_or_gateway_id || '' === $payment_method_or_gateway_id ) {
-			return 'card';
+			return WooPaymentsPaymentMethodType::CARD;
 		}
 
 		$gateway_prefix = WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX;

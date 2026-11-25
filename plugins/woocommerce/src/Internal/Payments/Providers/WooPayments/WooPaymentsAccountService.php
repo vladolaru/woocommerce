@@ -545,7 +545,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 
 		$settings['enabled']                        = 'no';
 		$settings['test_mode']                      = 'no';
-		$settings['upe_enabled_payment_method_ids'] = array( 'card' );
+		$settings['upe_enabled_payment_method_ids'] = array( WooPaymentsPaymentMethodType::CARD );
 
 		$this->legacy_proxy->call_function( 'update_option', WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, $settings );
 		$this->legacy_proxy->call_function( 'update_option', self::ONBOARDING_STRIPE_CONNECTED_OPTION, array() );

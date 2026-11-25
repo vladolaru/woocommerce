@@ -199,7 +199,7 @@ class WooPaymentsOrderDetailsService {
 					'checks'  => array(),
 					'network' => '',
 				),
-				'type' => 'card',
+				'type' => WooPaymentsPaymentMethodType::CARD,
 			),
 			'refunded'               => false,
 			'refunds'                => null,
@@ -229,7 +229,7 @@ class WooPaymentsOrderDetailsService {
 			'customer'             => $customer_id,
 			'metadata'             => WooPaymentsIntentRequestBuilder::metadata_from_order( $order ),
 			'payment_method'       => $payment_method,
-			'payment_method_types' => array( 'card' ),
+			'payment_method_types' => array( WooPaymentsPaymentMethodType::CARD ),
 			'off_session'          => true,
 		);
 

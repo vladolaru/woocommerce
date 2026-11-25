@@ -454,7 +454,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 		$payment_method_id = $this->get_payment_method_id_from_request_gateway( $request );
 		$definition        = $this->payment_method_registry->get( $payment_method_id );
 
-		return null === $definition ? 'card' : $definition->get_stripe_payment_method_type();
+		return null === $definition ? WooPaymentsPaymentMethodType::CARD : $definition->get_stripe_payment_method_type();
 	}
 
 	/**
@@ -467,7 +467,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 		$gateway_id = strtolower( $this->get_request_string( $request, 'payment_method' ) );
 
 		if ( '' === $gateway_id || WooPaymentsPersistenceVocabulary::GATEWAY_ID === $gateway_id ) {
-			return 'card';
+			return WooPaymentsPaymentMethodType::CARD;
 		}
 
 		$gateway_prefix = WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX;

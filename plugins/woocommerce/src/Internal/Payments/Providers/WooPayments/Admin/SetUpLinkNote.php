@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodType;
 use Automattic\WooCommerce\Admin\Notes\DataStore as NotesDataStore;
 use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Admin\Notes\Notes;
@@ -37,9 +38,9 @@ class SetUpLinkNote {
 	 */
 	public const NOTE_DOCUMENTATION_URL = 'https://woocommerce.com/document/woopayments/payment-methods/link-by-stripe/';
 
-	private const CARD = 'card';
+	private const CARD = WooPaymentsPaymentMethodType::CARD;
 
-	private const LINK = 'link';
+	private const LINK = WooPaymentsPaymentMethodType::LINK;
 
 	/**
 	 * WooPayments account service.

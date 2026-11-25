@@ -71,7 +71,7 @@ class WooPaymentsOrderEffects {
 		$wallet_type            = isset( $payment_method_details['card']['wallet']['type'] ) && is_scalar( $payment_method_details['card']['wallet']['type'] )
 			? sanitize_key( (string) $payment_method_details['card']['wallet']['type'] )
 			: '';
-		if ( '' === $wallet_type && 'amazon_pay' === $payment_method_type ) {
+		if ( '' === $wallet_type && WooPaymentsPaymentMethodType::AMAZON_PAY === $payment_method_type ) {
 			$wallet_type = 'amazon_pay';
 		}
 
@@ -98,21 +98,21 @@ class WooPaymentsOrderEffects {
 		$wallet_type           = isset( $card['wallet']['type'] ) && is_scalar( $card['wallet']['type'] ) ? (string) $card['wallet']['type'] : '';
 		$express_checkout_type = sanitize_key( $express_checkout_type );
 
-		if ( 'link' === $payment_method_type ) {
-			return self::compose_payment_method_display_effects( array( 'type' => 'link' ), 'link', '', '', false );
+		if ( WooPaymentsPaymentMethodType::LINK === $payment_method_type ) {
+			return self::compose_payment_method_display_effects( array( 'type' => WooPaymentsPaymentMethodType::LINK ), WooPaymentsPaymentMethodType::LINK, '', '', false );
 		}
 
-		if ( 'card' !== $payment_method_type || empty( $card ) ) {
+		if ( WooPaymentsPaymentMethodType::CARD !== $payment_method_type || empty( $card ) ) {
 			return array();
 		}
 
 		if ( 'link' === $wallet_type ) {
 			return self::compose_payment_method_display_effects(
 				array(
-					'type' => 'card',
+					'type' => WooPaymentsPaymentMethodType::CARD,
 					'card' => array( 'wallet' => array( 'type' => 'link' ) ),
 				),
-				'card',
+				WooPaymentsPaymentMethodType::CARD,
 				'link',
 				'',
 				false
@@ -124,7 +124,7 @@ class WooPaymentsOrderEffects {
 		}
 
 		$payment_method = array(
-			'type' => 'card',
+			'type' => WooPaymentsPaymentMethodType::CARD,
 			'card' => $card,
 		);
 		if ( '' === $express_checkout_type ) {
@@ -203,7 +203,7 @@ class WooPaymentsOrderEffects {
 			}
 		}
 
-		if ( 'amazon_pay' === $payment_method_type && isset( $payment_method_details['amazon_pay']['funding']['card'] ) && is_array( $payment_method_details['amazon_pay']['funding']['card'] ) ) {
+		if ( WooPaymentsPaymentMethodType::AMAZON_PAY === $payment_method_type && isset( $payment_method_details['amazon_pay']['funding']['card'] ) && is_array( $payment_method_details['amazon_pay']['funding']['card'] ) ) {
 			$funding_card = $payment_method_details['amazon_pay']['funding']['card'];
 			if ( isset( $funding_card['last4'] ) && is_scalar( $funding_card['last4'] ) ) {
 				$meta[ WooPaymentsPersistenceVocabulary::LAST4_META_KEY ] = (string) $funding_card['last4'];
@@ -705,7 +705,7 @@ class WooPaymentsOrderEffects {
 	private static function is_card_charge( array $charge ): bool {
 		$details = isset( $charge['payment_method_details'] ) && is_array( $charge['payment_method_details'] ) ? $charge['payment_method_details'] : array();
 
-		return 'card' === (string) ( $details['type'] ?? '' );
+		return WooPaymentsPaymentMethodType::CARD === (string) ( $details['type'] ?? '' );
 	}
 
 	/**
@@ -721,20 +721,20 @@ class WooPaymentsOrderEffects {
 		}
 
 		$payment_method = isset( $intent['payment_method'] ) && is_array( $intent['payment_method'] ) ? $intent['payment_method'] : array();
-		if ( 'card' === (string) ( $payment_method['type'] ?? '' ) ) {
+		if ( WooPaymentsPaymentMethodType::CARD === (string) ( $payment_method['type'] ?? '' ) ) {
 			return true;
 		}
 
 		$payment_method_types = isset( $intent['payment_method_types'] ) && is_array( $intent['payment_method_types'] )
 			? array_map( 'strval', $intent['payment_method_types'] )
 			: array();
-		if ( in_array( 'card', $payment_method_types, true ) ) {
+		if ( in_array( WooPaymentsPaymentMethodType::CARD, $payment_method_types, true ) ) {
 			return true;
 		}
 
 		$options = isset( $intent['payment_method_options'] ) && is_array( $intent['payment_method_options'] ) ? $intent['payment_method_options'] : array();
 
-		return array_key_exists( 'card', $options );
+		return array_key_exists( WooPaymentsPaymentMethodType::CARD, $options );
 	}
 
 	/**
@@ -744,7 +744,7 @@ class WooPaymentsOrderEffects {
 	 * @return string
 	 */
 	private static function payment_method_gateway_id( string $payment_method_type ): string {
-		if ( in_array( $payment_method_type, array( 'card', 'link', 'apple_pay', 'google_pay' ), true ) ) {
+		if ( in_array( $payment_method_type, array( WooPaymentsPaymentMethodType::CARD, WooPaymentsPaymentMethodType::LINK, WooPaymentsPaymentMethodType::APPLE_PAY, WooPaymentsPaymentMethodType::GOOGLE_PAY ), true ) ) {
 			return WooPaymentsPersistenceVocabulary::GATEWAY_ID;
 		}
 

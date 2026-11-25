@@ -1107,7 +1107,7 @@ class WooPaymentsOrderEffectApplier {
 
 		$details = json_decode( (string) $order->get_meta( WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_DETAILS_META_KEY, true ), true );
 		$effects = is_array( $details ) ? WooPaymentsOrderEffects::compose_setup_intent_payment_method_display_details( $details ) : array();
-		if ( empty( $effects ) || 'card' !== $effects['payment_method_type'] || ! isset( $effects['meta'][ WooPaymentsPersistenceVocabulary::LAST4_META_KEY ], $effects['meta'][ WooPaymentsPersistenceVocabulary::CARD_BRAND_META_KEY ] ) ) {
+		if ( empty( $effects ) || WooPaymentsPaymentMethodType::CARD !== $effects['payment_method_type'] || ! isset( $effects['meta'][ WooPaymentsPersistenceVocabulary::LAST4_META_KEY ], $effects['meta'][ WooPaymentsPersistenceVocabulary::CARD_BRAND_META_KEY ] ) ) {
 			return array();
 		}
 
@@ -1128,7 +1128,7 @@ class WooPaymentsOrderEffectApplier {
 			$display_country = strtoupper( trim( (string) $order->get_billing_country() ) );
 		}
 
-		$title = $this->registered_payment_method_title( 'card', $display_country );
+		$title = $this->registered_payment_method_title( WooPaymentsPaymentMethodType::CARD, $display_country );
 		$order->set_payment_method_title( '' !== $title ? $title : __( 'Card', 'woocommerce' ) );
 		$order->save();
 		$this->sync_payment_method_to_subscriptions( $order );
@@ -1278,7 +1278,7 @@ class WooPaymentsOrderEffectApplier {
 				return __( 'Google Pay', 'woocommerce' );
 		}
 
-		if ( 'card' === $type && isset( $details['card'] ) && is_array( $details['card'] ) ) {
+		if ( WooPaymentsPaymentMethodType::CARD === $type && isset( $details['card'] ) && is_array( $details['card'] ) ) {
 			return $this->card_payment_method_title( $details['card'] );
 		}
 
@@ -1331,21 +1331,21 @@ class WooPaymentsOrderEffectApplier {
 	 */
 	private function non_card_payment_method_title( string $type ): string {
 		$titles = array(
-			'affirm'            => __( 'Affirm', 'woocommerce' ),
-			'afterpay_clearpay' => __( 'Afterpay', 'woocommerce' ),
-			'alipay'            => __( 'Alipay', 'woocommerce' ),
-			'amazon_pay'        => __( 'Amazon Pay', 'woocommerce' ),
-			'au_becs_debit'     => __( 'BECS Direct Debit', 'woocommerce' ),
-			'bancontact'        => __( 'Bancontact', 'woocommerce' ),
-			'eps'               => __( 'EPS', 'woocommerce' ),
-			'grabpay'           => __( 'GrabPay', 'woocommerce' ),
-			'ideal'             => __( 'iDEAL', 'woocommerce' ),
-			'klarna'            => __( 'Klarna', 'woocommerce' ),
-			'link'              => __( 'Link', 'woocommerce' ),
-			'multibanco'        => __( 'Multibanco', 'woocommerce' ),
-			'p24'               => __( 'Przelewy24', 'woocommerce' ),
-			'sepa_debit'        => __( 'SEPA Direct Debit', 'woocommerce' ),
-			'wechat_pay'        => __( 'WeChat Pay', 'woocommerce' ),
+			WooPaymentsPaymentMethodType::AFFIRM        => __( 'Affirm', 'woocommerce' ),
+			WooPaymentsPaymentMethodType::AFTERPAY_CLEARPAY => __( 'Afterpay', 'woocommerce' ),
+			WooPaymentsPaymentMethodType::ALIPAY        => __( 'Alipay', 'woocommerce' ),
+			WooPaymentsPaymentMethodType::AMAZON_PAY    => __( 'Amazon Pay', 'woocommerce' ),
+			WooPaymentsPaymentMethodType::AU_BECS_DEBIT => __( 'BECS Direct Debit', 'woocommerce' ),
+			WooPaymentsPaymentMethodType::BANCONTACT    => __( 'Bancontact', 'woocommerce' ),
+			WooPaymentsPaymentMethodType::EPS           => __( 'EPS', 'woocommerce' ),
+			WooPaymentsPaymentMethodType::GRABPAY       => __( 'GrabPay', 'woocommerce' ),
+			WooPaymentsPaymentMethodType::IDEAL         => __( 'iDEAL', 'woocommerce' ),
+			WooPaymentsPaymentMethodType::KLARNA        => __( 'Klarna', 'woocommerce' ),
+			WooPaymentsPaymentMethodType::LINK          => __( 'Link', 'woocommerce' ),
+			WooPaymentsPaymentMethodType::MULTIBANCO    => __( 'Multibanco', 'woocommerce' ),
+			WooPaymentsPaymentMethodType::P24           => __( 'Przelewy24', 'woocommerce' ),
+			WooPaymentsPaymentMethodType::SEPA_DEBIT    => __( 'SEPA Direct Debit', 'woocommerce' ),
+			WooPaymentsPaymentMethodType::WECHAT_PAY    => __( 'WeChat Pay', 'woocommerce' ),
 		);
 
 		return $titles[ $type ] ?? '';

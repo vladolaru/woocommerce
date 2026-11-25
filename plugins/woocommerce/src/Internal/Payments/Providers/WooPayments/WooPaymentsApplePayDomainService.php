@@ -484,7 +484,7 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	 */
 	private function is_apple_pay_configured( array $settings ): bool {
 		return 'yes' === ( $settings['enabled'] ?? 'no' )
-			&& $this->account_service->is_payment_request_method_enabled( 'apple_pay' );
+			&& $this->account_service->is_payment_request_method_enabled( WooPaymentsPaymentMethodType::APPLE_PAY );
 	}
 
 	/**

@@ -39,17 +39,17 @@ class WooPaymentsSettingsService {
 	 * `includes/admin/class-wc-rest-payments-settings-controller.php:711-713`).
 	 */
 	public const MANUAL_CAPTURE_PAYMENT_METHOD_IDS = array(
-		'amazon_pay',
-		'apple_pay',
-		'card',
-		'google_pay',
-		'link',
+		WooPaymentsPaymentMethodType::AMAZON_PAY,
+		WooPaymentsPaymentMethodType::APPLE_PAY,
+		WooPaymentsPaymentMethodType::CARD,
+		WooPaymentsPaymentMethodType::GOOGLE_PAY,
+		WooPaymentsPaymentMethodType::LINK,
 	);
 
 	private const EXPRESS_CHECKOUT_METHOD_IDS = array(
-		'payment_request',
-		'amazon_pay',
-		'woopay',
+		WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_PAYMENT_REQUEST,
+		WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_AMAZON_PAY,
+		WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_WOOPAY,
 		'link',
 	);
 
@@ -272,7 +272,7 @@ class WooPaymentsSettingsService {
 		$account_fields               = $this->get_account_backed_response_fields();
 		$enabled_payment_method_ids   = $this->sanitize_payment_method_ids(
 			// A list stored as an empty string reads as card, as client 11.3.0 get_upe_enabled_payment_method_ids() answers its default for it.
-			'' === ( $settings['upe_enabled_payment_method_ids'] ?? null ) ? array( 'card' ) : $this->get_array_setting( $settings, 'upe_enabled_payment_method_ids' ),
+			'' === ( $settings['upe_enabled_payment_method_ids'] ?? null ) ? array( WooPaymentsPaymentMethodType::CARD ) : $this->get_array_setting( $settings, 'upe_enabled_payment_method_ids' ),
 			$available_payment_method_ids
 		);
 
@@ -451,10 +451,10 @@ class WooPaymentsSettingsService {
 		}
 		$button_options  = self::get_button_options();
 		$express_options = array(
-			'payment_request' => __( 'Apple Pay / Google Pay', 'woocommerce' ),
-			'woopay'          => __( 'WooPay', 'woocommerce' ),
-			'amazon_pay'      => __( 'Amazon Pay', 'woocommerce' ),
-			'link'            => __( 'Link', 'woocommerce' ),
+			WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_PAYMENT_REQUEST => __( 'Apple Pay / Google Pay', 'woocommerce' ),
+			WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_WOOPAY => __( 'WooPay', 'woocommerce' ),
+			WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_AMAZON_PAY => __( 'Amazon Pay', 'woocommerce' ),
+			'link' => __( 'Link', 'woocommerce' ),
 		);
 		$fields          = array(
 			'manual_capture'                    => array(
@@ -668,17 +668,17 @@ class WooPaymentsSettingsService {
 		// combination even while WooPay is ineligible, since eligibility can return. Stores with both already enabled
 		// can still save unrelated settings.
 		$is_link_woopay_conflict = fn( array $method_ids, bool $is_woopay_on ): bool => $is_woopay_on
-			&& in_array( 'card', $method_ids, true )
-			&& in_array( 'link', $method_ids, true );
+			&& in_array( WooPaymentsPaymentMethodType::CARD, $method_ids, true )
+			&& in_array( WooPaymentsPaymentMethodType::LINK, $method_ids, true );
 		// Read the stored list as persistence stores it, through sanitize_key() (the synchronizer's normalize_string_list()).
-		$stored_method_ids       = array_map( 'sanitize_key', $this->normalize_payment_method_ids( $this->get_array_setting( $settings, 'upe_enabled_payment_method_ids', array( 'card' ) ) ) );
+		$stored_method_ids       = array_map( 'sanitize_key', $this->normalize_payment_method_ids( $this->get_array_setting( $settings, 'upe_enabled_payment_method_ids', array( WooPaymentsPaymentMethodType::CARD ) ) ) );
 		$is_woopay_on_after_save = array_key_exists( 'is_woopay_enabled', $params )
 			? $this->is_yes( $this->normalize_setting_value( $params['is_woopay_enabled'], 'bool' ) )
 			: $was_woopay_enabled;
 		$method_ids_after_save   = null !== $enabled_methods_update ? $enabled_methods_update['requested'] : $stored_method_ids;
 		// While the account is ineligible the page hides WooPay, so a save keeps the stored choice, unless it leaves Link on:
 		// then WooPay is written off, as onboarding does, so the two are not both on when the account is eligible again.
-		$keeps_woopay = ! $is_woopay_eligible && ! ( in_array( 'card', $method_ids_after_save, true ) && in_array( 'link', $method_ids_after_save, true ) );
+		$keeps_woopay = ! $is_woopay_eligible && ! ( in_array( WooPaymentsPaymentMethodType::CARD, $method_ids_after_save, true ) && in_array( WooPaymentsPaymentMethodType::LINK, $method_ids_after_save, true ) );
 		if (
 			$is_link_woopay_conflict( $method_ids_after_save, $is_woopay_on_after_save )
 			&& ! $is_link_woopay_conflict( $stored_method_ids, $was_woopay_enabled )
@@ -728,7 +728,7 @@ class WooPaymentsSettingsService {
 			// The stored list as it is, whatever is available now, so a removed method is seen even when the availability
 			// filter hides it (client 11.1.0 class-wc-rest-payments-settings-controller.php:738-740).
 			$previous_enabled_payment_method_ids = $this->normalize_payment_method_ids(
-				$this->get_array_setting( $settings, 'upe_enabled_payment_method_ids', array( 'card' ) )
+				$this->get_array_setting( $settings, 'upe_enabled_payment_method_ids', array( WooPaymentsPaymentMethodType::CARD ) )
 			);
 			$enabled_payment_method_ids          = $this->sanitize_payment_method_ids(
 				$enabled_methods_update['requested'],
@@ -754,9 +754,9 @@ class WooPaymentsSettingsService {
 			}
 			// Card's gateway is the WooPayments gateway, so adding or removing card turns it on or off; persist() sets the other
 			// methods' gateways (client 11.1.0 `includes/admin/class-wc-rest-payments-settings-controller.php:766-790`).
-			if ( in_array( 'card', $added_payment_method_ids, true ) ) {
+			if ( in_array( WooPaymentsPaymentMethodType::CARD, $added_payment_method_ids, true ) ) {
 				$settings['enabled'] = 'yes';
-			} elseif ( in_array( 'card', $removed_payment_method_ids, true ) ) {
+			} elseif ( in_array( WooPaymentsPaymentMethodType::CARD, $removed_payment_method_ids, true ) ) {
 				$settings['enabled'] = 'no';
 			}
 			$settings['upe_enabled_payment_method_ids'] = $enabled_payment_method_ids;
@@ -841,7 +841,7 @@ class WooPaymentsSettingsService {
 		}
 		$locations = array();
 		foreach ( array( 'product', 'cart', 'checkout' ) as $location ) {
-			$locations[ $location . '_enabled' ] = in_array( 'woopay', $this->get_array_setting( $settings, 'express_checkout_' . $location . '_methods' ), true );
+			$locations[ $location . '_enabled' ] = in_array( WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_WOOPAY, $this->get_array_setting( $settings, 'express_checkout_' . $location . '_methods' ), true );
 		}
 		if ( $is_enabled && $is_eligible && array() !== array_intersect_key( $params, array_flip( array( 'express_checkout_product_methods', 'express_checkout_cart_methods', 'express_checkout_checkout_methods' ) ) ) ) {
 			$tracking->record_woopay_admin_event( 'woopay_express_button_locations_updated', $locations );

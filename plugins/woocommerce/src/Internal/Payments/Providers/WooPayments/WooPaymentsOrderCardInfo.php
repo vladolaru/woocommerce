@@ -135,7 +135,7 @@ class WooPaymentsOrderCardInfo implements RegisterHooksInterface {
 		}
 
 		$card = $details[ $type ];
-		if ( 'card_present' === $type || 'interac_present' === $type ) {
+		if ( WooPaymentsPaymentMethodType::CARD_PRESENT === $type || WooPaymentsPaymentMethodType::INTERAC_PRESENT === $type ) {
 			$brand = WooPaymentsTerminalCardFormatter::get_terminal_card_display_brand( $card );
 			$info  = array(
 				'brand'        => $brand,

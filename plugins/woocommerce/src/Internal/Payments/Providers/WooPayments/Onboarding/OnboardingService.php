@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodType;
 use Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\DefaultPaymentGateways;
 use Automattic\WooCommerce\Admin\Notes\DataStore as NotesDataStore;
 use Automattic\WooCommerce\Admin\Notes\Note;
@@ -561,14 +562,14 @@ class OnboardingService {
 	private function add_enabled_payment_methods( array $payment_method_ids, ?bool $woopay_picked = null, ?bool $payment_request_enabled = null, bool $enable_card_gateway = false ): bool {
 		$settings           = $this->proxy->call_function( 'get_option', WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array() );
 		$settings           = is_array( $settings ) ? $settings : array();
-		$enabled_ids        = is_array( $settings['upe_enabled_payment_method_ids'] ?? null ) ? $settings['upe_enabled_payment_method_ids'] : array( 'card' );
+		$enabled_ids        = is_array( $settings['upe_enabled_payment_method_ids'] ?? null ) ? $settings['upe_enabled_payment_method_ids'] : array( WooPaymentsPaymentMethodType::CARD );
 		$enabled_ids        = array_values( array_unique( array_merge( $enabled_ids, $payment_method_ids ) ) );
 		$was_woopay_enabled = 'yes' === ( $settings['platform_checkout'] ?? 'no' );
 		// WooPay and Link are never both on, and Link wins.
-		$is_woopay_enabled = ( $woopay_picked ?? $was_woopay_enabled ) && ! in_array( 'link', $enabled_ids, true );
+		$is_woopay_enabled = ( $woopay_picked ?? $was_woopay_enabled ) && ! in_array( WooPaymentsPaymentMethodType::LINK, $enabled_ids, true );
 
 		$settings['upe_enabled_payment_method_ids'] = $enabled_ids;
-		if ( $enable_card_gateway && in_array( 'card', $enabled_ids, true ) ) {
+		if ( $enable_card_gateway && in_array( WooPaymentsPaymentMethodType::CARD, $enabled_ids, true ) ) {
 			$settings['enabled'] = 'yes';
 		}
 		if ( $is_woopay_enabled !== $was_woopay_enabled ) {
@@ -663,7 +664,7 @@ class OnboardingService {
 		// A list stored as an empty string reads as card, as client 11.3.0 get_upe_enabled_payment_method_ids() does.
 		$settings                = $this->proxy->call_function( 'get_option', WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array() );
 		$stored_method_ids       = is_array( $settings ) ? ( $settings['upe_enabled_payment_method_ids'] ?? null ) : null;
-		$stored_method_ids       = '' === $stored_method_ids ? array( 'card' ) : $stored_method_ids;
+		$stored_method_ids       = '' === $stored_method_ids ? array( WooPaymentsPaymentMethodType::CARD ) : $stored_method_ids;
 		$enabled_payment_methods = is_array( $stored_method_ids ) ? $this->normalize_test_drive_payment_method_ids( $stored_method_ids ) : array();
 
 		$this->proxy->call_function(

@@ -18,6 +18,13 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 class WooPaymentsExpressPaymentMethodTypes {
 
 	/**
+	 * WooPay express checkout method ID.
+	 *
+	 * @var string
+	 */
+	public const EXPRESS_METHOD_WOOPAY = 'woopay';
+
+	/**
 	 * WooPayments Express Checkout method ID for Apple Pay / Google Pay.
 	 *
 	 * `payment_request` is the method ID the express checkout location settings list for the Apple Pay and Google Pay
@@ -33,12 +40,12 @@ class WooPaymentsExpressPaymentMethodTypes {
 	/**
 	 * Stripe card payment method type.
 	 */
-	public const STRIPE_TYPE_CARD = 'card';
+	public const STRIPE_TYPE_CARD = WooPaymentsPaymentMethodType::CARD;
 
 	/**
 	 * Stripe Amazon Pay payment method type.
 	 */
-	public const STRIPE_TYPE_AMAZON_PAY = 'amazon_pay';
+	public const STRIPE_TYPE_AMAZON_PAY = WooPaymentsPaymentMethodType::AMAZON_PAY;
 
 	/**
 	 * Checkout field carrying Stripe payment method types used to initialize ECE.

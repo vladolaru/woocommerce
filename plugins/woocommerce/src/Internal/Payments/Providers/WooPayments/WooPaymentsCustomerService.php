@@ -551,7 +551,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	 * @return array<int,array<string,mixed>>
 	 * @throws ApiException When the API request fails for reasons other than a missing customer.
 	 */
-	public function get_payment_methods_for_customer( string $customer_id, string $type = 'card' ): array {
+	public function get_payment_methods_for_customer( string $customer_id, string $type = WooPaymentsPaymentMethodType::CARD ): array {
 		if ( '' === $customer_id ) {
 			return array();
 		}

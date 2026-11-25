@@ -98,7 +98,7 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	 *
 	 * @var string[]
 	 */
-	private const RECHECKED_PAYMENT_METHODS = array( 'wechat_pay' );
+	private const RECHECKED_PAYMENT_METHODS = array( WooPaymentsPaymentMethodType::WECHAT_PAY );
 
 	/**
 	 * API client, for the live intent re-check.
@@ -473,19 +473,19 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 		}
 
 		$payment_method_id = WooPaymentsPersistenceVocabulary::GATEWAY_ID === $gateway_id
-			? 'card'
+			? WooPaymentsPaymentMethodType::CARD
 			: substr( $gateway_id, strlen( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX ) );
 
 		// Link payments go through the card gateway; detect them by the order's last payment token, as client 11.2.0
 		// does (class-wc-payments-order-success-page.php:205-218).
-		if ( 'card' === $payment_method_id ) {
+		if ( WooPaymentsPaymentMethodType::CARD === $payment_method_id ) {
 			$token_ids = $order->get_payment_tokens();
-			if ( ! empty( $token_ids ) && WC_Payment_Tokens::get( end( $token_ids ) ) instanceof LinkToken && null !== $this->payment_method_registry->get( 'link' ) ) {
-				$payment_method_id = 'link';
+			if ( ! empty( $token_ids ) && WC_Payment_Tokens::get( end( $token_ids ) ) instanceof LinkToken && null !== $this->payment_method_registry->get( WooPaymentsPaymentMethodType::LINK ) ) {
+				$payment_method_id = WooPaymentsPaymentMethodType::LINK;
 			}
 		}
 
-		if ( 'card' === $payment_method_id ) {
+		if ( WooPaymentsPaymentMethodType::CARD === $payment_method_id ) {
 			return $this->render_card_title( $order, $payment_method_title );
 		}
 
@@ -552,7 +552,7 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 		$order = $order_or_id instanceof WC_Order ? $order_or_id : wc_get_order( $order_or_id );
 		if (
 			! $order instanceof WC_Order
-			|| WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'multibanco' !== $order->get_payment_method()
+			|| WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . WooPaymentsPaymentMethodType::MULTIBANCO !== $order->get_payment_method()
 			|| OrderStatus::ON_HOLD !== $order->get_status()
 		) {
 			return;
@@ -662,7 +662,7 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	 */
 	public function add_multibanco_payment_instructions_to_order_on_hold_email( $order, $sent_to_admin = false, $plain_text = false, $email = '' ): void {
 		unset( $sent_to_admin );
-		if ( ! $email instanceof WC_Email_Customer_On_Hold_Order || ! $order instanceof WC_Order || WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'multibanco' !== $order->get_payment_method() ) {
+		if ( ! $email instanceof WC_Email_Customer_On_Hold_Order || ! $order instanceof WC_Order || WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . WooPaymentsPaymentMethodType::MULTIBANCO !== $order->get_payment_method() ) {
 			return;
 		}
 

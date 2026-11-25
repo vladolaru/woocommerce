@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodType;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentStatus;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
@@ -932,7 +933,7 @@ class PaymentIntentEventHandler {
 				// A failure of another payment method, from an attempt the shopper replaced by paying another way, changes
 				// nothing (client 11.3.0 class-wc-payments-webhook-processing-service.php:548). Terminal (card_present)
 				// intents are exempt: their payment method is created at the reader and is never the one stored on the order.
-				if ( 'card_present' !== $payment_method_type && (string) $payment_method['id'] !== (string) $order->get_meta( WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_ID_META_KEY, true ) ) {
+				if ( WooPaymentsPaymentMethodType::CARD_PRESENT !== $payment_method_type && (string) $payment_method['id'] !== (string) $order->get_meta( WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_ID_META_KEY, true ) ) {
 					return null;
 				}
 
@@ -942,7 +943,7 @@ class PaymentIntentEventHandler {
 				// attempt's, or, where an attach kept an earlier payment's record, that record's: there the failure of the
 				// attempt that started after it is left too. Two failures are applied as before: a terminal decline, whose
 				// intent the reader creates and the order does not store, and a failure on an order that stores no intent.
-				$awaited_intent_id = 'card_present' === $payment_method_type ? '' : $this->get_other_awaited_intent_id( $order, $intent_id );
+				$awaited_intent_id = WooPaymentsPaymentMethodType::CARD_PRESENT === $payment_method_type ? '' : $this->get_other_awaited_intent_id( $order, $intent_id );
 				if ( '' !== $awaited_intent_id ) {
 					wc_get_logger()->warning(
 						sprintf( 'payment failure not applied: order %d waits on payment %s, not on the failed payment %s', $order->get_id(), $awaited_intent_id, $intent_id ),
@@ -957,7 +958,7 @@ class PaymentIntentEventHandler {
 				}
 
 				$charge_id       = WooPaymentsIntentCodec::first_charge_id( $event_object );
-				$note_candidates = 'card_present' === $payment_method_type
+				$note_candidates = WooPaymentsPaymentMethodType::CARD_PRESENT === $payment_method_type
 					? $this->order_note_service->format_terminal_payment_failed_note_candidates( $order, $intent_id, $charge_id, $last_payment_error )
 					: $this->order_note_service->format_payment_failed_note_candidates( $order, $intent_id, $charge_id, $last_payment_error );
 
@@ -965,14 +966,14 @@ class PaymentIntentEventHandler {
 					PaymentLifecycleEvent::STATUS_FAILED,
 					// A reader retries a declined card on the same intent, so a terminal decline's note is keyed on its charge, as
 					// client 11.1.0 links that note to the charge for uniqueness (class-wc-payments-order-service.php:2139-2141).
-					'card_present' === $payment_method_type && '' !== $charge_id ? $charge_id : $intent_id,
+					WooPaymentsPaymentMethodType::CARD_PRESENT === $payment_method_type && '' !== $charge_id ? $charge_id : $intent_id,
 					// The status, the note and the intent status, as client 11.3.0's failed writers store them; the order keeps
 					// the intent it stores (class-wc-payments-order-service.php:545-560, :956-976).
 					$this->without_empty_values(
 						array(
 							WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY => isset( $event_object['status'] ) ? (string) $event_object['status'] : '',
 						)
-					) + ( 'card_present' === $payment_method_type ? array() : WooPaymentsOrderEffects::failed_payment_method_details_meta( $event_object ) ),
+					) + ( WooPaymentsPaymentMethodType::CARD_PRESENT === $payment_method_type ? array() : WooPaymentsOrderEffects::failed_payment_method_details_meta( $event_object ) ),
 					array(),
 					$note_candidates[0],
 					PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED,
@@ -983,7 +984,7 @@ class PaymentIntentEventHandler {
 				// already on the order changes nothing, as client 11.3.0's mark_payment_failed() returns then
 				// (class-wc-payments-order-service.php:550-554). A terminal decline sets the order Failed before its note check
 				// (:961-968), so it is applied, each one recorded.
-				return 'card_present' !== $payment_method_type && $this->order_note_service->is_failure_recorded( $order, $failure ) ? null : $failure;
+				return WooPaymentsPaymentMethodType::CARD_PRESENT !== $payment_method_type && $this->order_note_service->is_failure_recorded( $order, $failure ) ? null : $failure;
 
 			case 'charge.expired':
 				$charge_id       = $this->get_object_id( $event_object );
@@ -1037,11 +1038,11 @@ class PaymentIntentEventHandler {
 		if ( ! in_array(
 			$payment_method_type,
 			array(
-				'card',
-				'card_present',
+				WooPaymentsPaymentMethodType::CARD,
+				WooPaymentsPaymentMethodType::CARD_PRESENT,
 				'us_bank_account',
-				'au_becs_debit',
-				'wechat_pay',
+				WooPaymentsPaymentMethodType::AU_BECS_DEBIT,
+				WooPaymentsPaymentMethodType::WECHAT_PAY,
 			),
 			true
 		) ) {
@@ -1168,7 +1169,7 @@ class PaymentIntentEventHandler {
 			return WooPaymentsOrderEffects::completed_charge_payment_method_backfill_meta( $charge, true, (string) $order->get_meta( WooPaymentsPersistenceVocabulary::PAYMENT_TRANSACTION_ID_META_KEY, true ) );
 		}
 
-		$card_types     = array( 'card', 'card_present', 'interac_present' );
+		$card_types     = array( WooPaymentsPaymentMethodType::CARD, WooPaymentsPaymentMethodType::CARD_PRESENT, WooPaymentsPaymentMethodType::INTERAC_PRESENT );
 		$stored_type    = is_array( $details ) ? ( $details['type'] ?? '' ) : '';
 		$charge_details = $charge['payment_method_details'] ?? array();
 		$charge_type    = is_array( $charge_details ) ? ( $charge_details['type'] ?? '' ) : '';

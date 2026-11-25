@@ -25,7 +25,7 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 	/**
 	 * The wallet payment methods that share the payment request switch.
 	 */
-	public const PAYMENT_REQUEST_METHOD_IDS = array( 'apple_pay', 'google_pay' );
+	public const PAYMENT_REQUEST_METHOD_IDS = array( WooPaymentsPaymentMethodType::APPLE_PAY, WooPaymentsPaymentMethodType::GOOGLE_PAY );
 
 	private const PAYMENT_REQUEST_PENDING_OPTION = 'woocommerce_woopayments_payment_request_sync_pending';
 
@@ -315,7 +315,7 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 
 		foreach ( $this->registry->get_registered( $this->account_service ) as $definition ) {
 			if (
-				'card' !== $definition->get_id()
+				WooPaymentsPaymentMethodType::CARD !== $definition->get_id()
 				&& ! in_array( $definition->get_id(), self::PAYMENT_REQUEST_METHOD_IDS, true )
 				&& $definition->should_publish_gateway()
 			) {
