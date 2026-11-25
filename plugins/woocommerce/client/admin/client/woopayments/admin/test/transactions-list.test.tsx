@@ -380,6 +380,52 @@ describe( 'WooPayments transactions list columns', () => {
 		).toBeInTheDocument();
 	} );
 
+	it.each( [
+		[ 'US', 'link', 'Link', 'link-color.svg' ],
+		[ 'GB', 'link', 'Onelink', 'onelink.svg' ],
+		[ 'GB', 'visa', 'Visa', 'visa-card-color.svg' ],
+	] )(
+		'renders the %s transaction source %s with its artwork',
+		async ( country, source, label, file ) => {
+			window.wcSettings = {
+				admin: { woopaymentsSettings: { accountCountry: country } },
+			} as typeof window.wcSettings;
+			mockGetTransactions.mockResolvedValue( {
+				data: [ { ...SUBSCRIPTION_CHARGE, source } ] as never,
+				total_count: 1,
+			} );
+			renderList();
+			await screen.findByText( 'Transactions loaded.' );
+			const cell = getCell(
+				SUBSCRIPTION_CHARGE.transaction_id,
+				'source'
+			);
+			expect(
+				within( cell )
+					.getByRole( 'img', { name: label } )
+					.getAttribute( 'src' )
+			).toMatch( '/' + file );
+		}
+	);
+
+	it( 'keeps a transaction with an unknown source readable without artwork', async () => {
+		mockGetTransactions.mockResolvedValue( {
+			data: [
+				{
+					...SUBSCRIPTION_CHARGE,
+					source: 'unknown_source',
+					source_identifier: '',
+				},
+			] as never,
+			total_count: 1,
+		} );
+		renderList();
+		await screen.findByText( 'Transactions loaded.' );
+		const cell = getCell( SUBSCRIPTION_CHARGE.transaction_id, 'source' );
+		expect( within( cell ).queryByRole( 'img' ) ).toBeNull();
+		expect( cell ).toHaveTextContent( /unknown source/i );
+	} );
+
 	it( 'renders every column from recorded platform rows', async () => {
 		setMockUserPreferences( {
 			wc_payments_transactions_hidden_columns: [],

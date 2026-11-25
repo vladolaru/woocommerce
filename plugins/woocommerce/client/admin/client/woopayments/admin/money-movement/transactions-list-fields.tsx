@@ -9,6 +9,8 @@ import type { MouseEventHandler, ReactNode } from 'react';
 /**
  * Internal dependencies
  */
+import { getLinkBranding } from '../../settings/payment-method-definitions';
+import { getWooPaymentsSettingsBootstrap } from '../../settings/bootstrap';
 import type { WooPaymentsTransaction } from './types';
 import {
 	formatAmount,
@@ -193,22 +195,27 @@ export const OrderLink = ( {
  * A source's logo, then its detail, such as "•••• 4242". Without a logo, the text label.
  * Client 11.1.0 `transactions/list/index.tsx:473-497` and `disputes/index.tsx:280-290`.
  *
- * @param props        The component props.
- * @param props.source The source, such as `visa` or `sepa_debit`.
- * @param props.detail The text after the logo.
- * @param props.text   The text to show when there is no logo.
+ * @param props               The component props.
+ * @param props.source        The source, such as `visa` or `sepa_debit`.
+ * @param props.detail        The text after the logo.
+ * @param props.text          The text to show when there is no logo.
+ * @param props.brand         Country-specific artwork and label for the transaction.
+ * @param props.brand.iconUrl URL of the account's payment method logo.
+ * @param props.brand.label   Accessible name for the logo.
  */
 export const PaymentSource = ( {
 	source,
 	detail = '',
 	text,
+	brand,
 }: {
 	source: string;
 	detail?: string;
 	text?: string;
+	brand?: { iconUrl: string; label: string };
 } ) => {
-	const iconUrl = getTransactionSourceIconUrl( source );
-	const label = getTransactionSourceLabel( source );
+	const iconUrl = brand?.iconUrl ?? getTransactionSourceIconUrl( source );
+	const label = brand?.label ?? getTransactionSourceLabel( source );
 
 	if ( ! iconUrl ) {
 		return <>{ text || label }</>;
@@ -782,6 +789,14 @@ export const getTransactionListFields = (
 					<ClickableCell route={ getRowDetailsRoute( item ) }>
 						<PaymentSource
 							source={ item.source }
+							brand={
+								item.source === 'link'
+									? getLinkBranding(
+											getWooPaymentsSettingsBootstrap()
+												.accountCountry
+										)
+									: undefined
+							}
 							detail={ getTransactionListPaymentMethodDetail(
 								item
 							) }
