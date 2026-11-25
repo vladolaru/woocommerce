@@ -11,9 +11,7 @@ use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Abiliti
 
 /** Compare public getters to the recorded English inventory. */
 class AbilityRegistrationTest extends AbilityTestCase {
-	private const NOT_YET_PORTED = array(
-		'accept-dispute',
-	);
+	private const NOT_YET_PORTED = array();
 
 	/** Provide the independent extension records without losing empty object defaults. */
 	private static function inventory(): array {
@@ -43,7 +41,7 @@ class AbilityRegistrationTest extends AbilityTestCase {
 	}
 
 	/**
-	 * @testdox Leaving the registered payout list pending counts it twice.
+	 * @testdox Every extension ability is accounted for exactly once.
 	 */
 	public function test_inventory_partition(): void {
 		$this->install_root();
@@ -56,9 +54,6 @@ class AbilityRegistrationTest extends AbilityTestCase {
 		sort( $expected );
 		$this->assertCount( 22, $expected );
 		$this->assertSame( $expected, $all );
-		foreach ( self::NOT_YET_PORTED as $name ) {
-			$this->assertFalse( wp_has_ability( self::PREFIX . $name ), $name );
-		}
 	}
 
 	/**
@@ -82,10 +77,6 @@ class AbilityRegistrationTest extends AbilityTestCase {
 	public function test_inventory_fields( \stdClass $record ): void {
 		$this->install_root();
 		add_filter( self::GATE, '__return_true' );
-		if ( in_array( substr( $record->name, strlen( self::PREFIX ) ), self::NOT_YET_PORTED, true ) ) {
-			$this->assertFalse( wp_has_ability( $record->name ), $record->name );
-			return;
-		}
 		$this->assertTrue( wp_has_ability( $record->name ), $record->name );
 		$ability = wp_get_ability( $record->name );
 		$this->assertSame( \WP_Ability::class, get_class( $ability ) );
@@ -117,7 +108,7 @@ class AbilityRegistrationTest extends AbilityTestCase {
 		$this->install_root();
 		add_filter( self::GATE, '__return_true' );
 		$classes = apply_filters( 'woocommerce_ability_definition_classes', array() );
-		$this->assertCount( 21, $classes );
+		$this->assertCount( 22, $classes );
 		foreach ( $classes as $class ) {
 			$this->assertArrayNotHasKey( 'public', $class::get_registration_args()['meta'], $class );
 		}

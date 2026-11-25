@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Abiliti
 use Automattic\WooCommerce\Abilities\AbilityDefinition;
 use Automattic\WooCommerce\Internal\Abilities\Domain\AbstractDomainAbility;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Abilities\AbilitiesRegistrar;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use WP_Error;
 use WP_REST_Request;
@@ -273,5 +274,53 @@ abstract class AbstractAbility extends AbstractDomainAbility implements AbilityD
 
 		$data = $response instanceof WP_REST_Response ? $response->get_data() : null;
 		return is_array( $data ) ? $data : array();
+	}
+
+	/**
+	 * Describe a private, destructive write that cannot be replayed safely.
+	 *
+	 * @since 11.4.0
+	 */
+	protected static function get_private_write_meta(): array {
+		return array(
+			'annotations'  => array(
+				'readonly'    => false,
+				'destructive' => true,
+				'idempotent'  => false,
+			),
+			'show_in_rest' => true,
+			'mcp'          => array( 'public' => false ),
+		);
+	}
+
+	/**
+	 * Post through the merchant route and preserve the extension's public failure code and REST status.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param string $route      Merchant REST route.
+	 * @param string $error_code Ability's public error code.
+	 * @param string $action     Action name for the Ability log.
+	 * @param array  $params     Request parameters.
+	 * @return array|WP_Error Route result or write failure.
+	 */
+	protected static function delegate_write_to_rest_controller( string $route, string $error_code, string $action, array $params = array() ) {
+		try {
+			$response = self::delegate_to_rest_controller( 'POST', $route, $params );
+			if ( ! is_wp_error( $response ) ) {
+				return $response;
+			}
+			$code  = (string) $response->get_error_code();
+			$error = new WP_Error( $error_code, $response->get_error_message(), array( 'route_error_code' => $code ) );
+		} catch ( \Throwable $failure ) {
+			$code  = $failure instanceof ApiException ? $failure->get_error_code() : '';
+			$error = new WP_Error( $error_code, $failure->getMessage(), array( 'exception' => $failure ) );
+		}
+
+		wc_get_logger()->error(
+			sprintf( '%s failed (%s).', $action, WooPaymentsLogger::get_loggable_error_code( $code ) ),
+			array( 'source' => 'woopayments-abilities' )
+		);
+		return $error;
 	}
 }

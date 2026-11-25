@@ -14,6 +14,7 @@ abstract class AbilityTestCase extends \WC_Unit_Test_Case {
 	protected const PREFIX = 'woocommerce-payments/';
 	protected const GATE   = 'woocommerce_payments_abilities_enabled';
 	protected const NAMES  = array(
+		'accept-dispute',
 		'get-account',
 		'get-active-loan-summary',
 		'get-authorizations',

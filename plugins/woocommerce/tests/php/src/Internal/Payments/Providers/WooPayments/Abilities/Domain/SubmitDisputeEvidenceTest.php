@@ -9,71 +9,14 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\A
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Abilities\DisputeIdentifier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Abilities\Domain\SubmitDisputeEvidence;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\HttpClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputesRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Abilities\AbilityTestCase;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Abilities\DisputeWriteTestCase;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
-use Automattic\WooCommerce\Testing\Tools\TestingContainer;
 
 /** Exercise evidence updates through the dispute route the evidence screen posts to. */
-class SubmitDisputeEvidenceTest extends AbilityTestCase {
-	private const NAME        = 'woocommerce-payments/submit-dispute-evidence';
+class SubmitDisputeEvidenceTest extends DisputeWriteTestCase {
+	protected const NAME      = 'woocommerce-payments/submit-dispute-evidence';
 	private const DISPUTE_URL = '/sites/123/wcpay/disputes/du_test';
-	private const CACHE_KEYS  = array(
-		WooPaymentsDatabaseCache::DISPUTE_STATUS_COUNTS_KEY,
-		WooPaymentsDatabaseCache::DISPUTE_STATUS_COUNTS_KEY_TEST_MODE,
-		WooPaymentsDatabaseCache::ACTIVE_DISPUTES_KEY,
-	);
-
-	/** @var FakeHttpClient Platform transport. */
-	private $http;
-
-	/** @var \WP_Ability Registered evidence ability. */
-	private $sut;
-
-	/** @var \WP_REST_Server|null Server in place before this test. */
-	private $original_server;
-
-	/** @var WooPaymentsDisputesRestController Dispute routes served during this test. */
-	private $controller;
-
-	/** Discover the ability on a connected store whose dispute routes use a fake platform transport. */
-	public function setUp(): void {
-		parent::setUp();
-		$this->http = new FakeHttpClient();
-		$container  = wc_get_container();
-		$this->assertInstanceOf( TestingContainer::class, $container );
-		$container->replace( HttpClient::class, $this->http );
-		$this->reset_container_resolutions();
-		$this->install_root();
-		add_filter( self::GATE, '__return_true' );
-
-		$this->original_server     = $GLOBALS['wp_rest_server'] ?? null;
-		$GLOBALS['wp_rest_server'] = null;
-		$this->controller          = $container->get( WooPaymentsDisputesRestController::class );
-		add_action( 'rest_api_init', array( $this->controller, 'register_routes' ) );
-		rest_get_server();
-
-		$ability = wp_get_ability( self::NAME );
-		$this->assertInstanceOf( \WP_Ability::class, $ability );
-		$this->sut = $ability;
-	}
-
-	/** Restore the REST server and the original transport. */
-	public function tearDown(): void {
-		try {
-			remove_action( 'rest_api_init', array( $this->controller, 'register_routes' ) );
-			$GLOBALS['wp_rest_server'] = $this->original_server;
-			$this->reset_container_replacements();
-			$this->reset_container_resolutions();
-		} finally {
-			parent::tearDown();
-		}
-	}
-
 	/**
 	 * @testdox A draft goes through the dispute route: one read, one update, the dispute caches cleared and the order added.
 	 */
@@ -431,7 +374,7 @@ class SubmitDisputeEvidenceTest extends AbilityTestCase {
 	}
 
 	/**
-	 * @testdox Every fixed route name under the disputes base, taken from the registered routes, is refused as a dispute ID by both dispute abilities.
+	 * @testdox Every fixed route name under the disputes base, taken from the registered routes, is refused as a dispute ID by every dispute ability that takes an ID.
 	 */
 	public function test_registered_route_names_are_refused_as_dispute_ids(): void {
 		$base  = '/wc/v3/payments/disputes/';
@@ -447,18 +390,25 @@ class SubmitDisputeEvidenceTest extends AbilityTestCase {
 		}
 		$this->assertNotEmpty( $names );
 
+		$this->assertTrue( wp_has_ability( self::PREFIX . 'accept-dispute' ) );
+		$accept = wp_get_ability( self::PREFIX . 'accept-dispute' );
+		$this->assertInstanceOf( \WP_Ability::class, $accept );
+
 		foreach ( array_keys( $names ) as $name ) {
 			foreach ( array( $name, strtoupper( $name ) ) as $dispute_id ) {
 				$this->assertFalse( DisputeIdentifier::is_accepted( $dispute_id ), $dispute_id );
 				$submitted = $this->sut->execute( array( 'dispute_id' => $dispute_id ) );
 				$this->assertWPError( $submitted, $dispute_id );
 				$this->assertSame( 'wcpay_dispute_evidence_failed', $submitted->get_error_code(), $dispute_id );
+				$accepted = $accept->execute( array( 'dispute_id' => $dispute_id ) );
+				$this->assertWPError( $accepted, $dispute_id );
+				$this->assertSame( 'wcpay_dispute_close_failed', $accepted->get_error_code(), $dispute_id );
 				$read = wp_get_ability( self::PREFIX . 'get-dispute' )->execute( array( 'dispute_id' => $dispute_id ) );
 				$this->assertWPError( $read, $dispute_id );
 				$this->assertSame( 'wcpay_invalid_dispute_id', $read->get_error_code(), $dispute_id );
 			}
 		}
-		$this->assertSame( 0, $this->http->request_count );
+		$this->assert_nothing_sent();
 	}
 
 	/**
@@ -591,62 +541,6 @@ class SubmitDisputeEvidenceTest extends AbilityTestCase {
 
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertFalse( $this->sent_body()['submit'] );
-	}
-
-	/**
-	 * Build a platform dispute.
-	 *
-	 * @param array $fields Fields to override.
-	 */
-	private function dispute( array $fields = array() ): array {
-		return array_merge(
-			array(
-				'id'     => 'du_test',
-				'status' => 'needs_response',
-				'reason' => 'fraudulent',
-				'charge' => 'ch_disputed',
-			),
-			$fields
-		);
-	}
-
-	/**
-	 * Build a platform error response.
-	 *
-	 * @param string $code    Platform error code.
-	 * @param string $message Platform error message.
-	 * @param int    $status  HTTP status.
-	 */
-	private function error_response( string $code, string $message, int $status ): array {
-		return array(
-			'status' => $status,
-			'body'   => array(
-				'error' => array(
-					'code'    => $code,
-					'message' => $message,
-				),
-			),
-		);
-	}
-
-	/**
-	 * Queue the transport's JSON responses, one per request.
-	 *
-	 * @param array ...$bodies Platform bodies, or a status and body from error_response().
-	 */
-	private function respond_in_turn( array ...$bodies ): void {
-		foreach ( $bodies as $body ) {
-			$status = 200;
-			if ( isset( $body['status'], $body['body'] ) && is_int( $body['status'] ) ) {
-				$status = $body['status'];
-				$body   = $body['body'];
-			}
-			$this->http->responses[] = array(
-				'response' => array( 'code' => $status ),
-				'headers'  => array( 'content-type' => 'application/json' ),
-				'body'     => wp_json_encode( $body ),
-			);
-		}
 	}
 
 	/** Decode the last update body sent to the platform. */

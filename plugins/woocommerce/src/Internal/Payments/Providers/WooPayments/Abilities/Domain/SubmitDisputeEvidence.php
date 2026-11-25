@@ -8,8 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Abilities\Domain;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Abilities\DisputeIdentifier;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use WP_Error;
 
 /**
@@ -119,15 +117,7 @@ final class SubmitDisputeEvidence extends AbstractAbility {
 				'additionalProperties' => false,
 			),
 			'output_schema' => array(),
-			'meta'          => array(
-				'annotations'  => array(
-					'readonly'    => false,
-					'destructive' => true,
-					'idempotent'  => false,
-				),
-				'show_in_rest' => true,
-				'mcp'          => array( 'public' => false ),
-			),
+			'meta'          => self::get_private_write_meta(),
 		);
 	}
 
@@ -172,40 +162,15 @@ final class SubmitDisputeEvidence extends AbstractAbility {
 			return new WP_Error( 'wcpay_dispute_evidence_failed', __( 'Route param validation failed.', 'woocommerce' ) );
 		}
 
-		try {
-			$response = self::delegate_to_rest_controller(
-				'POST',
-				'/wc/v3/payments/disputes/' . rawurlencode( $dispute_id ),
-				array(
-					'evidence' => $evidence,
-					'submit'   => $submit,
-					'metadata' => $metadata,
-				)
-			);
-		} catch ( \Throwable $failure ) {
-			self::log_failure( $failure instanceof ApiException ? $failure->get_error_code() : '' );
-			return new WP_Error( 'wcpay_dispute_evidence_failed', $failure->getMessage(), array( 'exception' => $failure ) );
-		}
-
-		if ( is_wp_error( $response ) ) {
-			$route_code = (string) $response->get_error_code();
-			self::log_failure( $route_code );
-			// No status in the data, so the REST run endpoint answers 500 as the extension's ability does.
-			return new WP_Error( 'wcpay_dispute_evidence_failed', $response->get_error_message(), array( 'route_error_code' => $route_code ) );
-		}
-
-		return $response;
-	}
-
-	/**
-	 * Log a failed update with a listed error code only.
-	 *
-	 * @param string $code Route or platform error code.
-	 */
-	private static function log_failure( string $code ): void {
-		wc_get_logger()->error(
-			sprintf( 'Dispute evidence submission failed (%s).', WooPaymentsLogger::get_loggable_error_code( $code ) ),
-			array( 'source' => 'woopayments-abilities' )
+		return self::delegate_write_to_rest_controller(
+			'/wc/v3/payments/disputes/' . rawurlencode( $dispute_id ),
+			'wcpay_dispute_evidence_failed',
+			'Dispute evidence submission',
+			array(
+				'evidence' => $evidence,
+				'submit'   => $submit,
+				'metadata' => $metadata,
+			)
 		);
 	}
 }
