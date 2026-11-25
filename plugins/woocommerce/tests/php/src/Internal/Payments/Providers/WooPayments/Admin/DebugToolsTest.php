@@ -25,7 +25,7 @@ class DebugToolsTest extends WC_Unit_Test_Case {
 	private const EXTENSION_VERSION_OPTION = 'woocommerce_woocommerce_payments_version';
 
 	/**
-	 * The tools the built-in WooPayments lists on every store it serves with support diagnostics.
+	 * The tools the built-in WooPayments lists whenever it owns the store.
 	 *
 	 * Client 11.1.0 `includes/class-wc-payments-status.php:85-140` defines these IDs and the remediation ones below.
 	 */
@@ -52,7 +52,7 @@ class DebugToolsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The debug tools follow who runs WooPayments: all five for a connected or active built-in, three while it waits, is off or sits in the available tier, none beside the extension ($_dataName).
+	 * @testdox The debug tools follow who runs WooPayments: all five for a connected or active built-in, three in the available tier, none for any other owner ($_dataName).
 	 * @dataProvider provide_debug_tool_stores
 	 *
 	 * @param string   $feature      The WooPayments feature option.
@@ -88,6 +88,14 @@ class DebugToolsTest extends WC_Unit_Test_Case {
 		$tools = $this->get_sut()->add_debug_tools( $input );
 
 		$this->assertSame( $expected_ids, array_keys( $tools ) );
+		if ( ! $plugin && array() === $expected_ids ) {
+			$controller = $this->getMockBuilder( \WC_REST_System_Status_Tools_V2_Controller::class )->onlyMethods( array( 'get_tools', 'execute_tool' ) )->getMock();
+			$controller->method( 'get_tools' )->willReturn( $tools );
+			$controller->expects( $this->never() )->method( 'execute_tool' );
+			$request       = new \WP_REST_Request( 'PUT' );
+			$request['id'] = 'delete_wcpay_test_orders';
+			$this->assertSame( 404, $controller->update_item( $request )->get_error_data()['status'] );
+		}
 		foreach ( array_diff( $expected_ids, $input_ids ) as $tool_id ) {
 			$this->assertIsCallable( $tools[ $tool_id ]['callback'], $tool_id );
 		}
@@ -106,8 +114,8 @@ class DebugToolsTest extends WC_Unit_Test_Case {
 			'built-in owns a connected store, keeping other tools' => array( 'yes', false, false, WooPaymentsSetupTier::CONNECTED, false, array( 'clear_transients' ), array_merge( array( 'clear_transients' ), $all ) ),
 			'built-in owns an active store'              => array( 'yes', false, false, WooPaymentsSetupTier::ACTIVE, false, array(), $all ),
 			'switched store reset to the available tier' => array( 'yes', false, true, WooPaymentsSetupTier::AVAILABLE, true, array(), self::ACCOUNT_AND_ORDER_TOOLS ),
-			'waiting for the switch'                     => array( 'yes', false, true, WooPaymentsSetupTier::DISABLED, false, array(), self::ACCOUNT_AND_ORDER_TOOLS ),
-			'feature off, extension not running'         => array( 'no', false, true, WooPaymentsSetupTier::CONNECTED, false, array(), self::ACCOUNT_AND_ORDER_TOOLS ),
+			'waiting for the switch'                     => array( 'yes', false, true, WooPaymentsSetupTier::DISABLED, false, array(), array() ),
+			'feature off, extension not running'         => array( 'no', false, true, WooPaymentsSetupTier::CONNECTED, false, array(), array() ),
 			'extension owns payments, feature on'        => array( 'yes', true, true, WooPaymentsSetupTier::AVAILABLE, false, $all, $all ),
 			'extension owns payments, no extra tools'    => array( 'yes', true, true, WooPaymentsSetupTier::AVAILABLE, false, array(), array() ),
 		);

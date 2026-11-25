@@ -82,7 +82,7 @@ class DebugTools {
 	}
 
 	/**
-	 * Add the WooPayments debug tools, none while the WooPayments extension owns payments (it lists its own).
+	 * Add the WooPayments debug tools while the built-in WooPayments owns payments.
 	 *
 	 * The two canceled-authorization tools schedule actions whose handlers load only in the connected and active setup tiers,
 	 * which the built-in WooPayments reaches only as the owner, so they are listed only then.
@@ -91,7 +91,7 @@ class DebugTools {
 	 * @return mixed
 	 */
 	public function add_debug_tools( $tools ) {
-		if ( ! is_array( $tools ) || $this->arbiter->is_extension_owner() ) {
+		if ( ! is_array( $tools ) || ! $this->arbiter->is_builtin_owner() ) {
 			return $tools;
 		}
 

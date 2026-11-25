@@ -218,8 +218,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $sut->get_status_data()['runtime_owner'] );
 		$this->assertSame( 'none (awaiting the switch)', $sut->get_status_fields()['runtime_owner']['value'] );
 		$this->assertArrayHasKey( 'woocommerce_woopayments_cutover', $sut->add_site_status_tests( array() )['async'], 'The waiting store is offered the switch, so Site Health checks it.' );
-		// The tool IDs are the extension's (client 11.1.0 `includes/class-wc-payments-status.php:85-140`).
-		$this->assertSame( array( 'clear_wcpay_account_cache', 'delete_wcpay_test_orders', 'clear_wcpay_styles_cache' ), array_keys( $sut->add_debug_tools( array() ) ), 'The canceled-authorization tools need handlers that load only while the built-in WooPayments owns payments.' );
+		$this->assertSame( array(), $sut->add_debug_tools( array() ) );
 
 		ob_start();
 		$sut->render_status_report_section();
