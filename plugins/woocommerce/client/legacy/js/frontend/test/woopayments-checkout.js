@@ -1027,6 +1027,8 @@ describe( 'WooPayments checkout', () => {
 				gatewayId: 'woocommerce_payments_sepa_debit',
 				paymentMethodTypes: [ 'sepa_debit' ],
 				paymentMethodsConfig: {
+					card: {},
+					link: {},
 					sepa_debit: {
 						isReusable: false,
 					},
