@@ -117,7 +117,7 @@ class WooPaymentsOrderStatusChangeConfirmation {
 			'charge_id'                 => $this->get_charge_id_for_active_mode( $order ),
 			'has_open_authorization'    => WooPaymentsIntentStatus::REQUIRES_CAPTURE === $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true ),
 			'test_mode'                 => WooPaymentsOrderMode::TEST === $order->get_meta( WooPaymentsPersistenceVocabulary::MODE_META_KEY, true ),
-			'disable_manual_refunds'    => 'failed' !== $order->get_meta( WooPaymentsPersistenceVocabulary::REFUND_STATUS_META_KEY, true ),
+			'disable_manual_refunds'    => WooPaymentsStoredRefundStatus::FAILED !== $order->get_meta( WooPaymentsPersistenceVocabulary::REFUND_STATUS_META_KEY, true ),
 			// Client 11.1.0 localizes `shouldUseExplicitPrice` for the disputed order notice's amount (admin/class-wc-payments-admin.php:1040).
 			'should_use_explicit_price' => ExplicitPriceFormatter::should_output_explicit_admin_price(),
 		);

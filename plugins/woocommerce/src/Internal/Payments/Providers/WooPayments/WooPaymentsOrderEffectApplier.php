@@ -758,7 +758,7 @@ class WooPaymentsOrderEffectApplier {
 			(string) $order->get_currency(),
 			null,
 			$settlement_meta,
-			( ! $captures && $order->has_status( OrderStatus::ON_HOLD ) ) || 'review' === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY, true ),
+			( ! $captures && $order->has_status( OrderStatus::ON_HOLD ) ) || WooPaymentsFraudOutcome::REVIEW === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY, true ),
 			$include_fee_meta || $captures,
 			$captures
 		);
@@ -816,7 +816,7 @@ class WooPaymentsOrderEffectApplier {
 		} elseif ( in_array( $status, array( WooPaymentsIntentStatus::REQUIRES_CAPTURE, WooPaymentsIntentStatus::PROCESSING ), true ) && '' !== $intent_id ) {
 			$metadata      = isset( $result['metadata'] ) && is_array( $result['metadata'] ) ? $result['metadata'] : array();
 			$fraud_outcome = isset( $metadata['fraud_outcome'] ) && is_string( $metadata['fraud_outcome'] ) ? $metadata['fraud_outcome'] : '';
-			if ( 'review' === $fraud_outcome ) {
+			if ( WooPaymentsFraudOutcome::REVIEW === $fraud_outcome ) {
 				$note_candidates                                      = $this->note_service->format_fraud_held_for_review_note_candidates( $order, $intent_id, $charge_id, WooPaymentsOrderEffects::get_fraud_ruleset_results( $result ) );
 				$effect_data[ PaymentOutcome::DATA_NOTE ]             = $note_candidates[0];
 				$effect_data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] = $note_candidates;
@@ -907,7 +907,7 @@ class WooPaymentsOrderEffectApplier {
 					(string) $order->get_currency(),
 					$this->account_service->get_order_mode(),
 					$settlement_meta,
-					'review' === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY, true ),
+					WooPaymentsFraudOutcome::REVIEW === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY, true ),
 					$include_fee_meta
 				),
 				PaymentOutcome::DATA_NOTE             => $note_candidates[0],
@@ -930,8 +930,8 @@ class WooPaymentsOrderEffectApplier {
 		$message         = WooPaymentsIntentCodec::with_minimum_capture_amount( $message, is_array( $data['extra_details'] ?? null ) ? $data['extra_details'] : array() );
 		$note_candidates = $this->note_service->format_capture_failed_note_candidates( $order, $intent_id, $charge_id, $message );
 		$meta            = WooPaymentsOrderEffects::failed_capture_meta();
-		if ( 'review' === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY, true ) ) {
-			$meta[ WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY ] = 'review_failed';
+		if ( WooPaymentsFraudOutcome::REVIEW === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY, true ) ) {
+			$meta[ WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY ] = WooPaymentsFraudMetaBoxType::REVIEW_FAILED;
 		}
 
 		return array(
@@ -962,8 +962,8 @@ class WooPaymentsOrderEffectApplier {
 		if ( '' !== $charge_id ) {
 			$meta[ WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY ] = $charge_id;
 		}
-		if ( 'review' === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY, true ) ) {
-			$meta[ WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY ] = 'review_expired';
+		if ( WooPaymentsFraudOutcome::REVIEW === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY, true ) ) {
+			$meta[ WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY ] = WooPaymentsFraudMetaBoxType::REVIEW_EXPIRED;
 		}
 
 		return array(

@@ -389,7 +389,7 @@ class WooPaymentsRefundAmbiguityService {
 			);
 		}
 
-		if ( in_array( (string) ( $refund['status'] ?? '' ), array( 'failed', 'canceled' ), true ) ) {
+		if ( in_array( (string) ( $refund['status'] ?? '' ), array( WooPaymentsRefundStatus::FAILED, WooPaymentsRefundStatus::CANCELED ), true ) ) {
 			$this->clear_record( $order );
 			$this->log_cleared( $order, $record, sprintf( 'its refund %s did not go through, so this call sends under its own key', $refund_id ) );
 

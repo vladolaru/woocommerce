@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCaptureMethod;
 use Automattic\Jetpack\Connection\Client as Jetpack_Connection_Client;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
@@ -1193,7 +1194,7 @@ class SessionService {
 			'store_api_url'                  => $this->get_store_api_url(),
 			'account_id'                     => $this->account_service->get_account_id(),
 			'test_mode'                      => $this->account_service->is_test_mode_enabled(),
-			'capture_method'                 => $manual_capture ? 'manual' : 'automatic',
+			'capture_method'                 => $manual_capture ? WooPaymentsCaptureMethod::MANUAL : WooPaymentsCaptureMethod::AUTOMATIC,
 			'is_subscriptions_plugin_active' => SubscriptionMethodPolicy::is_woocommerce_subscriptions_active(),
 			'woocommerce_tax_display_cart'   => get_option( 'woocommerce_tax_display_cart' ),
 			'ship_to_billing_address_only'   => wc_ship_to_billing_address_only(),

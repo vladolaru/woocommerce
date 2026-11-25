@@ -494,7 +494,7 @@ class WooPaymentsPaymentOperationService {
 		$refunds          = is_array( $list['data'] ?? null ) ? array_reverse( $list['data'] ) : array();
 		$already_recorded = false;
 		foreach ( $refunds as $refund ) {
-			if ( ! is_array( $refund ) || 'succeeded' !== ( $refund['status'] ?? null ) || ! isset( $refund['amount'] ) || $request['amount'] !== $refund['amount'] || ! is_string( $refund['id'] ?? null ) ) {
+			if ( ! is_array( $refund ) || WooPaymentsRefundStatus::SUCCEEDED !== ( $refund['status'] ?? null ) || ! isset( $refund['amount'] ) || $request['amount'] !== $refund['amount'] || ! is_string( $refund['id'] ?? null ) ) {
 				continue;
 			}
 
@@ -1601,7 +1601,7 @@ class WooPaymentsPaymentOperationService {
 			if ( is_array( $intent ) ) {
 				$meta += WooPaymentsOrderEffects::failed_payment_method_details_meta( $intent );
 			}
-			$meta[ WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY ] = 'allow';
+			$meta[ WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY ] = WooPaymentsFraudMetaBoxType::ALLOW;
 			$data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]             = $meta;
 		}
 
@@ -1737,13 +1737,13 @@ class WooPaymentsPaymentOperationService {
 		} else {
 			// AVS blocks surface as a Stripe card error rather than a rule engine
 			// outcome, so no ruleset results accompany them; the fired rule is known.
-			$ruleset_results = array( 'avs_verification' => 'block' );
+			$ruleset_results = array( 'avs_verification' => WooPaymentsFraudOutcome::BLOCK );
 		}
 
 		$meta = isset( $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ) && is_array( $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ) ? $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] : array();
 
-		$meta[ WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY ] = 'block';
-		$meta[ WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY ]  = 'block';
+		$meta[ WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY ] = WooPaymentsFraudOutcome::BLOCK;
+		$meta[ WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY ]  = WooPaymentsFraudMetaBoxType::BLOCK;
 		$meta[ WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY ]     = WooPaymentsIntentStatus::CANCELED;
 		if ( array() !== $ruleset_results ) {
 			$meta[ WooPaymentsPersistenceVocabulary::FRAUD_RULESET_RESULTS_META_KEY ] = (string) wp_json_encode( $ruleset_results );

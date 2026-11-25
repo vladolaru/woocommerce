@@ -304,7 +304,7 @@ class WooPaymentsOrderEffects {
 
 		$meta = array_merge( $meta, self::authorized_charge_meta( $intent, $charge, $settlement_meta, $was_held_for_review ) );
 		if ( ! $is_capture && ! self::is_card_charge( $charge ) ) {
-			$meta[ WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY ] = 'not_card';
+			$meta[ WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY ] = WooPaymentsFraudMetaBoxType::NOT_CARD;
 		}
 
 		return $meta;
@@ -366,7 +366,7 @@ class WooPaymentsOrderEffects {
 			WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY             => isset( $intent['status'] ) ? (string) $intent['status'] : WooPaymentsIntentStatus::REQUIRES_ACTION,
 			WooPaymentsPersistenceVocabulary::INTENT_CURRENCY_META_KEY        => strtoupper( isset( $intent['currency'] ) ? (string) $intent['currency'] : $order_currency ),
 			WooPaymentsPersistenceVocabulary::PAYMENT_TRANSACTION_ID_META_KEY => '',
-			WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY    => self::is_card_intent( $intent ) ? 'payment_started' : 'not_card',
+			WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY    => self::is_card_intent( $intent ) ? WooPaymentsFraudMetaBoxType::PAYMENT_STARTED : WooPaymentsFraudMetaBoxType::NOT_CARD,
 		);
 	}
 
@@ -431,7 +431,7 @@ class WooPaymentsOrderEffects {
 		$metadata      = isset( $intent['metadata'] ) && is_array( $intent['metadata'] ) ? $intent['metadata'] : array();
 		$fraud_outcome = isset( $metadata['fraud_outcome'] ) ? (string) $metadata['fraud_outcome'] : '';
 
-		if ( in_array( $fraud_outcome, $is_authorization ? array( 'allow', 'review' ) : array( 'allow', 'block', 'review' ), true ) ) {
+		if ( in_array( $fraud_outcome, $is_authorization ? array( WooPaymentsFraudOutcome::ALLOW, WooPaymentsFraudOutcome::REVIEW ) : array( WooPaymentsFraudOutcome::ALLOW, WooPaymentsFraudOutcome::BLOCK, WooPaymentsFraudOutcome::REVIEW ), true ) ) {
 			// A review outcome on a pre-capture intent is client 11.1.0's
 			// mark_order_held_for_review_for_fraud() stamp (class-wc-payments-order-service.php:1717): the meta box must show the
 			// held-for-review panel until the merchant decides. On completion the
@@ -439,7 +439,7 @@ class WooPaymentsOrderEffects {
 			if ( $is_authorization ) {
 				$box_type = $fraud_outcome;
 			} else {
-				$box_type = $was_held_for_review ? 'review_allowed' : 'allow';
+				$box_type = $was_held_for_review ? WooPaymentsFraudMetaBoxType::REVIEW_ALLOWED : WooPaymentsFraudMetaBoxType::ALLOW;
 			}
 
 			$meta = array(
@@ -447,7 +447,7 @@ class WooPaymentsOrderEffects {
 				WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY  => $box_type,
 			);
 
-			if ( 'review' === $fraud_outcome && $is_authorization ) {
+			if ( WooPaymentsFraudOutcome::REVIEW === $fraud_outcome && $is_authorization ) {
 				$ruleset_results = self::get_fraud_ruleset_results( $intent );
 				$encoded_results = wp_json_encode( $ruleset_results );
 				if ( array() !== $ruleset_results && is_string( $encoded_results ) ) {
@@ -474,13 +474,13 @@ class WooPaymentsOrderEffects {
 	public static function cancelled_authorization_fraud_meta( array $intent ): array {
 		$metadata      = isset( $intent['metadata'] ) && is_array( $intent['metadata'] ) ? $intent['metadata'] : array();
 		$fraud_outcome = isset( $metadata['fraud_outcome'] ) && is_string( $metadata['fraud_outcome'] ) ? $metadata['fraud_outcome'] : '';
-		if ( ! in_array( $fraud_outcome, array( 'block', 'review' ), true ) ) {
+		if ( ! in_array( $fraud_outcome, array( WooPaymentsFraudOutcome::BLOCK, WooPaymentsFraudOutcome::REVIEW ), true ) ) {
 			return array();
 		}
 
 		return array(
 			WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY => $fraud_outcome,
-			WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY  => 'review_blocked',
+			WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY  => WooPaymentsFraudMetaBoxType::REVIEW_BLOCKED,
 		);
 	}
 
@@ -668,7 +668,7 @@ class WooPaymentsOrderEffects {
 	public static function compose_refund_effect_data( array $result, string $rendered_note, string $refund_note_identity, array $refund_note_equivalents ): array {
 		$refund_id              = isset( $result['id'] ) ? (string) $result['id'] : '';
 		$provider_status        = isset( $result['status'] ) ? (string) $result['status'] : '';
-		$refund_status          = WooPaymentsIntentCodec::is_pending_refund_status( $provider_status ) ? 'pending' : 'successful';
+		$refund_status          = WooPaymentsIntentCodec::is_pending_refund_status( $provider_status ) ? WooPaymentsStoredRefundStatus::PENDING : WooPaymentsStoredRefundStatus::SUCCESSFUL;
 		$balance_transaction_id = WooPaymentsIntentCodec::balance_transaction_id( $result['balance_transaction'] ?? null );
 		$refund_meta            = array( WooPaymentsPersistenceVocabulary::PROCESSED_REFUND_LINK_META_KEY => $refund_id );
 		$effect_data            = array(

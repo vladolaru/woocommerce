@@ -212,7 +212,7 @@ class WooPaymentsIntentCodec {
 		$provider_status        = isset( $result['status'] ) ? (string) $result['status'] : '';
 		$balance_transaction_id = self::balance_transaction_id( $result['balance_transaction'] ?? null );
 
-		if ( ! in_array( $provider_status, array( '', 'succeeded' ), true ) && ! self::is_pending_refund_status( $provider_status ) ) {
+		if ( ! in_array( $provider_status, array( '', WooPaymentsRefundStatus::SUCCEEDED ), true ) && ! self::is_pending_refund_status( $provider_status ) ) {
 			$failure_reason = isset( $result['failure_reason'] ) ? (string) $result['failure_reason'] : '';
 
 			return new PaymentOutcome(
@@ -230,7 +230,7 @@ class WooPaymentsIntentCodec {
 			);
 		}
 
-		$data = array( 'refund_status' => self::is_pending_refund_status( $provider_status ) ? 'pending' : 'successful' );
+		$data = array( 'refund_status' => self::is_pending_refund_status( $provider_status ) ? WooPaymentsStoredRefundStatus::PENDING : WooPaymentsStoredRefundStatus::SUCCESSFUL );
 		if ( '' !== $balance_transaction_id ) {
 			$data['refund_balance_transaction_id'] = $balance_transaction_id;
 		}

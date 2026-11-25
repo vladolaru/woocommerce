@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Shadow;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudOutcome;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentStatus;
 use Automattic\WooCommerce\Container;
@@ -510,7 +511,7 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 			(string) $order->get_currency(),
 			$order_mode,
 			$settlement_meta,
-			$order->has_status( OrderStatus::ON_HOLD ) || 'review' === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY, true )
+			$order->has_status( OrderStatus::ON_HOLD ) || WooPaymentsFraudOutcome::REVIEW === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY, true )
 		);
 	}
 

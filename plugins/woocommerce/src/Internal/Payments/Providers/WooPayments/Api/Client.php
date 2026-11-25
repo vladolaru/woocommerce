@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCaptureMethod;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentStatus;
 use Automattic\Jetpack\Connection\Client as Jetpack_Connection_Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -439,7 +440,7 @@ class Client {
 		}
 
 		$request_data['confirm']         = 'true';
-		$request_data['capture_method']  = $request_data['capture_method'] ?? 'automatic';
+		$request_data['capture_method']  = $request_data['capture_method'] ?? WooPaymentsCaptureMethod::AUTOMATIC;
 		$request_data['idempotency_key'] = $idempotency_key;
 
 		return self::answer_naming_what_it_made( $this->request( $request_data, 'intentions', 'POST' ) );

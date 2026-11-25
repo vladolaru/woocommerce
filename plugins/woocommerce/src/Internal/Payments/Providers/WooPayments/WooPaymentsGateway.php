@@ -1861,7 +1861,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		$order->add_order_note( $note );
-		$order->update_meta_data( WooPaymentsPersistenceVocabulary::REFUND_STATUS_META_KEY, 'failed' );
+		$order->update_meta_data( WooPaymentsPersistenceVocabulary::REFUND_STATUS_META_KEY, WooPaymentsStoredRefundStatus::FAILED );
 		$order->save();
 		WooPaymentsTracks::record_wcadmin_event( 'wcpay_edit_order_refund_failure', array( 'reason' => $tracks_reason ) );
 	}

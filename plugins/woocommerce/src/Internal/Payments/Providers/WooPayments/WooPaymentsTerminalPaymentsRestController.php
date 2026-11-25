@@ -608,10 +608,10 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 	private function get_terminal_intent_capture_method( WP_REST_Request $request ): string {
 		$capture_method = $request->get_param( 'capture_method' );
 		if ( null === $capture_method ) {
-			return 'manual';
+			return WooPaymentsCaptureMethod::MANUAL;
 		}
 
-		if ( ! is_string( $capture_method ) || ! in_array( $capture_method, array( 'manual', 'automatic' ), true ) ) {
+		if ( ! is_string( $capture_method ) || ! in_array( $capture_method, array( WooPaymentsCaptureMethod::MANUAL, WooPaymentsCaptureMethod::AUTOMATIC ), true ) ) {
 			throw new \UnexpectedValueException( 'Unsupported terminal capture method.' );
 		}
 
@@ -798,7 +798,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 		$order->update_meta_data( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, $status );
 		$order->update_meta_data( WooPaymentsPersistenceVocabulary::MODE_META_KEY, $this->account_service->get_order_mode() );
 		$order->update_meta_data( 'receipt_url', get_rest_url( null, $this->route_namespace . '/payments/readers/receipts/' . $intent_id ) );
-		$order->update_meta_data( WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY, 'terminal_payment' );
+		$order->update_meta_data( WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY, WooPaymentsFraudMetaBoxType::TERMINAL_PAYMENT );
 
 		if ( isset( $intent['currency'] ) ) {
 			// Plugin 11.1.0 stores the intent model's uppercased currency (class-wc-rest-payments-orders-controller.php:215, class-wc-payments-api-payment-intention.php:93).
@@ -971,8 +971,8 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 			'',
 			$note_candidates,
 			static function () use ( $order ): void {
-				if ( 'review' === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY, true ) ) {
-					$order->update_meta_data( WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY, 'review_failed' );
+				if ( WooPaymentsFraudOutcome::REVIEW === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY, true ) ) {
+					$order->update_meta_data( WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY, WooPaymentsFraudMetaBoxType::REVIEW_FAILED );
 				}
 
 				$order->update_meta_data( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, WooPaymentsIntentStatus::REQUIRES_CAPTURE );
@@ -999,8 +999,8 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 			'',
 			$note_candidates,
 			static function () use ( $order ): void {
-				if ( 'review' === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY, true ) ) {
-					$order->update_meta_data( WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY, 'review_expired' );
+				if ( WooPaymentsFraudOutcome::REVIEW === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY, true ) ) {
+					$order->update_meta_data( WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY, WooPaymentsFraudMetaBoxType::REVIEW_EXPIRED );
 				}
 
 				$order->update_meta_data( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, WooPaymentsIntentStatus::CANCELED );

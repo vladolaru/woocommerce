@@ -215,7 +215,7 @@ class WooPaymentsExpressCheckoutStoreApiExtension implements RegisterHooksInterf
 			'setup_future_usage'       => array(
 				'description' => __( 'Whether the payment method should be saved for future off-session payments.', 'woocommerce' ),
 				'type'        => array( 'string', 'null' ),
-				'enum'        => array( 'off_session', null ),
+				'enum'        => array( WooPaymentsSetupFutureUsage::OFF_SESSION, null ),
 				'context'     => array( 'view', 'edit' ),
 				'readonly'    => true,
 			),

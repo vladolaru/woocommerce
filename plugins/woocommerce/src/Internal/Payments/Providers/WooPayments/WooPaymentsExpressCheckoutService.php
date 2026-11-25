@@ -254,9 +254,9 @@ class WooPaymentsExpressCheckoutService {
 		 * @param string|null $setup_future_usage 'off_session' or null.
 		 * @param string      $context            Express checkout context: product, cart, checkout or pay_for_order.
 		 */
-		$setup_future_usage = apply_filters( 'wcpay_express_checkout_setup_future_usage', $will_be_saved ? 'off_session' : null, $context );
+		$setup_future_usage = apply_filters( 'wcpay_express_checkout_setup_future_usage', $will_be_saved ? WooPaymentsSetupFutureUsage::OFF_SESSION : null, $context );
 
-		return 'off_session' === $setup_future_usage ? 'off_session' : null;
+		return WooPaymentsSetupFutureUsage::OFF_SESSION === $setup_future_usage ? WooPaymentsSetupFutureUsage::OFF_SESSION : null;
 	}
 
 	/**

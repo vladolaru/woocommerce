@@ -42,27 +42,27 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 
 	private const META_FRAUD_RULESET_RESULTS = WooPaymentsPersistenceVocabulary::FRAUD_RULESET_RESULTS_META_KEY;
 
-	private const TYPE_ALLOW = 'allow';
+	private const TYPE_ALLOW = WooPaymentsFraudMetaBoxType::ALLOW;
 
-	private const TYPE_BLOCK = 'block';
+	private const TYPE_BLOCK = WooPaymentsFraudMetaBoxType::BLOCK;
 
-	private const TYPE_NOT_CARD = 'not_card';
+	private const TYPE_NOT_CARD = WooPaymentsFraudMetaBoxType::NOT_CARD;
 
 	private const TYPE_NOT_WCPAY = 'not_wcpay';
 
-	private const TYPE_PAYMENT_STARTED = 'payment_started';
+	private const TYPE_PAYMENT_STARTED = WooPaymentsFraudMetaBoxType::PAYMENT_STARTED;
 
-	private const TYPE_REVIEW = 'review';
+	private const TYPE_REVIEW = WooPaymentsFraudMetaBoxType::REVIEW;
 
-	private const TYPE_REVIEW_ALLOWED = 'review_allowed';
+	private const TYPE_REVIEW_ALLOWED = WooPaymentsFraudMetaBoxType::REVIEW_ALLOWED;
 
-	private const TYPE_REVIEW_BLOCKED = 'review_blocked';
+	private const TYPE_REVIEW_BLOCKED = WooPaymentsFraudMetaBoxType::REVIEW_BLOCKED;
 
-	private const TYPE_REVIEW_EXPIRED = 'review_expired';
+	private const TYPE_REVIEW_EXPIRED = WooPaymentsFraudMetaBoxType::REVIEW_EXPIRED;
 
-	private const TYPE_REVIEW_FAILED = 'review_failed';
+	private const TYPE_REVIEW_FAILED = WooPaymentsFraudMetaBoxType::REVIEW_FAILED;
 
-	private const TYPE_TERMINAL_PAYMENT = 'terminal_payment';
+	private const TYPE_TERMINAL_PAYMENT = WooPaymentsFraudMetaBoxType::TERMINAL_PAYMENT;
 
 	/**
 	 * Order-note service used for fraud-rule labels.

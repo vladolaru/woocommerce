@@ -7,6 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudMetaBoxType;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 
@@ -30,7 +32,7 @@ class FraudOutcomeTransactionsListRequest extends PaginatedListRequest {
 	 *
 	 * @since 11.4.0
 	 */
-	public const STATUSES = array( 'allow', 'block', 'review' );
+	public const STATUSES = array( WooPaymentsFraudOutcome::ALLOW, WooPaymentsFraudOutcome::BLOCK, WooPaymentsFraudOutcome::REVIEW );
 
 	protected const DEFAULT_PARAMS = array(
 		'page'      => 1,
@@ -284,12 +286,12 @@ class FraudOutcomeTransactionsListRequest extends PaginatedListRequest {
 		$manual_review       = $outcome['manual_review'] ?? '';
 		$fraud_meta_box_type = isset( $outcome['fraud_meta_box_type'] ) && is_scalar( $outcome['fraud_meta_box_type'] ) ? (string) $outcome['fraud_meta_box_type'] : '';
 
-		if ( 'review' === $status ) {
-			return WooPaymentsIntentStatus::REQUIRES_CAPTURE === $intent_status && empty( $manual_review ) && 'review' === $fraud_meta_box_type;
+		if ( WooPaymentsFraudOutcome::REVIEW === $status ) {
+			return WooPaymentsIntentStatus::REQUIRES_CAPTURE === $intent_status && empty( $manual_review ) && WooPaymentsFraudMetaBoxType::REVIEW === $fraud_meta_box_type;
 		}
 
-		if ( 'block' === $status ) {
-			return in_array( $fraud_meta_box_type, array( 'block', 'review_blocked' ), true );
+		if ( WooPaymentsFraudOutcome::BLOCK === $status ) {
+			return in_array( $fraud_meta_box_type, array( WooPaymentsFraudMetaBoxType::BLOCK, WooPaymentsFraudMetaBoxType::REVIEW_BLOCKED ), true );
 		}
 
 		return true;

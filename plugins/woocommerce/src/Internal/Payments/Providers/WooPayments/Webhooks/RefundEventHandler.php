@@ -7,6 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundStatus;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStoredRefundStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookEventType;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentStatus;
 use Automattic\WooCommerce\Enums\OrderStatus;
@@ -242,20 +244,20 @@ class RefundEventHandler {
 	public function has_refund_update_note( WC_Order $order, array $refund ): bool {
 		$id     = $refund['id'] ?? '';
 		$status = $refund['status'] ?? '';
-		if ( ! is_string( $id ) || '' === $id || ! in_array( $status, array( 'succeeded', 'failed', 'canceled' ), true ) ) {
+		if ( ! is_string( $id ) || '' === $id || ! in_array( $status, array( WooPaymentsRefundStatus::SUCCEEDED, WooPaymentsRefundStatus::FAILED, WooPaymentsRefundStatus::CANCELED ), true ) ) {
 			return false;
 		}
 		$notes = wc_get_container()->get( OrderPaymentNotes::class );
 		if ( $notes->find_by_identity( $order, 'other_charge|charge.refund.updated|' . $id . '|' . $status, $this->persistence_vocabulary ) ) {
 			return true;
 		}
-		$identity = 'refund:' . $id . ':' . ( 'succeeded' === $status ? 'created_successful' : $status );
+		$identity = 'refund:' . $id . ':' . ( WooPaymentsRefundStatus::SUCCEEDED === $status ? 'created_successful' : $status );
 		if ( $notes->find_by_identity( $order, $identity, $this->persistence_vocabulary ) ) {
 			return true;
 		}
 
 		// Notes inherited from the extension can have only their original wording.
-		if ( 'succeeded' === $status ) {
+		if ( WooPaymentsRefundStatus::SUCCEEDED === $status ) {
 			if ( $notes->find_by_identity( $order, 'refund:' . $id . ':unrecorded', $this->persistence_vocabulary ) ) {
 				return true;
 			}
@@ -266,14 +268,14 @@ class RefundEventHandler {
 			$candidates = $this->get_created_refund_note_candidates( $order, $row, $id, false );
 		} else {
 			$reason = $this->get_optional_string( $refund, 'failure_reason' );
-			if ( 'failed' === $status && 'insufficient_funds' === $reason ) {
+			if ( WooPaymentsRefundStatus::FAILED === $status && 'insufficient_funds' === $reason ) {
 				// The balance note names no refund. Only its private identity can match this update.
 				return false;
 			}
 			if ( ! is_numeric( $refund['amount'] ?? null ) || ! is_string( $refund['currency'] ?? null ) || '' === $refund['currency'] ) {
 				return false;
 			}
-			$candidates = $this->get_failed_refund_note_candidates( $order, $id, (int) $refund['amount'], $refund['currency'], 'canceled' === $status, $reason );
+			$candidates = $this->get_failed_refund_note_candidates( $order, $id, (int) $refund['amount'], $refund['currency'], WooPaymentsRefundStatus::CANCELED === $status, $reason );
 		}
 		return 0 < $notes->find_by_content( $order, $candidates[0], $candidates );
 	}
@@ -287,7 +289,7 @@ class RefundEventHandler {
 	 * @return bool
 	 */
 	private function can_report_refund( WC_Order $order, string $currency, string $status ): bool {
-		return 0 === strcasecmp( $currency, $order->get_currency() ) && ( '' === $status || 'succeeded' === $status || WooPaymentsIntentCodec::is_pending_refund_status( $status ) );
+		return 0 === strcasecmp( $currency, $order->get_currency() ) && ( '' === $status || WooPaymentsRefundStatus::SUCCEEDED === $status || WooPaymentsIntentCodec::is_pending_refund_status( $status ) );
 	}
 
 	/**
@@ -520,8 +522,8 @@ class RefundEventHandler {
 		// Each branch decides, and looks the local refund up again, on the order read under the lock, as charge.refunded
 		// does: a WP Admin refund of the same platform refund links its row while it holds the lock.
 		switch ( $status ) {
-			case 'failed':
-			case 'canceled':
+			case WooPaymentsRefundStatus::FAILED:
+			case WooPaymentsRefundStatus::CANCELED:
 				$lock_token = $this->claim_refund_lock( $order, $refund_id );
 				try {
 					$order = $this->get_fresh_order( $order );
@@ -530,13 +532,13 @@ class RefundEventHandler {
 						return;
 					}
 
-					$is_cancelled = 'failed' !== $status;
+					$is_cancelled = WooPaymentsRefundStatus::FAILED !== $status;
 					$this->handle_failed_refund( $order, $refund_id, $amount, $currency, $this->get_refund_by_provider_refund_id( $order, $refund_id ), $is_cancelled, $is_cancelled ? '' : $this->get_optional_string( $refund, 'failure_reason' ) );
 				} finally {
 					$this->order_payment_lock->release( $order, $this->persistence_vocabulary, $lock_token );
 				}
 				return;
-			case 'succeeded':
+			case WooPaymentsRefundStatus::SUCCEEDED:
 				// Only a refund this store already has gets the success note, so the order's own refund that the store does
 				// not have needs no lock. The check reads the order again too, so refund IDs cached earlier in the request
 				// cannot hide a linked refund.
@@ -639,7 +641,7 @@ class RefundEventHandler {
 	 */
 	private function add_note_and_metadata_for_created_refund( WC_Order $order, WC_Order_Refund $wc_refund, string $refund_id, string $balance_txn_id, string $status, int $amount, string $currency ): void {
 		$is_pending = WooPaymentsIntentCodec::is_pending_refund_status( $status );
-		$order->update_meta_data( WooPaymentsPersistenceVocabulary::REFUND_STATUS_META_KEY, $is_pending ? 'pending' : 'successful' );
+		$order->update_meta_data( WooPaymentsPersistenceVocabulary::REFUND_STATUS_META_KEY, $is_pending ? WooPaymentsStoredRefundStatus::PENDING : WooPaymentsStoredRefundStatus::SUCCESSFUL );
 		$wc_refund->update_meta_data( WooPaymentsPersistenceVocabulary::PROCESSED_REFUND_LINK_META_KEY, $refund_id );
 		if ( '' !== $balance_txn_id ) {
 			$wc_refund->update_meta_data( WooPaymentsPersistenceVocabulary::REFUND_TRANSACTION_ID_META_KEY, $balance_txn_id );
@@ -710,7 +712,7 @@ class RefundEventHandler {
 			}
 		}
 
-		$order->update_meta_data( WooPaymentsPersistenceVocabulary::REFUND_STATUS_META_KEY, 'failed' );
+		$order->update_meta_data( WooPaymentsPersistenceVocabulary::REFUND_STATUS_META_KEY, WooPaymentsStoredRefundStatus::FAILED );
 		$order->save();
 		if ( null !== $order->get_last_save_error() ) {
 			throw new RuntimeException( 'Could not save the failed refund status.' );
@@ -880,13 +882,13 @@ class RefundEventHandler {
 			return $order;
 		}
 
-		$intent_order = 'succeeded' === $status ? $this->event_order_resolver->find_order_by_event_intent( $refund ) : null;
+		$intent_order = WooPaymentsRefundStatus::SUCCEEDED === $status ? $this->event_order_resolver->find_order_by_event_intent( $refund ) : null;
 		if ( $intent_order instanceof WC_Order && WooPaymentsIntentStatus::CANCELED === (string) $intent_order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true ) ) {
 			$this->log_cancelled_intent_order( $refund_id, $charge_id, $this->event_order_resolver->get_event_intent_id( $refund, $intent_order ), $intent_order->get_id() );
 			return null;
 		}
 
-		if ( 'succeeded' === $status && ! $intent_order instanceof WC_Order ) {
+		if ( WooPaymentsRefundStatus::SUCCEEDED === $status && ! $intent_order instanceof WC_Order ) {
 			$this->log_refund_update_without_order( $refund_id, $charge_id );
 			return null;
 		}

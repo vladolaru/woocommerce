@@ -224,7 +224,7 @@ class WooPaymentsOrderDetailsService {
 	public function build_create_payment_intent_request_from_order( WC_Order $order, string $customer_id, string $payment_method, bool $manual_capture ): array {
 		$request = array(
 			'amount'               => WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $order->get_total(), (string) $order->get_currency() ),
-			'capture_method'       => $manual_capture ? 'manual' : 'automatic',
+			'capture_method'       => $manual_capture ? WooPaymentsCaptureMethod::MANUAL : WooPaymentsCaptureMethod::AUTOMATIC,
 			'currency'             => strtolower( (string) $order->get_currency() ),
 			'customer'             => $customer_id,
 			'metadata'             => WooPaymentsIntentRequestBuilder::metadata_from_order( $order ),

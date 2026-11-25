@@ -7,6 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudMetaBoxType;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookEventType;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodType;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentStatus;
@@ -904,7 +906,7 @@ class PaymentIntentEventHandler {
 					$charge,
 					$settlement_meta,
 					false,
-					$captures_the_authorization ? 'review' === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY, true ) : $order->has_status( OrderStatus::ON_HOLD ),
+					$captures_the_authorization ? WooPaymentsFraudOutcome::REVIEW === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY, true ) : $order->has_status( OrderStatus::ON_HOLD ),
 					$captures_the_authorization
 				),
 				$this->get_succeeded_payment_method_meta( $order, $charge, '' !== $stored_intent_id && $stored_intent_id !== $this->get_object_id( $event_object ) ),
@@ -1005,8 +1007,8 @@ class PaymentIntentEventHandler {
 					WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY        => $charge_id,
 					WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY => isset( $expired_intent['status'] ) ? (string) $expired_intent['status'] : '',
 				);
-				if ( 'review' === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY, true ) ) {
-					$meta[ WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY ] = 'review_expired';
+				if ( WooPaymentsFraudOutcome::REVIEW === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY, true ) ) {
+					$meta[ WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY ] = WooPaymentsFraudMetaBoxType::REVIEW_EXPIRED;
 				}
 
 				return new PaymentLifecycleEvent(

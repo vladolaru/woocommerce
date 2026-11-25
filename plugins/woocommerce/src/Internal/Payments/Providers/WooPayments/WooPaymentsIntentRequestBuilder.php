@@ -149,7 +149,7 @@ class WooPaymentsIntentRequestBuilder {
 		$payment_method_types = $this->payment_method_types_for_request( $context, (string) $order->get_currency() );
 		$request_data         = array(
 			'amount'               => WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $order->get_total(), (string) $order->get_currency() ),
-			'capture_method'       => ! $is_scheduled_renewal && $this->account_service->is_manual_capture_enabled() && $this->can_capture_later( $payment_method_types ) ? 'manual' : 'automatic',
+			'capture_method'       => ! $is_scheduled_renewal && $this->account_service->is_manual_capture_enabled() && $this->can_capture_later( $payment_method_types ) ? WooPaymentsCaptureMethod::MANUAL : WooPaymentsCaptureMethod::AUTOMATIC,
 			'currency'             => strtolower( (string) $order->get_currency() ),
 			'customer'             => $customer_id,
 			'description'          => self::intent_description( $order->get_order_number() ),
@@ -184,7 +184,7 @@ class WooPaymentsIntentRequestBuilder {
 		// rejects the combination outright, failing the whole checkout
 		// (class-wc-payment-gateway-wcpay.php:1870-1875).
 		if ( ! $is_scheduled_renewal && $save_payment_method && $this->are_payment_method_types_reusable( $payment_method_types ) ) {
-			$request_data['setup_future_usage'] = 'off_session';
+			$request_data['setup_future_usage'] = WooPaymentsSetupFutureUsage::OFF_SESSION;
 		}
 
 		// Stated lock exception: ordinary checkout already read the account during availability checks; Level 3 uses that copy.

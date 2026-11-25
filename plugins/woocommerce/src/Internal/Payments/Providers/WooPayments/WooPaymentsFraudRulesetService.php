@@ -383,8 +383,8 @@ class WooPaymentsFraudRulesetService {
 		$reviewable_outcome = $this->get_reviewable_fraud_outcome();
 
 		return array(
-			$this->get_international_ip_address_rule( 'block' ),
-			$this->get_rule( 'purchase_price_threshold', 'block', $this->get_check( 'order_total', 'greater_than', $this->get_fraud_threshold_amount() ) ),
+			$this->get_international_ip_address_rule( WooPaymentsFraudOutcome::BLOCK ),
+			$this->get_rule( 'purchase_price_threshold', WooPaymentsFraudOutcome::BLOCK, $this->get_check( 'order_total', 'greater_than', $this->get_fraud_threshold_amount() ) ),
 			$this->get_rule(
 				'order_items_threshold',
 				$reviewable_outcome,
@@ -407,7 +407,7 @@ class WooPaymentsFraudRulesetService {
 	 * @return string
 	 */
 	private function get_reviewable_fraud_outcome(): string {
-		return $this->is_fraud_protection_review_feature_active() ? 'review' : 'block';
+		return $this->is_fraud_protection_review_feature_active() ? WooPaymentsFraudOutcome::REVIEW : WooPaymentsFraudOutcome::BLOCK;
 	}
 
 	/**
@@ -483,7 +483,7 @@ class WooPaymentsFraudRulesetService {
 	private static function is_valid_fraud_rule( array $rule ): bool {
 		return isset( $rule['key'], $rule['outcome'], $rule['check'] )
 			&& is_string( $rule['key'] )
-			&& in_array( $rule['outcome'], array( 'allow', 'block', 'review' ), true )
+			&& in_array( $rule['outcome'], array( WooPaymentsFraudOutcome::ALLOW, WooPaymentsFraudOutcome::BLOCK, WooPaymentsFraudOutcome::REVIEW ), true )
 			&& is_array( $rule['check'] )
 			&& self::is_valid_fraud_check( $rule['check'] );
 	}

@@ -376,7 +376,7 @@ class WooPaymentsOrderNoteService {
 			rawurlencode( '/payments/transactions/details' ),
 			array(
 				'id'        => '' !== $intent_id ? $intent_id : $order_id,
-				'status_is' => 'block',
+				'status_is' => WooPaymentsFraudOutcome::BLOCK,
 				'type_is'   => 'order_note',
 			)
 		);
@@ -622,10 +622,10 @@ class WooPaymentsOrderNoteService {
 
 			case WooPaymentsWebhookEventType::CHARGE_REFUND_UPDATED:
 				$statuses = array(
-					'succeeded' => __( 'successful', 'woocommerce' ),
-					'failed'    => __( 'failed', 'woocommerce' ),
-					'canceled'  => __( 'canceled', 'woocommerce' ),
-					'cancelled' => __( 'canceled', 'woocommerce' ),
+					WooPaymentsRefundStatus::SUCCEEDED => __( 'successful', 'woocommerce' ),
+					WooPaymentsRefundStatus::FAILED    => __( 'failed', 'woocommerce' ),
+					WooPaymentsRefundStatus::CANCELED  => __( 'canceled', 'woocommerce' ),
+					'cancelled'                        => __( 'canceled', 'woocommerce' ),
 				);
 				/* translators: %1$s: WooPayments refund ID, %2$s: WooPayments charge ID, %3$s: refund status, such as "failed", %4$s: transaction URL. */
 				$format = __( 'The refund <code>%1$s</code> on WooPayments charge <a>%2$s</a>, which does not pay this order, is now %3$s.', 'woocommerce' );
@@ -1330,7 +1330,7 @@ class WooPaymentsOrderNoteService {
 			// As client 11.1.0 links it (class-wc-payments-order-service.php:2342-2361): to the transaction's review entries.
 			$transaction_url = add_query_arg(
 				array(
-					'status_is' => 'review',
+					'status_is' => WooPaymentsFraudOutcome::REVIEW,
 					'type_is'   => 'order_note',
 				),
 				$transaction_url
@@ -1410,7 +1410,7 @@ class WooPaymentsOrderNoteService {
 		if ( 'woocommerce-payments' === $text_domain ) {
 			// phpcs:disable WordPress.WP.I18n.TextDomainMismatch -- The extension's labels in the woocommerce-payments text domain, so notes already on an order are recognised.
 			$mapping = array(
-				'review' => array(
+				WooPaymentsFraudOutcome::REVIEW => array(
 					'avs_verification'         => __( 'Place in review if the AVS verification fails', 'woocommerce-payments' ),
 					'address_mismatch'         => __( 'Place in review if the shipping address country differs from the billing address country', 'woocommerce-payments' ),
 					'international_ip_address' => __( 'Place in review if the country resolved from customer IP is not listed in your selling countries', 'woocommerce-payments' ),
@@ -1418,7 +1418,7 @@ class WooPaymentsOrderNoteService {
 					'order_items_threshold'    => __( 'Place in review if the items count is not in your defined range', 'woocommerce-payments' ),
 					'purchase_price_threshold' => __( 'Place in review if the purchase price is not in your defined range', 'woocommerce-payments' ),
 				),
-				'block'  => array(
+				WooPaymentsFraudOutcome::BLOCK  => array(
 					'avs_verification'         => __( 'Block if the AVS verification fails', 'woocommerce-payments' ),
 					'address_mismatch'         => __( 'Block if the shipping address differs from the billing address', 'woocommerce-payments' ),
 					'international_ip_address' => __( 'Block if the country resolved from customer IP is not listed in your selling countries', 'woocommerce-payments' ),
@@ -1430,7 +1430,7 @@ class WooPaymentsOrderNoteService {
 			// phpcs:enable WordPress.WP.I18n.TextDomainMismatch
 		} else {
 			$mapping = array(
-				'review' => array(
+				WooPaymentsFraudOutcome::REVIEW => array(
 					'avs_verification'         => __( 'Place in review if the AVS verification fails', 'woocommerce' ),
 					'address_mismatch'         => __( 'Place in review if the shipping address country differs from the billing address country', 'woocommerce' ),
 					'international_ip_address' => __( 'Place in review if the country resolved from customer IP is not listed in your selling countries', 'woocommerce' ),
@@ -1438,7 +1438,7 @@ class WooPaymentsOrderNoteService {
 					'order_items_threshold'    => __( 'Place in review if the items count is not in your defined range', 'woocommerce' ),
 					'purchase_price_threshold' => __( 'Place in review if the purchase price is not in your defined range', 'woocommerce' ),
 				),
-				'block'  => array(
+				WooPaymentsFraudOutcome::BLOCK  => array(
 					'avs_verification'         => __( 'Block if the AVS verification fails', 'woocommerce' ),
 					'address_mismatch'         => __( 'Block if the shipping address differs from the billing address', 'woocommerce' ),
 					'international_ip_address' => __( 'Block if the country resolved from customer IP is not listed in your selling countries', 'woocommerce' ),
@@ -1451,7 +1451,7 @@ class WooPaymentsOrderNoteService {
 
 		$labels = array();
 		foreach ( $ruleset_results as $key => $outcome ) {
-			if ( ! is_string( $key ) || ! is_string( $outcome ) || 'allow' === $outcome ) {
+			if ( ! is_string( $key ) || ! is_string( $outcome ) || WooPaymentsFraudOutcome::ALLOW === $outcome ) {
 				continue;
 			}
 
