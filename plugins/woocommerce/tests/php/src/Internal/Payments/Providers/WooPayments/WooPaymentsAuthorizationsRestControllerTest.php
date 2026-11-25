@@ -1363,6 +1363,40 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 	}
 
 	/**
+	 * @testdox The merchant's review is already stored when cancellation attempts to claim the order.
+	 */
+	public function test_cancel_saves_the_review_entry_before_the_claim(): void {
+		$order = StoredPaymentRecords::authorization();
+		$order->update_meta_data( '_wcpay_fraud_outcome_status', 'review' );
+		$order->save();
+		$this->api_client->response = array(
+			'status'   => 'requires_capture',
+			'metadata' => array( 'order_id' => (string) $order->get_id() ),
+		);
+
+		$entry_at_claim = null;
+		$lock           = $this->createMock( OrderPaymentLock::class );
+		$lock->expects( $this->once() )->method( 'claim' )->willReturnCallback(
+			static function ( WC_Order $claimed_order ) use ( &$entry_at_claim ) {
+				$stored_order = new WC_Order( $claimed_order->get_id() );
+				$stored_order->read_meta_data( true );
+				$entry_at_claim = $stored_order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_MANUAL_ENTRY_META_KEY );
+				return null;
+			}
+		);
+		wc_get_container()->replace( OrderPaymentLock::class, $lock );
+		$this->reset_container_resolutions();
+		$this->create_authorizations_controller( wc_get_container()->get( PaymentProcessingService::class ) )->register_routes();
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/cancel_authorization' );
+		$request->set_body_params( array( 'payment_intent_id' => $order->get_transaction_id() ) );
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 'wcpay_cancel_error', $response->get_data()['code'] );
+		$this->assertSame( 'blocked', $entry_at_claim['action'] ?? null, 'The review entry must be in the database before the claim.' );
+	}
+
+	/**
 	 * @testdox The merchant's review is recorded when the authorization action returns $result.
 	 * @testWith ["capture", "succeeded", "approved"]
 	 *           ["capture", "wcpay_capture_error", "approved"]
