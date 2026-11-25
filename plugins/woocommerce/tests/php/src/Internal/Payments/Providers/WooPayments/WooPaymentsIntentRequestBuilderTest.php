@@ -177,8 +177,8 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Client 11.1.0 sends its transport user agent and the site URL as the mandate user agent
-	 * (class-wc-payment-gateway-wcpay.php:2596-2604); native sends its own transport identity there.
+	 * Client 11.3.0 sends its transport user agent and the site URL as the mandate user agent
+	 * (class-wc-payment-gateway-wcpay.php:2950-2958). The built-in sends its own transport identity there.
 	 *
 	 * @testdox Redirect and mandate runtime values match the WooPayments 11.1 request shape, with the built-in WooPayments user agent.
 	 */
@@ -216,7 +216,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 					'type'   => 'online',
 					'online' => array(
 						'ip_address' => \WC_Geolocation::get_ip_address(),
-						'user_agent' => 'WooCommerce Payments/11.2.0-native-woocommerce/10.4.0-rc.1; ' . get_bloginfo( 'url' ),
+						'user_agent' => 'WooCommerce Payments/11.3.0-native-woocommerce/10.4.0-rc.1; ' . get_bloginfo( 'url' ),
 					),
 				),
 			),
