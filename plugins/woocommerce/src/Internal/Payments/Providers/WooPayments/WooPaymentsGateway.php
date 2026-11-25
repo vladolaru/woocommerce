@@ -2438,8 +2438,9 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	private static function get_payment_method_changed_note( WC_Payment_Token $token ): string {
 		if ( $token instanceof LinkToken ) {
 			return sprintf(
-				/* translators: %1$s: redacted email address for Link payment method */
-				__( 'Payment method is changed to: <strong>Link ending in %1$s</strong>.', 'woocommerce' ),
+				/* translators: 1: Link brand name, 2: redacted email address. */
+				__( 'Payment method is changed to: <strong>%1$s ending in %2$s</strong>.', 'woocommerce' ),
+				esc_html( $token->get_brand_name() ),
 				esc_html( $token->get_redacted_email() )
 			);
 		}

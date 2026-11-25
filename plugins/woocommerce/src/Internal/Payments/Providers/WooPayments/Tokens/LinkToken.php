@@ -7,6 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use WC_Payment_Token;
 
 /**
@@ -42,6 +44,20 @@ class LinkToken extends WC_Payment_Token {
 	);
 
 	/**
+	 * Get the brand for this token's connected account.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return string
+	 */
+	public function get_brand_name(): string {
+		$container = wc_get_container();
+		$country   = $container->get( WooPaymentsAccountService::class )->get_account_country();
+
+		return $container->get( PaymentMethodRegistry::class )->get_link_title( $country );
+	}
+
+	/**
 	 * Get the payment method display name.
 	 *
 	 * @param string $deprecated Deprecated since WooCommerce 3.0.
@@ -53,8 +69,9 @@ class LinkToken extends WC_Payment_Token {
 		unset( $deprecated );
 
 		return sprintf(
-			/* translators: %s: redacted customer email. */
-			__( 'Stripe Link email ending in %s', 'woocommerce' ),
+			/* translators: 1: Link brand name, 2: redacted customer email. */
+			__( '%1$s email ending in %2$s', 'woocommerce' ),
+			$this->get_brand_name(),
 			$this->get_redacted_email()
 		);
 	}

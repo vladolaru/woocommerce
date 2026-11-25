@@ -226,8 +226,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	/**
 	 * Restore the casing of the SEPA and Link saved-method brands after core title-cases them.
 	 *
-	 * Core's wc_get_credit_card_type_label() turns an unknown brand into "Sepa Iban" or "Stripe Link Email"; client 11.1.0
-	 * restores its labels the same way (`includes/class-wc-payments-token-service.php:65-66,529-549`).
+	 * Keep saved-method brand casing when core formats the label, including older Stripe Link labels.
 	 *
 	 * @internal
 	 *
@@ -240,9 +239,12 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 		}
 
 		$normalized = strtolower( $label );
+		$link_email = $this->get_link_email_label( __( 'Link', 'woocommerce' ) );
 		$brands     = array(
 			'sepa iban'         => __( 'SEPA IBAN', 'woocommerce' ),
-			'stripe link email' => __( 'Stripe Link email', 'woocommerce' ),
+			'stripe link email' => $link_email,
+			'link email'        => $link_email,
+			'onelink email'     => $this->get_link_email_label( __( 'Onelink', 'woocommerce' ) ),
 		);
 		foreach ( $brands as $english => $brand ) {
 			// Core lower-cases the brand and turns hyphens and underscores into spaces before title-casing it.
@@ -252,6 +254,17 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 		}
 
 		return $label;
+	}
+
+	/**
+	 * Format the Link label on the shopper's saved payment method.
+	 *
+	 * @param string $brand Account-specific Link brand name.
+	 * @return string
+	 */
+	private function get_link_email_label( string $brand ): string {
+		/* translators: %s: Link brand name (Link or Onelink). */
+		return sprintf( esc_html__( '%s email', 'woocommerce' ), $brand );
 	}
 
 	/**
@@ -437,7 +450,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 
 			if ( $payment_token instanceof LinkToken ) {
 				$item['method']['last4'] = $payment_token->get_redacted_email();
-				$item['method']['brand'] = esc_html__( 'Stripe Link email', 'woocommerce' );
+				$item['method']['brand'] = $this->get_link_email_label( $this->payment_method_registry->get_link_title( $this->account_service->get_account_country() ) );
 
 				return $item;
 			}

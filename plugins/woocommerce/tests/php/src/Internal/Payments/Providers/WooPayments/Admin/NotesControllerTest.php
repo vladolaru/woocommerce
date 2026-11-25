@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\A
 
 use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Admin\Notes\Notes;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodType;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
@@ -140,13 +141,15 @@ class NotesControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Adds the Link note with its name, copy and action when card is enabled without Link.
 	 */
 	public function test_adds_link_note_when_card_is_enabled_without_link(): void {
-		$sut = $this->create_sut( $this->get_link_account_data(), array( 'card' ) );
+		$account            = $this->get_link_account_data();
+		$account['country'] = 'GB';
+		$sut                = $this->create_sut( $account, array( WooPaymentsPaymentMethodType::CARD ) );
 
 		$sut->add_woo_admin_notes();
 
 		$note = $this->get_single_note( SetUpLinkNote::NOTE_NAME );
 		$this->assertSame( 'Increase conversion at checkout', $note->get_title() );
-		$this->assertSame( 'Reduce cart abandonment and create a frictionless checkout experience with Link by Stripe. Link autofills your customer’s payment and shipping details, so they can check out in just six seconds with the Link optimized experience.', $note->get_content() );
+		$this->assertSame( 'Reduce cart abandonment and create a frictionless checkout experience with Onelink. Onelink autofills your customer’s payment and shipping details, so they can check out in just six seconds with the Onelink optimized experience.', $note->get_content() );
 		$this->assertSame( Note::E_WC_ADMIN_NOTE_INFORMATIONAL, $note->get_type() );
 		$this->assertSame( 'woocommerce-payments', $note->get_source() );
 

@@ -5,6 +5,8 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\S
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionAdminPaymentMethodHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\AmazonPayToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\LinkToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
@@ -357,6 +359,31 @@ class SubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_Case {
 		$result = $this->sut->maybe_render_subscription_payment_method( $title, $subscription );
 
 		$this->assertSame( $token->get_display_name(), $result );
+	}
+
+	/**
+	 * @testdox A GB subscription names the saved Link account and preserves each label's email masking.
+	 */
+	public function test_link_subscription_uses_account_brand(): void {
+		$account = $this->createMock( WooPaymentsAccountService::class );
+		$account->method( 'get_account_country' )->willReturn( 'GB' );
+		wc_get_container()->replace( WooPaymentsAccountService::class, $account );
+		$user_id      = self::factory()->user->create();
+		$subscription = $this->create_subscription_order( $user_id );
+		$token        = new LinkToken();
+		$token->set_email( 'shopper@example.com' );
+		$token->set_token( 'pm_link' );
+		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$token->set_user_id( $user_id );
+		$token->save();
+		$subscription->add_payment_token( $token );
+
+		$this->assertSame( 'Onelink email ending in ***pper@example.com', $this->sut->maybe_render_subscription_payment_method( 'Card', $subscription ) );
+		$this->assertSame( 'Onelink (***pper@example.com)', $this->sut->get_specific_new_payment_method_title( 'Card', WooPaymentsPersistenceVocabulary::GATEWAY_ID, $subscription ) );
+
+		$_POST['_wcsnonce']                             = wp_create_nonce( 'wcs_change_payment_method' );
+		$_POST['wc-woocommerce_payments-payment-token'] = 'new';
+		$this->assertSame( 'Onelink (shopper@example.com)', $this->sut->get_specific_new_payment_method_title( 'Card', WooPaymentsPersistenceVocabulary::GATEWAY_ID, $subscription ) );
 	}
 
 	/**

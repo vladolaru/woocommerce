@@ -6,9 +6,12 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodType;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOutcomeMetadataMapper;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\LinkToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
@@ -688,6 +691,32 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A zero-total order paid with a saved Link token keeps the account brand without a charge.
+	 */
+	public function test_saved_link_order_title_without_intent(): void {
+		( new WooPaymentsTokenClassMapController() )->register();
+		$order = $this->create_woopayments_order( '0.00' );
+		$token = new LinkToken();
+		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$token->set_token( 'pm_link' );
+		$token->set_email( 'shopper@example.com' );
+		$token->save();
+		$account = $this->createMock( WooPaymentsAccountService::class );
+		$account->method( 'get_account_country' )->willReturn( 'GB' );
+		$this->apply_charge(
+			$this->create_applier( null, null, $account ),
+			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ),
+			new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, '', '', 'pm_link' ),
+			WooPaymentsOrderEffectPlan::for_zero_amount_without_intent( array(), $token->get_id() )
+		);
+
+		$stored = new WC_Order( $order->get_id() );
+		$this->assertSame( 'Onelink', $stored->get_payment_method_title() );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $stored->get_payment_method() );
+		$this->assertSame( '', $stored->get_meta( WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_DETAILS_META_KEY ) );
+	}
+
+	/**
 	 * @testdox A GB Link wallet keeps its express marker and the account's Onelink title.
 	 */
 	public function test_link_wallet_on_a_gb_account_is_titled_onelink(): void {
@@ -720,7 +749,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$order = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'link', $order->get_meta( WooPaymentsPersistenceVocabulary::EXPRESS_CHECKOUT_PAYMENT_METHOD_META_KEY, true ) );
+		$this->assertSame( WooPaymentsPaymentMethodType::LINK, $order->get_meta( WooPaymentsPersistenceVocabulary::EXPRESS_CHECKOUT_PAYMENT_METHOD_META_KEY, true ) );
 		$this->assertSame( 'Onelink', $order->get_payment_method_title() );
 	}
 

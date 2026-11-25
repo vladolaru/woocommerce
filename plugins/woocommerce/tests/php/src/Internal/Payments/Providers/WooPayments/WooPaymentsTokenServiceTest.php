@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudOrderTrackingService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodType;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
@@ -1965,6 +1966,32 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A saved Link method lists the account brand and masks the shopper's email.
+	 *
+	 * @testWith ["US", "Link email"]
+	 *           ["GB", "Onelink email"]
+	 *
+	 * @param string $country Account country.
+	 * @param string $brand   Expected label.
+	 */
+	public function test_saved_link_method_lists_account_brand( string $country, string $brand ): void {
+		$account = $this->createMock( WooPaymentsAccountService::class );
+		$account->method( 'get_account_country' )->willReturn( $country );
+		$this->create_service( array(), null, null, $account );
+		$token = new LinkToken();
+		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$token->set_email( 'buyer@example.com' );
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercise the saved-method list filter.
+		$item = apply_filters( 'woocommerce_payment_methods_list_item', array( 'method' => array() ), $token );
+
+		$this->assertSame( $brand, $item['method']['brand'] );
+		$this->assertSame( '***uyer@example.com', $item['method']['last4'] );
+		$this->assertSame( $brand, wc_get_credit_card_type_label( $item['method']['brand'] ) );
+		$this->assertSame( 'Link email', wc_get_credit_card_type_label( 'Stripe Link Email' ) );
+	}
+
+	/**
 	 * Data provider for non-card saved payment method list items.
 	 *
 	 * @return array<string,array{string,array<string,mixed>,array{brand:string,last4:string}}>
@@ -1989,13 +2016,13 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 				'pm_link',
 				array(
 					'id'   => 'pm_link',
-					'type' => 'link',
+					'type' => WooPaymentsPaymentMethodType::LINK,
 					'link' => array(
 						'email' => 'buyer@example.com',
 					),
 				),
 				array(
-					'brand' => 'Stripe Link email',
+					'brand' => 'Link email',
 					'last4' => '***uyer@example.com',
 				),
 			),

@@ -1059,9 +1059,7 @@ class WooPaymentsOrderEffectApplier {
 			$type  = isset( $payment_method['type'] ) && is_scalar( $payment_method['type'] ) ? (string) $payment_method['type'] : '';
 			$title = $this->non_card_payment_method_title( $type );
 			if ( '' !== $title ) {
-				$order->set_payment_method_title( $title );
-				$order->save();
-				$this->sync_payment_method_to_subscriptions( $order );
+				$this->save_setup_intent_payment_method_title( $order, $title );
 
 				return false;
 			}
@@ -1129,7 +1127,17 @@ class WooPaymentsOrderEffectApplier {
 		}
 
 		$title = $this->registered_payment_method_title( WooPaymentsPaymentMethodType::CARD, $display_country );
-		$order->set_payment_method_title( '' !== $title ? $title : __( 'Card', 'woocommerce' ) );
+		$this->save_setup_intent_payment_method_title( $order, '' !== $title ? $title : __( 'Card', 'woocommerce' ) );
+	}
+
+	/**
+	 * Save the setup title on the order and its subscriptions.
+	 *
+	 * @param WC_Order $order Order being updated.
+	 * @param string   $title Payment method title.
+	 */
+	private function save_setup_intent_payment_method_title( WC_Order $order, string $title ): void {
+		$order->set_payment_method_title( $title );
 		$order->save();
 		$this->sync_payment_method_to_subscriptions( $order );
 	}
@@ -1543,9 +1551,13 @@ class WooPaymentsOrderEffectApplier {
 
 		$token_id = (int) ( $plan->get_provider_result()['token_id'] ?? 0 );
 		$token    = 0 < $token_id ? WC_Payment_Tokens::get( $token_id ) : null;
-		// The client skips the payment method fetch for Link tokens (gw:1693-1696).
-		$details = $token instanceof LinkToken ? array() : $this->token_service->get_payment_method_details_for_display( $payment_method_id );
-		$this->apply_setup_intent_payment_method_display_details( $order, $details );
+		if ( $token instanceof LinkToken ) {
+			$this->clear_setup_intent_card_identity( $order );
+			$this->save_setup_intent_payment_method_title( $order, $this->payment_method_registry->get_link_title( $this->account_service->get_account_country() ) );
+		} else {
+			$details = $this->token_service->get_payment_method_details_for_display( $payment_method_id );
+			$this->apply_setup_intent_payment_method_display_details( $order, $details );
+		}
 
 		if ( ! $token instanceof WC_Payment_Token ) {
 			return;

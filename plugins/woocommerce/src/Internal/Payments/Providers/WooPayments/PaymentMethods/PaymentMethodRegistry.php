@@ -240,6 +240,19 @@ class PaymentMethodRegistry {
 	}
 
 	/**
+	 * Get the Link brand shown for the connected account.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param string $country Account country.
+	 * @return string
+	 */
+	public function get_link_title( string $country ): string {
+		$this->initialize_definitions();
+		return $this->definitions[ WooPaymentsPaymentMethodType::LINK ]->get_title( $country );
+	}
+
+	/**
 	 * Initialize the definitions map.
 	 */
 	private function initialize_definitions(): void {

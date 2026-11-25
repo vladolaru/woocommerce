@@ -122,7 +122,13 @@ class SetUpLinkNote {
 	public function get_note(): Note {
 		$note = new Note();
 		$note->set_title( __( 'Increase conversion at checkout', 'woocommerce' ) );
-		$note->set_content( __( 'Reduce cart abandonment and create a frictionless checkout experience with Link by Stripe. Link autofills your customer’s payment and shipping details, so they can check out in just six seconds with the Link optimized experience.', 'woocommerce' ) );
+		$note->set_content(
+			sprintf(
+				/* translators: %1$s: Link brand name (Link or Onelink). */
+				__( 'Reduce cart abandonment and create a frictionless checkout experience with %1$s. %1$s autofills your customer’s payment and shipping details, so they can check out in just six seconds with the %1$s optimized experience.', 'woocommerce' ),
+				$this->payment_method_registry->get_link_title( $this->account_service->get_account_country() )
+			)
+		);
 		$note->set_content_data( (object) array() );
 		$note->set_type( Note::E_WC_ADMIN_NOTE_INFORMATIONAL );
 		$note->set_name( self::NOTE_NAME );

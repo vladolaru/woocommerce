@@ -11784,7 +11784,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A successful change to a saved payment method notes the new method on the subscription; a failed one notes nothing (client `class-wc-payment-gateway-wcpay.php:1720-1745`).
 	 * @testWith ["card", "completed", "Payment method is changed to: <strong>Credit card ending in 4242</strong>."]
-	 *           ["link", "completed", "Payment method is changed to: <strong>Link ending in ***pper@example.com</strong>."]
+	 *           ["link", "completed", "Payment method is changed to: <strong>Onelink ending in ***pper@example.com</strong>."]
 	 *           ["card", "failed", ""]
 	 *
 	 * @param string $token_type     Saved payment method type: `card` or `link`.
@@ -11792,6 +11792,16 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @param string $expected_note  Note expected on the subscription, empty for none.
 	 */
 	public function test_a_saved_method_change_notes_the_new_payment_method( string $token_type, string $outcome_status, string $expected_note ): void {
+		$container = wc_get_container();
+		$account   = $this->getMockBuilder( WooPaymentsAccountService::class )->onlyMethods( array( 'get_cached_account_data' ) )->getMock();
+		$account->method( 'get_cached_account_data' )->willReturn(
+			array(
+				'account_id' => 'acct_link_test',
+				'country'    => 'GB',
+			)
+		);
+		$account->init( $container->get( LegacyProxy::class ), $container->get( WooPaymentsDatabaseCache::class ) );
+		$container->replace( WooPaymentsAccountService::class, $account );
 		WooCommerceSubscriptionsDoubles::load();
 		$user_id      = self::factory()->user->create();
 		$subscription = $this->create_subscription( $user_id, '' );
