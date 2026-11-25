@@ -4,12 +4,14 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\ProviderInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\AuthorizationsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\HttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAuthorizationsRestController;
@@ -25,6 +27,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundAmbiguityService;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPlatformEvents;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\StoredPaymentRecords;
 use WC_Order;
@@ -58,7 +61,8 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 	 */
 	public function tearDown(): void {
 		remove_all_filters( 'wcpay_list_authorizations_request' );
-		wc_get_container()->reset_all_replacements();
+		$this->reset_container_replacements();
+		$this->reset_container_resolutions();
 		parent::tearDown();
 	}
 
@@ -1356,5 +1360,86 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 		$this->assertSame( 409, $response->get_status() );
 		$this->assertSame( 'wcpay_intent_order_mismatch', $response->get_data()['code'] );
 		$this->assertSame( array(), $this->api_client->last_call, 'The refusal comes before the live intent is fetched.' );
+	}
+
+	/**
+	 * @testdox The merchant's review is recorded when the authorization action returns $result.
+	 * @testWith ["capture", "succeeded", "approved"]
+	 *           ["capture", "wcpay_capture_error", "approved"]
+	 *           ["cancel", "canceled", "blocked"]
+	 *
+	 * @param string $action Authorization route action.
+	 * @param string $result Expected REST status or error code.
+	 * @param string $review Expected manual review action.
+	 */
+	public function test_authorization_action_persists_the_review_entry( string $action, string $result, string $review ): void {
+		$order = StoredPaymentRecords::authorization( 'pi_auth' );
+		$order->update_meta_data( '_wcpay_fraud_outcome_status', 'review' );
+		$order->save();
+
+		$transport = new FakeHttpClient();
+		wc_get_container()->replace( HttpClient::class, $transport );
+		$this->reset_container_resolutions();
+		wc_get_container()->get( WooPaymentsAuthorizationsRestController::class )->register_routes();
+
+		$response = static function ( array $body, int $status = 200 ): array {
+			return array(
+				'body'     => wp_json_encode( $body ),
+				'response' => array( 'code' => $status ),
+			);
+		};
+		$intent   = array(
+			'id'       => 'pi_auth',
+			'status'   => 'requires_capture',
+			'metadata' => array(
+				'order_id'      => (string) $order->get_id(),
+				'fraud_outcome' => 'review',
+			),
+		);
+
+		$transport->responses[] = $response( $intent );
+		if ( 'capture' === $action ) {
+			$account                = wp_json_file_decode( __DIR__ . '/Fixtures/platform-test-drive-account.json', array( 'associative' => true ) );
+			$transport->responses[] = $response( $account['account'] );
+		}
+		if ( 'wcpay_capture_error' === $result ) {
+			$error                  = array(
+				'code'    => 'card_declined',
+				'message' => 'Card declined.',
+			);
+			$transport->responses[] = $response( array( 'error' => $error ), 402 );
+			$transport->responses[] = $response( $intent );
+		} else {
+			$intent['status']       = $result;
+			$transport->responses[] = $response( $intent );
+		}
+
+		$claims_at_insert = array();
+		add_action(
+			'added_order_meta',
+			static function ( $meta_id, $order_id, $key ) use ( $order, &$claims_at_insert ) {
+				if ( $order->get_id() === $order_id && '_wcpay_fraud_outcome_manual_entry' === $key ) {
+					$claims_at_insert[] = wc_get_container()->get( OrderPaymentLock::class )->is_held( $order, new WooPaymentsPersistenceVocabulary() );
+				}
+			},
+			10,
+			3
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/' . $action . '_authorization' );
+		$request->set_body_params( array( 'payment_intent_id' => 'pi_auth' ) );
+		$data = $this->server->dispatch( $request )->get_data();
+		$this->assertSame( $result, $data['code'] ?? $data['status'] );
+		$this->assertSame( array(), $transport->responses );
+
+		wp_cache_flush();
+		$stored_order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $stored_order );
+		$entries = $stored_order->get_meta( '_wcpay_fraud_outcome_manual_entry', false );
+		$this->assertCount( 1, $entries, 'The stored order must identify the merchant who reviewed the payment exactly once.' );
+		$entry = reset( $entries )->value;
+		$this->assertSame( $review, $entry['action'] );
+		$this->assertSame( get_current_user_id(), $entry['user']['id'] );
+		$this->assertSame( array( false ), $claims_at_insert, 'The review entry must be inserted once, before claiming the order.' );
 	}
 }

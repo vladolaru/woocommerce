@@ -242,9 +242,6 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 			? $this->processing_service->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $this->provider )
 			: $this->processing_service->cancel( PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $this->provider );
 
-		// The merchant's audit entry is saved whatever the platform answered; client 11.1.0's capture and cancel also save the
-		// order on failure (`includes/class-wc-payment-gateway-wcpay.php:4043-4051,4129-4130`,
-		// `includes/class-wc-payments-order-service.php:2894`).
 		$order->save_meta_data();
 
 		if ( ! $this->is_expected_action_outcome( $outcome, $action ) ) {
@@ -464,6 +461,8 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 				'datetime' => time(),
 			)
 		);
+		// Capture can reload the order under its claim and discard pending metadata.
+		$order->save_meta_data();
 	}
 
 	/**
