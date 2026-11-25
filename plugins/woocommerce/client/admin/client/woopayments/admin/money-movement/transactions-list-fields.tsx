@@ -9,7 +9,7 @@ import type { MouseEventHandler, ReactNode } from 'react';
 /**
  * Internal dependencies
  */
-import { getLinkBranding } from '../../settings/payment-method-definitions';
+import { getLinkBranding } from '../../settings/link-branding';
 import { getWooPaymentsSettingsBootstrap } from '../../settings/bootstrap';
 import type { WooPaymentsTransaction } from './types';
 import {

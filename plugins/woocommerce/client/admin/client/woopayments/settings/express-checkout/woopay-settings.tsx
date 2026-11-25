@@ -31,7 +31,7 @@ import {
 	type ExpressCheckoutLocation,
 } from './components';
 import { SettingsSection } from '../settings-shell';
-import { getLinkBranding } from '../payment-method-definitions';
+import { getLinkBranding } from '../link-branding';
 import { TextLink } from '../text-link';
 import { getExpressCheckoutFeatureFlags } from './settings-utils';
 import { asSettingsRecord, asString } from '../settings-values';

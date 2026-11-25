@@ -18,7 +18,7 @@ import {
 	getPaymentMethodAvailability,
 } from '../payment-methods-list';
 import { SettingsSection } from '../settings-shell';
-import { getLinkBranding } from '../payment-method-definitions';
+import { getLinkBranding } from '../link-branding';
 import { TextLink } from '../text-link';
 import { AMAZON_PAY_DEFINITION } from '../amazon-pay-definition';
 import {
