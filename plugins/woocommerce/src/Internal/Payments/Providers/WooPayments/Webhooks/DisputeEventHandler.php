@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookEventType;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\ExplicitPriceFormatter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
@@ -146,11 +147,11 @@ class DisputeEventHandler {
 		return in_array(
 			$event_type,
 			array(
-				'charge.dispute.closed',
-				'charge.dispute.created',
-				'charge.dispute.funds_reinstated',
-				'charge.dispute.funds_withdrawn',
-				'charge.dispute.updated',
+				WooPaymentsWebhookEventType::CHARGE_DISPUTE_CLOSED,
+				WooPaymentsWebhookEventType::CHARGE_DISPUTE_CREATED,
+				WooPaymentsWebhookEventType::CHARGE_DISPUTE_FUNDS_REINSTATED,
+				WooPaymentsWebhookEventType::CHARGE_DISPUTE_FUNDS_WITHDRAWN,
+				WooPaymentsWebhookEventType::CHARGE_DISPUTE_UPDATED,
 			),
 			true
 		);
@@ -176,9 +177,9 @@ class DisputeEventHandler {
 				throw new InvalidArgumentException( esc_html( sprintf( 'Could not find WooPayments order via disputed charge ID: %s', $charge_id ) ) );
 			}
 
-			if ( 'charge.dispute.created' === $event_type ) {
+			if ( WooPaymentsWebhookEventType::CHARGE_DISPUTE_CREATED === $event_type ) {
 				$this->process_dispute_created( $order, $event_object, $charge_id );
-			} elseif ( 'charge.dispute.closed' === $event_type ) {
+			} elseif ( WooPaymentsWebhookEventType::CHARGE_DISPUTE_CLOSED === $event_type ) {
 				$this->process_dispute_closed( $order, $event_object, $charge_id );
 			} else {
 				$this->process_dispute_updated( $order, $event_object, $event_type, $charge_id );
@@ -212,7 +213,7 @@ class DisputeEventHandler {
 
 		$this->run_under_dispute_lock(
 			$order,
-			'charge.dispute.created',
+			WooPaymentsWebhookEventType::CHARGE_DISPUTE_CREATED,
 			$event_object,
 			$charge_id,
 			function ( WC_Order $order ) use ( $note, $dispute_id, $status, $note_type, $equivalents ): bool {
@@ -256,7 +257,7 @@ class DisputeEventHandler {
 
 		$this->run_under_dispute_lock(
 			$order,
-			'charge.dispute.closed',
+			WooPaymentsWebhookEventType::CHARGE_DISPUTE_CLOSED,
 			$event_object,
 			$charge_id,
 			fn( WC_Order $order ): bool => $this->apply_dispute_closed( $order, $event_object, $note, $dispute_id, $status, $note_type, $charge_id, $equivalents )
@@ -349,11 +350,11 @@ class DisputeEventHandler {
 		$status     = $this->get_required_string( $event_object, 'status' );
 
 		switch ( $event_type ) {
-			case 'charge.dispute.funds_withdrawn':
+			case WooPaymentsWebhookEventType::CHARGE_DISPUTE_FUNDS_WITHDRAWN:
 				$message   = __( 'Payment dispute and fees have been deducted from your next payout', 'woocommerce' );
 				$note_type = 'funds_withdrawn';
 				break;
-			case 'charge.dispute.funds_reinstated':
+			case WooPaymentsWebhookEventType::CHARGE_DISPUTE_FUNDS_REINSTATED:
 				$message   = __( 'Payment dispute funds have been reinstated', 'woocommerce' );
 				$note_type = 'funds_reinstated';
 				break;

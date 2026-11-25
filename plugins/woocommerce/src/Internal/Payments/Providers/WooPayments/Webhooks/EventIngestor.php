@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookEventType;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
@@ -34,9 +35,9 @@ class EventIngestor {
 	 * @var string[]
 	 */
 	private const STRIPE_BILLING_INVOICE_EVENT_TYPES = array(
-		'invoice.paid',
-		'invoice.payment_failed',
-		'invoice.upcoming',
+		WooPaymentsWebhookEventType::INVOICE_PAID,
+		WooPaymentsWebhookEventType::INVOICE_PAYMENT_FAILED,
+		WooPaymentsWebhookEventType::INVOICE_UPCOMING,
 	);
 
 	/**
@@ -62,14 +63,14 @@ class EventIngestor {
 	 * @var string[]
 	 */
 	private const RETRIED_EVENT_TYPES = array(
-		'payment_intent.succeeded',
-		'payment_intent.payment_failed',
-		'payment_intent.amount_capturable_updated',
-		'charge.refunded',
-		'charge.refund.updated',
-		'charge.dispute.created',
-		'charge.dispute.updated',
-		'charge.dispute.closed',
+		WooPaymentsWebhookEventType::PAYMENT_INTENT_SUCCEEDED,
+		WooPaymentsWebhookEventType::PAYMENT_INTENT_PAYMENT_FAILED,
+		WooPaymentsWebhookEventType::PAYMENT_INTENT_AMOUNT_CAPTURABLE_UPDATED,
+		WooPaymentsWebhookEventType::CHARGE_REFUNDED,
+		WooPaymentsWebhookEventType::CHARGE_REFUND_UPDATED,
+		WooPaymentsWebhookEventType::CHARGE_DISPUTE_CREATED,
+		WooPaymentsWebhookEventType::CHARGE_DISPUTE_UPDATED,
+		WooPaymentsWebhookEventType::CHARGE_DISPUTE_CLOSED,
 	);
 
 	/**
@@ -84,11 +85,11 @@ class EventIngestor {
 	 * @var string[]
 	 */
 	private const LOCK_REFUSAL_RETRIED_EVENT_TYPES = array(
-		'charge.expired',
-		'charge.dispute.funds_withdrawn',
-		'charge.dispute.funds_reinstated',
-		'radar.early_fraud_warning.created',
-		'radar.early_fraud_warning.updated',
+		WooPaymentsWebhookEventType::CHARGE_EXPIRED,
+		WooPaymentsWebhookEventType::CHARGE_DISPUTE_FUNDS_WITHDRAWN,
+		WooPaymentsWebhookEventType::CHARGE_DISPUTE_FUNDS_REINSTATED,
+		WooPaymentsWebhookEventType::RADAR_EARLY_FRAUD_WARNING_CREATED,
+		WooPaymentsWebhookEventType::RADAR_EARLY_FRAUD_WARNING_UPDATED,
 	);
 
 	/**
@@ -287,7 +288,7 @@ class EventIngestor {
 	 * @return \WC_Order|null
 	 */
 	public function find_existing_invoice_order( string $event_type, array $event_object ): ?\WC_Order {
-		if ( 'invoice.paid' !== $event_type ) {
+		if ( WooPaymentsWebhookEventType::INVOICE_PAID !== $event_type ) {
 			return null;
 		}
 		return $this->get_stripe_billing_module()->find_existing_invoice_order( $event_type, $event_object );
@@ -314,7 +315,7 @@ class EventIngestor {
 			return true;
 		}
 
-		return 'invoice.paid' === $event_type && $this->get_stripe_billing_module()->is_loaded();
+		return WooPaymentsWebhookEventType::INVOICE_PAID === $event_type && $this->get_stripe_billing_module()->is_loaded();
 	}
 
 	/**
@@ -435,9 +436,9 @@ class EventIngestor {
 	 */
 	private function refuse_stripe_billing_invoice_event_without_module( string $event_type ): void {
 		$reasons = array(
-			'invoice.upcoming'       => __( 'Cannot find subscription to handle the "invoice.upcoming" event.', 'woocommerce' ),
-			'invoice.paid'           => __( 'Cannot find subscription for the incoming "invoice.paid" event.', 'woocommerce' ),
-			'invoice.payment_failed' => __( 'Cannot find subscription for the incoming "invoice.payment_failed" event.', 'woocommerce' ),
+			WooPaymentsWebhookEventType::INVOICE_UPCOMING => __( 'Cannot find subscription to handle the "invoice.upcoming" event.', 'woocommerce' ),
+			WooPaymentsWebhookEventType::INVOICE_PAID     => __( 'Cannot find subscription for the incoming "invoice.paid" event.', 'woocommerce' ),
+			WooPaymentsWebhookEventType::INVOICE_PAYMENT_FAILED => __( 'Cannot find subscription for the incoming "invoice.payment_failed" event.', 'woocommerce' ),
 		);
 		$reason  = $reasons[ $event_type ] ?? '';
 

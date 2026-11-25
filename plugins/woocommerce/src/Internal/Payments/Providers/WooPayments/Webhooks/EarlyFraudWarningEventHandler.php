@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookEventType;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
@@ -102,8 +103,8 @@ class EarlyFraudWarningEventHandler {
 		return in_array(
 			$event_type,
 			array(
-				'radar.early_fraud_warning.created',
-				'radar.early_fraud_warning.updated',
+				WooPaymentsWebhookEventType::RADAR_EARLY_FRAUD_WARNING_CREATED,
+				WooPaymentsWebhookEventType::RADAR_EARLY_FRAUD_WARNING_UPDATED,
 			),
 			true
 		);
@@ -152,7 +153,7 @@ class EarlyFraudWarningEventHandler {
 			$resolver  = $this->event_order_resolver;
 			$intent_id = $resolver->get_event_intent_id( $event_object, $fresh_order );
 			if ( ! $resolver->is_own_payment_for_event( $fresh_order, $event_object, $warning['charge'] ) ) {
-				if ( 'radar.early_fraud_warning.created' === $event_type ) {
+				if ( WooPaymentsWebhookEventType::RADAR_EARLY_FRAUD_WARNING_CREATED === $event_type ) {
 					$this->other_charge_recorder->record(
 						$fresh_order,
 						$event_type,
@@ -169,7 +170,7 @@ class EarlyFraudWarningEventHandler {
 			}
 
 			$previous_warning = self::get_existing_warning( $fresh_order );
-			if ( 'radar.early_fraud_warning.updated' === $event_type && ! $previous_warning ) {
+			if ( WooPaymentsWebhookEventType::RADAR_EARLY_FRAUD_WARNING_UPDATED === $event_type && ! $previous_warning ) {
 				return;
 			}
 

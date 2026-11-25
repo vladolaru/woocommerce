@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookEventType;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentStatus;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
@@ -155,13 +156,13 @@ class StripeBillingEventHandler {
 
 		try {
 			switch ( $event_type ) {
-				case 'invoice.upcoming':
+				case WooPaymentsWebhookEventType::INVOICE_UPCOMING:
 					$this->handle_invoice_upcoming( $event );
 					break;
-				case 'invoice.paid':
+				case WooPaymentsWebhookEventType::INVOICE_PAID:
 					$this->handle_invoice_paid( $event );
 					break;
-				case 'invoice.payment_failed':
+				case WooPaymentsWebhookEventType::INVOICE_PAYMENT_FAILED:
 					$this->handle_invoice_payment_failed( $event );
 					break;
 			}
@@ -186,12 +187,12 @@ class StripeBillingEventHandler {
 			return null;
 		}
 		$subscription = $this->subscription_service->get_subscription_from_wcpay_subscription_id( $subscription_id );
-		if ( ! $subscription || 'invoice.upcoming' === $type ) {
+		if ( ! $subscription || WooPaymentsWebhookEventType::INVOICE_UPCOMING === $type ) {
 			return $subscription;
 		}
 
 		$invoice_id = $invoice['id'] ?? null;
-		if ( ! is_string( $invoice_id ) || '' === $invoice_id || ( 'invoice.paid' === $type && $this->invoice_service->get_subscription_invoice_id( $subscription ) === $invoice_id ) || ( 'invoice.payment_failed' === $type && ! $this->subscription_service->is_wcpay_subscription( $subscription ) ) ) {
+		if ( ! is_string( $invoice_id ) || '' === $invoice_id || ( WooPaymentsWebhookEventType::INVOICE_PAID === $type && $this->invoice_service->get_subscription_invoice_id( $subscription ) === $invoice_id ) || ( WooPaymentsWebhookEventType::INVOICE_PAYMENT_FAILED === $type && ! $this->subscription_service->is_wcpay_subscription( $subscription ) ) ) {
 			return null;
 		}
 		return $this->find_existing_renewal_order( $invoice_id );
@@ -209,7 +210,7 @@ class StripeBillingEventHandler {
 		$wcpay_subscription_id = (string) $this->get_event_property( $event_object, array( 'subscription' ) );
 
 		if ( SubscriptionMethodPolicy::is_duplicate_site() ) {
-			$this->log_skipped_webhook_due_to_staging( 'invoice.upcoming', $wcpay_subscription_id );
+			$this->log_skipped_webhook_due_to_staging( WooPaymentsWebhookEventType::INVOICE_UPCOMING, $wcpay_subscription_id );
 			return;
 		}
 
@@ -283,7 +284,7 @@ class StripeBillingEventHandler {
 		$wcpay_subscription_id = (string) $this->get_event_property( $event_object, array( 'subscription' ) );
 
 		if ( SubscriptionMethodPolicy::is_duplicate_site() ) {
-			$this->log_skipped_webhook_due_to_staging( 'invoice.paid', $wcpay_subscription_id );
+			$this->log_skipped_webhook_due_to_staging( WooPaymentsWebhookEventType::INVOICE_PAID, $wcpay_subscription_id );
 			return;
 		}
 
@@ -400,7 +401,7 @@ class StripeBillingEventHandler {
 			: null;
 
 		if ( null === $authorization && $this->records_another_payment( $order, $intent_id, $charge_id ) ) {
-			$this->other_charge_recorder->record( $order, 'invoice.paid', $invoice_facts + $this->get_another_payment_note_facts( $subscription, $order ) );
+			$this->other_charge_recorder->record( $order, WooPaymentsWebhookEventType::INVOICE_PAID, $invoice_facts + $this->get_another_payment_note_facts( $subscription, $order ) );
 			return $subscription;
 		}
 
@@ -420,7 +421,7 @@ class StripeBillingEventHandler {
 		if ( null === $authorization && ! $already_recorded && $this->cannot_refund_the_invoice_amount( $order, $intent_id, $amount_paid ) ) {
 			// A refund from this order would be refused, so its charge is left to its transaction page, which then refunds at the platform.
 			$note_facts = array( 'wording' => WooPaymentsOrderNoteService::INVOICE_NOTE_REFUND_FROM_TRANSACTION_PAGE ) + $this->get_collected_invoice_note_facts( $subscription, $order );
-			$this->other_charge_recorder->record( $order, 'invoice.paid', $invoice_facts + $note_facts );
+			$this->other_charge_recorder->record( $order, WooPaymentsWebhookEventType::INVOICE_PAID, $invoice_facts + $note_facts );
 			return $subscription;
 		}
 
@@ -710,7 +711,7 @@ class StripeBillingEventHandler {
 		$wcpay_subscription_id = (string) $this->get_event_property( $event_object, array( 'subscription' ) );
 
 		if ( SubscriptionMethodPolicy::is_duplicate_site() ) {
-			$this->log_skipped_webhook_due_to_staging( 'invoice.payment_failed', $wcpay_subscription_id );
+			$this->log_skipped_webhook_due_to_staging( WooPaymentsWebhookEventType::INVOICE_PAYMENT_FAILED, $wcpay_subscription_id );
 			return;
 		}
 

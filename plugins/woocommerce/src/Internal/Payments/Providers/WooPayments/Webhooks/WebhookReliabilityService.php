@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookEventType;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
 use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
@@ -413,7 +414,7 @@ class WebhookReliabilityService implements RegisterHooksInterface {
 		$due         = time() + self::RETRY_DELAYS_SECONDS[ $attempts ] + ( 2 === $attempts ? $brought_forward : 0 );
 		$claimed_at  = $exception instanceof OrderPaymentLockRefusedException ? $exception->get_holder_claimed_at() : null;
 		$lock_free   = (int) $claimed_at + WooPaymentsPersistenceVocabulary::LOCK_TTL_SECONDS + self::LOCK_EXPIRY_RETRY_MARGIN_SECONDS;
-		$is_held_up  = 1 === $attempts && null !== $claimed_at && time() - $claimed_at >= MINUTE_IN_SECONDS && time() < $lock_free && in_array( $event['type'] ?? '', array( 'payment_intent.succeeded', 'payment_intent.amount_capturable_updated' ), true );
+		$is_held_up  = 1 === $attempts && null !== $claimed_at && time() - $claimed_at >= MINUTE_IN_SECONDS && time() < $lock_free && in_array( $event['type'] ?? '', array( WooPaymentsWebhookEventType::PAYMENT_INTENT_SUCCEEDED, WooPaymentsWebhookEventType::PAYMENT_INTENT_AMOUNT_CAPTURABLE_UPDATED ), true );
 		$holder_free = $is_held_up ? $lock_free : $due;
 		if ( $holder_free < $due ) {
 			$event[ self::RETRY_BROUGHT_FORWARD_EVENT_KEY ] = $due - $holder_free;
@@ -435,7 +436,7 @@ class WebhookReliabilityService implements RegisterHooksInterface {
 	 * @return bool Whether this refund takes the place of the ordinary lock-refusal note.
 	 */
 	private function note_dropped_refund( array $event ): bool {
-		if ( 'charge.refunded' !== ( $event['type'] ?? '' ) || ! is_array( $event['data']['object'] ?? null ) ) {
+		if ( WooPaymentsWebhookEventType::CHARGE_REFUNDED !== ( $event['type'] ?? '' ) || ! is_array( $event['data']['object'] ?? null ) ) {
 			return false;
 		}
 		try {
@@ -509,7 +510,7 @@ class WebhookReliabilityService implements RegisterHooksInterface {
 		if ( $notes->find_by_identity( $order, $locked ? $drop_identity : $lock_identity, $vocabulary ) ) {
 			return;
 		}
-		if ( 'charge.refund.updated' === ( $event['type'] ?? '' ) && is_array( $event['data']['object'] ?? null ) && wc_get_container()->get( RefundEventHandler::class )->has_refund_update_note( $order, $event['data']['object'] ) ) {
+		if ( WooPaymentsWebhookEventType::CHARGE_REFUND_UPDATED === ( $event['type'] ?? '' ) && is_array( $event['data']['object'] ?? null ) && wc_get_container()->get( RefundEventHandler::class )->has_refund_update_note( $order, $event['data']['object'] ) ) {
 			return;
 		}
 
@@ -542,7 +543,7 @@ class WebhookReliabilityService implements RegisterHooksInterface {
 		if ( $payment->is_supported_event( $type ) ) {
 			return $payment->find_event_order( $type, $object );
 		}
-		if ( 'charge.refund.updated' === $type || $container->get( DisputeEventHandler::class )->is_supported_event( $type ) || $container->get( EarlyFraudWarningEventHandler::class )->is_supported_event( $type ) ) {
+		if ( WooPaymentsWebhookEventType::CHARGE_REFUND_UPDATED === $type || $container->get( DisputeEventHandler::class )->is_supported_event( $type ) || $container->get( EarlyFraudWarningEventHandler::class )->is_supported_event( $type ) ) {
 			return $container->get( EventOrderResolver::class )->find_order_by_charge_id( $object['charge'] ?? '' );
 		}
 		return $this->event_ingestor->find_existing_invoice_order( $type, $object );

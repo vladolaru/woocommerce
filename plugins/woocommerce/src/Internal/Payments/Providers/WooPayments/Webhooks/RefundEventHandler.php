@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookEventType;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentStatus;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
@@ -122,8 +123,8 @@ class RefundEventHandler {
 		return in_array(
 			$event_type,
 			array(
-				'charge.refund.updated',
-				'charge.refunded',
+				WooPaymentsWebhookEventType::CHARGE_REFUND_UPDATED,
+				WooPaymentsWebhookEventType::CHARGE_REFUNDED,
 			),
 			true
 		);
@@ -136,12 +137,12 @@ class RefundEventHandler {
 	 * @param array<string,mixed> $event_object Refund or charge object.
 	 */
 	public function process( string $event_type, array $event_object ): void {
-		if ( 'charge.refunded' === $event_type ) {
+		if ( WooPaymentsWebhookEventType::CHARGE_REFUNDED === $event_type ) {
 			$this->process_charge_refunded( $event_object );
 			return;
 		}
 
-		if ( 'charge.refund.updated' === $event_type ) {
+		if ( WooPaymentsWebhookEventType::CHARGE_REFUND_UPDATED === $event_type ) {
 			$this->process_refund_updated( $event_object );
 		}
 	}
@@ -403,7 +404,7 @@ class RefundEventHandler {
 		if ( $record_only || ! $this->is_own_payment( $order, $charge, $facts['charge_id'] ) ) {
 			// On an unpaid order the charge would pay, the refund may be of this order's own payment, recorded later.
 			$pre_payment = $record_only && ! $this->event_order_resolver->is_paid_for_ownership( $order ) && $this->is_own_payment( $order, $charge, $facts['charge_id'] );
-			$this->record_other_charge_refund( $order, 'charge.refunded', $charge, $facts['charge_id'], $facts['refund_id'], $facts['refund_status'], $facts['refunded_amount'], $facts['currency'], $pre_payment );
+			$this->record_other_charge_refund( $order, WooPaymentsWebhookEventType::CHARGE_REFUNDED, $charge, $facts['charge_id'], $facts['refund_id'], $facts['refund_status'], $facts['refunded_amount'], $facts['currency'], $pre_payment );
 			return;
 		}
 
@@ -476,7 +477,7 @@ class RefundEventHandler {
 		);
 
 		$this->add_note_and_metadata_for_created_refund( $order, $wc_refund, $facts['refund_id'], $facts['balance_txn_id'], $facts['refund_status'], $facts['refund_amount'], $facts['currency'] );
-		$this->event_order_resolver->log_own_event_on_another_payment_method( $order, 'charge.refunded', $facts['charge_id'] );
+		$this->event_order_resolver->log_own_event_on_another_payment_method( $order, WooPaymentsWebhookEventType::CHARGE_REFUNDED, $facts['charge_id'] );
 	}
 
 	/**
@@ -525,7 +526,7 @@ class RefundEventHandler {
 				try {
 					$order = $this->get_fresh_order( $order );
 					if ( ! $this->is_own_payment( $order, $refund, $charge_id ) ) {
-						$this->record_other_charge_refund( $order, 'charge.refund.updated', $refund, $charge_id, $refund_id, $status );
+						$this->record_other_charge_refund( $order, WooPaymentsWebhookEventType::CHARGE_REFUND_UPDATED, $refund, $charge_id, $refund_id, $status );
 						return;
 					}
 
@@ -548,7 +549,7 @@ class RefundEventHandler {
 				try {
 					$order = $this->get_fresh_order( $order );
 					if ( ! $this->is_own_payment( $order, $refund, $charge_id ) ) {
-						$this->record_other_charge_refund( $order, 'charge.refund.updated', $refund, $charge_id, $refund_id, $status );
+						$this->record_other_charge_refund( $order, WooPaymentsWebhookEventType::CHARGE_REFUND_UPDATED, $refund, $charge_id, $refund_id, $status );
 						return;
 					}
 

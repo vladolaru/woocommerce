@@ -588,28 +588,28 @@ class WooPaymentsOrderNoteService {
 		);
 
 		switch ( $event_type ) {
-			case 'payment_intent.succeeded':
+			case WooPaymentsWebhookEventType::PAYMENT_INTENT_SUCCEEDED:
 				$amount = WooPaymentsCurrencyUtils::format_price_in_currency( (float) ( $facts['amount'] ?? 0 ), strtoupper( $facts['currency'] ?? '' ) );
 				/* translators: %1$s: WooPayments charge ID, %2$s: charged amount, %3$s: transaction URL. */
 				$format = __( 'WooPayments charge <a>%1$s</a> for %2$s does not pay this order, so it was recorded without changing the order.', 'woocommerce' );
 				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, $link( '%3$s' ) ), esc_html( '' !== $charge_id ? $charge_id : $intent_id ), $amount, $transaction_url );
 
-			case 'payment_intent.payment_failed':
+			case WooPaymentsWebhookEventType::PAYMENT_INTENT_PAYMENT_FAILED:
 				/* translators: %1$s: WooPayments payment intent ID, %2$s: transaction URL. */
 				$format = __( 'A WooPayments payment attempt (<a>%1$s</a>) that does not pay this order failed.', 'woocommerce' );
 				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, $link( '%2$s' ) ), esc_html( $intent_id ), $transaction_url );
 
-			case 'payment_intent.amount_capturable_updated':
+			case WooPaymentsWebhookEventType::PAYMENT_INTENT_AMOUNT_CAPTURABLE_UPDATED:
 				/* translators: %1$s: WooPayments payment intent ID, %2$s: transaction URL. */
 				$format = __( 'A WooPayments payment (<a>%1$s</a>) that does not pay this order was authorized, so the order was not updated. The authorization was not captured and expires on its own.', 'woocommerce' );
 				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, $link( '%2$s' ) ), esc_html( $intent_id ), $transaction_url );
 
-			case 'charge.expired':
+			case WooPaymentsWebhookEventType::CHARGE_EXPIRED:
 				/* translators: %1$s: WooPayments charge ID, %2$s: transaction URL. */
 				$format = __( 'The authorization of WooPayments charge <a>%1$s</a>, which does not pay this order, expired.', 'woocommerce' );
 				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, $link( '%2$s' ) ), esc_html( $charge_id ), $transaction_url );
 
-			case 'charge.refunded':
+			case WooPaymentsWebhookEventType::CHARGE_REFUNDED:
 				$amount = WooPaymentsCurrencyUtils::format_price_in_currency( (float) ( $facts['amount'] ?? 0 ), strtoupper( $facts['currency'] ?? '' ) );
 				/* translators: %1$s: refunded amount, %2$s: WooPayments refund ID, %3$s: WooPayments charge ID, %4$s: transaction URL. */
 				$format = __( 'A refund of %1$s (<code>%2$s</code>) was made on WooPayments charge <a>%3$s</a>, which does not pay this order. No refund was added to the order.', 'woocommerce' );
@@ -619,7 +619,7 @@ class WooPaymentsOrderNoteService {
 				}
 				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, array_merge( $link( '%4$s' ), array( 'code' => '<code>' ) ) ), $amount, esc_html( $refund_id ), esc_html( $charge_id ), $transaction_url );
 
-			case 'charge.refund.updated':
+			case WooPaymentsWebhookEventType::CHARGE_REFUND_UPDATED:
 				$statuses = array(
 					'succeeded' => __( 'successful', 'woocommerce' ),
 					'failed'    => __( 'failed', 'woocommerce' ),
@@ -630,29 +630,29 @@ class WooPaymentsOrderNoteService {
 				$format = __( 'The refund <code>%1$s</code> on WooPayments charge <a>%2$s</a>, which does not pay this order, is now %3$s.', 'woocommerce' );
 				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, array_merge( $link( '%4$s' ), array( 'code' => '<code>' ) ) ), esc_html( $refund_id ), esc_html( $charge_id ), esc_html( $statuses[ $status ] ?? $status ), $transaction_url );
 
-			case 'charge.dispute.created':
+			case WooPaymentsWebhookEventType::CHARGE_DISPUTE_CREATED:
 				/* translators: %1$s: WooPayments dispute ID, %2$s: WooPayments charge ID, %3$s: dispute details URL. */
 				$format = __( 'A dispute (<code>%1$s</code>) was opened on WooPayments charge <code>%2$s</code>, which does not pay this order. The order status was not changed. See the <a>dispute overview</a>.', 'woocommerce' );
 				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, $dispute_elements ), esc_html( $dispute_id ), esc_html( $charge_id ), $dispute_url );
 
-			case 'charge.dispute.closed':
+			case WooPaymentsWebhookEventType::CHARGE_DISPUTE_CLOSED:
 				/* translators: %1$s: WooPayments dispute ID, %2$s: WooPayments charge ID, %3$s: dispute details URL, %4$s: dispute status, such as "lost". */
 				$format = __( 'The dispute <code>%1$s</code> on WooPayments charge <code>%2$s</code>, which does not pay this order, was closed with status %4$s. The order status was not changed. See the <a>dispute overview</a>.', 'woocommerce' );
 				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, $dispute_elements ), esc_html( $dispute_id ), esc_html( $charge_id ), $dispute_url, esc_html( $status ) );
 
-			case 'charge.dispute.updated':
-			case 'charge.dispute.funds_withdrawn':
-			case 'charge.dispute.funds_reinstated':
+			case WooPaymentsWebhookEventType::CHARGE_DISPUTE_UPDATED:
+			case WooPaymentsWebhookEventType::CHARGE_DISPUTE_FUNDS_WITHDRAWN:
+			case WooPaymentsWebhookEventType::CHARGE_DISPUTE_FUNDS_REINSTATED:
 				/* translators: %1$s: WooPayments dispute ID, %2$s: WooPayments charge ID, %3$s: dispute details URL, %4$s: dispute status, such as "under_review", %5$s: what happened, such as "Payment dispute has been updated". */
 				$format = __( '%5$s: the dispute <code>%1$s</code> on WooPayments charge <code>%2$s</code>, which does not pay this order, has status %4$s. The order status was not changed. See the <a>dispute overview</a>.', 'woocommerce' );
 				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, $dispute_elements ), esc_html( $dispute_id ), esc_html( $charge_id ), $dispute_url, esc_html( $status ), esc_html( $facts['message'] ?? '' ) );
 
-			case 'radar.early_fraud_warning.created':
+			case WooPaymentsWebhookEventType::RADAR_EARLY_FRAUD_WARNING_CREATED:
 				/* translators: %1$s: WooPayments early fraud warning ID, %2$s: WooPayments charge ID, %3$s: transaction URL. */
 				$format = __( 'An early fraud warning (<code>%1$s</code>) was raised on WooPayments charge <a>%2$s</a>, which does not pay this order.', 'woocommerce' );
 				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, array_merge( $link( '%3$s' ), array( 'code' => '<code>' ) ) ), esc_html( $facts['warning_id'] ?? '' ), esc_html( $charge_id ), $transaction_url );
 
-			case 'invoice.paid':
+			case WooPaymentsWebhookEventType::INVOICE_PAID:
 				return $this->format_collected_invoice_note( $facts['wording'] ?? '', $facts );
 		}
 
