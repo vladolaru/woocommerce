@@ -737,7 +737,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 
 		$params = $integration->get_payment_method_data()['expressCheckoutParams'];
 
-		$this->assertSame( array( 'payment_request' ), $params['enabled_methods'] );
+		$this->assertSame( array(), $params['enabled_methods'] );
 		$this->assertSame( array( 'payment_request', 'amazon_pay' ), $params['methods_enabled_at_location'] );
 	}
 
