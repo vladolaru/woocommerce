@@ -287,14 +287,7 @@ const ExpressCheckoutSettingsSection = () => {
 					iconSrc: linkBrand.iconUrl,
 					description: (
 						<>
-							{ sprintf(
-								/* translators: %s: Link brand name (Link or Onelink). */
-								__(
-									"%s autofills your customers' payment and shipping details to deliver an easy and seamless checkout experience.",
-									'woocommerce'
-								),
-								linkBrand.label
-							) }
+							{ linkBrand.description }
 							{ ! isLinkSaved && (
 								<>
 									{ ' ' }
