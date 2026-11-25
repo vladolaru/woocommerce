@@ -1011,12 +1011,12 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 	public function test_facades_leave_the_listed_members_undeclared(): void {
 		$this->declare_facade();
 		$not_declared = array(
-			'WCPay\\MultiCurrency\\MultiCurrency' => array( '__construct', 'init_hooks', 'init', 'init_rest_api', 'init_widgets', 'init_settings_pages', 'enqueue_admin_scripts', 'add_props_to_wcpay_js_config', 'add_woo_admin_notes', 'maybe_update_customer_currencies_option', 'update_selected_currency_by_url', 'update_selected_currency_by_geolocation', 'maybe_auto_enable_cache_rendering_mode', 'display_geolocation_currency_update_notice', 'set_new_customer_currency_meta', 'add_order_meta_on_refund', 'recalculate_cart', 'possible_simulation_activation', 'register_script_with_dependencies', 'get_file_version', 'get_storefront_integration', 'get_currency_switcher_widget', 'set_enabled_currencies', 'update_selected_currency', 'update_single_currency_settings', 'update_settings', 'is_simulation_enabled', 'get_multi_currency_onboarding_simulation_variables', 'get_backend_formatted_wc_price', 'get_adjusted_price' ),
+			'WCPay\\MultiCurrency\\MultiCurrency' => array( '__construct', 'init_hooks', 'init', 'init_rest_api', 'init_widgets', 'init_settings_pages', 'enqueue_admin_scripts', 'add_props_to_wcpay_js_config', 'add_woo_admin_notes', 'maybe_update_customer_currencies_option', 'update_selected_currency_by_url', 'update_selected_currency_by_geolocation', 'maybe_auto_enable_cache_rendering_mode', 'display_geolocation_currency_update_notice', 'set_new_customer_currency_meta', 'add_order_meta_on_refund', 'recalculate_cart', 'record_cart_totals_currency', 'start_cart_totals_calculation', 'note_cart_totals_saved', 'clear_cart_totals_currency', 'maybe_recalculate_cart_for_currency', 'possible_simulation_activation', 'register_script_with_dependencies', 'get_file_version', 'get_storefront_integration', 'get_currency_switcher_widget', 'set_enabled_currencies', 'update_selected_currency', 'update_single_currency_settings', 'update_settings', 'is_simulation_enabled', 'get_multi_currency_onboarding_simulation_variables', 'get_backend_formatted_wc_price', 'get_adjusted_price' ),
 			'WCPay\\MultiCurrency\\Compatibility' => array( 'init', 'init_compatibility_classes', 'get_compatibility_classes', 'attach_order_modifier', 'convert_order_prices' ),
 			MultiCurrencyCurrency::class          => array( 'get_currency_name_from_code' ),
 		);
 
-		$this->assertCount( 30, $not_declared['WCPay\\MultiCurrency\\MultiCurrency'] );
+		$this->assertCount( 35, $not_declared['WCPay\\MultiCurrency\\MultiCurrency'] );
 		foreach ( $not_declared as $class => $members ) {
 			foreach ( $members as $member ) {
 				$this->assertFalse( method_exists( $class, $member ), $class . '::' . $member );
