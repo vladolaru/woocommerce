@@ -355,6 +355,7 @@ describe( 'wc-payment-method-woopayments', () => {
 			create: jest.fn( () => ( {
 				on: jest.fn( fireReadyWhenSubscribed ),
 				mount: jest.fn(),
+				update: jest.fn(),
 			} ) ),
 			submit: jest.fn( () => {
 				calls.push( 'submit' );
@@ -425,6 +426,94 @@ describe( 'wc-payment-method-woopayments', () => {
 			unsubscribePaymentSetup,
 		};
 	};
+
+	it( 'prefills Link at mount and waits for 750 ms after the last valid email edit', async () => {
+		jest.useFakeTimers();
+		try {
+			const billing = ( email ) => ( { billingAddress: { email } } );
+			const harness = await setUpNewCardPayment(
+				billing( '  shopper@example.test  ' )
+			);
+			const { create } = harness.elementsInstance;
+			const { update } = create.mock.results[ 0 ].value;
+			expect( create ).toHaveBeenCalledWith(
+				'payment',
+				expect.objectContaining( {
+					defaultValues: {
+						billingDetails: { email: 'shopper@example.test' },
+					},
+				} )
+			);
+			const edit = ( email ) =>
+				harness.rerender( harness.createContent( billing( email ) ) );
+			const tick = ( ms ) =>
+				act( () => {
+					jest.advanceTimersByTime( ms );
+				} );
+			edit( 'first@example.test' );
+			tick( 500 );
+			edit( 'replacement@example.test' );
+			tick( 749 );
+			expect( update ).not.toHaveBeenCalled();
+			tick( 1 );
+			expect( update ).toHaveBeenCalledWith( {
+				defaultValues: {
+					billingDetails: { email: 'replacement@example.test' },
+				},
+			} );
+			for ( const value of [
+				'',
+				'unfinished@',
+				' replacement@example.test ',
+			] ) {
+				edit( value );
+				tick( 750 );
+			}
+			expect( update ).toHaveBeenCalledTimes( 1 );
+			expect( create ).toHaveBeenCalledTimes( 1 );
+		} finally {
+			jest.useRealTimers();
+		}
+	} );
+
+	it.each( [
+		[ 'Link off', [ 'card' ], { card: {} } ],
+		[
+			'a non-card method',
+			[ 'sepa_debit' ],
+			{ sepa_debit: {}, card: {}, link: {} },
+		],
+	] )( 'omits the Link email for %s', async ( _, types, config ) => {
+		const settings = jest.requireMock( '@woocommerce/settings' );
+		settings.getPaymentMethodData.mockReturnValueOnce( {
+			...settings.getPaymentMethodData(),
+			paymentMethodTypes: types,
+			paymentMethodsConfig: config,
+		} );
+		const harness = await setUpNewCardPayment( {
+			billingAddress: { email: 'shopper@example.test' },
+		} );
+		const { create } = harness.elementsInstance;
+		expect( create.mock.calls[ 0 ][ 1 ] ).not.toHaveProperty(
+			'defaultValues'
+		);
+		jest.useFakeTimers();
+		try {
+			harness.rerender(
+				harness.createContent( {
+					billingAddress: { email: 'other@example.test' },
+				} )
+			);
+			act( () => {
+				jest.advanceTimersByTime( 750 );
+			} );
+			expect(
+				create.mock.results[ 0 ].value.update
+			).not.toHaveBeenCalled();
+		} finally {
+			jest.useRealTimers();
+		}
+	} );
 
 	it( 'submits wcpay-payment-method metadata for a new card method', async () => {
 		window.wcpayFraudPreventionToken = 'fraud-token-123';

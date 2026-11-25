@@ -691,6 +691,16 @@ const getStripeElementsOptions = ( paymentSettings = defaultSettings ) => {
 	return options;
 };
 
+const getLinkEmail = ( value ) => {
+	const email = typeof value === 'string' ? value.trim() : '';
+	return email.length <= 254 &&
+		/^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9.-]+$/.test(
+			email
+		)
+		? email
+		: '';
+};
+
 const getStripePaymentElementOptions = (
 	paymentSettings = defaultSettings,
 	shouldSavePayment = false
@@ -1383,6 +1393,14 @@ const WooPaymentsContent = ( {
 	const billingData =
 		billing?.billingAddress || billing?.billingData || EMPTY_BILLING_DATA;
 
+	const checkoutLinkEmail =
+		isCardMethod && isLinkEnabled( paymentSettings )
+			? getLinkEmail( billingData.email )
+			: '';
+	const currentLinkEmail = useRef( checkoutLinkEmail );
+	const appliedLinkEmail = useRef( '' );
+	currentLinkEmail.current = checkoutLinkEmail;
+
 	if ( ! deviceFingerprint.current ) {
 		deviceFingerprint.current = getDeviceFingerprint();
 	}
@@ -1528,6 +1546,12 @@ const WooPaymentsContent = ( {
 		elements.current = stripe.current.elements(
 			getStripeElementsOptions( paymentSettings )
 		);
+		appliedLinkEmail.current = currentLinkEmail.current;
+		if ( appliedLinkEmail.current ) {
+			paymentElementOptions.defaultValues = {
+				billingDetails: { email: appliedLinkEmail.current },
+			};
+		}
 		paymentElement.current = elements.current.create(
 			'payment',
 			paymentElementOptions
@@ -1566,6 +1590,24 @@ const WooPaymentsContent = ( {
 		} );
 		paymentElement.current.mount( elementContainer.current );
 	}, [ isStripeLoaded, paymentSettings, shouldSavePayment ] );
+
+	useEffect( () => {
+		const element = paymentElement.current;
+		if (
+			! element ||
+			! checkoutLinkEmail ||
+			checkoutLinkEmail === appliedLinkEmail.current
+		) {
+			return;
+		}
+		const timer = setTimeout( () => {
+			element.update( {
+				defaultValues: { billingDetails: { email: checkoutLinkEmail } },
+			} );
+			appliedLinkEmail.current = checkoutLinkEmail;
+		}, 750 );
+		return () => clearTimeout( timer );
+	}, [ checkoutLinkEmail ] );
 
 	useEffect( () => {
 		renderWooPaySaveUserSection( paymentSettings );

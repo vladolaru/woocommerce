@@ -1033,6 +1033,7 @@ describe( 'WooPayments checkout', () => {
 				},
 			} );
 
+		document.body.insertAdjacentHTML( 'beforeend', '<input id="billing_email" value="shopper@example.test" />' );
 		const selectedContainer = document
 			.getElementById( 'payment_method_woocommerce_payments_sepa_debit' )
 			.closest( 'li' )
@@ -1045,6 +1046,7 @@ describe( 'WooPayments checkout', () => {
 			paymentMethodTypes: [ 'sepa_debit' ],
 		} );
 		expect( mountPaymentElement ).toHaveBeenCalledWith( selectedContainer );
+		expect( paymentElementOptions ).not.toHaveProperty( 'defaultValues.billingDetails.email', 'shopper@example.test' );
 	} );
 
 	test( 'does not mount a redirect gateway into another gateway payment element container', async () => {
@@ -1981,6 +1983,48 @@ describe( 'WooPayments checkout', () => {
 		);
 
 		delete window.wc_woopayments_checkout_params.enabledBillingFields;
+	} );
+
+	test( 'prefills Link with the checkout email and updates once per valid change', async () => {
+		document.body.insertAdjacentHTML(
+			'beforeend',
+			'<input id="billing_email" value="  shopper@example.test  " />'
+		);
+		window.wc_woopayments_checkout_params.customerData = {
+			email: 'prepared@example.test',
+			name: 'Test Shopper',
+		};
+		require( '../woopayments-checkout' );
+		await flushPromises();
+
+		expect( paymentElementOptions.defaultValues.billingDetails ).toMatchObject( {
+			name: 'Test Shopper',
+			email: 'shopper@example.test',
+		} );
+		updatePaymentElement.mockClear();
+		const field = document.getElementById( 'billing_email' );
+		for ( const email of [ '', 'invalid', 'next@example.test', 'next@example.test' ] ) {
+			field.value = email;
+			field.dispatchEvent( new window.Event( 'change', { bubbles: true } ) );
+		}
+		expect( updatePaymentElement ).toHaveBeenCalledTimes( 1 );
+		expect( updatePaymentElement ).toHaveBeenCalledWith( {
+			defaultValues: { billingDetails: expect.objectContaining( { email: 'next@example.test' } ) },
+		} );
+	} );
+
+	test( 'keeps the prepared billing defaults when Link is disabled', async () => {
+		delete window.wc_woopayments_checkout_params.paymentMethodsConfig.link;
+		window.wc_woopayments_checkout_params.customerData = {
+			email: 'prepared@example.test',
+		};
+		document.body.insertAdjacentHTML( 'beforeend', '<input id="billing_email" value="shopper@example.test" />' );
+		require( '../woopayments-checkout' );
+		await flushPromises();
+
+		expect( paymentElementOptions.defaultValues.billingDetails.email ).toBe( 'prepared@example.test' );
+		document.getElementById( 'billing_email' ).dispatchEvent( new window.Event( 'change', { bubbles: true } ) );
+		expect( updatePaymentElement ).not.toHaveBeenCalled();
 	} );
 
 	test( 'instantiates Stripe with the reference client betas', async () => {

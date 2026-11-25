@@ -861,8 +861,9 @@
 		} );
 	}
 
-	function getPreparedCustomerBillingDetails() {
+	function getPreparedCustomerBillingDetails( linkEmail ) {
 		var customerData = baseConfig.customerData || {};
+		var email = linkEmail || customerData.email;
 		var country =
 			customerData.billing_country || customerData.billingCountry || '';
 		var address = customerData.address
@@ -873,7 +874,7 @@
 
 		if (
 			! customerData.name &&
-			! customerData.email &&
+			! email &&
 			Object.keys( address ).length === 0
 		) {
 			return null;
@@ -881,7 +882,7 @@
 
 		return {
 			name: customerData.name || undefined,
-			email: customerData.email,
+			email: email,
 			address: address,
 		};
 	}
@@ -1045,7 +1046,34 @@
 		};
 	}
 
-	function getStripePaymentElementOptions() {
+	function getCheckoutLinkEmail( paymentGatewayId ) {
+		if (
+			paymentGatewayId !== defaultGatewayId ||
+			! isLinkEnabled( getConfigForGateway( paymentGatewayId ) )
+		) {
+			return '';
+		}
+		var email = getInputValue( 'billing_email' ).trim();
+		return email.length <= 254 &&
+			/^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9.-]+$/.test( email )
+			? email
+			: '';
+	}
+
+	function updateLinkEmail() {
+		var component = paymentElements[ defaultGatewayId ];
+		var email = getCheckoutLinkEmail( defaultGatewayId );
+		if ( component && email && email !== component.linkEmail ) {
+			component.linkEmail = email;
+			component.paymentElement.update( {
+				defaultValues: {
+					billingDetails: getPreparedCustomerBillingDetails( email ),
+				},
+			} );
+		}
+	}
+
+	function getStripePaymentElementOptions( linkEmail ) {
 		var options = {
 			wallets: {
 				applePay: 'never',
@@ -1078,7 +1106,7 @@
 			};
 		}
 
-		var preparedBillingDetails = getPreparedCustomerBillingDetails();
+		var preparedBillingDetails = getPreparedCustomerBillingDetails( linkEmail );
 		if ( preparedBillingDetails ) {
 			options.defaultValues = {
 				billingDetails: preparedBillingDetails,
@@ -2496,9 +2524,10 @@
 		};
 		elements = component.stripe.elements( getStripeElementsOptions() );
 		component.elements = elements;
+		component.linkEmail = getCheckoutLinkEmail( paymentGatewayId );
 		component.paymentElement = elements.create(
 			'payment',
-			getStripePaymentElementOptions()
+			getStripePaymentElementOptions( component.linkEmail )
 		);
 		component.paymentElement.on( 'ready', function () {
 			settleReady( true );
@@ -3504,7 +3533,13 @@
 		confirmRedirectIfPresent();
 		document.addEventListener( 'click', copyTestNumber );
 		document.addEventListener( 'click', recordPlaceOrderButtonClick );
-		document.addEventListener( 'change', updatePaymentElementTerms );
+		document.addEventListener( 'change', function ( event ) {
+			if ( event.target.id === 'billing_email' ) {
+				updateLinkEmail();
+			} else {
+				updatePaymentElementTerms( event );
+			}
+		} );
 		if ( document.getElementById( 'add_payment_method' ) ) {
 			document
 				.getElementById( 'add_payment_method' )
