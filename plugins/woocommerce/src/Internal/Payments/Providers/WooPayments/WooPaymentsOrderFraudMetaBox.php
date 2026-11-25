@@ -302,11 +302,11 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 	 */
 	private function get_fraud_meta_box_type( WC_Order $order ): string {
 		$payment_method = (string) $order->get_payment_method();
-		if ( str_starts_with( $payment_method, 'woocommerce_payments_' ) ) {
+		if ( str_starts_with( $payment_method, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX ) ) {
 			return self::TYPE_NOT_CARD;
 		}
 
-		if ( 'woocommerce_payments' !== $payment_method ) {
+		if ( WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $payment_method ) {
 			return self::TYPE_NOT_WCPAY;
 		}
 

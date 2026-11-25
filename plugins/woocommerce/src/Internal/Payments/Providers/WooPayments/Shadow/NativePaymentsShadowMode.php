@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Shadow;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentStatus;
 use Automattic\WooCommerce\Container;
 use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
@@ -509,7 +510,7 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 			(string) $order->get_currency(),
 			$order_mode,
 			$settlement_meta,
-			$order->has_status( 'on-hold' ) || 'review' === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY, true )
+			$order->has_status( OrderStatus::ON_HOLD ) || 'review' === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY, true )
 		);
 	}
 
@@ -639,20 +640,20 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 		switch ( $outcome->get_status() ) {
 			case PaymentOutcome::STATUS_COMPLETED:
 			case PaymentOutcome::STATUS_NO_EXTERNAL_PAYMENT:
-				if ( $order->has_status( array( 'processing', 'completed' ) ) ) {
+				if ( $order->has_status( array( OrderStatus::PROCESSING, OrderStatus::COMPLETED ) ) ) {
 					return (string) $order->get_status();
 				}
 
 				return $this->get_completed_order_status( $order );
 
 			case PaymentOutcome::STATUS_AUTHORIZED:
-				return 'on-hold';
+				return OrderStatus::ON_HOLD;
 
 			case PaymentOutcome::STATUS_FAILED:
-				return 'failed';
+				return OrderStatus::FAILED;
 
 			case PaymentOutcome::STATUS_CANCELED:
-				return 'cancelled';
+				return OrderStatus::CANCELLED;
 
 			case PaymentOutcome::STATUS_PENDING_ASYNC:
 			case PaymentOutcome::STATUS_REQUIRES_REDIRECT:
@@ -670,7 +671,7 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	 * @return string
 	 */
 	private function get_completed_order_status( WC_Order $order ): string {
-		return $order->needs_processing() ? 'processing' : 'completed';
+		return $order->needs_processing() ? OrderStatus::PROCESSING : OrderStatus::COMPLETED;
 	}
 
 	/**

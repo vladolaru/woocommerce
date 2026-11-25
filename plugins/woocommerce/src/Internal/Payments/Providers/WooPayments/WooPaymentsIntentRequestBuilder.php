@@ -144,7 +144,7 @@ class WooPaymentsIntentRequestBuilder {
 		$is_renewal           = $is_scheduled_renewal || ( function_exists( 'wcs_order_contains_renewal' ) && (bool) wcs_order_contains_renewal( $order ) );
 		$is_recurring         = $is_renewal || $is_recurring;
 		$save_payment_method  = ! empty( $payment_data[ PaymentOperationContext::PAYMENT_DATA_SAVE_PAYMENT_METHOD ] ) || $is_recurring;
-		$payment_type         = $is_recurring ? 'recurring' : 'single';
+		$payment_type         = $is_recurring ? WooPaymentsPaymentType::RECURRING : WooPaymentsPaymentType::SINGLE;
 		$subscription_payment = $is_renewal ? 'renewal' : ( $is_recurring ? 'initial' : 'no' );
 		$payment_method_types = $this->payment_method_types_for_request( $context, (string) $order->get_currency() );
 		$request_data         = array(
@@ -310,7 +310,7 @@ class WooPaymentsIntentRequestBuilder {
 		$provider_data        = $context->get_provider_data();
 		$is_renewal           = ! empty( $provider_data[ WooPaymentsProviderDataKey::SCHEDULED_SUBSCRIPTION_PAYMENT ] );
 		$is_recurring         = $is_renewal || $is_recurring;
-		$payment_type         = $is_recurring ? 'recurring' : 'single';
+		$payment_type         = $is_recurring ? WooPaymentsPaymentType::RECURRING : WooPaymentsPaymentType::SINGLE;
 		$subscription_payment = $is_renewal ? 'renewal' : ( $is_recurring ? 'initial' : 'no' );
 		$payment_method_types = $this->payment_method_types_for_request( $context, (string) $order->get_currency() );
 		$metadata             = array_merge(
@@ -365,10 +365,10 @@ class WooPaymentsIntentRequestBuilder {
 	 * @param string   $subscription_payment Subscription payment type.
 	 * @return array<string,mixed>
 	 */
-	public static function metadata_from_order( WC_Order $order, string $payment_type = 'single', string $subscription_payment = 'no' ): array {
+	public static function metadata_from_order( WC_Order $order, string $payment_type = WooPaymentsPaymentType::SINGLE, string $subscription_payment = 'no' ): array {
 		ClassAliases::register_compat_class_alias( WooPaymentsPaymentType::class );
 
-		$payment_type         = 'recurring' === $payment_type ? WooPaymentsPaymentType::recurring() : WooPaymentsPaymentType::single();
+		$payment_type         = WooPaymentsPaymentType::RECURRING === $payment_type ? WooPaymentsPaymentType::recurring() : WooPaymentsPaymentType::single();
 		$subscription_payment = in_array( $subscription_payment, array( 'initial', 'renewal' ), true ) ? $subscription_payment : 'no';
 		$metadata             = array(
 			'customer_name'        => sanitize_text_field( $order->get_billing_first_name() ) . ' ' . sanitize_text_field( $order->get_billing_last_name() ),
@@ -429,7 +429,7 @@ class WooPaymentsIntentRequestBuilder {
 
 		return self::metadata_from_order(
 			$order,
-			$is_subscription ? 'recurring' : 'single',
+			$is_subscription ? WooPaymentsPaymentType::RECURRING : WooPaymentsPaymentType::SINGLE,
 			$is_renewal ? 'renewal' : ( $is_subscription ? 'initial' : 'no' )
 		);
 	}

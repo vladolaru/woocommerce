@@ -154,7 +154,7 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 	 * @return WP_REST_Response|WP_Error
 	 */
 	public function capture_authorization( WP_REST_Request $request ) {
-		return $this->run_authorization_action( $request, 'capture' );
+		return $this->run_authorization_action( $request, PaymentProcessingService::OPERATION_CAPTURE );
 	}
 
 	/**
@@ -165,7 +165,7 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 	 * @return WP_REST_Response|WP_Error
 	 */
 	public function cancel_authorization( WP_REST_Request $request ) {
-		return $this->run_authorization_action( $request, 'cancel' );
+		return $this->run_authorization_action( $request, PaymentProcessingService::OPERATION_CANCEL );
 	}
 
 	/**
@@ -183,7 +183,7 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 			return $this->handle_authorization_action( $request, $action );
 		} catch ( Throwable $exception ) {
 			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable(
-				'capture' === $action ? 'Failed to capture an authorization via the REST API.' : 'Failed to cancel an authorization via the REST API.',
+				PaymentProcessingService::OPERATION_CAPTURE === $action ? 'Failed to capture an authorization via the REST API.' : 'Failed to cancel an authorization via the REST API.',
 				$exception,
 				array( 'order_id' => absint( $request->get_param( 'order_id' ) ) )
 			);
@@ -212,7 +212,7 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 		if ( 0 < (float) $order->get_total_refunded() ) {
 			return new WP_Error(
 				'wcpay_refunded_order_uncapturable',
-				'capture' === $action
+				PaymentProcessingService::OPERATION_CAPTURE === $action
 					? __( 'Payment cannot be captured for partially or fully refunded orders.', 'woocommerce' )
 					: __( 'Payment cannot be canceled for partially or fully refunded orders.', 'woocommerce' ),
 				array( 'status' => 400 )
@@ -222,7 +222,7 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 		if ( '' === $payment_intent_id || $payment_intent_id !== $this->get_order_intent_id( $order ) ) {
 			return new WP_Error(
 				'wcpay_intent_order_mismatch',
-				'capture' === $action ? __( 'The payment cannot be captured', 'woocommerce' ) : __( 'The payment cannot be canceled', 'woocommerce' ),
+				PaymentProcessingService::OPERATION_CAPTURE === $action ? __( 'The payment cannot be captured', 'woocommerce' ) : __( 'The payment cannot be canceled', 'woocommerce' ),
 				array( 'status' => 409 )
 			);
 		}
@@ -232,13 +232,13 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 			return $live_intent;
 		}
 
-		$this->add_fraud_outcome_manual_entry( $order, 'capture' === $action ? 'approve' : 'block' );
+		$this->add_fraud_outcome_manual_entry( $order, PaymentProcessingService::OPERATION_CAPTURE === $action ? 'approve' : 'block' );
 		// The account is read before the capture claim, so the Level 3 lookup under it does not fetch it.
-		if ( 'capture' === $action ) {
+		if ( PaymentProcessingService::OPERATION_CAPTURE === $action ) {
 			wc_get_container()->get( WooPaymentsCompositionDataSettler::class )->settle_account_before_claim( $order );
 		}
 
-		$outcome = 'capture' === $action
+		$outcome = PaymentProcessingService::OPERATION_CAPTURE === $action
 			? $this->processing_service->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $this->provider )
 			: $this->processing_service->cancel( PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $this->provider );
 
@@ -253,7 +253,7 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 
 		return new WP_REST_Response(
 			array(
-				'status' => 'capture' === $action ? WooPaymentsIntentStatus::SUCCEEDED : WooPaymentsIntentStatus::CANCELED,
+				'status' => PaymentProcessingService::OPERATION_CAPTURE === $action ? WooPaymentsIntentStatus::SUCCEEDED : WooPaymentsIntentStatus::CANCELED,
 				'id'     => '' !== $outcome->get_provider_payment_id() ? $outcome->get_provider_payment_id() : $payment_intent_id,
 			)
 		);
@@ -402,7 +402,7 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 		if ( $intent_meta_order_id !== $order->get_id() ) {
 			return new WP_Error(
 				'wcpay_intent_order_mismatch',
-				'capture' === $action ? __( 'The payment cannot be captured', 'woocommerce' ) : __( 'The payment cannot be canceled', 'woocommerce' ),
+				PaymentProcessingService::OPERATION_CAPTURE === $action ? __( 'The payment cannot be captured', 'woocommerce' ) : __( 'The payment cannot be canceled', 'woocommerce' ),
 				array( 'status' => 409 )
 			);
 		}
@@ -411,7 +411,7 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 		if ( WooPaymentsIntentStatus::REQUIRES_CAPTURE !== $status ) {
 			return new WP_Error(
 				'wcpay_payment_uncapturable',
-				'capture' === $action ? __( 'The payment cannot be captured', 'woocommerce' ) : __( 'The payment cannot be canceled', 'woocommerce' ),
+				PaymentProcessingService::OPERATION_CAPTURE === $action ? __( 'The payment cannot be captured', 'woocommerce' ) : __( 'The payment cannot be canceled', 'woocommerce' ),
 				array( 'status' => 409 )
 			);
 		}
@@ -474,7 +474,7 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 	 * @return bool
 	 */
 	private function is_expected_action_outcome( PaymentOutcome $outcome, string $action ): bool {
-		return 'capture' === $action
+		return PaymentProcessingService::OPERATION_CAPTURE === $action
 			? PaymentOutcome::STATUS_COMPLETED === $outcome->get_status()
 			: PaymentOutcome::STATUS_CANCELED === $outcome->get_status();
 	}
@@ -494,7 +494,7 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 		$data    = $outcome->get_data();
 		$message = isset( $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] ) ? (string) $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] : '';
 
-		if ( 'cancel' === $action ) {
+		if ( PaymentProcessingService::OPERATION_CANCEL === $action ) {
 			return new WP_Error(
 				'wcpay_cancel_error',
 				sprintf(

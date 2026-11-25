@@ -25,7 +25,7 @@ class WooPaymentsDuplicateGatewayMethodsService {
 	 * Gateway IDs that belong to the card cluster only on an exact match, so their sub-gateways
 	 * (stripe_alipay, stripe_link, ...) are classified by payment method keyword instead.
 	 */
-	private const DUPLICATE_CARD_GATEWAY_IDS = array( 'woocommerce_payments', 'stripe' );
+	private const DUPLICATE_CARD_GATEWAY_IDS = array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'stripe' );
 
 	/**
 	 * Gateway ID keywords per payment method, checked in order; the first match wins.

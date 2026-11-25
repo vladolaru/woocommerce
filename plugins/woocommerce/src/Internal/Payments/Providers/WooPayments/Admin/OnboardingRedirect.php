@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
@@ -48,7 +49,7 @@ class OnboardingRedirect {
 	/**
 	 * Client 11.1.0 settings section; `woocommerce_payments_<method>` sections redirect to it first.
 	 */
-	private const GATEWAY_SETTINGS_SECTION = 'woocommerce_payments';
+	private const GATEWAY_SETTINGS_SECTION = WooPaymentsPersistenceVocabulary::GATEWAY_ID;
 
 	/**
 	 * Payments settings routes that need a working connection and a valid account, matched by prefix.

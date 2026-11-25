@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
@@ -222,10 +223,10 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 		$disallowed_statuses = apply_filters(
 			'wcpay_create_customer_disallowed_order_statuses',
 			array(
-				'completed',
-				'cancelled',
-				'refunded',
-				'failed',
+				OrderStatus::COMPLETED,
+				OrderStatus::CANCELLED,
+				OrderStatus::REFUNDED,
+				OrderStatus::FAILED,
 			)
 		);
 
@@ -826,7 +827,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 		 *
 		 * @param string $order_status Order status.
 		 */
-		$order_status = apply_filters( 'wcpay_terminal_payment_completed_order_status', 'completed' );
+		$order_status = apply_filters( 'wcpay_terminal_payment_completed_order_status', OrderStatus::COMPLETED );
 		if ( 'payment_complete' === $order_status ) {
 			$order->payment_complete( $intent_id );
 		} elseif ( is_string( $order_status ) && '' !== $order_status ) {
@@ -1003,7 +1004,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 				}
 
 				$order->update_meta_data( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, WooPaymentsIntentStatus::CANCELED );
-				$order->update_status( 'failed' );
+				$order->update_status( OrderStatus::FAILED );
 			}
 		);
 	}

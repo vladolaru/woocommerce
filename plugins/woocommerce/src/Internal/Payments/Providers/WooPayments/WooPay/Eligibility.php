@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\EuVatNumberIntegration;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressPaymentMethodTypes;
@@ -225,7 +226,7 @@ class Eligibility {
 	public function is_woopay_gateway_available(): bool {
 		$available_gateways = WC()->payment_gateways()->get_available_payment_gateways();
 
-		return isset( $available_gateways['woocommerce_payments'] );
+		return isset( $available_gateways[ WooPaymentsPersistenceVocabulary::GATEWAY_ID ] );
 	}
 
 	/**

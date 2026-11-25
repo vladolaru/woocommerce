@@ -318,7 +318,7 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( 0 !== strpos( $order->get_payment_method(), 'woocommerce_payments' ) ) {
+		if ( 0 !== strpos( $order->get_payment_method(), WooPaymentsPersistenceVocabulary::GATEWAY_ID ) ) {
 			$this->send_other_gateway_order_counter();
 			return;
 		}

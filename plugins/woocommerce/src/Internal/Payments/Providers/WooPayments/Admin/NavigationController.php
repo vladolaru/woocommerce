@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
@@ -489,7 +490,7 @@ class NavigationController implements RegisterHooksInterface {
 		}
 
 		$section = $this->get_request_scalar( $request, 'section' );
-		if ( ! str_starts_with( $section, 'woocommerce_payments_' ) ) {
+		if ( ! str_starts_with( $section, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX ) ) {
 			return '';
 		}
 

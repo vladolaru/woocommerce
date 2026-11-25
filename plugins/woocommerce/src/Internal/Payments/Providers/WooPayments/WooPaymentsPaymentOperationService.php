@@ -327,7 +327,7 @@ class WooPaymentsPaymentOperationService {
 			return $this->normalize_unusable_scheduled_renewal_failure( $context, $outcome );
 		}
 
-		return $this->unavailable_outcome( 'charge' );
+		return $this->unavailable_outcome( PaymentProcessingService::OPERATION_CHARGE );
 	}
 
 	/**
@@ -433,7 +433,7 @@ class WooPaymentsPaymentOperationService {
 			}
 		}
 
-		return $this->unavailable_outcome( 'refund' );
+		return $this->unavailable_outcome( PaymentProcessingService::OPERATION_REFUND );
 	}
 
 	/**
@@ -482,7 +482,7 @@ class WooPaymentsPaymentOperationService {
 		try {
 			$list = $this->api_client->list_charge_refunds( $request['charge'] );
 		} catch ( ApiException $exception ) {
-			return WooPaymentsIntentCodec::failed_transport_outcome( 'refund', $exception );
+			return WooPaymentsIntentCodec::failed_transport_outcome( PaymentProcessingService::OPERATION_REFUND, $exception );
 		}
 
 		$recorded_refund_ids = array();
@@ -541,7 +541,7 @@ class WooPaymentsPaymentOperationService {
 				$this->refund_ambiguity_service->clear_sent_request( $order, $key );
 			}
 
-			return WooPaymentsIntentCodec::failed_transport_outcome( 'refund', $exception );
+			return WooPaymentsIntentCodec::failed_transport_outcome( PaymentProcessingService::OPERATION_REFUND, $exception );
 		}
 
 		$outcome = WooPaymentsIntentCodec::outcome_from_refund_result( $result );
@@ -593,19 +593,19 @@ class WooPaymentsPaymentOperationService {
 
 		$order = $context->get_order();
 		if ( $this->api_client->is_available() ) {
-			$refusal = $this->refuse_status_change_on_a_changed_order( $context, 'capture' );
+			$refusal = $this->refuse_status_change_on_a_changed_order( $context, PaymentProcessingService::OPERATION_CAPTURE );
 			if ( null !== $refusal ) {
 				return $refusal;
 			}
 
-			$intent_id = $this->get_operation_intent_id( $context, 'capture' );
+			$intent_id = $this->get_operation_intent_id( $context, PaymentProcessingService::OPERATION_CAPTURE );
 			if ( '' !== $intent_id ) {
-				$refusal = $this->refuse_an_intent_id_outside_the_form( $context, 'capture', $intent_id );
+				$refusal = $this->refuse_an_intent_id_outside_the_form( $context, PaymentProcessingService::OPERATION_CAPTURE, $intent_id );
 				if ( null !== $refusal ) {
 					return $refusal;
 				}
 
-				$refusal = $this->refuse_a_target_of_another_order( $context, 'capture', $intent_id );
+				$refusal = $this->refuse_a_target_of_another_order( $context, PaymentProcessingService::OPERATION_CAPTURE, $intent_id );
 				if ( null !== $refusal ) {
 					return $refusal;
 				}
@@ -634,7 +634,7 @@ class WooPaymentsPaymentOperationService {
 					// reach, completes the payment (:2193-2219, :2216).
 					return self::leaving_order_status_when( PaymentOutcome::STATUS_COMPLETED, $outcome )->with_effect_plan( $plan->without_fee_meta() );
 				} catch ( ApiException $exception ) {
-					$outcome = WooPaymentsIntentCodec::failed_transport_outcome( 'capture', $exception, $intent_id );
+					$outcome = WooPaymentsIntentCodec::failed_transport_outcome( PaymentProcessingService::OPERATION_CAPTURE, $exception, $intent_id );
 
 					// The site may have missed the charge.expired webhook, so a failed capture
 					// re-fetches the intent: a canceled intent means the authorization expired,
@@ -656,7 +656,7 @@ class WooPaymentsPaymentOperationService {
 			}
 		}
 
-		return $this->unavailable_outcome( 'capture' );
+		return $this->unavailable_outcome( PaymentProcessingService::OPERATION_CAPTURE );
 	}
 
 	/**
@@ -693,19 +693,19 @@ class WooPaymentsPaymentOperationService {
 		unset( $idempotency_key );
 
 		if ( $this->api_client->is_available() ) {
-			$refusal = $this->refuse_status_change_on_a_changed_order( $context, 'cancel' );
+			$refusal = $this->refuse_status_change_on_a_changed_order( $context, PaymentProcessingService::OPERATION_CANCEL );
 			if ( null !== $refusal ) {
 				return $refusal;
 			}
 
-			$intent_id = $this->get_operation_intent_id( $context, 'cancel' );
+			$intent_id = $this->get_operation_intent_id( $context, PaymentProcessingService::OPERATION_CANCEL );
 			if ( '' !== $intent_id ) {
-				$refusal = $this->refuse_an_intent_id_outside_the_form( $context, 'cancel', $intent_id );
+				$refusal = $this->refuse_an_intent_id_outside_the_form( $context, PaymentProcessingService::OPERATION_CANCEL, $intent_id );
 				if ( null !== $refusal ) {
 					return $refusal;
 				}
 
-				$refusal = $this->refuse_a_target_of_another_order( $context, 'cancel', $intent_id );
+				$refusal = $this->refuse_a_target_of_another_order( $context, PaymentProcessingService::OPERATION_CANCEL, $intent_id );
 				if ( null !== $refusal ) {
 					return $refusal;
 				}
@@ -722,7 +722,7 @@ class WooPaymentsPaymentOperationService {
 						return $this->cancel_outcome( $context, $intent );
 					}
 
-					$outcome = WooPaymentsIntentCodec::failed_transport_outcome( 'cancel', $exception, $intent_id );
+					$outcome = WooPaymentsIntentCodec::failed_transport_outcome( PaymentProcessingService::OPERATION_CANCEL, $exception, $intent_id );
 
 					// Not canceled: the plan carries the status the provider still reports so
 					// the applier records it with the failure note, as client 11.1.0 does
@@ -734,7 +734,7 @@ class WooPaymentsPaymentOperationService {
 			}
 		}
 
-		return $this->unavailable_outcome( 'cancel' );
+		return $this->unavailable_outcome( PaymentProcessingService::OPERATION_CANCEL );
 	}
 
 	/**
@@ -1564,7 +1564,7 @@ class WooPaymentsPaymentOperationService {
 	 * @return PaymentOutcome
 	 */
 	private function failed_charge_outcome( WC_Order $order, ApiException $exception, bool $is_payment_intent_dispatch = false, string $customer_id = '', bool $is_scheduled_renewal = false, string $payment_method_id = '' ): PaymentOutcome {
-		$outcome = WooPaymentsIntentCodec::failed_transport_outcome( 'charge', $exception );
+		$outcome = WooPaymentsIntentCodec::failed_transport_outcome( PaymentProcessingService::OPERATION_CHARGE, $exception );
 		$data    = $outcome->get_data();
 		if ( $is_payment_intent_dispatch && $exception->has_ambiguous_outcome() ) {
 			$this->record_charge_ambiguity( $order, $customer_id );

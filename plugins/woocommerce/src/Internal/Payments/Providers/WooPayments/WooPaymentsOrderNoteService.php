@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\ExplicitPriceFormatter;
@@ -1957,7 +1958,7 @@ class WooPaymentsOrderNoteService {
 	 * @return array{note:string,message:string} The order note, and the plain-text error message the merchant sees.
 	 */
 	public function format_operation_target_refusal( WC_Order $order, string $operation, string $intent_id, ?int $owner_order_id ): array {
-		$is_capture = 'capture' === $operation;
+		$is_capture = PaymentProcessingService::OPERATION_CAPTURE === $operation;
 		$payment    = $this->format_payment_reference( $intent_id, true, null !== $owner_order_id );
 
 		if ( null === $owner_order_id ) {

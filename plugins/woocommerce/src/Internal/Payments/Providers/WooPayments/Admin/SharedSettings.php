@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\Jetpack\Identity_Crisis;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\ExplicitPriceFormatter;
@@ -419,7 +420,7 @@ class SharedSettings implements RegisterHooksInterface {
 	private function is_woopayments_page( string $current_path ): bool {
 		$section = $this->get_request_scalar( $_GET, 'section' ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only route check.
 
-		return str_starts_with( $current_path, '/woopayments/' ) || str_starts_with( $section, 'woocommerce_payments' );
+		return str_starts_with( $current_path, '/woopayments/' ) || str_starts_with( $section, WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 	}
 
 	/**

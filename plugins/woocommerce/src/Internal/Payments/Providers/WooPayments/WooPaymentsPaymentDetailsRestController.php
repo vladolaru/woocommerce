@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
@@ -949,9 +950,9 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 				return $this->api_client->refund_charge( $charge_id, $amount, $reason, $source, $platform_key );
 			}
 
-			$token = $lock->claim( $order, $vocabulary, null, 'refund' );
+			$token = $lock->claim( $order, $vocabulary, null, PaymentProcessingService::OPERATION_REFUND );
 			if ( null === $token ) {
-				$lock->log_refusal( $order, $vocabulary, 'refund' );
+				$lock->log_refusal( $order, $vocabulary, PaymentProcessingService::OPERATION_REFUND );
 				return new WP_Error( 'order_payment_refund_locked', __( 'A payment operation is already in progress for this order.', 'woocommerce' ), array( 'status' => 409 ) );
 			}
 
