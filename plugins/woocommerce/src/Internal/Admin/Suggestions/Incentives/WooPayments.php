@@ -68,6 +68,9 @@ class WooPayments extends Incentive {
 	 */
 	private ?array $incentives_memo = null;
 
+	/** @var mixed Transient value already read for the next ordinary lookup. */
+	private $lookup_cache;
+
 	/**
 	 * WooPayments extension runtime.
 	 *
@@ -110,8 +113,18 @@ class WooPayments extends Incentive {
 	 * @return boolean Whether the incentive should be visible.
 	 */
 	public function is_visible( string $id, string $country_code, bool $skip_extension_active_check = false ): bool {
+		$cold_lookup = null === $this->incentives_memo;
+		if ( ! $skip_extension_active_check && $cold_lookup && null !== $this->arbiter
+			&& ( ! $this->user_has_caps() || $this->skip_waiting_store_lookup() ) ) {
+			return false;
+		}
+
 		// Always skip the extension active check since we will check below.
 		if ( false === parent::is_visible( $id, $country_code, true ) ) {
+			return false;
+		}
+
+		if ( ! $skip_extension_active_check && ! $cold_lookup && null !== $this->arbiter && $this->arbiter->is_awaiting_switch() ) {
 			return false;
 		}
 
@@ -121,6 +134,26 @@ class WooPayments extends Incentive {
 		}
 
 		return true;
+	}
+
+	/**
+	 * Skip fetching offers on a waiting store. Memoized offers can be filtered without fetching.
+	 *
+	 * @since 11.4.0
+	 */
+	public function skip_waiting_store_lookup(): bool {
+		if ( null === $this->incentives_memo && null !== $this->arbiter ) {
+			$cache = get_transient( $this->cache_transient_name );
+			if ( is_wp_error( $cache ) ) {
+				$this->incentives_memo = array();
+				return true;
+			}
+			if ( $this->arbiter->is_awaiting_switch() ) {
+				return true;
+			}
+			$this->lookup_cache = $cache ?? false;
+		}
+		return false;
 	}
 
 	/**
@@ -138,6 +171,7 @@ class WooPayments extends Incentive {
 	 */
 	public function reset_memo() {
 		$this->incentives_memo = null;
+		$this->lookup_cache    = null;
 	}
 
 	/**
@@ -166,8 +200,8 @@ class WooPayments extends Incentive {
 			return $this->incentives_memo;
 		}
 
-		// Get the cached data.
-		$cache = get_transient( $this->cache_transient_name );
+		$cache              = $this->lookup_cache ?? get_transient( $this->cache_transient_name );
+		$this->lookup_cache = null;
 
 		// If the cached data is not expired, and it's a WP_Error,
 		// it means there was an API error previously, and we should not retry just yet.

@@ -5,6 +5,9 @@ namespace Automattic\WooCommerce\Tests\Internal\Admin\Suggestions\Incentives;
 
 use Automattic\WooCommerce\Internal\Admin\Suggestions\Incentives\Incentive;
 use Automattic\WooCommerce\Internal\Admin\Suggestions\Incentives\WooPayments;
+use Automattic\WooCommerce\Internal\Admin\Suggestions\PaymentsExtensionSuggestionIncentives;
+use Automattic\WooCommerce\Internal\Admin\Suggestions\PaymentsExtensionSuggestions;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -41,7 +44,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	/**
 	 * WooPayments extension runtime mock.
 	 *
-	 * @var WooPaymentsExtensionRuntime|MockObject
+	 * @var WooPaymentsExtensionRuntime&MockObject
 	 */
 	protected $extension_runtime;
 
@@ -274,6 +277,48 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testWith ["visibility", true]
+	 *           ["list", true]
+	 *           ["visibility", false]
+	 *
+	 * @param string $reader  Ordinary incentive reader.
+	 * @param bool   $manager Whether the shopper can manage WooCommerce.
+	 */
+	public function test_waiting_store_skips_promo_lookup( string $reader, bool $manager ): void {
+		$id      = PaymentsExtensionSuggestions::WOOPAYMENTS;
+		$arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		update_option( WooPaymentsRuntimeArbiter::EXTENSION_VERSION_OPTION, '11.1.0' );
+		$arbiter->invalidate();
+		$this->assertTrue( $arbiter->is_awaiting_switch() );
+		$sut = new PaymentsExtensionSuggestionIncentives();
+		$sut->init( $this->extension_runtime, $arbiter );
+		delete_transient( Incentive::PREFIX . $id . '_cache' );
+		add_filter( 'pre_http_request', $this->response_mock_ref, 10, 3 );
+		if ( ! $manager ) {
+			wp_set_current_user( self::factory()->user->create( array( 'role' => 'customer' ) ) );
+		}
+		$this->extension_runtime->expects( $this->never() )->method( 'has_live_cached_account_data' );
+		$counts = static fn() => array( did_filter( 'pre_option' ), did_filter( 'pre_http_request' ), did_action( 'added_option' ), did_action( 'updated_option' ) );
+		$start  = did_filter( 'pre_option' );
+		current_user_can( 'manage_woocommerce' );
+		$cap_reads = did_filter( 'pre_option' ) - $start;
+		$before    = $counts();
+		if ( 'list' === $reader ) {
+			$this->assertSame( array(), $sut->get_incentives( $id, 'US', 'type1' ) );
+		} else {
+			$this->assertFalse( $sut->is_incentive_visible( 'incentive1', $id, 'US' ) );
+		}
+		$before[0] += ( 'list' === $reader ? 0 : $cap_reads ) + ( $manager ? 1 : 0 );
+		$this->assertSame( $before, $counts() );
+		if ( $manager ) {
+			update_option( Incentive::PREFIX . $id . '_store_had_woopayments', 'no' );
+			$this->assertSame( array( 'incentive1' ), array_column( $sut->get_incentives( $id, 'US', 'type1', true ), 'id' ) );
+			$this->assertTrue( $sut->is_incentive_visible( 'incentive1', $id, 'US', true ) );
+		}
+	}
+
+	/**
 	 * Test is_visible when WooPayments is active and has no account data.
 	 */
 	public function test_is_visible_with_extension_active_and_no_account_data() {
@@ -315,7 +360,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		$this->extension_runtime->method( 'is_loaded' )->willReturn( false );
 		$this->extension_runtime->method( 'has_live_cached_account_data' )->willReturn( true );
 		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
-			->onlyMethods( array( 'is_builtin_owner' ) )
+			->onlyMethods( array( 'is_builtin_owner', 'is_awaiting_switch' ) )
 			->getMock();
 		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
 		$sut = new WooPayments( $this->suggestion_id, $this->extension_runtime, $arbiter );
@@ -337,7 +382,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		$this->extension_runtime->method( 'is_loaded' )->willReturn( false );
 		$this->extension_runtime->method( 'has_live_cached_account_data' )->willReturn( false );
 		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
-			->onlyMethods( array( 'is_builtin_owner' ) )
+			->onlyMethods( array( 'is_builtin_owner', 'is_awaiting_switch' ) )
 			->getMock();
 		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
 		$sut = new WooPayments( $this->suggestion_id, $this->extension_runtime, $arbiter );

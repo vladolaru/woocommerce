@@ -95,6 +95,10 @@ class PaymentsExtensionSuggestionIncentives {
 			return array();
 		}
 
+		if ( ! $skip_visibility_check && $provider instanceof WooPayments && $provider->skip_waiting_store_lookup() ) {
+			return array();
+		}
+
 		$incentives = $provider->get_all( $country_code, $incentive_type );
 
 		if ( ! $skip_visibility_check ) {
