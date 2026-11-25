@@ -661,6 +661,52 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The completed-order email and the saved order show the account's wallet title for a one-off payment.
+	 *
+	 * @testWith ["US", "card", "link", "Link"]
+	 *           ["GB", "card", "link", "Onelink"]
+	 *           ["GB", "link", "", "Onelink"]
+	 *           ["GB", "card", "apple_pay", "Apple Pay (WooPayments)"]
+	 *
+	 * @param string $country        Account country.
+	 * @param string $type           Charge type.
+	 * @param string $wallet         Card wallet type.
+	 * @param string $expected_title Title at the first customer notification.
+	 */
+	public function test_tokenless_wallet_title_at_customer_notification( string $country, string $type, string $wallet, string $expected_title ): void {
+		$order = $this->create_woopayments_order( '10.99' );
+		$order->update_meta_data( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, self::RECORDED_INTENT );
+		$order->save();
+		$intent  = $this->own_rule_intent( $order );
+		$details = array( 'type' => $type );
+		if ( '' !== $wallet ) {
+			$details['card'] = array(
+				'brand'  => 'visa',
+				'last4'  => '4242',
+				'wallet' => array( 'type' => $wallet ),
+			);
+		}
+		$intent['charges']['data'][0]['payment_method_details'] = $details;
+
+		$email_titles = array();
+		WC()->mailer();
+		add_action(
+			'woocommerce_order_status_completed_notification',
+			static function ( $order_id ) use ( &$email_titles ) {
+				$email_titles[] = wc_get_order( $order_id )->get_payment_method_title();
+			}
+		);
+		$this->create_intent_confirmation_service( wc_get_container()->get( Client::class ), null, $this->create_account_service( false, $country ) )
+			->confirm_fetched_intent_for_order( $order, $intent, false );
+
+		$this->assertSame( array( $expected_title ), $email_titles );
+		$reloaded = wc_get_order( $order->get_id() );
+		$this->assertSame( $expected_title, $reloaded->get_payment_method_title() );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $reloaded->get_payment_method() );
+		$this->assertEmpty( $reloaded->get_payment_tokens() );
+	}
+
+	/**
 	 * @testdox A $intent_status intent confirmed by the $entry leaves the order $order_status and preserves the unresolved checkout charge.
 	 *
 	 * @testWith ["3DS return", "succeeded", "completed"]
@@ -934,10 +980,11 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a WooPayments account service mock.
 	 *
-	 * @param bool $test_mode Whether WooPayments should run in test mode.
+	 * @param bool   $test_mode Whether WooPayments should run in test mode.
+	 * @param string $country    Connected account country.
 	 * @return WooPaymentsAccountService
 	 */
-	private function create_account_service( bool $test_mode ): WooPaymentsAccountService {
+	private function create_account_service( bool $test_mode, string $country = 'US' ): WooPaymentsAccountService {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_mode', 'is_test_mode_enabled', 'get_account_default_currency', 'get_account_country' ) )
@@ -946,7 +993,7 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 		$account_service->method( 'get_mode' )->willReturn( $test_mode ? 'test' : 'live' );
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( $test_mode );
 		$account_service->method( 'get_account_default_currency' )->willReturn( 'usd' );
-		$account_service->method( 'get_account_country' )->willReturn( 'US' );
+		$account_service->method( 'get_account_country' )->willReturn( $country );
 
 		return $account_service;
 	}

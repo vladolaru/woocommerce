@@ -688,12 +688,9 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Client 11.2.0 titles an express payment with the method's title for no country (`class-wc-payment-gateway-wcpay.php:2730-2732`),
-	 * so a Link wallet charge on a GB account is "Link", not the GB checkout name "Onelink" (`LinkDefinition.php:64-70`).
-	 *
-	 * @testdox A Link wallet payment on a GB account is titled "Link (WooPayments)".
+	 * @testdox A GB Link wallet keeps its express marker and the account's Onelink title.
 	 */
-	public function test_express_link_payment_on_a_gb_account_is_titled_link(): void {
+	public function test_link_wallet_on_a_gb_account_is_titled_onelink(): void {
 		$order           = $this->create_woopayments_order();
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
@@ -723,8 +720,8 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$order = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'link', $order->get_meta( '_wcpay_express_checkout_payment_method', true ) );
-		$this->assertSame( 'Link (WooPayments)', $order->get_payment_method_title() );
+		$this->assertSame( 'link', $order->get_meta( WooPaymentsPersistenceVocabulary::EXPRESS_CHECKOUT_PAYMENT_METHOD_META_KEY, true ) );
+		$this->assertSame( 'Onelink', $order->get_payment_method_title() );
 	}
 
 	/**

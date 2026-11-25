@@ -37,6 +37,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodType;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
@@ -2729,7 +2730,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$order                 = $this->create_woopayments_order( '10.00' );
 		$unrelated_order       = $this->create_woopayments_order( '10.00' );
 		$subscription          = $this->create_woopayments_order( '10.00' );
-		$result                = $this->completed_link_payment_intent_result();
+		$result                = $this->completed_wallet_payment_intent_result( WooPaymentsPaymentMethodType::LINK );
 		$sequence              = new \ArrayObject();
 		$provider              = $this->completed_payment_intent_provider( $result, $sequence );
 		$context               = $this->completed_payment_intent_context( $order, $scheduled_subscription_payment );
@@ -2751,7 +2752,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 					return array();
 				}
 
-				if ( 'Link (WooPayments)' === wc_get_order( $order_id )->get_payment_method_title() ) {
+				if ( 'Link' === wc_get_order( $order_id )->get_payment_method_title() ) {
 					++$display_sync_calls;
 					$sequence[] = 'display-sync';
 				} else {
@@ -2800,7 +2801,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				array(
 					'id'                   => $order instanceof WC_Order ? $order->get_id() : 0,
 					'payment_method'       => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
-					'payment_method_title' => 'Link (WooPayments)',
+					'payment_method_title' => 'Link',
 					'last4'                => '',
 					'card_brand'           => '',
 				),
@@ -2808,21 +2809,21 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			$observed
 		);
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'Link (WooPayments)', $order->get_payment_method_title() );
-		$this->assertSame( 1, $filter_calls );
+		$this->assertSame( 'Link', $order->get_payment_method_title() );
+		$this->assertSame( 0, $filter_calls );
 		$this->assertSame( $scheduled_subscription_payment ? 1 : 0, $credential_sync_calls );
 		$this->assertSame( 1, $display_sync_calls );
 		$this->assertSame(
 			$scheduled_subscription_payment
-				? array( 'transport:scheduled', 'credential-sync', 'suffix', 'display-sync', 'lifecycle:Link (WooPayments)', 'finalization' )
-				: array( 'transport:direct', 'suffix', 'display-sync', 'lifecycle:Link (WooPayments)', 'finalization' ),
+				? array( 'transport:scheduled', 'credential-sync', 'display-sync', 'lifecycle:Link', 'finalization' )
+				: array( 'transport:direct', 'display-sync', 'lifecycle:Link', 'finalization' ),
 			$sequence->getArrayCopy()
 		);
 		$this->assertSame( '', $order->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) );
 		$subscription = wc_get_order( $subscription->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $subscription );
 		$this->assertSame(
-			$scheduled_subscription_payment ? '' : 'Link (WooPayments)',
+			$scheduled_subscription_payment ? '' : 'Link',
 			$subscription->get_payment_method_title(),
 			$scheduled_subscription_payment ? 'A renewal leaves its subscription\'s title as it was.' : 'The parent order gives its subscription its final title.'
 		);
@@ -2959,7 +2960,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		unset( $label );
 		$order           = $this->create_woopayments_order( '10.00' );
 		$sequence        = new \ArrayObject();
-		$provider        = $this->completed_payment_intent_provider( $this->completed_link_payment_intent_result(), $sequence );
+		$provider        = $this->completed_payment_intent_provider( $this->completed_wallet_payment_intent_result( WooPaymentsPaymentMethodType::APPLE_PAY ), $sequence );
 		$filter_calls    = 0;
 		$lifecycle_calls = 0;
 		add_filter(
@@ -3007,12 +3008,12 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function malformed_payment_request_suffix_data(): array {
 		return array(
-			'array'                 => array( 'an array', array( 'unexpected' ), 'Link (WooPayments)' ),
-			'non-stringable object' => array( 'an object', new \stdClass(), 'Link (WooPayments)' ),
-			'false'                 => array( 'false', false, 'Link' ),
-			'null'                  => array( 'null', null, 'Link' ),
-			'empty string'          => array( 'an empty string', '', 'Link' ),
-			'number'                => array( 'a number', 5, 'Link (5)' ),
+			'array'                 => array( 'an array', array( 'unexpected' ), 'Apple Pay (WooPayments)' ),
+			'non-stringable object' => array( 'an object', new \stdClass(), 'Apple Pay (WooPayments)' ),
+			'false'                 => array( 'false', false, 'Apple Pay' ),
+			'null'                  => array( 'null', null, 'Apple Pay' ),
+			'empty string'          => array( 'an empty string', '', 'Apple Pay' ),
+			'number'                => array( 'a number', 5, 'Apple Pay (5)' ),
 		);
 	}
 
@@ -6308,16 +6309,17 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Build the expanded completed Link PaymentIntent returned by the provider for title-suffix lifecycle tests.
+	 * Build the expanded completed wallet PaymentIntent returned by the provider for title-suffix lifecycle tests.
 	 *
+	 * @param string $wallet Card wallet type.
 	 * @return array<string,mixed>
 	 *
-	 * A Link PaymentIntent with its latest charge expanded, reduced to the fields the effect plan reads. The envelope
+	 * A wallet PaymentIntent with its latest charge expanded, reduced to the fields the effect plan reads. The envelope
 	 * (charges.data, application_fee_amount, the expanded balance_transaction) follows the recorded platform intention
-	 * response in Providers/WooPayments/Fixtures/platform-intention-basic-card.json (entries[0].response.body); the Link wallet type
+	 * response in Providers/WooPayments/Fixtures/platform-intention-basic-card.json (entries[0].response.body); the wallet type
 	 * follows client 11.1.0 class-wc-payment-gateway-wcpay.php:2700-2745. Other fields are omitted on purpose.
 	 */
-	private function completed_link_payment_intent_result(): array {
+	private function completed_wallet_payment_intent_result( string $wallet ): array {
 		return array(
 			'id'       => 'pi_lifecycle_title',
 			'status'   => 'succeeded',
@@ -6333,7 +6335,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 						'balance_transaction'    => array( 'id' => 'txn_lifecycle_title' ),
 						'payment_method_details' => array(
 							'type' => 'card',
-							'card' => array( 'wallet' => array( 'type' => 'link' ) ),
+							'card' => array( 'wallet' => array( 'type' => $wallet ) ),
 						),
 					),
 				),

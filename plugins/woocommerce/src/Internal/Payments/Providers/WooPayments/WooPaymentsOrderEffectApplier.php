@@ -1210,14 +1210,16 @@ class WooPaymentsOrderEffectApplier {
 	 */
 	private function resolve_payment_method_title( WC_Order $order, array $effects, string $account_country ): string {
 		$display_country = strtoupper( trim( '' !== $account_country ? $account_country : $this->account_service->get_account_country() ) );
+		$express_type    = $effects['express_checkout_type'];
+		$wallet_or_type  = $effects['payment_method_details']['card']['wallet']['type'] ?? $effects['payment_method_type'];
+		if ( WooPaymentsPaymentMethodType::LINK === ( '' !== $express_type ? $express_type : $wallet_or_type ) ) {
+			return $this->registered_payment_method_title( WooPaymentsPaymentMethodType::LINK, $display_country );
+		}
 		if ( '' === $display_country ) {
 			$display_country = strtoupper( trim( (string) $order->get_billing_country() ) );
 		}
 
-		$express_type = $effects['express_checkout_type'];
 		if ( '' !== $express_type ) {
-			// No country: client 11.2.0 titles express payments with get_title() (class-wc-payment-gateway-wcpay.php:2730-2732),
-			// so a GB account's Link wallet payment is "Link", not its checkout name "Onelink".
 			$title = $this->registered_payment_method_title( $express_type, '' );
 			if ( '' === $title ) {
 				$title = $this->non_card_payment_method_title( $express_type );
@@ -1270,8 +1272,6 @@ class WooPaymentsOrderEffectApplier {
 		$type        = isset( $details['type'] ) && is_scalar( $details['type'] ) ? (string) $details['type'] : '';
 
 		switch ( $wallet_type ) {
-			case 'link':
-				return __( 'Link', 'woocommerce' );
 			case 'apple_pay':
 				return __( 'Apple Pay', 'woocommerce' );
 			case 'google_pay':
