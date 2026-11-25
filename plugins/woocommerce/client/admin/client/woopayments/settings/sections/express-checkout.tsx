@@ -18,6 +18,7 @@ import {
 	getPaymentMethodAvailability,
 } from '../payment-methods-list';
 import { SettingsSection } from '../settings-shell';
+import { getLinkBranding } from '../payment-method-definitions';
 import { TextLink } from '../text-link';
 import { AMAZON_PAY_DEFINITION } from '../amazon-pay-definition';
 import {
@@ -82,6 +83,7 @@ const getExpressCheckoutCheckboxId = (
 
 const ExpressCheckoutSettingsSection = () => {
 	const settings = asSettingsRecord( useGetSettings() );
+	const linkBrand = getLinkBranding( settings.account_country );
 	const isWooPayAvailableForStore = isWooPayAvailable( settings );
 	const [ isPaymentRequestEnabled, setIsPaymentRequestEnabled ] =
 		usePaymentRequestEnabledSettings() as BooleanSetting;
@@ -135,18 +137,23 @@ const ExpressCheckoutSettingsSection = () => {
 	const isWooPayOn = isWooPayAvailableForStore && isWooPayEnabled;
 	const isStripeLinkOn = isLinkEnabled && enabledMethodIds.includes( 'card' );
 	const isLinkWooPayConflict = isWooPayOn && isStripeLinkOn;
-	const conflictNotice = __(
-		"Link by Stripe and WooPay can't be enabled at the same time. Disable one of them.",
-		'woocommerce'
+	const conflictNotice = sprintf(
+		/* translators: %s: Link brand name (Link or Onelink). */
+		__(
+			"%s and WooPay can't be enabled at the same time. Disable one of them.",
+			'woocommerce'
+		),
+		linkBrand.label
 	);
 	let wooPayNotice = '';
 
 	if ( isLinkWooPayConflict ) {
 		wooPayNotice = conflictNotice;
 	} else if ( isStripeLinkOn ) {
-		wooPayNotice = __(
-			'To enable WooPay, you must first disable Link by Stripe.',
-			'woocommerce'
+		wooPayNotice = sprintf(
+			/* translators: %s: Link brand name (Link or Onelink). */
+			__( 'To enable WooPay, you must first disable %s.', 'woocommerce' ),
+			linkBrand.label
 		);
 	} else if ( showWooPayIncompatibilityNotice ) {
 		wooPayNotice = __(
@@ -159,9 +166,10 @@ const ExpressCheckoutSettingsSection = () => {
 	if ( isLinkWooPayConflict ) {
 		linkNotice = conflictNotice;
 	} else if ( isWooPayOn ) {
-		linkNotice = __(
-			'To enable Link by Stripe, you must first disable WooPay.',
-			'woocommerce'
+		linkNotice = sprintf(
+			/* translators: %s: Link brand name (Link or Onelink). */
+			__( 'To enable %s, you must first disable WooPay.', 'woocommerce' ),
+			linkBrand.label
 		);
 	}
 
@@ -269,33 +277,49 @@ const ExpressCheckoutSettingsSection = () => {
 	if ( isLinkAvailable ) {
 		expressRows.push( {
 			id: 'link',
-			label: __( 'Link', 'woocommerce' ),
+			label: linkBrand.label,
 			checked: isLinkEnabled,
 			disabled: isWooPayOn && ! isLinkEnabled,
 			onChange: setIsLinkEnabled,
 			items: [
 				{
-					label: __( 'Link', 'woocommerce' ),
-					iconSrc: EXPRESS_CHECKOUT_METHOD_ICONS.link[ 0 ].src,
-					description: isLinkSaved
-						? __(
-								"Link autofills your customers' payment and shipping details to deliver an easy and seamless checkout experience.",
-								'woocommerce'
-							)
-						: createInterpolateElement(
+					label: linkBrand.label,
+					iconSrc: linkBrand.iconUrl,
+					description: (
+						<>
+							{ sprintf(
+								/* translators: %s: Link brand name (Link or Onelink). */
 								__(
-									"Link autofills your customers' payment and shipping details to deliver an easy and seamless checkout experience. By enabling this feature, you agree to the <termsLink>Link by Stripe terms</termsLink>, and <privacyLink>Privacy Policy</privacyLink>.",
+									"%s autofills your customers' payment and shipping details to deliver an easy and seamless checkout experience.",
 									'woocommerce'
 								),
-								{
-									termsLink: createTermsLink(
-										'https://link.com/terms'
-									),
-									privacyLink: createTermsLink(
-										'https://link.com/privacy'
-									),
-								}
-							),
+								linkBrand.label
+							) }
+							{ ! isLinkSaved && (
+								<>
+									{ ' ' }
+									{ createInterpolateElement(
+										sprintf(
+											/* translators: %s: Link brand name (Link or Onelink). */
+											__(
+												'By enabling this feature, you agree to the <termsLink>%s terms</termsLink>, and <privacyLink>Privacy Policy</privacyLink>.',
+												'woocommerce'
+											),
+											linkBrand.label
+										),
+										{
+											termsLink: createTermsLink(
+												'https://link.com/terms'
+											),
+											privacyLink: createTermsLink(
+												'https://link.com/privacy'
+											),
+										}
+									) }
+								</>
+							) }
+						</>
+					),
 				},
 			],
 			notice: linkNotice,

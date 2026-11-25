@@ -1431,122 +1431,150 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 	} );
 
 	// Client 11.2.0 `settings/express-checkout-settings/woopay-settings.js:62-66, :83-98`.
-	it( 'lets a store holding Link and WooPay turn WooPay off, with the conflict notice', async () => {
-		mockUseEnabledPaymentMethodIds.mockReturnValue( [
-			[ 'card', 'link' ],
-			noop,
-		] );
-		mockUseWooPayEnabledSettings.mockReturnValue( [ true, noop ] );
-		mockUseWooPayStoreLogo.mockReturnValue( [ '', noop ] );
+	it.each( [
+		[ 'GB', 'Onelink' ],
+		[ 'US', 'Link' ],
+	] )(
+		'lets a store holding Link and WooPay turn WooPay off, with the conflict notice (%s)',
+		async ( country, brand ) => {
+			mockUseGetSettings.mockReturnValue( {
+				...mockUseGetSettings(),
+				account_country: country,
+			} );
+			mockUseEnabledPaymentMethodIds.mockReturnValue( [
+				[ 'card', 'link' ],
+				noop,
+			] );
+			mockUseWooPayEnabledSettings.mockReturnValue( [ true, noop ] );
+			mockUseWooPayStoreLogo.mockReturnValue( [ '', noop ] );
 
-		render( <WooPaymentsExpressCheckoutSettings methodId="woopay" /> );
+			render( <WooPaymentsExpressCheckoutSettings methodId="woopay" /> );
 
-		const checkbox = await screen.findByRole( 'checkbox', {
-			name: 'Enable WooPay',
-		} );
-		expect( checkbox ).toBeChecked();
-		expect( checkbox ).toBeEnabled();
-		expect(
-			screen.getByText(
-				"Link by Stripe and WooPay can't be enabled at the same time. Disable one of them."
-			)
-		).toBeInTheDocument();
-		expect(
-			screen.queryByText(
-				'To enable WooPay, you must first disable Link by Stripe.'
-			)
-		).not.toBeInTheDocument();
-	} );
-
-	it( 'renders WooPay detail controls and blocks WooPay while Link is enabled', async () => {
-		mockUseEnabledPaymentMethodIds.mockReturnValue( [
-			[ 'card', 'link' ],
-			noop,
-		] );
-		mockUseWooPayEnabledSettings.mockReturnValue( [ false, noop ] );
-		mockUseWooPayStoreLogo.mockReturnValue( [ '', noop ] );
-		( window as WindowWithWooSettings ).wcSettings = {
-			...( ( window as WindowWithWooSettings ).wcSettings ?? {} ),
-			storePages: {
-				...( ( window as WindowWithWooSettings ).wcSettings
-					?.storePages ?? {} ),
-				privacy: {
-					permalink: 'https://example.test/privacy-policy/',
-				},
-				terms: {
-					permalink: 'https://example.test/terms-and-conditions/',
-				},
-			},
-		};
-
-		render( <WooPaymentsExpressCheckoutSettings methodId="woopay" /> );
-
-		expect(
-			await screen.findByRole( 'heading', { level: 1, name: 'WooPay' } )
-		).toBeInTheDocument();
-		expect(
-			( await screen.findAllByRole( 'img', { name: 'WooPay' } ) ).length
-		).toBeGreaterThan( 0 );
-		expect(
-			screen.getByRole( 'checkbox', { name: 'Enable WooPay' } )
-		).toBeDisabled();
-		expect(
-			screen.getByText(
-				'To enable WooPay, you must first disable Link by Stripe.'
-			)
-		).toBeInTheDocument();
-		expect(
-			screen.getByText( /WooCommerce Terms of Service/ )
-		).toBeInTheDocument();
-		expect(
-			screen.getByRole( 'link', { name: /^WooPay/ } )
-		).toHaveAttribute(
-			'href',
-			'https://woocommerce.com/document/woopay-merchant-documentation/'
-		);
-		expect(
-			screen.getByRole( 'link', { name: /^privacy policy/ } )
-		).toHaveAttribute( 'href', 'https://example.test/privacy-policy/' );
-		expect(
-			screen.getByRole( 'link', {
-				name: /^terms of service/,
-			} )
-		).toHaveAttribute(
-			'href',
-			'https://example.test/terms-and-conditions/'
-		);
-		expect(
-			screen
-				.getAllByRole( 'link', { name: /^Learn more/ } )
-				.filter(
-					( link ) =>
-						link.getAttribute( 'href' ) ===
-						'https://woocommerce.com/document/woopay-merchant-documentation/#checkout-appearance'
+			const checkbox = await screen.findByRole( 'checkbox', {
+				name: 'Enable WooPay',
+			} );
+			expect( checkbox ).toBeChecked();
+			expect( checkbox ).toBeEnabled();
+			expect(
+				screen.getByText(
+					`${ brand } and WooPay can't be enabled at the same time. Disable one of them.`
 				)
-		).toHaveLength( 2 );
-		expect(
-			screen.getByLabelText( 'Checkout policies' )
-		).toBeInTheDocument();
-		expect(
-			screen.getByRole( 'button', { name: 'Upload custom logo' } )
-		).toBeInTheDocument();
-		expect(
-			screen.getByRole( 'checkbox', {
-				name: /Enable global theme support/,
-			} )
-		).toBeInTheDocument();
-		expect( screen.getByText( 'Preview of checkout' ) ).toBeInTheDocument();
-		expect(
-			screen.getByRole( 'img', { name: 'WooPay checkout preview' } )
-		).toBeInTheDocument();
-		expect( screen.getByText( 'Native test store' ) ).toBeInTheDocument();
-		expect( screen.getByText( 'Place order' ) ).toBeInTheDocument();
-		expect(
-			screen.queryByText(
-				'WooPay checkout preview is shown when native preview data is available.'
-			)
-		).not.toBeInTheDocument();
-	} );
+			).toBeInTheDocument();
+			expect(
+				screen.queryByText(
+					`To enable WooPay, you must first disable ${ brand }.`
+				)
+			).not.toBeInTheDocument();
+		}
+	);
+
+	it.each( [
+		[ 'GB', 'Onelink' ],
+		[ 'US', 'Link' ],
+	] )(
+		'renders WooPay detail controls and blocks WooPay while Link is enabled (%s)',
+		async ( country, brand ) => {
+			mockUseGetSettings.mockReturnValue( {
+				...mockUseGetSettings(),
+				account_country: country,
+			} );
+			mockUseEnabledPaymentMethodIds.mockReturnValue( [
+				[ 'card', 'link' ],
+				noop,
+			] );
+			mockUseWooPayEnabledSettings.mockReturnValue( [ false, noop ] );
+			mockUseWooPayStoreLogo.mockReturnValue( [ '', noop ] );
+			( window as WindowWithWooSettings ).wcSettings = {
+				...( ( window as WindowWithWooSettings ).wcSettings ?? {} ),
+				storePages: {
+					...( ( window as WindowWithWooSettings ).wcSettings
+						?.storePages ?? {} ),
+					privacy: {
+						permalink: 'https://example.test/privacy-policy/',
+					},
+					terms: {
+						permalink: 'https://example.test/terms-and-conditions/',
+					},
+				},
+			};
+
+			render( <WooPaymentsExpressCheckoutSettings methodId="woopay" /> );
+
+			expect(
+				await screen.findByRole( 'heading', {
+					level: 1,
+					name: 'WooPay',
+				} )
+			).toBeInTheDocument();
+			expect(
+				( await screen.findAllByRole( 'img', { name: 'WooPay' } ) )
+					.length
+			).toBeGreaterThan( 0 );
+			expect(
+				screen.getByRole( 'checkbox', { name: 'Enable WooPay' } )
+			).toBeDisabled();
+			expect(
+				screen.getByText(
+					`To enable WooPay, you must first disable ${ brand }.`
+				)
+			).toBeInTheDocument();
+			expect(
+				screen.getByText( /WooCommerce Terms of Service/ )
+			).toBeInTheDocument();
+			expect(
+				screen.getByRole( 'link', { name: /^WooPay/ } )
+			).toHaveAttribute(
+				'href',
+				'https://woocommerce.com/document/woopay-merchant-documentation/'
+			);
+			expect(
+				screen.getByRole( 'link', { name: /^privacy policy/ } )
+			).toHaveAttribute( 'href', 'https://example.test/privacy-policy/' );
+			expect(
+				screen.getByRole( 'link', {
+					name: /^terms of service/,
+				} )
+			).toHaveAttribute(
+				'href',
+				'https://example.test/terms-and-conditions/'
+			);
+			expect(
+				screen
+					.getAllByRole( 'link', { name: /^Learn more/ } )
+					.filter(
+						( link ) =>
+							link.getAttribute( 'href' ) ===
+							'https://woocommerce.com/document/woopay-merchant-documentation/#checkout-appearance'
+					)
+			).toHaveLength( 2 );
+			expect(
+				screen.getByLabelText( 'Checkout policies' )
+			).toBeInTheDocument();
+			expect(
+				screen.getByRole( 'button', { name: 'Upload custom logo' } )
+			).toBeInTheDocument();
+			expect(
+				screen.getByRole( 'checkbox', {
+					name: /Enable global theme support/,
+				} )
+			).toBeInTheDocument();
+			expect(
+				screen.getByText( 'Preview of checkout' )
+			).toBeInTheDocument();
+			expect(
+				screen.getByRole( 'img', { name: 'WooPay checkout preview' } )
+			).toBeInTheDocument();
+			expect(
+				screen.getByText( 'Native test store' )
+			).toBeInTheDocument();
+			expect( screen.getByText( 'Place order' ) ).toBeInTheDocument();
+			expect(
+				screen.queryByText(
+					'WooPay checkout preview is shown when native preview data is available.'
+				)
+			).not.toBeInTheDocument();
+		}
+	);
 
 	it( 'applies WooPay preview theme only when global theme support is enabled', async () => {
 		const { container, rerender } = render(

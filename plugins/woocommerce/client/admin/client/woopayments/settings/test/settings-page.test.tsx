@@ -2007,44 +2007,54 @@ describe( 'WooPaymentsSettingsPage', () => {
 
 	// Client 11.2.0 `settings/express-checkout/link-item.tsx:46, :61-62, :117-118`, `woopay-item.tsx:35-38, :60, :135-136`
 	// and `settings-warnings/incompatibility-notice.js:44-51`.
-	it( 'lets a store holding Link and WooPay turn Link off, with the conflict notice on both rows', async () => {
-		const setIsLinkEnabled = jest.fn();
-		mockUseEnabledPaymentMethodIds.mockReturnValue( [
-			[ 'card', 'link' ],
-			noop,
-		] );
-		mockUseWooPayEnabledSettings.mockReturnValue( [ true, noop ] );
-		mockUseLinkEnabledSettings.mockReturnValue( [
-			true,
-			setIsLinkEnabled,
-		] );
+	it.each( [
+		[ 'GB', 'Onelink' ],
+		[ 'US', 'Link' ],
+	] )(
+		'lets a %s store holding both methods turn %s off',
+		async ( country, brand ) => {
+			mockUseGetSettings.mockReturnValue( {
+				...mockUseGetSettings(),
+				account_country: country,
+			} );
+			const setIsLinkEnabled = jest.fn();
+			mockUseEnabledPaymentMethodIds.mockReturnValue( [
+				[ 'card', 'link' ],
+				noop,
+			] );
+			mockUseWooPayEnabledSettings.mockReturnValue( [ true, noop ] );
+			mockUseLinkEnabledSettings.mockReturnValue( [
+				true,
+				setIsLinkEnabled,
+			] );
 
-		render( <WooPaymentsSettingsPage /> );
+			render( <WooPaymentsSettingsPage /> );
 
-		const expressCheckoutsSection =
-			getSettingsSectionByName( 'Express checkouts' );
-		const wooPayCheckbox = within( expressCheckoutsSection ).getByRole(
-			'checkbox',
-			{ name: 'WooPay' }
-		);
-		const linkCheckbox = within( expressCheckoutsSection ).getByRole(
-			'checkbox',
-			{ name: 'Link' }
-		);
+			const expressCheckoutsSection =
+				getSettingsSectionByName( 'Express checkouts' );
+			const wooPayCheckbox = within( expressCheckoutsSection ).getByRole(
+				'checkbox',
+				{ name: 'WooPay' }
+			);
+			const linkCheckbox = within( expressCheckoutsSection ).getByRole(
+				'checkbox',
+				{ name: brand }
+			);
 
-		expect( wooPayCheckbox ).toBeChecked();
-		expect( wooPayCheckbox ).toBeEnabled();
-		expect( linkCheckbox ).toBeChecked();
-		expect( linkCheckbox ).toBeEnabled();
-		expect(
-			within( expressCheckoutsSection ).getAllByText(
-				"Link by Stripe and WooPay can't be enabled at the same time. Disable one of them."
-			)
-		).toHaveLength( 2 );
+			expect( wooPayCheckbox ).toBeChecked();
+			expect( wooPayCheckbox ).toBeEnabled();
+			expect( linkCheckbox ).toBeChecked();
+			expect( linkCheckbox ).toBeEnabled();
+			expect(
+				within( expressCheckoutsSection ).getAllByText(
+					`${ brand } and WooPay can't be enabled at the same time. Disable one of them.`
+				)
+			).toHaveLength( 2 );
 
-		await userEvent.click( linkCheckbox );
-		expect( setIsLinkEnabled ).toHaveBeenCalledWith( false );
-	} );
+			await userEvent.click( linkCheckbox );
+			expect( setIsLinkEnabled ).toHaveBeenCalledWith( false );
+		}
+	);
 
 	// Client 11.2.0 `settings/express-checkout/woopay-item.tsx:35-38`: Link counts only with card.
 	it( 'keeps WooPay editable when Link is stored without card', () => {
@@ -2108,7 +2118,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 		).toBeInTheDocument();
 		expect(
 			within( expressCheckoutsSection ).queryByText(
-				'To enable Link by Stripe, you must first disable WooPay.'
+				'To enable Link, you must first disable WooPay.'
 			)
 		).not.toBeInTheDocument();
 
@@ -2168,6 +2178,51 @@ describe( 'WooPaymentsSettingsPage', () => {
 			} )
 		).toBeInTheDocument();
 	} );
+
+	it.each( [
+		[ 'GB', 'Onelink', 'onelink.svg' ],
+		[ 'US', 'Link', 'link-color.svg' ],
+	] )(
+		'shows the %s brand and terms when enabling Link',
+		( country, brand, icon ) => {
+			mockUseGetSettings.mockReturnValue( {
+				...mockUseGetSettings(),
+				account_country: country,
+			} );
+			mockUseWooPayEnabledSettings.mockReturnValue( [ true, noop ] );
+			mockUseEnabledPaymentMethodIds.mockReturnValue( [
+				[ 'card' ],
+				noop,
+			] );
+			mockUseLinkEnabledSettings.mockReturnValue( [ false, noop ] );
+			render( <WooPaymentsSettingsPage /> );
+
+			const section = within(
+				getSettingsSectionByName( 'Express checkouts' )
+			);
+			expect(
+				section.getByRole( 'checkbox', { name: brand } )
+			).toBeDisabled();
+			expect(
+				section
+					.getByRole( 'img', { name: brand + ' logo' } )
+					.getAttribute( 'src' )
+			).toMatch( '/' + icon );
+			expect(
+				section.getByText(
+					'To enable ' + brand + ', you must first disable WooPay.'
+				)
+			).toBeInTheDocument();
+			const terms = section.getByRole( 'link', {
+				name: brand + ' terms',
+			} );
+			expect( terms ).toHaveAttribute( 'href', 'https://link.com/terms' );
+			expect( terms.closest( 'p' ) ).toHaveTextContent(
+				brand +
+					" autofills your customers' payment and shipping details to deliver an easy and seamless checkout experience."
+			);
+		}
+	);
 
 	it( 'renders express checkout legal links and read-more actions', () => {
 		mockUseWooPayEnabledSettings.mockReturnValue( [ false, noop ] );

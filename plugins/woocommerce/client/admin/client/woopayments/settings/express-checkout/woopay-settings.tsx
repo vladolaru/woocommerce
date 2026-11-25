@@ -31,6 +31,7 @@ import {
 	type ExpressCheckoutLocation,
 } from './components';
 import { SettingsSection } from '../settings-shell';
+import { getLinkBranding } from '../payment-method-definitions';
 import { TextLink } from '../text-link';
 import { getExpressCheckoutFeatureFlags } from './settings-utils';
 import { asSettingsRecord, asString } from '../settings-values';
@@ -231,6 +232,7 @@ const WooPayLogoUpload = ( {
 
 export const WooPaySettings = () => {
 	const settings = asSettingsRecord( useGetSettings() );
+	const linkBrand = getLinkBranding( settings.account_country );
 	const featureFlags = getExpressCheckoutFeatureFlags( settings );
 	const [ enabledMethodIds ] = useEnabledPaymentMethodIds() as [ string[] ];
 	const [ isWooPayEnabled, setIsWooPayEnabled ] =
@@ -304,17 +306,25 @@ export const WooPaySettings = () => {
 				) }
 				{ isConflicting && (
 					<ExpressCheckoutInlineNotice>
-						{ __(
-							"Link by Stripe and WooPay can't be enabled at the same time. Disable one of them.",
-							'woocommerce'
+						{ sprintf(
+							/* translators: %s: Link brand name (Link or Onelink). */
+							__(
+								"%s and WooPay can't be enabled at the same time. Disable one of them.",
+								'woocommerce'
+							),
+							linkBrand.label
 						) }
 					</ExpressCheckoutInlineNotice>
 				) }
 				{ isStripeLinkEnabled && ! isConflicting && (
 					<ExpressCheckoutInlineNotice>
-						{ __(
-							'To enable WooPay, you must first disable Link by Stripe.',
-							'woocommerce'
+						{ sprintf(
+							/* translators: %s: Link brand name (Link or Onelink). */
+							__(
+								'To enable WooPay, you must first disable %s.',
+								'woocommerce'
+							),
+							linkBrand.label
 						) }
 					</ExpressCheckoutInlineNotice>
 				) }

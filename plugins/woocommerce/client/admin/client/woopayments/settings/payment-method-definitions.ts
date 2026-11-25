@@ -27,6 +27,17 @@ export type WooPaymentsCardBrand = {
 
 const assetUrl = ( path: string ) => `${ WC_ASSET_URL || '' }${ path }`;
 
+export const getLinkBranding = ( accountCountry: unknown ) =>
+	typeof accountCountry === 'string' && accountCountry.toUpperCase() === 'GB'
+		? {
+				label: __( 'Onelink', 'woocommerce' ),
+				iconUrl: assetUrl( 'images/payment-methods/onelink.svg' ),
+			}
+		: {
+				label: __( 'Link', 'woocommerce' ),
+				iconUrl: assetUrl( 'images/payment-methods/link-color.svg' ),
+			};
+
 const CURRENCIES = {
 	all: [],
 	aud: [ 'AUD' ],
