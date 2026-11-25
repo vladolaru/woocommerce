@@ -721,6 +721,8 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 		$link_wallet['card']['wallet'] = array( 'type' => WooPaymentsPaymentMethodType::LINK );
 		$apple_pay                     = $card;
 		$apple_pay['card']['wallet']   = array( 'type' => WooPaymentsPaymentMethodType::APPLE_PAY );
+		$google_pay                    = $card;
+		$google_pay['card']['wallet']  = array( 'type' => WooPaymentsPaymentMethodType::GOOGLE_PAY );
 
 		return array(
 			'US Link wallet'              => array( 'US', $link_wallet, '', 'Link' ),
@@ -730,6 +732,7 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 			'plain card after Link'       => array( 'GB', $card, WooPaymentsPaymentMethodType::LINK, 'Visa credit card' ),
 			'Link marker without details' => array( 'US', array(), WooPaymentsPaymentMethodType::LINK, 'Link' ),
 			'Apple Pay marker on card'    => array( 'GB', $card, WooPaymentsPaymentMethodType::APPLE_PAY, 'Apple Pay (WooPayments)' ),
+			'Google Pay with marker'      => array( 'GB', $google_pay, WooPaymentsPaymentMethodType::GOOGLE_PAY, 'Google Pay (WooPayments)' ),
 		);
 	}
 
