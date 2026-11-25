@@ -1219,8 +1219,14 @@ class WooPaymentsOrderEffectApplier {
 	private function resolve_payment_method_title( WC_Order $order, array $effects, string $account_country ): string {
 		$display_country = strtoupper( trim( '' !== $account_country ? $account_country : $this->account_service->get_account_country() ) );
 		$express_type    = $effects['express_checkout_type'];
-		$wallet_or_type  = $effects['payment_method_details']['card']['wallet']['type'] ?? $effects['payment_method_type'];
-		if ( WooPaymentsPaymentMethodType::LINK === ( '' !== $express_type ? $express_type : $wallet_or_type ) ) {
+		$charge_details  = $effects['payment_method_details'];
+		// A plain card retry can retain the Link marker from an expired authorization.
+		if ( $charge_details && WooPaymentsPaymentMethodType::LINK === $express_type ) {
+			$express_type = '';
+		}
+		$type    = $charge_details ? ( $charge_details['type'] ?? '' ) : $effects['payment_method_type'];
+		$is_link = WooPaymentsPaymentMethodType::LINK === $type || WooPaymentsPaymentMethodType::LINK === ( $charge_details['card']['wallet']['type'] ?? '' );
+		if ( WooPaymentsPaymentMethodType::LINK === $express_type || ( '' === $express_type && $is_link ) ) {
 			return $this->registered_payment_method_title( WooPaymentsPaymentMethodType::LINK, $display_country );
 		}
 		if ( '' === $display_country ) {

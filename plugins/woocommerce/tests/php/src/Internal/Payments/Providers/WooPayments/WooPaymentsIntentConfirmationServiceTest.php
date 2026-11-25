@@ -23,6 +23,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodType;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
@@ -661,32 +662,27 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The completed-order email and the saved order show the account's wallet title for a one-off payment.
+	 * @testdox The completed-order email and the saved order show the payment method title for a one-off payment.
 	 *
-	 * @testWith ["US", "card", "link", "Link"]
-	 *           ["GB", "card", "link", "Onelink"]
-	 *           ["GB", "link", "", "Onelink"]
-	 *           ["GB", "card", "apple_pay", "Apple Pay (WooPayments)"]
-	 *
-	 * @param string $country        Account country.
-	 * @param string $type           Charge type.
-	 * @param string $wallet         Card wallet type.
-	 * @param string $expected_title Title at the first customer notification.
+	 * @dataProvider tokenless_payment_title_data
+	 * @param string              $country        Account country.
+	 * @param array<string,mixed> $details        Charge payment method details.
+	 * @param string              $express_marker Express type already stored on the order.
+	 * @param string              $expected_title Title at the first customer notification.
 	 */
-	public function test_tokenless_wallet_title_at_customer_notification( string $country, string $type, string $wallet, string $expected_title ): void {
+	public function test_tokenless_wallet_title_at_customer_notification( string $country, array $details, string $express_marker, string $expected_title ): void {
 		$order = $this->create_woopayments_order( '10.99' );
 		$order->update_meta_data( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, self::RECORDED_INTENT );
-		$order->save();
-		$intent  = $this->own_rule_intent( $order );
-		$details = array( 'type' => $type );
-		if ( '' !== $wallet ) {
-			$details['card'] = array(
-				'brand'  => 'visa',
-				'last4'  => '4242',
-				'wallet' => array( 'type' => $wallet ),
-			);
+		if ( '' !== $express_marker ) {
+			$order->update_meta_data( WooPaymentsPersistenceVocabulary::EXPRESS_CHECKOUT_PAYMENT_METHOD_META_KEY, $express_marker );
 		}
-		$intent['charges']['data'][0]['payment_method_details'] = $details;
+		$order->save();
+		$intent = $this->own_rule_intent( $order );
+		if ( $details ) {
+			$intent['charges']['data'][0]['payment_method_details'] = $details;
+		} else {
+			unset( $intent['charges']['data'][0]['payment_method_details'] );
+		}
 
 		$email_titles = array();
 		WC()->mailer();
@@ -704,6 +700,37 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( $expected_title, $reloaded->get_payment_method_title() );
 		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $reloaded->get_payment_method() );
 		$this->assertEmpty( $reloaded->get_payment_tokens() );
+	}
+
+	/**
+	 * Charge details and any express marker retained from checkout.
+	 *
+	 * @return array<string,array{string,array<string,mixed>,string,string}>
+	 */
+	public static function tokenless_payment_title_data(): array {
+		$card = array(
+			'type' => WooPaymentsPaymentMethodType::CARD,
+			'card' => array(
+				'network' => 'visa',
+				'funding' => 'credit',
+				'last4'   => '4242',
+			),
+		);
+
+		$link_wallet                   = $card;
+		$link_wallet['card']['wallet'] = array( 'type' => WooPaymentsPaymentMethodType::LINK );
+		$apple_pay                     = $card;
+		$apple_pay['card']['wallet']   = array( 'type' => WooPaymentsPaymentMethodType::APPLE_PAY );
+
+		return array(
+			'US Link wallet'              => array( 'US', $link_wallet, '', 'Link' ),
+			'GB Link wallet'              => array( 'GB', $link_wallet, '', 'Onelink' ),
+			'top-level Link'              => array( 'GB', array( 'type' => WooPaymentsPaymentMethodType::LINK ), '', 'Onelink' ),
+			'Apple Pay wallet'            => array( 'GB', $apple_pay, '', 'Apple Pay (WooPayments)' ),
+			'plain card after Link'       => array( 'GB', $card, WooPaymentsPaymentMethodType::LINK, 'Visa credit card' ),
+			'Link marker without details' => array( 'US', array(), WooPaymentsPaymentMethodType::LINK, 'Link' ),
+			'Apple Pay marker on card'    => array( 'GB', $card, WooPaymentsPaymentMethodType::APPLE_PAY, 'Apple Pay (WooPayments)' ),
+		);
 	}
 
 	/**
