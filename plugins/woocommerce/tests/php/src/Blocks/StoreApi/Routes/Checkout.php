@@ -21,6 +21,8 @@ use Automattic\WooCommerce\Blocks\Domain\Services\CheckoutFields;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Enums\ProductStockStatus;
 use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenizedCartSessionController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenizedCartSessionHandler;
 use WC_Gateway_BACS;
 use WC_Tax;
 
@@ -2349,7 +2351,7 @@ class Checkout extends \WP_Test_REST_TestCase {
 	}
 
 	/**
-	 * Test that local pickup orders bypass shipping country validation.
+	 * @testdox Local pickup orders bypass shipping country validation.
 	 */
 	public function test_local_pickup_country_validation() {
 		// Set shipping to a country that's not enabled for shipping.
@@ -2373,6 +2375,7 @@ class Checkout extends \WP_Test_REST_TestCase {
 					'postcode'                    => '12345',
 					'country'                     => 'US',
 					'email'                       => 'test@test.com',
+					'phone'                       => '555-555-5555',
 					'plugin-namespace/student-id' => '12345678',
 				),
 				'shipping_address' => (object) array(
@@ -2383,6 +2386,7 @@ class Checkout extends \WP_Test_REST_TestCase {
 					'state'                       => 'CA',
 					'postcode'                    => '12345',
 					'country'                     => 'FR',
+					'phone'                       => '555-555-5555',
 					'plugin-namespace/student-id' => '12345678',
 				),
 				'payment_method'   => WC_Gateway_BACS::ID,
@@ -3945,6 +3949,132 @@ class Checkout extends \WP_Test_REST_TestCase {
 		WC()->session->set( 'store_api_draft_order', $order->get_id() );
 
 		return $order;
+	}
+
+	/**
+	 * @testdox Only the accepted express checkout reaches payment processing after a nonce refresh.
+	 */
+	public function test_express_nonce_refresh_reaches_payment_once(): void {
+		$controller = wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenizedCartSessionController::class );
+		$controller->register();
+		$server  = rest_get_server();
+		$request = $this->build_valid_post_request();
+		$header  = 'X-WooPayments-Tokenized-Cart-Nonce';
+		$request->set_header( $header, 'previous' );
+		$request->set_header( 'Nonce', 'previous' );
+		$hook   = 'woocommerce_rest_checkout_process_payment_with_context';
+		$before = did_action( $hook );
+
+		$refused = apply_filters( 'rest_post_dispatch', $server->dispatch( $request ), $server, $request );
+		$this->assertSame( 403, $refused->get_status() );
+		$this->assertSame( 'woocommerce_rest_invalid_nonce', $refused->get_data()['code'] );
+		$this->assertSame( $before, did_action( $hook ) );
+
+		$headers = $refused->get_headers();
+		$this->assertSame( wp_create_nonce( 'woopayments_tokenized_cart_nonce' ), $headers[ $header ] ?? null );
+		$request->set_header( $header, $headers[ $header ] );
+		$request->set_header( 'Nonce', $headers['Nonce'] );
+		$this->assertSame( 200, $server->dispatch( $request )->get_status() );
+		$this->assertSame( $before + 1, did_action( $hook ) );
+	}
+
+	/**
+	 * @testWith ["add-item", 201]
+	 *           ["checkout", 200]
+	 *           ["invalid-session", 400]
+	 *
+	 * @param string $operation Product cart operation.
+	 * @param int    $status    Final response status.
+	 */
+	public function test_product_session_nonce_refresh( string $operation, int $status ): void {
+		$controller = wc_get_container()->get( WooPaymentsTokenizedCartSessionController::class );
+		$controller->register();
+		$server = rest_get_server();
+
+		$request = $this->build_valid_post_request();
+		if ( 'add-item' === $operation ) {
+			$request = new \WP_REST_Request( 'POST', '/wc/store/v1/cart/add-item' );
+			$request->set_param( 'id', $this->products[2]->get_id() );
+			$request->set_param( 'quantity', 1 );
+		}
+
+		$actions = array(
+			'Nonce'                                      => 'wc_store_api',
+			'X-WooPayments-Tokenized-Cart-Nonce'         => WooPaymentsTokenizedCartSessionController::TOKENIZED_CART_NONCE_ACTION,
+			'X-WooPayments-Tokenized-Cart-Session-Nonce' => WooPaymentsTokenizedCartSessionController::SESSION_NONCE_ACTION,
+		);
+		// Mint page nonces in an earlier tick without waiting for the clock.
+		$earlier_tick = static fn() => 2 * DAY_IN_SECONDS;
+		add_filter( 'nonce_life', $earlier_tick );
+		try {
+			$page_nonces = array_map( 'wp_create_nonce', $actions );
+		} finally {
+			remove_filter( 'nonce_life', $earlier_tick );
+		}
+
+		$original_server  = $_SERVER;
+		$original_session = WC()->session;
+		$payment_hook     = 'woocommerce_rest_checkout_process_payment_with_context';
+		$payments         = did_action( $payment_hook );
+		$adds             = did_action( 'woocommerce_add_to_cart' );
+		try {
+			$_SERVER['REQUEST_URI'] = '/' . rest_get_url_prefix() . $request->get_route();
+			if ( 'checkout' === $operation ) {
+				// Checkout uses the signed session returned by the product cart.
+				WC()->session = new WooPaymentsTokenizedCartSessionHandler();
+				WC()->session->init();
+				$cart_session = new \WC_Cart_Session( WC()->cart );
+				WC()->session->set( 'cart', $cart_session->get_cart_for_session() );
+				WC()->session->save_data();
+				$session_id = WC()->session->get_customer_id();
+				$cart_reply = $controller->handle_store_api_response( new \WP_REST_Response() );
+				$_SERVER['HTTP_X_WOOPAYMENTS_TOKENIZED_CART_SESSION'] = $cart_reply->get_headers()['X-WooPayments-Tokenized-Cart-Session'];
+				WC()->session = $original_session;
+			} elseif ( 'invalid-session' === $operation ) {
+				$_SERVER['HTTP_X_WOOPAYMENTS_TOKENIZED_CART_SESSION'] = 'invalid-session';
+			}
+			foreach ( $page_nonces as $header => $nonce ) {
+				$request->set_header( $header, $nonce );
+				$_SERVER[ 'HTTP_' . strtoupper( str_replace( '-', '_', $header ) ) ] = $nonce;
+			}
+
+			$response = apply_filters( 'rest_post_dispatch', $server->dispatch( $request ), $server, $request );
+			$this->assertSame( $payments, did_action( $payment_hook ) );
+			$this->assertSame( $adds, did_action( 'woocommerce_add_to_cart' ) );
+			if ( 'invalid-session' === $operation ) {
+				$this->assertSame( 400, $response->get_status() );
+				$this->assertSame( 'woocommerce_rest_invalid_tokenized_cart_session', $response->get_data()['code'] );
+				return;
+			}
+
+			$this->assertSame( 403, $response->get_status() );
+			$this->assertSame( 'woocommerce_rest_invalid_nonce', $response->get_data()['code'] );
+			$headers = $response->get_headers();
+			$this->assertGreaterThan( 0, (int) $headers['Nonce-Timestamp'] );
+			foreach ( $actions as $header => $action ) {
+				$this->assertSame( wp_create_nonce( $action ), $headers[ $header ] );
+				$request->set_header( $header, $headers[ $header ] );
+				$_SERVER[ 'HTTP_' . strtoupper( str_replace( '-', '_', $header ) ) ] = $headers[ $header ];
+			}
+
+			WC()->initialize_session();
+			$this->assertInstanceOf( WooPaymentsTokenizedCartSessionHandler::class, WC()->session );
+			if ( 'checkout' === $operation ) {
+				WC()->cart->set_cart_contents( array() );
+				$cart_session->get_cart_from_session();
+			}
+			$this->assertSame( $status, $server->dispatch( $request )->get_status() );
+			if ( 'checkout' === $operation ) {
+				$this->assertSame( $session_id, WC()->session->get_customer_id() );
+				$this->assertSame( $payments + 1, did_action( $payment_hook ) );
+			} else {
+				$this->assertSame( $adds + 1, did_action( 'woocommerce_add_to_cart' ) );
+				$this->assertSame( $payments, did_action( $payment_hook ) );
+			}
+		} finally {
+			$_SERVER      = $original_server;
+			WC()->session = $original_session;
+		}
 	}
 
 	/**

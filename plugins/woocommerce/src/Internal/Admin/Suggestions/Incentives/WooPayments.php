@@ -7,6 +7,9 @@ defined( 'ABSPATH' ) || exit;
 
 use Automattic\WooCommerce\Admin\WCAdminHelper;
 use Automattic\WooCommerce\Enums\OrderInternalStatus;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderMode;
 use WC_Abstract_Order;
 
 /**
@@ -66,18 +69,42 @@ class WooPayments extends Incentive {
 	private ?array $incentives_memo = null;
 
 	/**
+	 * Promotion transient already read for the next ordinary lookup.
+	 *
+	 * @var mixed
+	 */
+	private $lookup_cache;
+
+	/**
+	 * WooPayments extension runtime.
+	 *
+	 * @var WooPaymentsExtensionRuntime|null
+	 */
+	private ?WooPaymentsExtensionRuntime $extension_runtime;
+
+	/**
+	 * Payments runtime owner arbiter.
+	 *
+	 * @var WooPaymentsRuntimeArbiter|null
+	 */
+	private ?WooPaymentsRuntimeArbiter $arbiter;
+
+	/**
 	 * Constructor.
 	 *
-	 * @param string $suggestion_id The suggestion ID.
+	 * @param string                           $suggestion_id  The suggestion ID.
+	 * @param WooPaymentsExtensionRuntime|null $extension_runtime WooPayments extension runtime.
+	 * @param WooPaymentsRuntimeArbiter|null   $arbiter        Payments runtime owner arbiter.
 	 */
-	public function __construct( string $suggestion_id ) {
+	public function __construct( string $suggestion_id, ?WooPaymentsExtensionRuntime $extension_runtime = null, ?WooPaymentsRuntimeArbiter $arbiter = null ) {
 		parent::__construct( $suggestion_id );
 
-		$this->cache_transient_name              = self::PREFIX . $suggestion_id . '_cache';
-		$this->store_has_orders_transient_name   = self::PREFIX . $suggestion_id . '_store_has_orders';
-		$this->store_had_woopayments_option_name = self::PREFIX . $suggestion_id . '_store_had_woopayments';
-
+		$this->cache_transient_name                      = self::PREFIX . $suggestion_id . '_cache';
+		$this->store_has_orders_transient_name           = self::PREFIX . $suggestion_id . '_store_has_orders';
+		$this->store_had_woopayments_option_name         = self::PREFIX . $suggestion_id . '_store_had_woopayments';
 		$this->store_had_woopayments_version_option_name = $this->store_had_woopayments_option_name . '_version';
+		$this->extension_runtime                         = $extension_runtime;
+		$this->arbiter                                   = $arbiter;
 	}
 
 	/**
@@ -90,6 +117,10 @@ class WooPayments extends Incentive {
 	 * @return boolean Whether the incentive should be visible.
 	 */
 	public function is_visible( string $id, string $country_code, bool $skip_extension_active_check = false ): bool {
+		$cold_lookup = null === $this->incentives_memo;
+		if ( ! $skip_extension_active_check && $cold_lookup && null !== $this->arbiter && ( ! $this->user_has_caps() || $this->skip_waiting_store_lookup() ) ) {
+			return false;
+		}
 		// Always skip the extension active check since we will check below.
 		if ( false === parent::is_visible( $id, $country_code, true ) ) {
 			return false;
@@ -101,6 +132,26 @@ class WooPayments extends Incentive {
 		}
 
 		return true;
+	}
+
+	/**
+	 * Skip fetching offers on a waiting store. Memoized offers can be filtered without fetching.
+	 *
+	 * @since 11.4.0
+	 */
+	public function skip_waiting_store_lookup(): bool {
+		if ( null === $this->incentives_memo && null !== $this->arbiter ) {
+			$cache = get_transient( $this->cache_transient_name );
+			if ( is_wp_error( $cache ) ) {
+				$this->incentives_memo = array();
+				return true;
+			}
+			if ( $this->arbiter->is_awaiting_switch() ) {
+				return true;
+			}
+			$this->lookup_cache = $cache ?? false;
+		}
+		return false;
 	}
 
 	/**
@@ -118,15 +169,21 @@ class WooPayments extends Incentive {
 	 */
 	public function reset_memo() {
 		$this->incentives_memo = null;
+		$this->lookup_cache    = null;
 	}
 
 	/**
-	 * Check if the extension plugin is active.
+	 * Check if WooPayments is active: the WooPayments extension is loaded and owns payments, or the built-in WooPayments
+	 * owns payments.
 	 *
-	 * @return boolean Whether the extension plugin is active.
+	 * @return boolean Whether WooPayments is active.
 	 */
 	protected function is_extension_active(): bool {
-		return class_exists( '\WC_Payments' );
+		if ( null !== $this->extension_runtime && $this->extension_runtime->is_loaded() ) {
+			return true;
+		}
+
+		return null !== $this->arbiter && $this->arbiter->is_builtin_owner();
 	}
 
 	/**
@@ -142,7 +199,8 @@ class WooPayments extends Incentive {
 		}
 
 		// Get the cached data.
-		$cache = get_transient( $this->cache_transient_name );
+		$cache              = $this->lookup_cache ?? get_transient( $this->cache_transient_name );
+		$this->lookup_cache = null;
 
 		// If the cached data is not expired, and it's a WP_Error,
 		// it means there was an API error previously, and we should not retry just yet.
@@ -312,7 +370,7 @@ class WooPayments extends Incentive {
 					// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
 					'meta_key'       => '_wcpay_mode',
 					// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
-					'meta_value'     => 'prod',
+					'meta_value'     => WooPaymentsOrderMode::PRODUCTION,
 				)
 			)
 		) ) {
@@ -336,27 +394,7 @@ class WooPayments extends Incentive {
 	 * @return boolean
 	 */
 	private function has_wcpay_account_data(): bool {
-		$account_data = get_option( 'wcpay_account_data', array() );
-		$account      = $account_data['data'] ?? array();
-
-		if ( empty( $account['account_id'] ) ) {
-			return false;
-		}
-
-		// A test-drive account is a trial of WooPayments, not real usage of it.
-		if ( ! empty( $account['is_test_drive'] ) ) {
-			return false;
-		}
-
-		// Sandbox accounts don't count either.
-		// Both flags are only acted upon when present: cached account data written by
-		// older WooPayments versions may not carry them, and we'd rather keep counting
-		// those stores as WooPayments users than reclassify them on missing data.
-		if ( isset( $account['is_live'] ) && ! $account['is_live'] ) {
-			return false;
-		}
-
-		return true;
+		return null !== $this->extension_runtime && $this->extension_runtime->has_live_cached_account_data();
 	}
 
 	/**

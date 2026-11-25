@@ -2184,6 +2184,24 @@ class WC_Cart_Test extends \WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should clear the cart after payment when the order awaiting payment in the session moved past payment.
+	 */
+	public function test_clear_cart_after_payment_reads_the_order_awaiting_payment(): void {
+		$product = WC_Helper_Product::create_simple_product();
+		WC()->cart->add_to_cart( $product->get_id(), 1 );
+
+		$order = WC_Helper_Order::create_order( 1, $product, array( 'status' => OrderStatus::PROCESSING ) );
+		$order->set_cart_hash( WC()->cart->get_cart_hash() );
+		$order->save();
+
+		WC()->session->set( 'order_awaiting_payment', $order->get_id() );
+
+		wc_clear_cart_after_payment();
+
+		$this->assertTrue( WC()->cart->is_empty(), 'The next page load should empty the cart of a paid order the session still holds as awaiting payment.' );
+	}
+
+	/**
 	 * @testdox Should allow woocommerce_should_clear_cart_after_payment to override the final clear cart value.
 	 */
 	public function test_clear_cart_after_payment_filter_can_override_final_value(): void {

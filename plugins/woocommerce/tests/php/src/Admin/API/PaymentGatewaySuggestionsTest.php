@@ -2,6 +2,9 @@
 
 namespace Automattic\WooCommerce\Tests\Admin\API;
 
+use Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\DefaultPaymentGateways;
+use Automattic\WooCommerce\Admin\RemoteSpecs\RuleProcessors\RuleEvaluator;
+use Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\EvaluateSuggestion;
 use Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\Init;
 use Automattic\WooCommerce\Admin\Marketing\MarketingCampaign;
 use Automattic\WooCommerce\Admin\Marketing\MarketingCampaignType;
@@ -9,6 +12,7 @@ use Automattic\WooCommerce\Admin\Marketing\MarketingChannelInterface;
 use Automattic\WooCommerce\Admin\Marketing\MarketingChannels as MarketingChannelsService;
 use WC_REST_Unit_Test_Case;
 use WP_REST_Request;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 
 /**
  * PaymentGatewaySuggestionsTest API controller test.
@@ -36,7 +40,6 @@ class PaymentGatewaySuggestionsTest extends WC_REST_Unit_Test_Case {
 			)
 		);
 		wp_set_current_user( $this->user );
-
 	}
 
 	/**
@@ -52,7 +55,7 @@ class PaymentGatewaySuggestionsTest extends WC_REST_Unit_Test_Case {
 		// update the base country to the U.S for testing purposes.
 		update_option( 'woocommerce_default_country', 'US:CA' );
 
-		$response_mock_ref = function( $preempt, $parsed_args, $url ) {
+		$response_mock_ref = function ( $preempt, $parsed_args, $url ) {
 			if ( str_contains( $url, 'https://woocommerce.com/wp-json/wccom/payment-gateway-suggestions/2.0/suggestions.json' ) ) {
 				return array(
 					'success' => true,
@@ -96,5 +99,267 @@ class PaymentGatewaySuggestionsTest extends WC_REST_Unit_Test_Case {
 
 		// restore the base country.
 		update_option( 'woocommerce_default_country', $existing_base_country['country'] . ':' . $existing_base_country['state'] );
+	}
+
+	/**
+	 * @testdox Should not advertise WooPayments suggestions as WooPayments plugin installs while the WooPayments feature is on.
+	 */
+	public function test_woopayments_suggestions_do_not_include_plugin_install_metadata_while_the_feature_is_on() {
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$woopayments_suggestions = array_filter(
+			DefaultPaymentGateways::get_all(),
+			function ( $suggestion ) {
+				return isset( $suggestion['id'] ) && str_starts_with( $suggestion['id'], 'woocommerce_payments' );
+			}
+		);
+
+		$this->assertNotEmpty( $woopayments_suggestions );
+
+		foreach ( $woopayments_suggestions as $suggestion ) {
+			$this->assertNotContains( 'woocommerce-payments', $suggestion['plugins'] ?? array() );
+		}
+	}
+
+	/**
+	 * @testdox Should advertise WooPayments suggestions as WooPayments plugin installs while the WooPayments feature is off.
+	 */
+	public function test_woopayments_suggestions_include_plugin_install_metadata_while_the_feature_is_off() {
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
+
+		$woopayments_suggestions = array_filter(
+			DefaultPaymentGateways::get_all(),
+			function ( $suggestion ) {
+				return isset( $suggestion['id'] ) && str_starts_with( $suggestion['id'], 'woocommerce_payments' );
+			}
+		);
+
+		$this->assertNotEmpty( $woopayments_suggestions );
+		foreach ( $woopayments_suggestions as $suggestion ) {
+			$this->assertSame( array( 'woocommerce-payments' ), $suggestion['plugins'] ?? array() );
+		}
+	}
+
+	/**
+	 * @testdox WooPayments reads as active while the WooPayments feature is on, and as inactive while it is off or unset.
+	 * @testWith ["yes", true]
+	 *           ["no", false]
+	 *           [null, false]
+	 *
+	 * @param string|null $feature  Stored WooPayments feature option, or null when absent.
+	 * @param bool        $expected Whether WooPayments should read as active.
+	 */
+	public function test_woopayments_activation_rules_follow_the_woopayments_feature( ?string $feature, bool $expected ) {
+		if ( null === $feature ) {
+			delete_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION );
+		} else {
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $feature );
+		}
+		$evaluator = new RuleEvaluator();
+
+		$this->assertSame( $expected, $evaluator->evaluate( DefaultPaymentGateways::get_rules_for_wcpay_activated( true ) ) );
+		$this->assertSame( ! $expected, $evaluator->evaluate( DefaultPaymentGateways::get_rules_for_wcpay_activated( false ) ) );
+	}
+
+	/**
+	 * The WooPayments plugin cannot be activated in unit tests, so its operand is checked by shape.
+	 *
+	 * @testdox WooPayments also reads as active while the WooPayments extension is active.
+	 */
+	public function test_woopayments_activation_rules_count_the_active_plugin() {
+		$active_rule = DefaultPaymentGateways::get_rules_for_wcpay_activated( true );
+
+		$this->assertSame( 'or', $active_rule->type );
+		$this->assertEquals(
+			array(
+				(object) array(
+					'type'    => 'plugins_activated',
+					'plugins' => array( 'woocommerce-payments' ),
+				),
+			),
+			$active_rule->operands[0]
+		);
+	}
+
+	/**
+	 * @testdox Should strip WooPayments plugin install metadata from remote suggestions while the WooPayments feature is on.
+	 */
+	public function test_remote_woopayments_suggestions_do_not_include_plugin_install_metadata_while_the_feature_is_on() {
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		Init::delete_specs_transient();
+		EvaluateSuggestion::reset_memo();
+
+		$response_mock_ref = function ( $preempt, $parsed_args, $url ) {
+			if ( str_contains( $url, 'https://woocommerce.com/wp-json/wccom/payment-gateway-suggestions/2.0/suggestions.json' ) ) {
+				return array(
+					'success' => true,
+					'body'    => wp_json_encode(
+						array(
+							array(
+								'id'         => 'woocommerce_payments:without-in-person-payments',
+								'title'      => 'WooPayments',
+								'plugins'    => array( 'woocommerce-payments' ),
+								'is_visible' => true,
+							),
+							array(
+								'id'         => 'stripe',
+								'title'      => 'Stripe',
+								'plugins'    => array( 'woocommerce-gateway-stripe' ),
+								'is_visible' => true,
+							),
+						)
+					),
+				);
+			}
+
+			return $preempt;
+		};
+
+		add_filter( 'pre_http_request', $response_mock_ref, 10, 3 );
+
+		$request     = new WP_REST_Request( 'GET', self::ENDPOINT );
+		$suggestions = rest_get_server()->dispatch( $request )->get_data();
+
+		remove_filter( 'pre_http_request', $response_mock_ref );
+		Init::delete_specs_transient();
+		EvaluateSuggestion::reset_memo();
+
+		$woopayments_suggestions = array_filter(
+			$suggestions,
+			function ( $suggestion ) {
+				return isset( $suggestion->id ) && str_starts_with( $suggestion->id, 'woocommerce_payments' );
+			}
+		);
+		$stripe_suggestions      = array_filter(
+			$suggestions,
+			function ( $suggestion ) {
+				return isset( $suggestion->id ) && 'stripe' === $suggestion->id;
+			}
+		);
+
+		$this->assertNotEmpty( $woopayments_suggestions );
+		foreach ( $woopayments_suggestions as $suggestion ) {
+			$this->assertFalse( property_exists( $suggestion, 'plugins' ) );
+		}
+
+		$this->assertNotEmpty( $stripe_suggestions );
+		$stripe_suggestion = reset( $stripe_suggestions );
+		$this->assertContains( 'woocommerce-gateway-stripe', $stripe_suggestion->plugins );
+	}
+
+	/**
+	 * @testdox Should retain remote WooPayments plugin install metadata while the WooPayments feature is off.
+	 */
+	public function test_remote_woopayments_suggestions_include_plugin_install_metadata_while_the_feature_is_off() {
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
+		Init::delete_specs_transient();
+		EvaluateSuggestion::reset_memo();
+
+		$response_mock_ref = function ( $preempt, $parsed_args, $url ) {
+			if ( str_contains( $url, 'https://woocommerce.com/wp-json/wccom/payment-gateway-suggestions/2.0/suggestions.json' ) ) {
+				return array(
+					'success' => true,
+					'body'    => wp_json_encode(
+						array(
+							array(
+								'id'         => 'woocommerce_payments:without-in-person-payments',
+								'title'      => 'WooPayments',
+								'plugins'    => array( 'woocommerce-payments' ),
+								'is_visible' => true,
+							),
+						)
+					),
+				);
+			}
+
+			return $preempt;
+		};
+
+		add_filter( 'pre_http_request', $response_mock_ref, 10, 3 );
+
+		try {
+			$request     = new WP_REST_Request( 'GET', self::ENDPOINT );
+			$suggestions = rest_get_server()->dispatch( $request )->get_data();
+			$this->assertCount( 1, $suggestions );
+			$this->assertTrue( property_exists( $suggestions[0], 'plugins' ) );
+			$this->assertSame( array( 'woocommerce-payments' ), $suggestions[0]->plugins );
+		} finally {
+			remove_filter( 'pre_http_request', $response_mock_ref, 10 );
+			Init::delete_specs_transient();
+			EvaluateSuggestion::reset_memo();
+		}
+	}
+
+	/**
+	 * Remote specs with nothing visible make the suggestions fall back to the defaults, cached for three hours. The defaults
+	 * depend on the WooPayments feature, so a feature change drops the cache and the next request builds them again.
+	 *
+	 * @testdox Should serve cached default suggestions that follow a WooPayments feature change: $_dataName.
+	 * @testWith ["yes", "no", ["woocommerce-payments"]]
+	 *           ["no", "yes", []]
+	 *
+	 * @param string $before   The feature when the defaults are cached.
+	 * @param string $after    The feature on the next request.
+	 * @param array  $expected The plugins the WooPayments suggestion installs on the next request.
+	 */
+	public function test_cached_default_suggestions_follow_a_feature_change( string $before, string $after, array $expected ) {
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $before );
+		// An admin request constructs the suggestions feature, which watches the WooPayments feature.
+		new Init();
+		$no_data_sources = static fn() => array();
+		add_filter( 'data_source_poller_data_sources', $no_data_sources );
+		// The WooPayments defaults carry store rules (selling venues, plugin versions) this test is not about; showing them
+		// leaves their plugins as the specs hold them.
+		$show_woopayments = static function ( $specs ) {
+			foreach ( $specs as $index => $spec ) {
+				$id = is_array( $spec ) ? ( $spec['id'] ?? '' ) : ( $spec->id ?? '' );
+				if ( str_starts_with( (string) $id, 'woocommerce_payments' ) ) {
+					if ( is_array( $spec ) ) {
+						$specs[ $index ]['is_visible'] = true;
+					} else {
+						$specs[ $index ]->is_visible = true;
+					}
+				}
+			}
+			return $specs;
+		};
+		add_filter( 'woocommerce_admin_payment_gateway_suggestion_specs', $show_woopayments );
+		// Remote specs whose only suggestion is hidden, so the defaults are served and cached. The shape is a reduced
+		// spec from the woocommerce.com feed (wp-json/wccom/payment-gateway-suggestions/2.0/suggestions.json, read by
+		// PaymentGatewaySuggestionsDataSourcePoller); the gateway id and its hidden state are synthetic.
+		set_transient(
+			'woocommerce_admin_payment_gateway_suggestions_specs',
+			array(
+				get_user_locale() => array(
+					(object) array(
+						'id'         => 'hidden-mock-gateway',
+						'is_visible' => false,
+					),
+				),
+			)
+		);
+		EvaluateSuggestion::reset_memo();
+
+		try {
+			Init::get_suggestions();
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $after );
+			EvaluateSuggestion::reset_memo();
+			$woopayments = array_values(
+				array_filter(
+					Init::get_suggestions(),
+					static fn( $suggestion ) => isset( $suggestion->id ) && str_starts_with( $suggestion->id, 'woocommerce_payments' )
+				)
+			);
+		} finally {
+			remove_filter( 'data_source_poller_data_sources', $no_data_sources );
+			remove_filter( 'woocommerce_admin_payment_gateway_suggestion_specs', $show_woopayments );
+			Init::delete_specs_transient();
+			EvaluateSuggestion::reset_memo();
+		}
+
+		$this->assertNotEmpty( $woopayments );
+		foreach ( $woopayments as $suggestion ) {
+			$this->assertSame( $expected, $suggestion->plugins ?? array() );
+		}
 	}
 }

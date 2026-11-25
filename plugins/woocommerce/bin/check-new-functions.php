@@ -164,8 +164,17 @@ foreach ( $added_function_file_map as $function => $file ) {
 }
 
 // Calculate net added functions (added minus deleted) and clean file paths.
-$net_function_file_map = array();
+// Each public contract is approved only at its designated declaration site.
+$owner_approved_functions = array(
+	'wc_get_currency_switcher_markup' => 'plugins/woocommerce/includes/wc-template-functions.php',
+	'WC_Payments_Multi_Currency'      => 'plugins/woocommerce/includes/legacy/woopayments-multi-currency-compat/wc-payments-multi-currency.php',
+);
+$net_function_file_map    = array();
 foreach ( $added_function_file_map as $function => $file_path ) {
+	if ( isset( $owner_approved_functions[ $function ] ) && $owner_approved_functions[ $function ] === $file_path ) {
+		continue;
+	}
+
 	// Skip functions that were also deleted (net zero change).
 	if ( in_array( $function, $deleted_functions, true ) ) {
 		continue;

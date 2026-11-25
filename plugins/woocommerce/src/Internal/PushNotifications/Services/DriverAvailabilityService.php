@@ -38,8 +38,8 @@ class DriverAvailabilityService {
 	const DRIVER_REMOTE_PROXY = 'remote-push-notification-proxy';
 
 	/**
-	 * The Jetpack Sync settings class, checked/called defensively as the
-	 * package is only present at runtime when Jetpack Sync is installed.
+	 * The Jetpack Sync settings class. WooCommerce bundles the package, so its
+	 * presence alone does not mean a Jetpack Sync flow runs.
 	 */
 	const JETPACK_SYNC_SETTINGS_CLASS = 'Automattic\\Jetpack\\Sync\\Settings';
 
@@ -296,9 +296,10 @@ class DriverAvailabilityService {
 
 	/**
 	 * Determines whether Jetpack Sync is enabled. Treated as not enabled when
-	 * the package isn't installed, or when the package throws.
+	 * the package throws.
 	 *
-	 * The call reaches third-party package code, so it is guarded: an `Error`
+	 * The call reaches the Jetpack Sync package, which the Jetpack autoloader
+	 * may serve from another plugin's newer copy, so it is guarded: an `Error`
 	 * from an incompatible Jetpack would otherwise escape
 	 * {@see \Automattic\WooCommerce\Internal\RestApiControllerBase::run()},
 	 * which catches `Exception` only, and turn an endpoint whose purpose is to
@@ -309,19 +310,8 @@ class DriverAvailabilityService {
 	 * @since 11.2.0
 	 */
 	protected function is_jetpack_sync_enabled(): bool {
-		$is_sync_enabled = array( self::JETPACK_SYNC_SETTINGS_CLASS, 'is_sync_enabled' );
-
-		if ( ! is_callable( $is_sync_enabled ) ) {
-			// class_exists() already passed, so the class is present but the method
-			// is not: an incompatible Jetpack Sync rather than a merchant choice.
-			// Recorded so this reports as undetermined rather than a definitive no.
-			$this->failed_checks[ self::CHECK_SYNC_ENABLED ] = true;
-
-			return false;
-		}
-
 		try {
-			return (bool) call_user_func( $is_sync_enabled );
+			return (bool) \Automattic\Jetpack\Sync\Settings::is_sync_enabled();
 		} catch ( Throwable $e ) {
 			$this->failed_checks[ self::CHECK_SYNC_ENABLED ] = true;
 

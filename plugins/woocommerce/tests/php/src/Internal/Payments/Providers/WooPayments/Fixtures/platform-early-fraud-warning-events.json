@@ -1,0 +1,58 @@
+{
+	"_meta": {
+		"recording": "C0s, the first full live lane run (2026-10-18)",
+		"source": "Local WPCOM (wpcom-local) Transact platform, blog 4, account acct_1TrY2nBzWlxcwgpP (US, test mode): radar.early_fraud_warning events the platform forwarded to the store (WPCOM wcpay event-handler/class-radar-event-handler.php:95-104), WPCOM at 8c43425a763.",
+		"store": "native WooCommerce :8889 (woocommerce-develop-2, exp/core-native-payments at 75488974986), test mode.",
+		"captured_via": "The store's WooPayments log, WEBHOOK RECEIVED lines, during the lane run. The logger redacted nothing in these bodies; they are as logged."
+	},
+	"entries": [
+		{
+			"pair": "early_fraud_warning_created",
+			"context": "The warning Stripe raised on charge ch_3URpwrBzWlxcwgpP0FFvwXvn (order 5886, a card checkout), actionable.",
+			"logged_at": "2026-10-18T09:00:17+00:00",
+			"restored": {},
+			"body": {
+				"account": "acct_1TrY2nBzWlxcwgpP",
+				"data": {
+					"object": {
+						"actionable": true,
+						"charge": "ch_3URpwrBzWlxcwgpP0FFvwXvn",
+						"created": 1792314010,
+						"fraud_type": "made_with_stolen_card",
+						"id": "issfr_1URpwsBzWlxcwgpPo6GF88GN",
+						"livemode": false,
+						"object": "radar.early_fraud_warning",
+						"payment_intent": "pi_3URpwrBzWlxcwgpP0ZlAtnzJ"
+					}
+				},
+				"id": "evt_1URpwtBzWlxcwgpPHkIjp9Mu",
+				"livemode": false,
+				"type": "radar.early_fraud_warning.created"
+			}
+		},
+		{
+			"pair": "early_fraud_warning_updated",
+			"context": "The same warning 16 s later, no longer actionable.",
+			"logged_at": "2026-10-18T09:00:33+00:00",
+			"restored": {},
+			"body": {
+				"account": "acct_1TrY2nBzWlxcwgpP",
+				"data": {
+					"object": {
+						"actionable": false,
+						"charge": "ch_3URpwrBzWlxcwgpP0FFvwXvn",
+						"created": 1792314010,
+						"fraud_type": "made_with_stolen_card",
+						"id": "issfr_1URpwsBzWlxcwgpPo6GF88GN",
+						"livemode": false,
+						"object": "radar.early_fraud_warning",
+						"payment_intent": "pi_3URpwrBzWlxcwgpP0ZlAtnzJ"
+					}
+				},
+				"id": "evt_1URpxABzWlxcwgpPxsX6k0sH",
+				"livemode": false,
+				"type": "radar.early_fraud_warning.updated"
+			}
+		}
+	]
+}

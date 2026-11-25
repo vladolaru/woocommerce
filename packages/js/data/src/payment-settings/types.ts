@@ -51,6 +51,31 @@ export type PaymentsProviderIncentive = {
 	};
 };
 
+export type WooPaymentsAdminNoticeId = 'one_and_done';
+
+export type WooPaymentsAdminNoticeAction =
+	'shown' | 'dismiss' | 'snooze' | 'cta';
+
+export type WooPaymentsAdminNotice = {
+	id: WooPaymentsAdminNoticeId;
+	message: string;
+	primary: {
+		kind: 'navigate_and_dismiss';
+		label: string;
+		href?: string;
+	};
+	secondary?: {
+		kind: 'snooze';
+		label: string;
+	};
+	_links: {
+		shown: LinkData;
+		dismiss: LinkData;
+		snooze?: LinkData;
+		cta?: LinkData;
+	};
+};
+
 interface PaymentsProviderIncentiveDismissal {
 	timestamp: number; // timestamp in seconds
 	context: string;
@@ -128,6 +153,8 @@ export type PaymentsProvider = PaymentsEntity & {
 	};
 	tags?: string[];
 	_incentive?: PaymentsProviderIncentive;
+	_admin_notice?: WooPaymentsAdminNotice;
+	_woopayments_builtin?: boolean; // True only for the WooPayments gateway or suggestion built into WooCommerce.
 };
 
 // Represents a payment gateway in the main providers list.

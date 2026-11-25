@@ -745,6 +745,78 @@ class WC_Order_Functions_Test extends \WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox wc_create_refund() records refund totals and the remaining amount in the order currency's decimals.
+	 *
+	 * @testWith ["JPY", 0, "USD", "5.25", "-5.25", "12.75", "0.25", "-0.25", "12.50"]
+	 *           ["JPY", 0, "USD", "5.75", "-5.75", "12.25", "12.25", "-12.25", "0.00"]
+	 *           ["USD", 2, "KWD", "5.125", "-5.125", "12.875", "0.125", "-0.125", "12.750"]
+	 *           ["USD", 2, "JPY", "5.25", "-5.25", "12.75", "0.25", "-0.25", "12.50"]
+	 *           ["USD", 0, "USD", "5.25", "-5", "13", "2", "-2", "11"]
+	 *
+	 * @param string $store_currency     Store currency.
+	 * @param int    $store_decimals     Store price decimals.
+	 * @param string $order_currency     Order currency.
+	 * @param string $first_amount       First refund amount.
+	 * @param string $first_total        Expected total of the first refund.
+	 * @param string $first_remaining    Expected remaining amount after the first refund.
+	 * @param string $second_amount      Second refund amount.
+	 * @param string $second_total       Expected total of the second refund.
+	 * @param string $second_remaining   Expected remaining amount after the second refund.
+	 */
+	public function test_wc_create_refund_uses_order_currency_decimals( string $store_currency, int $store_decimals, string $order_currency, string $first_amount, string $first_total, string $first_remaining, string $second_amount, string $second_total, string $second_remaining ): void {
+		update_option( 'woocommerce_currency', $store_currency );
+		update_option( 'woocommerce_price_num_decimals', $store_decimals );
+
+		$order = wc_create_order();
+		$order->set_currency( $order_currency );
+		$order->set_total( '18' );
+		$order->set_status( OrderStatus::PROCESSING );
+		$order->save();
+
+		foreach ( array( array( $first_amount, $first_total, $first_remaining ), array( $second_amount, $second_total, $second_remaining ) ) as $step ) {
+			list( $amount, $expected_total, $expected_remaining ) = $step;
+
+			$refund = wc_create_refund(
+				array(
+					'order_id' => $order->get_id(),
+					'amount'   => $amount,
+				)
+			);
+
+			$this->assertInstanceOf( WC_Order_Refund::class, $refund, "The {$amount} refund should be created." );
+			$this->assertSame( $amount, wc_get_order( $refund->get_id() )->get_amount(), "The {$amount} refund should keep its amount." );
+			$this->assertSame( $expected_total, wc_get_order( $refund->get_id() )->get_total(), "The {$amount} refund should store its total in the order currency's decimals." );
+			$this->assertSame( $expected_remaining, wc_get_order( $order->get_id() )->get_remaining_refund_amount(), "The remaining amount after the {$amount} refund should use the order currency's decimals." );
+		}
+	}
+
+	/**
+	 * @testdox The remaining refund amount uses the store's decimals when a currency filter returns something other than a string.
+	 *
+	 * @testWith [null]
+	 *           [["USD"]]
+	 *
+	 * @param mixed $filtered_currency Value the order currency filter returns.
+	 */
+	public function test_remaining_refund_amount_with_non_string_filtered_currency( $filtered_currency ): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'woocommerce_price_num_decimals', 1 );
+
+		$order = wc_create_order();
+		$order->set_currency( 'USD' );
+		$order->set_total( '18.3' );
+		$order->save();
+		add_filter(
+			'woocommerce_order_get_currency',
+			static function () use ( $filtered_currency ) {
+				return $filtered_currency;
+			}
+		);
+
+		$this->assertSame( '18.3', wc_get_order( $order->get_id() )->get_remaining_refund_amount(), 'A non-string filtered currency should fall back to the store decimals.' );
+	}
+
+	/**
 	 * @testdox Should record the logged-in user who issued the refund.
 	 */
 	public function test_wc_create_refund_records_the_current_user(): void {

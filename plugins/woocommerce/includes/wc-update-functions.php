@@ -38,6 +38,7 @@ use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
 use Automattic\WooCommerce\Internal\EmailEditor\WCTransactionalEmails\WCEmailPostsCleanup;
 use Automattic\WooCommerce\Internal\EmailEditor\WCTransactionalEmails\WCEmailTemplateSyncBackfill;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\ProductAttributesLookup\DataRegenerator;
 use Automattic\WooCommerce\Internal\ProductAttributesLookup\LookupDataStore;
 use Automattic\WooCommerce\Internal\ProductDownloads\ApprovedDirectories\Register as Download_Directories;
@@ -4260,4 +4261,15 @@ function wc_update_1140_add_mpn_to_product_lookup_table(): void {
 	if ( ! $wpdb->get_var( "SHOW INDEX FROM {$wpdb->wc_product_meta_lookup} WHERE Key_name = 'mpn'" ) ) {
 		$wpdb->query( "ALTER TABLE {$wpdb->wc_product_meta_lookup} ADD INDEX mpn (mpn(50))" );
 	}
+}
+
+/**
+ * Seed the independent core multi-currency feature from prior WooPayments use.
+ *
+ * @since 11.2.0
+ *
+ * @return void
+ */
+function wc_update_1140_seed_multi_currency_feature(): void {
+	MultiCurrencyFeatureController::seed_from_prior_use();
 }

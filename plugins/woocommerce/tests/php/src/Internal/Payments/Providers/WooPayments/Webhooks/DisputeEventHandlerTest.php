@@ -1,0 +1,2166 @@
+<?php
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Webhooks;
+
+use Automattic\WooCommerce\Enums\OrderStatus;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventOrderResolver;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\OtherChargeRecorder;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\DisputeEventHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
+use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockWithClaimHook;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\StoredPaymentRecords;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
+use RuntimeException;
+use WC_Order;
+use WC_Unit_Test_Case;
+
+/**
+ * Tests for the DisputeEventHandler class.
+ */
+class DisputeEventHandlerTest extends WC_Unit_Test_Case {
+
+	use OrderPaymentLockTestTrait;
+	use ProviderTextLogAssertions;
+	use RefundLinesTestTrait;
+	use OrderNoteSnapshotTestTrait;
+
+	/**
+	 * The System Under Test.
+	 *
+	 * @var DisputeEventHandler
+	 */
+	private $sut;
+
+	/**
+	 * Original option values restored after each test.
+	 *
+	 * @var array<string,mixed>
+	 */
+	private array $original_options = array();
+
+	/**
+	 * Set up test fixtures.
+	 */
+	public function setUp(): void {
+		parent::setUp();
+
+		foreach ( array( 'woocommerce_currency', '_wcpay_feature_customer_multi_currency', 'wcpay_multi_currency_enabled_currencies', 'wcpay_multi_currency_exchange_rate_eur', 'wcpay_multi_currency_manual_rate_eur' ) as $option_name ) {
+			$this->original_options[ $option_name ] = get_option( $option_name, null );
+		}
+		$this->sut = new DisputeEventHandler();
+		$this->sut->init(
+			new class() extends Client {},
+			wc_get_container()->get( WooPaymentsDatabaseCache::class ),
+			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
+			wc_get_container()->get( OrderPaymentLock::class ),
+			wc_get_container()->get( WooPaymentsPersistenceVocabulary::class ),
+			wc_get_container()->get( EventOrderResolver::class ),
+			wc_get_container()->get( OtherChargeRecorder::class )
+		);
+	}
+
+	/**
+	 * Tear down test fixtures.
+	 */
+	public function tearDown(): void {
+		foreach ( $this->original_options as $option_name => $option_value ) {
+			null === $option_value ? delete_option( $option_name ) : update_option( $option_name, $option_value );
+		}
+		$this->original_options = array();
+		$this->reset_container_replacements();
+		parent::tearDown();
+	}
+
+	/**
+	 * Extension 11.3.0 appends an escaped dispute ID to the note and inserts the reason and deadline raw.
+	 *
+	 * @dataProvider created_note_histories
+	 * @param string $status  Status of the incoming dispute.
+	 * @param string $history Notes already on this charge.
+	 */
+	public function test_created_note_history( string $status, string $history ): void {
+		$order = $this->create_disputable_order();
+		$order->set_currency( 'USD' );
+		$order->set_total( 100 );
+		$order->update_meta_data( '_charge_id', 'ch_notes' );
+		$order->save();
+		$event           = $this->get_created_event_object( 'dp_current', $status );
+		$event['charge'] = 'ch_notes';
+
+		$inquiry = 'warning_needs_response' === $status;
+		$source  = $inquiry ? 'A payment inquiry has been raised for %1$s with reason "%2$s". <a>Response due by %3$s</a>.' : 'Payment has been disputed for %1$s with reason "%2$s". <a>Response due by %3$s</a>.';
+		$title   = $inquiry ? 'Enquête' : 'Litige';
+		$reason  = "L'achat & la carte";
+		$this->capture_note_translations(
+			array(
+				$source                    => $title . ' %1$s / %2$s / <a>%3$s</a>.',
+				'Transaction unauthorized' => $reason,
+				'(Dispute ID: %s)'         => '(Litige %s)',
+			),
+			'stale snapshot' === $history
+		);
+		update_option( '_wcpay_feature_customer_multi_currency', '1' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
+		add_filter( 'wcpay_multi_currency_should_output_explicit_price', '__return_false' );
+		add_filter( 'woocommerce_date_format', static fn() => 'English' === $history ? 'Y-m-d' : "Y & 'd'" );
+		$amount = wc_price( 10, array( 'currency' => 'USD' ) );
+		$date   = date_i18n( wc_date_format(), $event['evidence_details']['due_by'] );
+		$link   = '<a href="' . admin_url( 'admin.php?page=wc-admin&path=%2Fpayments%2Ftransactions%2Fdetails&id=ch_notes' ) . '" target="_blank" rel="noopener noreferrer">';
+		$id     = 'neighbour' === $history ? 'dp_other' : 'dp_current';
+		if ( 'built-in' === $history ) {
+			$this->deliver_in_prior_note_language( $source, 'Rückfrage %1$s / %2$s. <a>%3$s</a>.', fn() => $this->sut->process( 'charge.dispute.created', $event ) );
+		} elseif ( 'English' === $history ) {
+			$order->add_order_note( ( $inquiry ? 'A payment inquiry has been raised for ' : 'Payment has been disputed for ' ) . $amount . ' with reason &quot;Transaction unauthorized&quot;. ' . $link . 'Response due by ' . $date . '</a>. (Dispute ID: ' . $id . ')' );
+		} elseif ( 'first' !== $history ) {
+			$suffix = 'old format' === $history ? '' : ' (Litige ' . $id . ')';
+			$order->add_order_note( $title . ' ' . $amount . ' USD / ' . $reason . ' / ' . $link . $date . '</a>.' . $suffix );
+		}
+		$order = wc_get_order( $order->get_id() );
+		$order->set_status( OrderStatus::COMPLETED );
+		$open = 'neighbour' === $history ? array( 'dp_other' ) : array();
+		if ( $open ) {
+			$order->update_meta_data( '_wcpay_open_dispute_ids', $open );
+		} else {
+			$order->delete_meta_data( '_wcpay_open_dispute_ids' );
+		}
+		if ( 'snapshot' === $history ) {
+			$closed_status = $inquiry ? 'warning_closed' : 'won';
+			$order->add_order_note( $title . ' ' . $closed_status . '. ' . $link . 'Détails</a>. (Litige dp_current)' );
+		}
+		$order->save();
+		$before = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+
+		$this->sut->process( 'charge.dispute.created', $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$runs  = in_array( $history, array( 'first', 'neighbour', 'stale snapshot', 'old format' ), true );
+		$this->assertSame( $runs ? 'on-hold' : 'completed', $order->get_status() );
+		$this->assertSame( $runs ? array_merge( $open, array( 'dp_current' ) ) : '', $order->get_meta( '_wcpay_open_dispute_ids' ) );
+		$this->assertCount( $before + ( $runs ? 2 : 0 ), wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+	}
+
+	/** @return array<string,array{string,string}> Created dispute and inquiry histories. */
+	public static function created_note_histories(): array {
+		return self::note_history_cases( array( 'needs_response', 'warning_needs_response' ) );
+	}
+
+	/**
+	 * A loss handled by the extension leaves an unlinked local refund and its closing note.
+	 *
+	 * @dataProvider closed_note_histories
+	 * @param string $status  Status of the incoming close.
+	 * @param string $history Notes already on this charge.
+	 */
+	public function test_closed_note_history( string $status, string $history ): void {
+		wc_get_container()->get( RefundRowCapture::class )->register();
+		$order = $this->create_disputable_order();
+		$order->set_currency( 'USD' );
+		$order->set_total( 100 );
+		$order->update_meta_data( '_charge_id', 'ch_notes' );
+		$order->save();
+		$event = array(
+			'id'       => 'dp_current',
+			'charge'   => 'ch_notes',
+			'amount'   => 3000,
+			'currency' => 'usd',
+			'status'   => $status,
+		);
+
+		$inquiry = 'warning_closed' === $status;
+		$source  = $inquiry ? 'Payment inquiry has been closed with status %1$s. See <a>payment status</a> for more details.' : 'Dispute has been closed with status %1$s. See <a>dispute overview</a> for more details.';
+		$title   = $inquiry ? 'Enquête' : 'Litige';
+		$this->capture_note_translations(
+			array(
+				$source            => $title . ' %1$s. <a>Détails</a>.',
+				'(Dispute ID: %s)' => '(Litige %s)',
+			),
+			'stale snapshot' === $history
+		);
+		$link = '<a href="' . admin_url( 'admin.php?page=wc-admin&path=%2Fpayments%2Ftransactions%2Fdetails&id=ch_notes' ) . '" target="_blank" rel="noopener noreferrer">';
+		$id   = 'neighbour' === $history ? 'dp_other' : 'dp_current';
+		$lost = 'lost' === $status;
+		if ( 'built-in' === $history ) {
+			$this->deliver_in_prior_note_language( $source, 'Geschlossen: %1$s. <a>Details</a>.', fn() => $this->sut->process( 'charge.dispute.closed', $event ) );
+		} elseif ( 'first' !== $history ) {
+			if ( $lost ) {
+				$refund = wc_create_refund(
+					array(
+						'order_id' => $order->get_id(),
+						'amount'   => 30,
+					)
+				);
+				$this->assertInstanceOf( \WC_Order_Refund::class, $refund );
+				$this->assertSame( '', $refund->get_meta( '_wcpay_dispute_id' ) );
+			}
+			if ( 'English' === $history ) {
+				$order->add_order_note( str_replace( '<a>', $link, sprintf( $source, $status ) ) . ' (Dispute ID: ' . $id . ')' );
+			} else {
+				$suffix = 'old format' === $history ? '' : ' (Litige ' . $id . ')';
+				$order->add_order_note( $title . ' ' . $status . '. ' . $link . 'Détails</a>.' . $suffix );
+			}
+		}
+		$order = wc_get_order( $order->get_id() );
+		if ( 'neighbour' === $history ) {
+			$created = $inquiry ? 'A payment inquiry has been raised for ' : 'Payment has been disputed for ';
+			$order->add_order_note( $created . wc_price( 30, array( 'currency' => 'USD' ) ) . ' with reason &quot;Transaction unauthorized&quot;. ' . $link . 'Response due by ' . date_i18n( wc_date_format(), 1893456000 ) . '</a>. (Dispute ID: dp_current)' );
+			$order->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_current' ) );
+		}
+		$order->set_status( OrderStatus::PROCESSING );
+		$order->save();
+		$prior_rows = count( $order->get_refunds() );
+		$before     = count( $this->find_order_note( $order, $status . '.' ) );
+
+		$this->sut->process( 'charge.dispute.closed', $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$runs  = in_array( $history, array( 'first', 'neighbour', 'stale snapshot', 'old format' ), true );
+		$this->assertSame( $runs && ! $lost ? 'completed' : 'processing', $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_wcpay_open_dispute_ids' ) );
+		$this->assertCount( $prior_rows + ( $lost && $runs ? 1 : 0 ), $order->get_refunds() );
+		$this->assertCount( $before + ( $runs ? 1 : 0 ), $this->find_order_note( $order, $status . '.' ) );
+		if ( $lost ) {
+			$linked = array();
+			foreach ( $order->get_refunds() as $refund ) {
+				$this->assertEquals( 30, $refund->get_amount() );
+				$linked[] = $refund->get_meta( '_wcpay_dispute_id' );
+			}
+			$this->assertSame( $runs || 'built-in' === $history, in_array( 'dp_current', $linked, true ) );
+		}
+	}
+
+	/** @return array<string,array{string,string}> Close outcomes and histories. */
+	public static function closed_note_histories(): array {
+		return self::note_history_cases( array( 'warning_closed', 'won', 'lost' ) );
+	}
+
+	/**
+	 * @testdox A charge.dispute.closed event escapes its status in the closed note it writes.
+	 *
+	 * @dataProvider provider_dispute_closed_note_escapes_status
+	 *
+	 * @param string $status  Dispute status carrying markup.
+	 * @param string $note    Fragment that finds the closed note.
+	 */
+	public function test_dispute_closed_note_escapes_status( string $status, string $note ): void {
+		$order = $this->create_disputable_order();
+		$order->update_meta_data( '_charge_id', 'ch_123' );
+		$order->save();
+
+		// A Stripe Dispute, as charge.dispute.closed carries it; client 11.1.0 reads charge, status and id
+		// (class-wc-payments-webhook-processing-service.php:748-754).
+		$this->sut->process(
+			'charge.dispute.closed',
+			array(
+				'id'     => 'dp_escape',
+				'charge' => 'ch_123',
+				'status' => $status,
+			)
+		);
+
+		$notes = $this->find_order_note( wc_get_order( $order->get_id() ), $note );
+		$this->assertCount( 1, $notes );
+		$this->assertStringNotContainsString( '<script>', $notes[0]->content, 'The raw script tag must not appear in the closed note.' );
+		$this->assertStringContainsString( '&lt;script&gt;', $notes[0]->content, 'The status must be HTML-escaped in the closed note.' );
+	}
+
+	/**
+	 * Closed dispute statuses carrying markup, for each wording.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public function provider_dispute_closed_note_escapes_status(): array {
+		return array(
+			'dispute' => array( '<script>alert(1)</script>', 'Dispute has been closed with status' ),
+			'inquiry' => array( 'warning_<script>alert(1)</script>', 'Payment inquiry has been closed with status' ),
+		);
+	}
+
+	/**
+	 * @testdox A charge.dispute.created event escapes the reason and the due date in the $_dataName note it writes.
+	 *
+	 * The reason is a translated label and the due date follows the store's date format, so markup can only come from a
+	 * translation or that setting. This pins native's own escaping of both values: client 11.1.0 escapes only the note
+	 * template and inserts them raw (class-wc-payments-order-service.php:2455-2504, :2471-2472, :2485-2486).
+	 *
+	 * @dataProvider provider_dispute_created_note_kinds
+	 *
+	 * @param string $status Dispute status.
+	 * @param string $note   Fragment that finds the created note.
+	 */
+	public function test_dispute_created_note_escapes_reason_and_due_by( string $status, string $note ): void {
+		$order = $this->create_disputable_order();
+		$order->update_meta_data( '_charge_id', 'ch_escape' );
+		$order->save();
+		add_filter(
+			'gettext',
+			static fn( string $translation, string $text ): string => 'Transaction unauthorized' === $text ? '<b>reason</b>' : $translation,
+			10,
+			2
+		);
+		add_filter( 'woocommerce_date_format', static fn(): string => '\<\i\>Y\<\/\i\>' );
+		$event           = $this->get_created_event_object( 'dp_escape', $status );
+		$event['charge'] = 'ch_escape';
+
+		$this->sut->process( 'charge.dispute.created', $event );
+
+		$notes = $this->find_order_note( wc_get_order( $order->get_id() ), $note );
+		$this->assertCount( 1, $notes );
+		$this->assertStringNotContainsString( '<b>reason</b>', $notes[0]->content, 'The raw reason markup must not appear in the created note.' );
+		$this->assertStringNotContainsString( '<i>', $notes[0]->content, 'The raw due date markup must not appear in the created note.' );
+		$this->assertStringContainsString( '&lt;b&gt;reason&lt;/b&gt;', $notes[0]->content, 'The reason must be HTML-escaped in the created note.' );
+		$this->assertStringContainsString( '&lt;i&gt;', $notes[0]->content, 'The due date must be HTML-escaped in the created note.' );
+	}
+
+	/**
+	 * Dispute statuses for the two created notes and the fragment that finds each.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public function provider_dispute_created_note_kinds(): array {
+		return array(
+			'dispute' => array( 'needs_response', 'Payment has been disputed for' ),
+			'inquiry' => array( 'warning_needs_response', 'A payment inquiry has been raised for' ),
+		);
+	}
+
+	/**
+	 * @testdox The amount in a charge.dispute.created note follows the WooPayments extension's explicit-price rule.
+	 *
+	 * Source: client 11.1.0 class-wc-payments-webhook-processing-service.php:726-730 (dispute amount) and
+	 * class-wc-payments-explicit-price-formatter.php:55-74,167-190 (Multi-Currency on with a second currency, then the filter).
+	 *
+	 * @dataProvider explicit_price_rule_provider
+	 *
+	 * @param bool        $core_multi_currency Whether core Multi-Currency owns the runtime.
+	 * @param string[]    $enabled_currencies  Enabled currencies option.
+	 * @param string|null $plugin_flag         Stale WooPayments `_wcpay_feature_customer_multi_currency` value, or null when absent.
+	 * @param bool|null   $filter_result       Value the filter returns, or null for no filter.
+	 * @param string      $order_currency      Order currency.
+	 * @param bool        $expected_default    Default the filter must receive.
+	 * @param string      $expected            Expected plain-text amount.
+	 */
+	public function test_formatted_dispute_amount_follows_the_woopayments_extension_explicit_price_rule( bool $core_multi_currency, array $enabled_currencies, ?string $plugin_flag, ?bool $filter_result, string $order_currency, bool $expected_default, string $expected ): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', $enabled_currencies );
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.9' );
+		null === $plugin_flag ? delete_option( '_wcpay_feature_customer_multi_currency' ) : update_option( '_wcpay_feature_customer_multi_currency', $plugin_flag );
+		$arbiter   = $this->getMockBuilder( MultiCurrencyRuntimeArbiter::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_builtin_owner' ) )
+			->getMock();
+		$container = wc_get_container();
+		// Keep the real feature definition working if FeaturesController registers it while the mock is in place.
+		$arbiter->init( $container->get( WooPaymentsRuntimeArbiter::class ), $container->get( LegacyProxy::class ), $container->get( MultiCurrencyFeatureController::class ) );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( $core_multi_currency );
+		wc_get_container()->replace( MultiCurrencyRuntimeArbiter::class, $arbiter );
+		$defaults = array();
+		add_filter(
+			'wcpay_multi_currency_should_output_explicit_price',
+			static function ( bool $current_default ) use ( &$defaults, $filter_result ): bool {
+				$defaults[] = $current_default;
+				return $filter_result ?? $current_default;
+			}
+		);
+		$order = $this->create_disputable_order();
+		$order->set_currency( $order_currency );
+		$order->update_meta_data( '_charge_id', 'ch_amount' );
+		$order->save();
+		$event           = $this->get_created_event_object( 'dp_amount', 'needs_response' );
+		$event['charge'] = 'ch_amount';
+		$event['amount'] = 5000;
+
+		$this->sut->process( 'charge.dispute.created', $event );
+
+		$notes = $this->find_order_note( wc_get_order( $order->get_id() ), 'Payment has been disputed for' );
+		$this->assertCount( 1, $notes );
+		$this->assertStringContainsString( 'disputed for ' . $expected . ' with reason', html_entity_decode( wp_strip_all_tags( $notes[0]->content ) ) );
+		$this->assertSame( array( $expected_default ), $defaults, 'The filter must run once per amount with the client default.' );
+	}
+
+	/**
+	 * Store states with the client's dispute amount outcome.
+	 *
+	 * @return array<string,array{0:bool,1:string[],2:?string,3:?bool,4:string,5:bool,6:string}>
+	 */
+	public function explicit_price_rule_provider(): array {
+		return array(
+			'Multi-Currency on with a second currency'     => array( true, array( 'USD', 'EUR' ), null, null, 'USD', true, '$50.00 USD' ),
+			'Multi-Currency on, foreign-currency order'    => array( true, array( 'USD', 'EUR' ), null, null, 'EUR', true, '€50.00 EUR' ),
+			'Multi-Currency on, stale plugin flag off'     => array( true, array( 'USD', 'EUR' ), '0', null, 'USD', true, '$50.00 USD' ),
+			'Multi-Currency on, single currency'           => array( true, array( 'USD' ), null, null, 'EUR', false, '€50.00' ),
+			'Multi-Currency off, stale enabled currencies' => array( false, array( 'USD', 'EUR' ), '1', null, 'USD', false, '$50.00' ),
+			'filter forces the code while Multi-Currency is off' => array( false, array( 'USD', 'EUR' ), null, true, 'USD', false, '$50.00 USD' ),
+			'filter removes the code while Multi-Currency is on' => array( true, array( 'USD', 'EUR' ), null, false, 'USD', true, '$50.00' ),
+		);
+	}
+
+	/**
+	 * @testdox A won dispute close on an order already refunded in full leaves it refunded, not completed.
+	 *
+	 * @dataProvider provider_won_close_on_refunded_order
+	 *
+	 * @param callable $make_refund Brings the order into that state.
+	 */
+	public function test_won_close_on_a_refunded_order_leaves_it_refunded( callable $make_refund ): void {
+		$order = $this->create_disputable_order();
+		$order->update_meta_data( '_charge_id', 'ch_refunded' );
+		$order->save();
+		$make_refund( $order );
+
+		// A Stripe Dispute, as charge.dispute.closed carries it; client 11.1.0 reads charge, status and id
+		// (class-wc-payments-webhook-processing-service.php:748-754).
+		$this->sut->process(
+			'charge.dispute.closed',
+			array(
+				'id'     => 'dp_refunded',
+				'charge' => 'ch_refunded',
+				'status' => 'won',
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'refunded', $order->get_status() );
+		$this->assertNotEmpty( $this->find_order_note( $order, 'The order was not marked as completed because it has already been fully refunded.' ) );
+	}
+
+	/**
+	 * Orders refunded in full before a won dispute close.
+	 *
+	 * @return array<string,array{0:callable}>
+	 */
+	public function provider_won_close_on_refunded_order(): array {
+		return array(
+			'refunded status'           => array(
+				static function ( WC_Order $order ): void {
+					$order->set_status( 'refunded' );
+					$order->save();
+				},
+			),
+			'on hold, refunded in full' => array(
+				static function ( WC_Order $order ): void {
+					wc_create_refund(
+						array(
+							'order_id'       => $order->get_id(),
+							'amount'         => 10.00,
+							'refund_payment' => false,
+						)
+					);
+					wc_get_order( $order->get_id() )->update_status( 'on-hold' );
+				},
+			),
+		);
+	}
+
+	/**
+	 * @testdox Two disputes on one charge each get their own note and record; closing one keeps the hold, closing the last completes the order.
+	 */
+	public function test_sibling_disputes_on_one_charge(): void {
+		$order = $this->create_disputable_order();
+		$order->update_meta_data( '_charge_id', 'ch_multi' );
+		$order->save();
+		$created           = $this->get_created_event_object( 'dp_b1', 'needs_response' );
+		$created['charge'] = 'ch_multi';
+
+		$this->sut->process( 'charge.dispute.created', $created );
+		$this->sut->process( 'charge.dispute.created', array_merge( $created, array( 'id' => 'dp_b2' ) ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( array( 'dp_b1', 'dp_b2' ), $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$this->assertNotEmpty( $this->find_order_note( $order, '(Dispute ID: dp_b1)' ) );
+		$this->assertNotEmpty( $this->find_order_note( $order, '(Dispute ID: dp_b2)' ) );
+
+		// A Stripe Dispute, as charge.dispute.closed carries it; client 11.1.0 reads charge, status and id
+		// (class-wc-payments-webhook-processing-service.php:748-754).
+		$this->sut->process(
+			'charge.dispute.closed',
+			array(
+				'id'     => 'dp_b1',
+				'charge' => 'ch_multi',
+				'status' => 'won',
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'on-hold', $order->get_status() );
+		$this->assertSame( array( 'dp_b2' ), $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$this->assertNotEmpty( $this->find_order_note( $order, 'The order was not marked as completed because 1 other dispute on this payment is still open.' ) );
+
+		// A Stripe Dispute, as charge.dispute.closed carries it; client 11.1.0 reads charge, status and id
+		// (class-wc-payments-webhook-processing-service.php:748-754).
+		$this->sut->process(
+			'charge.dispute.closed',
+			array(
+				'id'     => 'dp_b2',
+				'charge' => 'ch_multi',
+				'status' => 'won',
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'completed', $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+	}
+
+	/**
+	 * @testdox A replayed created webhook does not duplicate the open-dispute record, note, or on-hold hold.
+	 *
+	 * Client `os:591-594`: `mark_payment_dispute_created()` dedupes on the note's
+	 * own identity, so a replay writes neither a second note nor a second
+	 * `on-hold` transition.
+	 *
+	 * Fed the recorded dispute object (`Fixtures/platform-dispute-created-events.json`, pair
+	 * `accept_case_created`).
+	 */
+	public function test_replayed_created_webhook_does_not_duplicate_record(): void {
+		$dispute = $this->load_recorded_dispute_object( 'accept_case_created' );
+		$order   = $this->create_disputable_order();
+		$order->set_transaction_id( (string) $dispute['payment_intent'] );
+		$order->update_meta_data( '_intent_id', (string) $dispute['payment_intent'] );
+		$order->update_meta_data( '_charge_id', (string) $dispute['charge'] );
+		$order->save();
+
+		$this->sut->process( 'charge.dispute.created', $dispute );
+		$this->sut->process( 'charge.dispute.created', $dispute );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( array( $dispute['id'] ), $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$this->assertCount( 1, $this->find_order_note( $order, 'Payment has been disputed' ), 'A replayed created webhook must leave exactly one created note.' );
+		$this->assertSame( 'on-hold', $order->get_status(), 'A replayed created webhook must keep the order on-hold.' );
+	}
+
+	/**
+	 * @testdox A dispute created webhook refused by a held order payment lock writes nothing, and a second delivery after the lock is released applies it.
+	 */
+	public function test_created_webhook_refused_by_the_order_payment_lock_applies_on_a_second_delivery(): void {
+		$order = $this->create_disputable_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->update_meta_data( '_charge_id', 'ch_lock_contention' );
+		$order->save();
+
+		$event              = $this->get_created_event_object( 'dp_lock_contention', 'needs_response' );
+		$event['charge']    = 'ch_lock_contention';
+		$order_payment_lock = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary         = new WooPaymentsPersistenceVocabulary();
+
+		$this->assertNotNull( $order_payment_lock->claim( $order, $vocabulary, 'pi_lock_holder', 'payment operation' ) );
+
+		try {
+			try {
+				$this->sut->process( 'charge.dispute.created', $event );
+				$this->fail( 'A dispute webhook must fail for retry while a lifecycle event holds the order payment lock.' );
+			} catch ( OrderPaymentLockRefusedException $exception ) {
+				// The reliability service retries this exception for every event type (WebhookReliabilityServiceTest).
+				$this->assertSame( $order->get_id(), $exception->get_order_id() );
+			}
+		} finally {
+			$this->clear_order_payment_lock( $order, $vocabulary );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( \WC_Order::class, $order );
+		$this->assertSame( 'processing', $order->get_status(), 'A contended dispute webhook must not silently change the order state.' );
+		$this->assertSame( '', $order->get_meta( '_wcpay_open_dispute_ids', true ), 'A contended dispute webhook must not write an open-dispute record.' );
+		$this->assertCount( 0, $this->find_order_note( $order, 'Payment has been disputed' ), 'A contended dispute webhook must not add its note before retry.' );
+
+		$this->sut->process( 'charge.dispute.created', $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( \WC_Order::class, $order );
+		$this->assertSame( 'on-hold', $order->get_status(), 'The retried dispute webhook must restore the dispute hold.' );
+		$this->assertSame( array( 'dp_lock_contention' ), $order->get_meta( '_wcpay_open_dispute_ids', true ), 'The retried dispute webhook must persist its open-dispute record.' );
+		$this->assertCount( 1, $this->find_order_note( $order, 'Payment has been disputed' ), 'The retried dispute webhook must add exactly one note.' );
+	}
+
+	/**
+	 * @testdox A $event_type delivery refused by a held order payment lock writes nothing to the order.
+	 * @dataProvider dispute_events_after_created
+	 *
+	 * @param string $event_type Dispute event type.
+	 */
+	public function test_dispute_event_after_created_is_refused_by_a_held_order_payment_lock( string $event_type ): void {
+		$order = $this->create_disputable_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_status( 'on-hold' );
+		$order->update_meta_data( '_charge_id', 'ch_locked_close' );
+		$order->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_locked_close' ) );
+		$order->save();
+		$order_payment_lock = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary         = new WooPaymentsPersistenceVocabulary();
+		$this->assertNotNull( $order_payment_lock->claim( $order, $vocabulary, 'pi_lock_holder', 'payment operation' ) );
+
+		try {
+			$this->sut->process(
+				$event_type,
+				array(
+					'id'     => 'dp_locked_close',
+					'charge' => 'ch_locked_close',
+					'status' => 'won',
+				)
+			);
+			$this->fail( 'The delivery must be refused while another operation holds the order payment lock.' );
+		} catch ( OrderPaymentLockRefusedException $exception ) {
+			$this->assertSame( $order->get_id(), $exception->get_order_id() );
+		} finally {
+			$this->clear_order_payment_lock( $order, $vocabulary );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'on-hold', $order->get_status() );
+		$this->assertSame( array( 'dp_locked_close' ), $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$dispute_notes = array_filter(
+			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+			static fn( $note ): bool => false !== stripos( $note->content, 'dispute' )
+		);
+		$this->assertCount( 0, $dispute_notes );
+	}
+
+	/** @return array<string,array{string}> */
+	public static function dispute_events_after_created(): array {
+		return array(
+			'closed'  => array( 'charge.dispute.closed' ),
+			'updated' => array( 'charge.dispute.updated' ),
+		);
+	}
+
+	/**
+	 * @testdox A dispute close re-reads the order under the lock, so a sibling dispute opened just before it stays open and keeps the hold.
+	 */
+	public function test_dispute_closed_keeps_a_sibling_dispute_opened_before_its_lock(): void {
+		$order = $this->create_disputable_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_status( 'on-hold' );
+		$order->update_meta_data( '_charge_id', 'ch_sibling' );
+		$order->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_first' ) );
+		$order->save();
+		$store = new class() extends OrderPaymentLock {
+			/**
+			 * Whether the concurrent dispute has been recorded.
+			 *
+			 * @var bool
+			 */
+			public bool $sibling_recorded = false;
+
+			/**
+			 * Record a sibling dispute, as a concurrent dispute created delivery would under the lock, then grant the claim.
+			 *
+			 * @param WC_Order                               $order     Order being locked.
+			 * @param ProviderPersistenceVocabularyInterface $vocabulary   Persistence profile.
+			 * @param string|null                            $reference Payment reference.
+			 * @param string                                 $operation Operation claiming the lock.
+			 * @return string|null
+			 */
+			public function claim( WC_Order $order, ProviderPersistenceVocabularyInterface $vocabulary, ?string $reference, string $operation ): ?string {
+				unset( $vocabulary, $reference, $operation );
+				if ( ! $this->sibling_recorded ) {
+					$this->sibling_recorded = true;
+					// A separate request loads its own copy of the order.
+					$writer = new WC_Order( $order->get_id() );
+					$writer->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_first', 'dp_sibling' ) );
+					$writer->save();
+				}
+
+				return 'test_lock_token';
+			}
+
+			/**
+			 * Release nothing: the claim above holds no lock.
+			 *
+			 * @param WC_Order                               $order      Order being unlocked.
+			 * @param ProviderPersistenceVocabularyInterface $vocabulary    Persistence profile.
+			 * @param string                                 $lock_token Claim token.
+			 */
+			public function release( WC_Order $order, ProviderPersistenceVocabularyInterface $vocabulary, string $lock_token ): void {
+				unset( $order, $vocabulary, $lock_token );
+			}
+		};
+		wc_get_container()->replace( OrderPaymentLock::class, $store );
+		$handler = new DisputeEventHandler();
+		$handler->init(
+			new class() extends Client {},
+			wc_get_container()->get( WooPaymentsDatabaseCache::class ),
+			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
+			wc_get_container()->get( OrderPaymentLock::class ),
+			wc_get_container()->get( WooPaymentsPersistenceVocabulary::class ),
+			wc_get_container()->get( EventOrderResolver::class ),
+			wc_get_container()->get( OtherChargeRecorder::class )
+		);
+
+		$handler->process(
+			'charge.dispute.closed',
+			array(
+				'id'     => 'dp_first',
+				'charge' => 'ch_sibling',
+				'status' => 'won',
+			)
+		);
+
+		$this->assertTrue( $store->sibling_recorded, 'The close must claim the order payment lock.' );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( array( 'dp_sibling' ), $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$this->assertSame( 'on-hold', $order->get_status(), 'The sibling dispute keeps the hold.' );
+	}
+
+	/**
+	 * @testdox A dispute close keeps a site's own '__return_false' on the order emails it silences while it runs.
+	 */
+	public function test_dispute_closed_keeps_the_sites_own_email_filters(): void {
+		$order = $this->create_disputable_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_status( 'on-hold' );
+		$order->update_meta_data( '_charge_id', 'ch_site_filter' );
+		$order->save();
+		add_filter( 'woocommerce_email_enabled_customer_completed_order', '__return_false' );
+
+		try {
+			$this->sut->process(
+				'charge.dispute.closed',
+				array(
+					'id'     => 'dp_site_filter',
+					'charge' => 'ch_site_filter',
+					'status' => 'won',
+				)
+			);
+
+			$this->assertSame( 10, has_filter( 'woocommerce_email_enabled_customer_completed_order', '__return_false' ), 'The site disabled this email; the close must leave that in place.' );
+		} finally {
+			remove_filter( 'woocommerce_email_enabled_customer_completed_order', '__return_false' );
+		}
+		$this->assertSame( 'completed', wc_get_order( $order->get_id() )->get_status() );
+	}
+
+	/**
+	 * @testdox A lost partial $currency dispute whose summary cannot be fetched refunds the disputed amount from the event ($expected), not the whole order.
+	 * @testWith ["USD", 300, "3.00"]
+	 *           ["JPY", 300, "300.00"]
+	 *
+	 * @param string $currency Order and dispute currency.
+	 * @param int    $amount   Dispute amount in the currency's minor units, as Stripe sends it.
+	 * @param string $expected Refund amount.
+	 */
+	public function test_lost_partial_dispute_refunds_the_event_amount_when_the_summary_fetch_fails( string $currency, int $amount, string $expected ): void {
+		$order = $this->create_disputable_order();
+		$order->set_currency( $currency );
+		$order->set_total( 'JPY' === $currency ? '1000' : '10.00' );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_status( 'on-hold' );
+		$order->update_meta_data( '_charge_id', 'ch_partial_lost' );
+		$order->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_partial_lost' ) );
+		$order->save();
+		$handler = new DisputeEventHandler();
+		$handler->init(
+			new class() extends Client {
+				/**
+				 * Fail as the platform does when it cannot answer.
+				 *
+				 * @param string $dispute_id Dispute ID.
+				 * @return array<string,mixed>
+				 * @throws ApiException For every dispute ID the platform would look up.
+				 */
+				public function get_dispute_summary( string $dispute_id ): array {
+					if ( '' !== $dispute_id ) {
+						throw new ApiException( 'Service unavailable.', 'wcpay_server_error', 503 );
+					}
+
+					return array();
+				}
+			},
+			wc_get_container()->get( WooPaymentsDatabaseCache::class ),
+			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
+			wc_get_container()->get( OrderPaymentLock::class ),
+			wc_get_container()->get( WooPaymentsPersistenceVocabulary::class ),
+			wc_get_container()->get( EventOrderResolver::class ),
+			wc_get_container()->get( OtherChargeRecorder::class )
+		);
+
+		// A Stripe Dispute object, the charge.dispute.closed event's data.object: amount and currency are the fields the
+		// platform's summary copies into disputed_amount and currency (wpcom class-dispute-service.php:454-455).
+		$handler->process(
+			'charge.dispute.closed',
+			array(
+				'id'       => 'dp_partial_lost',
+				'charge'   => 'ch_partial_lost',
+				'status'   => 'lost',
+				'amount'   => $amount,
+				'currency' => strtolower( $currency ),
+			)
+		);
+
+		$refunds = wc_get_order( $order->get_id() )->get_refunds();
+		$this->assertCount( 1, $refunds );
+		$this->assertSame( $expected, wc_format_decimal( $refunds[0]->get_amount(), 2 ) );
+	}
+
+	/**
+	 * @testdox A $event_type event on a charge ID carrying markup writes a note whose link holds the ID percent-encoded, with no injected element.
+	 *
+	 * Provider charge IDs (ch_, py_) are left as they are by the encoding, so the note stays the WooPayments extension's.
+	 *
+	 * @dataProvider provider_dispute_note_events
+	 *
+	 * @param string              $event_type Dispute event type.
+	 * @param array<string,mixed> $dispute    Dispute object fields of the event.
+	 * @param string              $note       Fragment that finds the note.
+	 */
+	public function test_dispute_note_link_encodes_a_malformed_charge_id( string $event_type, array $dispute, string $note ): void {
+		$charge_id = 'ch_x"><script>alert(1)</script><a href="https://example.test/';
+		$order     = $this->create_disputable_order();
+		$order->update_meta_data( '_charge_id', $charge_id );
+		$order->save();
+
+		$this->sut->process( $event_type, array_merge( $dispute, array( 'charge' => $charge_id ) ) );
+
+		$notes = $this->find_order_note( wc_get_order( $order->get_id() ), $note );
+		$this->assertCount( 1, $notes );
+		$this->assertStringNotContainsString( '<script', $notes[0]->content );
+		$this->assertStringNotContainsString( 'example.test/"', $notes[0]->content );
+		$this->assertStringContainsString( 'id=' . rawurlencode( $charge_id ) . '"', $notes[0]->content );
+	}
+
+	/**
+	 * Dispute events that write a note linking to the disputed charge.
+	 *
+	 * Stripe Dispute objects with the fields client 11.1.0 reads for each event (class-wc-payments-webhook-processing-service.php:
+	 * created :699-710, closed :748-754, updated :794-806); the test adds the charge.
+	 *
+	 * @return array<string,array{0:string,1:array<string,mixed>,2:string}>
+	 */
+	public function provider_dispute_note_events(): array {
+		return array(
+			'created' => array(
+				'charge.dispute.created',
+				array(
+					'id'               => 'dp_markup',
+					'status'           => 'needs_response',
+					'amount'           => 1000,
+					'reason'           => 'fraudulent',
+					'evidence_details' => array( 'due_by' => 1893456000 ),
+				),
+				'Payment has been disputed',
+			),
+			'closed'  => array(
+				'charge.dispute.closed',
+				array(
+					'id'     => 'dp_markup',
+					'status' => 'won',
+				),
+				'Dispute has been closed',
+			),
+			'updated' => array(
+				'charge.dispute.updated',
+				array(
+					'id'     => 'dp_markup',
+					'status' => 'under_review',
+				),
+				'Payment dispute has been updated',
+			),
+		);
+	}
+
+	/**
+	 * @testdox A $status close replayed onto the closed note the WooPayments extension wrote changes nothing.
+	 *
+	 * Client 11.1.0 writes the note in generate_dispute_closed_note() (class-wc-payments-order-service.php:2516-2558) with
+	 * compose_dispute_url() (:2681-2690), and skips the close when a note with the same text exists (:619-623,
+	 * order_note_exists() at :810-823).
+	 *
+	 * @dataProvider woopayments_extension_closed_note_provider
+	 *
+	 * @param string $status Dispute status.
+	 */
+	public function test_woopayments_extension_era_closed_note_suppresses_replayed_close( string $status ): void {
+		$order = $this->create_disputable_order();
+		$order->set_status( 'on-hold' );
+		$order->update_meta_data( '_charge_id', 'ch_cutover' );
+		$order->update_meta_data( '_wcpay_payment_transaction_id', 'txn_cutover' );
+		$order->save();
+		$order->add_order_note( $this->get_woopayments_extension_note_without_dispute_id( 'charge.dispute.closed', $status, 'ch_cutover' ) . ' (Dispute ID: dp_cutover)' );
+
+		// A Stripe Dispute, as charge.dispute.closed carries it; client 11.1.0 reads charge, status and id, then fetches the
+		// dispute summary (class-wc-payments-webhook-processing-service.php:748-781). Amount and currency are read only by
+		// native, for a lost close whose summary cannot be fetched.
+		$this->sut->process(
+			'charge.dispute.closed',
+			array(
+				'id'       => 'dp_cutover',
+				'charge'   => 'ch_cutover',
+				'status'   => $status,
+				'amount'   => 1000,
+				'currency' => 'usd',
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'on-hold', $order->get_status() );
+		$this->assertCount( 1, $this->find_order_note( $order, 'Dispute has been closed with status ' . $status ) );
+		$this->assertCount( 0, $order->get_refunds() );
+	}
+
+	/**
+	 * Closed notes the WooPayments extension wrote.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public function woopayments_extension_closed_note_provider(): array {
+		return array(
+			'won'  => array( 'won' ),
+			'lost' => array( 'lost' ),
+		);
+	}
+
+	/**
+	 * @testdox A created event replayed onto the created note the WooPayments extension wrote changes nothing, and the note gets the dispute's note identity.
+	 *
+	 * Client 11.1.0 writes the note in generate_dispute_created_note() (class-wc-payments-order-service.php:2455-2504) with
+	 * compose_dispute_url() (:2681-2690), escaping the text around the link (WC_Payments_Utils::esc_interpolated_html()),
+	 * and skips the hold when a note with the same text exists (:590-594).
+	 */
+	public function test_woopayments_extension_era_created_note_suppresses_replayed_created(): void {
+		$order = $this->create_disputable_order();
+		$order->update_meta_data( '_charge_id', 'ch_cutover_created' );
+		$order->update_meta_data( '_wcpay_payment_transaction_id', 'txn_cutover_created' );
+		$order->save();
+		$event             = $this->get_created_event_object( 'dp_cutover_created', 'needs_response' );
+		$event['charge']   = 'ch_cutover_created';
+		$extension_note_id = $order->add_order_note( $this->get_woopayments_extension_note_without_dispute_id( 'charge.dispute.created', 'needs_response', 'ch_cutover_created' ) . ' (Dispute ID: dp_cutover_created)' );
+
+		$this->sut->process( 'charge.dispute.created', $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'processing', $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$this->assertCount( 1, $this->find_order_note( $order, 'Payment has been disputed' ) );
+		$this->assertSame(
+			hash( 'sha256', 'dispute:dp_cutover_created|needs_response|created_dispute' ),
+			get_comment_meta( $extension_note_id, '_wc_woopayments_note_identity', true ),
+			'The extension-era note gets the dispute note identity, so a later write finds it whatever its text reads.'
+		);
+	}
+
+	/**
+	 * @testdox A dispute update replayed onto the update note the WooPayments extension wrote adds no second note.
+	 *
+	 * Client 11.1.0 writes the note in process_webhook_dispute_updated() (class-wc-payments-webhook-processing-service.php:825-845)
+	 * and adds it only when no note with the same text exists (:847-849).
+	 */
+	public function test_woopayments_extension_era_update_note_suppresses_replayed_update(): void {
+		$order = $this->create_disputable_order();
+		$order->update_meta_data( '_charge_id', 'ch_cutover_updated' );
+		$order->update_meta_data( '_wcpay_payment_transaction_id', 'txn_cutover_updated' );
+		$order->save();
+		$order->add_order_note( $this->get_woopayments_extension_note_without_dispute_id( 'charge.dispute.updated', 'under_review', 'ch_cutover_updated' ) . ' (Dispute ID: dp_cutover_updated)' );
+
+		// A Stripe Dispute, as charge.dispute.updated carries it; client 11.1.0 reads id and charge
+		// (class-wc-payments-webhook-processing-service.php:794-806), and native also reads its status.
+		$this->sut->process(
+			'charge.dispute.updated',
+			array(
+				'id'     => 'dp_cutover_updated',
+				'charge' => 'ch_cutover_updated',
+				'status' => 'under_review',
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'processing', $order->get_status() );
+		$this->assertCount( 1, $this->find_order_note( $order, 'Payment dispute has been updated' ) );
+	}
+
+	/**
+	 * @testdox A $event_type event for a second dispute on the charge applies over the first dispute's note that the WooPayments extension wrote without the dispute ID.
+	 *
+	 * Client 11.1.0 matches a dispute note by its exact text (order_note_exists(), class-wc-payments-order-service.php:810-823),
+	 * and the text carries the dispute ID since 11.0.0 (#11991, #11993). A note from an earlier version is not matched, and
+	 * no open-dispute record (added in 11.1.0, #11997) names its dispute.
+	 *
+	 * @dataProvider provider_second_dispute_over_a_note_without_the_dispute_id
+	 *
+	 * @param string              $event_type        Dispute event type.
+	 * @param array<string,mixed> $dispute           Second dispute's object fields; the test adds the charge.
+	 * @param string              $initial_status    Order status left by the first dispute.
+	 * @param string              $expected_status   Order status after the second dispute's event.
+	 * @param string|string[]     $expected_open_ids Open-dispute record after the event ('' when there is none).
+	 * @param int                 $expected_refunds  Local refunds after the event.
+	 * @param string              $note              Fragment that finds both disputes' notes.
+	 */
+	public function test_second_disputes_event_applies_over_a_note_without_the_dispute_id( string $event_type, array $dispute, string $initial_status, string $expected_status, $expected_open_ids, int $expected_refunds, string $note ): void {
+		$order = $this->create_disputable_order();
+		$order->set_status( $initial_status );
+		$order->update_meta_data( '_charge_id', 'ch_two_disputes' );
+		$order->save();
+		$order->add_order_note( $this->get_woopayments_extension_note_without_dispute_id( $event_type, (string) $dispute['status'], 'ch_two_disputes' ) );
+
+		$this->sut->process( $event_type, array_merge( $dispute, array( 'charge' => 'ch_two_disputes' ) ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( $expected_status, $order->get_status() );
+		$this->assertSame( $expected_open_ids, $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$this->assertCount( $expected_refunds, $order->get_refunds() );
+		$this->assertCount( 2, $this->find_order_note( $order, $note ) );
+		$this->assertCount( 1, $this->find_order_note( $order, '(Dispute ID: dp_second)' ) );
+	}
+
+	/**
+	 * Second disputes on a charge whose first dispute's note carries no dispute ID.
+	 *
+	 * Stripe Dispute objects with the fields client 11.1.0 reads for each event (class-wc-payments-webhook-processing-service.php:
+	 * created :699-710, closed :748-781, updated :794-806). The closed ones add amount and currency, which only native reads:
+	 * for a lost close whose dispute summary cannot be fetched.
+	 *
+	 * @return array<string,array{0:string,1:array<string,mixed>,2:string,3:string,4:string|string[],5:int,6:string}>
+	 */
+	public function provider_second_dispute_over_a_note_without_the_dispute_id(): array {
+		$closed = array(
+			'id'       => 'dp_second',
+			'amount'   => 1000,
+			'currency' => 'usd',
+		);
+
+		return array(
+			'closed, won'  => array( 'charge.dispute.closed', array_merge( $closed, array( 'status' => 'won' ) ), 'on-hold', 'completed', '', 0, 'Dispute has been closed with status won' ),
+			'closed, lost' => array( 'charge.dispute.closed', array_merge( $closed, array( 'status' => 'lost' ) ), 'on-hold', 'refunded', '', 1, 'Dispute has been closed with status lost' ),
+			'created'      => array( 'charge.dispute.created', $this->get_created_event_object( 'dp_second', 'needs_response' ), 'completed', 'on-hold', array( 'dp_second' ), 0, 'Payment has been disputed' ),
+			'updated'      => array(
+				'charge.dispute.updated',
+				array(
+					'id'     => 'dp_second',
+					'status' => 'under_review',
+				),
+				'on-hold',
+				'on-hold',
+				'',
+				0,
+				'Payment dispute has been updated',
+			),
+		);
+	}
+
+	/**
+	 * Build a dispute note as the WooPayments extension wrote it, without the dispute ID it appends since 11.0.0.
+	 *
+	 * Client 11.1.0: created generate_dispute_created_note() (class-wc-payments-order-service.php:2455-2504), closed
+	 * generate_dispute_closed_note() (:2516-2558), updated process_webhook_dispute_updated()
+	 * (class-wc-payments-webhook-processing-service.php:825-845). The created note is the one get_created_event_object() makes.
+	 *
+	 * @param string $event_type Dispute event type.
+	 * @param string $status     Dispute status, for a closed note.
+	 * @param string $charge_id  Disputed charge ID.
+	 * @return string
+	 */
+	private function get_woopayments_extension_note_without_dispute_id( string $event_type, string $status, string $charge_id ): string {
+		if ( 'charge.dispute.created' === $event_type ) {
+			return 'Payment has been disputed for ' . wc_price( 10.0, array( 'currency' => 'USD' ) ) . ' with reason &quot;Transaction unauthorized&quot;. <a href="' . $this->get_woopayments_extension_dispute_url( $charge_id ) . '" target="_blank" rel="noopener noreferrer">Response due by ' . date_i18n( wc_date_format(), 1893456000 ) . '</a>.';
+		}
+
+		if ( 'charge.dispute.closed' === $event_type ) {
+			return 'Dispute has been closed with status ' . $status . '. See <a href="' . $this->get_woopayments_extension_dispute_url( $charge_id ) . '" target="_blank" rel="noopener noreferrer">dispute overview</a> for more details.';
+		}
+
+		return 'Payment dispute has been updated. See <a href="' . add_query_arg( array( 'id' => $charge_id ), admin_url( 'admin.php?page=wc-admin&path=/payments/transactions/details' ) ) . '">dispute overview</a> for more details.';
+	}
+
+	/**
+	 * Build the dispute details URL as the WooPayments extension put it in its created and closed dispute notes.
+	 *
+	 * Client 11.1.0 class-wc-payments-order-service.php:2681-2690 (compose_dispute_url()).
+	 *
+	 * @param string $charge_id Disputed charge ID.
+	 * @return string
+	 */
+	private function get_woopayments_extension_dispute_url( string $charge_id ): string {
+		return add_query_arg(
+			array(
+				'page' => 'wc-admin',
+				'path' => rawurlencode( '/payments/transactions/details' ),
+				'id'   => $charge_id,
+			),
+			admin_url( 'admin.php' )
+		);
+	}
+
+	/**
+	 * @testdox A charge.dispute.created event on a charge recorded on an order another gateway paid adds one note, keeps the status and logs one line.
+	 *
+	 * Client 11.1.0 holds the charge's order whatever its gateway (class-wc-payments-webhook-processing-service.php:712-724);
+	 * here the dispute is recorded, because the charge is not the order's payment. The dispute carries its `payment_intent`
+	 * (https://docs.stripe.com/api/disputes/object#dispute_object-payment_intent).
+	 */
+	public function test_dispute_created_on_an_order_paid_by_another_gateway_is_recorded(): void {
+		$order                   = $this->create_order_paid_by_another_gateway( 'bacs', 'ch_bacs_created' );
+		$event                   = $this->get_created_event_object( 'dp_bacs_created', 'needs_response' );
+		$event['charge']         = 'ch_bacs_created';
+		$event['payment_intent'] = 'pi_bacs_created';
+		$logger                  = RecordingWcLogger::install();
+
+		$this->sut->process( 'charge.dispute.created', $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( \WC_Order::class, $order );
+		$this->assertSame( 'processing', $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$this->assertCount( 0, $this->find_order_note( $order, 'Payment has been disputed' ) );
+		$record_notes = $this->find_order_note( $order, 'was opened on WooPayments charge' );
+		$this->assertCount( 1, $record_notes );
+		$this->assertStringContainsString( 'dp_bacs_created', $record_notes[0]->content );
+		$this->assertStringContainsString( 'ch_bacs_created', $record_notes[0]->content );
+		$record_lines = array_keys(
+			array_filter(
+				$logger->lines,
+				static fn( array $line ): bool => 'warning' === $line[0] && 'other charge recorded: order ' . $order->get_id() . ', charge.dispute.created, charge ch_bacs_created, order payment method bacs' === $line[1]
+			)
+		);
+		$this->assertCount( 1, $record_lines );
+		$this->assertSame( 'woopayments', $logger->contexts[ $record_lines[0] ]['source'] );
+		$this->assertSame( array(), $this->get_own_event_on_another_payment_method_lines( $logger ), 'A recorded dispute is not applied as the order\'s own.' );
+	}
+
+	/**
+	 * @testdox A charge.dispute.updated event on a charge recorded on an order another gateway paid adds one note naming the update, and keeps the status.
+	 *
+	 * Client 11.1.0 notes the update on the charge's order whatever its gateway
+	 * (class-wc-payments-webhook-processing-service.php:794-853).
+	 */
+	public function test_dispute_updated_on_an_order_paid_by_another_gateway_is_recorded(): void {
+		$order                   = $this->create_order_paid_by_another_gateway( 'bacs', 'ch_bacs_updated' );
+		$event                   = $this->get_created_event_object( 'dp_bacs_updated', 'under_review' );
+		$event['charge']         = 'ch_bacs_updated';
+		$event['payment_intent'] = 'pi_bacs_updated';
+
+		$this->sut->process( 'charge.dispute.updated', $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( \WC_Order::class, $order );
+		$this->assertSame( 'processing', $order->get_status() );
+		$this->assertCount( 0, $this->find_order_note( $order, 'Payment dispute has been updated. See' ) );
+		$record_notes = $this->find_order_note( $order, 'Payment dispute has been updated: the dispute' );
+		$this->assertCount( 1, $record_notes );
+		$this->assertStringContainsString( 'under_review', $record_notes[0]->content );
+	}
+
+	/**
+	 * @testdox A dispute created event retried after the dispute closed ($status) leaves the order off hold with no open dispute.
+	 * @testWith ["won", "dp_created_retry_won", "needs_response"]
+	 *           ["lost", "dp_created_retry_lost", "needs_response"]
+	 *           ["prevented", "dp_created_retry_prevented", "needs_response"]
+	 *           ["warning_closed", "dp_created_retry_inquiry", "warning_needs_response"]
+	 *
+	 * The first created delivery fails writing its note, after the hold, the close lands, and the store's retry of the created
+	 * event runs last. Stripe closes a dispute as won, lost or prevented and an inquiry as warning_closed
+	 * (https://docs.stripe.com/api/disputes/object#dispute_object-status).
+	 *
+	 * @param string $status         Closing status.
+	 * @param string $dispute_id     Dispute ID.
+	 * @param string $created_status Status the created event carries.
+	 */
+	public function test_dispute_created_retried_after_the_close_does_not_reopen_it( string $status, string $dispute_id, string $created_status ): void {
+		$order = $this->create_disputable_order();
+		$order->update_meta_data( '_charge_id', 'ch_created_retry' );
+		$order->save();
+		$created    = array_merge( $this->get_created_event_object( $dispute_id, $created_status ), array( 'charge' => 'ch_created_retry' ) );
+		$thrown     = 0;
+		$throw_once = static function ( array $note_data ) use ( &$thrown, $dispute_id ): array {
+			if ( false !== strpos( (string) ( $note_data['comment_content'] ?? '' ), $dispute_id ) && 0 === $thrown++ ) {
+				throw new RuntimeException( 'Note write failed.' );
+			}
+
+			return $note_data;
+		};
+		add_filter( 'woocommerce_new_order_note_data', $throw_once );
+
+		$caught = null;
+		try {
+			$this->sut->process( 'charge.dispute.created', $created );
+		} catch ( RuntimeException $exception ) {
+			$caught = $exception;
+		}
+		remove_filter( 'woocommerce_new_order_note_data', $throw_once );
+		// A Stripe Dispute, as charge.dispute.closed carries it (https://docs.stripe.com/api/disputes/object): a lost close
+		// refunds its amount.
+		$this->sut->process(
+			'charge.dispute.closed',
+			array(
+				'id'       => $dispute_id,
+				'charge'   => 'ch_created_retry',
+				'status'   => $status,
+				'amount'   => 1000,
+				'currency' => 'usd',
+			)
+		);
+		$this->sut->process( 'charge.dispute.created', $created );
+
+		$this->assertInstanceOf( RuntimeException::class, $caught, 'The first created delivery fails.' );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( \WC_Order::class, $order );
+		$this->assertNotSame( 'on-hold', $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+	}
+
+	/**
+	 * @testdox A lost dispute close retried after an error left its refund behind records one refund.
+	 *
+	 * wc_create_refund() deletes the refund it saved only when a hook throws an Exception (includes/wc-order-functions.php:749-754),
+	 * so an Error from a refund hook leaves the row, the closed note is never written, and the store retries the event.
+	 */
+	public function test_lost_dispute_close_retried_after_an_error_left_its_refund_records_one_refund(): void {
+		wc_get_container()->get( RefundRowCapture::class )->register();
+		$order = $this->create_disputable_order();
+		$order->set_status( 'on-hold' );
+		$order->update_meta_data( '_charge_id', 'ch_lost_retry' );
+		$order->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_lost_retry' ) );
+		$order->save();
+		$handler = new DisputeEventHandler();
+		$handler->init(
+			new class() extends Client {
+				/**
+				 * Answer with no summary, so the event's own amount is refunded.
+				 *
+				 * @param string $dispute_id Dispute ID.
+				 * @return array<string,mixed>
+				 */
+				public function get_dispute_summary( string $dispute_id ): array {
+					unset( $dispute_id );
+
+					return array();
+				}
+			},
+			wc_get_container()->get( WooPaymentsDatabaseCache::class ),
+			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
+			wc_get_container()->get( OrderPaymentLock::class ),
+			wc_get_container()->get( WooPaymentsPersistenceVocabulary::class ),
+			wc_get_container()->get( EventOrderResolver::class ),
+			wc_get_container()->get( OtherChargeRecorder::class )
+		);
+		// A Stripe Dispute, as charge.dispute.closed carries it (https://docs.stripe.com/api/disputes/object): a lost dispute of
+		// 4.00 on a 10.00 order.
+		$event      = array(
+			'id'       => 'dp_lost_retry',
+			'charge'   => 'ch_lost_retry',
+			'status'   => 'lost',
+			'amount'   => 400,
+			'currency' => 'usd',
+		);
+		$thrown     = 0;
+		$throw_once = static function () use ( &$thrown ): void {
+			if ( 0 === $thrown++ ) {
+				throw new \Error( 'Refund hook failed.' );
+			}
+		};
+		add_action( 'woocommerce_order_partially_refunded', $throw_once );
+
+		$caught = null;
+		try {
+			$handler->process( 'charge.dispute.closed', $event );
+		} catch ( \Error $error ) {
+			$caught = $error;
+		}
+		$handler->process( 'charge.dispute.closed', $event );
+		remove_action( 'woocommerce_order_partially_refunded', $throw_once );
+
+		$this->assertInstanceOf( \Error::class, $caught, 'The first delivery fails after the refund row is saved.' );
+		$order   = wc_get_order( $order->get_id() );
+		$refunds = $order->get_refunds();
+		$this->assertCount( 1, $refunds );
+		$this->assertSame( '4.00', wc_format_decimal( $refunds[0]->get_amount(), 2 ) );
+		$this->assertCount( 1, $this->find_order_note( $order, 'Dispute has been closed with status' ) );
+	}
+
+	/**
+	 * @testdox A lost dispute of the whole charge names each line at the units, total and tax not yet refunded, after an earlier refund of $earlier_units units of line A.
+	 * @dataProvider provider_lost_dispute_line_states
+	 *
+	 * The earlier refund returns line A's units with their total and tax, as the order screen does; the dispute's refund
+	 * is the amount still refundable. WooCommerce's refund handler names a line only up to the units not yet refunded
+	 * (WC_AJAX::refund_line_items()).
+	 *
+	 * @param int                  $earlier_units  Units of line A the earlier refund named.
+	 * @param string               $expected_total Amount of the dispute's refund.
+	 * @param array<string,string> $expected_lines Lines the dispute's refund names, as "quantity total tax".
+	 */
+	public function test_lost_dispute_names_each_line_at_what_is_left( int $earlier_units, string $expected_total, array $expected_lines ): void {
+		wc_get_container()->get( RefundRowCapture::class )->register();
+		$order = $this->create_disputable_order();
+		$items = $this->add_two_taxed_lines( $order );
+		$order->set_status( 'on-hold' );
+		$order->update_meta_data( '_charge_id', 'ch_lines_lost' );
+		$order->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_lines_lost' ) );
+		$order->save();
+		if ( $earlier_units > 0 ) {
+			$this->refund_line_units( $order, $items['A'], $earlier_units, true );
+		}
+		$handler = new DisputeEventHandler();
+		$handler->init(
+			new class() extends Client {
+				/**
+				 * Answer with no summary, so the event's own amount is refunded.
+				 *
+				 * @param string $dispute_id Dispute ID.
+				 * @return array<string,mixed>
+				 */
+				public function get_dispute_summary( string $dispute_id ): array {
+					unset( $dispute_id );
+
+					return array();
+				}
+			},
+			wc_get_container()->get( WooPaymentsDatabaseCache::class ),
+			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
+			wc_get_container()->get( OrderPaymentLock::class ),
+			wc_get_container()->get( WooPaymentsPersistenceVocabulary::class ),
+			wc_get_container()->get( EventOrderResolver::class ),
+			wc_get_container()->get( OtherChargeRecorder::class )
+		);
+
+		// A Stripe Dispute, as charge.dispute.closed carries it (https://docs.stripe.com/api/disputes/object): a lost dispute
+		// of the whole 55.00 charge.
+		$handler->process(
+			'charge.dispute.closed',
+			array(
+				'id'       => 'dp_lines_lost',
+				'charge'   => 'ch_lines_lost',
+				'status'   => 'lost',
+				'amount'   => 5500,
+				'currency' => 'usd',
+			)
+		);
+
+		$order   = wc_get_order( $order->get_id() );
+		$refunds = array_values( array_filter( $order->get_refunds(), static fn( \WC_Order_Refund $refund ): bool => 'dp_lines_lost' === $refund->get_meta( '_wcpay_dispute_id', true ) ) );
+		$this->assertCount( 1, $refunds );
+		$this->assertSame( $expected_total, wc_format_decimal( $refunds[0]->get_amount(), 2 ) );
+		$this->assertSame( $expected_lines, $this->get_refund_lines( $refunds[0] ) );
+		$this->assertSame(
+			array(
+				'A' => 3,
+				'B' => 1,
+			),
+			$this->get_refunded_units( $order, $items ),
+			'No line is refunded beyond its ordered units.'
+		);
+	}
+
+	/**
+	 * Line A's state before a lost dispute, with the dispute refund's amount and lines; line B is never refunded first.
+	 *
+	 * @return array<string,array{0:int,1:string,2:array<string,string>}>
+	 */
+	public function provider_lost_dispute_line_states(): array {
+		return array(
+			'line A untouched'       => array(
+				0,
+				'55.00',
+				array(
+					'A' => '-3 -30.00 -3.00',
+					'B' => '-1 -20.00 -2.00',
+				),
+			),
+			'line A partly refunded' => array(
+				1,
+				'44.00',
+				array(
+					'A' => '-2 -20.00 -2.00',
+					'B' => '-1 -20.00 -2.00',
+				),
+			),
+			'line A fully refunded'  => array( 3, '22.00', array( 'B' => '-1 -20.00 -2.00' ) ),
+		);
+	}
+
+	/**
+	 * @testdox A lost dispute of the whole charge names each line from its unrounded refund history, at the order currency's decimals and never below zero: $name.
+	 * @dataProvider provider_lost_dispute_history_rows
+	 *
+	 * The earlier refund returns line A's money with it, as the order screen does; the dispute's refund is the amount
+	 * still refundable.
+	 *
+	 * @param string                                       $name            Row name.
+	 * @param string                                       $currency        Order currency; the store's is USD at two decimals.
+	 * @param array<string,array{int,float|int,float|int}> $lines           Units, total and tax of each line.
+	 * @param float                                        $order_total     Order total.
+	 * @param array{int,float,float}                       $earlier         Units, total and tax of line A the earlier refund named.
+	 * @param int                                          $decimals        Decimals of the order currency.
+	 * @param string                                       $expected_amount Amount of the dispute's refund.
+	 * @param array<string,string>                         $expected_lines  Lines the dispute's refund names, as "quantity total tax".
+	 */
+	public function test_lost_dispute_names_lines_from_unrounded_refund_history( string $name, string $currency, array $lines, float $order_total, array $earlier, int $decimals, string $expected_amount, array $expected_lines ): void {
+		unset( $name );
+		wc_get_container()->get( RefundRowCapture::class )->register();
+		$order = $this->create_disputable_order();
+		$order->set_currency( $currency );
+		$items = $this->add_taxed_lines( $order, $lines, $order_total );
+		$order->set_status( 'on-hold' );
+		$order->update_meta_data( '_charge_id', 'ch_lines_lost' );
+		$order->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_lines_lost' ) );
+		$order->save();
+		$this->refund_line_money( $order, $items['A'], $earlier[0], $earlier[1], $earlier[2], true );
+		$handler = new DisputeEventHandler();
+		$handler->init(
+			new class() extends Client {
+				/**
+				 * Answer with no summary, so the remaining refundable amount is refunded.
+				 *
+				 * @param string $dispute_id Dispute ID.
+				 * @return array<string,mixed>
+				 */
+				public function get_dispute_summary( string $dispute_id ): array {
+					unset( $dispute_id );
+
+					return array();
+				}
+			},
+			wc_get_container()->get( WooPaymentsDatabaseCache::class ),
+			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
+			wc_get_container()->get( OrderPaymentLock::class ),
+			wc_get_container()->get( WooPaymentsPersistenceVocabulary::class ),
+			wc_get_container()->get( EventOrderResolver::class ),
+			wc_get_container()->get( OtherChargeRecorder::class )
+		);
+
+		$handler->process(
+			'charge.dispute.closed',
+			array(
+				'id'       => 'dp_lines_lost',
+				'charge'   => 'ch_lines_lost',
+				'status'   => 'lost',
+				'amount'   => (int) round( $order_total * 100 ),
+				'currency' => strtolower( $currency ),
+			)
+		);
+
+		$order   = wc_get_order( $order->get_id() );
+		$refunds = array_values( array_filter( $order->get_refunds(), static fn( \WC_Order_Refund $refund ): bool => 'dp_lines_lost' === $refund->get_meta( '_wcpay_dispute_id', true ) ) );
+		$this->assertCount( 1, $refunds );
+		$this->assertSame( $expected_amount, wc_format_decimal( $refunds[0]->get_amount(), $decimals ) );
+		$this->assertSame( $expected_lines, $this->get_refund_lines( $refunds[0], $decimals ) );
+		$this->assertSame( array_map( static fn( array $line ): int => $line[0], $lines ), $this->get_refunded_units( $order, $items ), 'Each line is refunded up to its ordered units.' );
+	}
+
+	/**
+	 * Orders whose earlier refund the line history must read unrounded, or clamp, with the dispute refund's amount and lines.
+	 *
+	 * @return array<string,array{0:string,1:string,2:array<string,array{int,float|int,float|int}>,3:float,4:array{int,float,float},5:int,6:string,7:array<string,string>}>
+	 */
+	public function provider_lost_dispute_history_rows(): array {
+		return array(
+			'three-decimal order currency after a partial net and tax refund' => array(
+				'three-decimal order currency after a partial net and tax refund',
+				'KWD',
+				array(
+					'A' => array( 2, 10.008, 1.002 ),
+					'B' => array( 1, 20, 2 ),
+				),
+				33.01,
+				array( 1, 5.004, 0.501 ),
+				3,
+				'27.505',
+				array(
+					'A' => '-1 -5.004 -0.501',
+					'B' => '-1 -20.000 -2.000',
+				),
+			),
+			'line refunded past its total' => array(
+				'line refunded past its total',
+				'USD',
+				array(
+					'A' => array( 3, 30, 3 ),
+					'B' => array( 1, 20, 2 ),
+				),
+				55.0,
+				array( 1, 35.0, 4.0 ),
+				2,
+				'16.00',
+				array(
+					'A' => '-2 0.00 0.00',
+					'B' => '-1 -20.00 -2.00',
+				),
+			),
+		);
+	}
+
+	/**
+	 * @testdox A lost charge.dispute.closed on a charge recorded on an order another gateway paid adds no refund, fetches nothing and keeps the status.
+	 */
+	public function test_lost_dispute_on_another_charge_adds_no_refund(): void {
+		$order   = $this->create_order_paid_by_another_gateway( 'bacs', 'ch_bacs_lost' );
+		$fetched = array();
+		$handler = new DisputeEventHandler();
+		$handler->init(
+			new class( $fetched ) extends Client {
+				/**
+				 * Dispute IDs the handler asked a summary for.
+				 *
+				 * @var array<int,string>
+				 */
+				private array $fetched;
+
+				/**
+				 * Constructor.
+				 *
+				 * @param array<int,string> $fetched Receives the dispute IDs asked for.
+				 */
+				public function __construct( array &$fetched ) {
+					$this->fetched = &$fetched;
+				}
+
+				/**
+				 * Record the dispute ID asked for.
+				 *
+				 * @param string $dispute_id Dispute ID.
+				 * @return array<string,mixed>
+				 */
+				public function get_dispute_summary( string $dispute_id ): array {
+					$this->fetched[] = $dispute_id;
+
+					return array();
+				}
+			},
+			wc_get_container()->get( WooPaymentsDatabaseCache::class ),
+			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
+			wc_get_container()->get( OrderPaymentLock::class ),
+			wc_get_container()->get( WooPaymentsPersistenceVocabulary::class ),
+			wc_get_container()->get( EventOrderResolver::class ),
+			wc_get_container()->get( OtherChargeRecorder::class )
+		);
+
+		$handler->process(
+			'charge.dispute.closed',
+			array(
+				'id'             => 'dp_bacs_lost',
+				'charge'         => 'ch_bacs_lost',
+				'payment_intent' => 'pi_bacs_lost',
+				'status'         => 'lost',
+				'amount'         => 1000,
+				'currency'       => 'usd',
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( \WC_Order::class, $order );
+		$this->assertCount( 0, $order->get_refunds() );
+		$this->assertSame( 'processing', $order->get_status() );
+		$this->assertSame( array(), $fetched );
+		$record_notes = $this->find_order_note( $order, 'was closed with status lost' );
+		$this->assertCount( 1, $record_notes );
+	}
+
+	/**
+	 * Create an order another gateway paid, holding a WooPayments charge recorded on it.
+	 *
+	 * @param string $payment_method Order payment method.
+	 * @param string $charge_id      Recorded charge ID.
+	 * @return \WC_Order
+	 */
+	private function create_order_paid_by_another_gateway( string $payment_method, string $charge_id ): \WC_Order {
+		$order = wc_create_order();
+		$this->assertInstanceOf( \WC_Order::class, $order );
+		$order->set_payment_method( $payment_method );
+		$order->set_total( '10.00' );
+		$order->set_status( 'processing' );
+		$order->set_date_paid( time() );
+		$order->update_meta_data( '_charge_id', $charge_id );
+		$order->save();
+
+		return $order;
+	}
+
+	/**
+	 * @testdox A charge.dispute.created event on the charge that paid the order holds it after the merchant changed its payment method.
+	 *
+	 * The event's `payment_intent` is the Stripe Dispute field (https://docs.stripe.com/api/disputes/object#dispute_object-payment_intent).
+	 */
+	public function test_dispute_created_on_the_orders_own_charge_holds_it_whatever_its_payment_method(): void {
+		$order = $this->create_disputable_order();
+		$order->set_payment_method( 'bacs' );
+		$order->update_meta_data( '_charge_id', 'ch_disputed' );
+		$order->save();
+		$event                   = $this->get_created_event_object( 'dp_own_charge', 'needs_response' );
+		$event['charge']         = 'ch_disputed';
+		$event['payment_intent'] = 'pi_disputed';
+
+		$this->sut->process( 'charge.dispute.created', $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( \WC_Order::class, $order );
+		$this->assertSame( 'on-hold', $order->get_status() );
+		$this->assertSame( array( 'dp_own_charge' ), $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$this->assertCount( 1, $this->find_order_note( $order, 'Payment has been disputed' ) );
+	}
+
+	/**
+	 * @testdox A charge.dispute.created event on the stored payment of a paid order with no transaction ID holds it, records the dispute as open, and adds no other-charge note.
+	 *
+	 * The stored WooPayments payment stands in for the empty transaction ID: the dispute's charge is the stored one and its
+	 * own `payment_intent` is the stored intent (https://docs.stripe.com/api/disputes/object#dispute_object-payment_intent).
+	 * Client 11.3.0 holds the order its _charge_id finds (class-wc-payments-order-service.php:762-777).
+	 */
+	public function test_dispute_created_on_the_stored_payment_of_an_order_without_transaction_id_holds_it(): void {
+		$order                   = StoredPaymentRecords::paid_without_transaction_id( OrderStatus::PROCESSING, 'pi_a', 'ch_a' );
+		$event                   = $this->get_created_event_object( 'dp_stored_payment', 'needs_response' );
+		$event['charge']         = 'ch_a';
+		$event['payment_intent'] = 'pi_a';
+
+		$this->sut->process( 'charge.dispute.created', $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( \WC_Order::class, $order );
+		$this->assertSame( OrderStatus::ON_HOLD, $order->get_status() );
+		$this->assertSame( array( 'dp_stored_payment' ), $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$this->assertCount( 1, $this->find_order_note( $order, 'Payment has been disputed' ) );
+		$this->assertCount( 0, $this->find_order_note( $order, 'was opened on WooPayments charge' ) );
+	}
+
+	/**
+	 * @testdox A $event_type event on the payment of $_dataName changes the order as today and writes $expected_lines own-payment line(s) naming another payment method.
+	 * @dataProvider provider_dispute_on_a_kept_payment
+	 *
+	 * Client 11.3.0 holds or refunds the charge's order whatever its payment method, logging nothing of the kind
+	 * (class-wc-payments-webhook-processing-service.php:834-874, :883-920). The built-in store changes it the same way and writes
+	 * one warning, whatever the logging setting, once per change applied as the order's own when the order's payment
+	 * method is not a WooPayments one. The events are Stripe Disputes (https://docs.stripe.com/api/disputes/object); the
+	 * platform has no dispute summary, so a lost dispute refunds the event's amount.
+	 *
+	 * @param callable            $create_order     Creates the order the disputed charge pays.
+	 * @param string              $event_type       Dispute event type.
+	 * @param array<string,mixed> $event            Dispute object fields of the event.
+	 * @param int                 $deliveries       How many times the event is delivered.
+	 * @param string              $expected_status  Order status after the event.
+	 * @param string              $expected_note    Fragment of the one note the event writes.
+	 * @param int                 $expected_refunds Refund rows after the event, each for the whole order and linked to the dispute.
+	 * @param int                 $expected_lines   Own-payment lines naming another payment method.
+	 * @param string[]|string     $expected_open    Open-dispute IDs after the event, or an empty string for none.
+	 */
+	public function test_dispute_on_a_kept_payment_logs_another_payment_method_once( callable $create_order, string $event_type, array $event, int $deliveries, string $expected_status, string $expected_note, int $expected_refunds, int $expected_lines, $expected_open ): void {
+		self::enable_woopayments_debug_logging();
+		wc_get_container()->get( RefundRowCapture::class )->register();
+		$order   = $create_order();
+		$handler = new DisputeEventHandler();
+		$handler->init(
+			new class() extends Client {
+				/**
+				 * Answer with no summary, so a lost dispute refunds the event's own amount.
+				 *
+				 * @param string $dispute_id Dispute ID.
+				 * @return array<string,mixed>
+				 */
+				public function get_dispute_summary( string $dispute_id ): array {
+					unset( $dispute_id );
+
+					return array();
+				}
+			},
+			wc_get_container()->get( WooPaymentsDatabaseCache::class ),
+			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
+			wc_get_container()->get( OrderPaymentLock::class ),
+			wc_get_container()->get( WooPaymentsPersistenceVocabulary::class ),
+			wc_get_container()->get( EventOrderResolver::class ),
+			wc_get_container()->get( OtherChargeRecorder::class )
+		);
+		$event  = array_merge(
+			array(
+				'id'             => 'dp_A',
+				'charge'         => 'ch_A',
+				'payment_intent' => 'pi_A',
+			),
+			$event
+		);
+		$logger = RecordingWcLogger::install();
+
+		for ( $delivery = 0; $delivery < $deliveries; $delivery++ ) {
+			$handler->process( $event_type, $event );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( \WC_Order::class, $order );
+		$this->assertSame( $expected_status, $order->get_status() );
+		$this->assertCount( 1, $this->find_order_note( $order, $expected_note ) );
+		$this->assertSame( $expected_open, $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$refunds = $order->get_refunds();
+		$this->assertCount( $expected_refunds, $refunds );
+		foreach ( $refunds as $refund ) {
+			$this->assertSame( '-10.99', $refund->get_total() );
+			$this->assertSame( 'dp_A', $refund->get_meta( '_wcpay_dispute_id', true ) );
+		}
+		$lines = $this->get_own_event_on_another_payment_method_lines( $logger );
+		$this->assertCount( $expected_lines, $lines );
+		if ( 0 === $expected_lines ) {
+			return;
+		}
+		$index = array_key_first( $lines );
+		$this->assertSame(
+			array( 'warning', 'own payment event applied on an order of another payment method: order ' . $order->get_id() . ', ' . $event_type . ', charge ch_A, order payment method bacs', 'woopayments' ),
+			$lines[ $index ]
+		);
+		$this->assertSame(
+			array(
+				'order_id'       => $order->get_id(),
+				'event_type'     => $event_type,
+				'charge_id'      => 'ch_A',
+				'payment_method' => 'bacs',
+				'reason'         => 'own_payment_event_on_another_payment_method',
+			),
+			array_intersect_key( $logger->contexts[ $index ], array_flip( array( 'order_id', 'event_type', 'charge_id', 'payment_method', 'reason' ) ) )
+		);
+	}
+
+	/**
+	 * Dispute events on a payment, its order's payment method and the deliveries.
+	 *
+	 * @return array<string,array{0:callable,1:string,2:array<string,mixed>,3:int,4:string,5:string,6:int,7:int,8:string[]|string}>
+	 */
+	public function provider_dispute_on_a_kept_payment(): array {
+		$kept    = static fn(): \WC_Order => StoredPaymentRecords::payment_kept_on_an_order_of_another_method();
+		$created = array(
+			'status'           => 'needs_response',
+			'amount'           => 1099,
+			'reason'           => 'fraudulent',
+			'evidence_details' => array( 'due_by' => 1893456000 ),
+		);
+		$lost    = array(
+			'status'   => 'lost',
+			'amount'   => 1099,
+			'currency' => 'usd',
+		);
+
+		return array(
+			'a WooPayments payment kept on a bank transfer order' => array( $kept, 'charge.dispute.created', $created, 1, 'on-hold', 'Payment has been disputed', 0, 1, array( 'dp_A' ) ),
+			'a WooPayments payment kept on a bank transfer order, delivered twice' => array( $kept, 'charge.dispute.created', $created, 2, 'on-hold', 'Payment has been disputed', 0, 1, array( 'dp_A' ) ),
+			'a WooPayments payment kept on a bank transfer order, lost' => array( $kept, 'charge.dispute.closed', $lost, 1, 'refunded', 'Dispute has been closed with status', 1, 1, '' ),
+			'a WooPayments payment kept on a bank transfer order, lost, delivered twice' => array( $kept, 'charge.dispute.closed', $lost, 2, 'refunded', 'Dispute has been closed with status', 1, 1, '' ),
+			'a WooPayments order' => array( static fn(): \WC_Order => StoredPaymentRecords::payment(), 'charge.dispute.created', $created, 1, 'on-hold', 'Payment has been disputed', 0, 0, array( 'dp_A' ) ),
+		);
+	}
+
+	/**
+	 * Get the recorded lines saying a WooPayments event was applied as the payment of an order of another payment method.
+	 *
+	 * @param RecordingWcLogger $logger Recording logger.
+	 * @return array<int,array{0:string,1:string,2:string}> Lines by their index in the recording.
+	 */
+	private function get_own_event_on_another_payment_method_lines( RecordingWcLogger $logger ): array {
+		return array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'own payment event applied on an order of another payment method:' ) );
+	}
+
+	/**
+	 * @testdox A charge.dispute.created event is decided on what the order stores under the lock after $_dataName.
+	 *
+	 * The order is found by the disputed charge ch_A of intent pi_A, then changed before the dispute's claim. An unpaid order
+	 * that no longer stores ch_A, which no order stores any more, records the dispute as another charge's and keeps its
+	 * status; a paid order is decided by its transaction ID, as before. Client 11.3.0 writes on the order it found, with no
+	 * lock and no re-check (class-wc-payments-webhook-processing-service.php:834-873; class-wc-payments-order-service.php:762-777).
+	 *
+	 * @dataProvider created_disputes_after_a_change_at_the_claim
+	 *
+	 * @param string $start           `paid` (Processing, transaction ID pi_A) or `held` (On hold for an amount mismatch, no paid date).
+	 * @param string $change          Change stored between the look-up and the claim.
+	 * @param string $expected_status Order status after the event.
+	 * @param bool   $applied         Whether the dispute is applied as the order's own: its note and open dispute ID.
+	 */
+	public function test_dispute_created_is_decided_on_what_the_order_stores_under_the_lock( string $start, string $change, string $expected_status, bool $applied ): void {
+		$order   = $this->create_order_storing_the_disputed_charge( $start );
+		$handler = $this->create_handler_changing_the_order_at_the_claim( $order, $change );
+		$event   = $this->get_disputed_charge_event( 'charge.dispute.created' );
+
+		$handler->process( 'charge.dispute.created', $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( $expected_status, $order->get_status() );
+		$this->assertSame( $applied ? array( 'dp_race' ) : '', $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$this->assertCount( $applied ? 1 : 0, $this->find_order_note( $order, 'Payment has been disputed' ) );
+		$this->assertCount( $applied ? 0 : 1, $this->find_order_note( $order, 'A dispute (<code>dp_race</code>) was opened on WooPayments charge <code>ch_A</code>, which does not pay this order.' ) );
+	}
+
+	/**
+	 * Orders found by the disputed charge, the change stored before the claim, and what the created event leaves.
+	 *
+	 * @return array<string,array{string,string,string,bool}>
+	 */
+	public function created_disputes_after_a_change_at_the_claim(): array {
+		return array(
+			'nothing, on a paid order'                    => array( 'paid', 'nothing', OrderStatus::ON_HOLD, true ),
+			'nothing, on an order held for an amount mismatch' => array( 'held', 'nothing', OrderStatus::ON_HOLD, true ),
+			'a partial refund, on a paid order'           => array( 'paid', 'partial refund', OrderStatus::ON_HOLD, true ),
+			'the merchant cancelled a paid order'         => array( 'paid', 'cancelled', OrderStatus::ON_HOLD, true ),
+			'another attempt with no charge, on a held order' => array( 'held', 'another attempt, no charge', OrderStatus::PENDING, false ),
+			'another attempt authorized, on a held order' => array( 'held', 'another attempt, authorized', OrderStatus::ON_HOLD, false ),
+			'another attempt started, the charge kept'    => array( 'held', 'another attempt started', OrderStatus::ON_HOLD, true ),
+			'another charge recorded on a paid order'     => array( 'paid', 'another charge recorded', OrderStatus::ON_HOLD, true ),
+			'the order paid by another attempt'           => array( 'paid', 'paid by another attempt', OrderStatus::PROCESSING, false ),
+		);
+	}
+
+	/**
+	 * @testdox A $event_type event on an unpaid order another attempt took over before the claim, its charge stored on no order, records it as another charge's and keeps the order as it is.
+	 *
+	 * Client 11.3.0 applies it as the order's own (class-wc-payments-webhook-processing-service.php:883-925, :986-988).
+	 *
+	 * @testWith ["charge.dispute.updated", "under_review", "Payment dispute has been updated: the dispute <code>dp_race</code>", "Payment dispute has been updated. See"]
+	 *           ["charge.dispute.funds_withdrawn", "needs_response", "Payment dispute and fees have been deducted from your next payout: the dispute <code>dp_race</code>", "Payment dispute and fees have been deducted from your next payout. See"]
+	 *           ["charge.dispute.funds_reinstated", "won", "Payment dispute funds have been reinstated: the dispute <code>dp_race</code>", "Payment dispute funds have been reinstated. See"]
+	 *           ["charge.dispute.closed", "lost", "which does not pay this order, was closed with status lost", "Dispute has been closed with status"]
+	 *           ["charge.dispute.closed", "won", "which does not pay this order, was closed with status won", "Dispute has been closed with status"]
+	 *
+	 * @param string $event_type Dispute event type.
+	 * @param string $status     Dispute status the event carries.
+	 * @param string $recorded   Text of the other-charge note.
+	 * @param string $own        Text of the note the event writes on the order's own dispute.
+	 */
+	public function test_dispute_event_on_an_unpaid_order_whose_charge_no_order_stores_is_recorded( string $event_type, string $status, string $recorded, string $own ): void {
+		wc_get_container()->get( RefundRowCapture::class )->register();
+		$order   = $this->create_order_storing_the_disputed_charge( 'held' );
+		$handler = $this->create_handler_changing_the_order_at_the_claim( $order, 'another attempt, no charge' );
+		$event   = $this->get_disputed_charge_event( $event_type, $status );
+
+		$handler->process( $event_type, $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::PENDING, $order->get_status() );
+		$this->assertCount( 0, $order->get_refunds() );
+		$this->assertSame( '', $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$this->assertCount( 0, $this->find_order_note( $order, $own ) );
+		$this->assertCount( 1, $this->find_order_note( $order, $recorded ) );
+	}
+
+	/**
+	 * @testdox A $event_type event on an unpaid order whose disputed charge moved to another order before the claim fails for its retry and writes nothing on either order.
+	 *
+	 * The created, updated and closed events are retried, and the retry finds the order that now stores the charge. The funds
+	 * events are retried only after a lock refusal, so this one ends as a logged failure: a recorded limit, which loses one
+	 * informational note while the dispute stays in the Disputes list.
+	 *
+	 * The check comes before the ownership rule, so an order another payment method also took over does not record the
+	 * dispute as another charge's while another order stores it.
+	 *
+	 * @testWith ["charge.dispute.created", "needs_response", "charge moved to another order"]
+	 *           ["charge.dispute.funds_withdrawn", "needs_response", "charge moved to another order"]
+	 *           ["charge.dispute.funds_reinstated", "won", "charge moved to another order"]
+	 *           ["charge.dispute.created", "needs_response", "charge moved, order paid another way"]
+	 *
+	 * @param string $event_type Dispute event type.
+	 * @param string $status     Dispute status the event carries.
+	 * @param string $change     Change stored before the claim.
+	 */
+	public function test_dispute_event_on_a_charge_another_order_now_stores_fails_for_its_retry( string $event_type, string $status, string $change ): void {
+		$order = $this->create_order_storing_the_disputed_charge( 'held' );
+		$other = $this->create_disputable_order();
+		$other->set_transaction_id( 'pi_A' );
+		$other->update_meta_data( '_intent_id', 'pi_A' );
+		$other->set_date_paid( time() );
+		$other->save();
+		$handler = $this->create_handler_changing_the_order_at_the_claim( $order, $change, $other );
+		$event   = $this->get_disputed_charge_event( $event_type, $status );
+
+		$failure = $this->process_catching( $handler, $event_type, $event );
+
+		$this->assertInstanceOf( RuntimeException::class, $failure, 'A failure the created, updated and closed events are retried on.' );
+		$this->assertStringContainsString( 'ch_A', $failure->getMessage() );
+		foreach ( array( $order, $other ) as $each ) {
+			$each = wc_get_order( $each->get_id() );
+			$this->assertCount( 0, $this->find_order_note( $each, 'ispute' ), 'No dispute note on order ' . $each->get_id() . '.' );
+			$this->assertSame( '', $each->get_meta( '_wcpay_open_dispute_ids', true ) );
+		}
+		$this->assertSame( array( OrderStatus::PENDING, OrderStatus::PROCESSING ), array( wc_get_order( $order->get_id() )->get_status(), wc_get_order( $other->get_id() )->get_status() ) );
+		if ( 'charge.dispute.created' !== $event_type ) {
+			return;
+		}
+
+		$handler->process( $event_type, $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$other = wc_get_order( $other->get_id() );
+		$this->assertSame( array( OrderStatus::PENDING, OrderStatus::ON_HOLD ), array( $order->get_status(), $other->get_status() ), 'The retry applies the dispute on the order that stores the charge.' );
+		$this->assertSame( array( 'dp_race' ), $other->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$this->assertCount( 1, $this->find_order_note( $other, 'Payment has been disputed' ) );
+		$this->assertCount( 0, $this->find_order_note( $order, 'ispute' ) );
+	}
+
+	/**
+	 * @testdox A dispute event fails for its retry, writing nothing, when the second look-up under the lock answers the unpaid order that no longer stores the disputed charge.
+	 *
+	 * Every writer of the charge ID holds the same lock, so the look-up cannot answer this order while the lock is held; the
+	 * look-up is forced here.
+	 */
+	public function test_dispute_event_fails_when_the_second_look_up_answers_the_order_itself(): void {
+		$order    = $this->create_order_storing_the_disputed_charge( 'held' );
+		$resolver = new class( $order->get_id() ) extends EventOrderResolver {
+			/**
+			 * Order ID every look-up after the first answers.
+			 *
+			 * @var int
+			 */
+			private int $order_id;
+
+			/**
+			 * Look-ups so far.
+			 *
+			 * @var int
+			 */
+			private int $lookups = 0;
+
+			/**
+			 * Keep the order ID.
+			 *
+			 * @param int $order_id Order ID.
+			 */
+			public function __construct( int $order_id ) {
+				$this->order_id = $order_id;
+			}
+
+			/**
+			 * Answer the first look-up as the store does, every later one with the order.
+			 *
+			 * @param string              $charge_id    Charge ID.
+			 * @param array<string,mixed> $event_object Event object.
+			 * @return \WC_Order|null
+			 */
+			public function find_order_by_charge_id( string $charge_id, array $event_object = array() ): ?\WC_Order {
+				++$this->lookups;
+
+				return 1 === $this->lookups ? parent::find_order_by_charge_id( $charge_id, $event_object ) : wc_get_order( $this->order_id );
+			}
+		};
+		$handler  = $this->create_handler_changing_the_order_at_the_claim( $order, 'another attempt, no charge', null, $resolver );
+
+		$failure = $this->process_catching( $handler, 'charge.dispute.created', $this->get_disputed_charge_event( 'charge.dispute.created' ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( RuntimeException::class, $failure );
+		$this->assertSame( OrderStatus::PENDING, $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$this->assertCount( 0, $this->find_order_note( $order, 'ispute' ) );
+	}
+
+	/**
+	 * Create a WooPayments order found by the disputed charge ch_A of intent pi_A: paid (Processing, transaction ID pi_A), or
+	 * held for an amount mismatch (On hold, no paid date).
+	 *
+	 * @param string $start `paid` or `held`.
+	 * @return \WC_Order
+	 */
+	private function create_order_storing_the_disputed_charge( string $start ): \WC_Order {
+		$order = $this->create_disputable_order();
+		$order->set_transaction_id( 'pi_A' );
+		$order->update_meta_data( '_intent_id', 'pi_A' );
+		$order->update_meta_data( '_charge_id', 'ch_A' );
+		if ( 'held' === $start ) {
+			$order->set_status( OrderStatus::ON_HOLD );
+			$order->set_date_paid( null );
+		} else {
+			$order->set_date_paid( time() );
+		}
+		$order->save();
+		if ( 'held' === $start ) {
+			$this->assertNull( wc_get_order( $order->get_id() )->get_date_paid(), 'The held order has no paid date.' );
+		}
+
+		return $order;
+	}
+
+	/**
+	 * Create a dispute handler whose order payment lock stores a change on the order at its first claim, after the look-up,
+	 * as another request finishing just before the claim would.
+	 *
+	 * @param \WC_Order               $order    Order the look-up finds.
+	 * @param string                  $change   Change to store.
+	 * @param \WC_Order|null          $other    Order the charge moves to, for `charge moved to another order`.
+	 * @param EventOrderResolver|null $resolver Resolver, the store's by default.
+	 * @return DisputeEventHandler
+	 */
+	private function create_handler_changing_the_order_at_the_claim( \WC_Order $order, string $change, ?\WC_Order $other = null, ?EventOrderResolver $resolver = null ): DisputeEventHandler {
+		$lock    = new OrderPaymentLockWithClaimHook(
+			static function () use ( $order, $change, $other ): void {
+				$stored = wc_get_order( $order->get_id() );
+				switch ( $change ) {
+					case 'partial refund':
+						wc_create_refund(
+							array(
+								'order_id' => $order->get_id(),
+								'amount'   => 2,
+							)
+						);
+						return;
+					case 'cancelled':
+						$stored->set_status( OrderStatus::CANCELLED );
+						break;
+					case 'another attempt started':
+						$stored->update_meta_data( '_intent_id', 'pi_B' );
+						break;
+					case 'charge moved, order paid another way':
+						$stored->set_payment_method( 'cod' );
+						// Fall through: the rest is the moved charge's change.
+					case 'another attempt, no charge':
+					case 'charge moved to another order':
+						$stored->set_transaction_id( 'pi_B' );
+						$stored->update_meta_data( '_intent_id', 'pi_B' );
+						$stored->delete_meta_data( '_charge_id' );
+						$stored->set_status( OrderStatus::PENDING );
+						$stored->set_date_paid( null );
+						if ( null !== $other ) {
+							$other->update_meta_data( '_charge_id', 'ch_A' );
+							$other->save();
+						}
+						break;
+					case 'another attempt, authorized':
+						$stored->set_transaction_id( 'pi_B' );
+						$stored->update_meta_data( '_intent_id', 'pi_B' );
+						$stored->update_meta_data( '_charge_id', 'ch_B' );
+						break;
+					case 'another charge recorded':
+						$stored->update_meta_data( '_charge_id', 'ch_B' );
+						break;
+					case 'paid by another attempt':
+						$stored->set_transaction_id( 'pi_B' );
+						$stored->update_meta_data( '_intent_id', 'pi_B' );
+						$stored->update_meta_data( '_charge_id', 'ch_B' );
+						break;
+				}
+				$stored->save();
+			}
+		);
+		$handler = new DisputeEventHandler();
+		$handler->init(
+			new class() extends Client {},
+			wc_get_container()->get( WooPaymentsDatabaseCache::class ),
+			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
+			$lock,
+			wc_get_container()->get( WooPaymentsPersistenceVocabulary::class ),
+			$resolver ?? wc_get_container()->get( EventOrderResolver::class ),
+			wc_get_container()->get( OtherChargeRecorder::class )
+		);
+
+		return $handler;
+	}
+
+	/**
+	 * A dispute event object on charge ch_A of intent pi_A.
+	 *
+	 * @param string $event_type Dispute event type.
+	 * @param string $status     Dispute status.
+	 * @return array<string,mixed>
+	 */
+	private function get_disputed_charge_event( string $event_type, string $status = 'needs_response' ): array {
+		$event                   = 'charge.dispute.closed' === $event_type
+			? array(
+				'id'       => 'dp_race',
+				'amount'   => 1000,
+				'currency' => 'usd',
+				'status'   => $status,
+			)
+			: $this->get_created_event_object( 'dp_race', $status );
+		$event['charge']         = 'ch_A';
+		$event['payment_intent'] = 'pi_A';
+
+		return $event;
+	}
+
+	/**
+	 * Process a dispute event and return what it threw, or null.
+	 *
+	 * @param DisputeEventHandler $handler    Handler.
+	 * @param string              $event_type Event type.
+	 * @param array<string,mixed> $event      Dispute object.
+	 * @return \Throwable|null
+	 */
+	private function process_catching( DisputeEventHandler $handler, string $event_type, array $event ): ?\Throwable {
+		try {
+			$handler->process( $event_type, $event );
+		} catch ( \Throwable $failure ) {
+			return $failure;
+		}
+
+		return null;
+	}
+
+	/**
+	 * Create an order suitable for dispute processing, in the state a WooPayments payment leaves it: paid, with the intent as its transaction ID.
+	 *
+	 * @return \WC_Order
+	 */
+	private function create_disputable_order(): \WC_Order {
+		$order = wc_create_order();
+		$this->assertInstanceOf( \WC_Order::class, $order );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_total( '10.00' );
+		$order->set_status( 'processing' );
+		$order->set_transaction_id( 'pi_disputed' );
+		$order->update_meta_data( '_intent_id', 'pi_disputed' );
+		$order->save();
+
+		return $order;
+	}
+
+	/**
+	 * Build a dispute created event object fixture.
+	 *
+	 * A Stripe Dispute, as charge.dispute.created carries it; client 11.1.0 reads id, charge, reason, amount,
+	 * evidence_details.due_by and status (class-wc-payments-webhook-processing-service.php:699-710). Tests add the charge.
+	 *
+	 * @param string $dispute_id Dispute ID.
+	 * @param string $status     Dispute status.
+	 * @return array<string,mixed>
+	 */
+	private function get_created_event_object( string $dispute_id, string $status ): array {
+		return array(
+			'id'               => $dispute_id,
+			'status'           => $status,
+			'amount'           => 1000,
+			'reason'           => 'fraudulent',
+			'evidence_details' => array( 'due_by' => 1893456000 ),
+		);
+	}
+
+	/**
+	 * Load one recorded REC-DC dispute object (the webhook's `data.object`) by fixture pair key.
+	 *
+	 * @param string $pair REC-DC fixture pair key.
+	 * @return array<string,mixed>
+	 */
+	private function load_recorded_dispute_object( string $pair ): array {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$fixture = file_get_contents( __DIR__ . '/../Fixtures/platform-dispute-created-events.json' );
+		$this->assertIsString( $fixture );
+		$decoded = json_decode( $fixture, true );
+		$this->assertIsArray( $decoded );
+
+		foreach ( $decoded['entries'] as $entry ) {
+			if ( is_array( $entry ) && ( $entry['pair'] ?? '' ) === $pair ) {
+				return $entry['body']['data']['object'];
+			}
+		}
+
+		$this->fail( "REC-DC fixture has no entry for pair '$pair'." );
+	}
+
+	/**
+	 * Find an order note containing the given text.
+	 *
+	 * @param \WC_Order $order Order object.
+	 * @param string    $text  Note text fragment.
+	 * @return array<int,object>
+	 */
+	private function find_order_note( \WC_Order $order, string $text ): array {
+		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+
+		return array_values(
+			array_filter(
+				$notes,
+				static function ( $note ) use ( $text ): bool {
+					return false !== strpos( (string) $note->content, $text );
+				}
+			)
+		);
+	}
+}

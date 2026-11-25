@@ -3,7 +3,10 @@ declare( strict_types=1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Admin\Suggestions;
 
+use Automattic\WooCommerce\Internal\Admin\Suggestions\Incentives\WooPayments as WooPaymentsIncentive;
 use Automattic\WooCommerce\Internal\Admin\Suggestions\PaymentsExtensionSuggestionIncentives;
+use Automattic\WooCommerce\Internal\Admin\Suggestions\PaymentsExtensionSuggestions;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use Automattic\WooCommerce\Tests\Internal\Admin\Suggestions\Mocks\FakeIncentive;
 use PHPUnit\Framework\MockObject\MockObject;
 use WC_Unit_Test_Case;
@@ -188,6 +191,8 @@ class PaymentsExtensionSuggestionIncentivesTest extends WC_Unit_Test_Case {
 	 */
 	public function test_get_incentives_no_provider() {
 		// Arrange.
+		$before = did_filter( 'pre_option' );
+		$this->sut->init( new WooPaymentsExtensionRuntime(), wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter::class ) );
 		$this->sut
 			->expects( $this->once() )
 			->method( 'get_incentive_instance' )
@@ -198,6 +203,7 @@ class PaymentsExtensionSuggestionIncentivesTest extends WC_Unit_Test_Case {
 		$incentives = $this->sut->get_incentives( 'suggestion1', 'RO' );
 
 		// Assert.
+		$this->assertSame( $before, did_filter( 'pre_option' ) );
 		$this->assertSame( array(), $incentives );
 	}
 
@@ -565,5 +571,24 @@ class PaymentsExtensionSuggestionIncentivesTest extends WC_Unit_Test_Case {
 
 		// Assert.
 		$this->assertTrue( $incentive_provider );
+	}
+
+	/**
+	 * @testdox Should pass WooPayments extension runtime to manually constructed WooPayments incentive providers.
+	 */
+	public function test_injects_woopayments_runtime_into_woopayments_incentive_provider(): void {
+		$extension_runtime = new WooPaymentsExtensionRuntime();
+		$sut               = new PaymentsExtensionSuggestionIncentives();
+
+		$sut->init( $extension_runtime );
+
+		$provider = $sut->get_incentive_instance( PaymentsExtensionSuggestions::WOOPAYMENTS );
+
+		$this->assertInstanceOf( WooPaymentsIncentive::class, $provider );
+
+		$runtime_property = new \ReflectionProperty( $provider, 'extension_runtime' );
+		$runtime_property->setAccessible( true );
+
+		$this->assertSame( $extension_runtime, $runtime_property->getValue( $provider ) );
 	}
 }

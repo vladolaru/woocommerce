@@ -9,6 +9,8 @@ use Automattic\WooCommerce\Internal\CostOfGoodsSold\CostOfGoodsSoldController;
 use Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableController;
 use Automattic\WooCommerce\Internal\DataStores\Orders\DataSynchronizer;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Utilities\PluginUtil;
 
@@ -29,6 +31,20 @@ class FeaturesControllerTest extends \WC_Unit_Test_Case {
 	 * @var PluginUtil
 	 */
 	private $fake_plugin_util;
+
+	/**
+	 * The fake multi-currency feature registerer.
+	 *
+	 * @var object
+	 */
+	private $multi_currency_feature_registerer;
+
+	/**
+	 * The fake WooPayments feature registerer.
+	 *
+	 * @var object
+	 */
+	private $woopayments_feature_registerer;
 
 	/**
 	 * Runs before each test.
@@ -54,6 +70,30 @@ class FeaturesControllerTest extends \WC_Unit_Test_Case {
 		$container = wc_get_container();
 		$container->replace( CustomOrdersTableController::class, $dummy_feature_registerer );
 		$container->replace( CostOfGoodsSoldController::class, $dummy_feature_registerer );
+
+		// phpcs:disable Squiz.Commenting.FunctionComment.Missing
+		$this->multi_currency_feature_registerer = new class() {
+			/** @var int Number of feature-definition requests. */
+			public int $calls = 0;
+
+			public function add_feature_definition( $features_controller ) {
+				++$this->calls;
+			}
+		};
+		// phpcs:enable Squiz.Commenting.FunctionComment.Missing
+		$container->replace( MultiCurrencyFeatureController::class, $this->multi_currency_feature_registerer );
+
+		// phpcs:disable Squiz.Commenting.FunctionComment.Missing
+		$this->woopayments_feature_registerer = new class() {
+			/** @var int Number of feature-definition requests. */
+			public int $calls = 0;
+
+			public function add_feature_definition( $features_controller ) {
+				++$this->calls;
+			}
+		};
+		// phpcs:enable Squiz.Commenting.FunctionComment.Missing
+		$container->replace( WooPaymentsFeatureController::class, $this->woopayments_feature_registerer );
 
 		$this->sut = new FeaturesController();
 		$this->sut->init( wc_get_container()->get( LegacyProxy::class ), $this->fake_plugin_util );
@@ -208,6 +248,26 @@ class FeaturesControllerTest extends \WC_Unit_Test_Case {
 		);
 
 		$this->assertEquals( $expected, $actual );
+	}
+
+	/**
+	 * @testdox 'get_features' asks the multi-currency owner for its definition exactly once.
+	 */
+	public function test_get_features_registers_multi_currency_definition_from_owning_controller_once() {
+		$this->sut->get_features( false, false );
+		$this->sut->get_features( false, false );
+
+		$this->assertSame( 1, $this->multi_currency_feature_registerer->calls );
+	}
+
+	/**
+	 * @testdox 'get_features' asks the WooPayments feature owner for its definition exactly once.
+	 */
+	public function test_get_features_registers_woopayments_definition_from_owning_controller_once() {
+		$this->sut->get_features( false, false );
+		$this->sut->get_features( false, false );
+
+		$this->assertSame( 1, $this->woopayments_feature_registerer->calls );
 	}
 
 	/**

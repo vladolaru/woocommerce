@@ -706,4 +706,69 @@ class WC_REST_Orders_V4_Can_Be_Refunded_Test extends WC_REST_Unit_Test_Case {
 			'A discount (negative) fee with no prior refund should be refundable.'
 		);
 	}
+
+	/**
+	 * @testdox A shipping or fee line of an order in another currency stays refundable while that currency's decimals leave an amount.
+	 *
+	 * After 17.75 of an 18.00 line is refunded, 0.25 is left in the order currency (USD, two decimals), which the refund
+	 * routes accept. A store-currency order keeps the store's precision, where 0.25 rounds to nothing left.
+	 *
+	 * @testWith ["JPY", 0, "USD", "shipping", true]
+	 *           ["JPY", 0, "USD", "fee", true]
+	 *           ["USD", 0, "USD", "shipping", false]
+	 *           ["USD", 0, "USD", "fee", false]
+	 *
+	 * @param string $store_currency Store currency.
+	 * @param int    $store_decimals Store price decimals.
+	 * @param string $order_currency Order currency.
+	 * @param string $type           Line type, shipping or fee.
+	 * @param bool   $expected       Expected can_be_refunded of the line.
+	 */
+	public function test_line_with_amount_left_in_order_currency_can_be_refunded( string $store_currency, int $store_decimals, string $order_currency, string $type, bool $expected ): void {
+		update_option( 'woocommerce_currency', $store_currency );
+		update_option( 'woocommerce_price_num_decimals', $store_decimals );
+
+		$order = wc_create_order( array( 'customer_id' => self::$user_id ) );
+		if ( 'shipping' === $type ) {
+			$line = new WC_Order_Item_Shipping();
+			$line->set_props(
+				array(
+					'method_title' => 'Flat Rate',
+					'total'        => '18.00',
+				)
+			);
+		} else {
+			$line = new WC_Order_Item_Fee();
+			$line->set_props(
+				array(
+					'name'  => 'Handling',
+					'total' => '18.00',
+				)
+			);
+		}
+		$order->add_item( $line );
+		$order->set_currency( $order_currency );
+		$order->set_total( '18' );
+		$order->set_status( 'completed' );
+		$order->save();
+
+		$refund = wc_create_refund(
+			array(
+				'order_id'   => $order->get_id(),
+				'amount'     => '17.75',
+				'line_items' => array(
+					$line->get_id() => array(
+						'qty'          => 0,
+						'refund_total' => '17.75',
+						'refund_tax'   => array(),
+					),
+				),
+			)
+		);
+		$this->assertNotWPError( $refund );
+
+		$data = $this->get_order_response( $order->get_id() );
+
+		$this->assertSame( $expected, $data[ $type . '_lines' ][0]['can_be_refunded'] );
+	}
 }

@@ -1,0 +1,93 @@
+<?php
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay;
+
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\AdaptedExtensions;
+use WC_Unit_Test_Case;
+
+/**
+ * Tests for AdaptedExtensions.
+ */
+class AdaptedExtensionsTest extends WC_Unit_Test_Case {
+
+	/**
+	 * Tear down.
+	 */
+	public function tearDown(): void {
+		unset( $_GET['affiliate'] );
+		FakeWooPayAffiliateApi::$conversions = array();
+		parent::tearDown();
+	}
+
+	/**
+	 * @testdox Should track the affiliate conversion a WooPay order request carries, without forcing its eligibility, and only then: $_dataName.
+	 *
+	 * Affiliate for WooCommerce applies its own rules, its self-referral setting included, unless the call forces
+	 * is_affiliate_eligible (AFWC 9.17.0 includes/class-afwc-api.php:609-616); client 11.1.0 forces it
+	 * (includes/woopay/class-woopay-adapted-extensions.php:205).
+	 *
+	 * No conversion is tracked when the request carries no affiliate or Affiliate for WooCommerce is not active.
+	 *
+	 * @dataProvider provide_affiliate_parameters
+	 *
+	 * @param bool        $extension_active Whether Affiliate for WooCommerce is active.
+	 * @param string|null $parameter        The request's affiliate parameter, or null for none.
+	 * @param int|null    $affiliate_id     The affiliate ID the one conversion names, or null for no conversion.
+	 */
+	public function test_update_order_extension_data_tracks_affiliate_conversion( bool $extension_active, ?string $parameter, ?int $affiliate_id ): void {
+		if ( $extension_active ) {
+			$this->install_affiliate_for_woocommerce_double();
+		}
+		if ( null !== $parameter ) {
+			$_GET['affiliate'] = $parameter;
+		}
+
+		( new AdaptedExtensions() )->update_order_extension_data( 1001 );
+
+		$expected = null === $affiliate_id ? array() : array(
+			array(
+				'order_id'     => 1001,
+				'affiliate_id' => $affiliate_id,
+				'type'         => '',
+				'params'       => array(),
+			),
+		);
+		$this->assertSame( $expected, FakeWooPayAffiliateApi::$conversions );
+	}
+
+	/**
+	 * Whether the extension is active, the request's affiliate parameter, and the affiliate ID the conversion must pass.
+	 *
+	 * @return array<string,array{bool,string|null,int|null}>
+	 */
+	public function provide_affiliate_parameters(): array {
+		return array(
+			'does not force eligibility'  => array( true, '42', 42 ),
+			'still passes the affiliate'  => array( true, ' 7 ', 7 ),
+			'no affiliate on the request' => array( true, null, null ),
+			'extension not active'        => array( false, '42', null ),
+		);
+	}
+
+	/**
+	 * Install the Affiliate for WooCommerce surface the adapter probes.
+	 *
+	 * The adapter asks LegacyProxy whether the extension's constant is defined, and the mock is reset after every test.
+	 * The helper function and API class stay defined for later tests, but nothing reaches them without that constant.
+	 */
+	private function install_affiliate_for_woocommerce_double(): void {
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'defined' => static fn( $constant_name ) => 'AFWC_PLUGIN_FILE' === $constant_name || defined( $constant_name ),
+			)
+		);
+		if ( ! function_exists( 'afwc_get_referrer_id' ) ) {
+			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Extension function double; inert unless a test reports the extension's constant as defined.
+			eval( 'function afwc_get_referrer_id() { return 42; }' );
+		}
+		if ( ! class_exists( 'AFWC_API', false ) ) {
+			class_alias( FakeWooPayAffiliateApi::class, 'AFWC_API' );
+		}
+	}
+}

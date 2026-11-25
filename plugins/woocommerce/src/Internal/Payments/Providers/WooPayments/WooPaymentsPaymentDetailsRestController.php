@@ -1,0 +1,1098 @@
+<?php
+/**
+ * WooPaymentsPaymentDetailsRestController class file.
+ */
+
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
+
+use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
+use Automattic\WooCommerce\Enums\OrderStatus;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\PaymentIntentEventHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventOrderResolver;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\RefundEventHandler;
+use Automattic\WooCommerce\Internal\RestApiControllerBase;
+use Automattic\WooCommerce\Internal\Utilities\CurrencyUtil;
+use WC_Order;
+use WP_Error;
+use WP_REST_Request;
+use WP_REST_Response;
+use WP_REST_Server;
+use Throwable;
+
+/**
+ * Serves a charge or an order's charge, a payment intent and its timeline, creates and confirms a payment intent for an
+ * order, and refunds a payment.
+ *
+ * @since 11.0.0
+ * @internal
+ */
+class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
+
+	private const EVENT_FRAUD_OUTCOME_REVIEW = 'fraud_outcome_review';
+	private const EVENT_FRAUD_OUTCOME_BLOCK  = 'fraud_outcome_block';
+	private const EVENTS_ORDER               = array(
+		'authorized',
+		'authorization_voided',
+		'authorization_expired',
+		self::EVENT_FRAUD_OUTCOME_REVIEW,
+		self::EVENT_FRAUD_OUTCOME_BLOCK,
+		'captured',
+		'partial_refund',
+		'full_refund',
+		'refund_failed',
+		'failed',
+		'dispute_needs_response',
+		'dispute_in_review',
+		'dispute_won',
+		'dispute_lost',
+		'financing_paydown',
+	);
+
+	/**
+	 * WooPayments API client.
+	 *
+	 * @var Client
+	 */
+	private Client $api_client;
+
+	/**
+	 * Order details service.
+	 *
+	 * @var WooPaymentsOrderDetailsService
+	 */
+	private WooPaymentsOrderDetailsService $order_service;
+
+	/**
+	 * WooPayments account service.
+	 *
+	 * @var WooPaymentsAccountService
+	 */
+	private WooPaymentsAccountService $account_service;
+
+	/**
+	 * Initialize the class instance.
+	 *
+	 * @internal
+	 *
+	 * @param Client                         $api_client      WooPayments API client.
+	 * @param WooPaymentsOrderDetailsService $order_service   Order details service.
+	 * @param WooPaymentsAccountService      $account_service Account service.
+	 */
+	final public function init( Client $api_client, WooPaymentsOrderDetailsService $order_service, WooPaymentsAccountService $account_service ): void {
+		$this->api_client      = $api_client;
+		$this->order_service   = $order_service;
+		$this->account_service = $account_service;
+	}
+
+	/**
+	 * Get this controller's key in WooCommerce's list of REST controllers.
+	 *
+	 * @return string
+	 */
+	protected function get_rest_api_namespace(): string {
+		return 'woopayments-payment-details';
+	}
+
+	/**
+	 * Register the payment detail routes.
+	 */
+	public function register_routes(): void {
+		register_rest_route( $this->route_namespace, '/payments/charges/(?P<charge_id>\w+)', $this->get_readable_route( 'get_charge' ) );
+		register_rest_route( $this->route_namespace, '/payments/charges/order/(?P<order_id>\w+)', $this->get_readable_route( 'generate_charge_from_order' ) );
+		$intent_route           = $this->get_creatable_route( 'create_payment_intent', __( 'Optional. Any non-empty string. Send the same key with the same request again and no second charge is made: you get the first answer back, or a refusal that says the order is already paid. Empty means no key. A concurrent request with the same key gets HTTP 409. Retry the same request with the same key.', 'woocommerce' ) );
+		$intent_route['schema'] = array( $this, 'get_payment_intent_schema' );
+		register_rest_route( $this->route_namespace, '/payments/payment_intents', $intent_route );
+		register_rest_route( $this->route_namespace, '/payments/payment_intents/(?P<payment_intent_id>\w+)', $this->get_readable_route( 'get_payment_intent' ) );
+		register_rest_route( $this->route_namespace, '/payments/timeline/(?P<intention_id>\w+)', $this->get_readable_route( 'get_timeline' ) );
+		register_rest_route( $this->route_namespace, '/payments/refund', $this->get_creatable_route( 'process_refund', __( 'Optional. Any non-empty string. Honoured when this route refunds the charge directly: no order_id, an order_id that does not resolve, or the order_id of an order of another payment method. Not used when order_id names a WooPayments order: that refund goes through the order, which keeps its own protection. Send the same key with the same request again and no second refund is made: you get the first answer back, or a refusal that says why when the first refund is already recorded on the order. Empty means no key. Concurrent requests for the same charge can return HTTP 409 while the order is locked, or HTTP 500 if the payment provider refuses a concurrent request.', 'woocommerce' ) ) );
+	}
+
+	/**
+	 * Check route permissions.
+	 *
+	 * @return bool
+	 */
+	public function has_permission(): bool {
+		return current_user_can( 'manage_woocommerce' );
+	}
+
+	/**
+	 * Get a charge.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function get_charge( WP_REST_Request $request ) {
+		try {
+			return $this->order_service->build_detail_read_response(
+				$this->order_service->enrich_charge_response(
+					$this->api_client->get_charge( (string) $request->get_param( 'charge_id' ) )
+				)
+			);
+		} catch ( ApiException $exception ) {
+			// The client's own code, with no status (class-wc-rest-payments-charges-controller.php:62-63); the mobile apps read this route.
+			return new WP_Error( 'wcpay_get_charge', $exception->getMessage() );
+		}
+	}
+
+	/**
+	 * Generate a charge-like object from a WooCommerce order.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function generate_charge_from_order( WP_REST_Request $request ) {
+		$order = wc_get_order( absint( $request->get_param( 'order_id' ) ) );
+		if ( ! $order instanceof WC_Order ) {
+			return new WP_Error(
+				'wcpay_missing_order',
+				__( 'Order not found', 'woocommerce' ),
+				array( 'status' => 404 )
+			);
+		}
+
+		return new WP_REST_Response( $this->order_service->build_charge_response_from_order( $order ) );
+	}
+
+	/**
+	 * Get a payment intent.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function get_payment_intent( WP_REST_Request $request ) {
+		try {
+			return new WP_REST_Response(
+				$this->order_service->enrich_payment_intent_response(
+					$this->api_client->get_payment_intention( (string) $request->get_param( 'payment_intent_id' ) )
+				)
+			);
+		} catch ( ApiException $exception ) {
+			return $exception->to_wp_error();
+		}
+	}
+
+	/**
+	 * Create and confirm a payment intent from an order.
+	 *
+	 * Check payment eligibility on the freshly read order under the checkout lock.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function create_payment_intent( WP_REST_Request $request ) {
+		$order = wc_get_order( absint( $request->get_param( 'order_id' ) ) );
+		if ( ! $order instanceof WC_Order ) {
+			return new WP_Error(
+				'wcpay_server_error',
+				__( 'Order not found', 'woocommerce' ),
+				array( 'status' => 500 )
+			);
+		}
+
+		// The account is read before the claim, so nothing under the claim fetches it.
+		wc_get_container()->get( WooPaymentsCompositionDataSettler::class )->settle_account_before_claim( $order );
+		$order_payment_lock = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary         = new WooPaymentsPersistenceVocabulary();
+		$lock_token         = $order_payment_lock->claim( $order, $vocabulary, null, 'payment intent creation' );
+		if ( null === $lock_token ) {
+			$order_payment_lock->log_refusal( $order, $vocabulary, 'payment intent creation' );
+
+			return new WP_Error( 'wcpay_order_payment_locked', __( 'A payment operation is already in progress for this order.', 'woocommerce' ), array( 'status' => 409 ) );
+		}
+
+		try {
+			$lifecycle = wc_get_container()->get( OrderPaymentLifecycleService::class );
+			$order     = $lifecycle->get_fresh_order_from_data_store( $order );
+			$refusal   = $this->get_order_payment_refusal( $order );
+			if ( null !== $refusal ) {
+				return $refusal;
+			}
+
+			$gateway = WC()->payment_gateways()->payment_gateways()[ WooPaymentsPersistenceVocabulary::GATEWAY_ID ] ?? null;
+			if ( null === $gateway ) {
+				return new WP_Error( 'wcpay_server_error', __( 'The WooPayments card gateway is unavailable.', 'woocommerce' ), array( 'status' => 500 ) );
+			}
+			if ( WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $order->get_payment_method( 'edit' ) ) {
+				$order->set_payment_method( $gateway );
+				$order->save();
+				$save_error = $order->get_last_save_error();
+				if ( null !== $save_error ) {
+					return $this->get_create_payment_error( $order, $save_error );
+				}
+			}
+
+			$order_payment_lock->mark_money_request_unsaved( $lock_token, true );
+			$request_data = $this->order_service->build_create_payment_intent_request_from_order(
+				$order,
+				(string) $request->get_param( 'customer' ),
+				(string) $request->get_param( 'payment_method' ),
+				$this->account_service->is_manual_capture_enabled()
+			);
+			$caller_key   = (string) ( $request->get_param( 'idempotency_key' ) ?? '' );
+			$intent       = $this->api_client->create_and_confirm_payment_intention( $request_data, WooPaymentsIdempotencyKey::for_platform( $caller_key, WooPaymentsIdempotencyKey::OPERATION_INTENT ) );
+			try {
+				wc_get_container()->get( WooPaymentsCompositionDataSettler::class )->run_settled(
+					static function () use ( $lifecycle, $order, $intent ): void {
+						$lifecycle->reread_order_from_data_store( $order );
+						$writer = wc_get_container()->get( PaymentIntentEventHandler::class );
+						$status = $intent['status'] ?? '';
+						if ( WooPaymentsIntentStatus::SUCCEEDED === $status ) {
+							$writer->apply_succeeded_payment_intent_under_lock( $order, $intent );
+						} elseif ( WooPaymentsIntentStatus::REQUIRES_CAPTURE === $status ) {
+							$writer->apply_authorization_under_lock_for_answer( $order, $intent );
+						}
+					}
+				);
+			} catch ( Throwable $failure ) {
+				wc_get_container()->get( WooPaymentsLogger::class )->log_throwable_always( 'Failed to record the payment intent from the REST API.', $failure, array( 'order_id' => $order->get_id() ) );
+			}
+
+			return new WP_REST_Response( $this->prepare_payment_intent_for_response( $intent, $request ) );
+		} catch ( Throwable $exception ) {
+			return $this->get_create_payment_error( $order, $exception );
+		} finally {
+			$order_payment_lock->release( $order, $vocabulary, $lock_token );
+		}
+	}
+
+	/**
+	 * Log a failed create request and prepare the client's error response.
+	 *
+	 * @since 11.4.0
+	 * @param WC_Order  $order     Order being charged.
+	 * @param Throwable $exception Failure that stopped the request.
+	 * @return WP_Error
+	 */
+	private function get_create_payment_error( WC_Order $order, Throwable $exception ): WP_Error {
+		// The client logs the failure and returns its message (class-wc-rest-payments-payment-intents-controller.php:149-152).
+		wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Failed to create an intention via the REST API.', $exception, array( 'order_id' => $order->get_id() ) );
+
+		if ( $exception instanceof ApiException ) {
+			if ( 'idempotency_key_in_use' === $exception->get_error_code() ) {
+				return new WP_Error( 'wcpay_idempotency_key_conflict', __( 'A request with this idempotency key is already in progress. Retry the same request with the same key.', 'woocommerce' ), array( 'status' => 409 ) );
+			}
+			if ( WooPaymentsPaymentOperationService::is_idempotency_key_conflict( $exception ) ) {
+				return new WP_Error( 'wcpay_idempotency_key_conflict', __( 'This idempotency key was already used for a different request.', 'woocommerce' ), array( 'status' => 409 ) );
+			}
+		}
+		return new WP_Error( 'wcpay_server_error', $exception->getMessage(), array( 'status' => 500 ) );
+	}
+
+	/**
+	 * Apply checkout's rules under the order lock. Only checkout can replay its earlier request under a kept key.
+	 *
+	 * @since 11.4.0
+	 * @param WC_Order $order Order as read again under the order payment lock.
+	 * @return WP_Error|null The 409 to answer, or null when the charge goes on.
+	 */
+	private function get_order_payment_refusal( WC_Order $order ): ?WP_Error {
+		if ( ! $order->needs_payment() ) {
+			if ( $order->has_status( OrderStatus::REFUNDED ) ) {
+				return new WP_Error( 'wcpay_order_refunded', __( "This order's payment was refunded, so it can't be paid again. Please place a new order.", 'woocommerce' ), array( 'status' => 409 ) );
+			}
+			if ( $order->is_paid() ) {
+				return new WP_Error( 'wcpay_order_already_paid', __( 'This order is already paid.', 'woocommerce' ), array( 'status' => 409 ) );
+			}
+			return new WP_Error( 'wcpay_order_not_payable', __( 'This order does not need payment.', 'woocommerce' ), array( 'status' => 409 ) );
+		}
+		if ( SubscriptionMethodPolicy::only_saves_the_card( $order ) ) {
+			return new WP_Error( 'wcpay_order_is_subscription', __( "A subscription can't be charged directly. Charge one of its orders instead.", 'woocommerce' ), array( 'status' => 409 ) );
+		}
+		if ( '' !== WooPaymentsPaymentOperationService::get_own_charge_idempotency_key( $order ) ) {
+			return new WP_Error( 'wcpay_order_payment_unresolved', __( "This order's last payment attempt is not resolved yet. Try again later.", 'woocommerce' ), array( 'status' => 409 ) );
+		}
+
+		$intent_id    = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true );
+		$failed_read  = null;
+		$intent       = WooPaymentsDuplicatePaymentPreventionService::get_attached_payment_that_holds_money( $order, $intent_id, $this->api_client, $failed_read );
+		$refusal_tier = null === $failed_read ? null : wc_get_container()->get( WooPaymentsPaymentOperationService::class )->get_unread_payment_refusal_tier_for_order(
+			$order,
+			$failed_read['intent_id'],
+			$failed_read['unknown']
+		);
+		if ( is_wp_error( $intent ) || null !== $refusal_tier ) {
+			return new WP_Error( 'wcpay_order_payment_unreadable', __( "This order's attached payment could not be checked. Try again later.", 'woocommerce' ), array( 'status' => 409 ) );
+		}
+		if ( null !== $intent ) {
+			return new WP_Error(
+				'wcpay_order_payment_holds_money',
+				__( 'This order already has a payment that holds money.', 'woocommerce' ),
+				array(
+					'status'    => 409,
+					'intent_id' => $intent_id,
+				)
+			);
+		}
+		if ( WooPaymentsDuplicatePaymentPreventionService::should_prevent_payment_for_paid_status( $order, $order->get_status( 'edit' ) ) ) {
+			WooPaymentsDuplicatePaymentPreventionService::add_prevented_payment_note( $order );
+			return new WP_Error( 'wcpay_order_already_paid', __( 'This order is already paid.', 'woocommerce' ), array( 'status' => 409 ) );
+		}
+		if ( wc_get_container()->get( OrderPaymentLifecycleService::class )->has_paid_status( $order ) ) {
+			return new WP_Error( 'wcpay_order_paid_status_payable', __( "Pay the balance through this order's pay page.", 'woocommerce' ), array( 'status' => 409 ) );
+		}
+		return null;
+	}
+
+	/**
+	 * Get timeline events for a payment intent or order identifier.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function get_timeline( WP_REST_Request $request ) {
+		try {
+			$intention_id = (string) $request->get_param( 'intention_id' );
+			$timeline     = $this->api_client->get_timeline( $intention_id );
+
+			return new WP_REST_Response( $this->add_manual_fraud_outcome_entry( $timeline, $intention_id ) );
+		} catch ( ApiException $exception ) {
+			return $exception->to_wp_error();
+		}
+	}
+
+	/**
+	 * Process a payment detail refund.
+	 *
+	 * An order whose payment method is a WooPayments gateway is refunded through WooCommerce, as client 11.3.0
+	 * `WC_REST_Payments_Refunds_Controller::process_refund()` refunds any order that exists
+	 * (includes/admin/class-wc-rest-payments-refunds-controller.php:46-77). For a missing order, or an order of
+	 * another payment method, whose own gateway cannot refund a WooPayments charge, the charge is refunded directly.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function process_refund( WP_REST_Request $request ) {
+		$order_id = absint( $request->get_param( 'order_id' ) );
+		$order    = $order_id > 0 ? wc_get_order( $order_id ) : false;
+		if ( ! $order instanceof WC_Order || ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) ) {
+			return $this->process_charge_refund( $request );
+		}
+
+		$charge_id       = sanitize_text_field( (string) $request->get_param( 'charge_id' ) );
+		$order_charge_id = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY, true );
+		if ( '' === $charge_id || '' === $order_charge_id || $charge_id !== $order_charge_id ) {
+			return new WP_Error(
+				'wcpay_refund_charge_order_mismatch',
+				__( 'The charge does not match the WooPayments charge stored on this order.', 'woocommerce' ),
+				array( 'status' => 409 )
+			);
+		}
+
+		$refund_amount = $this->get_refund_amount( $request, $order );
+		if ( is_wp_error( $refund_amount ) ) {
+			return $refund_amount;
+		}
+
+		$reason = sanitize_text_field( (string) $request->get_param( 'reason' ) );
+		$refund = wc_create_refund(
+			array(
+				'amount'         => $refund_amount,
+				'reason'         => $reason,
+				'order_id'       => $order->get_id(),
+				'refund_payment' => true,
+				'restock_items'  => true,
+			)
+		);
+
+		// The caller's errors are refused above. wc_create_refund() rewraps a gateway or platform failure as an error with no
+		// status, so it is a server fault: 500.
+		if ( is_wp_error( $refund ) ) {
+			return new WP_Error(
+				'wcpay_refund_payment_failed',
+				$refund->get_error_message(),
+				array( 'status' => 500 )
+			);
+		}
+
+		return new WP_REST_Response(
+			array(
+				'id'       => $refund->get_id(),
+				'order_id' => $order->get_id(),
+				'amount'   => wc_format_decimal( $refund->get_amount(), wc_get_price_decimals() ),
+				'reason'   => $refund->get_reason(),
+				'status'   => $refund->get_status(),
+			)
+		);
+	}
+
+	/**
+	 * Add a locally persisted manual fraud outcome event to platform review timelines.
+	 *
+	 * @param array<string,mixed> $timeline Timeline response.
+	 * @param string              $intention_id Payment intent ID or order ID.
+	 * @return array<string,mixed>
+	 */
+	private function add_manual_fraud_outcome_entry( array $timeline, string $intention_id ): array {
+		if ( ! $this->timeline_has_fraud_outcome_event( $timeline ) ) {
+			return $timeline;
+		}
+
+		$order = $this->get_order_for_timeline( $intention_id );
+		if ( ! $order instanceof WC_Order ) {
+			return $timeline;
+		}
+
+		$manual_entry = $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_MANUAL_ENTRY_META_KEY, true );
+		if ( ! is_array( $manual_entry ) || empty( $manual_entry ) ) {
+			return $timeline;
+		}
+
+		$events   = isset( $timeline['data'] ) && is_array( $timeline['data'] ) ? $timeline['data'] : array();
+		$events[] = $manual_entry;
+		usort( $events, array( $this, 'sort_timeline_events' ) );
+
+		$timeline['data'] = $events;
+
+		return $timeline;
+	}
+
+	/**
+	 * Check whether platform timeline data contains fraud outcome events.
+	 *
+	 * @param array<string,mixed> $timeline Timeline response.
+	 * @return bool
+	 */
+	private function timeline_has_fraud_outcome_event( array $timeline ): bool {
+		if ( empty( $timeline['data'] ) || ! is_array( $timeline['data'] ) ) {
+			return false;
+		}
+
+		foreach ( $timeline['data'] as $event ) {
+			if ( ! is_array( $event ) ) {
+				continue;
+			}
+
+			$type = $event['type'] ?? '';
+			if ( is_string( $type ) && in_array( $type, array( self::EVENT_FRAUD_OUTCOME_REVIEW, self::EVENT_FRAUD_OUTCOME_BLOCK ), true ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Get the WooCommerce order represented by a timeline ID.
+	 *
+	 * @param string $intention_id Payment intent ID or order ID.
+	 * @return WC_Order|null
+	 */
+	private function get_order_for_timeline( string $intention_id ): ?WC_Order {
+		if ( is_numeric( $intention_id ) ) {
+			$order = wc_get_order( (int) $intention_id );
+			return $order instanceof WC_Order ? $order : null;
+		}
+
+		$order = $this->get_order_by_intention_id( $intention_id );
+		if ( $order instanceof WC_Order ) {
+			return $order;
+		}
+
+		$order_id = $this->get_order_id_from_intention( $intention_id );
+		if ( $order_id <= 0 ) {
+			return null;
+		}
+
+		$order = wc_get_order( $order_id );
+		return $order instanceof WC_Order ? $order : null;
+	}
+
+	/**
+	 * Get the order whose `_intent_id` meta is this payment intent.
+	 *
+	 * The meta query compares with the table collation, so the found order counts only when its stored value is exactly
+	 * the ID, as core's download lookup requires an exact match.
+	 *
+	 * @param string $intention_id Payment intent ID.
+	 * @return WC_Order|null
+	 */
+	private function get_order_by_intention_id( string $intention_id ): ?WC_Order {
+		$orders = wc_get_orders(
+			array(
+				'limit'      => 1,
+				'meta_key'   => WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
+				'meta_value' => $intention_id, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
+				'return'     => 'objects',
+			)
+		);
+
+		if ( ! is_array( $orders ) ) {
+			return null;
+		}
+
+		$order = reset( $orders );
+		return $order instanceof WC_Order && (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true ) === $intention_id ? $order : null;
+	}
+
+	/**
+	 * Get an order ID from the platform payment intent metadata.
+	 *
+	 * @param string $intention_id Payment intent ID.
+	 * @return int
+	 */
+	private function get_order_id_from_intention( string $intention_id ): int {
+		try {
+			$intention = $this->api_client->get_payment_intention( $intention_id );
+		} catch ( ApiException $exception ) {
+			return 0;
+		}
+
+		$metadata = isset( $intention['metadata'] ) && is_array( $intention['metadata'] ) ? $intention['metadata'] : array();
+		$order_id = $metadata['order_id'] ?? 0;
+
+		return is_numeric( $order_id ) ? (int) $order_id : 0;
+	}
+
+	/**
+	 * Sort timeline events newest first, then by event type.
+	 *
+	 * @param mixed $event_a First event.
+	 * @param mixed $event_b Second event.
+	 * @return int
+	 */
+	private function sort_timeline_events( $event_a, $event_b ): int {
+		$datetime_result = $this->get_timeline_event_datetime( $event_b ) <=> $this->get_timeline_event_datetime( $event_a );
+		if ( 0 !== $datetime_result ) {
+			return $datetime_result;
+		}
+
+		return $this->get_timeline_event_order( $event_b ) <=> $this->get_timeline_event_order( $event_a );
+	}
+
+	/**
+	 * Get an event datetime.
+	 *
+	 * @param mixed $event Timeline event.
+	 * @return int
+	 */
+	private function get_timeline_event_datetime( $event ): int {
+		if ( ! is_array( $event ) ) {
+			return 0;
+		}
+
+		$datetime = $event['datetime'] ?? 0;
+		return is_numeric( $datetime ) ? (int) $datetime : 0;
+	}
+
+	/**
+	 * Get an event type sort order.
+	 *
+	 * @param mixed $event Timeline event.
+	 * @return int
+	 */
+	private function get_timeline_event_order( $event ): int {
+		if ( ! is_array( $event ) ) {
+			return -1;
+		}
+
+		$type = $event['type'] ?? '';
+		if ( ! is_string( $type ) ) {
+			return -1;
+		}
+
+		$order = array_search( $type, self::EVENTS_ORDER, true );
+		return false === $order ? -1 : $order;
+	}
+
+	/**
+	 * Build a readable REST route definition.
+	 *
+	 * @param string $callback Callback method.
+	 * @return array<string,mixed>
+	 */
+	private function get_readable_route( string $callback ): array {
+		return array(
+			'methods'             => WP_REST_Server::READABLE,
+			'callback'            => array( $this, $callback ),
+			'permission_callback' => array( $this, 'has_permission' ),
+		);
+	}
+
+	/**
+	 * Build a creatable REST route definition.
+	 *
+	 * @param string $callback        Callback method.
+	 * @param string $key_description How the route uses the caller's key.
+	 * @return array<string,mixed>
+	 */
+	private function get_creatable_route( string $callback, string $key_description ): array {
+		return array(
+			'methods'             => WP_REST_Server::CREATABLE,
+			'args'                => array(
+				'idempotency_key' => array(
+					'type'        => 'string',
+					'required'    => false,
+					'description' => $key_description,
+				),
+			),
+			'callback'            => array( $this, $callback ),
+			'permission_callback' => array( $this, 'has_permission' ),
+		);
+	}
+
+	/**
+	 * Get the created payment intent the way client 11.1.0 `WC_REST_Payments_Payment_Intents_Controller::prepare_item_for_response()`
+	 * shapes it: intent fields and the latest charge's summary, filtered by the route schema.
+	 *
+	 * @param array<string,mixed> $intent  Created payment intent.
+	 * @param WP_REST_Request     $request Request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return array<string,mixed>
+	 */
+	private function prepare_payment_intent_for_response( array $intent, WP_REST_Request $request ): array {
+		$charges = isset( $intent['charges']['data'] ) && is_array( $intent['charges']['data'] ) && 0 < (int) ( $intent['charges']['total_count'] ?? count( $intent['charges']['data'] ) )
+			? $intent['charges']['data']
+			: array();
+		$charge  = empty( $charges ) ? null : end( $charges );
+		$charge  = is_array( $charge ) ? $charge : null;
+
+		$payment_method = $intent['payment_method'] ?? $intent['source'] ?? null;
+		$item           = array(
+			'id'             => $intent['id'] ?? null,
+			'amount'         => $intent['amount'] ?? null,
+			// Uppercase, as client 11.1.0's intent model returns it (`includes/wc-payment-api/models/class-wc-payments-api-payment-intention.php:93`).
+			'currency'       => isset( $intent['currency'] ) ? strtoupper( (string) $intent['currency'] ) : null,
+			'created'        => gmdate( 'Y-m-d H:i:s', (int) ( $intent['created'] ?? 0 ) ),
+			'customer'       => $intent['customer'] ?? $charge['customer'] ?? null,
+			'payment_method' => is_array( $payment_method ) ? ( $payment_method['id'] ?? null ) : $payment_method,
+			'status'         => $intent['status'] ?? null,
+		);
+
+		if ( null !== $charge ) {
+			$item['charge'] = array(
+				'id'                     => $charge['id'] ?? null,
+				'amount'                 => $charge['amount'] ?? null,
+				'application_fee_amount' => $charge['application_fee_amount'] ?? null,
+				'status'                 => $charge['status'] ?? null,
+			);
+
+			$billing_details = is_array( $charge['billing_details'] ?? null ) ? $charge['billing_details'] : array();
+			if ( isset( $billing_details['address'] ) ) {
+				foreach ( array( 'city', 'country', 'line1', 'line2', 'postal_code', 'state' ) as $key ) {
+					$item['charge']['billing_details']['address'][ $key ] = $billing_details['address'][ $key ] ?? '';
+				}
+			}
+			foreach ( array( 'email', 'name', 'phone' ) as $key ) {
+				$item['charge']['billing_details'][ $key ] = $billing_details[ $key ] ?? '';
+			}
+
+			$card = $charge['payment_method_details']['card'] ?? null;
+			if ( is_array( $card ) ) {
+				foreach ( array( 'amount_authorized', 'brand', 'capture_before', 'country', 'exp_month', 'exp_year', 'last4', 'three_d_secure' ) as $key ) {
+					$item['charge']['payment_method_details']['card'][ $key ] = $card[ $key ] ?? '';
+				}
+			}
+		}
+
+		$context = is_string( $request['context'] ?? null ) ? $request['context'] : 'view';
+
+		return (array) rest_filter_response_by_context( $item, $this->get_payment_intent_schema(), $context );
+	}
+
+	/**
+	 * Get the schema of a created payment intent, as client 11.1.0 declares it.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public function get_payment_intent_schema(): array {
+		return array(
+			'$schema'    => 'http://json-schema.org/draft-04/schema#',
+			'title'      => 'payment_intent',
+			'type'       => 'object',
+			'properties' => array(
+				'id'       => array(
+					'description' => __( 'ID for the payment intent.', 'woocommerce' ),
+					'type'        => 'string',
+					'context'     => array( 'view' ),
+				),
+				'amount'   => array(
+					'description' => __( 'The amount of the transaction.', 'woocommerce' ),
+					'type'        => 'integer',
+					'context'     => array( 'view' ),
+				),
+				'currency' => array(
+					'description' => __( 'The currency of the transaction.', 'woocommerce' ),
+					'type'        => 'string',
+					'context'     => array( 'view' ),
+				),
+				'created'  => array(
+					'description' => __( 'The date when the payment intent was created.', 'woocommerce' ),
+					'type'        => 'string',
+					'context'     => array( 'view' ),
+				),
+				'customer' => array(
+					'description' => __( 'The customer id of the intent', 'woocommerce' ),
+					'type'        => 'string',
+					'context'     => array( 'view' ),
+				),
+				'status'   => array(
+					'description' => __( 'The status of the payment intent.', 'woocommerce' ),
+					'type'        => 'string',
+					'context'     => array( 'view' ),
+				),
+				'charge'   => array(
+					'description' => __( 'Charge object associated with this payment intention.', 'woocommerce' ),
+					'type'        => 'object',
+					'context'     => array( 'view' ),
+					'properties'  => array(
+						'id'                     => array(
+							'description' => 'ID for the charge.',
+							'type'        => 'string',
+							'context'     => array( 'view' ),
+						),
+						'amount'                 => array(
+							'description' => 'The amount of the charge.',
+							'type'        => 'integer',
+							'context'     => array( 'view' ),
+						),
+						'payment_method_details' => array(
+							'description' => 'Details for the payment method used for the charge.',
+							'type'        => 'object',
+							'properties'  => array(
+								'card' => array(
+									'description' => 'Details for a card payment method.',
+									'type'        => 'object',
+									'properties'  => array(
+										'amount_authorized' => array(
+											'description' => 'The amount authorized by the card.',
+											'type'        => 'integer',
+										),
+										'brand'          => array(
+											'description' => 'The brand of the card.',
+											'type'        => 'string',
+										),
+										'capture_before' => array(
+											'description' => 'Timestamp for when the authorization must be captured.',
+											'type'        => 'string',
+										),
+										'country'        => array(
+											'description' => 'The ISO country code.',
+											'type'        => 'string',
+										),
+										'exp_month'      => array(
+											'description' => 'The expiration month of the card.',
+											'type'        => 'integer',
+										),
+										'exp_year'       => array(
+											'description' => 'The expiration year of the card.',
+											'type'        => 'integer',
+										),
+										'last4'          => array(
+											'description' => 'The last 4 digits of the card.',
+											'type'        => 'string',
+										),
+										'three_d_secure' => array(
+											'description' => 'Details for 3D Secure authentication.',
+											'type'        => 'object',
+										),
+									),
+								),
+							),
+						),
+						'billing_details'        => array(
+							'description' => __( 'Billing details for the payment method.', 'woocommerce' ),
+							'type'        => 'object',
+							'context'     => array( 'view' ),
+							'properties'  => array(
+								'address' => array(
+									'description' => __( 'Address associated with the billing details.', 'woocommerce' ),
+									'type'        => 'object',
+									'context'     => array( 'view' ),
+									'properties'  => array(
+										'city'        => array(
+											'description' => __( 'City of the billing address.', 'woocommerce' ),
+											'type'        => 'string',
+											'context'     => array( 'view' ),
+										),
+										'country'     => array(
+											'description' => __( 'Country of the billing address.', 'woocommerce' ),
+											'type'        => 'string',
+											'context'     => array( 'view' ),
+										),
+										'line1'       => array(
+											'description' => __( 'Line 1 of the billing address.', 'woocommerce' ),
+											'type'        => 'string',
+											'context'     => array( 'view' ),
+										),
+										'line2'       => array(
+											'description' => __( 'Line 2 of the billing address.', 'woocommerce' ),
+											'type'        => 'string',
+											'context'     => array( 'view' ),
+										),
+										'postal_code' => array(
+											'description' => __( 'Postal code of the billing address.', 'woocommerce' ),
+											'type'        => 'string',
+											'context'     => array( 'view' ),
+										),
+										'state'       => array(
+											'description' => __( 'State of the billing address.', 'woocommerce' ),
+											'type'        => 'string',
+											'context'     => array( 'view' ),
+										),
+									),
+								),
+								'email'   => array(
+									'description' => __( 'Email associated with the billing details.', 'woocommerce' ),
+									'type'        => 'string',
+									'format'      => 'email',
+									'context'     => array( 'view' ),
+								),
+								'name'    => array(
+									'description' => __( 'Name associated with the billing details.', 'woocommerce' ),
+									'type'        => 'string',
+									'context'     => array( 'view' ),
+								),
+								'phone'   => array(
+									'description' => __( 'Phone number associated with the billing details.', 'woocommerce' ),
+									'type'        => 'string',
+									'context'     => array( 'view' ),
+								),
+							),
+						),
+						'payment_method'         => array(
+							'description' => 'The payment method associated with this charge.',
+							'type'        => 'string',
+							'context'     => array( 'view' ),
+						),
+						'application_fee_amount' => array(
+							'description' => 'The application fee amount.',
+							'type'        => 'integer',
+							'context'     => array( 'view' ),
+						),
+						'status'                 => array(
+							'description' => 'The status of the payment intent created.',
+							'type'        => 'string',
+							'context'     => array( 'view' ),
+						),
+					),
+				),
+
+			),
+		);
+	}
+
+	/**
+	 * Refund a charge when the caller supplies no WooPayments order.
+	 *
+	 * The charge must be a `ch_` or `py_` ID and the amount a positive integer
+	 * (client 11.1.0 `includes/admin/class-wc-rest-payments-refunds-controller.php:107-114` and its `Refund_Charge` request).
+	 * Invalid input is refused with a 400.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return WP_REST_Response|WP_Error
+	 */
+	private function process_charge_refund( WP_REST_Request $request ) {
+		$charge_id = $request->get_param( 'charge_id' );
+		if ( ! is_string( $charge_id ) || ! preg_match( '/^(ch|py)_\w{1,250}$/', $charge_id ) ) {
+			return new WP_Error(
+				'wcpay_core_invalid_request_parameter_stripe_id',
+				__( 'The charge ID is not a valid WooPayments charge identifier.', 'woocommerce' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		$amount = filter_var( $request->get_param( 'amount' ), FILTER_VALIDATE_INT );
+		if ( false === $amount || $amount <= 0 ) {
+			return $this->get_invalid_refund_amount_error();
+		}
+
+		$reason = $request->get_param( 'reason' );
+		if ( null !== $reason && ! is_string( $reason ) ) {
+			return new WP_Error(
+				'wcpay_refund_invalid_reason',
+				__( 'The refund reason is not valid.', 'woocommerce' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		$caller_key = (string) ( $request->get_param( 'idempotency_key' ) ?? '' );
+		$refund     = $this->refund_charge_without_order( $charge_id, $amount, $reason, 'transaction_details_no_order', $caller_key );
+		return is_wp_error( $refund ) ? $refund : new WP_REST_Response( $refund );
+	}
+
+	/**
+	 * Refund a charge directly and record the answer when it resolves to the locked order.
+	 *
+	 * @since 11.4.0
+	 * @param string      $charge_id Charge to refund.
+	 * @param int|null    $amount    Amount in minor units, or null for the charge's remainder.
+	 * @param string|null $reason    Merchant's reason.
+	 * @param string      $source    Refund source sent in the metadata.
+	 * @param string      $caller_key Idempotency key supplied by the caller.
+	 * @throws ApiException For an ability refund, so its caller can inspect the original failure.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	public function refund_charge_without_order( string $charge_id, ?int $amount, ?string $reason, string $source, string $caller_key ) {
+		$platform_key = WooPaymentsIdempotencyKey::for_platform( $caller_key, WooPaymentsIdempotencyKey::OPERATION_REFUND );
+
+		$resolver   = wc_get_container()->get( EventOrderResolver::class );
+		$order      = $resolver->find_order_by_charge_id( $charge_id );
+		$lock       = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		$token      = null;
+		try {
+			if ( null === $order || ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( $order->get_payment_method() ) ) {
+				return $this->api_client->refund_charge( $charge_id, $amount, $reason, $source, $platform_key );
+			}
+
+			$token = $lock->claim( $order, $vocabulary, null, PaymentProcessingService::OPERATION_REFUND );
+			if ( null === $token ) {
+				$lock->log_refusal( $order, $vocabulary, PaymentProcessingService::OPERATION_REFUND );
+				return new WP_Error( 'order_payment_refund_locked', __( 'A payment operation is already in progress for this order.', 'woocommerce' ), array( 'status' => 409 ) );
+			}
+
+			$writer  = wc_get_container()->get( RefundEventHandler::class );
+			$order   = $writer->get_fresh_order( $order, true );
+			$refusal = $this->get_charge_refund_refusal( $order, $charge_id, $amount );
+			if ( null !== $refusal ) {
+				return $refusal;
+			}
+
+			$lock->mark_money_request_unsaved( $token, true );
+			$answer = $this->api_client->refund_charge( $charge_id, $amount, $reason, $source, $platform_key );
+			try {
+				$charge = $answer['payment_intent']['charges']['data'][0] ?? null;
+				if ( WooPaymentsIntentCodec::outcome_from_refund_result( $answer )->is_successful() && is_array( $charge ) && ( $charge['id'] ?? null ) === $charge_id && $writer->is_recordable_refunded_charge( $charge ) ) {
+					$order    = $writer->get_fresh_order( $order, true );
+					$resolved = $resolver->find_order_by_charge_id( $charge_id, $charge );
+					if ( $resolved && $resolved->get_id() === $order->get_id() ) {
+						$facts = $writer->parse_refunded_charge( $charge, $answer );
+						$writer->assert_refund_amounts( $facts );
+						if ( ! $writer->has_legacy_failed_refund_note( $order, $facts ) ) {
+							$writer->apply_charge_refund_under_lock( $order, $facts, $charge, $answer, false );
+						}
+					}
+				}
+			} catch ( Throwable $failure ) {
+				// A concurrent Admin refund can still roll back its temporary row. The event retries against the resulting balance and notes a write it finally gives up.
+				wp_cache_delete( \WC_Cache_Helper::get_cache_prefix( 'orders' ) . 'total_refunded' . $order->get_id(), 'orders' );
+				wc_get_container()->get( WooPaymentsLogger::class )->log_throwable_always( 'Failed to record the refund from the REST API.', $failure, array( 'order_id' => $order->get_id() ) );
+			}
+			return $answer;
+		} catch ( ApiException $exception ) {
+			if ( 'woopayments_ability' === $source ) {
+				throw $exception;
+			}
+			return new WP_Error( 'wcpay_refund_payment', $exception->getMessage(), array( 'status' => 500 ) );
+		} finally {
+			if ( null !== $token && null !== $order ) {
+				$lock->release( $order, $vocabulary, $token );
+			}
+		}
+	}
+
+	/**
+	 * Check the direct refund against the locked order before sending.
+	 *
+	 * @param WC_Order $order     Freshly read order.
+	 * @param string   $charge_id Charge to refund.
+	 * @param int|null $amount    Amount in minor units.
+	 * @return WP_Error|null
+	 */
+	private function get_charge_refund_refusal( WC_Order $order, string $charge_id, ?int $amount ): ?WP_Error {
+		if ( WooPaymentsGateway::has_uncaptured_payment( $order ) ) {
+			return new WP_Error( 'wcpay_refund_uncaptured_payment', WooPaymentsGateway::get_uncaptured_refund_message(), array( 'status' => 409 ) );
+		}
+		if ( null === $amount ) {
+			return new WP_Error( 'wcpay_refund_amount_required', __( 'Give the amount to refund: this charge belongs to an order.', 'woocommerce' ), array( 'status' => 400 ) );
+		}
+		$payment_currency = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_CURRENCY_META_KEY, true );
+		if ( '' !== $payment_currency && strtolower( $payment_currency ) !== strtolower( $order->get_currency() ) ) {
+			return new WP_Error( 'wcpay_refund_currency_mismatch', __( "This order's currency differs from its payment's. Refund it from the order page.", 'woocommerce' ), array( 'status' => 409 ) );
+		}
+		$currency = (string) $order->get_currency();
+		$decimals = CurrencyUtil::get_price_decimals( $currency );
+		$minor    = WooPaymentsCurrencyUtils::get_stripe_minor_unit_for_currency( $currency );
+		if ( $minor > $decimals && 0 !== $amount % ( 10 ** ( $minor - $decimals ) ) ) {
+			/* translators: %d: Number of decimal places used to record refunds. */
+			$message = sprintf( _n( 'This store records refunds to %d decimal place. Enter an amount it can record exactly.', 'This store records refunds to %d decimal places. Enter an amount it can record exactly.', $decimals, 'woocommerce' ), $decimals );
+			return new WP_Error( 'wcpay_refund_amount_precision', $message, array( 'status' => 400 ) );
+		}
+		if ( ! wc_get_container()->get( WooPaymentsOrderDataService::class )->can_cover_refund_amount( $order, $amount ) ) {
+			return $this->get_invalid_refund_amount_error();
+		}
+
+		// Core checks the hydrated order, which an admin request can read at a lower precision than the stored total.
+		$remaining                = max( '0', $order->get_remaining_refund_amount() );
+		list( $whole, $fraction ) = array_pad( explode( '.', $remaining ), 2, '' );
+		$fraction                 = substr( str_pad( $fraction, $minor, '0' ), 0, $minor );
+		if ( $amount > (int) ( $whole . $fraction ) ) {
+			$maximum = wc_format_localized_price( 0 === $minor ? $whole : $whole . '.' . $fraction );
+			/* translators: 1: Largest recordable refund amount, 2: Order currency code. */
+			$message = sprintf( __( 'This order cannot record that refund amount. The largest amount it can record is %1$s %2$s.', 'woocommerce' ), $maximum, $currency );
+			return new WP_Error( 'wcpay_refund_invalid_amount', $message, array( 'status' => 400 ) );
+		}
+		$gateway = wc_get_payment_gateway_by_order( $order );
+		if ( ! $gateway instanceof \WC_Payment_Gateway || ! $gateway->can_refund_order( $order ) ) {
+			return new WP_Error( 'order_payment_refund_missing_charge', __( 'This order does not have a WooPayments charge to refund.', 'woocommerce' ), array( 'status' => 409 ) );
+		}
+		if ( wc_get_container()->get( WooPaymentsRefundAmbiguityService::class )->has_unsettled_attempt( $order, $charge_id ) ) {
+			return new WP_Error( 'wcpay_order_refund_unresolved', __( "This order's last refund attempt is not settled yet. Refund it from the order page, which settles it first.", 'woocommerce' ), array( 'status' => 409 ) );
+		}
+		return null;
+	}
+
+	/**
+	 * Get the decimal refund amount from the request.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @param WC_Order        $order   Order.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return float|WP_Error
+	 */
+	private function get_refund_amount( WP_REST_Request $request, WC_Order $order ) {
+		$amount = filter_var( $request->get_param( 'amount' ), FILTER_VALIDATE_INT );
+		if ( false === $amount || $amount <= 0 ) {
+			return $this->get_invalid_refund_amount_error();
+		}
+
+		return $this->get_refund_amount_for_order( $amount, $order );
+	}
+
+	/**
+	 * Convert the requested minor units and check how much the order has left.
+	 *
+	 * @param int      $amount Positive amount in minor units.
+	 * @param WC_Order $order  Order being refunded.
+	 * @return float|WP_Error
+	 */
+	private function get_refund_amount_for_order( int $amount, WC_Order $order ) {
+		$refund_amount = WooPaymentsCurrencyUtils::amount_from_minor_units( $amount, (string) $order->get_currency() );
+		$remaining     = (float) $order->get_remaining_refund_amount();
+		if ( $refund_amount > $remaining ) {
+			return $this->get_invalid_refund_amount_error();
+		}
+
+		// The converted amount is refunded as it is, as client 11.1.0 passes it (includes/admin/class-wc-rest-payments-refunds-controller.php:87-96):
+		// rounding to the store's price decimals would change an amount in an order currency with more decimals.
+		return $refund_amount;
+	}
+
+	/**
+	 * Get invalid refund amount error.
+	 *
+	 * @return WP_Error
+	 */
+	private function get_invalid_refund_amount_error(): WP_Error {
+		return new WP_Error(
+			'wcpay_refund_invalid_amount',
+			__( 'The refund amount is not valid.', 'woocommerce' ),
+			array( 'status' => 400 )
+		);
+	}
+}

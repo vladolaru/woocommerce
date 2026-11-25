@@ -25,7 +25,11 @@ const config = {
 		},
 		{
 			name: 'e2e-pressable',
-			testIgnore: [ '**/api-tests/**', '**/js-file-monitor/**' ],
+			testIgnore: [
+				'**/api-tests/**',
+				'**/js-file-monitor/**',
+				'**/tests/woopayments-native/**',
+			],
 			grepInvert,
 			dependencies: [ 'reset', 'site setup' ],
 		},

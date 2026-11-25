@@ -12,6 +12,7 @@ defined( 'ABSPATH' ) || exit;
 use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Admin\Notes\NoteTraits;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 
 /**
  * WooCommerce_Payments
@@ -49,6 +50,10 @@ class WooCommercePayments {
 	 * Maybe add a note on WooCommerce Payments for US based sites older than a week without the plugin installed.
 	 */
 	public static function possibly_add_note() {
+		if ( ! self::is_applicable() ) {
+			return;
+		}
+
 		if ( ! self::is_wc_admin_active_in_date_range( 'week-1-4' ) || 'US' !== WC()->countries->get_base_country() ) {
 			return;
 		}
@@ -129,6 +134,16 @@ class WooCommercePayments {
 		return $note;
 	}
 
+	/**
+	 * The note applies only while the WooPayments feature is off; while it is on, the built-in WooPayments is offered instead.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return bool
+	 */
+	public static function is_applicable(): bool {
+		return ! wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_builtin_enabled();
+	}
 
 	/**
 	 * Check if the WooCommerce Payments plugin is active or installed.
@@ -176,6 +191,15 @@ class WooCommercePayments {
 			! isset( $_GET['action'] ) ||
 			'setup-woocommerce-payments' !== $_GET['action']
 		) {
+			return;
+		}
+
+		// While the feature is on, the built-in WooPayments is offered on the Payments settings page instead.
+		if ( ! self::is_applicable() ) {
+			if ( current_user_can( 'manage_woocommerce' ) ) {
+				wp_safe_redirect( admin_url( 'admin.php?page=wc-settings&tab=checkout&from=WCADMIN_PAYMENT_TASK' ) );
+				exit;
+			}
 			return;
 		}
 

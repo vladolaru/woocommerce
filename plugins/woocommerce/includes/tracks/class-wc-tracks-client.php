@@ -149,10 +149,22 @@ class WC_Tracks_Client {
 	 * @return bool Always returns true.
 	 */
 	public static function record_pixel( $pixel ) {
+		self::send_pixel( $pixel );
+		return true;
+	}
+
+	/**
+	 * Dispatch a non-blocking pixel and report local transport errors.
+	 *
+	 * @since 11.4.0
+	 * @param string $pixel Pixel URL.
+	 * @return true|WP_Error
+	 */
+	public static function send_pixel( $pixel ) {
 		// Add the Request Timestamp and no cache parameter just before the HTTP request.
 		$pixel = self::add_request_timestamp_and_nocache( $pixel );
 
-		wp_safe_remote_get(
+		$result = wp_safe_remote_get(
 			$pixel,
 			array(
 				'blocking'    => false,
@@ -162,7 +174,7 @@ class WC_Tracks_Client {
 			)
 		);
 
-		return true;
+		return is_wp_error( $result ) ? $result : true;
 	}
 
 	/**

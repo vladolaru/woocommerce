@@ -517,12 +517,14 @@ class WC_Admin_Notes_Woo_Subscriptions_Notes extends DeprecatedClassFacade {
 	protected static $deprecated_in_version = '4.8.0';
 }
 
+// phpcs:disable Squiz.Classes.ClassFileName.NoMatch, Squiz.Classes.ValidClassName.NotCamelCaps -- Preserve the legacy public class name in the shared facade file.
 /**
  * WC_Admin_Notes_WooCommerce_Payments.
  *
  * @deprecated since 4.8.0, use WooCommercePayments
  */
 class WC_Admin_Notes_WooCommerce_Payments extends DeprecatedClassFacade {
+	// phpcs:enable Squiz.Classes.ClassFileName.NoMatch, Squiz.Classes.ValidClassName.NotCamelCaps
 	/**
 	 * The name of the non-deprecated class that this facade covers.
 	 *

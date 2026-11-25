@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Enums\ProductType;
 use Automattic\WooCommerce\Internal\Admin\Analytics;
 use Automattic\WooCommerce\Internal\Admin\WCAdminAssets;
 use Automattic\WooCommerce\Internal\CostOfGoodsSold\CostOfGoodsSoldController;
+use Automattic\WooCommerce\Internal\Utilities\CurrencyUtil;
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
@@ -705,7 +706,7 @@ if ( ! class_exists( 'WC_Admin_Assets', false ) ) :
 					'calendar_image'                                  => WC()->plugin_url() . '/assets/images/calendar.png',
 					'post_id'                                         => $this->is_order_meta_box_screen( $screen_id ) && isset( $order_or_post_object ) ? \Automattic\WooCommerce\Utilities\OrderUtil::get_post_or_order_id( $order_or_post_object ) : $post_id,
 					'base_country'                                    => WC()->countries->get_base_country(),
-					'currency_format_num_decimals'                    => wc_get_price_decimals(),
+					'currency_format_num_decimals'                    => CurrencyUtil::get_price_decimals( $currency ),
 					'currency_format_symbol'                          => get_woocommerce_currency_symbol( $currency ),
 					'currency_format_decimal_sep'                     => esc_attr( wc_get_price_decimal_separator() ),
 					'currency_format_thousand_sep'                    => esc_attr( wc_get_price_thousand_separator() ),

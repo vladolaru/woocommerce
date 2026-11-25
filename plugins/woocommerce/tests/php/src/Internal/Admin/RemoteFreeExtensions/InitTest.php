@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Admin\RemoteSpecs\DataSourcePoller;
 use Automattic\WooCommerce\Internal\Admin\RemoteFreeExtensions\Init as RemoteFreeExtensions;
 use Automattic\WooCommerce\Internal\Admin\RemoteFreeExtensions\DefaultFreeExtensions;
 use Automattic\WooCommerce\Internal\Admin\RemoteFreeExtensions\RemoteFreeExtensionsDataSourcePoller;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use WC_Unit_Test_Case;
 
 /**
@@ -320,6 +321,62 @@ class InitTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * The woocommerce.com specs list the WooPayments plugin in the core profiler bundle. While the WooPayments feature is
+	 * on, the built-in WooPayments is offered, so the profiler must not install the extension.
+	 *
+	 * The fixture is a reduced bundle from the woocommerce.com free extensions feed
+	 * (`wp-json/wccom/obw-free-extensions/4.0/extensions.json`, read by RemoteFreeExtensionsDataSourcePoller), in the
+	 * shape DefaultFreeExtensions::get_all() also returns: it keeps the bundle `key`, `title` and `plugins`, and each
+	 * plugin's `name`, `key` and `is_visible` rule, and leaves out the display fields (description, images, URLs).
+	 *
+	 * @testdox Should leave the WooPayments plugin out of remote extension bundles only while the WooPayments feature is on.
+	 */
+	public function test_remote_bundles_offer_the_woopayments_plugin_only_while_the_feature_is_off(): void {
+		update_option( 'woocommerce_default_country', 'US' );
+		$visible_in_us = (object) array(
+			'type'      => 'base_location_country',
+			'value'     => 'US',
+			'operation' => '=',
+		);
+		// A feature change drops the cached specs, so each state gets the remote bundle again.
+		$cache_remote_bundle = function () use ( $visible_in_us ): void {
+			set_transient(
+				$this->get_specs_transient_name(),
+				array(
+					get_user_locale() => array(
+						(object) array(
+							'key'     => 'obw/core-profiler',
+							'title'   => 'Core profiler',
+							'plugins' => array(
+								(object) array(
+									'name'       => 'WooPayments',
+									'key'        => 'woocommerce-payments',
+									'is_visible' => $visible_in_us,
+								),
+								(object) array(
+									'name'       => 'mock-extension-2',
+									'key'        => 'mock-extension-2',
+									'is_visible' => $visible_in_us,
+								),
+							),
+						),
+					),
+				)
+			);
+		};
+
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$cache_remote_bundle();
+		$feature_on_keys = wp_list_pluck( RemoteFreeExtensions::get_extensions( array( 'obw/core-profiler' ) )[0]['plugins'], 'key' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
+		$cache_remote_bundle();
+		$feature_off_keys = wp_list_pluck( RemoteFreeExtensions::get_extensions( array( 'obw/core-profiler' ) )[0]['plugins'], 'key' );
+
+		$this->assertSame( array( 'mock-extension-2' ), $feature_on_keys );
+		$this->assertSame( array( 'woocommerce-payments', 'mock-extension-2' ), $feature_off_keys );
+	}
+
+	/**
 	 * Test that empty bundles are replaced with defaults.
 	 */
 	public function test_empty_extensions() {
@@ -343,5 +400,62 @@ class InitTest extends WC_Unit_Test_Case {
 
 		$expires = (int) get_transient( '_transient_timeout_woocommerce_admin_' . RemoteFreeExtensionsDataSourcePoller::ID . '_specs' );
 		$this->assertTrue( ( $expires - time() ) < 3 * HOUR_IN_SECONDS );
+	}
+
+	/**
+	 * Remote specs with no visible plugin make the bundles fall back to the defaults, cached for three hours. The defaults
+	 * depend on the WooPayments feature, so a feature change drops the cache and the next request builds them again.
+	 *
+	 * @testdox Should serve cached default bundles that follow a WooPayments feature change: $_dataName.
+	 * @testWith ["yes", "no", true]
+	 *           ["no", "yes", false]
+	 *
+	 * @param string $before   The feature when the defaults are cached.
+	 * @param string $after    The feature on the next request.
+	 * @param bool   $expected Whether the core profiler bundle offers the WooPayments extension on the next request.
+	 */
+	public function test_cached_default_bundles_follow_a_feature_change( string $before, string $after, bool $expected ): void {
+		remove_filter( 'transient_' . $this->get_specs_transient_name(), $this->specs_transient_filter );
+		update_option( 'woocommerce_default_country', 'US' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $before );
+		// An admin request constructs the free extensions feature, which watches the WooPayments feature.
+		new RemoteFreeExtensions();
+		$no_data_sources = static fn() => array();
+		add_filter( DataSourcePoller::FILTER_NAME, $no_data_sources );
+		// Remote specs whose only plugin is hidden on this store, so the defaults are served and cached. The shape is a
+		// reduced bundle from the woocommerce.com feed (wp-json/wccom/obw-free-extensions/4.0/extensions.json, read by
+		// RemoteFreeExtensionsDataSourcePoller); the plugin and its hidden state are synthetic.
+		set_transient(
+			$this->get_specs_transient_name(),
+			array(
+				get_user_locale() => array(
+					(object) array(
+						'key'     => 'obw/core-profiler',
+						'title'   => 'Core profiler',
+						'plugins' => array(
+							(object) array(
+								'name'       => 'mock-extension-1',
+								'key'        => 'mock-extension-1',
+								'is_visible' => (object) array(
+									'type'      => 'base_location_country',
+									'value'     => 'ZA',
+									'operation' => '=',
+								),
+							),
+						),
+					),
+				),
+			)
+		);
+
+		try {
+			RemoteFreeExtensions::get_extensions( array( 'obw/core-profiler' ) );
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $after );
+			$keys = wp_list_pluck( RemoteFreeExtensions::get_extensions( array( 'obw/core-profiler' ) )[0]['plugins'], 'key' );
+		} finally {
+			remove_filter( DataSourcePoller::FILTER_NAME, $no_data_sources );
+		}
+
+		$this->assertSame( $expected, in_array( 'woocommerce-payments', $keys, true ) );
 	}
 }

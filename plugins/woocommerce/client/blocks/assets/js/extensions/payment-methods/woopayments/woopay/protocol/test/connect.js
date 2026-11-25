@@ -1,0 +1,746 @@
+/**
+ * Internal dependencies
+ */
+import { loadPhoneValidation, normalizePhone } from '../phone-validation';
+import {
+	dispatchFromWindow,
+	getIframeWindow,
+	postFromWooPay,
+	removeMessageListenersAfterEach,
+} from './utils/post-from-woopay';
+
+const WOOPAY_HOST = 'https://pay.woo.test';
+
+const flushPromises = async () => {
+	for ( let i = 0; i < 6; i++ ) {
+		await Promise.resolve();
+	}
+};
+
+// The client lives for the page, so each case gets a fresh copy of the module.
+const loadGetConnect = () => {
+	let getConnect;
+	jest.isolateModules( () => {
+		( { getConnect } = require( '../connect' ) );
+	} );
+	return getConnect;
+};
+
+describe( 'WooPay Connect (shared)', () => {
+	let postMessage;
+
+	removeMessageListenersAfterEach();
+
+	beforeEach( () => {
+		postMessage = jest.fn();
+		Object.defineProperty(
+			window.HTMLIFrameElement.prototype,
+			'contentWindow',
+			{
+				configurable: true,
+				get() {
+					return { postMessage };
+				},
+			}
+		);
+		document.cookie = 'tk_ai=anon-id; path=/';
+	} );
+
+	afterEach( () => {
+		document.body.innerHTML = '';
+		document.cookie =
+			'tk_ai=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;';
+		delete window.HTMLIFrameElement.prototype.contentWindow;
+		jest.useRealTimers();
+	} );
+
+	const loadConnectIframe = async () => {
+		await flushPromises();
+		document
+			.getElementById( 'woopay-connect-iframe' )
+			.dispatchEvent( new window.Event( 'load' ) );
+		await flushPromises();
+	};
+
+	test.each( [
+		[ '1', 'true' ],
+		[ '', 'false' ],
+		[ undefined, null ],
+	] )(
+		'reads testMode %p by truthiness in the connect URL',
+		async ( testMode, expected ) => {
+			loadGetConnect()( {
+				woopayHost: WOOPAY_HOST,
+				woopayMerchantId: '123',
+				testMode,
+				iframeTitle: 'WooPay Connect',
+			} ).fetchPreferredCard();
+			await flushPromises();
+
+			const iframe = document.getElementById( 'woopay-connect-iframe' );
+			const url = new URL( iframe.src );
+			expect( iframe.title ).toBe( 'WooPay Connect' );
+			expect( url.searchParams.get( 'testMode' ) ).toBe( expected );
+			expect( url.searchParams.get( 'blogId' ) ).toBe( '123' );
+		}
+	);
+
+	const sendWooPayMessage = ( data ) => postFromWooPay( data, WOOPAY_HOST );
+
+	const getPreemptiveSession = ( connect, value ) =>
+		connect.sendMessage(
+			{ action: 'setPreemptiveSessionData', value },
+			'setPreemptiveSessionData',
+			null,
+			true
+		);
+
+	// The classic and Blocks WooPay scripts both run on a Blocks cart or checkout with direct checkout on. Client 11.2.0
+	// asks once per page (express-button/preferred-card-fetch.ts), and direct checkout asks for no card.
+	test( 'gives the classic and Blocks WooPay scripts one client, which asks for the preferred card once', async () => {
+		const getConnect = loadGetConnect();
+		const classicConnect = getConnect( {
+			woopayHost: WOOPAY_HOST,
+			iframeTitle: 'WooPay Connect Direct Checkout',
+		} );
+		const blocksConnect = getConnect( {
+			woopayHost: WOOPAY_HOST,
+			iframeTitle: 'WooPay Connect',
+		} );
+		const first = classicConnect.fetchPreferredCard();
+		const second = blocksConnect.fetchPreferredCard();
+
+		await loadConnectIframe();
+
+		expect( blocksConnect ).toBe( classicConnect );
+		expect( document.querySelectorAll( 'iframe' ) ).toHaveLength( 1 );
+		expect( postMessage ).toHaveBeenCalledTimes( 1 );
+
+		sendWooPayMessage( {
+			action: 'get_preferred_payment_method_success',
+			value: { brand: 'visa', last4: '4242' },
+		} );
+
+		await expect( first ).resolves.toEqual( {
+			brand: 'visa',
+			last4: '4242',
+		} );
+		await expect( second ).resolves.toEqual( {
+			brand: 'visa',
+			last4: '4242',
+		} );
+	} );
+
+	// Hosted WooPay answers every request and its answers name none (build/connect.js), so with one client two requests
+	// under one name wait on one list. A newer request taking the callback would leave the older one waiting for its
+	// 5 s deadline, and its own answer unused.
+	test( 'settles two requests under one name from their two answers, without a deadline', async () => {
+		jest.useFakeTimers();
+		const connect = loadGetConnect()( { woopayHost: WOOPAY_HOST } );
+		const settled = [];
+		getPreemptiveSession( connect, 'first' ).then( ( value ) =>
+			settled.push( [ 'first', value ] )
+		);
+		getPreemptiveSession( connect, 'second' ).then( ( value ) =>
+			settled.push( [ 'second', value ] )
+		);
+
+		await loadConnectIframe();
+		expect( postMessage ).toHaveBeenCalledTimes( 2 );
+
+		sendWooPayMessage( {
+			action: 'set_preemptive_session_data_success',
+			value: { redirect_url: 'https://pay.woo.test/first' },
+		} );
+		await flushPromises();
+		expect( settled ).toEqual( [
+			[ 'first', { redirect_url: 'https://pay.woo.test/first' } ],
+		] );
+
+		sendWooPayMessage( { action: 'set_preemptive_session_data_error' } );
+		await flushPromises();
+		expect( settled ).toEqual( [
+			[ 'first', { redirect_url: 'https://pay.woo.test/first' } ],
+			[ 'second', { is_error: true } ],
+		] );
+
+		await jest.advanceTimersByTimeAsync( 5000 );
+		expect( settled ).toHaveLength( 2 );
+	} );
+
+	test( 'keeps the newer request waiting when the older one reaches its deadline', async () => {
+		jest.useFakeTimers();
+		const connect = loadGetConnect()( { woopayHost: WOOPAY_HOST } );
+		const settled = [];
+		getPreemptiveSession( connect, 'first' ).then( ( value ) =>
+			settled.push( [ 'first', value ] )
+		);
+		await loadConnectIframe();
+		await jest.advanceTimersByTimeAsync( 1000 );
+		getPreemptiveSession( connect, 'second' ).then( ( value ) =>
+			settled.push( [ 'second', value ] )
+		);
+		await jest.advanceTimersByTimeAsync( 4000 );
+		expect( settled ).toEqual( [ [ 'first', null ] ] );
+
+		sendWooPayMessage( {
+			action: 'set_preemptive_session_data_success',
+			value: { redirect_url: 'https://pay.woo.test/second' },
+		} );
+		await flushPromises();
+		expect( settled[ 1 ] ).toEqual( [
+			'second',
+			{ redirect_url: 'https://pay.woo.test/second' },
+		] );
+	} );
+
+	// A request sent to an iframe that left the page gets no answer, so it must not stand in front of the new iframe's.
+	test( 'gives the answer of a replacement iframe to the request sent to it', async () => {
+		jest.useFakeTimers();
+		const connect = loadGetConnect()( { woopayHost: WOOPAY_HOST } );
+		const settled = [];
+		getPreemptiveSession( connect, 'lost' ).then( ( value ) =>
+			settled.push( [ 'lost', value ] )
+		);
+		await loadConnectIframe();
+
+		document.getElementById( 'woopay-connect-iframe' ).remove();
+		getPreemptiveSession( connect, 'replacement' ).then( ( value ) =>
+			settled.push( [ 'replacement', value ] )
+		);
+		await loadConnectIframe();
+		sendWooPayMessage( {
+			action: 'set_preemptive_session_data_success',
+			value: { redirect_url: 'https://pay.woo.test/replacement' },
+		} );
+		await flushPromises();
+
+		expect( settled ).toEqual( [
+			[
+				'replacement',
+				{ redirect_url: 'https://pay.woo.test/replacement' },
+			],
+		] );
+
+		await jest.advanceTimersByTimeAsync( 5000 );
+		expect( settled[ 1 ] ).toEqual( [ 'lost', null ] );
+	} );
+
+	// Another element under the id, with no wait of this client's on it: nothing sent to the old iframe is answered, and
+	// the new one takes messages only once its connect page loads.
+	test( 'follows the iframe element when another takes its id', async () => {
+		jest.useFakeTimers();
+		const connect = loadGetConnect()( { woopayHost: WOOPAY_HOST } );
+		const settled = [];
+		getPreemptiveSession( connect, 'lost' ).then( ( value ) =>
+			settled.push( [ 'lost', value ] )
+		);
+		await loadConnectIframe();
+		expect( postMessage ).toHaveBeenCalledTimes( 1 );
+
+		const replacement = document.createElement( 'iframe' );
+		replacement.id = 'woopay-connect-iframe';
+		replacement.src = `${ WOOPAY_HOST }/connect/`;
+		document
+			.getElementById( 'woopay-connect-iframe' )
+			.replaceWith( replacement );
+
+		getPreemptiveSession( connect, 'replacement' ).then( ( value ) =>
+			settled.push( [ 'replacement', value ] )
+		);
+		await flushPromises();
+		expect( postMessage ).toHaveBeenCalledTimes( 1 );
+
+		replacement.dispatchEvent( new window.Event( 'load' ) );
+		await flushPromises();
+		expect( postMessage ).toHaveBeenCalledTimes( 2 );
+
+		sendWooPayMessage( {
+			action: 'set_preemptive_session_data_success',
+			value: { redirect_url: 'https://pay.woo.test/replacement' },
+		} );
+		await flushPromises();
+		expect( settled ).toEqual( [
+			[
+				'replacement',
+				{ redirect_url: 'https://pay.woo.test/replacement' },
+			],
+		] );
+
+		await jest.advanceTimersByTimeAsync( 5000 );
+		expect( settled[ 1 ] ).toEqual( [ 'lost', null ] );
+	} );
+
+	// Answers name no request, but the source tells two iframes apart: an answer the old iframe had already sent belongs to
+	// a request the old iframe took, not to the new iframe's.
+	test( 'takes no answer from an iframe another has replaced', async () => {
+		jest.useFakeTimers();
+		const connect = loadGetConnect()( { woopayHost: WOOPAY_HOST } );
+		const settled = [];
+		getPreemptiveSession( connect, 'old' ).then( ( value ) =>
+			settled.push( [ 'old', value ] )
+		);
+		await loadConnectIframe();
+		const oldIframe = document.getElementById( 'woopay-connect-iframe' );
+		const oldWindow = getIframeWindow( oldIframe );
+
+		const replacement = document.createElement( 'iframe' );
+		replacement.id = 'woopay-connect-iframe';
+		replacement.src = `${ WOOPAY_HOST }/connect/`;
+		oldIframe.replaceWith( replacement );
+		getPreemptiveSession( connect, 'new' ).then( ( value ) =>
+			settled.push( [ 'new', value ] )
+		);
+		replacement.dispatchEvent( new window.Event( 'load' ) );
+		await flushPromises();
+
+		dispatchFromWindow( oldWindow, {
+			action: 'set_preemptive_session_data_success',
+			value: { redirect_url: 'https://pay.woo.test/old' },
+		} );
+		await flushPromises();
+		expect( settled ).toEqual( [] );
+		expect( console ).toHaveWarnedWith(
+			'WooPay Connect dropped set_preemptive_session_data_success: the message did not come from the Connect iframe.'
+		);
+
+		sendWooPayMessage( {
+			action: 'set_preemptive_session_data_success',
+			value: { redirect_url: 'https://pay.woo.test/new' },
+		} );
+		await flushPromises();
+		expect( settled ).toEqual( [
+			[ 'new', { redirect_url: 'https://pay.woo.test/new' } ],
+		] );
+	} );
+
+	// A browser answers null for a removed iframe's window, where jsdom keeps it, so the row sets that null by hand. A
+	// message whose frame was discarded carries a null source too, and any frame on WooPay's origin can send one.
+	test( 'settles nothing for a null source once the iframe has left the page', async () => {
+		jest.useFakeTimers();
+		const connect = loadGetConnect()( { woopayHost: WOOPAY_HOST } );
+		const settled = [];
+		getPreemptiveSession( connect, 'detached' ).then( ( value ) =>
+			settled.push( [ 'detached', value ] )
+		);
+		await loadConnectIframe();
+
+		const iframe = document.getElementById( 'woopay-connect-iframe' );
+		iframe.remove();
+		Object.defineProperty( iframe, 'contentWindow', {
+			configurable: true,
+			value: null,
+		} );
+
+		dispatchFromWindow( null, {
+			action: 'set_preemptive_session_data_success',
+			value: { redirect_url: 'https://pay.woo.test/another-frame' },
+		} );
+		await flushPromises();
+		expect( settled ).toEqual( [] );
+		expect( console ).toHaveWarnedWith(
+			'WooPay Connect dropped set_preemptive_session_data_success: the Connect iframe has left the page.'
+		);
+
+		await jest.advanceTimersByTimeAsync( 5000 );
+		expect( settled ).toEqual( [ [ 'detached', null ] ] );
+	} );
+
+	// WooPay's other pages share the origin, so the code dialog's messages reach this listener on every normal page.
+	test.each( [ 'iframe_height', 'close_modal', 'otp_email_submitted' ] )(
+		'stays silent on %s, which is not a Connect answer',
+		async ( action ) => {
+			const connect = loadGetConnect()( { woopayHost: WOOPAY_HOST } );
+			connect.fetchPreferredCard();
+			await loadConnectIframe();
+
+			dispatchFromWindow( {}, { action } );
+
+			expect( console ).not.toHaveWarned();
+		}
+	);
+
+	// A nested frame on WooPay's origin, or any other sender: its answer is dropped, and dev tools and the canary's console
+	// capture must see that.
+	test( 'warns once when a Connect answer does not come from the iframe', async () => {
+		const connect = loadGetConnect()( { woopayHost: WOOPAY_HOST } );
+		const card = jest.fn();
+		connect.fetchPreferredCard().then( card );
+		await loadConnectIframe();
+		const answer = {
+			action: 'get_preferred_payment_method_success',
+			value: { brand: 'visa', last4: '4242' },
+		};
+
+		dispatchFromWindow( {}, answer );
+		dispatchFromWindow( {}, answer );
+		await flushPromises();
+
+		expect( card ).not.toHaveBeenCalled();
+		expect( console ).toHaveWarnedWith(
+			'WooPay Connect dropped get_preferred_payment_method_success: the message did not come from the Connect iframe.'
+		);
+		// eslint-disable-next-line no-console -- The matchers cannot count the calls.
+		expect( console.warn ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	test( 'asks for the preferred card again when another iframe takes the id', async () => {
+		const connect = loadGetConnect()( { woopayHost: WOOPAY_HOST } );
+		connect.fetchPreferredCard();
+		await loadConnectIframe();
+		sendWooPayMessage( {
+			action: 'get_preferred_payment_method_success',
+			value: { brand: 'visa', last4: '4242' },
+		} );
+		await flushPromises();
+
+		const replacement = document.createElement( 'iframe' );
+		replacement.id = 'woopay-connect-iframe';
+		replacement.src = `${ WOOPAY_HOST }/connect/`;
+		document
+			.getElementById( 'woopay-connect-iframe' )
+			.replaceWith( replacement );
+
+		const card = connect.fetchPreferredCard();
+		replacement.dispatchEvent( new window.Event( 'load' ) );
+		await flushPromises();
+		expect( postMessage ).toHaveBeenCalledTimes( 2 );
+
+		sendWooPayMessage( {
+			action: 'get_preferred_payment_method_success',
+			value: { brand: 'amex', last4: '0005' },
+		} );
+		await expect( card ).resolves.toEqual( {
+			brand: 'amex',
+			last4: '0005',
+		} );
+	} );
+
+	// Client 11.2.0 connect-utils.js:38-53 and woopay-direct-checkout.js:124-130; hosted ConnectPage.php:108 sends 3000.
+	describe( "WooPay's deadline", () => {
+		const settledAt = async ( connect ) => {
+			let settled = false;
+			getPreemptiveSession( connect, 'later' ).then( () => {
+				settled = true;
+			} );
+			await jest.advanceTimersByTimeAsync( 2999 );
+			const before = settled;
+			await jest.advanceTimersByTimeAsync( 1 );
+			const atThree = settled;
+			await jest.advanceTimersByTimeAsync( 2000 );
+
+			return { before, atThree, atFive: settled };
+		};
+
+		test( 'waits as long as WooPay says for requests sent after its answer', async () => {
+			jest.useFakeTimers();
+			const connect = loadGetConnect()( { woopayHost: WOOPAY_HOST } );
+			const asked = connect.initPostMessageTimeout();
+			await loadConnectIframe();
+			expect( postMessage ).toHaveBeenCalledWith(
+				{ action: 'getPostMessageTimeout' },
+				WOOPAY_HOST
+			);
+			sendWooPayMessage( {
+				action: 'get_post_message_timeout_success',
+				value: 3000,
+			} );
+			await asked;
+
+			expect( await settledAt( connect ) ).toEqual( {
+				before: false,
+				atThree: true,
+				atFive: true,
+			} );
+		} );
+
+		test.each( [
+			[ 'no answer', undefined ],
+			[ 'an answer that is not a positive number', '3000' ],
+			[ 'an answer of zero', 0 ],
+		] )( 'keeps 5000 ms after %s', async ( name, value ) => {
+			jest.useFakeTimers();
+			const connect = loadGetConnect()( { woopayHost: WOOPAY_HOST } );
+			const asked = connect.initPostMessageTimeout();
+			await loadConnectIframe();
+			if ( value === undefined ) {
+				await jest.advanceTimersByTimeAsync( 5000 );
+			} else {
+				sendWooPayMessage( {
+					action: 'get_post_message_timeout_success',
+					value,
+				} );
+			}
+			await asked;
+
+			expect( await settledAt( connect ) ).toEqual( {
+				before: false,
+				atThree: false,
+				atFive: true,
+			} );
+		} );
+
+		test( 'keeps 5000 ms for a request sent before the answer', async () => {
+			jest.useFakeTimers();
+			const connect = loadGetConnect()( { woopayHost: WOOPAY_HOST } );
+			const asked = connect.initPostMessageTimeout();
+			let settled = false;
+			getPreemptiveSession( connect, 'early' ).then( () => {
+				settled = true;
+			} );
+			await loadConnectIframe();
+			sendWooPayMessage( {
+				action: 'get_post_message_timeout_success',
+				value: 3000,
+			} );
+			await asked;
+
+			await jest.advanceTimersByTimeAsync( 4999 );
+			expect( settled ).toBe( false );
+			await jest.advanceTimersByTimeAsync( 1 );
+			expect( settled ).toBe( true );
+		} );
+
+		test( 'keeps 5000 ms for the third-party cookie check', async () => {
+			jest.useFakeTimers();
+			const connect = loadGetConnect()( { woopayHost: WOOPAY_HOST } );
+			const asked = connect.initPostMessageTimeout();
+			await loadConnectIframe();
+			sendWooPayMessage( {
+				action: 'get_post_message_timeout_success',
+				value: 3000,
+			} );
+			await asked;
+			let answer;
+			connect.areThirdPartyCookiesEnabled().then( ( value ) => {
+				answer = value;
+			} );
+
+			await jest.advanceTimersByTimeAsync( 4999 );
+			expect( answer ).toBeUndefined();
+			await jest.advanceTimersByTimeAsync( 1 );
+			expect( answer ).toBe( false );
+		} );
+	} );
+
+	describe( 'third-party cookie check', () => {
+		const TEMP_IFRAME = '#temp-woopay-connect-iframe';
+		const SET_SUCCESS = {
+			action: 'set_temp_third_party_cookie_success',
+			value: true,
+		};
+		const getAnswer = ( value ) => ( {
+			action: 'get_is_third_party_cookies_enabled_success',
+			value,
+		} );
+
+		const startCheck = () => {
+			const check = loadGetConnect()( {
+				woopayHost: WOOPAY_HOST,
+			} ).areThirdPartyCookiesEnabled();
+			const iframe = document.querySelector( TEMP_IFRAME );
+
+			return { check, iframe, iframeWindow: getIframeWindow( iframe ) };
+		};
+
+		// Client 11.2.0 connect/session-connect.js:31-127; hosted build/connect.js answers both messages.
+		test.each( [ [ true ], [ false ] ] )(
+			'asks a temporary iframe and answers %p',
+			async ( isEnabled ) => {
+				const { check, iframe, iframeWindow } = startCheck();
+
+				expect( iframe.src ).toBe( `${ WOOPAY_HOST }/connect/` );
+				iframe.dispatchEvent( new window.Event( 'load' ) );
+				dispatchFromWindow( iframeWindow, SET_SUCCESS );
+				dispatchFromWindow( iframeWindow, getAnswer( isEnabled ) );
+
+				await expect( check ).resolves.toBe( isEnabled );
+				expect( postMessage.mock.calls ).toEqual( [
+					[ { action: 'setTempThirdPartyCookie' }, WOOPAY_HOST ],
+					[
+						{ action: 'getIsThirdPartyCookiesEnabled' },
+						WOOPAY_HOST,
+					],
+				] );
+				expect( document.querySelector( TEMP_IFRAME ) ).toBeNull();
+			}
+		);
+
+		test( 'answers false when the test cookie was not set, without reading it', async () => {
+			const { check, iframe, iframeWindow } = startCheck();
+
+			iframe.dispatchEvent( new window.Event( 'load' ) );
+			dispatchFromWindow( iframeWindow, {
+				...SET_SUCCESS,
+				value: false,
+			} );
+
+			await expect( check ).resolves.toBe( false );
+			expect( postMessage ).toHaveBeenCalledTimes( 1 );
+			expect( document.querySelector( TEMP_IFRAME ) ).toBeNull();
+		} );
+
+		// Setting the cookie reloads the connect page, so the iframe can load twice.
+		test( 'sets the test cookie once when the connect page reloads', () => {
+			const { iframe } = startCheck();
+
+			iframe.dispatchEvent( new window.Event( 'load' ) );
+			iframe.dispatchEvent( new window.Event( 'load' ) );
+
+			expect( postMessage ).toHaveBeenCalledTimes( 1 );
+		} );
+
+		test( 'takes messages from its own iframe only', async () => {
+			const { check, iframe, iframeWindow } = startCheck();
+			const otherWindow = {};
+
+			iframe.dispatchEvent( new window.Event( 'load' ) );
+			dispatchFromWindow( otherWindow, SET_SUCCESS );
+			dispatchFromWindow(
+				iframeWindow,
+				SET_SUCCESS,
+				'https://evil.test'
+			);
+			expect( postMessage ).toHaveBeenCalledTimes( 1 );
+
+			dispatchFromWindow( iframeWindow, SET_SUCCESS );
+			dispatchFromWindow( otherWindow, getAnswer( false ) );
+			dispatchFromWindow( iframeWindow, getAnswer( true ) );
+
+			await expect( check ).resolves.toBe( true );
+		} );
+
+		test.each( [
+			[ 'no page loads', false ],
+			[ 'the read goes unanswered', true ],
+		] )(
+			'answers false at the deadline when %s',
+			async ( name, reachesRead ) => {
+				jest.useFakeTimers();
+				const { check, iframe, iframeWindow } = startCheck();
+				let answer;
+				check.then( ( value ) => {
+					answer = value;
+				} );
+
+				if ( reachesRead ) {
+					await jest.advanceTimersByTimeAsync( 4000 );
+					iframe.dispatchEvent( new window.Event( 'load' ) );
+					dispatchFromWindow( iframeWindow, SET_SUCCESS );
+				}
+
+				// Each step has its own 5 s, as each client promise has its own timer.
+				await jest.advanceTimersByTimeAsync( 4999 );
+				expect( answer ).toBeUndefined();
+				await jest.advanceTimersByTimeAsync( 1 );
+
+				expect( answer ).toBe( false );
+				expect( document.querySelector( TEMP_IFRAME ) ).toBeNull();
+			}
+		);
+
+		// A removed iframe's window is null, so without the isConnected read a null source would match it.
+		test.each( [
+			[ 'the set answer', SET_SUCCESS ],
+			[ 'the read answer', getAnswer( true ) ],
+		] )(
+			'takes %s from nobody once the iframe is removed, and answers false at the deadline',
+			async ( name, message ) => {
+				jest.useFakeTimers();
+				const { check, iframe } = startCheck();
+				let answer;
+				check.then( ( value ) => {
+					answer = value;
+				} );
+				iframe.dispatchEvent( new window.Event( 'load' ) );
+				iframe.remove();
+				Object.defineProperty( iframe, 'contentWindow', {
+					configurable: true,
+					value: null,
+				} );
+
+				dispatchFromWindow( null, message );
+				await jest.advanceTimersByTimeAsync( 4999 );
+				expect( answer ).toBeUndefined();
+				await jest.advanceTimersByTimeAsync( 1 );
+
+				expect( answer ).toBe( false );
+			}
+		);
+
+		test( 'answers false with no iframe when there is no WooPay host', async () => {
+			const check = loadGetConnect()( {} ).areThirdPartyCookiesEnabled();
+
+			await expect( check ).resolves.toBe( false );
+			expect( document.querySelector( TEMP_IFRAME ) ).toBeNull();
+		} );
+
+		test( 'leaves a request on the page connect iframe waiting for its own answer', async () => {
+			const connect = loadGetConnect()( { woopayHost: WOOPAY_HOST } );
+			const card = connect.fetchPreferredCard();
+			await loadConnectIframe();
+			const check = connect.areThirdPartyCookiesEnabled();
+			const iframeWindow = getIframeWindow(
+				document.querySelector( TEMP_IFRAME )
+			);
+
+			document
+				.querySelector( TEMP_IFRAME )
+				.dispatchEvent( new window.Event( 'load' ) );
+			dispatchFromWindow( iframeWindow, {
+				...SET_SUCCESS,
+				value: false,
+			} );
+			await expect( check ).resolves.toBe( false );
+
+			sendWooPayMessage( {
+				action: 'get_preferred_payment_method_success',
+				value: { brand: 'amex', last4: '0005' },
+			} );
+			await expect( card ).resolves.toEqual( {
+				brand: 'amex',
+				last4: '0005',
+			} );
+		} );
+	} );
+} );
+
+describe( 'WooPay save-user phone helpers (shared)', () => {
+	afterEach( () => {
+		delete window.wc;
+		document.head.innerHTML = '';
+	} );
+
+	test( 'normalizes the phone WooPay receives', () => {
+		expect( normalizePhone( '(555) 123-4567' ) ).toBe( '+15551234567' );
+		expect( normalizePhone( '+44 20 7946 0958' ) ).toBe( '+442079460958' );
+		expect( normalizePhone( undefined ) ).toBe( '+1' );
+	} );
+
+	test( 'loads the phone validation script once and resolves null without a URL', async () => {
+		await expect( loadPhoneValidation( '' ) ).resolves.toBeNull();
+
+		const first = loadPhoneValidation( 'https://example.test/phone.js' );
+		const second = loadPhoneValidation( 'https://example.test/phone.js' );
+		const scripts = document.head.querySelectorAll( 'script' );
+
+		expect( scripts ).toHaveLength( 1 );
+
+		// The script runs on a page without the WooPay protocol entry, so it creates the namespace itself.
+		expect( window.wc ).toBeUndefined();
+		jest.isolateModules( () =>
+			jest.requireActual( '../../../phone-validation' )
+		);
+		expect(
+			window.wc.woopayments.phoneValidation.validatePhoneNumber
+		).toEqual( expect.any( Function ) );
+		scripts[ 0 ].onload();
+
+		await expect( first ).resolves.toBe(
+			window.wc.woopayments.phoneValidation
+		);
+		await expect( second ).resolves.toBe(
+			window.wc.woopayments.phoneValidation
+		);
+	} );
+} );

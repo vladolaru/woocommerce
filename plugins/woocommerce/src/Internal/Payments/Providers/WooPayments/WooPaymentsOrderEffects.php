@@ -1,0 +1,789 @@
+<?php
+/**
+ * WooPaymentsOrderEffects class file.
+ */
+
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
+
+use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use WC_Order;
+
+/**
+ * Computes the order meta values a platform intent implies, without writing them.
+ *
+ * @since 11.0.0
+ * @internal
+ */
+class WooPaymentsOrderEffects {
+
+	/**
+	 * Get the failed charge's display details, or the error's payment method details for a chargeless decline.
+	 *
+	 * @param array<string,mixed> $intent Platform intent.
+	 * @return array<string,string> Order meta.
+	 */
+	public static function failed_payment_method_details_meta( array $intent ): array {
+		$charge = WooPaymentsIntentCodec::first_charge( $intent );
+		if ( array() !== $charge ) {
+			return self::payment_method_details_meta( $charge['payment_method_details'] ?? array() );
+		}
+
+		$method = $intent['last_payment_error']['payment_method'] ?? array();
+		$type   = $method['type'] ?? '';
+		if ( ! is_string( $type ) || '' === $type || ! is_array( $method[ $type ] ?? null ) ) {
+			return array();
+		}
+
+		return self::payment_method_details_meta(
+			array(
+				'type' => $type,
+				$type  => $method[ $type ],
+			)
+		);
+	}
+
+	/**
+	 * Encode the payment method details supplied by a charge or decline for display on the order.
+	 *
+	 * @param mixed $details Platform payment method details.
+	 * @return array<string,string> Order meta.
+	 */
+	public static function payment_method_details_meta( $details ): array {
+		$encoded = is_array( $details ) && array() !== $details ? wp_json_encode( $details ) : false;
+		return false === $encoded ? array() : array( WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_DETAILS_META_KEY => $encoded );
+	}
+
+	/**
+	 * Compose payment-method identity and metadata without rendering a title.
+	 *
+	 * @param array<string,mixed> $result                Platform PaymentIntent response.
+	 * @param string              $express_checkout_type Existing express-checkout identity.
+	 * @return array{meta:array<string,string>,payment_method_id:string,payment_method_type:string,payment_method_details:array<string,mixed>,express_checkout_type:string}|array{}
+	 */
+	public static function compose_payment_method_display_details( array $result, string $express_checkout_type = '' ): array {
+		$charge                 = WooPaymentsIntentCodec::latest_charge( $result );
+		$payment_method_details = is_array( $charge['payment_method_details'] ?? null ) ? $charge['payment_method_details'] : array();
+		$payment_method_type    = isset( $payment_method_details['type'] ) && is_scalar( $payment_method_details['type'] )
+			? sanitize_key( (string) $payment_method_details['type'] )
+			: self::intent_payment_method_type( $result );
+		$wallet_type            = isset( $payment_method_details['card']['wallet']['type'] ) && is_scalar( $payment_method_details['card']['wallet']['type'] )
+			? sanitize_key( (string) $payment_method_details['card']['wallet']['type'] )
+			: '';
+		if ( '' === $wallet_type && WooPaymentsPaymentMethodType::AMAZON_PAY === $payment_method_type ) {
+			$wallet_type = 'amazon_pay';
+		}
+
+		$express_checkout_type = sanitize_key( $express_checkout_type );
+		if ( '' === $express_checkout_type ) {
+			$express_checkout_type = $wallet_type;
+		}
+
+		return self::compose_payment_method_display_effects( $payment_method_details, $payment_method_type, $wallet_type, $express_checkout_type );
+	}
+
+	/**
+	 * Compose display effects from the payment method confirmed by a SetupIntent.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param array<string,mixed> $payment_method       Provider payment method response.
+	 * @param string              $express_checkout_type Existing express-checkout identity.
+	 * @return array{meta:array<string,string>,payment_method_id:string,payment_method_type:string,payment_method_details:array<string,mixed>,express_checkout_type:string}|array{}
+	 */
+	public static function compose_setup_intent_payment_method_display_details( array $payment_method, string $express_checkout_type = '' ): array {
+		$payment_method_type   = isset( $payment_method['type'] ) && is_scalar( $payment_method['type'] ) ? (string) $payment_method['type'] : '';
+		$card                  = isset( $payment_method['card'] ) && is_array( $payment_method['card'] ) ? $payment_method['card'] : array();
+		$wallet_type           = isset( $card['wallet']['type'] ) && is_scalar( $card['wallet']['type'] ) ? (string) $card['wallet']['type'] : '';
+		$express_checkout_type = sanitize_key( $express_checkout_type );
+
+		if ( WooPaymentsPaymentMethodType::LINK === $payment_method_type ) {
+			return self::compose_payment_method_display_effects( array( 'type' => WooPaymentsPaymentMethodType::LINK ), WooPaymentsPaymentMethodType::LINK, '', '', false );
+		}
+
+		if ( WooPaymentsPaymentMethodType::CARD !== $payment_method_type || empty( $card ) ) {
+			return array();
+		}
+
+		if ( 'link' === $wallet_type ) {
+			return self::compose_payment_method_display_effects(
+				array(
+					'type' => WooPaymentsPaymentMethodType::CARD,
+					'card' => array( 'wallet' => array( 'type' => 'link' ) ),
+				),
+				WooPaymentsPaymentMethodType::CARD,
+				'link',
+				'',
+				false
+			);
+		}
+
+		if ( ! self::has_coherent_setup_intent_card_identity( $card ) ) {
+			return array();
+		}
+
+		$payment_method = array(
+			'type' => WooPaymentsPaymentMethodType::CARD,
+			'card' => $card,
+		);
+		if ( '' === $express_checkout_type ) {
+			$express_checkout_type = $wallet_type;
+		}
+
+		return self::compose_payment_method_display_effects( $payment_method, $payment_method_type, $wallet_type, $express_checkout_type );
+	}
+
+	/**
+	 * Tell whether provider card details can safely establish a card identity.
+	 *
+	 * @param array<string,mixed> $card Provider card details.
+	 * @return bool
+	 */
+	private static function has_coherent_setup_intent_card_identity( array $card ): bool {
+		if (
+			! self::has_nonempty_scalar( $card['brand'] ?? null )
+			|| ! self::has_nonempty_scalar( $card['last4'] ?? null )
+			|| ! isset( $card['funding'] )
+			|| ! is_scalar( $card['funding'] )
+			|| ! in_array( (string) $card['funding'], array( 'credit', 'debit', 'prepaid', 'unknown' ), true )
+		) {
+			return false;
+		}
+
+		$networks = isset( $card['networks'] ) && is_array( $card['networks'] ) ? $card['networks'] : array();
+		if ( ( isset( $card['networks'] ) && ! is_array( $card['networks'] ) ) || ( isset( $networks['available'] ) && ! is_array( $networks['available'] ) ) ) {
+			return false;
+		}
+
+		$available = $networks['available'] ?? array();
+		$network   = $card['display_brand'] ?? $card['network'] ?? $networks['preferred'] ?? $available[0] ?? null;
+
+		return self::has_nonempty_scalar( $network );
+	}
+
+	/**
+	 * Tell whether a provider value is a non-empty scalar.
+	 *
+	 * @param mixed $value Provider value.
+	 * @return bool
+	 */
+	private static function has_nonempty_scalar( $value ): bool {
+		return is_scalar( $value ) && '' !== trim( (string) $value );
+	}
+
+	/**
+	 * Compose display effects from a normalized provider payment-method detail object.
+	 *
+	 * @param array<string,mixed> $payment_method_details Provider payment method details.
+	 * @param string              $payment_method_type    Provider payment method type.
+	 * @param string              $wallet_type            Wrapped wallet type.
+	 * @param string              $express_checkout_type  Existing express-checkout identity.
+	 * @param bool                $persist_payment_method_details Whether to persist the payment method details metadata.
+	 * @return array{meta:array<string,string>,payment_method_id:string,payment_method_type:string,payment_method_details:array<string,mixed>,express_checkout_type:string}|array{}
+	 */
+	private static function compose_payment_method_display_effects( array $payment_method_details, string $payment_method_type, string $wallet_type, string $express_checkout_type, bool $persist_payment_method_details = true ): array {
+
+		if ( '' === $payment_method_type && '' === $express_checkout_type ) {
+			return array();
+		}
+
+		$meta = array();
+		if ( $persist_payment_method_details && ! empty( $payment_method_details ) ) {
+			$encoded_details = wp_json_encode( $payment_method_details );
+			if ( false !== $encoded_details ) {
+				$meta[ WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_DETAILS_META_KEY ] = $encoded_details;
+			}
+		}
+
+		if ( 'link' !== $wallet_type && isset( $payment_method_details['card']['last4'] ) ) {
+			$meta[ WooPaymentsPersistenceVocabulary::LAST4_META_KEY ] = (string) $payment_method_details['card']['last4'];
+			if ( isset( $payment_method_details['card']['brand'] ) ) {
+				$meta[ WooPaymentsPersistenceVocabulary::CARD_BRAND_META_KEY ] = (string) $payment_method_details['card']['brand'];
+			}
+		}
+
+		if ( WooPaymentsPaymentMethodType::AMAZON_PAY === $payment_method_type && isset( $payment_method_details['amazon_pay']['funding']['card'] ) && is_array( $payment_method_details['amazon_pay']['funding']['card'] ) ) {
+			$funding_card = $payment_method_details['amazon_pay']['funding']['card'];
+			if ( isset( $funding_card['last4'] ) && is_scalar( $funding_card['last4'] ) ) {
+				$meta[ WooPaymentsPersistenceVocabulary::LAST4_META_KEY ] = (string) $funding_card['last4'];
+			}
+			if ( isset( $funding_card['brand'] ) && is_scalar( $funding_card['brand'] ) ) {
+				$meta[ WooPaymentsPersistenceVocabulary::CARD_BRAND_META_KEY ] = strtolower( (string) $funding_card['brand'] );
+			}
+		}
+
+		if ( '' !== $express_checkout_type ) {
+			$meta[ WooPaymentsPersistenceVocabulary::EXPRESS_CHECKOUT_PAYMENT_METHOD_META_KEY ] = $express_checkout_type;
+		}
+
+		$effective_type = '' !== $express_checkout_type ? $express_checkout_type : $payment_method_type;
+
+		return array(
+			'meta'                   => $meta,
+			'payment_method_id'      => self::payment_method_gateway_id( $effective_type ),
+			'payment_method_type'    => $payment_method_type,
+			'payment_method_details' => $payment_method_details,
+			'express_checkout_type'  => $express_checkout_type,
+		);
+	}
+
+	/**
+	 * Compose lifecycle metadata for a platform PaymentIntent.
+	 *
+	 * @param array<string,mixed>  $intent              Platform PaymentIntent response.
+	 * @param string               $order_currency      Order currency.
+	 * @param string|null          $order_mode          Charge mode to include, or null when applying an existing intent.
+	 * @param array<string,string> $settlement_meta     Precomputed settlement metadata.
+	 * @param bool                 $was_held_for_review Whether the order was held for fraud review before completing.
+	 * @param bool                 $include_fee_meta    Whether to add the fee meta client 11.1.0 attaches from the charge (class-wc-payments-order-service.php:1741).
+	 * @param bool                 $is_capture          Whether a succeeded intent completes the order as a capture (completed_charge_meta()).
+	 * @return array<string,string>
+	 */
+	public static function payment_intent_meta( array $intent, string $order_currency, ?string $order_mode, array $settlement_meta = array(), bool $was_held_for_review = false, bool $include_fee_meta = true, bool $is_capture = false ): array {
+		$status                 = isset( $intent['status'] ) ? (string) $intent['status'] : '';
+		$charge                 = WooPaymentsIntentCodec::latest_charge( $intent );
+		$charge_id              = isset( $charge['id'] ) ? (string) $charge['id'] : '';
+		$balance_transaction_id = WooPaymentsIntentCodec::balance_transaction_id( $charge['balance_transaction'] ?? null );
+		$intent_currency        = isset( $intent['currency'] ) ? (string) $intent['currency'] : $order_currency;
+		$meta                   = array(
+			// Client 11.1.0 stores the intent model's currency, which its constructor uppercases (class-wc-payments-api-payment-intention.php:93, class-wc-payments-order-service.php:1361,1414).
+			WooPaymentsPersistenceVocabulary::INTENT_CURRENCY_META_KEY        => strtoupper( $intent_currency ),
+			WooPaymentsPersistenceVocabulary::PAYMENT_TRANSACTION_ID_META_KEY => $balance_transaction_id,
+		);
+
+		if ( null !== $order_mode ) {
+			$meta[ WooPaymentsPersistenceVocabulary::MODE_META_KEY ] = $order_mode;
+		}
+
+		if ( '' !== $charge_id ) {
+			$meta[ WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY ] = $charge_id;
+		}
+
+		if ( isset( $charge['outcome']['risk_level'] ) ) {
+			$meta[ WooPaymentsPersistenceVocabulary::CHARGE_RISK_LEVEL_META_KEY ] = (string) $charge['outcome']['risk_level'];
+		}
+
+		if ( WooPaymentsIntentStatus::SUCCEEDED === $status ) {
+			$meta = array_merge( $meta, self::completed_charge_meta( $intent, $charge, $settlement_meta, true, $was_held_for_review, $is_capture ) );
+		} elseif ( in_array( $status, array( WooPaymentsIntentStatus::REQUIRES_CAPTURE, WooPaymentsIntentStatus::PROCESSING ), true ) ) {
+			$meta[ WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY ] = $status;
+			$meta = array_merge( $meta, self::authorized_charge_meta( $intent, $charge, $settlement_meta, false, true ) );
+		} elseif ( in_array( $status, array( WooPaymentsIntentStatus::REQUIRES_ACTION, WooPaymentsIntentStatus::REQUIRES_CONFIRMATION ), true ) ) {
+			$meta = array_merge( $meta, self::started_payment_meta( $intent, $order_currency ) );
+		}
+
+		if ( $include_fee_meta ) {
+			$meta = array_merge( $meta, self::attached_fee_meta( $charge ) );
+		}
+
+		return array_merge( $meta, self::multibanco_voucher_meta( $intent ) );
+	}
+
+	/**
+	 * Get the order metadata for a completed charge.
+	 *
+	 * A payment that completes the order marks a non-card charge's fraud box not_card, whatever the fraud outcome, as client
+	 * 11.3.0's success writer does (class-wc-payments-order-service.php:2062-2064); a capture keeps the outcome's stamp for
+	 * every payment method (:2209-2213).
+	 *
+	 * @param array<string,mixed>  $intent                         Platform PaymentIntent response.
+	 * @param array<string,mixed>  $charge                         Platform Charge response.
+	 * @param array<string,string> $settlement_meta                Precomputed settlement metadata.
+	 * @param bool                 $include_payment_transaction_id Whether to include the balance transaction ID.
+	 * @param bool                 $was_held_for_review            Whether the order was held for fraud review before completing.
+	 * @param bool                 $is_capture                     Whether the charge completes the order as a capture of its authorization.
+	 * @return array<string,string>
+	 */
+	public static function completed_charge_meta( array $intent, array $charge, array $settlement_meta = array(), bool $include_payment_transaction_id = true, bool $was_held_for_review = false, bool $is_capture = false ): array {
+		$meta                   = array();
+		$balance_transaction_id = WooPaymentsIntentCodec::balance_transaction_id( $charge['balance_transaction'] ?? null );
+		if ( $include_payment_transaction_id && '' !== $balance_transaction_id ) {
+			$meta[ WooPaymentsPersistenceVocabulary::PAYMENT_TRANSACTION_ID_META_KEY ] = $balance_transaction_id;
+		}
+
+		$meta = array_merge( $meta, self::authorized_charge_meta( $intent, $charge, $settlement_meta, $was_held_for_review ) );
+		if ( ! $is_capture && ! self::is_card_charge( $charge ) ) {
+			$meta[ WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY ] = WooPaymentsFraudMetaBoxType::NOT_CARD;
+		}
+
+		return $meta;
+	}
+
+	/**
+	 * Get charge metadata valid before capture.
+	 *
+	 * @param array<string,mixed>  $intent               Platform PaymentIntent response.
+	 * @param array<string,mixed>  $charge               Platform Charge response.
+	 * @param array<string,string> $settlement_meta      Precomputed settlement metadata.
+	 * @param bool                 $was_held_for_review  Whether the order was held for fraud review before completing.
+	 * @param bool                 $is_authorization     Whether the intent is an authorization (`requires_capture` or `processing`).
+	 * @return array<string,string>
+	 */
+	private static function authorized_charge_meta( array $intent, array $charge, array $settlement_meta = array(), bool $was_held_for_review = false, bool $is_authorization = false ): array {
+		$meta = $settlement_meta;
+		if ( isset( $charge['outcome']['risk_level'] ) ) {
+			$meta[ WooPaymentsPersistenceVocabulary::CHARGE_RISK_LEVEL_META_KEY ] = (string) $charge['outcome']['risk_level'];
+		}
+
+		return array_merge( $meta, self::fraud_outcome_meta( $intent, $was_held_for_review, $is_authorization ) );
+	}
+
+	/**
+	 * Get payment-method backfill metadata from a completed charge.
+	 *
+	 * @param array<string,mixed> $charge                          Platform Charge response.
+	 * @param bool                $has_placeholder_payment_details Whether existing details are empty.
+	 * @param string              $existing_transaction_id        Existing balance transaction ID.
+	 * @return array<string,string>
+	 */
+	public static function completed_charge_payment_method_backfill_meta( array $charge, bool $has_placeholder_payment_details, string $existing_transaction_id = '' ): array {
+		if ( ! $has_placeholder_payment_details ) {
+			return array();
+		}
+
+		$meta                   = array();
+		$balance_transaction_id = WooPaymentsIntentCodec::balance_transaction_id( $charge['balance_transaction'] ?? null );
+		if ( '' === $existing_transaction_id && '' !== $balance_transaction_id ) {
+			$meta[ WooPaymentsPersistenceVocabulary::PAYMENT_TRANSACTION_ID_META_KEY ] = $balance_transaction_id;
+		}
+
+		return $meta + self::payment_method_details_meta( $charge['payment_method_details'] ?? array() );
+	}
+
+	/**
+	 * Get the order metadata for a started PaymentIntent.
+	 *
+	 * Client 11.1.0 stores the payment intent's own currency, uppercased by its intent model, before the payment succeeds (class-wc-payments-api-payment-intention.php:93, class-wc-payments-order-service.php:1361).
+	 * The order currency is only a fallback.
+	 *
+	 * @param array<string,mixed> $intent         Platform PaymentIntent response.
+	 * @param string              $order_currency Order currency, used when the intent carries none.
+	 * @return array<string,string>
+	 */
+	public static function started_payment_meta( array $intent, string $order_currency ): array {
+		return array(
+			WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY             => isset( $intent['status'] ) ? (string) $intent['status'] : WooPaymentsIntentStatus::REQUIRES_ACTION,
+			WooPaymentsPersistenceVocabulary::INTENT_CURRENCY_META_KEY        => strtoupper( isset( $intent['currency'] ) ? (string) $intent['currency'] : $order_currency ),
+			WooPaymentsPersistenceVocabulary::PAYMENT_TRANSACTION_ID_META_KEY => '',
+			WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY    => self::is_card_intent( $intent ) ? WooPaymentsFraudMetaBoxType::PAYMENT_STARTED : WooPaymentsFraudMetaBoxType::NOT_CARD,
+		);
+	}
+
+	/**
+	 * Get lifecycle metadata from a completed capture response.
+	 *
+	 * @param array<string,mixed>  $intent              Platform PaymentIntent response.
+	 * @param string               $order_currency      Order currency.
+	 * @param string               $order_mode          `_wcpay_mode` value, one of WooPaymentsOrderMode.
+	 * @param array<string,string> $settlement_meta     Precomputed settlement metadata.
+	 * @param bool                 $was_held_for_review Whether the order's stored fraud outcome is review.
+	 * @param bool                 $include_fee_meta    Whether to add the fee meta client 11.1.0 attaches from the charge (class-wc-payments-order-service.php:1741).
+	 * @return array<string,string>
+	 */
+	public static function completed_capture_meta( array $intent, string $order_currency, string $order_mode, array $settlement_meta = array(), bool $was_held_for_review = false, bool $include_fee_meta = true ): array {
+		$charge = WooPaymentsIntentCodec::latest_charge( $intent );
+		if ( empty( $charge ) ) {
+			return array();
+		}
+
+		$meta      = array(
+			// Client 11.1.0 capture keeps the uppercase value its authorization stored (class-wc-payments-api-payment-intention.php:93); only the webhook writes Stripe's lowercase.
+			WooPaymentsPersistenceVocabulary::INTENT_CURRENCY_META_KEY => strtoupper( isset( $intent['currency'] ) ? (string) $intent['currency'] : $order_currency ),
+			WooPaymentsPersistenceVocabulary::MODE_META_KEY            => $order_mode,
+		);
+		$charge_id = isset( $charge['id'] ) ? (string) $charge['id'] : '';
+		if ( '' !== $charge_id ) {
+			$meta[ WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY ] = $charge_id;
+		}
+
+		$meta = array_merge( $meta, self::completed_charge_meta( $intent, $charge, $settlement_meta, false, $was_held_for_review, true ) );
+
+		return $include_fee_meta ? array_merge( $meta, self::attached_fee_meta( $charge ) ) : $meta;
+	}
+
+	/**
+	 * Get the order metadata for a failed capture response.
+	 *
+	 * @return array<string,string>
+	 */
+	public static function failed_capture_meta(): array {
+		return array( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY => WooPaymentsIntentStatus::REQUIRES_CAPTURE );
+	}
+
+	/**
+	 * Get WooPayments fraud-outcome order metadata.
+	 *
+	 * An order that succeeds after sitting in fraud review is stamped
+	 * review_allowed, not allow — the meta box then records that a human
+	 * approved the payment rather than the risk filters alone. The stamp is
+	 * the same for every payment method; with no fraud outcome nothing is
+	 * stamped (class-wc-payments-order-service.php:2153-2156, :2209-2213).
+	 * An authorization stamps only an allow or a review outcome (:2153,
+	 * :2262-2264).
+	 *
+	 * @param array<string,mixed> $intent              Platform PaymentIntent response.
+	 * @param bool                $was_held_for_review Whether the order was held for fraud review before completing.
+	 * @param bool                $is_authorization    Whether the intent is an authorization (`requires_capture` or `processing`).
+	 * @return array<string,string>
+	 */
+	private static function fraud_outcome_meta( array $intent, bool $was_held_for_review = false, bool $is_authorization = false ): array {
+		$metadata      = isset( $intent['metadata'] ) && is_array( $intent['metadata'] ) ? $intent['metadata'] : array();
+		$fraud_outcome = isset( $metadata['fraud_outcome'] ) ? (string) $metadata['fraud_outcome'] : '';
+
+		if ( in_array( $fraud_outcome, $is_authorization ? array( WooPaymentsFraudOutcome::ALLOW, WooPaymentsFraudOutcome::REVIEW ) : array( WooPaymentsFraudOutcome::ALLOW, WooPaymentsFraudOutcome::BLOCK, WooPaymentsFraudOutcome::REVIEW ), true ) ) {
+			// A review outcome on a pre-capture intent is client 11.1.0's
+			// mark_order_held_for_review_for_fraud() stamp (class-wc-payments-order-service.php:1717): the meta box must show the
+			// held-for-review panel until the merchant decides. On completion the
+			// outcome value no longer drives the box; the held-for-review history does.
+			if ( $is_authorization ) {
+				$box_type = $fraud_outcome;
+			} else {
+				$box_type = $was_held_for_review ? WooPaymentsFraudMetaBoxType::REVIEW_ALLOWED : WooPaymentsFraudMetaBoxType::ALLOW;
+			}
+
+			$meta = array(
+				WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY => $fraud_outcome,
+				WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY  => $box_type,
+			);
+
+			if ( WooPaymentsFraudOutcome::REVIEW === $fraud_outcome && $is_authorization ) {
+				$ruleset_results = self::get_fraud_ruleset_results( $intent );
+				$encoded_results = wp_json_encode( $ruleset_results );
+				if ( array() !== $ruleset_results && is_string( $encoded_results ) ) {
+					$meta[ WooPaymentsPersistenceVocabulary::FRAUD_RULESET_RESULTS_META_KEY ] = $encoded_results;
+				}
+			}
+
+			return $meta;
+		}
+
+		return array();
+	}
+
+	/**
+	 * Get the fraud meta of an authorization the merchant cancelled from the order screen or the REST route: a block or
+	 * review outcome in the canceled intent's metadata is stored with the review_blocked box, and any other outcome stores
+	 * nothing (class-wc-payments-order-service.php:2009-2014).
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param array<string,mixed> $intent Canceled PaymentIntent response.
+	 * @return array<string,string>
+	 */
+	public static function cancelled_authorization_fraud_meta( array $intent ): array {
+		$metadata      = isset( $intent['metadata'] ) && is_array( $intent['metadata'] ) ? $intent['metadata'] : array();
+		$fraud_outcome = isset( $metadata['fraud_outcome'] ) && is_string( $metadata['fraud_outcome'] ) ? $metadata['fraud_outcome'] : '';
+		if ( ! in_array( $fraud_outcome, array( WooPaymentsFraudOutcome::BLOCK, WooPaymentsFraudOutcome::REVIEW ), true ) ) {
+			return array();
+		}
+
+		return array(
+			WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY => $fraud_outcome,
+			WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY  => WooPaymentsFraudMetaBoxType::REVIEW_BLOCKED,
+		);
+	}
+
+	/**
+	 * Get the fired fraud ruleset results from a PaymentIntent response.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param array<string,mixed> $intent Platform PaymentIntent response.
+	 * @return array<mixed> Fired fraud ruleset results, when present and valid.
+	 */
+	public static function get_fraud_ruleset_results( array $intent ): array {
+		$metadata = isset( $intent['metadata'] ) && is_array( $intent['metadata'] ) ? $intent['metadata'] : array();
+		$encoded  = $metadata['fraud_ruleset_results'] ?? null;
+		if ( ! is_string( $encoded ) ) {
+			return array();
+		}
+
+		$ruleset_results = json_decode( $encoded, true );
+
+		return is_array( $ruleset_results ) && array() !== $ruleset_results ? $ruleset_results : array();
+	}
+
+	/**
+	 * Tell whether a succeeded intent completes the order as the capture of the authorization the order recorded: the
+	 * order stores requires_capture, the intent is the one the order stored before the caller wrote any, and the
+	 * transaction ID names it. Any other success is a payment, whose amount is checked. Client 11.3.0 reads the stored
+	 * status alone (class-wc-payments-order-service.php:484-485, :2193-2219).
+	 *
+	 * @param WC_Order            $order            Order the intent pays, read under the order payment lock.
+	 * @param array<string,mixed> $intent           Provider intent response.
+	 * @param string|null         $stored_intent_id The intent the order stored before the caller wrote any, or null to read it now.
+	 * @return bool
+	 */
+	public static function captures_the_authorization( WC_Order $order, array $intent, ?string $stored_intent_id = null ): bool {
+		$intent_id = isset( $intent['id'] ) && is_scalar( $intent['id'] ) ? (string) $intent['id'] : '';
+		$charge    = WooPaymentsIntentCodec::latest_charge( $intent );
+		$charge_id = isset( $charge['id'] ) && is_scalar( $charge['id'] ) ? (string) $charge['id'] : '';
+
+		return WooPaymentsIntentStatus::SUCCEEDED === (string) ( $intent['status'] ?? '' )
+			&& WooPaymentsIntentStatus::REQUIRES_CAPTURE === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true )
+			&& '' !== $intent_id
+			&& ( $stored_intent_id ?? (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true ) ) === $intent_id
+			&& self::transaction_id_names_payment( $order, $intent_id, $charge_id );
+	}
+
+	/**
+	 * Tell whether the order's transaction ID names a payment, by its intent ID or its charge ID. An empty transaction ID
+	 * names nothing. Event ownership, the Stripe Billing renewal records and the capture of an authorization ask this, so
+	 * they cannot answer it differently.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param WC_Order $order     Order.
+	 * @param string   $intent_id The payment's intent ID, or ''.
+	 * @param string   $charge_id The payment's charge ID, or ''.
+	 * @return bool
+	 */
+	public static function transaction_id_names_payment( WC_Order $order, string $intent_id, string $charge_id ): bool {
+		$transaction_id = (string) $order->get_transaction_id();
+
+		return '' !== $transaction_id && ( $transaction_id === $intent_id || $transaction_id === $charge_id );
+	}
+
+	/**
+	 * Get the fee meta client 11.1.0 `attach_transaction_fee_to_order()` writes from a charge: nothing until the charge is
+	 * captured; the envelope's fee and net when it has one; otherwise the application fee alone, in the charge currency.
+	 *
+	 * @param array<string,mixed> $charge Platform Charge response.
+	 * @return array<string,string>
+	 */
+	public static function attached_fee_meta( array $charge ): array {
+		if ( empty( $charge['captured'] ) ) {
+			return array();
+		}
+
+		$envelope_meta = self::envelope_fee_meta( $charge );
+		if ( null !== $envelope_meta ) {
+			return $envelope_meta;
+		}
+
+		$application_fee_amount = $charge['application_fee_amount'] ?? null;
+
+		return null !== $application_fee_amount
+			? array( WooPaymentsPersistenceVocabulary::TRANSACTION_FEE_META_KEY => (string) self::interpret_stripe_amount( (int) $application_fee_amount, (string) ( $charge['currency'] ?? '' ) ) )
+			: array();
+	}
+
+	/**
+	 * Get the fee meta client 11.1.0 writes from a `payment_intent.succeeded` event: the envelope's fee and net when the
+	 * first charge has one; otherwise, when the application fee is not zero, that fee and the intent amount less it, in
+	 * the intent currency.
+	 *
+	 * @param array<string,mixed> $intent PaymentIntent from the event.
+	 * @param array<string,mixed> $charge First charge of the intent.
+	 * @return array<string,string>
+	 */
+	public static function webhook_fee_meta( array $intent, array $charge ): array {
+		$envelope_meta = self::envelope_fee_meta( $charge );
+		if ( null !== $envelope_meta ) {
+			return $envelope_meta;
+		}
+
+		$application_fee_amount = (int) ( $charge['application_fee_amount'] ?? 0 );
+		if ( 0 === $application_fee_amount ) {
+			return array();
+		}
+
+		$currency = (string) ( $intent['currency'] ?? '' );
+		$fee      = self::interpret_stripe_amount( $application_fee_amount, $currency );
+
+		return array(
+			WooPaymentsPersistenceVocabulary::TRANSACTION_FEE_META_KEY => (string) $fee,
+			WooPaymentsPersistenceVocabulary::NET_META_KEY => (string) ( self::interpret_stripe_amount( (int) ( $intent['amount'] ?? 0 ), $currency ) - $fee ),
+		);
+	}
+
+	/**
+	 * Get the fee and net meta from a charge's fee envelope.
+	 *
+	 * @param array<string,mixed> $charge Platform Charge response.
+	 * @return array<string,string>|null Null when the charge has no envelope with a fee total.
+	 */
+	private static function envelope_fee_meta( array $charge ): ?array {
+		$totals = $charge['fee_breakdown_v1']['totals'] ?? null;
+		if ( ! is_array( $totals ) || ! isset( $totals['fee']['amount'], $totals['fee']['currency'] ) ) {
+			return null;
+		}
+
+		$meta = array( WooPaymentsPersistenceVocabulary::TRANSACTION_FEE_META_KEY => (string) self::interpret_stripe_amount( (int) $totals['fee']['amount'], (string) $totals['fee']['currency'] ) );
+		if ( isset( $totals['net']['amount'], $totals['net']['currency'] ) ) {
+			$meta[ WooPaymentsPersistenceVocabulary::NET_META_KEY ] = (string) self::interpret_stripe_amount( (int) $totals['net']['amount'], (string) $totals['net']['currency'] );
+		}
+
+		return $meta;
+	}
+
+	/**
+	 * Interpret a Stripe integer amount for a currency.
+	 *
+	 * @param int    $amount   Stripe integer amount.
+	 * @param string $currency Currency code.
+	 * @return float
+	 */
+	public static function interpret_stripe_amount( int $amount, string $currency ): float {
+		return WooPaymentsCurrencyUtils::amount_from_minor_units( $amount, $currency );
+	}
+
+	/**
+	 * Get the Multibanco voucher order metadata.
+	 *
+	 * @param array<string,mixed> $intent Platform PaymentIntent response.
+	 * @return array<string,string>
+	 */
+	public static function multibanco_voucher_meta( array $intent ): array {
+		$next_action = isset( $intent['next_action'] ) && is_array( $intent['next_action'] ) ? $intent['next_action'] : array();
+		if ( 'multibanco_display_details' !== (string) ( $next_action['type'] ?? '' ) ) {
+			return array();
+		}
+
+		$details = isset( $next_action['multibanco_display_details'] ) && is_array( $next_action['multibanco_display_details'] )
+			? $next_action['multibanco_display_details']
+			: array();
+
+		return self::scalar_meta_from_keys(
+			$details,
+			array(
+				'reference'          => WooPaymentsPersistenceVocabulary::MULTIBANCO_REFERENCE_META_KEY,
+				'entity'             => WooPaymentsPersistenceVocabulary::MULTIBANCO_ENTITY_META_KEY,
+				'hosted_voucher_url' => WooPaymentsPersistenceVocabulary::MULTIBANCO_URL_META_KEY,
+				'expires_at'         => WooPaymentsPersistenceVocabulary::MULTIBANCO_EXPIRY_META_KEY,
+			)
+		);
+	}
+
+	/**
+	 * Compose local effects for a successful provider refund.
+	 *
+	 * @param array<string,mixed> $result                  Provider refund response.
+	 * @param string              $rendered_note           Rendered refund note.
+	 * @param string              $refund_note_identity    Stable refund note identity.
+	 * @param array<mixed>        $refund_note_equivalents Exact equivalent refund-note renderings.
+	 * @return array<string,mixed>
+	 */
+	public static function compose_refund_effect_data( array $result, string $rendered_note, string $refund_note_identity, array $refund_note_equivalents ): array {
+		$refund_id              = isset( $result['id'] ) ? (string) $result['id'] : '';
+		$provider_status        = isset( $result['status'] ) ? (string) $result['status'] : '';
+		$refund_status          = WooPaymentsIntentCodec::is_pending_refund_status( $provider_status ) ? WooPaymentsStoredRefundStatus::PENDING : WooPaymentsStoredRefundStatus::SUCCESSFUL;
+		$balance_transaction_id = WooPaymentsIntentCodec::balance_transaction_id( $result['balance_transaction'] ?? null );
+		$refund_meta            = array( WooPaymentsPersistenceVocabulary::PROCESSED_REFUND_LINK_META_KEY => $refund_id );
+		$effect_data            = array(
+			PaymentOutcome::DATA_ORDER_META  => array(
+				WooPaymentsPersistenceVocabulary::REFUND_STATUS_META_KEY => $refund_status,
+				WooPaymentsPaymentOperationService::REFUND_AMBIGUITY_META => '',
+			),
+			PaymentOutcome::DATA_REFUND_META => $refund_meta,
+			PaymentOutcome::DATA_REFUND_NOTE => $rendered_note,
+		);
+
+		if ( '' !== $balance_transaction_id ) {
+			$effect_data[ PaymentOutcome::DATA_REFUND_META ][ WooPaymentsPersistenceVocabulary::REFUND_TRANSACTION_ID_META_KEY ] = $balance_transaction_id;
+		}
+
+		if ( '' !== $refund_note_identity ) {
+			$effect_data[ PaymentOutcome::DATA_REFUND_NOTE_IDENTITY ] = $refund_note_identity;
+		}
+
+		$refund_note_equivalents = array_values( array_filter( $refund_note_equivalents, 'is_string' ) );
+		if ( ! empty( $refund_note_equivalents ) ) {
+			$effect_data[ PaymentOutcome::DATA_REFUND_NOTE_EQUIVALENTS ] = $refund_note_equivalents;
+		}
+
+		return $effect_data;
+	}
+
+	/**
+	 * Tell whether a charge used a card payment method.
+	 *
+	 * @param array<string,mixed> $charge Platform Charge response.
+	 * @return bool
+	 */
+	private static function is_card_charge( array $charge ): bool {
+		$details = isset( $charge['payment_method_details'] ) && is_array( $charge['payment_method_details'] ) ? $charge['payment_method_details'] : array();
+
+		return WooPaymentsPaymentMethodType::CARD === (string) ( $details['type'] ?? '' );
+	}
+
+	/**
+	 * Tell whether an intent used a card payment method.
+	 *
+	 * @param array<string,mixed> $intent Platform PaymentIntent response.
+	 * @return bool
+	 */
+	private static function is_card_intent( array $intent ): bool {
+		$charge = WooPaymentsIntentCodec::latest_charge( $intent );
+		if ( ! empty( $charge ) && self::is_card_charge( $charge ) ) {
+			return true;
+		}
+
+		$payment_method = isset( $intent['payment_method'] ) && is_array( $intent['payment_method'] ) ? $intent['payment_method'] : array();
+		if ( WooPaymentsPaymentMethodType::CARD === (string) ( $payment_method['type'] ?? '' ) ) {
+			return true;
+		}
+
+		$payment_method_types = isset( $intent['payment_method_types'] ) && is_array( $intent['payment_method_types'] )
+			? array_map( 'strval', $intent['payment_method_types'] )
+			: array();
+		if ( in_array( WooPaymentsPaymentMethodType::CARD, $payment_method_types, true ) ) {
+			return true;
+		}
+
+		$options = isset( $intent['payment_method_options'] ) && is_array( $intent['payment_method_options'] ) ? $intent['payment_method_options'] : array();
+
+		return array_key_exists( WooPaymentsPaymentMethodType::CARD, $options );
+	}
+
+	/**
+	 * Map a provider payment method type to its WooCommerce gateway ID.
+	 *
+	 * @param string $payment_method_type Provider payment method type.
+	 * @return string
+	 */
+	private static function payment_method_gateway_id( string $payment_method_type ): string {
+		if ( in_array( $payment_method_type, array( WooPaymentsPaymentMethodType::CARD, WooPaymentsPaymentMethodType::LINK, WooPaymentsPaymentMethodType::APPLE_PAY, WooPaymentsPaymentMethodType::GOOGLE_PAY ), true ) ) {
+			return WooPaymentsPersistenceVocabulary::GATEWAY_ID;
+		}
+
+		return '' === $payment_method_type ? '' : WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . $payment_method_type;
+	}
+
+	/**
+	 * Get the payment method type represented by an intent.
+	 *
+	 * @param array<string,mixed> $intent Provider intent response.
+	 * @return string
+	 */
+	private static function intent_payment_method_type( array $intent ): string {
+		$options = isset( $intent['payment_method_options'] ) && is_array( $intent['payment_method_options'] ) ? array_keys( $intent['payment_method_options'] ) : array();
+		if ( ! empty( $options ) ) {
+			return sanitize_key( (string) $options[0] );
+		}
+
+		$types = isset( $intent['payment_method_types'] ) && is_array( $intent['payment_method_types'] ) ? array_values( $intent['payment_method_types'] ) : array();
+
+		return ! empty( $types ) && is_scalar( $types[0] ) ? sanitize_key( (string) $types[0] ) : '';
+	}
+
+	/**
+	 * Project scalar payload fields to metadata keys.
+	 *
+	 * @param array<string,mixed>  $payload Payload values.
+	 * @param array<string,string> $key_map Source-to-meta key map.
+	 * @return array<string,string>
+	 */
+	private static function scalar_meta_from_keys( array $payload, array $key_map ): array {
+		$meta = array();
+
+		foreach ( $key_map as $source_key => $meta_key ) {
+			if ( isset( $payload[ $source_key ] ) && is_scalar( $payload[ $source_key ] ) ) {
+				$meta[ $meta_key ] = (string) $payload[ $source_key ];
+			}
+		}
+
+		return $meta;
+	}
+}

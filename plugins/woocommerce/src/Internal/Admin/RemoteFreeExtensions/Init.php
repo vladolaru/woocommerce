@@ -9,6 +9,8 @@ defined( 'ABSPATH' ) || exit;
 
 use Automattic\WooCommerce\Internal\Admin\RemoteFreeExtensions\DefaultFreeExtensions;
 use Automattic\WooCommerce\Admin\RemoteSpecs\RemoteSpecsEngine;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 
 /**
  * Remote Payment Methods engine.
@@ -21,6 +23,10 @@ class Init extends RemoteSpecsEngine {
 	 */
 	public function __construct() {
 		add_action( 'woocommerce_updated', array( __CLASS__, 'delete_specs_transient' ) );
+		// The fallback defaults cached with these specs depend on the WooPayments feature, so a feature change drops them.
+		foreach ( array( 'add_option_', 'update_option_', 'delete_option_' ) as $hook ) {
+			add_action( $hook . WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, array( __CLASS__, 'delete_specs_transient' ), 10, 0 );
+		}
 	}
 
 	/**
@@ -62,7 +68,39 @@ class Init extends RemoteSpecsEngine {
 			RemoteFreeExtensionsDataSourcePoller::get_instance()->set_specs_transient( array( $locale => $specs_to_save ), 3 * HOUR_IN_SECONDS );
 		}
 
-		return $specs_to_return;
+		return self::remove_woopayments_from_bundles( $specs_to_return );
+	}
+
+	/**
+	 * Leave the WooPayments plugin out of the bundles while the WooPayments feature is on: the built-in WooPayments is
+	 * offered instead, and the remote specs still list the extension.
+	 *
+	 * The default bundles follow the same rule (DefaultFreeExtensions::get_all()).
+	 *
+	 * @param array $bundles Evaluated bundles.
+	 * @return array
+	 */
+	private static function remove_woopayments_from_bundles( array $bundles ): array {
+		if ( ! wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_builtin_enabled() ) {
+			return $bundles;
+		}
+
+		foreach ( $bundles as $index => $bundle ) {
+			if ( empty( $bundle['plugins'] ) || ! is_array( $bundle['plugins'] ) ) {
+				continue;
+			}
+
+			$bundles[ $index ]['plugins'] = array_values(
+				array_filter(
+					$bundle['plugins'],
+					static function ( $plugin ): bool {
+						return ! is_object( $plugin ) || 'woocommerce-payments' !== ( $plugin->key ?? '' );
+					}
+				)
+			);
+		}
+
+		return $bundles;
 	}
 
 	/**

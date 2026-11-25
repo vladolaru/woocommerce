@@ -1,0 +1,88 @@
+{
+	"assets": {
+		"blocks-express-checkout.css": {
+			"allow_new": true,
+			"raw_bytes": 788,
+			"gzip_bytes": 270
+		},
+		"blocks-express-checkout.js": {
+			"allow_new": true,
+			"raw_bytes": 26103,
+			"gzip_bytes": 8729,
+			"reason": "Express checkout checks whether the cart is empty and whether the wallet supports the current currency. These checks add no dependencies, and the full Cart and Checkout block bundles are still smaller than in WooPayments 11.1.0."
+		},
+		"multi-currency-analytics.js": {
+			"allow_missing": true
+		},
+		"multi-currency-setup.css": {
+			"allow_missing": true
+		},
+		"multi-currency-setup.js": {
+			"allow_missing": true
+		},
+		"multi-currency-switcher-block.js": {
+			"allow_missing": true
+		},
+		"classic-card.css": {
+			"raw_growth_bytes": 2784,
+			"gzip_growth_bytes": 778
+		},
+		"woopay-direct-checkout.js": {
+			"raw_bytes": 43978,
+			"gzip_bytes": 15809
+		},
+		"woopay.js": {
+			"raw_growth_bytes": 4396,
+			"gzip_growth_bytes": 3196
+		},
+		"frontend-tracks.js": {
+			"raw_bytes": 2129,
+			"gzip_bytes": 946,
+			"reason": "Shopper Tracks events from the checkout scripts share one queue and are sent in batches, as WooPayments 11.3.0 does, and nothing is sent for a signed-in administrator, as on the extension. The measured ceilings add no dependencies and stay below the extension's own script for the same feature."
+		},
+		"admin-capital.js": {
+			"raw_bytes": 12124,
+			"gzip_bytes": 4253,
+			"reason": "DevModeMessage uses the extension’s WordPress-provided ExternalLink. These measured ceilings cover the built-in loan columns, saved preferences and development-mode notice ported from WooPayments 11.3.0, with no added third-party code or headroom. The gzip ceiling also covers the active loan summary's empty-response fallback, measured at 4,251 bytes: its helper ships once, in the chunk the WooPayments admin routes share, and the call to it compresses worse than the loans call it used to repeat. The 2 extra bytes cover the module-id noise seen between builds of one commit."
+		},
+		"admin-fraud-protection.js": {
+			"raw_bytes": 29707,
+			"gzip_bytes": 8924
+		},
+		"admin-overview.js": {
+			"raw_bytes": 111061,
+			"gzip_bytes": 29974
+		},
+		"admin-payouts.js": {
+			"raw_bytes": 29486,
+			"gzip_bytes": 9225
+		},
+		"admin-shared.css": {
+			"raw_bytes": 189231,
+			"gzip_bytes": 22217
+		},
+		"blocks-common.js": {
+			"allow_new": true,
+			"raw_bytes": 15778,
+			"gzip_bytes": 5627
+		},
+		"blocks-woopay-common.js": {
+			"allow_new": true,
+			"raw_bytes": 18593,
+			"gzip_bytes": 6195
+		},
+		"blocks-woopay.css": {
+			"allow_new": true,
+			"raw_bytes": 3643,
+			"gzip_bytes": 1069
+		},
+		"woopay-phone-validation.js": {
+			"allow_new": true,
+			"raw_bytes": 9485,
+			"gzip_bytes": 4345
+		},
+		"cart-block.css": {
+			"gzip_growth_bytes": 25
+		}
+	}
+}

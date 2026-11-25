@@ -171,7 +171,7 @@ export const WooPaymentsPostSandboxAccountSetupModal = ( {
 												components: {
 													link: (
 														<Link
-															href="https://woocommerce.com/document/woopayments/startup-guide/#sign-up-process"
+															href="https://woocommerce.com/document/woopayments/startup-guide/#signup-process"
 															target="_blank"
 															rel="noreferrer"
 															type="external"

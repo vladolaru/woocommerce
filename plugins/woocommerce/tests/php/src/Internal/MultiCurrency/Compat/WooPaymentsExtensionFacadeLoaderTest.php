@@ -1,0 +1,407 @@
+<?php
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Compat;
+
+use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Internal\MultiCurrency\Compat\WooPaymentsExtensionFacadeLoader;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\LocalizationInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
+use Automattic\WooCommerce\Tests\Internal\Compatibility\WooPaymentsCompatibilityNoticeTestTrait;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\ServiceFactories;
+use WC_Unit_Test_Case;
+
+require_once __DIR__ . '/Fixtures/multi-currency-facade-consumers.inc';
+
+/**
+ * Tests the native MultiCurrency legacy facade compatibility boundary.
+ */
+class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
+
+	use WooPaymentsCompatibilityNoticeTestTrait;
+
+	/**
+	 * @testdox WordPress can sandbox-load the extension after plugins_loaded without colliding with a built-in declaration.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_currency_names_stay_available_for_extension_activation(): void {
+		$_REQUEST['action'] = 'activate';
+		$_REQUEST['plugin'] = 'woocommerce-payments/woocommerce-payments.php';
+		$loader             = new WooPaymentsExtensionFacadeLoader();
+		$loader->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ) );
+		$loader->register();
+		$this->assertFalse( function_exists( 'WC_Payments_Multi_Currency' ) );
+		$this->assertFalse( class_exists( 'WCPay\MultiCurrency\MultiCurrency', false ) );
+		require __DIR__ . '/Fixtures/extension-currency-accessor.fixture';
+		$GLOBALS['wc_test_multi_currency_extension'] = new \stdClass();
+		$this->assertSame( $GLOBALS['wc_test_multi_currency_extension'], WC_Payments_Multi_Currency() );
+	}
+
+	/**
+	 * @testdox The facade is available to later plugins_loaded listeners and also on late registration.
+	 * @testWith [true]
+	 *           [false]
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 *
+	 * @param bool $early Whether the loader registers before plugins_loaded.
+	 */
+	public function test_accessor_load_timing( bool $early ): void {
+		$loader = new WooPaymentsExtensionFacadeLoader();
+		$loader->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ) );
+		if ( $early ) {
+			unset( $GLOBALS['wp_actions']['plugins_loaded'] );
+			remove_all_actions( 'plugins_loaded' );
+			$loader->register();
+			$this->assertFalse( function_exists( 'WC_Payments_Multi_Currency' ) );
+			add_action(
+				'plugins_loaded',
+				function () {
+					$this->assertTrue( function_exists( 'WC_Payments_Multi_Currency' ) );
+					$this->assertTrue( class_exists( 'WCPay\MultiCurrency\Utils', false ) );
+				},
+				1
+			);
+			do_action( 'plugins_loaded' );
+		} else {
+			$loader->register();
+		}
+		$this->assertTrue( function_exists( 'WC_Payments_Multi_Currency' ) );
+		$this->assertTrue( class_exists( 'WCPay\MultiCurrency\Exceptions\InvalidCurrencyRateException', false ) );
+	}
+
+	/**
+	 * Tear down test fixtures.
+	 */
+	public function tearDown(): void {
+		Constants::clear_single_constant( 'WP_SANDBOX_SCRAPING' );
+		$this->reset_container_replacements();
+
+		parent::tearDown();
+	}
+
+	/**
+	 * @testdox The core-owned facade preserves grounded extension calls and converts a price exactly once.
+	 */
+	public function test_core_owned_facade_preserves_grounded_extension_calls(): void {
+		$this->reset_compatibility_notices( \WCPay\MultiCurrency\MultiCurrency::class, \WCPay\MultiCurrency\Compatibility::class );
+		$failing_price_converter = $this->createMock( PriceConverter::class );
+		$failing_price_converter->method( 'get_price' )->willThrowException( new \RuntimeException( 'Projection failed.' ) );
+		$this->create_loader( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $failing_price_converter );
+		$consumer = new MultiCurrencyFacadeConsumerFixture();
+
+		$this->assertTrue( class_exists( 'WCPay\\MultiCurrency\\MultiCurrency', false ), 'Core ownership should declare the namespaced compatibility facade.' );
+		$this->assertTrue( class_exists( 'WCPay\\MultiCurrency\\Compatibility', false ), 'Core ownership declares the compatibility facade with it.' );
+		if ( ! class_exists( 'WCPay\\MultiCurrency\\MultiCurrency', false ) ) {
+			return;
+		}
+
+		$facade_class   = new \ReflectionClass( 'WCPay\\MultiCurrency\\MultiCurrency' );
+		$instance_type  = $facade_class->getMethod( 'instance' )->getReturnType();
+		$get_price      = $facade_class->getMethod( 'get_price' );
+		$get_price_type = $get_price->getReturnType();
+		$this->assertInstanceOf( \ReflectionNamedType::class, $instance_type );
+		$this->assertInstanceOf( \ReflectionNamedType::class, $get_price_type );
+		if ( ! $instance_type instanceof \ReflectionNamedType || ! $get_price_type instanceof \ReflectionNamedType ) {
+			return;
+		}
+		$this->assertContains( $instance_type->getName(), array( 'self', 'WCPay\\MultiCurrency\\MultiCurrency' ), 'The singleton return type is part of the approved facade contract.' );
+		$this->assertCount( 3, $get_price->getParameters() );
+		$this->assertSame( 2, $get_price->getNumberOfRequiredParameters() );
+		$this->assertFalse( $get_price->getParameters()[0]->hasType(), 'The legacy amount parameter must continue accepting numeric strings.' );
+		$this->assertSame( 'string', (string) $get_price->getParameters()[1]->getType() );
+		$currency_type = $get_price->getParameters()[2]->getType();
+		$this->assertInstanceOf( \ReflectionNamedType::class, $currency_type );
+		$this->assertSame( MultiCurrencyCurrency::class, $currency_type->getName() );
+		$this->assertTrue( $currency_type->allowsNull() );
+		$this->assertNull( $get_price->getParameters()[2]->getDefaultValue() );
+		$this->assertSame( 'float', $get_price_type->getName() );
+
+		$this->setExpectedIncorrectUsage( 'WCPay\\MultiCurrency\\MultiCurrency::instance()' );
+		$this->setExpectedIncorrectUsage( 'WCPay\\MultiCurrency\\MultiCurrency::get_price()' );
+		try {
+			$consumer->get_woopayments_multicurrency_price( 10.0 );
+			$this->fail( 'Expected the projection exception.' );
+		} catch ( \RuntimeException $exception ) {
+			$this->assertSame( 'Projection failed.', $exception->getMessage() );
+		}
+
+		$price_converter = $this->create_recording_price_converter( 2.0, 5.0 );
+		$this->create_loader( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $price_converter, $this->create_state_builder( $this->create_state() ) );
+
+		$first_instance = \WCPay\MultiCurrency\MultiCurrency::instance();
+		$this->assertSame( $first_instance, \WCPay\MultiCurrency\MultiCurrency::instance(), 'The compatibility instance should remain stable for the request.' );
+
+		$this->assertSame( 20.0, $first_instance->get_price( 10.0, 'product' ) );
+
+		$consumer = new MultiCurrencyFacadeConsumerFixture();
+		$this->setExpectedIncorrectUsage( 'WCPay\\MultiCurrency\\MultiCurrency::get_selected_currency()' );
+		$this->setExpectedIncorrectUsage( 'WCPay\\MultiCurrency\\MultiCurrency::get_default_currency()' );
+		$this->setExpectedIncorrectUsage( 'WCPay\\MultiCurrency\\MultiCurrency::get_raw_conversion()' );
+		$this->assertSame( 5.0, $consumer->get_table_rate_base_currency_price( 10.0 ), 'The guarded Table Rate call shape should reach native selected/default state and raw conversion without an undefined method.' );
+		$this->assertSame( 20.0, $first_instance->get_raw_conversion( 10.0, 'EUR' ), 'Omitting the source currency should preserve the plugin facade default of the store currency.' );
+
+		$this->assertSame( 20.0, $consumer->get_woopayments_multicurrency_price( 10.0 ), 'The Deposits call shape converts once: 10.0 at rate 2.0 is 20.0, two conversions would give 40.0.' );
+	}
+
+	/**
+	 * @testdox The facade converts a subscription cart's disabled currency back to the store currency for shipping price bands.
+	 *
+	 * A renewal or resubscribe cart keeps its subscription's currency after the merchant disabled it. Table Rate Shipping
+	 * compares the cart subtotal, converted back to the store currency, with its price bands; when that conversion throws, it
+	 * compares the unconverted subtotal. GBP's manual rate 0.73 is kept, so a £73 subtotal is $100.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_converts_a_disabled_subscription_currency_for_shipping_price_bands(): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'JPY' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_jpy', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_jpy', '150' );
+		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_gbp', '0.73' );
+		// What the Subscriptions compatibility returns for a GBP subscription's cart.
+		add_filter(
+			'wcpay_multi_currency_override_selected_currency',
+			static function () {
+				StateBuilder::set_order_currency_override( 'GBP' );
+
+				return 'GBP';
+			}
+		);
+		$state_builder = wc_get_container()->get( StateBuilderFactory::class )->get_state_builder();
+		$this->create_loader( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, wc_get_container()->get( ServiceFactory::class )->create_price_converter(), $state_builder );
+		$this->setExpectedIncorrectUsage( 'WCPay\\MultiCurrency\\MultiCurrency::instance()' );
+		$this->setExpectedIncorrectUsage( 'WCPay\\MultiCurrency\\MultiCurrency::get_selected_currency()' );
+		$this->setExpectedIncorrectUsage( 'WCPay\\MultiCurrency\\MultiCurrency::get_default_currency()' );
+		$this->setExpectedIncorrectUsage( 'WCPay\\MultiCurrency\\MultiCurrency::get_raw_conversion()' );
+
+		$subtotal = ( new MultiCurrencyFacadeConsumerFixture() )->get_table_rate_base_currency_price( 73.0 );
+
+		$this->assertEqualsWithDelta( 100.0, $subtotal, 0.000001 );
+		$this->assertSame( 'from $90', $subtotal >= 90.0 ? 'from $90' : 'below $90', 'The subtotal falls in the store-currency price band it is worth.' );
+	}
+
+	/**
+	 * @testdox The facade stays absent outside core-owned MultiCurrency.
+	 *
+	 * Its own process, the one where nothing declared the facade: PHP cannot undeclare a class, and the in-process cases
+	 * of this class and the facade test declare it.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_facade_stays_absent_outside_core_ownership(): void {
+		$this->assertFalse( class_exists( 'WCPay\\MultiCurrency\\MultiCurrency', false ), 'Precondition: an earlier in-process test declared the facade.' );
+
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		$reads   = 0;
+		$notices = 0;
+		add_filter(
+			'option_wcpay_multi_currency_enabled_currencies',
+			static function ( $codes ) use ( &$reads ) {
+				++$reads;
+				return $codes;
+			}
+		);
+		add_action(
+			'doing_it_wrong_run',
+			static function () use ( &$notices ) {
+				++$notices;
+			}
+		);
+		foreach ( array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, MultiCurrencyRuntimeArbiter::OWNER_NONE ) as $owner ) {
+			$loader = new WooPaymentsExtensionFacadeLoader();
+			$loader->init( $this->create_arbiter( $owner ) );
+			$loader->register();
+			$this->assertFalse( class_exists( 'WCPay\\MultiCurrency\\MultiCurrency', false ), 'The plugin and ownerless runtimes must retain authority over the plugin namespace.' );
+			$this->assertFalse( class_exists( 'WCPay\\MultiCurrency\\Compatibility', false ), 'The compatibility facade stays absent with the facade.' );
+			$this->assertFalse( function_exists( 'WC_Payments_Multi_Currency' ) );
+			foreach ( array( 'Utils', 'Exceptions\InvalidCurrencyException', 'Exceptions\InvalidCurrencyRateException' ) as $name ) {
+				$this->assertFalse( class_exists( 'WCPay\MultiCurrency\\' . $name, false ) );
+			}
+		}
+		$this->assertSame( 0, $reads );
+		$this->assertSame( 0, $notices );
+	}
+
+	/**
+	 * Create and register the facade loader under a controlled ownership decision.
+	 *
+	 * The facade reads its services from the container, so the container hands out factories that return the given
+	 * services.
+	 *
+	 * @param string            $owner           Runtime owner.
+	 * @param PriceConverter    $price_converter Price projection service.
+	 * @param StateBuilder|null $state_builder   State builder; the request's shared builder by default.
+	 */
+	private function create_loader( string $owner, PriceConverter $price_converter, ?StateBuilder $state_builder = null ): void {
+		// An earlier activate_plugin() leaves the sandbox constant defined for the rest of the suite.
+		Constants::set_constant( 'WP_SANDBOX_SCRAPING', false );
+		$loader = new WooPaymentsExtensionFacadeLoader();
+		$loader->init( $this->create_arbiter( $owner ) );
+		$loader->register();
+
+		wc_get_container()->replace( ServiceFactory::class, ServiceFactories::with( $this, array( 'create_price_converter' => $price_converter ) ) );
+		if ( null !== $state_builder ) {
+			wc_get_container()->replace( StateBuilderFactory::class, ServiceFactories::state_builder( $this, $state_builder ) );
+		}
+	}
+
+	/**
+	 * Create a runtime arbiter test double.
+	 *
+	 * @param string $owner Runtime owner.
+	 * @return MultiCurrencyRuntimeArbiter
+	 */
+	private function create_arbiter( string $owner ): MultiCurrencyRuntimeArbiter {
+		return new class( $owner ) extends MultiCurrencyRuntimeArbiter {
+			/** @var string */
+			private string $owner;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param string $owner Runtime owner.
+			 */
+			public function __construct( string $owner ) {
+				$this->owner = $owner;
+			}
+
+			/**
+			 * Get the runtime owner.
+			 *
+			 * @return string
+			 */
+			public function get_runtime_owner(): string {
+				return $this->owner;
+			}
+		};
+	}
+
+	/**
+	 * Create a recording projection service.
+	 *
+	 * @param float $price_rate           Product price conversion rate.
+	 * @param float $raw_conversion_value Raw conversion result.
+	 * @return PriceConverter
+	 */
+	private function create_recording_price_converter( float $price_rate, float $raw_conversion_value = 0.0 ): PriceConverter {
+		$service = $this->createMock( PriceConverter::class );
+		$service->method( 'get_price' )->willReturnCallback(
+			static function ( $amount, string $type ) use ( $price_rate ): float {
+				return 'product' === $type ? (float) $amount * $price_rate : (float) $amount;
+			}
+		);
+		$service->method( 'get_raw_conversion' )->willReturnCallback(
+			static function ( float $amount, string $to_currency, string $from_currency ) use ( $raw_conversion_value ): float {
+				if ( 'EUR' === $to_currency && 'USD' === $from_currency ) {
+					return $amount * 2.0;
+				}
+
+				return $raw_conversion_value;
+			}
+		);
+
+		return $service;
+	}
+
+	/**
+	 * Create deterministic USD/EUR state.
+	 *
+	 * @return MultiCurrencyState
+	 */
+	private function create_state(): MultiCurrencyState {
+		$localization = $this->create_localization();
+		$usd          = new MultiCurrencyCurrency( $localization, 'USD', 1.0, true );
+		$eur          = new MultiCurrencyCurrency( $localization, 'EUR', 2.0, false );
+
+		return new MultiCurrencyState(
+			array(
+				'USD' => $usd,
+				'EUR' => $eur,
+			),
+			array(
+				'USD' => $usd,
+				'EUR' => $eur,
+			),
+			$usd,
+			$eur
+		);
+	}
+
+	/**
+	 * Create a state builder test double.
+	 *
+	 * @param MultiCurrencyState $state State snapshot.
+	 * @return StateBuilder
+	 */
+	private function create_state_builder( MultiCurrencyState $state ): StateBuilder {
+		return new class( $state ) extends StateBuilder {
+			/** @var MultiCurrencyState */
+			private MultiCurrencyState $state;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param MultiCurrencyState $state State snapshot.
+			 */
+			public function __construct( MultiCurrencyState $state ) {
+				$this->state = $state;
+			}
+
+			/**
+			 * Build the state snapshot.
+			 *
+			 * @return MultiCurrencyState
+			 */
+			public function build(): MultiCurrencyState {
+				return $this->state;
+			}
+		};
+	}
+
+	/**
+	 * Create a minimal localization boundary.
+	 *
+	 * @return LocalizationInterface
+	 */
+	private function create_localization(): LocalizationInterface {
+		return new class() implements LocalizationInterface {
+			/**
+			 * Get currency formatting.
+			 *
+			 * @param string $currency_code Currency code.
+			 * @return array<string,mixed>
+			 */
+			public function get_currency_format( $currency_code ): array {
+				unset( $currency_code );
+
+				return array(
+					'currency_pos' => 'left',
+					'thousand_sep' => ',',
+					'decimal_sep'  => '.',
+					'num_decimals' => 2,
+				);
+			}
+
+			/**
+			 * Get country locale data.
+			 *
+			 * @param string $country Country code.
+			 * @return array<string,mixed>
+			 */
+			public function get_country_locale_data( $country ): array {
+				unset( $country );
+
+				return array();
+			}
+		};
+	}
+}

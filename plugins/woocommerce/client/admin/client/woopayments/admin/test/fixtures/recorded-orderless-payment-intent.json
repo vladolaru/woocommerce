@@ -1,0 +1,343 @@
+{
+	"_meta": {
+		"recording": "GET wp-json/wc/v3/payments/payment_intents/pi_3UL6CXBzWlxcwgpP1pSl8arF on the native :8889 store (Transact platform via wpcom-local, Stripe test mode), 2026-09-29T18:56:44Z, after a 4242 test-card checkout whose order 5604 was then permanently deleted (F-T60-12 provider case)",
+		"sanitized": "client secret, receipt URL, order keys, shopper name and emails replaced; store host replaced with store.example.com; every other value verbatim",
+		"note": "the deleted order arrives as `order: []` on both the intent and charges.data[0], the platform shape the client 11.1.0 notice condition `! charge.order` sees"
+	},
+	"response": {
+		"id": "pi_3UL6CXBzWlxcwgpP1pSl8arF",
+		"object": "payment_intent",
+		"allowed_payment_method_types": null,
+		"amount": 1234,
+		"amount_capturable": 0,
+		"amount_details": {
+			"tip": []
+		},
+		"amount_received": 1234,
+		"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+		"application_fee_amount": 66,
+		"automatic_payment_methods": null,
+		"canceled_at": null,
+		"cancellation_reason": null,
+		"capture_method": "automatic",
+		"charges": {
+			"object": "list",
+			"data": [
+				{
+					"id": "ch_3UL6CXBzWlxcwgpP1JZFm6v3",
+					"object": "charge",
+					"amount": 1234,
+					"amount_captured": 1234,
+					"amount_refunded": 0,
+					"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+					"application_fee": "fee_1UL6CXBzWlxcwgpP1jqH8GPh",
+					"application_fee_amount": 66,
+					"balance_transaction": {
+						"id": "txn_3UL6CXBzWlxcwgpP1Zx9XHWA",
+						"object": "balance_transaction",
+						"amount": 1234,
+						"available_on": 1790812800,
+						"balance_type": "payments",
+						"created": 1790708189,
+						"currency": "usd",
+						"description": "Online Payment for Order #5604 for store.example.com blog_id 4",
+						"exchange_rate": null,
+						"fee": 66,
+						"fee_details": [
+							{
+								"amount": 66,
+								"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+								"currency": "usd",
+								"description": "DEV Shared Account WCPay application fee",
+								"type": "application_fee"
+							}
+						],
+						"net": 1168,
+						"reporting_category": "charge",
+						"source": "ch_3UL6CXBzWlxcwgpP1JZFm6v3",
+						"status": "pending",
+						"type": "charge"
+					},
+					"billing_details": {
+						"address": {
+							"city": "San Francisco",
+							"country": "US",
+							"line1": "60 29th Street",
+							"line2": "",
+							"postal_code": "94110",
+							"state": "CA"
+						},
+						"email": "shopper@example.com",
+						"name": "Test Customer",
+						"phone": null,
+						"tax_id": null
+					},
+					"calculated_statement_descriptor": "WOOCOMMERCE",
+					"captured": true,
+					"created": 1790708189,
+					"currency": "usd",
+					"customer": "cus_VLniUXy2K2R9QA",
+					"description": "Online Payment for Order #5604 for store.example.com blog_id 4",
+					"destination": null,
+					"dispute": null,
+					"disputed": false,
+					"failure_balance_transaction": null,
+					"failure_code": null,
+					"failure_message": null,
+					"fraud_details": [],
+					"invoice": null,
+					"level3": {
+						"customer_reference": "5604",
+						"line_items": [
+							{
+								"discount_amount": 0,
+								"product_code": "5602",
+								"product_description": "F-T60-12 orderless refund ",
+								"quantity": 1,
+								"tax_amount": 0,
+								"unit_cost": 1234
+							}
+						],
+						"merchant_reference": "5604",
+						"shipping_address_zip": "94110",
+						"shipping_amount": 0,
+						"shipping_from_zip": "94107"
+					},
+					"livemode": false,
+					"metadata": {
+						"checkout_type": "store-api",
+						"client_version": "11.1.0",
+						"customer_email": "shopper@example.com",
+						"customer_name": "Test Customer",
+						"fraud_outcome": "allow",
+						"fraud_prevention_data_available": "1",
+						"fraud_prevention_data_cart_contents": "1",
+						"fraud_prevention_data_ip_country": "RO",
+						"fraud_prevention_data_shopper_ip_hash": "ae37709263971b437203e9ef79563b168763f1c7153fc01f126cd12d97404cf76fabcb65e06e9f37aaa4ac5b6063c0b387d2deda713b469b8344f1ff10db48ed",
+						"fraud_prevention_data_shopper_ua_hash": "9063c4db814afbd7d13a93d156bfba1d",
+						"order_id": "5604",
+						"order_key": "REDACTED",
+						"order_number": "5604",
+						"payment_type": "single",
+						"site_url": "http://store.example.com",
+						"subscription_payment": "no"
+					},
+					"on_behalf_of": null,
+					"order": [],
+					"outcome": {
+						"advice_code": null,
+						"network_advice_code": null,
+						"network_decline_code": null,
+						"network_status": "approved_by_network",
+						"reason": null,
+						"risk_level": "normal",
+						"risk_score": 0,
+						"seller_message": "Payment complete.",
+						"type": "authorized"
+					},
+					"paid": true,
+					"payment_intent": "pi_3UL6CXBzWlxcwgpP1pSl8arF",
+					"payment_method": "pm_1UL6CTBzWlxcwgpPD5c9RzpA",
+					"payment_method_details": {
+						"card": {
+							"amount_authorized": 1234,
+							"authorization_code": "325938",
+							"brand": "visa",
+							"checks": {
+								"address_line1_check": "pass",
+								"address_postal_code_check": "pass",
+								"cvc_check": "pass"
+							},
+							"country": "US",
+							"description": "Visa Classic",
+							"electronic_commerce_indicator": "07",
+							"exp_month": 12,
+							"exp_year": 2034,
+							"extended_authorization": {
+								"status": "disabled"
+							},
+							"fingerprint": "GPNBuIQZKl9E7Sku",
+							"funding": "credit",
+							"iin": "424242",
+							"incremental_authorization": {
+								"status": "unavailable"
+							},
+							"installments": null,
+							"issuer": "Stripe Payments UK Limited",
+							"last4": "4242",
+							"mandate": null,
+							"moto": null,
+							"multicapture": {
+								"status": "unavailable"
+							},
+							"network": "visa",
+							"network_token": {
+								"used": false
+							},
+							"network_transaction_id": "119727611598658",
+							"overcapture": {
+								"maximum_amount_capturable": 1234,
+								"status": "unavailable"
+							},
+							"regulated_status": "unregulated",
+							"three_d_secure": null,
+							"transaction_link_id": null,
+							"wallet": null
+						},
+						"type": "card"
+					},
+					"radar_options": [],
+					"receipt_email": null,
+					"receipt_number": null,
+					"receipt_url": "REDACTED",
+					"refunded": false,
+					"refunds": {
+						"object": "list",
+						"data": [],
+						"has_more": false,
+						"total_count": 0,
+						"url": "/v1/charges/ch_3UL6CXBzWlxcwgpP1JZFm6v3/refunds"
+					},
+					"review": null,
+					"shipping": null,
+					"source": null,
+					"source_transfer": null,
+					"statement_descriptor": null,
+					"statement_descriptor_suffix": null,
+					"status": "succeeded",
+					"transfer_data": null,
+					"transfer_group": null,
+					"fee_breakdown_v1": {
+						"rows": [
+							{
+								"key": "base",
+								"kind": "fee",
+								"label": null,
+								"amount": 66,
+								"display_amount": -66,
+								"currency": "usd",
+								"rate": null,
+								"meta": null
+							}
+						],
+						"totals": {
+							"fee": {
+								"key": null,
+								"amount": 66,
+								"display_amount": -66,
+								"currency": "usd",
+								"rate": null
+							},
+							"tax": {
+								"amount": 0,
+								"display_amount": 0,
+								"currency": "usd"
+							},
+							"net": {
+								"amount": 1168,
+								"currency": "usd"
+							},
+							"capture_net": {
+								"amount": 1168,
+								"currency": "usd"
+							},
+							"gross": {
+								"amount": 1234,
+								"currency": "usd"
+							},
+							"fee_plus_tax": {
+								"amount": 66,
+								"currency": "usd"
+							}
+						},
+						"notes": [],
+						"sources": {
+							"balance_transaction_exchange_rate": 0,
+							"refunded_fee_amount_store": 0
+						}
+					}
+				}
+			],
+			"has_more": false,
+			"total_count": 1,
+			"url": "/v1/charges?payment_intent=pi_3UL6CXBzWlxcwgpP1pSl8arF"
+		},
+		"client_secret": "REDACTED",
+		"confirmation_method": "automatic",
+		"created": 1790708189,
+		"currency": "usd",
+		"customer": "cus_VLniUXy2K2R9QA",
+		"customer_account": null,
+		"description": "Online Payment for Order #5604 for store.example.com blog_id 4",
+		"excluded_payment_method_types": null,
+		"invoice": null,
+		"last_payment_error": null,
+		"latest_charge": "ch_3UL6CXBzWlxcwgpP1JZFm6v3",
+		"level3": {
+			"customer_reference": "5604",
+			"line_items": [
+				{
+					"discount_amount": 0,
+					"product_code": "5602",
+					"product_description": "F-T60-12 orderless refund ",
+					"quantity": 1,
+					"tax_amount": 0,
+					"unit_cost": 1234
+				}
+			],
+			"merchant_reference": "5604",
+			"shipping_address_zip": "94110",
+			"shipping_amount": 0,
+			"shipping_from_zip": "94107"
+		},
+		"livemode": false,
+		"managed_payments": {
+			"enabled": false
+		},
+		"metadata": {
+			"checkout_type": "store-api",
+			"client_version": "11.1.0",
+			"customer_email": "shopper@example.com",
+			"customer_name": "Test Customer",
+			"fraud_outcome": "allow",
+			"fraud_prevention_data_available": "1",
+			"fraud_prevention_data_cart_contents": "1",
+			"fraud_prevention_data_ip_country": "RO",
+			"fraud_prevention_data_shopper_ip_hash": "ae37709263971b437203e9ef79563b168763f1c7153fc01f126cd12d97404cf76fabcb65e06e9f37aaa4ac5b6063c0b387d2deda713b469b8344f1ff10db48ed",
+			"fraud_prevention_data_shopper_ua_hash": "9063c4db814afbd7d13a93d156bfba1d",
+			"order_id": "5604",
+			"order_key": "REDACTED",
+			"order_number": "5604",
+			"payment_type": "single",
+			"site_url": "http://store.example.com",
+			"subscription_payment": "no"
+		},
+		"next_action": null,
+		"on_behalf_of": null,
+		"payment_method": "pm_1UL6CTBzWlxcwgpPD5c9RzpA",
+		"payment_method_configuration_details": null,
+		"payment_method_options": {
+			"card": {
+				"installments": null,
+				"mandate_options": null,
+				"network": null,
+				"request_three_d_secure": "automatic"
+			}
+		},
+		"payment_method_types": [ "card" ],
+		"payment_record": null,
+		"processing": null,
+		"receipt_email": null,
+		"review": null,
+		"setup_future_usage": null,
+		"shared_payment_granted_token": null,
+		"shipping": null,
+		"source": null,
+		"statement_descriptor": null,
+		"statement_descriptor_suffix": null,
+		"status": "succeeded",
+		"transfer_data": null,
+		"transfer_group": null,
+		"order": []
+	}
+}

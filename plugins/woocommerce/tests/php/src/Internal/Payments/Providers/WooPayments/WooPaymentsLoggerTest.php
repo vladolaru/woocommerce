@@ -1,0 +1,525 @@
+<?php
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
+
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
+use RuntimeException;
+use WC_Unit_Test_Case;
+
+/**
+ * WooPayments log lines follow client 11.1.0 `src/Internal/Logger.php:22,64-91`: written under `woopayments`, and only
+ * in dev mode or with the gateway's `enable_logging` setting on.
+ */
+class WooPaymentsLoggerTest extends WC_Unit_Test_Case {
+
+	use ProviderTextLogAssertions;
+
+	/**
+	 * @testdox With debug logging $logging and dev mode $dev_mode, an error line is written: $expected.
+	 * @dataProvider logging_states
+	 *
+	 * @param string $logging  Gateway `enable_logging` setting.
+	 * @param bool   $dev_mode Whether WooPayments runs in dev mode.
+	 * @param bool   $expected Whether the line is written.
+	 */
+	public function test_writes_error_only_when_logging_is_on( string $logging, bool $dev_mode, bool $expected ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => $logging ) );
+		add_filter( 'wcpay_dev_mode', $dev_mode ? '__return_true' : '__return_false' );
+		$account_service = new WooPaymentsAccountService();
+		$database_cache  = new WooPaymentsDatabaseCache();
+		$database_cache->init( wc_get_container()->get( LegacyProxy::class ) );
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ), $database_cache );
+		$sut = new WooPaymentsLogger();
+		$sut->init( $account_service );
+
+		$written = array();
+		$filter  = function ( $message, $level, $context ) use ( &$written ) {
+			$written[] = array( $level, $message, $context );
+			return $message;
+		};
+		add_filter( 'woocommerce_logger_log_message', $filter, 10, 3 );
+		try {
+			$sut->error(
+				'Error occurred during the payment process. Exception: Card declined',
+				array(
+					'order_id' => 42,
+					'source'   => 'payment-info',
+				)
+			);
+		} finally {
+			remove_filter( 'woocommerce_logger_log_message', $filter, 10 );
+		}
+
+		$lines = array_values( array_filter( $written, static fn( array $line ): bool => 'Error occurred during the payment process. Exception: Card declined' === $line[1] ) );
+		if ( ! $expected ) {
+			$this->assertSame( array(), $lines );
+			return;
+		}
+		$this->assertNotSame( array(), $lines );
+		$this->assertSame( 'error', $lines[0][0] );
+		$this->assertSame( 'woopayments', $lines[0][2]['source'] );
+		$this->assertSame( 42, $lines[0][2]['order_id'] );
+	}
+
+	/**
+	 * @testdox A line logged without a level is written at info level, as client 11.1.0 `Logger::log()` does.
+	 */
+	public function test_log_writes_info_by_default(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		$account_service = new WooPaymentsAccountService();
+		$database_cache  = new WooPaymentsDatabaseCache();
+		$database_cache->init( wc_get_container()->get( LegacyProxy::class ) );
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ), $database_cache );
+		$sut = new WooPaymentsLogger();
+		$sut->init( $account_service );
+
+		$written = array();
+		$filter  = function ( $message, $level, $context ) use ( &$written ) {
+			$written[] = array( $level, $message, $context['source'] ?? '' );
+			return $message;
+		};
+		add_filter( 'woocommerce_logger_log_message', $filter, 10, 3 );
+		try {
+			$sut->log( 'Stripe Billing product sync failed for product 7' );
+		} finally {
+			remove_filter( 'woocommerce_logger_log_message', $filter, 10 );
+		}
+
+		$this->assertContains( array( 'info', 'Stripe Billing product sync failed for product 7', 'woopayments' ), $written );
+	}
+
+	/**
+	 * @testdox With debug logging off, a caught $throwable_class is written: $expected.
+	 *
+	 * The client catches only exceptions at these sites, so a PHP Error would fatal there; native writes it always.
+	 *
+	 * @testWith ["TypeError", true]
+	 *           ["RuntimeException", false]
+	 *
+	 * @param string $throwable_class Class of the caught throwable.
+	 * @param bool   $expected        Whether the line is written.
+	 */
+	public function test_writes_a_php_error_whatever_the_logging_setting( string $throwable_class, bool $expected ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$account_service = new WooPaymentsAccountService();
+		$database_cache  = new WooPaymentsDatabaseCache();
+		$database_cache->init( wc_get_container()->get( LegacyProxy::class ) );
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ), $database_cache );
+		$sut = new WooPaymentsLogger();
+		$sut->init( $account_service );
+		$throwable = ( static function ( string $secret ) use ( $throwable_class ) {
+			unset( $secret ); // Only here to put an argument in the trace.
+			return new $throwable_class( 'Argument #1 must be of type array', 7 );
+		} )( 'secret-call-argument' );
+
+		$written = array();
+		$filter  = function ( $message, $level, $context ) use ( &$written ) {
+			$written[] = array( $level, $message, $context );
+			return $message;
+		};
+		add_filter( 'woocommerce_logger_log_message', $filter, 10, 3 );
+		try {
+			$sut->log_throwable( 'Error completing the payment: Argument #1 must be of type array', $throwable, array( 'order_id' => 42 ), 'info' );
+		} finally {
+			remove_filter( 'woocommerce_logger_log_message', $filter, 10 );
+		}
+
+		$lines = array_values( array_filter( $written, static fn( array $line ): bool => 'Error completing the payment: Argument #1 must be of type array' === $line[1] ) );
+		if ( ! $expected ) {
+			$this->assertSame( array(), $lines );
+			return;
+		}
+		$this->assertNotSame( array(), $lines );
+		$this->assertSame( 'error', $lines[0][0], 'A PHP Error is written at error level whatever level the site asks for.' );
+		$this->assertSame( 'woopayments', $lines[0][2]['source'] );
+		$this->assertSame( 42, $lines[0][2]['order_id'] );
+		$this->assertSame( 'TypeError', $lines[0][2]['exception'] );
+		$this->assertSame( 7, $lines[0][2]['code'] );
+		$this->assertStringContainsString( __CLASS__ . '->' . __FUNCTION__ . '()', $lines[0][2]['trace'] );
+		$this->assertStringNotContainsString( 'secret-call-argument', $lines[0][2]['trace'], 'The trace leaves out call arguments.' );
+	}
+
+	/**
+	 * @testdox A platform error is logged with its HTTP status and listed codes only, also when another throwable wraps it.
+	 */
+	public function test_failure_context_carries_only_listed_codes_of_a_platform_error(): void {
+		$declined = new ApiException( 'Error: Your card was declined.', 'card_declined', 402, 'card_error', 'insufficient_funds' );
+		$wrapped  = new RuntimeException( 'Applying the outcome failed.', 0, $declined );
+
+		$context = WooPaymentsLogger::get_failure_context( $wrapped );
+
+		$this->assertSame( RuntimeException::class, $context['exception'] );
+		$this->assertSame( 402, $context['http_status'] );
+		$this->assertSame( 'card_declined', $context['error_code'] );
+		$this->assertSame( 'insufficient_funds', $context['decline_code'] );
+
+		// An error envelope's code and decline code are free text to this store: client 11.1.0 copies error.code and
+		// error.decline_code as they are (class-wc-payments-api-client.php:2853, :2866, :2869).
+		$free_text = new ApiException( 'Error: x', 'https://pay.example.test/r?key=sk_test_leak123', 400, '', 'shopper@example.com' );
+		$context   = WooPaymentsLogger::get_api_error_context( $free_text );
+		$this->assertSame( 'unknown_error', $context['error_code'] );
+		$this->assertSame( 'unknown_error', $context['decline_code'] );
+
+		// Client::request_decoded() keeps a failed request's WP_Error code as transport_error_code; a
+		// pre_http_request callback can set any code there.
+		$transport = new ApiException( 'Http request failed. Reason: cURL error 6: Could not resolve host: pay.example.test', 'wcpay_http_request_failed', 500, '', '', array( 'transport_error_code' => 'http_request_failed' ) );
+		$this->assertSame(
+			array(
+				'http_status'          => 500,
+				'error_code'           => 'wcpay_http_request_failed',
+				'transport_error_code' => 'http_request_failed',
+			),
+			WooPaymentsLogger::get_api_error_context( $transport )
+		);
+		$odd_transport = new ApiException( 'Http request failed.', 'wcpay_http_request_failed', 500, '', '', array( 'transport_error_code' => 'sk_test_leak123' ) );
+		$this->assertSame( 'unknown_error', WooPaymentsLogger::get_api_error_context( $odd_transport )['transport_error_code'] );
+
+		$this->assertSame( array(), WooPaymentsLogger::get_api_error_context( new RuntimeException( 'Order 7 could not be saved.' ) ) );
+	}
+
+	/**
+	 * @testdox A platform error with $_dataName is logged with its codes as they are.
+	 *
+	 * WooPaymentsOrderNoteService writes its own failed payment note for these codes, and
+	 * WooPaymentsPaymentOperationService treats `payment_method_no_longer_available` as an unusable saved payment method.
+	 *
+	 * @dataProvider codes_the_provider_branches_on
+	 *
+	 * @param string $error_code   The platform error's code.
+	 * @param string $decline_code The platform error's decline code, or '' for none.
+	 */
+	public function test_failure_context_logs_a_code_the_provider_branches_on( string $error_code, string $decline_code ): void {
+		$context = WooPaymentsLogger::get_failure_context( new ApiException( 'Error: x', $error_code, 402, 'card_error', $decline_code ) );
+
+		$this->assertSame( $error_code, $context['error_code'] );
+		if ( '' !== $decline_code ) {
+			$this->assertSame( $decline_code, $context['decline_code'] );
+		}
+	}
+
+	/**
+	 * The codes the failed payment note and the renewal's unusable payment method check branch on.
+	 *
+	 * @return array<string,array{string,string}>
+	 */
+	public function codes_the_provider_branches_on(): array {
+		return array(
+			'a closed bank account'              => array( 'account_closed', '' ),
+			'an unauthorized debit'              => array( 'debit_not_authorized', '' ),
+			'no bank account'                    => array( 'no_account', '' ),
+			'failed microdeposits'               => array( 'payment_method_microdeposit_failed', '' ),
+			'too many microdeposit checks'       => array( 'payment_method_microdeposit_verification_attempts_exceeded', '' ),
+			'an invalid mandate'                 => array( 'payment_intent_mandate_invalid', '' ),
+			'an undelivered debit notification'  => array( 'card_declined', 'debit_notification_undelivered' ),
+			'a recurring payment not approved'   => array( 'card_declined', 'transaction_not_approved' ),
+			'a saved method no longer available' => array( 'payment_method_no_longer_available', '' ),
+		);
+	}
+
+	/**
+	 * @testdox A provider object ID that is $_dataName is logged as $expected.
+	 * @dataProvider provider_object_ids
+	 *
+	 * @param string $id       Provider object ID, stored or received.
+	 * @param string $expected What a log line carries.
+	 */
+	public function test_loggable_provider_id_prints_only_a_whole_provider_object_id( string $id, string $expected ): void {
+		$this->assertSame( $expected, WooPaymentsLogger::get_loggable_provider_id( $id ) );
+	}
+
+	/**
+	 * Provider object IDs, and values outside their form, and what a log line carries for each.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public function provider_object_ids(): array {
+		return array(
+			'empty'                                     => array( '', 'none' ),
+			'a payment intent ID'                       => array( 'pi_3URphFBzWlxcwgpP0icvvDN4', 'pi_3URphFBzWlxcwgpP0icvvDN4' ),
+			'a setup intent ID'                         => array( 'seti_1QxYzAbCdEfGh2', 'seti_1QxYzAbCdEfGh2' ),
+			'a charge ID'                               => array( 'ch_3URphFBzWlxcwgpP0Ab12Cd', 'ch_3URphFBzWlxcwgpP0Ab12Cd' ),
+			'a payment ID'                              => array( 'py_3URphFBzWlxcwgpP1Ab12Cd', 'py_3URphFBzWlxcwgpP1Ab12Cd' ),
+			'a refund ID'                               => array( 're_3URphFBzWlxcwgpP0Ef34Gh', 're_3URphFBzWlxcwgpP0Ef34Gh' ),
+			'a payment refund ID'                       => array( 'pyr_1QxYzAbCdEfGh2', 'pyr_1QxYzAbCdEfGh2' ),
+			'a dispute ID'                              => array( 'dp_1QxYzAbCdEfGh2', 'dp_1QxYzAbCdEfGh2' ),
+			'a payment dispute ID'                      => array( 'du_1QxYzAbCdEfGh2', 'du_1QxYzAbCdEfGh2' ),
+			'an event ID'                               => array( 'evt_3URphFBzWlxcwgpP0Ij56Kl', 'evt_3URphFBzWlxcwgpP0Ij56Kl' ),
+			'a payment method ID'                       => array( 'pm_1QxYzAbCdEfGh2', 'pm_1QxYzAbCdEfGh2' ),
+			'a source ID'                               => array( 'src_1QxYzAbCdEfGh2', 'src_1QxYzAbCdEfGh2' ),
+			'a card ID'                                 => array( 'card_1QxYzAbCdEfGh2', 'card_1QxYzAbCdEfGh2' ),
+			'a customer ID'                             => array( 'cus_VdpHzGkGQqnWfF', 'cus_VdpHzGkGQqnWfF' ),
+			'an ID with an underscore after its prefix' => array( 'pi_rollback_fixture', 'another value' ),
+			'an intent client secret'                   => array( 'pi_3URphFBzWlxcwgpP0icvvDN4_secret_Xy12Ab34', 'another value' ),
+			'a payment intent prefix and a hyphen'      => array( 'pi_ORDER-123', 'another value' ),
+			'a payment intent prefix and a space'       => array( 'pi_abc def', 'another value' ),
+			'a setup intent prefix and a hyphen'        => array( 'seti_ORDER-123', 'another value' ),
+			'a payment intent ID and a line break'      => array( "pi_abc\n", 'another value' ),
+			'the payment intent prefix alone'           => array( 'pi_', 'another value' ),
+			'an unlisted prefix'                        => array( 'tok_1QxYzAbCdEfGh2', 'another value' ),
+			'a prefix in capitals'                      => array( 'PI_1QxYzAbCdEfGh2', 'another value' ),
+			'a typed order number'                      => array( 'ORDER-123', 'another value' ),
+			'a payment intent ID not at the start'      => array( 'ref pi_abc', 'another value' ),
+		);
+	}
+
+	/**
+	 * @testdox An order payment method that is $_dataName is logged as $expected.
+	 * @dataProvider order_payment_methods
+	 *
+	 * @param string $payment_method Order payment method.
+	 * @param string $expected       What a log line carries.
+	 */
+	public function test_loggable_payment_method_prints_only_a_gateway_id_form( string $payment_method, string $expected ): void {
+		$this->assertSame( $expected, WooPaymentsLogger::get_loggable_payment_method( $payment_method ) );
+	}
+
+	/**
+	 * Order payment methods and what a log line carries for each.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public function order_payment_methods(): array {
+		return array(
+			'empty'                                  => array( '', 'none' ),
+			'a core gateway ID'                      => array( 'bacs', 'bacs' ),
+			'a WooPayments split gateway ID'         => array( 'woocommerce_payments_sepa_debit', 'woocommerce_payments_sepa_debit' ),
+			'a gateway ID no gateway registers'      => array( 'my_old_gateway', 'my_old_gateway' ),
+			'a gateway ID with hyphens and capitals' => array( 'PPCP-Gateway-2', 'PPCP-Gateway-2' ),
+			'free text'                              => array( 'paid by cheque, see note', 'another value' ),
+			'an email address'                       => array( 'shopper@example.com', 'another value' ),
+			'a URL'                                  => array( 'https://pay.example.test/r?key=abc', 'another value' ),
+			'a gateway ID and a line break'          => array( "bacs\n", 'another value' ),
+			'a gateway ID after a space'             => array( ' bacs', 'another value' ),
+			'a gateway ID before a space'            => array( 'bacs ', 'another value' ),
+			'a gateway ID with a dot'                => array( 'gateway.v2', 'another value' ),
+			'a gateway ID with an accented letter'   => array( 'paiement_espèces', 'another value' ),
+		);
+	}
+
+	/**
+	 * @testdox A caught platform error is logged with the caller's message, its status and code, and none of its text.
+	 */
+	public function test_log_throwable_adds_the_platform_status_and_code(): void {
+		self::enable_woopayments_debug_logging();
+		$account_service = new WooPaymentsAccountService();
+		$database_cache  = new WooPaymentsDatabaseCache();
+		$database_cache->init( wc_get_container()->get( LegacyProxy::class ) );
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ), $database_cache );
+		$sut = new WooPaymentsLogger();
+		$sut->init( $account_service );
+		$logger = RecordingWcLogger::install();
+
+		$sut->log_throwable( 'Failed to fetch the payment intent.', self::make_provider_error(), array( 'order_id' => 42 ) );
+		$sut->log_throwable_always( 'Failed to fetch the payment intent again.', self::make_provider_error( 'wcpay_https://x' ) );
+
+		$context = $this->get_logged_context( $logger, 'Failed to fetch the payment intent.' );
+		$this->assertSame( 404, $context['http_status'] );
+		$this->assertSame( 'resource_missing', $context['error_code'] );
+		$this->assertSame( 42, $context['order_id'] );
+		$this->assertSame( 'unknown_error', $this->get_logged_context( $logger, 'Failed to fetch the payment intent again.' )['error_code'] );
+		$this->assert_log_holds_no_provider_text( $logger );
+	}
+
+	/**
+	 * @testdox Each line carries the WooPayments extension's request context, with the request path but no query string and no referrer.
+	 *
+	 * Client 11.1.0 `src/Internal/Logger.php:68` merges `src/Internal/LoggerContext.php:140-164` into every line; native leaves
+	 * out the referrer and the query string, which carry order keys on order-pay pages (monitor ruling 2026-10-06).
+	 */
+	public function test_lines_carry_the_request_context_without_order_keys(): void {
+		self::enable_woopayments_debug_logging();
+		$server  = $_SERVER;
+		$user_id = self::factory()->user->create( array( 'user_login' => 'shop_manager_one' ) );
+		wp_set_current_user( $user_id );
+		$_SERVER['REQUEST_URI']     = '/checkout/order-pay/12/?pay_for_order=true&key=wc_order_abc123';
+		$_SERVER['HTTP_REFERER']    = 'https://store.test/checkout/order-pay/12/?key=wc_order_abc123';
+		$_SERVER['HTTP_USER_AGENT'] = 'Merchant browser';
+		$account_service            = new WooPaymentsAccountService();
+		$database_cache             = new WooPaymentsDatabaseCache();
+		$database_cache->init( wc_get_container()->get( LegacyProxy::class ) );
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ), $database_cache );
+		$sut = new WooPaymentsLogger();
+		$sut->init( $account_service );
+		$logger = RecordingWcLogger::install();
+
+		try {
+			$sut->log( 'Charged the order.', 'info', array( 'WP_CLI' => 'caller value' ) );
+			$sut->log_always( 'Held the order.', 'warning' );
+		} finally {
+			$_SERVER = $server;
+		}
+
+		foreach ( array( 'Charged the order.', 'Held the order.' ) as $message ) {
+			$context = $this->get_logged_context( $logger, $message );
+			$this->assertSame( '#' . $user_id, $context['WP_USER'] );
+			$this->assertStringNotContainsString( 'shop_manager_one', (string) wp_json_encode( $context ) );
+			$this->assertSame( 'Merchant browser', $context['HTTP_USER_AGENT'] );
+			$this->assertSame( '/checkout/order-pay/12/', $context['REQUEST_URI'] );
+			$this->assertSame( '', $context['DOING_AJAX'] );
+			$this->assertSame( '', $context['DOING_CRON'] );
+			$this->assertArrayHasKey( 'WOOPAYMENTS_MODE', $context );
+			$this->assertArrayNotHasKey( 'HTTP_REFERER', $context );
+			$this->assertStringNotContainsString( 'wc_order_abc123', (string) wp_json_encode( $context ) );
+		}
+		$this->assertSame( 'caller value', $this->get_logged_context( $logger, 'Charged the order.' )['WP_CLI'], 'The caller\'s context wins, as in the client.' );
+	}
+
+	/**
+	 * @testdox Log lines name the user by ID: $_dataName.
+	 *
+	 * Client 11.3.0 `src/Internal/LoggerContext.php:162`: `#<user ID>` for a logged-in user, else "Guest (non logged-in user)".
+	 *
+	 * @testWith [true]
+	 *           [false]
+	 *
+	 * @param bool $logged_in Whether a user is logged in.
+	 */
+	public function test_lines_name_the_user_by_id( bool $logged_in ): void {
+		self::enable_woopayments_debug_logging();
+		$user_id = $logged_in ? self::factory()->user->create( array( 'user_login' => 'shop_manager_three' ) ) : 0;
+		wp_set_current_user( $user_id );
+		$account_service = new WooPaymentsAccountService();
+		$database_cache  = new WooPaymentsDatabaseCache();
+		$database_cache->init( wc_get_container()->get( LegacyProxy::class ) );
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ), $database_cache );
+		$sut = new WooPaymentsLogger();
+		$sut->init( $account_service );
+		$logger = RecordingWcLogger::install();
+
+		$sut->log( 'Charged the order.' );
+
+		$this->assertSame( $logged_in ? '#' . $user_id : 'Guest (non logged-in user)', $this->get_logged_context( $logger, 'Charged the order.' )['WP_USER'] );
+	}
+
+	/**
+	 * @testdox A line written while WooPayments logging is off carries no request context, as the WooPayments extension writes none then.
+	 */
+	public function test_lines_written_with_logging_off_carry_no_request_context(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		wp_set_current_user( self::factory()->user->create( array( 'user_login' => 'shop_manager_two' ) ) );
+		$account_service = new WooPaymentsAccountService();
+		$database_cache  = new WooPaymentsDatabaseCache();
+		$database_cache->init( wc_get_container()->get( LegacyProxy::class ) );
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ), $database_cache );
+		$sut = new WooPaymentsLogger();
+		$sut->init( $account_service );
+		$logger = RecordingWcLogger::install();
+
+		$sut->log_always( 'Held the order.', 'warning', array( 'order_id' => 7 ) );
+
+		$this->assertSame(
+			array(
+				'order_id' => 7,
+				'source'   => 'woopayments',
+			),
+			$this->get_logged_context( $logger, 'Held the order.' )
+		);
+	}
+
+	/**
+	 * @testdox The logger does not resolve the current user while the current user is being decided.
+	 */
+	public function test_logger_does_not_resolve_the_user_while_the_user_is_being_decided(): void {
+		$user_id = self::factory()->user->create();
+		$sut     = $this->make_logger();
+
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$decided_with_logging_off = $this->decide_user_while_logging( $sut, $user_id );
+
+		self::enable_woopayments_debug_logging();
+		$logger                  = RecordingWcLogger::install();
+		$decided_with_logging_on = $this->decide_user_while_logging( $sut, $user_id );
+
+		$this->assertSame( 1, $decided_with_logging_off['entries'] );
+		$this->assertSame( 1, $decided_with_logging_on['entries'] );
+		$this->assertSame( $decided_with_logging_off['user_id'], $decided_with_logging_on['user_id'] );
+		$this->assertSame( $user_id, $decided_with_logging_on['user_id'] );
+		$this->assertCount( 1, array_keys( array_column( $logger->lines, 1 ), 'Logged while the user is decided.', true ) );
+		$this->assertSame( '--', $this->get_logged_context( $logger, 'Logged while the user is decided.' )['WP_USER'] );
+	}
+
+	/**
+	 * @testdox Once the user is decided, a line names the decided user, as before.
+	 */
+	public function test_logger_names_the_user_once_the_user_is_decided(): void {
+		self::enable_woopayments_debug_logging();
+		$user_id = self::factory()->user->create();
+		$sut     = $this->make_logger();
+		$this->decide_user_while_logging( $sut, $user_id );
+		$logger = RecordingWcLogger::install();
+
+		$sut->log( 'Logged after the user is decided.' );
+
+		$this->assertSame( '#' . $user_id, $this->get_logged_context( $logger, 'Logged after the user is decided.' )['WP_USER'] );
+	}
+
+	/**
+	 * Make a logger on a fresh account service.
+	 *
+	 * @return WooPaymentsLogger
+	 */
+	private function make_logger(): WooPaymentsLogger {
+		$account_service = new WooPaymentsAccountService();
+		$database_cache  = new WooPaymentsDatabaseCache();
+		$database_cache->init( wc_get_container()->get( LegacyProxy::class ) );
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ), $database_cache );
+		$sut = new WooPaymentsLogger();
+		$sut->init( $account_service );
+
+		return $sut;
+	}
+
+	/**
+	 * Decide the current user afresh and log a line while the current user is being decided.
+	 *
+	 * The callback counts its entries and logs on the first five only.
+	 *
+	 * @param WooPaymentsLogger $sut     Logger.
+	 * @param int               $user_id User ID the callback decides.
+	 * @return array{entries:int,user_id:int}
+	 */
+	private function decide_user_while_logging( WooPaymentsLogger $sut, int $user_id ): array {
+		global $current_user;
+
+		$entries  = 0;
+		$callback = static function ( $user ) use ( $sut, $user_id, &$entries ) {
+			unset( $user );
+			++$entries;
+			if ( $entries <= 5 ) {
+				$sut->log( 'Logged while the user is decided.' );
+			}
+
+			return $user_id;
+		};
+
+		$current_user = null; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Lets WordPress decide the user again.
+		add_filter( 'determine_current_user', $callback, 20 );
+		try {
+			$decided = wp_get_current_user()->ID;
+		} finally {
+			remove_filter( 'determine_current_user', $callback, 20 );
+		}
+
+		return array(
+			'entries' => $entries,
+			'user_id' => (int) $decided,
+		);
+	}
+
+	/** @return array<string,array{string,bool,bool}> */
+	public static function logging_states(): array {
+		return array(
+			'logging off'           => array( 'no', false, false ),
+			'logging on'            => array( 'yes', false, true ),
+			'dev mode, logging off' => array( 'no', true, true ),
+		);
+	}
+}

@@ -1,0 +1,2343 @@
+/**
+ * External dependencies
+ */
+import apiFetch from '@wordpress/api-fetch';
+import {
+	act,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+	within,
+} from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import type { ReactNode } from 'react';
+import moment from 'moment-timezone';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
+import { speak } from '@wordpress/a11y';
+import { recordEvent } from '@woocommerce/tracks';
+import { downloadCSVFile } from '@woocommerce/csv-export';
+
+/**
+ * Internal dependencies
+ */
+import { expectPlainClickRoutesInApp } from './helpers/in-app-route-click';
+import { WooPaymentsReportsPage } from '../reports/page';
+import {
+	getWooPaymentsReportsBalanceSummary,
+	getWooPaymentsReportsFees,
+	getWooPaymentsReportsFeesExportUrl,
+	getWooPaymentsReportsFeesSummary,
+	requestWooPaymentsReportsFeesExport,
+} from '../reports/data';
+import { formatAmount as formatMoneyMovementAmount } from '../money-movement/utils';
+import { ZERO_DECIMAL_CURRENCIES } from './helpers/zero-decimal-currencies';
+import { pinLocalCalendarAt } from './helpers/browser-calendar';
+import {
+	mockUpdateUserPreferences,
+	setMockUserPreferences,
+} from './helpers/user-preferences';
+
+jest.mock( '@wordpress/api-fetch', () => jest.fn() );
+
+// The export raises snackbars; other stores keep the real dispatch.
+jest.mock( '@wordpress/data', () => {
+	const actual = jest.requireActual( '@wordpress/data' );
+
+	return {
+		...actual,
+		dispatch: ( store: string ) =>
+			store === 'core/notices'
+				? {
+						createSuccessNotice: jest.fn(),
+						createErrorNotice: jest.fn(),
+					}
+				: actual.dispatch( store ),
+	};
+} );
+
+jest.mock( '@woocommerce/tracks', () => ( {
+	recordEvent: jest.fn(),
+} ) );
+
+jest.mock( '@woocommerce/data', () => ( {
+	useUserPreferences: () =>
+		jest
+			.requireActual( './helpers/user-preferences' )
+			.useMockUserPreferences(),
+} ) );
+
+jest.mock( '@wordpress/a11y', () => ( {
+	speak: jest.fn(),
+} ) );
+
+// WordPress gives `@wordpress/date` the date_format and time_format options (wp-includes/script-loader.php:472-476); WooCommerce
+// publishes wc_date_format() as wcSettings.dateFormat (src/Blocks/Assets/AssetDataRegistry.php:94). Distinct values show which
+// source each part of a report date comes from.
+let mockSiteTimeFormat = 'H:i';
+// A test that checks the formatted date itself turns on the real formatter.
+let mockRealDateI18n = false;
+jest.mock( '@wordpress/date', () => ( {
+	dateI18n: jest.fn( ( format, date, timezone ) =>
+		mockRealDateI18n
+			? jest
+					.requireActual( '@wordpress/date' )
+					.dateI18n( format, date, timezone )
+			: [ format, date, timezone ].filter( Boolean ).join( '|' )
+	),
+	getSettings: () => ( {
+		formats: { date: 'F j, Y', time: mockSiteTimeFormat },
+	} ),
+} ) );
+
+jest.mock( '@woocommerce/csv-export', () => ( {
+	...jest.requireActual( '@woocommerce/csv-export' ),
+	downloadCSVFile: jest.fn(),
+} ) );
+
+jest.mock( '../reports/data', () => ( {
+	getWooPaymentsReportsBalanceSummary: jest.fn(),
+	getWooPaymentsReportsFees: jest.fn(),
+	getWooPaymentsReportsFeesSummary: jest.fn(),
+	requestWooPaymentsReportsFeesExport: jest.fn(),
+	getWooPaymentsReportsFeesExportUrl: jest.fn(),
+} ) );
+
+const mockDataViews = jest.fn(
+	( {
+		data = [],
+		fields = [],
+		header,
+		isLoading,
+		onChangeView,
+		search,
+		searchLabel,
+		view = {},
+	}: {
+		data?: Array< Record< string, unknown > >;
+		fields?: Array< {
+			id: string;
+			label: string;
+			header?: string;
+			filterBy?:
+				| false
+				| {
+						operators: string[];
+				  };
+			render?: ( props: {
+				item: Record< string, unknown >;
+			} ) => ReactNode;
+		} >;
+		header?: ReactNode;
+		isLoading?: boolean;
+		onChangeView?: ( view: Record< string, unknown > ) => void;
+		search?: boolean;
+		searchLabel?: string;
+		view?: Record< string, unknown >;
+	} ) => {
+		const viewFields = Array.isArray( view.fields )
+			? ( view.fields as string[] )
+			: fields.map( ( field ) => field.id );
+		const visibleFields = fields.filter(
+			( field ) =>
+				field.id === view.titleField || viewFields.includes( field.id )
+		);
+
+		return (
+			<div data-testid="reports-dataviews" aria-busy={ isLoading }>
+				{ header }
+				{ /* The DataViews 17.1.0 date range popover's markup, with its own presets and a custom range applied. */ }
+				{ fields.some(
+					( field ) => field.id === 'date' && field.filterBy
+				) && (
+					<div
+						className="dataviews-filters__summary-popover"
+						data-testid="date-popover"
+					>
+						<div>
+							{ [
+								'Last 7 days',
+								'Last 30 days',
+								'Month to date',
+								'Last year',
+								'Year to date',
+							].map( ( label ) => (
+								<button
+									key={ label }
+									type="button"
+									className="dataviews-controls__date-preset"
+									aria-pressed="false"
+								>
+									{ label }
+								</button>
+							) ) }
+							<button
+								type="button"
+								className="dataviews-controls__date-preset is-pressed"
+								aria-pressed="true"
+							>
+								Custom
+							</button>
+						</div>
+						<div className="dataviews-controls__date-range-inputs" />
+					</div>
+				) }
+				{ fields.some(
+					( field ) => field.id === 'date' && field.filterBy
+				) &&
+					onChangeView && (
+						<button
+							type="button"
+							onClick={ () =>
+								onChangeView( {
+									...view,
+									filters: [
+										{
+											field: 'date',
+											operator: 'between',
+											value: [
+												'2026-04-01',
+												'2026-04-30',
+											],
+										},
+									],
+								} )
+							}
+						>
+							Apply April date filter
+						</button>
+					) }
+				{ /* The calendar's first click on a day emits that day as both ends of the range. */ }
+				{ fields.some(
+					( field ) => field.id === 'date' && field.filterBy
+				) &&
+					onChangeView && (
+						<button
+							type="button"
+							onClick={ () =>
+								onChangeView( {
+									...view,
+									filters: [
+										{
+											field: 'date',
+											operator: 'between',
+											value: [
+												'2026-05-10',
+												'2026-05-10',
+											],
+										},
+									],
+								} )
+							}
+						>
+							Pick May 10 as the first calendar click
+						</button>
+					) }
+				{ /* DataViews adds a date filter with no value until the merchant picks dates. */ }
+				{ fields.some(
+					( field ) => field.id === 'date' && field.filterBy
+				) &&
+					onChangeView && (
+						<button
+							type="button"
+							onClick={ () =>
+								onChangeView( {
+									...view,
+									filters: [
+										{ field: 'date', operator: 'between' },
+									],
+								} )
+							}
+						>
+							Add date filter without dates
+						</button>
+					) }
+				{ search && onChangeView && (
+					<button
+						type="button"
+						onClick={ () =>
+							onChangeView( {
+								...view,
+								page: 3,
+								perPage: 50,
+								search: 'txn_456',
+								filters: [
+									{
+										field: 'date',
+										operator: 'between',
+										value: [ '2026-04-01', '2026-04-30' ],
+									},
+									{
+										field: 'type',
+										operator: 'is',
+										value: 'charge',
+									},
+								],
+							} )
+						}
+					>
+						Apply detailed fees view
+					</button>
+				) }
+				{ search && onChangeView && (
+					<button
+						type="button"
+						onClick={ () =>
+							onChangeView( { ...view, perPage: 10 } )
+						}
+					>
+						Apply 10 rows per page
+					</button>
+				) }
+				{ search && searchLabel && (
+					<input
+						type="search"
+						aria-label={ searchLabel }
+						value={ String( view.search || '' ) }
+						onChange={ ( event ) =>
+							onChangeView?.( {
+								...view,
+								search: event.currentTarget.value,
+							} )
+						}
+					/>
+				) }
+				{ visibleFields.map( ( field ) => (
+					<div key={ field.id }>{ field.header || field.label }</div>
+				) ) }
+				{ data.map( ( item, index ) => (
+					<div
+						key={ String(
+							item.id || item.transaction_id || index
+						) }
+						data-testid={ `row-${ String(
+							item.id || item.transaction_id || index
+						) }` }
+					>
+						{ visibleFields.map( ( field ) => (
+							<div key={ field.id }>
+								{ field.render
+									? field.render( { item } )
+									: String( item[ field.id ] || '' ) }
+							</div>
+						) ) }
+					</div>
+				) ) }
+			</div>
+		);
+	}
+);
+
+// The composed pieces render nothing here: the mock lays out the rows itself.
+jest.mock( '@wordpress/dataviews/wp', () => ( {
+	DataViews: Object.assign(
+		( props: Record< string, unknown > ) =>
+			mockDataViews( props as Parameters< typeof mockDataViews >[ 0 ] ),
+		{
+			FiltersToggle: () => null,
+			FiltersToggled: () => null,
+			Layout: () => null,
+		}
+	),
+} ) );
+
+const mockGetBalanceSummary =
+	getWooPaymentsReportsBalanceSummary as jest.MockedFunction<
+		typeof getWooPaymentsReportsBalanceSummary
+	>;
+const mockGetFees = getWooPaymentsReportsFees as jest.MockedFunction<
+	typeof getWooPaymentsReportsFees
+>;
+const mockGetFeesSummary =
+	getWooPaymentsReportsFeesSummary as jest.MockedFunction<
+		typeof getWooPaymentsReportsFeesSummary
+	>;
+const mockRequestFeesExport =
+	requestWooPaymentsReportsFeesExport as jest.MockedFunction<
+		typeof requestWooPaymentsReportsFeesExport
+	>;
+const mockGetFeesExportUrl =
+	getWooPaymentsReportsFeesExportUrl as jest.MockedFunction<
+		typeof getWooPaymentsReportsFeesExportUrl
+	>;
+const mockDownloadCSVFile = jest.mocked( downloadCSVFile );
+
+const LocationProbe = () => {
+	const location = useLocation();
+	return (
+		<div data-testid="location">
+			{ location.pathname }
+			{ location.search }
+		</div>
+	);
+};
+
+const BackButton = () => {
+	const navigate = useNavigate();
+	return (
+		<button type="button" onClick={ () => navigate( -1 ) }>
+			Browser back
+		</button>
+	);
+};
+
+const renderReportsPage = ( initialEntries = [ '/woopayments/reports' ] ) =>
+	render(
+		<MemoryRouter initialEntries={ initialEntries }>
+			<WooPaymentsReportsPage
+				now={ new Date( '2026-06-19T12:00:00Z' ) }
+			/>
+			<LocationProbe />
+			<BackButton />
+		</MemoryRouter>
+	);
+
+const balanceSummary = {
+	currency: 'usd',
+	period: {
+		start: '2026-06-01T00:00:00Z',
+		end: '2026-06-19T23:59:59Z',
+	},
+	starting_balance: {
+		amount: 1000,
+	},
+	total_charges_captured: {
+		amount: 162672,
+		count: 8,
+	},
+	fees: {
+		amount: -6064,
+	},
+	charge_fees: {
+		amount: -5958,
+	},
+	payout_fees: {
+		amount: -100,
+	},
+	reader_fees: {
+		amount: -150,
+	},
+	dispute_fees: {
+		amount: -1500,
+	},
+	fee_refunds: {
+		amount: 1644,
+	},
+	refunds: {
+		amount: -21500,
+		count: 3,
+	},
+	refund_failure: {
+		amount: -2000,
+		count: 1,
+	},
+	disputes: {
+		amount: -4000,
+		count: 1,
+	},
+	financing_payout: {
+		amount: 5000,
+		count: 1,
+	},
+	financing_paydown: {
+		amount: -500,
+		count: 1,
+	},
+	network_costs: {
+		amount: -250,
+		count: 1,
+	},
+	other_adjustments: {
+		amount: 750,
+		count: 1,
+	},
+	net_balance_change_in_the_period: {
+		amount: 132008,
+	},
+	payouts: {
+		amount: 1102608,
+		count: 2,
+	},
+	ending_balance: {
+		amount: 877,
+	},
+};
+
+const defaultFeesFields = [
+	'payment_method',
+	'type',
+	'order_id',
+	'transaction_id',
+	'transaction_currency',
+	'amount',
+	'fees',
+];
+
+const defaultFeesLayout = {
+	styles: { amount: { align: 'start' }, fees: { align: 'start' } },
+};
+
+const changeFeesTableView = ( changes: Record< string, unknown > ) => {
+	const props = mockDataViews.mock.lastCall?.[ 0 ];
+	act( () => props?.onChangeView?.( { ...props.view, ...changes } ) );
+};
+
+const feeRow = {
+	transaction_id: 'txn_123',
+	date: '2026-06-18 10:11:12',
+	payment_method: {
+		type: 'card',
+	},
+	type: 'charge',
+	transaction_currency: 'usd',
+	amount: 2500,
+	deposit_currency: 'usd',
+	fees: -120,
+	order_id: 99,
+	deposit_date: '2026-06-19',
+	deposit_id: 'po_123',
+};
+
+// Clicks a preset in the DataViews date popover.
+const choosePreset = ( name: string ) =>
+	fireEvent.click(
+		within( screen.getByTestId( 'date-popover' ) ).getByRole( 'button', {
+			name,
+		} )
+	);
+
+const waitForNextTick = () =>
+	new Promise< void >( ( resolve ) => {
+		window.setTimeout( resolve, 0 );
+	} );
+
+describe( 'WooPaymentsReportsPage', () => {
+	// Client 11.1.0 `formatDateValue()` takes the merchant's day; pin the browser at +03:00 so the UTC boundaries are fixed.
+	let timezoneSpy: jest.SpyInstance;
+	beforeEach( () => {
+		timezoneSpy = jest
+			.spyOn( Date.prototype, 'getTimezoneOffset' )
+			.mockReturnValue( -180 );
+	} );
+	afterEach( () => {
+		timezoneSpy.mockRestore();
+	} );
+
+	let printSpy: jest.SpyInstance;
+
+	beforeEach( () => {
+		mockSiteTimeFormat = 'H:i';
+		mockRealDateI18n = false;
+		setMockUserPreferences( {} );
+		window.wcSettings = {
+			adminUrl: 'http://example.com/wp-admin',
+			dateFormat: 'd/m/Y',
+			locale: {
+				userLocale: 'en_US',
+			},
+			admin: {
+				woopaymentsSettings: {
+					// The server preloads the account's default currency in lower case (WooPaymentsAccountService::get_account_default_currency()).
+					accountDefaultCurrency: 'usd',
+					zeroDecimalCurrencies: ZERO_DECIMAL_CURRENCIES,
+					balanceReportIdentity: {
+						businessName: 'Native Merchant LLC',
+						accountId: 'acct_native_123',
+					},
+				},
+			},
+		};
+		printSpy = jest.spyOn( window, 'print' ).mockImplementation();
+		mockDataViews.mockClear();
+		jest.mocked( recordEvent ).mockClear();
+		jest.mocked( speak ).mockClear();
+		mockGetBalanceSummary.mockReset();
+		mockGetFees.mockReset();
+		mockGetFeesSummary.mockReset();
+		mockRequestFeesExport.mockReset();
+		mockGetFeesExportUrl.mockReset();
+		mockDownloadCSVFile.mockReset();
+		mockGetBalanceSummary.mockImplementation( async () => {
+			await waitForNextTick();
+			return balanceSummary;
+		} );
+		mockGetFees.mockImplementation( async () => {
+			await waitForNextTick();
+			return [ feeRow ];
+		} );
+		mockGetFeesSummary.mockImplementation( async () => {
+			await waitForNextTick();
+			return {
+				count: 1,
+				sources: [ 'card' ],
+				types: [ 'charge' ],
+			};
+		} );
+		mockRequestFeesExport.mockResolvedValue( {
+			export_id: 'export_123',
+		} );
+		mockGetFeesExportUrl.mockResolvedValue( {
+			status: 'success',
+			download_url: 'https://example.com/fees.csv',
+		} );
+	} );
+
+	afterEach( () => {
+		jest.useRealTimers();
+		printSpy.mockRestore();
+	} );
+
+	it( 'renders the Reports shell, Balance tab, DataViews, and page view tracking', async () => {
+		renderReportsPage();
+
+		expect(
+			screen.getByRole( 'heading', {
+				name: 'Reports',
+				hidden: true,
+			} )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( 'View your reconciliation reports.' )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'tab', { name: 'Balance' } )
+		).toHaveAttribute( 'aria-selected', 'true' );
+		expect( screen.getByRole( 'tab', { name: 'Fees' } ) ).toHaveAttribute(
+			'aria-selected',
+			'false'
+		);
+		expect( screen.getByRole( 'status' ) ).toHaveTextContent(
+			'Loading balance report…'
+		);
+
+		expect(
+			await screen.findByRole( 'heading', { name: 'Balance summary' } )
+		).toBeInTheDocument();
+		const dataViews = screen.getByTestId( 'reports-dataviews' );
+		expect( dataViews ).toBeInTheDocument();
+		// Client 11.2.0 `reports/balance/utils.ts:72-100`: the anchors name the period's dates in WooCommerce's date format, in UTC.
+		for ( const label of [
+			'Starting balance - d/m/Y|2026-06-01T00:00:00.000Z|UTC UTC',
+			'Total charges captured',
+			'Fees',
+			'Charge fees',
+			'Payout fees',
+			'Reader costs',
+			'Dispute fees',
+			'Fee refunds',
+			'Refunds',
+			'Refund failures',
+			'Disputes',
+			'Financing payout',
+			'Financing paydown',
+			'Network costs',
+			'Other adjustments',
+			'Net balance change in the period',
+			'Payouts',
+			'Ending balance - d/m/Y|2026-06-19T23:59:59.000Z|UTC UTC',
+		] ) {
+			expect(
+				within( dataViews ).getByText( label )
+			).toBeInTheDocument();
+		}
+		expect(
+			within( dataViews ).queryByText( 'Charges' )
+		).not.toBeInTheDocument();
+		expect( mockGetBalanceSummary ).toHaveBeenCalledWith( {
+			date_start: '2026-05-01T00:00:00.000Z',
+			date_end: '2026-05-31T23:59:59.999Z',
+			currency: 'usd',
+		} );
+		expect(
+			screen.getByRole( 'button', { name: 'Print' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'button', { name: 'Export' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'status', { name: 'Balance export status' } )
+		).toBeEmptyDOMElement();
+		expect( recordEvent ).toHaveBeenCalledWith( 'page_view', {
+			path: 'payments_reports',
+			tab: 'balance',
+		} );
+		expect( speak ).toHaveBeenCalledWith(
+			'18 balance report rows loaded.',
+			'polite'
+		);
+	} );
+
+	it( 'defaults the Balance DataViews Date filter to Between and offers no amount filter', async () => {
+		renderReportsPage();
+
+		await screen.findByRole( 'heading', { name: 'Balance summary' } );
+		const fields = mockDataViews.mock.calls.at( -1 )?.[ 0 ].fields;
+		expect(
+			fields?.find( ( field ) => field.id === 'date' )?.filterBy
+		).toEqual( {
+			operators: [ 'between', 'before', 'after', 'on' ],
+		} );
+		expect(
+			fields?.find( ( field ) => field.id === 'amount' )?.filterBy
+		).toBe( false );
+	} );
+
+	it( 'formats Balance amounts with the standard admin helper and prints the same visible table', async () => {
+		mockGetBalanceSummary.mockResolvedValueOnce( {
+			...balanceSummary,
+			currency: 'cad',
+		} );
+
+		renderReportsPage();
+
+		const dataViews = await screen.findByTestId( 'reports-dataviews' );
+		expect(
+			within( dataViews ).getByText(
+				`+${ formatMoneyMovementAmount( 162672, 'cad' ) }`
+			)
+		).toBeInTheDocument();
+
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Print' } )
+		);
+
+		expect( printSpy ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	// Client 11.1.0 reports/balance/format.ts:106-114 and __tests__/format.test.ts:37-85: inflows carry an
+	// explicit `+`, outflows keep their `-`.
+	it( 'signs Balance inflows with a leading plus and keeps outflows negative', async () => {
+		renderReportsPage();
+
+		const dataViews = await screen.findByTestId( 'reports-dataviews' );
+		expect(
+			within( dataViews ).getByText( '+$1,626.72' )
+		).toBeInTheDocument();
+		expect(
+			within( dataViews ).getByText( '+$10.00' )
+		).toBeInTheDocument();
+		expect(
+			within( dataViews ).getByText( '-$60.64' )
+		).toBeInTheDocument();
+		expect(
+			within( dataViews ).queryByText( '$1,626.72' )
+		).not.toBeInTheDocument();
+	} );
+
+	// Client 11.2.0 `reports/balance/rows.ts:110-232` and `balance-dataview.tsx:198-221`: only the rows the client counts carry a
+	// count, shown as a badge and spelled out for screen readers.
+	it( 'counts the Balance rows the client counts', async () => {
+		mockGetBalanceSummary.mockResolvedValueOnce( {
+			...balanceSummary,
+			fees: { amount: -6064, count: 4 },
+		} );
+		renderReportsPage();
+
+		const charges = await screen.findByTestId(
+			'row-total_charges_captured'
+		);
+		expect( within( charges ).getByText( '8' ) ).toHaveAttribute(
+			'aria-hidden',
+			'true'
+		);
+		expect( within( charges ).getByText( '8 items' ) ).toBeInTheDocument();
+		expect(
+			within( screen.getByTestId( 'row-refund_failure' ) ).getByText(
+				'1 item'
+			)
+		).toBeInTheDocument();
+		expect(
+			within( screen.getByTestId( 'row-payouts' ) ).getByText( '2 items' )
+		).toBeInTheDocument();
+		expect(
+			within( screen.getByTestId( 'row-fees' ) ).queryByText( /item/ )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'downloads the loaded Balance summary with business and account identity CSV columns', async () => {
+		mockGetBalanceSummary.mockResolvedValueOnce( {
+			...balanceSummary,
+			starting_balance: {
+				amount: 0,
+			},
+		} );
+		renderReportsPage();
+
+		await screen.findByRole( 'heading', { name: 'Balance summary' } );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Export' } )
+		);
+
+		const csv = mockDownloadCSVFile.mock.calls[ 0 ][ 1 ];
+
+		expect( mockDownloadCSVFile ).toHaveBeenCalledWith(
+			'wcpay-balance-2026-06-01_2026-06-19.csv',
+			expect.any( String )
+		);
+		expect( csv ).toContain(
+			'"Native Merchant LLC",acct_native_123,starting_balance,"Starting balance - d/m/Y|2026-06-01T00:00:00.000Z|UTC UTC",0,,usd,2026-06-01,2026-06-19'
+		);
+		expect( csv ).toContain(
+			'total_charges_captured,"Total charges captured",1626.72,8,usd'
+		);
+		expect( csv ).toContain( 'fees,Fees,-60.64,,usd' );
+		expect( csv ).toContain( 'reader_fees,"Reader costs",-1.5,,usd' );
+		expect( csv ).toContain( 'payouts,Payouts,-11026.08,2,usd' );
+		expect( csv ).not.toContain( '$' );
+		expect( csv ).not.toContain( ' USD' );
+	} );
+
+	it( 'keeps mixed-case zero-decimal Balance CSV amounts in provider units', async () => {
+		mockGetBalanceSummary.mockResolvedValueOnce( {
+			...balanceSummary,
+			currency: 'jPy',
+		} );
+		renderReportsPage();
+
+		await screen.findByRole( 'heading', { name: 'Balance summary' } );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Export' } )
+		);
+
+		expect( mockDownloadCSVFile.mock.calls[ 0 ][ 1 ] ).toContain(
+			'total_charges_captured,"Total charges captured",162672,8,jpy'
+		);
+		expect( mockDownloadCSVFile.mock.calls[ 0 ][ 1 ] ).toContain(
+			'payouts,Payouts,-1102608,2,jpy'
+		);
+	} );
+
+	it( 'converts mixed-case UGX Balance CSV amounts from provider minor units', async () => {
+		mockGetBalanceSummary.mockResolvedValueOnce( {
+			...balanceSummary,
+			currency: 'uGx',
+			total_charges_captured: {
+				amount: 12345,
+				count: 8,
+			},
+		} );
+		renderReportsPage();
+
+		await screen.findByRole( 'heading', { name: 'Balance summary' } );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Export' } )
+		);
+
+		expect( mockDownloadCSVFile.mock.calls[ 0 ][ 1 ] ).toContain(
+			'total_charges_captured,"Total charges captured",123.45,8,ugx'
+		);
+		expect( mockDownloadCSVFile.mock.calls[ 0 ][ 1 ] ).toContain(
+			'payouts,Payouts,-11026.08,2,ugx'
+		);
+	} );
+
+	// Client 11.2.0 `reports/balance/rows.ts:80-89,222`: Payouts show as an outflow on screen and in the CSV alike, whatever sign
+	// the platform stores (the client's fixture stores a positive magnitude); zero stays unsigned.
+	it.each( [
+		[
+			'a positive magnitude',
+			8070,
+			'-$80.70',
+			'payouts,Payouts,-80.7,2,usd',
+		],
+		[
+			'a negative amount',
+			-8070,
+			'-$80.70',
+			'payouts,Payouts,-80.7,2,usd',
+		],
+		[ 'zero', 0, '$0.00', 'payouts,Payouts,0,2,usd' ],
+	] )(
+		'signs Payouts stored as %s the same way on screen and in the CSV',
+		async ( _case, amount, shown, csvRow ) => {
+			mockGetBalanceSummary.mockResolvedValueOnce( {
+				...balanceSummary,
+				payouts: { amount, count: 2 },
+			} );
+			renderReportsPage();
+
+			expect(
+				within( await screen.findByTestId( 'row-payouts' ) ).getByText(
+					shown
+				)
+			).toBeInTheDocument();
+
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Export' } )
+			);
+			expect( mockDownloadCSVFile.mock.calls[ 0 ][ 1 ] ).toContain(
+				csvRow
+			);
+		}
+	);
+
+	// Client 11.2.0 `utils/date-time.ts:38-49`: the platform's period has no offset and is read as UTC, so the anchors name
+	// the same days whatever the browser's time zone; the CSV labels share them. Jest cannot change the engine's time zone
+	// within a run, so moment's default zone stands in for the browser's (moment reads an offset-less string in it), and the
+	// offset spy follows it.
+	it.each( [
+		[
+			"the platform's period, in a browser east of UTC",
+			'Etc/GMT-3',
+			-180,
+			{ start: '2026-10-01T00:00:00', end: '2026-10-31T23:59:59' },
+			'October 1, 2026 UTC',
+			'October 31, 2026 UTC',
+		],
+		[
+			"the platform's period, in a browser west of UTC",
+			'Etc/GMT+5',
+			300,
+			{ start: '2026-10-01T00:00:00', end: '2026-10-31T23:59:59' },
+			'October 1, 2026 UTC',
+			'October 31, 2026 UTC',
+		],
+		[
+			'the requested period when the summary has none',
+			'Etc/GMT-3',
+			-180,
+			undefined,
+			'May 1, 2026 UTC',
+			'May 31, 2026 UTC',
+		],
+	] )(
+		'keeps the Balance anchor rows visible when activity rows are zero, dated by %s',
+		async ( _case, timezone, offset, period, startDate, endDate ) => {
+			moment.tz.setDefault( timezone );
+			timezoneSpy.mockReturnValue( offset );
+			mockRealDateI18n = true;
+			window.wcSettings.dateFormat = 'F j, Y';
+			mockGetBalanceSummary.mockImplementationOnce( async () => {
+				await waitForNextTick();
+				return {
+					currency: 'usd',
+					...( period ? { period } : {} ),
+					starting_balance: {
+						amount: 0,
+					},
+					total_charges_captured: {
+						amount: 0,
+						count: 0,
+					},
+					fees: {
+						amount: 0,
+					},
+					net_balance_change_in_the_period: {
+						amount: 0,
+					},
+					payouts: {
+						amount: 0,
+						count: 0,
+					},
+					ending_balance: {
+						amount: 0,
+					},
+				};
+			} );
+
+			try {
+				renderReportsPage();
+
+				expect(
+					await screen.findByRole( 'heading', {
+						name: 'No balance activity',
+					} )
+				).toBeInTheDocument();
+				const dataViews = screen.getByTestId( 'reports-dataviews' );
+
+				for ( const label of [
+					`Starting balance - ${ startDate }`,
+					'Total charges captured',
+					'Fees',
+					'Net balance change in the period',
+					'Payouts',
+					`Ending balance - ${ endDate }`,
+				] ) {
+					expect(
+						within( dataViews ).getByText( label )
+					).toBeInTheDocument();
+				}
+
+				for ( const label of [
+					'Reader costs',
+					'Charge fees',
+					'Payout fees',
+					'Refund failures',
+					'Network costs',
+				] ) {
+					expect(
+						within( dataViews ).queryByText( label )
+					).not.toBeInTheDocument();
+				}
+				expect( speak ).not.toHaveBeenCalled();
+			} finally {
+				moment.tz.setDefault();
+			}
+		}
+	);
+
+	// Client 11.1.0 `reports/balance/index.tsx:177` requests the account's default currency (`wcpaySettings.accountDefaultCurrency`);
+	// native preloads it in woopaymentsSettings. A PLN account must not be asked for USD, which the platform refuses.
+	it( "requests the Balance summary in the account's default currency", async () => {
+		(
+			window.wcSettings.admin as {
+				woopaymentsSettings: Record< string, unknown >;
+			}
+		 ).woopaymentsSettings.accountDefaultCurrency = 'pln';
+		renderReportsPage();
+
+		await waitFor( () =>
+			expect( mockGetBalanceSummary ).toHaveBeenLastCalledWith(
+				expect.objectContaining( { currency: 'pln' } )
+			)
+		);
+	} );
+
+	it( 'requests the Balance summary in USD when a settings filter left a malformed currency', async () => {
+		(
+			window.wcSettings.admin as {
+				woopaymentsSettings: Record< string, unknown >;
+			}
+		 ).woopaymentsSettings.accountDefaultCurrency = 42;
+		renderReportsPage();
+
+		await waitFor( () =>
+			expect( mockGetBalanceSummary ).toHaveBeenLastCalledWith(
+				expect.objectContaining( { currency: 'usd' } )
+			)
+		);
+	} );
+
+	// Client 11.1.0 `class-wc-payments-admin.php:1072-1073`: WooCommerce's date format and the site's time format.
+	it( "shows Fees dates in WooCommerce's date format and the site's time format", async () => {
+		mockSiteTimeFormat = 'G:i';
+		renderReportsPage( [ '/woopayments/reports?tab=fees' ] );
+
+		expect(
+			await screen.findByText( 'd/m/Y / G:i|2026-06-18T10:11:12Z' )
+		).toBeInTheDocument();
+	} );
+
+	it( 'keeps the Fees rows of the current query when an earlier request answers last', async () => {
+		let resolveEarlier: ( rows: ( typeof feeRow )[] ) => void = () => {};
+		renderReportsPage( [ '/woopayments/reports?report_tab=fees' ] );
+		await screen.findByRole( 'searchbox', { name: 'Search fees' } );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Apply detailed fees view' } )
+		);
+
+		// The Previous month request hangs; the Previous year request answers first.
+		mockGetFees
+			.mockImplementationOnce(
+				() =>
+					new Promise( ( resolve ) => {
+						resolveEarlier = resolve;
+					} )
+			)
+			.mockImplementation( async () => [
+				{ ...feeRow, transaction_id: 'txn_new' },
+			] );
+		choosePreset( 'Previous month' );
+		choosePreset( 'Previous year' );
+		await screen.findByRole( 'link', { name: 'txn_new' } );
+
+		await act( async () => {
+			resolveEarlier( [ { ...feeRow, transaction_id: 'txn_old' } ] );
+			await waitForNextTick();
+		} );
+
+		expect(
+			screen.getByRole( 'link', { name: 'txn_new' } )
+		).toBeInTheDocument();
+		expect(
+			screen.queryByRole( 'link', { name: 'txn_old' } )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'keeps the Fees rows of the current query when an earlier request fails last', async () => {
+		let rejectEarlier: ( error: Error ) => void = () => {};
+		renderReportsPage( [ '/woopayments/reports?report_tab=fees' ] );
+		await screen.findByRole( 'searchbox', { name: 'Search fees' } );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Apply detailed fees view' } )
+		);
+
+		mockGetFees
+			.mockImplementationOnce(
+				() =>
+					new Promise( ( resolve, reject ) => {
+						rejectEarlier = reject;
+					} )
+			)
+			.mockImplementation( async () => [
+				{ ...feeRow, transaction_id: 'txn_new' },
+			] );
+		choosePreset( 'Previous month' );
+		choosePreset( 'Previous year' );
+		await screen.findByRole( 'link', { name: 'txn_new' } );
+
+		await act( async () => {
+			rejectEarlier( new Error( 'Earlier request failed.' ) );
+			await waitForNextTick();
+		} );
+
+		expect(
+			screen.getByRole( 'link', { name: 'txn_new' } )
+		).toBeInTheDocument();
+		expect(
+			screen.queryByText( 'Fees report could not be loaded.' )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'keeps the Balance totals of the current query when an earlier request answers last', async () => {
+		let resolveEarlier: (
+			summary: typeof balanceSummary
+		) => void = () => {};
+		renderReportsPage();
+		await waitFor( () =>
+			expect( mockGetBalanceSummary ).toHaveBeenCalledTimes( 1 )
+		);
+		await screen.findByTestId( 'date-popover' );
+
+		mockGetBalanceSummary
+			.mockImplementationOnce(
+				() =>
+					new Promise( ( resolve ) => {
+						resolveEarlier = resolve;
+					} )
+			)
+			.mockImplementation( async () => ( {
+				...balanceSummary,
+				ending_balance: { amount: 222222 },
+			} ) );
+		choosePreset( 'Previous year' );
+		choosePreset( 'Previous month' );
+		await screen.findByText( /2,222\.22/ );
+
+		await act( async () => {
+			resolveEarlier( {
+				...balanceSummary,
+				ending_balance: { amount: 111111 },
+			} );
+			await waitForNextTick();
+		} );
+
+		expect( screen.getByText( /2,222\.22/ ) ).toBeInTheDocument();
+		expect( screen.queryByText( /1,111\.11/ ) ).not.toBeInTheDocument();
+	} );
+
+	it( 'keeps the Balance totals of the current query when an earlier request fails last', async () => {
+		let rejectEarlier: ( error: Error ) => void = () => {};
+		renderReportsPage();
+		await waitFor( () =>
+			expect( mockGetBalanceSummary ).toHaveBeenCalledTimes( 1 )
+		);
+		await screen.findByTestId( 'date-popover' );
+
+		mockGetBalanceSummary
+			.mockImplementationOnce(
+				() =>
+					new Promise( ( resolve, reject ) => {
+						rejectEarlier = reject;
+					} )
+			)
+			.mockImplementation( async () => ( {
+				...balanceSummary,
+				ending_balance: { amount: 222222 },
+			} ) );
+		choosePreset( 'Previous year' );
+		choosePreset( 'Previous month' );
+		await screen.findByText( /2,222\.22/ );
+
+		await act( async () => {
+			rejectEarlier( new Error( 'Earlier request failed.' ) );
+			await waitForNextTick();
+		} );
+
+		expect( screen.getByText( /2,222\.22/ ) ).toBeInTheDocument();
+		expect(
+			screen.queryByText( 'Balance report could not be loaded.' )
+		).not.toBeInTheDocument();
+	} );
+
+	// Client 11.2.0 `reports/date-filter/dataviews-date-range-preset-portal.tsx`: Previous month and Previous year join the
+	// DataViews date range presets, in front of them.
+	it( 'applies previous-period presets to Balance and Fees using the stable report clock', async () => {
+		renderReportsPage();
+
+		await screen.findByRole( 'heading', { name: 'Balance summary' } );
+		const popover = within( screen.getByTestId( 'date-popover' ) );
+		expect(
+			popover
+				.getAllByRole( 'button' )
+				.map( ( button ) => button.textContent )
+		).toEqual( [
+			'Previous month',
+			'Previous year',
+			'Last 7 days',
+			'Last 30 days',
+			'Month to date',
+			'Last year',
+			'Year to date',
+			'Custom',
+		] );
+		// The default period is the previous month: its preset shows pressed, and DataViews' Custom does not.
+		expect(
+			popover.getByRole( 'button', { name: 'Previous month' } )
+		).toHaveAttribute( 'aria-pressed', 'true' );
+		expect(
+			popover.getByRole( 'button', { name: 'Custom' } )
+		).toHaveAttribute( 'aria-pressed', 'false' );
+
+		fireEvent.click(
+			popover.getByRole( 'button', { name: 'Previous year' } )
+		);
+
+		await waitFor( () =>
+			expect( mockGetBalanceSummary ).toHaveBeenLastCalledWith( {
+				date_start: '2025-01-01T00:00:00.000Z',
+				date_end: '2025-12-31T23:59:59.999Z',
+				currency: 'usd',
+			} )
+		);
+		expect( screen.getByTestId( 'location' ) ).toHaveTextContent(
+			'date_between%5B%5D=2025-01-01'
+		);
+		await waitFor( () =>
+			expect(
+				popover.getByRole( 'button', { name: 'Previous year' } )
+			).toHaveAttribute( 'aria-pressed', 'true' )
+		);
+
+		fireEvent.click(
+			popover.getByRole( 'button', { name: 'Previous month' } )
+		);
+
+		await waitFor( () =>
+			expect( mockGetBalanceSummary ).toHaveBeenLastCalledWith( {
+				date_start: '2026-05-01T00:00:00.000Z',
+				date_end: '2026-05-31T23:59:59.999Z',
+				currency: 'usd',
+			} )
+		);
+
+		await userEvent.click( screen.getByRole( 'tab', { name: 'Fees' } ) );
+		await screen.findByRole( 'searchbox', { name: 'Search fees' } );
+		// A Date filter with no dates yet filters nothing (client 11.2.0 `getFeesDateFilterValue()`): no preset is pressed, and
+		// the request is the one already loaded, so nothing is sent again.
+		await waitFor( () =>
+			expect( screen.getByTestId( 'reports-dataviews' ) ).toHaveAttribute(
+				'aria-busy',
+				'false'
+			)
+		);
+		const feesCalls = mockGetFees.mock.calls.length;
+		const feesSummaryCalls = mockGetFeesSummary.mock.calls.length;
+		await userEvent.click(
+			screen.getByRole( 'button', {
+				name: 'Add date filter without dates',
+			} )
+		);
+		const feesPopover = within( screen.getByTestId( 'date-popover' ) );
+		expect(
+			feesPopover.getByRole( 'button', { name: 'Previous month' } )
+		).toHaveAttribute( 'aria-pressed', 'false' );
+		expect(
+			feesPopover.getByRole( 'button', { name: 'Previous year' } )
+		).toHaveAttribute( 'aria-pressed', 'false' );
+		await act( waitForNextTick );
+		expect( mockGetFees ).toHaveBeenCalledTimes( feesCalls );
+		expect( mockGetFeesSummary ).toHaveBeenCalledTimes( feesSummaryCalls );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Apply detailed fees view' } )
+		);
+		expect(
+			within( screen.getByTestId( 'date-popover' ) )
+				.getAllByRole( 'button' )
+				.map( ( button ) => button.textContent )
+		).toEqual( [
+			'Previous month',
+			'Previous year',
+			'Last 7 days',
+			'Last 30 days',
+			'Month to date',
+			'Last year',
+			'Year to date',
+			'Custom',
+		] );
+
+		choosePreset( 'Previous month' );
+
+		await waitFor( () =>
+			expect( mockGetFees ).toHaveBeenLastCalledWith(
+				expect.objectContaining( {
+					page: 1,
+					per_page: 50,
+					sort: 'date',
+					direction: 'desc',
+					search: [ 'txn_456' ],
+					type: [ 'charge' ],
+					date_between: [
+						'2026-04-30 21:00:00',
+						'2026-05-31 20:59:59',
+					],
+				} )
+			)
+		);
+
+		choosePreset( 'Previous year' );
+
+		await waitFor( () =>
+			expect( mockGetFees ).toHaveBeenLastCalledWith(
+				expect.objectContaining( {
+					date_between: [
+						'2024-12-31 21:00:00',
+						'2025-12-31 20:59:59',
+					],
+				} )
+			)
+		);
+	} );
+
+	// Client 11.2.0 `reports/date-filter/presets.ts:116-140`: the Fees presets resolve on the browser's calendar; Balance
+	// stays on UTC (`reports/balance/use-balance-date-filter.ts:18`, `:44-67`). At 01:00 on June 1 in a browser at +03:00,
+	// UTC is still on May 31. The calendar getters are pinned to +03:00 with the offset spy, so the host's zone plays no part.
+	it( "resolves the Fees previous-month preset on the browser's calendar and Balance on UTC", async () => {
+		const restoreCalendar = pinLocalCalendarAt( 180 );
+
+		try {
+			render(
+				<MemoryRouter initialEntries={ [ '/woopayments/reports' ] }>
+					<WooPaymentsReportsPage
+						now={ new Date( '2026-05-31T22:00:00Z' ) }
+					/>
+				</MemoryRouter>
+			);
+
+			await waitFor( () =>
+				expect( mockGetBalanceSummary ).toHaveBeenLastCalledWith( {
+					date_start: '2026-04-01T00:00:00.000Z',
+					date_end: '2026-04-30T23:59:59.999Z',
+					currency: 'usd',
+				} )
+			);
+
+			await userEvent.click(
+				screen.getByRole( 'tab', { name: 'Fees' } )
+			);
+			await screen.findByRole( 'searchbox', { name: 'Search fees' } );
+			choosePreset( 'Previous month' );
+
+			await waitFor( () =>
+				expect( mockGetFees ).toHaveBeenLastCalledWith(
+					expect.objectContaining( {
+						date_between: [
+							'2026-04-30 21:00:00',
+							'2026-05-31 20:59:59',
+						],
+					} )
+				)
+			);
+			await waitFor( () =>
+				expect(
+					within( screen.getByTestId( 'date-popover' ) ).getByRole(
+						'button',
+						{ name: 'Previous month' }
+					)
+				).toHaveAttribute( 'aria-pressed', 'true' )
+			);
+		} finally {
+			restoreCalendar();
+		}
+	} );
+
+	it( 'lets merchants change the Balance period through the DataViews date filter', async () => {
+		renderReportsPage();
+
+		await screen.findByRole( 'heading', { name: 'Balance summary' } );
+		await userEvent.click(
+			screen.getByRole( 'button', {
+				name: 'Apply April date filter',
+			} )
+		);
+
+		await waitFor( () =>
+			expect( mockGetBalanceSummary ).toHaveBeenLastCalledWith( {
+				date_start: '2026-04-01T00:00:00.000Z',
+				date_end: '2026-04-30T23:59:59.999Z',
+				currency: 'usd',
+			} )
+		);
+		expect( screen.getByTestId( 'location' ) ).toHaveTextContent(
+			'date_between%5B%5D=2026-04-01'
+		);
+		expect( recordEvent ).toHaveBeenCalledWith(
+			'wcpay_reports_balance_date_filter_change',
+			{
+				preset: 'custom',
+				range_days: 30,
+				is_initial_apply: false,
+			}
+		);
+	} );
+
+	// Client 11.3.0 `reports/date-filter/url.ts:32-34`: a range with the same day twice reads back as "on" that day, the
+	// way Balance writes "on" (`date_between[]=X&date_between[]=X`), so the filter does not turn into "between".
+	it( 'reads a Balance range of one day back as the "on" filter', async () => {
+		renderReportsPage( [
+			'/woopayments/reports?date_between%5B%5D=2026-05-10&date_between%5B%5D=2026-05-10',
+		] );
+
+		await waitFor( () =>
+			expect( mockGetBalanceSummary ).toHaveBeenLastCalledWith( {
+				date_start: '2026-05-10T00:00:00.000Z',
+				date_end: '2026-05-10T23:59:59.999Z',
+				currency: 'usd',
+			} )
+		);
+		await screen.findByRole( 'heading', { name: 'Balance summary' } );
+		expect( mockDataViews.mock.lastCall?.[ 0 ].view?.filters ).toEqual( [
+			{ field: 'date', operator: 'on', value: '2026-05-10' },
+		] );
+	} );
+
+	// Client 11.3.0 `reports/balance/use-balance-date-filter.ts:246-250`: only a URL read collapses one day to "on"; the
+	// merchant's own pick stays "between" so the calendar can take the end day.
+	it( 'keeps "between" active when the first calendar click gives the same day for both ends', async () => {
+		renderReportsPage();
+
+		await screen.findByRole( 'heading', { name: 'Balance summary' } );
+		await userEvent.click(
+			screen.getByRole( 'button', {
+				name: 'Pick May 10 as the first calendar click',
+			} )
+		);
+
+		await waitFor( () =>
+			expect( screen.getByTestId( 'location' ) ).toHaveTextContent(
+				'date_between%5B%5D=2026-05-10&date_between%5B%5D=2026-05-10'
+			)
+		);
+		await waitFor( () =>
+			expect( mockGetBalanceSummary ).toHaveBeenLastCalledWith( {
+				date_start: '2026-05-10T00:00:00.000Z',
+				date_end: '2026-05-10T23:59:59.999Z',
+				currency: 'usd',
+			} )
+		);
+		expect( mockDataViews.mock.lastCall?.[ 0 ].view?.filters ).toEqual( [
+			{
+				field: 'date',
+				operator: 'between',
+				value: [ '2026-05-10', '2026-05-10' ],
+			},
+		] );
+	} );
+
+	it( 'reads a Balance range of two days as the "between" filter', async () => {
+		renderReportsPage( [
+			'/woopayments/reports?date_between%5B%5D=2026-05-10&date_between%5B%5D=2026-05-11',
+		] );
+
+		await waitFor( () =>
+			expect( mockGetBalanceSummary ).toHaveBeenLastCalledWith( {
+				date_start: '2026-05-10T00:00:00.000Z',
+				date_end: '2026-05-11T23:59:59.999Z',
+				currency: 'usd',
+			} )
+		);
+		await screen.findByRole( 'heading', { name: 'Balance summary' } );
+		expect( mockDataViews.mock.lastCall?.[ 0 ].view?.filters ).toEqual( [
+			{
+				field: 'date',
+				operator: 'between',
+				value: [ '2026-05-10', '2026-05-11' ],
+			},
+		] );
+	} );
+
+	it( 'syncs the active tab to the URL and tracks tab changes', async () => {
+		renderReportsPage();
+
+		await screen.findByRole( 'heading', { name: 'Balance summary' } );
+		await userEvent.click( screen.getByRole( 'tab', { name: 'Fees' } ) );
+
+		expect( screen.getByTestId( 'location' ) ).toHaveTextContent(
+			'/woopayments/reports?report_tab=fees'
+		);
+		expect( recordEvent ).toHaveBeenCalledWith(
+			'wcpay_reports_tab_change',
+			{
+				from_tab: 'balance',
+				to_tab: 'fees',
+			}
+		);
+		expect(
+			await screen.findByRole( 'searchbox', { name: 'Search fees' } )
+		).toBeInTheDocument();
+		expect( mockGetFees ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				page: 1,
+				per_page: 25,
+				sort: 'date',
+				direction: 'desc',
+				user_timezone: expect.stringMatching( /^[+-]\d{2}:\d{2}$/ ),
+			} )
+		);
+	} );
+
+	it( 'supports keyboard navigation between Reports tabs', async () => {
+		renderReportsPage();
+
+		const balanceTab = screen.getByRole( 'tab', { name: 'Balance' } );
+		await screen.findByRole( 'heading', { name: 'Balance summary' } );
+		balanceTab.focus();
+		fireEvent.keyDown( balanceTab, { key: 'ArrowRight' } );
+
+		expect( screen.getByTestId( 'location' ) ).toHaveTextContent(
+			'/woopayments/reports?report_tab=fees'
+		);
+		expect( screen.getByRole( 'tab', { name: 'Fees' } ) ).toHaveFocus();
+		expect( recordEvent ).toHaveBeenCalledWith(
+			'wcpay_reports_tab_change',
+			{
+				from_tab: 'balance',
+				to_tab: 'fees',
+			}
+		);
+	} );
+
+	it( 'renders Balance error and empty states with accessible reload controls', async () => {
+		mockGetBalanceSummary.mockImplementationOnce( async () => {
+			await waitForNextTick();
+			throw new Error( 'Balance failed' );
+		} );
+		renderReportsPage();
+
+		expect(
+			await screen.findByRole( 'heading', {
+				name: 'Balance report unavailable',
+			} )
+		).toBeInTheDocument();
+		expect( screen.getByRole( 'alert' ) ).toHaveTextContent(
+			"We couldn't load your balance report."
+		);
+		expect(
+			screen.getByRole( 'button', { name: 'Reload report' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'button', { name: 'Apply April date filter' } )
+		).toBeInTheDocument();
+		expect( screen.getByTestId( 'date-popover' ) ).toHaveTextContent(
+			'Previous month'
+		);
+		expect( speak ).toHaveBeenCalledWith(
+			'Balance report could not be loaded.',
+			'assertive'
+		);
+		// Client 11.2.0 `reports/balance/actions.tsx:84-118`, `:183-199`: no Print or Export of a report that did not load.
+		const expectActionsDisabled = ( reason: string ) => {
+			[ 'Print', 'Export' ].forEach( ( name ) => {
+				const button = screen.getByRole( 'button', { name } );
+				expect( button ).toHaveAttribute( 'aria-disabled', 'true' );
+				expect( button ).toHaveAccessibleDescription( reason );
+			} );
+		};
+		expectActionsDisabled(
+			'Print and Export are unavailable while the Balance report is unavailable.'
+		);
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Export' } )
+		);
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Print' } )
+		);
+		expect( mockDownloadCSVFile ).not.toHaveBeenCalled();
+		expect( printSpy ).not.toHaveBeenCalled();
+
+		mockGetBalanceSummary.mockImplementationOnce( async () => {
+			await waitForNextTick();
+			return {
+				currency: 'usd',
+				starting_balance: {
+					amount: 0,
+				},
+				ending_balance: {
+					amount: 0,
+				},
+			};
+		} );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Reload report' } )
+		);
+
+		expect(
+			await screen.findByRole( 'heading', {
+				name: 'No balance activity',
+			} )
+		).toBeInTheDocument();
+		expect(
+			screen
+				.getByRole( 'heading', { name: 'No balance activity' } )
+				.closest( '[role="status"]' )
+		).toHaveTextContent(
+			'No balance activity was found for the selected period. Summary rows are shown with zero amounts.'
+		);
+		expectActionsDisabled(
+			'Print and Export are unavailable when the selected range has no Balance activity.'
+		);
+		expect(
+			screen.getByRole( 'button', { name: 'Apply April date filter' } )
+		).toBeInTheDocument();
+		expect( screen.getByTestId( 'date-popover' ) ).toHaveTextContent(
+			'Previous month'
+		);
+	} );
+
+	it( 'renders Fees states, search, DataViews fields, and export flow', async () => {
+		const clickSpy = jest
+			.spyOn( HTMLAnchorElement.prototype, 'click' )
+			.mockImplementation();
+
+		renderReportsPage( [ '/woopayments/reports?tab=fees' ] );
+
+		expect( screen.getByRole( 'status' ) ).toHaveTextContent(
+			'Loading fees report…'
+		);
+		expect(
+			await screen.findByRole( 'searchbox', { name: 'Search fees' } )
+		).toBeInTheDocument();
+		expect( screen.getByText( 'Date & time' ) ).toBeInTheDocument();
+		expect( screen.getByText( 'Method' ) ).toBeInTheDocument();
+		expect( screen.getByText( 'Gross amount' ) ).toBeInTheDocument();
+		expect( screen.getByText( 'Fees total' ) ).toBeInTheDocument();
+		expect(
+			screen.getByText( 'd/m/Y / H:i|2026-06-18T10:11:12Z' )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'link', { name: 'txn_123' } )
+		).toHaveAttribute(
+			'href',
+			'http://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions%2Fdetails&id=txn_123&transaction_type=charge'
+		);
+		expectPlainClickRoutesInApp(
+			screen.getByRole( 'link', { name: 'txn_123' } ),
+			'admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions%2Fdetails&id=txn_123&transaction_type=charge'
+		);
+		expect( screen.getByRole( 'link', { name: '99' } ) ).toHaveAttribute(
+			'href',
+			'http://example.com/wp-admin/admin.php?page=wc-orders&action=edit&id=99'
+		);
+		expect( screen.getByText( '$25.00' ) ).toBeInTheDocument();
+		expect( screen.getByText( '-$1.20' ) ).toBeInTheDocument();
+		expect( speak ).toHaveBeenCalledWith( '1 fees loaded.', 'polite' );
+
+		fireEvent.change(
+			screen.getByRole( 'searchbox', { name: 'Search fees' } ),
+			{
+				target: {
+					value: 'txn_456',
+				},
+			}
+		);
+
+		await waitFor( () =>
+			expect( mockGetFees ).toHaveBeenLastCalledWith(
+				expect.objectContaining( {
+					search: [ 'txn_456' ],
+					user_timezone: expect.stringMatching( /^[+-]\d{2}:\d{2}$/ ),
+				} )
+			)
+		);
+		expect( recordEvent ).toHaveBeenCalledWith(
+			'wcpay_reports_fees_search',
+			{
+				search_length: 7,
+			}
+		);
+
+		jest.useFakeTimers();
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Export' } )
+		);
+
+		expect( mockRequestFeesExport ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				search: [ 'txn_456' ],
+				user_timezone: expect.stringMatching( /^[+-]\d{2}:\d{2}$/ ),
+			} )
+		);
+		// Client 11.1.0 `hooks/use-report-export.ts:91-95`: the first check runs a second after the request.
+		await act( () => jest.advanceTimersByTimeAsync( 1000 ) );
+		expect( clickSpy ).toHaveBeenCalledTimes( 1 );
+		expect( mockGetFeesExportUrl ).toHaveBeenCalledWith( 'export_123' );
+		expect( recordEvent ).toHaveBeenCalledWith( 'wcpay_csv_export_click', {
+			row_type: 'fees',
+			source: 'payments_reports',
+			exported_row_count: 1,
+		} );
+		expect( recordEvent ).toHaveBeenCalledWith(
+			'wcpay_reports_fees_export_success',
+			{ exported_row_count: 1 }
+		);
+		clickSpy.mockRestore();
+	} );
+
+	// Client 11.2.0 `reports/fees/strings.ts:9-25` and `fields.tsx:79-94`: the Fees method and type labels are the
+	// transactions list's own (`constants/payment-method.ts:48-65`, `transactions/strings.ts`), in sentence case.
+	it( 'labels Fees methods and types as the transactions list does', async () => {
+		mockGetFees.mockImplementation( async () => {
+			await waitForNextTick();
+			return [
+				{
+					...feeRow,
+					payment_method: { type: 'ach_debit' },
+					type: 'refund_failure',
+				},
+			];
+		} );
+		mockGetFeesSummary.mockImplementation( async () => {
+			await waitForNextTick();
+			return {
+				count: 1,
+				sources: [ 'ach_debit' ],
+				types: [ 'refund_failure' ],
+			};
+		} );
+
+		renderReportsPage( [ '/woopayments/reports?tab=fees' ] );
+
+		const dataViews = await screen.findByTestId( 'reports-dataviews' );
+		expect(
+			await within( dataViews ).findByText( 'ACH debit' )
+		).toBeInTheDocument();
+		expect(
+			within( dataViews ).getByText( 'Refund failure' )
+		).toBeInTheDocument();
+		const fields = mockDataViews.mock.lastCall?.[ 0 ].fields as Array< {
+			id: string;
+			elements?: Array< { value: string; label: string } >;
+		} >;
+		expect(
+			fields.find( ( field ) => field.id === 'payment_method' )?.elements
+		).toEqual( [ { value: 'ach_debit', label: 'ACH debit' } ] );
+		expect(
+			fields.find( ( field ) => field.id === 'type' )?.elements
+		).toEqual( [ { value: 'refund_failure', label: 'Refund failure' } ] );
+	} );
+
+	it( 'exposes the Fees date filter through DataViews', async () => {
+		renderReportsPage( [ '/woopayments/reports?tab=fees' ] );
+
+		await screen.findByRole( 'searchbox', { name: 'Search fees' } );
+		await userEvent.click(
+			screen.getByRole( 'button', {
+				name: 'Apply April date filter',
+			} )
+		);
+
+		await waitFor( () =>
+			expect( mockGetFees ).toHaveBeenLastCalledWith(
+				expect.objectContaining( {
+					date_between: [
+						'2026-03-31 21:00:00',
+						'2026-04-30 20:59:59',
+					],
+					user_timezone: expect.stringMatching( /^[+-]\d{2}:\d{2}$/ ),
+				} )
+			)
+		);
+		expect( mockGetFeesSummary ).toHaveBeenLastCalledWith(
+			expect.objectContaining( {
+				date_between: [ '2026-03-31 21:00:00', '2026-04-30 20:59:59' ],
+				user_timezone: expect.stringMatching( /^[+-]\d{2}:\d{2}$/ ),
+			} )
+		);
+	} );
+
+	it( "loads the Fees sort, paging and filters from the client's URL params", async () => {
+		// Client 11.1.0 `reports/fees/use-fees-url-sync.ts:167-195`.
+		renderReportsPage( [
+			'/woopayments/reports?report_tab=fees&orderby=amount&order=asc&paged=2&per_page=50&search%5B%5D=txn_9&date_after=2026-04-01&payment_method_type=card&type=charge',
+		] );
+
+		await waitFor( () =>
+			expect( mockGetFees ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					page: 2,
+					per_page: 50,
+					sort: 'amount',
+					direction: 'asc',
+					search: [ 'txn_9' ],
+					date_after: '2026-03-31 21:00:00',
+					payment_method_type: 'card',
+					type: [ 'charge' ],
+				} )
+			)
+		);
+		expect( mockGetFees ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	// Client 11.3.0 `reports/fees/use-fees-url-sync.ts:175-178`: with no `per_page` in the URL the rows per page come from
+	// the merchant's saved Fees view (`reports/fees/use-fees-user-prefs.ts`, user meta `wc_payments_reports_fees_view`).
+	it( "opens Fees with the merchant's saved rows per page when the URL has none", async () => {
+		setMockUserPreferences( {
+			wc_payments_reports_fees_view: {
+				fields: [ 'type', 'fees' ],
+				perPage: 50,
+			},
+		} );
+
+		renderReportsPage( [ '/woopayments/reports?report_tab=fees' ] );
+
+		await waitFor( () =>
+			expect( mockGetFees ).toHaveBeenCalledWith(
+				expect.objectContaining( { per_page: 50 } )
+			)
+		);
+		expect( mockGetFees ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	it( "lets the URL's rows per page win over the saved one", async () => {
+		setMockUserPreferences( {
+			wc_payments_reports_fees_view: { perPage: 50 },
+		} );
+
+		renderReportsPage( [
+			'/woopayments/reports?report_tab=fees&per_page=10',
+		] );
+
+		await waitFor( () =>
+			expect( mockGetFees ).toHaveBeenCalledWith(
+				expect.objectContaining( { per_page: 10 } )
+			)
+		);
+	} );
+
+	it( "opens Fees with the merchant's saved columns", async () => {
+		setMockUserPreferences( {
+			wc_payments_reports_fees_view: { fields: [ 'type', 'fees' ] },
+		} );
+		renderReportsPage( [ '/woopayments/reports?report_tab=fees' ] );
+
+		const table = within(
+			await screen.findByTestId( 'reports-dataviews' )
+		);
+		expect( table.getByText( 'Date & time' ) ).toBeInTheDocument();
+		expect( table.getByText( 'Type' ) ).toBeInTheDocument();
+		expect( table.getByText( 'Fees total' ) ).toBeInTheDocument();
+		expect( table.queryByText( 'Transaction ID' ) ).not.toBeInTheDocument();
+		expect( mockDataViews.mock.lastCall?.[ 0 ].view?.fields ).toStrictEqual(
+			[ 'type', 'fees' ]
+		);
+	} );
+
+	it( 'applies the saved Fees layout when preferences arrive after mount', async () => {
+		renderReportsPage( [ '/woopayments/reports?report_tab=fees' ] );
+		await screen.findByRole( 'searchbox', { name: 'Search fees' } );
+
+		await act( async () => {
+			await mockUpdateUserPreferences( {
+				wc_payments_reports_fees_view: {
+					fields: [ 'fees' ],
+					layout: {
+						density: 'compact',
+						styles: {
+							fees: { align: 'end', width: 120 },
+							type: { align: 'center' },
+						},
+					},
+				},
+			} );
+		} );
+
+		expect( mockDataViews.mock.lastCall?.[ 0 ].view ).toMatchObject( {
+			fields: [ 'fees' ],
+			layout: {
+				density: 'compact',
+				styles: {
+					amount: { align: 'start' },
+					fees: { align: 'start', width: 120 },
+					type: { align: 'center' },
+				},
+			},
+		} );
+	} );
+
+	it( 'shows Date once as the Fees title even when saved among the columns', async () => {
+		setMockUserPreferences( {
+			wc_payments_reports_fees_view: {
+				fields: [ 'date', 'transaction_id', 'amount' ],
+			},
+		} );
+		renderReportsPage( [ '/woopayments/reports?report_tab=fees' ] );
+		await screen.findByRole( 'searchbox', { name: 'Search fees' } );
+
+		const table = mockDataViews.mock.lastCall?.[ 0 ];
+		expect( table?.view ).toMatchObject( {
+			titleField: 'date',
+			fields: [ 'transaction_id', 'amount' ],
+		} );
+		expect( screen.getAllByText( 'Date & time' ) ).toHaveLength( 1 );
+	} );
+
+	it( 'hides the Fees Date title from Properties for the current visit only', async () => {
+		const { DataViews } = jest.requireActual( '@wordpress/dataviews' );
+		const route = [ '/woopayments/reports?report_tab=fees' ];
+		setMockUserPreferences( {
+			wc_payments_reports_fees_view: {
+				fields: [ 'fees' ],
+				perPage: 25,
+				layout: defaultFeesLayout,
+			},
+		} );
+
+		await mockDataViews.withImplementation(
+			( props ) => <DataViews { ...props } />,
+			async () => {
+				const firstVisit = renderReportsPage( route );
+				const table = within( await screen.findByRole( 'table' ) );
+				expect( table.getByText( 'Date & time' ) ).toBeInTheDocument();
+				fireEvent.click(
+					screen.getByRole( 'button', { name: 'View options' } )
+				);
+				await screen.findByText( 'Properties' );
+
+				jest.useFakeTimers();
+				try {
+					fireEvent.click(
+						screen.getByText( 'Date', { selector: 'span' } )
+					);
+					await act( () => jest.advanceTimersByTimeAsync( 750 ) );
+					expect(
+						table.queryByText( 'Date & time' )
+					).not.toBeInTheDocument();
+					expect(
+						table.getByText( 'Fees total' )
+					).toBeInTheDocument();
+					expect( mockUpdateUserPreferences ).not.toHaveBeenCalled();
+				} finally {
+					jest.useRealTimers();
+				}
+
+				firstVisit.unmount();
+				renderReportsPage( route );
+				const reopened = within( await screen.findByRole( 'table' ) );
+				expect(
+					reopened.getByText( 'Date & time' )
+				).toBeInTheDocument();
+				expect(
+					reopened.queryByText( 'Transaction ID' )
+				).not.toBeInTheDocument();
+			}
+		);
+	} );
+
+	it.each( [
+		{ name: 'a first save', stored: '', fields: defaultFeesFields },
+		{
+			name: 'saved columns',
+			stored: { fields: [ 'type', 'fees' ], perPage: 25 },
+			fields: [ 'type', 'fees' ],
+		},
+	] )(
+		'saves the Fees rows per page with columns and layout for $name',
+		async ( { stored, fields } ) => {
+			setMockUserPreferences( { wc_payments_reports_fees_view: stored } );
+			renderReportsPage( [ '/woopayments/reports?report_tab=fees' ] );
+
+			await screen.findByRole( 'searchbox', { name: 'Search fees' } );
+			jest.useFakeTimers();
+			try {
+				fireEvent.click(
+					screen.getByRole( 'button', {
+						name: 'Apply detailed fees view',
+					} )
+				);
+
+				expect( mockUpdateUserPreferences ).not.toHaveBeenCalled();
+				await act( () => jest.advanceTimersByTimeAsync( 750 ) );
+
+				expect( mockUpdateUserPreferences ).toHaveBeenCalledTimes( 1 );
+				expect( mockUpdateUserPreferences ).toHaveBeenCalledWith( {
+					wc_payments_reports_fees_view: {
+						fields,
+						perPage: 50,
+						layout: defaultFeesLayout,
+					},
+				} );
+			} finally {
+				jest.useRealTimers();
+			}
+		}
+	);
+
+	it( 'does not save the Fees rows per page before the saved view has loaded', async () => {
+		// No key yet: the current user's preferences have not arrived.
+		renderReportsPage( [ '/woopayments/reports?report_tab=fees' ] );
+
+		await screen.findByRole( 'searchbox', { name: 'Search fees' } );
+		jest.useFakeTimers();
+		try {
+			fireEvent.click(
+				screen.getByRole( 'button', {
+					name: 'Apply detailed fees view',
+				} )
+			);
+			await act( () => jest.advanceTimersByTimeAsync( 2000 ) );
+
+			expect( mockUpdateUserPreferences ).not.toHaveBeenCalled();
+		} finally {
+			jest.useRealTimers();
+		}
+	} );
+
+	it( 'writes all Fees preferences once after the last column or page size change', async () => {
+		setMockUserPreferences( {
+			wc_payments_reports_fees_view: '',
+		} );
+		renderReportsPage( [ '/woopayments/reports?report_tab=fees' ] );
+
+		await screen.findByRole( 'searchbox', { name: 'Search fees' } );
+		jest.useFakeTimers();
+		try {
+			fireEvent.click(
+				screen.getByRole( 'button', {
+					name: 'Apply detailed fees view',
+				} )
+			);
+			await act( () => jest.advanceTimersByTimeAsync( 400 ) );
+			fireEvent.click(
+				screen.getByRole( 'button', { name: 'Apply 10 rows per page' } )
+			);
+			await act( () => jest.advanceTimersByTimeAsync( 400 ) );
+			const fields = mockDataViews.mock.lastCall?.[ 0 ].view
+				?.fields as string[];
+			changeFeesTableView( {
+				fields: fields.filter(
+					( field ) => field !== 'transaction_currency'
+				),
+				layout: { ...defaultFeesLayout, density: 'compact' },
+			} );
+			await act( () => jest.advanceTimersByTimeAsync( 749 ) );
+			expect( mockUpdateUserPreferences ).not.toHaveBeenCalled();
+			await act( () => jest.advanceTimersByTimeAsync( 1 ) );
+
+			expect( mockUpdateUserPreferences ).toHaveBeenCalledTimes( 1 );
+			expect( mockUpdateUserPreferences ).toHaveBeenCalledWith( {
+				wc_payments_reports_fees_view: {
+					fields: [
+						'payment_method',
+						'type',
+						'order_id',
+						'transaction_id',
+						'amount',
+						'fees',
+					],
+					perPage: 10,
+					layout: { ...defaultFeesLayout, density: 'compact' },
+				},
+			} );
+		} finally {
+			jest.useRealTimers();
+		}
+	} );
+
+	it( 'opens Fees with 25 rows when the saved rows per page is outside 1 to 100', async () => {
+		setMockUserPreferences( {
+			wc_payments_reports_fees_view: { perPage: 101 },
+		} );
+
+		renderReportsPage( [ '/woopayments/reports?report_tab=fees' ] );
+
+		await waitFor( () =>
+			expect( mockGetFees ).toHaveBeenCalledWith(
+				expect.objectContaining( { per_page: 25 } )
+			)
+		);
+		expect( mockGetFees ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	it( 'does not write the saved Fees view when the rows per page stay the same', async () => {
+		setMockUserPreferences( {
+			wc_payments_reports_fees_view: { perPage: 50 },
+		} );
+		renderReportsPage( [
+			'/woopayments/reports?report_tab=fees&per_page=50',
+		] );
+
+		fireEvent.change(
+			await screen.findByRole( 'searchbox', { name: 'Search fees' } ),
+			{ target: { value: 'txn_456' } }
+		);
+
+		await waitFor( () =>
+			expect( screen.getByTestId( 'location' ) ).toHaveTextContent(
+				'search%5B%5D=txn_456'
+			)
+		);
+		expect( mockUpdateUserPreferences ).not.toHaveBeenCalled();
+	} );
+
+	it.each( [
+		{ action: 'changing only the sort', urlSize: 50 },
+		{ action: 'returning to the saved size', urlSize: 10 },
+	] )(
+		'skips a write when $action gives the normalized saved Fees view',
+		async ( { urlSize } ) => {
+			setMockUserPreferences( {
+				wc_payments_reports_fees_view: {
+					fields: [ 'date', 'fees' ],
+					perPage: 50,
+					layout: defaultFeesLayout,
+				},
+			} );
+			renderReportsPage( [
+				`/woopayments/reports?report_tab=fees&per_page=${ urlSize }`,
+			] );
+			await screen.findByRole( 'searchbox', { name: 'Search fees' } );
+
+			jest.useFakeTimers();
+			try {
+				changeFeesTableView( {
+					perPage: 50,
+					sort: { field: 'fees', direction: 'asc' },
+				} );
+				await act( () => jest.advanceTimersByTimeAsync( 750 ) );
+				expect( mockUpdateUserPreferences ).not.toHaveBeenCalled();
+			} finally {
+				jest.useRealTimers();
+			}
+		}
+	);
+
+	// Client 11.3.0 `data/reports/hooks.ts:123-125,161,250`: Fees sorts a reversed range before it asks for the rows and the
+	// summary, as Balance, Documents and the money-movement lists do.
+	it( 'sorts a reversed Fees date range for the rows and the summary', async () => {
+		renderReportsPage( [
+			'/woopayments/reports?report_tab=fees&date_between%5B%5D=2026-04-30&date_between%5B%5D=2026-04-01',
+		] );
+
+		const sortedRange = [ '2026-03-31 21:00:00', '2026-04-30 20:59:59' ];
+		await waitFor( () =>
+			expect( mockGetFees ).toHaveBeenCalledWith(
+				expect.objectContaining( { date_between: sortedRange } )
+			)
+		);
+		expect( mockGetFeesSummary ).toHaveBeenCalledWith(
+			expect.objectContaining( { date_between: sortedRange } )
+		);
+		// The filter chip keeps the order the merchant typed.
+		await screen.findByRole( 'searchbox', { name: 'Search fees' } );
+		expect( mockDataViews.mock.lastCall?.[ 0 ].view?.filters ).toEqual( [
+			{
+				field: 'date',
+				operator: 'between',
+				value: [ '2026-04-30', '2026-04-01' ],
+			},
+		] );
+	} );
+
+	it( 'writes Fees view changes to the URL with the client param names', async () => {
+		renderReportsPage( [ '/woopayments/reports?report_tab=fees' ] );
+
+		await screen.findByRole( 'searchbox', { name: 'Search fees' } );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Apply detailed fees view' } )
+		);
+
+		// Client 11.1.0 `reports/fees/use-fees-url-sync.ts:122-129`.
+		expect( screen.getByTestId( 'location' ) ).toHaveTextContent(
+			'/woopayments/reports?report_tab=fees&orderby=date&order=desc&paged=3&per_page=50&search%5B%5D=txn_456&date_between%5B%5D=2026-04-01&date_between%5B%5D=2026-04-30&type=charge'
+		);
+	} );
+
+	it( 'writes a Fees search to the URL only after typing pauses', async () => {
+		renderReportsPage( [ '/woopayments/reports?report_tab=fees' ] );
+
+		fireEvent.change(
+			await screen.findByRole( 'searchbox', { name: 'Search fees' } ),
+			{ target: { value: 'txn_456' } }
+		);
+
+		// Client 11.1.0 `reports/fees/use-fees-url-sync.ts:26,226-230`: the search write waits 500ms.
+		expect( screen.getByTestId( 'location' ) ).not.toHaveTextContent(
+			'txn_456'
+		);
+		await waitFor(
+			() =>
+				expect( screen.getByTestId( 'location' ) ).toHaveTextContent(
+					'search%5B%5D=txn_456'
+				),
+			{ timeout: 2000 }
+		);
+	} );
+
+	it( 'restores the previous Fees view on browser back', async () => {
+		renderReportsPage( [
+			'/woopayments/reports?report_tab=fees&orderby=amount&order=asc',
+		] );
+
+		await screen.findByRole( 'searchbox', { name: 'Search fees' } );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Apply detailed fees view' } )
+		);
+		await waitFor( () =>
+			expect( mockGetFees ).toHaveBeenLastCalledWith(
+				expect.objectContaining( { page: 3, search: [ 'txn_456' ] } )
+			)
+		);
+
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Browser back' } )
+		);
+
+		// Client 11.1.0 `reports/fees/use-fees-url-sync.ts:160-166,193-195`: popstate re-derives the view from the URL.
+		await waitFor( () =>
+			expect( mockGetFees ).toHaveBeenLastCalledWith(
+				expect.not.objectContaining( { search: expect.anything() } )
+			)
+		);
+		expect( mockGetFees ).toHaveBeenLastCalledWith(
+			expect.objectContaining( {
+				page: 1,
+				sort: 'amount',
+				direction: 'asc',
+			} )
+		);
+	} );
+
+	it.each( [ undefined, 'fees' ] )(
+		'uses the Fees default column order for stored fields %p',
+		async ( fields ) => {
+			setMockUserPreferences( {
+				wc_payments_reports_fees_view: { fields },
+			} );
+			renderReportsPage( [ '/woopayments/reports?tab=fees' ] );
+
+			await screen.findByRole( 'searchbox', { name: 'Search fees' } );
+			const view = mockDataViews.mock.lastCall?.[ 0 ].view;
+			expect( view?.titleField ).toBe( 'date' );
+			expect( view?.fields ).toStrictEqual( defaultFeesFields );
+		}
+	);
+
+	// Client 11.2.0 `reports/fees/fields.tsx:137-157`: the two amount columns sort but are not offered as filters.
+	it( 'defaults the Fees DataViews Date filter to Between and offers no amount filters', async () => {
+		renderReportsPage( [ '/woopayments/reports?tab=fees' ] );
+
+		await screen.findByRole( 'searchbox', { name: 'Search fees' } );
+		const fields = mockDataViews.mock.calls.at( -1 )?.[ 0 ].fields;
+		expect(
+			fields?.find( ( field ) => field.id === 'date' )?.filterBy
+		).toEqual( {
+			operators: [ 'between', 'on', 'before', 'after' ],
+		} );
+		expect(
+			fields?.find( ( field ) => field.id === 'amount' )?.filterBy
+		).toBe( false );
+		expect(
+			fields?.find( ( field ) => field.id === 'fees' )?.filterBy
+		).toBe( false );
+	} );
+
+	it.each( [
+		[ 'empty', undefined, 0, 1 ],
+		[
+			'full',
+			{ count: 37, sources: [ 'card' ], types: [ 'charge' ] },
+			37,
+			2,
+		],
+	] as const )(
+		'keeps the fee row with a fulfilled %s fees summary',
+		async ( _, summary, count, pages ) => {
+			mockGetFeesSummary.mockImplementation(
+				jest.requireActual( '../reports/data' )
+					.getWooPaymentsReportsFeesSummary
+			);
+			jest.mocked( apiFetch ).mockResolvedValue( summary );
+			renderReportsPage( [ '/woopayments/reports?report_tab=fees' ] );
+
+			expect(
+				await screen.findByRole( 'link', { name: 'txn_123' } )
+			).toBeInTheDocument();
+			expect( mockDataViews.mock.lastCall?.[ 0 ] ).toMatchObject( {
+				paginationInfo: { totalItems: count, totalPages: pages },
+			} );
+			expect( speak ).toHaveBeenCalledWith(
+				`${ count } fees loaded.`,
+				'polite'
+			);
+		}
+	);
+
+	it.each( [
+		[ '', 'No fees yet' ],
+		[ '&search=txn_missing', 'No fees to display' ],
+	] )(
+		'keeps Export with a fulfilled empty fees summary and no rows (%s)',
+		async ( search, heading ) => {
+			mockGetFeesSummary.mockImplementation(
+				jest.requireActual( '../reports/data' )
+					.getWooPaymentsReportsFeesSummary
+			);
+			jest.mocked( apiFetch ).mockResolvedValue( null );
+			mockGetFees.mockResolvedValue( [] );
+			renderReportsPage( [
+				`/woopayments/reports?report_tab=fees${ search }`,
+			] );
+
+			expect(
+				await screen.findByRole( 'heading', { name: heading } )
+			).toBeInTheDocument();
+			expect(
+				screen.getByRole( 'button', { name: 'Export' } )
+			).toBeEnabled();
+		}
+	);
+
+	it( 'renders Fees error and empty states', async () => {
+		mockGetFees.mockImplementationOnce( async () => {
+			await waitForNextTick();
+			throw new Error( 'Fees failed' );
+		} );
+		renderReportsPage( [ '/woopayments/reports?tab=fees' ] );
+
+		expect(
+			await screen.findByRole( 'heading', {
+				name: 'Fees report unavailable',
+			} )
+		).toBeInTheDocument();
+		expect( screen.getByRole( 'alert' ) ).toHaveTextContent(
+			"We couldn't load your fees data."
+		);
+		expect( speak ).toHaveBeenCalledWith(
+			'Fees report could not be loaded.',
+			'assertive'
+		);
+
+		mockGetFees.mockImplementationOnce( async () => {
+			await waitForNextTick();
+			return [];
+		} );
+		mockGetFeesSummary.mockImplementationOnce( async () => {
+			await waitForNextTick();
+			return {
+				count: 0,
+				sources: [],
+				types: [],
+			};
+		} );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Reload report' } )
+		);
+
+		expect(
+			await screen.findByRole( 'heading', { name: 'No fees yet' } )
+		).toBeInTheDocument();
+		expect( screen.getByRole( 'status' ) ).toHaveTextContent(
+			'Fees will appear here once you start receiving payments.'
+		);
+	} );
+} );
