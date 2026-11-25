@@ -47,7 +47,7 @@ class DisputeEventHandler {
 	 *
 	 * @var string
 	 */
-	public const OPEN_DISPUTE_IDS_META_KEY = '_wcpay_open_dispute_ids';
+	public const OPEN_DISPUTE_IDS_META_KEY = WooPaymentsPersistenceVocabulary::OPEN_DISPUTE_IDS_META_KEY;
 
 	/**
 	 * Refund meta key holding the ID of the lost dispute the refund records.
@@ -871,7 +871,7 @@ class DisputeEventHandler {
 	 * @throws RuntimeException When an order stores the disputed charge; nothing has been written.
 	 */
 	private function is_disputed_charge_stored_on_no_order( WC_Order $order, string $charge_id ): bool {
-		if ( $this->event_order_resolver->is_paid_for_ownership( $order ) || $charge_id === (string) $order->get_meta( '_charge_id', true ) ) {
+		if ( $this->event_order_resolver->is_paid_for_ownership( $order ) || $charge_id === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY, true ) ) {
 			return false;
 		}
 

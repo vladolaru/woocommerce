@@ -42,7 +42,7 @@ class EventOrderResolver {
 	 * @return WC_Order|null
 	 */
 	public function find_order_by_charge_id( string $charge_id, array $event_object = array() ): ?WC_Order {
-		$order = $this->find_order_by_payment_meta( '_charge_id', $charge_id );
+		$order = $this->find_order_by_payment_meta( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY, $charge_id );
 
 		return $order instanceof WC_Order && $this->does_order_key_match_event_object( $order, $event_object ) ? $order : null;
 	}
@@ -58,7 +58,7 @@ class EventOrderResolver {
 	 */
 	public function find_order_for_intent_event( array $payment_intent ): ?WC_Order {
 		$intent_id = isset( $payment_intent['id'] ) ? (string) $payment_intent['id'] : '';
-		$order     = $this->find_order_by_payment_meta( '_intent_id', $intent_id );
+		$order     = $this->find_order_by_payment_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, $intent_id );
 		if ( $order instanceof WC_Order && $this->does_order_key_match_event_object( $order, $payment_intent ) ) {
 			return $order;
 		}
@@ -78,7 +78,7 @@ class EventOrderResolver {
 	 * @return WC_Order|null
 	 */
 	public function find_order_by_event_intent( array $event_object ): ?WC_Order {
-		$order = $this->find_order_by_payment_meta( '_intent_id', $this->get_payment_intent_field( $event_object ) );
+		$order = $this->find_order_by_payment_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, $this->get_payment_intent_field( $event_object ) );
 
 		return $order instanceof WC_Order && $this->does_order_key_match_event_object( $order, $event_object ) ? $order : null;
 	}
@@ -127,7 +127,7 @@ class EventOrderResolver {
 	public function get_event_intent_id( array $event_object, WC_Order $order ): string {
 		$intent_id = $this->get_payment_intent_field( $event_object );
 
-		return '' !== $intent_id ? $intent_id : (string) $order->get_meta( '_intent_id', true );
+		return '' !== $intent_id ? $intent_id : (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true );
 	}
 
 	/**
@@ -170,7 +170,7 @@ class EventOrderResolver {
 			return WooPaymentsOrderEffects::transaction_id_names_payment( $order, $intent_id, $charge_id );
 		}
 
-		if ( '' !== $intent_id && $intent_id === (string) $order->get_meta( '_intent_id', true ) ) {
+		if ( '' !== $intent_id && $intent_id === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true ) ) {
 			return true;
 		}
 
@@ -249,7 +249,7 @@ class EventOrderResolver {
 	 * @return bool
 	 */
 	public function is_superseded_attempt( WC_Order $order, string $intent_id, int $intent_created_at ): bool {
-		if ( '' === $intent_id || $intent_id === (string) $order->get_meta( '_intent_id', true ) ) {
+		if ( '' === $intent_id || $intent_id === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true ) ) {
 			return false;
 		}
 
@@ -258,7 +258,7 @@ class EventOrderResolver {
 			return true;
 		}
 
-		if ( '' !== (string) $order->get_meta( '_wcpay_mode', true ) ) {
+		if ( '' !== (string) $order->get_meta( WooPaymentsPersistenceVocabulary::MODE_META_KEY, true ) ) {
 			return false;
 		}
 
@@ -319,11 +319,11 @@ class EventOrderResolver {
 			return false;
 		}
 
-		if ( '' === $stand_in_intent_id || $stand_in_intent_id !== (string) $order->get_meta( '_intent_id', true ) ) {
+		if ( '' === $stand_in_intent_id || $stand_in_intent_id !== (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true ) ) {
 			return false;
 		}
 
-		$stored_charge_id = (string) $order->get_meta( '_charge_id', true );
+		$stored_charge_id = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY, true );
 
 		return '' === $stored_charge_id || $stored_charge_id === $charge_id;
 	}

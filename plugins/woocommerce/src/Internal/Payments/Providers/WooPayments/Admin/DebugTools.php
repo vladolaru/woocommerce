@@ -187,7 +187,7 @@ class DebugTools {
 				array(
 					'limit'      => -1,
 					// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
-					'meta_key'   => '_wcpay_mode',
+					'meta_key'   => WooPaymentsPersistenceVocabulary::MODE_META_KEY,
 					// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
 					'meta_value' => WooPaymentsOrderMode::TEST,
 					'return'     => 'objects',

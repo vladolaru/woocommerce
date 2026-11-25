@@ -422,7 +422,7 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	 * @return string
 	 */
 	private function get_projection_intent_id( WC_Order $order ): string {
-		return (string) $order->get_meta( '_intent_id', true );
+		return (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true );
 	}
 
 	/**
@@ -458,7 +458,7 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	 * @return string A WooPaymentsOrderMode value; the current mode when the order has none.
 	 */
 	private function get_order_mode( WC_Order $order ): string {
-		$mode = strtolower( trim( (string) $order->get_meta( '_wcpay_mode', true ) ) );
+		$mode = strtolower( trim( (string) $order->get_meta( WooPaymentsPersistenceVocabulary::MODE_META_KEY, true ) ) );
 		if ( in_array( $mode, array( WooPaymentsOrderMode::TEST, WooPaymentsOrderMode::PRODUCTION ), true ) ) {
 			return $mode;
 		}
@@ -476,8 +476,8 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	private function get_mapping_context( WC_Order $order, array $intent ): WooPaymentsIntentMappingContext {
 		return new WooPaymentsIntentMappingContext(
 			$order->get_checkout_order_received_url(),
-			(string) $order->get_meta( '_payment_method_id', true ),
-			(string) $order->get_meta( '_stripe_customer_id', true ),
+			(string) $order->get_meta( WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_ID_META_KEY, true ),
+			(string) $order->get_meta( WooPaymentsPersistenceVocabulary::STRIPE_CUSTOMER_ID_META_KEY, true ),
 			'',
 			'pi',
 			esc_url_raw( WooPaymentsIntentCodec::raw_next_action_redirect_url( $intent ) )
@@ -508,7 +508,7 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 			(string) $order->get_currency(),
 			$order_mode,
 			$settlement_meta,
-			$order->has_status( 'on-hold' ) || 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true )
+			$order->has_status( 'on-hold' ) || 'review' === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY, true )
 		);
 	}
 
@@ -590,7 +590,7 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 		$wc_refunds = array_values( $order->get_refunds() );
 
 		foreach ( $wc_refunds as $refund ) {
-			$provider_refund_id = (string) $refund->get_meta( '_wcpay_refund_id', true );
+			$provider_refund_id = (string) $refund->get_meta( WooPaymentsPersistenceVocabulary::PROCESSED_REFUND_LINK_META_KEY, true );
 			$provider_refund    = $refunds_by_id[ $provider_refund_id ] ?? null;
 			if ( ! is_array( $provider_refund ) && 1 === count( $wc_refunds ) && 1 === count( $provider_refunds ) ) {
 				$provider_refund = reset( $provider_refunds );
@@ -598,10 +598,10 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 
 			$meta = array();
 			if ( is_array( $provider_refund ) && isset( $provider_refund['id'] ) ) {
-				$meta['_wcpay_refund_id'] = (string) $provider_refund['id'];
-				$balance_transaction_id   = WooPaymentsIntentCodec::balance_transaction_id( $provider_refund['balance_transaction'] ?? null );
+				$meta[ WooPaymentsPersistenceVocabulary::PROCESSED_REFUND_LINK_META_KEY ] = (string) $provider_refund['id'];
+				$balance_transaction_id = WooPaymentsIntentCodec::balance_transaction_id( $provider_refund['balance_transaction'] ?? null );
 				if ( '' !== $balance_transaction_id ) {
-					$meta['_wcpay_refund_transaction_id'] = $balance_transaction_id;
+					$meta[ WooPaymentsPersistenceVocabulary::REFUND_TRANSACTION_ID_META_KEY ] = $balance_transaction_id;
 				}
 			}
 

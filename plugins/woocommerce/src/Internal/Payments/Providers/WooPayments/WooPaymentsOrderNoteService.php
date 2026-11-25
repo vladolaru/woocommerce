@@ -160,7 +160,7 @@ class WooPaymentsOrderNoteService {
 			return $order_mode;
 		}
 
-		$persisted_order_mode = $order->get_meta( '_wcpay_mode', true );
+		$persisted_order_mode = $order->get_meta( WooPaymentsPersistenceVocabulary::MODE_META_KEY, true );
 
 		return is_string( $persisted_order_mode ) ? $persisted_order_mode : '';
 	}
@@ -1034,7 +1034,7 @@ class WooPaymentsOrderNoteService {
 			$transaction_url
 		);
 		$note .= ' ' . esc_html__( 'If the customer also paid another way, one of the payments needs a refund.', 'woocommerce' );
-		if ( (string) $order->get_transaction_id() === $intent_id && (string) $order->get_meta( '_charge_id', true ) === $charge_id ) {
+		if ( (string) $order->get_transaction_id() === $intent_id && (string) $order->get_meta( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY, true ) === $charge_id ) {
 			$note .= ' ' . esc_html__( 'At this moment, this order\'s transaction ID names that payment, so a refund or a dispute of it changes this order.', 'woocommerce' );
 		}
 
@@ -1223,7 +1223,7 @@ class WooPaymentsOrderNoteService {
 	 */
 	private function format_capture_failed_note_for_domain( WC_Order $order, string $intent_id, string $charge_id, string $message, string $text_domain, ?string $formatted_amount = null ): string {
 		$transaction_id  = '' !== $intent_id ? $intent_id : $charge_id;
-		$transaction_url = $this->transaction_url( $intent_id, $charge_id, (string) $order->get_meta( '_wcpay_payment_transaction_id', true ) );
+		$transaction_url = $this->transaction_url( $intent_id, $charge_id, (string) $order->get_meta( WooPaymentsPersistenceVocabulary::PAYMENT_TRANSACTION_ID_META_KEY, true ) );
 		if ( 'woocommerce-payments' === $text_domain ) {
 			/* translators: %1$s: authorized amount, %2$s: WooPayments, %3$s: transaction ID, %4$s: transaction URL. */
 			$note_format = __( 'A capture of %1$s <strong>failed</strong> to complete using %2$s (<a>%3$s</a>).', 'woocommerce-payments' );
@@ -1997,7 +1997,7 @@ class WooPaymentsOrderNoteService {
 		}
 
 		$note             = $reason . ' ' . esc_html( $is_capture ? __( 'Nothing was charged.', 'woocommerce' ) : __( 'Nothing was released.', 'woocommerce' ) );
-		$stored_intent_id = (string) $order->get_meta( '_intent_id', true );
+		$stored_intent_id = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true );
 		if ( $stored_intent_id !== $intent_id && 1 === preg_match( self::PRINTABLE_INTENT_ID_PATTERN, $stored_intent_id ) ) {
 			$note .= ' ' . sprintf(
 				/* translators: %s: the ID of a WooPayments payment, such as "pi_123". */

@@ -582,7 +582,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 			? $this->note_service->format_declined_payment_note_candidates( $order, $intent_id, $intent_error )
 			: $this->note_service->format_redirect_payment_failed_note_candidates( $order, $intent_id, $exception_message );
 
-		$meta = '' === $intent_status ? array() : array( '_intention_status' => $intent_status );
+		$meta = '' === $intent_status ? array() : array( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY => $intent_status );
 		if ( ! $order->has_status( OrderStatus::FAILED ) && 0 === strpos( $intent_id, 'pi_' ) ) {
 			$meta += WooPaymentsOrderEffects::failed_payment_method_details_meta( array( 'last_payment_error' => $intent_error ) );
 		}
@@ -702,7 +702,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function order_matches_intent( WC_Order $order, string $intent_id ): bool {
-		$current_intent_id = (string) $order->get_meta( '_intent_id', true );
+		$current_intent_id = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true );
 
 		return '' !== $current_intent_id && hash_equals( $current_intent_id, $intent_id );
 	}
@@ -766,7 +766,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 		// A response filter can leave another scalar; it is compared as its string, so true or 42 matches no known customer.
 		$customer        = $intent['customer'] ?? null;
 		$intent_customer = is_scalar( $customer ) && ! is_string( $customer ) ? (string) $customer : WooPaymentsIntentCodec::result_customer_id( $intent, '' );
-		$order_customer  = (string) $order->get_meta( '_stripe_customer_id', true );
+		$order_customer  = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::STRIPE_CUSTOMER_ID_META_KEY, true );
 		if ( '' === $order_customer && 0 < $order->get_user_id() ) {
 			$order_customer = (string) $this->customer_service->get_persisted_customer_id_by_user_id( $order->get_user_id() );
 		}

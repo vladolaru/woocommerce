@@ -37,10 +37,10 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 
 	private const ASSET_HANDLE = 'wc-woopayments-order-success';
 
-	private const MULTIBANCO_REFERENCE_META_KEY = '_wcpay_multibanco_reference';
-	private const MULTIBANCO_ENTITY_META_KEY    = '_wcpay_multibanco_entity';
-	private const MULTIBANCO_EXPIRY_META_KEY    = '_wcpay_multibanco_expiry';
-	private const MULTIBANCO_URL_META_KEY       = '_wcpay_multibanco_url';
+	private const MULTIBANCO_REFERENCE_META_KEY = WooPaymentsPersistenceVocabulary::MULTIBANCO_REFERENCE_META_KEY;
+	private const MULTIBANCO_ENTITY_META_KEY    = WooPaymentsPersistenceVocabulary::MULTIBANCO_ENTITY_META_KEY;
+	private const MULTIBANCO_EXPIRY_META_KEY    = WooPaymentsPersistenceVocabulary::MULTIBANCO_EXPIRY_META_KEY;
+	private const MULTIBANCO_URL_META_KEY       = WooPaymentsPersistenceVocabulary::MULTIBANCO_URL_META_KEY;
 
 	/**
 	 * Payment-method definition registry.
@@ -182,7 +182,7 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	 */
 	public function determine_woopay_order_received_verify_known_shoppers( $value ) {
 		$order = $this->get_order_received_order();
-		if ( null === $order || ! $order->get_meta( 'is_woopay' ) ) {
+		if ( null === $order || ! $order->get_meta( WooPaymentsPersistenceVocabulary::IS_WOOPAY_META_KEY ) ) {
 			return $value;
 		}
 
@@ -220,7 +220,7 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 			return $required;
 		}
 
-		$intent_id         = (string) $order->get_meta( '_intent_id', true );
+		$intent_id         = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true );
 		$session_intent_id = (string) WooPaymentsSessionService::get_owned_value( $session, self::PAID_INTENT_ID_SESSION_KEY );
 		if ( '' === $intent_id || '' === $session_intent_id || ! hash_equals( $intent_id, $session_intent_id ) ) {
 			return $required;
@@ -250,7 +250,7 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 		$should_show_failure = $order->has_status( OrderStatus::FAILED );
 		if ( ! $should_show_failure ) {
 			$payment_method_type = str_replace( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX, '', $order->get_payment_method() );
-			$intent_id           = (string) $order->get_meta( '_intent_id', true );
+			$intent_id           = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true );
 			if ( '' === $intent_id ) {
 				$intent_id = (string) $order->get_transaction_id();
 			}
@@ -462,11 +462,11 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 			return $payment_method_title;
 		}
 
-		if ( $order->get_meta( 'is_woopay', true ) ) {
+		if ( $order->get_meta( WooPaymentsPersistenceVocabulary::IS_WOOPAY_META_KEY, true ) ) {
 			return $this->render_woopay_title( $order );
 		}
 
-		$express_method = (string) $order->get_meta( '_wcpay_express_checkout_payment_method', true );
+		$express_method = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::EXPRESS_CHECKOUT_PAYMENT_METHOD_META_KEY, true );
 		if ( '' !== $express_method ) {
 			$definition = $this->payment_method_registry->get( $express_method );
 			return null === $definition ? $payment_method_title : $this->render_definition_title( $definition, $order, true );
@@ -797,7 +797,7 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	 * @return string|mixed
 	 */
 	private function render_card_title( WC_Order $order, $payment_method_title ) {
-		$card_brand = sanitize_key( (string) $order->get_meta( '_card_brand', true ) );
+		$card_brand = sanitize_key( (string) $order->get_meta( WooPaymentsPersistenceVocabulary::CARD_BRAND_META_KEY, true ) );
 		if ( '' === $card_brand ) {
 			return $payment_method_title;
 		}
@@ -812,7 +812,7 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 			WC()->plugin_url() . '/' . $relative_path,
 			'',
 			'wc-payment-card-logo',
-			(string) $order->get_meta( 'last4', true )
+			(string) $order->get_meta( WooPaymentsPersistenceVocabulary::LAST4_META_KEY, true )
 		);
 	}
 
@@ -852,7 +852,7 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 			$icon_url,
 			$dark_icon_url,
 			$is_express ? 'wc-payment-card-logo' : 'wc-payment-lpm-logo wc-payment-lpm-logo--' . sanitize_html_class( $definition->get_id() ),
-			$is_express ? (string) $order->get_meta( 'last4', true ) : ''
+			$is_express ? (string) $order->get_meta( WooPaymentsPersistenceVocabulary::LAST4_META_KEY, true ) : ''
 		);
 	}
 
@@ -868,7 +868,7 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 			WC()->plugin_url() . '/assets/images/payment-methods/woo-short-color.svg',
 			'',
 			'woopay',
-			(string) $order->get_meta( 'last4', true )
+			(string) $order->get_meta( WooPaymentsPersistenceVocabulary::LAST4_META_KEY, true )
 		);
 	}
 

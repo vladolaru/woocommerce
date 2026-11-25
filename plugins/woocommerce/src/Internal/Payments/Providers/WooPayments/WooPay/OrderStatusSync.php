@@ -290,7 +290,7 @@ class OrderStatusSync implements RegisterHooksInterface {
 
 		$order = wc_get_order( $order_id );
 		// Client 11.1.0 hooks this only while WooPay is eligible and on (includes/class-wc-payments.php:1711-1715,1761).
-		if ( ! $order instanceof WC_Order || ! $order->get_meta( 'is_woopay' ) || ! $this->woopay_eligibility->is_woopay_enabled_by_merchant() ) {
+		if ( ! $order instanceof WC_Order || ! $order->get_meta( WooPaymentsPersistenceVocabulary::IS_WOOPAY_META_KEY ) || ! $this->woopay_eligibility->is_woopay_enabled_by_merchant() ) {
 			return;
 		}
 

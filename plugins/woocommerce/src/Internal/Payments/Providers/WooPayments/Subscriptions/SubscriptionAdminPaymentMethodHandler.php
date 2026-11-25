@@ -311,7 +311,7 @@ class SubscriptionAdminPaymentMethodHandler {
 		// Refreshing meta would discard any edits Subscriptions has staged.
 		$subscription->save();
 		$subscription->read_meta_data( true );
-		$subscription->update_meta_data( '_payment_method_id', (string) $new_token->get_token() );
+		$subscription->update_meta_data( WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_ID_META_KEY, (string) $new_token->get_token() );
 		$subscription->save_meta_data();
 
 		return true;
@@ -595,7 +595,7 @@ class SubscriptionAdminPaymentMethodHandler {
 			return false;
 		}
 
-		return '' !== (string) $subscription->get_meta( '_wcpay_original_payment_method_id', true );
+		return '' !== (string) $subscription->get_meta( WooPaymentsPersistenceVocabulary::ORIGINAL_PAYMENT_METHOD_ID_META_KEY, true );
 	}
 
 	/**

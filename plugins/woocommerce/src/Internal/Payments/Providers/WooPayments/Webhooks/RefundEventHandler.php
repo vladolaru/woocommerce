@@ -207,7 +207,7 @@ class RefundEventHandler {
 		try {
 			// Even if a live holder refuses this last claim, check what it has already saved.
 			$order = $this->get_fresh_order( $order, true );
-			if ( $facts['charge_id'] !== (string) $order->get_meta( '_charge_id', true ) || ! $this->is_own_payment( $order, $charge, $facts['charge_id'] ) || ! $this->can_report_refund( $order, $facts['currency'], $facts['refund_status'] ) ) {
+			if ( $facts['charge_id'] !== (string) $order->get_meta( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY, true ) || ! $this->is_own_payment( $order, $charge, $facts['charge_id'] ) || ! $this->can_report_refund( $order, $facts['currency'], $facts['refund_status'] ) ) {
 				return false;
 			}
 			if ( $this->get_refund_by_provider_refund_id( $order, $facts['refund_id'] ) || $this->has_failed_refund_note( $order, $facts['refund_id'] ) || $this->has_legacy_failed_refund_note( $order, $facts ) ) {
@@ -398,7 +398,7 @@ class RefundEventHandler {
 	public function apply_charge_refund_under_lock( WC_Order $order, array $facts, array $charge, array $refund, bool $record_only ): void {
 		// An order found by the charge's metadata is recorded only while it still does not hold the charge: one that
 		// saved it before this claim is decided like any order found by its charge.
-		$record_only = $record_only && $facts['charge_id'] !== (string) $order->get_meta( '_charge_id', true );
+		$record_only = $record_only && $facts['charge_id'] !== (string) $order->get_meta( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY, true );
 		if ( $record_only || ! $this->is_own_payment( $order, $charge, $facts['charge_id'] ) ) {
 			// On an unpaid order the charge would pay, the refund may be of this order's own payment, recorded later.
 			$pre_payment = $record_only && ! $this->event_order_resolver->is_paid_for_ownership( $order ) && $this->is_own_payment( $order, $charge, $facts['charge_id'] );
@@ -583,7 +583,7 @@ class RefundEventHandler {
 			'amount'                          => $this->local_refund_amount( $order, $amount ),
 			'reason'                          => $reason,
 			'order_id'                        => $order->get_id(),
-			RefundRowCapture::REFUND_META_ARG => array( '_wcpay_refund_id' => $refund_id ),
+			RefundRowCapture::REFUND_META_ARG => array( WooPaymentsPersistenceVocabulary::PROCESSED_REFUND_LINK_META_KEY => $refund_id ),
 		);
 
 		if ( ! empty( $line_items ) ) {
@@ -620,7 +620,7 @@ class RefundEventHandler {
 
 		$row = wc_get_order( (int) ( $record['wc_refund_id'] ?? 0 ) );
 
-		return $row instanceof WC_Order_Refund && $order->get_id() === $row->get_parent_id() && '' === (string) $row->get_meta( '_wcpay_refund_id', true )
+		return $row instanceof WC_Order_Refund && $order->get_id() === $row->get_parent_id() && '' === (string) $row->get_meta( WooPaymentsPersistenceVocabulary::PROCESSED_REFUND_LINK_META_KEY, true )
 			&& WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $row->get_amount(), $currency ) === $refund_amount ? $row : null;
 	}
 
@@ -637,10 +637,10 @@ class RefundEventHandler {
 	 */
 	private function add_note_and_metadata_for_created_refund( WC_Order $order, WC_Order_Refund $wc_refund, string $refund_id, string $balance_txn_id, string $status, int $amount, string $currency ): void {
 		$is_pending = WooPaymentsIntentCodec::is_pending_refund_status( $status );
-		$order->update_meta_data( '_wcpay_refund_status', $is_pending ? 'pending' : 'successful' );
-		$wc_refund->update_meta_data( '_wcpay_refund_id', $refund_id );
+		$order->update_meta_data( WooPaymentsPersistenceVocabulary::REFUND_STATUS_META_KEY, $is_pending ? 'pending' : 'successful' );
+		$wc_refund->update_meta_data( WooPaymentsPersistenceVocabulary::PROCESSED_REFUND_LINK_META_KEY, $refund_id );
 		if ( '' !== $balance_txn_id ) {
-			$wc_refund->update_meta_data( '_wcpay_refund_transaction_id', $balance_txn_id );
+			$wc_refund->update_meta_data( WooPaymentsPersistenceVocabulary::REFUND_TRANSACTION_ID_META_KEY, $balance_txn_id );
 		}
 
 		$wc_refund->save_meta_data();
@@ -708,7 +708,7 @@ class RefundEventHandler {
 			}
 		}
 
-		$order->update_meta_data( '_wcpay_refund_status', 'failed' );
+		$order->update_meta_data( WooPaymentsPersistenceVocabulary::REFUND_STATUS_META_KEY, 'failed' );
 		$order->save();
 		if ( null !== $order->get_last_save_error() ) {
 			throw new RuntimeException( 'Could not save the failed refund status.' );
@@ -879,7 +879,7 @@ class RefundEventHandler {
 		}
 
 		$intent_order = 'succeeded' === $status ? $this->event_order_resolver->find_order_by_event_intent( $refund ) : null;
-		if ( $intent_order instanceof WC_Order && 'canceled' === (string) $intent_order->get_meta( '_intention_status', true ) ) {
+		if ( $intent_order instanceof WC_Order && 'canceled' === (string) $intent_order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true ) ) {
 			$this->log_cancelled_intent_order( $refund_id, $charge_id, $this->event_order_resolver->get_event_intent_id( $refund, $intent_order ), $intent_order->get_id() );
 			return null;
 		}
@@ -968,7 +968,7 @@ class RefundEventHandler {
 	 */
 	private function get_refund_by_provider_refund_id( WC_Order $order, string $refund_id ): ?WC_Order_Refund {
 		foreach ( $order->get_refunds() as $refund ) {
-			if ( $refund_id === (string) $refund->get_meta( '_wcpay_refund_id', true ) ) {
+			if ( $refund_id === (string) $refund->get_meta( WooPaymentsPersistenceVocabulary::PROCESSED_REFUND_LINK_META_KEY, true ) ) {
 				return $refund;
 			}
 		}

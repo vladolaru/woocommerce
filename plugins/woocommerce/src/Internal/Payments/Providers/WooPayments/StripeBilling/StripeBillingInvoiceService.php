@@ -338,8 +338,8 @@ class StripeBillingInvoiceService {
 		if ( 0.0 === $total ) {
 			return $order->is_paid();
 		}
-		return 'succeeded' === $order->get_meta( '_intention_status', true )
-			&& 0 === strpos( (string) $order->get_meta( '_intent_id', true ), 'pi_' )
+		return 'succeeded' === $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true )
+			&& 0 === strpos( (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true ), 'pi_' )
 			&& (float) $order->get_total_refunded() < $total;
 	}
 

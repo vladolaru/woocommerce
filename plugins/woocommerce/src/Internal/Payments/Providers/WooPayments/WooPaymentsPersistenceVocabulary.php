@@ -21,6 +21,251 @@ use WC_Order;
 class WooPaymentsPersistenceVocabulary implements ProviderPersistenceVocabularyInterface {
 
 	/**
+	 * Brand of the card used for the payment.
+	 *
+	 * @var string
+	 */
+	public const CARD_BRAND_META_KEY = '_card_brand';
+
+	/**
+	 * ID of the charge associated with the order.
+	 *
+	 * @var string
+	 */
+	public const CHARGE_ID_META_KEY = '_charge_id';
+
+	/**
+	 * Risk level reported for the charge.
+	 *
+	 * @var string
+	 */
+	public const CHARGE_RISK_LEVEL_META_KEY = '_charge_risk_level';
+
+	/**
+	 * ID of the intent associated with the order.
+	 *
+	 * @var string
+	 */
+	public const INTENT_ID_META_KEY = '_intent_id';
+
+	/**
+	 * Last recorded status of the payment intent.
+	 *
+	 * @var string
+	 */
+	public const INTENTION_STATUS_META_KEY = '_intention_status';
+
+	/**
+	 * ID of the payment method used for the order.
+	 *
+	 * @var string
+	 */
+	public const PAYMENT_METHOD_ID_META_KEY = '_payment_method_id';
+
+	/**
+	 * Stripe customer associated with the payment.
+	 *
+	 * @var string
+	 */
+	public const STRIPE_CUSTOMER_ID_META_KEY = '_stripe_customer_id';
+
+	/**
+	 * Stripe mandate authorizing future payments.
+	 *
+	 * @var string
+	 */
+	public const STRIPE_MANDATE_ID_META_KEY = '_stripe_mandate_id';
+
+	/**
+	 * Express checkout method used to place the order.
+	 *
+	 * @var string
+	 */
+	public const EXPRESS_CHECKOUT_PAYMENT_METHOD_META_KEY = '_wcpay_express_checkout_payment_method';
+
+	/**
+	 * Fraud panel to display on the order screen.
+	 *
+	 * @var string
+	 */
+	public const FRAUD_META_BOX_TYPE_META_KEY = '_wcpay_fraud_meta_box_type';
+
+	/**
+	 * Manual entry associated with the fraud outcome.
+	 *
+	 * @var string
+	 */
+	public const FRAUD_OUTCOME_MANUAL_ENTRY_META_KEY = '_wcpay_fraud_outcome_manual_entry';
+
+	/**
+	 * Fraud decision recorded on the order.
+	 *
+	 * @var string
+	 */
+	public const FRAUD_OUTCOME_STATUS_META_KEY = '_wcpay_fraud_outcome_status';
+
+	/**
+	 * Results of the fraud rules evaluated for the payment.
+	 *
+	 * @var string
+	 */
+	public const FRAUD_RULESET_RESULTS_META_KEY = '_wcpay_fraud_ruleset_results';
+
+	/**
+	 * Currency of the payment intent.
+	 *
+	 * @var string
+	 */
+	public const INTENT_CURRENCY_META_KEY = '_wcpay_intent_currency';
+
+	/**
+	 * Channel used to take the in-person payment.
+	 *
+	 * @var string
+	 */
+	public const IPP_CHANNEL_META_KEY = '_wcpay_ipp_channel';
+
+	/**
+	 * Live or test mode in which the payment was made.
+	 *
+	 * @var string
+	 */
+	public const MODE_META_KEY = '_wcpay_mode';
+
+	/**
+	 * Default currency recorded for the order.
+	 *
+	 * @var string
+	 */
+	private const MULTI_CURRENCY_ORDER_DEFAULT_CURRENCY_META_KEY = '_wcpay_multi_currency_order_default_currency';
+
+	/**
+	 * Order exchange rate recorded by multi-currency checkout.
+	 *
+	 * @var string
+	 */
+	private const MULTI_CURRENCY_ORDER_EXCHANGE_RATE_META_KEY = '_wcpay_multi_currency_order_exchange_rate';
+
+	/**
+	 * Exchange rate reported by Stripe for the payment.
+	 *
+	 * @var string
+	 */
+	public const MULTI_CURRENCY_STRIPE_EXCHANGE_RATE_META_KEY = '_wcpay_multi_currency_stripe_exchange_rate';
+
+	/**
+	 * Entity number on the Multibanco voucher.
+	 *
+	 * @var string
+	 */
+	public const MULTIBANCO_ENTITY_META_KEY = '_wcpay_multibanco_entity';
+
+	/**
+	 * Expiry of the Multibanco voucher.
+	 *
+	 * @var string
+	 */
+	public const MULTIBANCO_EXPIRY_META_KEY = '_wcpay_multibanco_expiry';
+
+	/**
+	 * Payment reference on the Multibanco voucher.
+	 *
+	 * @var string
+	 */
+	public const MULTIBANCO_REFERENCE_META_KEY = '_wcpay_multibanco_reference';
+
+	/**
+	 * URL for the Multibanco payment instructions.
+	 *
+	 * @var string
+	 */
+	public const MULTIBANCO_URL_META_KEY = '_wcpay_multibanco_url';
+
+	/**
+	 * Net amount after transaction fees.
+	 *
+	 * @var string
+	 */
+	public const NET_META_KEY = '_wcpay_net';
+
+	/**
+	 * IDs of open disputes associated with the order.
+	 *
+	 * @var string
+	 */
+	public const OPEN_DISPUTE_IDS_META_KEY = '_wcpay_open_dispute_ids';
+
+	/**
+	 * Original payment method ID recorded on the order.
+	 *
+	 * @var string
+	 */
+	public const ORIGINAL_PAYMENT_METHOD_ID_META_KEY = '_wcpay_original_payment_method_id';
+
+	/**
+	 * Payment method details retained with the order.
+	 *
+	 * @var string
+	 */
+	public const PAYMENT_METHOD_DETAILS_META_KEY = '_wcpay_payment_method_details';
+
+	/**
+	 * Balance transaction ID for the payment.
+	 *
+	 * @var string
+	 */
+	public const PAYMENT_TRANSACTION_ID_META_KEY = '_wcpay_payment_transaction_id';
+
+	/**
+	 * Raw payment method details retained with the order.
+	 *
+	 * @var string
+	 */
+	public const RAW_PAYMENT_METHOD_DETAILS_META_KEY = '_wcpay_raw_payment_method_details';
+
+	/**
+	 * Refund status recorded locally for reconciliation.
+	 *
+	 * @var string
+	 */
+	public const REFUND_STATUS_META_KEY = '_wcpay_refund_status';
+
+	/**
+	 * Balance transaction ID for the refund.
+	 *
+	 * @var string
+	 */
+	public const REFUND_TRANSACTION_ID_META_KEY = '_wcpay_refund_transaction_id';
+
+	/**
+	 * Provider subscription ID associated with the subscription.
+	 *
+	 * @var string
+	 */
+	public const SUBSCRIPTION_ID_META_KEY = '_wcpay_subscription_id';
+
+	/**
+	 * Transaction fee recorded for the payment.
+	 *
+	 * @var string
+	 */
+	public const TRANSACTION_FEE_META_KEY = '_wcpay_transaction_fee';
+
+	/**
+	 * Whether the shopper used WooPay.
+	 *
+	 * @var string
+	 */
+	public const IS_WOOPAY_META_KEY = 'is_woopay';
+
+	/**
+	 * Last four digits of the card used for the payment.
+	 *
+	 * @var string
+	 */
+	public const LAST4_META_KEY = 'last4';
+
+	/**
 	 * WooPayments gateway ID.
 	 *
 	 * WooPayments orders store the base or split gateway ID as their payment method, so these names live with the stored
@@ -130,40 +375,40 @@ class WooPaymentsPersistenceVocabulary implements ProviderPersistenceVocabularyI
 	 * @var string[]
 	 */
 	private const PAYMENT_META_KEYS = array(
-		'_intent_id',
-		'_payment_method_id',
-		'_charge_id',
-		'_intention_status',
-		'_charge_risk_level',
-		'_stripe_customer_id',
-		'_wcpay_fraud_meta_box_type',
-		'_wcpay_fraud_outcome_status',
-		'_wcpay_fraud_ruleset_results',
+		self::INTENT_ID_META_KEY,
+		self::PAYMENT_METHOD_ID_META_KEY,
+		self::CHARGE_ID_META_KEY,
+		self::INTENTION_STATUS_META_KEY,
+		self::CHARGE_RISK_LEVEL_META_KEY,
+		self::STRIPE_CUSTOMER_ID_META_KEY,
+		self::FRAUD_META_BOX_TYPE_META_KEY,
+		self::FRAUD_OUTCOME_STATUS_META_KEY,
+		self::FRAUD_RULESET_RESULTS_META_KEY,
 		self::EARLY_FRAUD_WARNING_META_KEY,
-		'_wcpay_intent_currency',
-		'_wcpay_open_dispute_ids',
-		'_wcpay_refund_id',
-		'_wcpay_refund_transaction_id',
-		'_wcpay_refund_status',
-		'_wcpay_transaction_fee',
-		'_wcpay_mode',
-		'_wcpay_payment_transaction_id',
-		'_wcpay_multibanco_entity',
-		'_wcpay_multibanco_reference',
-		'_wcpay_multibanco_expiry',
-		'_wcpay_multibanco_url',
-		'_wcpay_payment_method_details',
-		'_wcpay_ipp_channel',
-		'_wcpay_net',
-		'_stripe_mandate_id',
-		'_wcpay_express_checkout_payment_method',
-		'_wcpay_multi_currency_stripe_exchange_rate',
-		'_wcpay_multi_currency_order_exchange_rate',
-		'_wcpay_multi_currency_order_default_currency',
-		'_wcpay_fraud_outcome_manual_entry',
-		'is_woopay',
-		'last4',
-		'_card_brand',
+		self::INTENT_CURRENCY_META_KEY,
+		self::OPEN_DISPUTE_IDS_META_KEY,
+		self::PROCESSED_REFUND_LINK_META_KEY,
+		self::REFUND_TRANSACTION_ID_META_KEY,
+		self::REFUND_STATUS_META_KEY,
+		self::TRANSACTION_FEE_META_KEY,
+		self::MODE_META_KEY,
+		self::PAYMENT_TRANSACTION_ID_META_KEY,
+		self::MULTIBANCO_ENTITY_META_KEY,
+		self::MULTIBANCO_REFERENCE_META_KEY,
+		self::MULTIBANCO_EXPIRY_META_KEY,
+		self::MULTIBANCO_URL_META_KEY,
+		self::PAYMENT_METHOD_DETAILS_META_KEY,
+		self::IPP_CHANNEL_META_KEY,
+		self::NET_META_KEY,
+		self::STRIPE_MANDATE_ID_META_KEY,
+		self::EXPRESS_CHECKOUT_PAYMENT_METHOD_META_KEY,
+		self::MULTI_CURRENCY_STRIPE_EXCHANGE_RATE_META_KEY,
+		self::MULTI_CURRENCY_ORDER_EXCHANGE_RATE_META_KEY,
+		self::MULTI_CURRENCY_ORDER_DEFAULT_CURRENCY_META_KEY,
+		self::FRAUD_OUTCOME_MANUAL_ENTRY_META_KEY,
+		self::IS_WOOPAY_META_KEY,
+		self::LAST4_META_KEY,
+		self::CARD_BRAND_META_KEY,
 	);
 
 	/**
@@ -242,7 +487,7 @@ class WooPaymentsPersistenceVocabulary implements ProviderPersistenceVocabularyI
 	 * @since 11.2.0
 	 */
 	public function get_payment_reference_meta_key(): string {
-		return '_intent_id';
+		return self::INTENT_ID_META_KEY;
 	}
 
 	/**

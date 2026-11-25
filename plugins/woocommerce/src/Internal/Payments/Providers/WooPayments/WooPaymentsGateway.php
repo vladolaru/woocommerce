@@ -734,13 +734,13 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return string Transaction details URL, or an empty string when there is nothing to link.
 	 */
 	public function get_transaction_url( $order ): string {
-		$intention_status = (string) $order->get_meta( '_intention_status', true );
+		$intention_status = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true );
 		if ( ! in_array( $intention_status, self::AUTHORIZED_INTENTION_STATUSES, true ) ) {
 			return '';
 		}
 
-		$intent_id = (string) $order->get_meta( '_intent_id', true );
-		$charge_id = (string) $order->get_meta( '_charge_id', true );
+		$intent_id = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true );
+		$charge_id = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY, true );
 
 		if ( '' === $intent_id && '' === $charge_id ) {
 			return '';
@@ -1620,7 +1620,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		// Payment_Information::from_payment_request() does (class-payment-information.php:284-285);
 		// it passes true, which the meta tables store as '1'.
 		if ( ! empty( $_POST['is_woopay'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
-			$order->add_meta_data( 'is_woopay', '1', true );
+			$order->add_meta_data( WooPaymentsPersistenceVocabulary::IS_WOOPAY_META_KEY, '1', true );
 			$order->save_meta_data();
 		}
 
@@ -1730,7 +1730,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return bool
 	 */
 	public static function has_uncaptured_payment( WC_Order $order ): bool {
-		return 'requires_capture' === (string) $order->get_meta( '_intention_status', true );
+		return 'requires_capture' === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true );
 	}
 
 	/**
@@ -1835,7 +1835,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		// never loaded would add a second row instead of replacing the saved one.
 		$this->get_lifecycle_service()->reread_order_from_data_store( $order );
 		$note_service    = wc_get_container()->get( WooPaymentsOrderNoteService::class );
-		$intent_currency = (string) $order->get_meta( '_wcpay_intent_currency', true );
+		$intent_currency = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_CURRENCY_META_KEY, true );
 		$currency        = '' !== $intent_currency ? $intent_currency : (string) $order->get_currency();
 
 		// Client 11.1.0 sends the failure note as the reason, or the error message when it adds no generic note
@@ -1861,7 +1861,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		$order->add_order_note( $note );
-		$order->update_meta_data( '_wcpay_refund_status', 'failed' );
+		$order->update_meta_data( WooPaymentsPersistenceVocabulary::REFUND_STATUS_META_KEY, 'failed' );
 		$order->save();
 		WooPaymentsTracks::record_wcadmin_event( 'wcpay_edit_order_refund_failure', array( 'reason' => $tracks_reason ) );
 	}
@@ -1875,7 +1875,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	public function can_refund_order( $order ) {
 		return $order instanceof WC_Order
 			&& $this->supports( PaymentGatewayFeature::REFUNDS )
-			&& '' !== (string) $order->get_meta( '_charge_id', true );
+			&& '' !== (string) $order->get_meta( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY, true );
 	}
 
 	/**
@@ -2664,8 +2664,8 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return bool
 	 */
 	private function has_succeeded_intent( WC_Order $order ): bool {
-		return 'succeeded' === (string) $order->get_meta( '_intention_status', true )
-			&& 0 === strpos( (string) $order->get_meta( '_intent_id', true ), 'pi_' );
+		return 'succeeded' === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true )
+			&& 0 === strpos( (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true ), 'pi_' );
 	}
 
 	/**
@@ -2675,11 +2675,11 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @param WC_Order $order Order being paid.
 	 */
 	private function log_stored_success_without_a_payment( WC_Order $order ): void {
-		if ( 'succeeded' !== (string) $order->get_meta( '_intention_status', true ) ) {
+		if ( 'succeeded' !== (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true ) ) {
 			return;
 		}
 
-		$stored = WooPaymentsLogger::get_loggable_provider_id( (string) $order->get_meta( '_intent_id', true ) );
+		$stored = WooPaymentsLogger::get_loggable_provider_id( (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true ) );
 		$this->get_logger()->log_always(
 			sprintf( 'Order #%1$d stores a succeeded status whose stored intent is not a payment intent (%2$s), so its checkout was refused rather than kept as paid.', $order->get_id(), $stored ),
 			'warning',
@@ -2870,7 +2870,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return false;
 		}
 
-		return $intent_id === (string) $fresh_order->get_meta( '_intent_id', true )
+		return $intent_id === (string) $fresh_order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true )
 			&& $fresh_order->has_status( array_merge( array( OrderStatus::ON_HOLD ), wc_get_is_paid_statuses() ) );
 	}
 
@@ -2888,7 +2888,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return false;
 		}
 
-		return 'succeeded' === ( ( new WooPaymentsOutcomeMetadataMapper() )->get_outcome_meta( $exception->get_outcome() )['_intention_status'] ?? '' );
+		return 'succeeded' === ( ( new WooPaymentsOutcomeMetadataMapper() )->get_outcome_meta( $exception->get_outcome() )[ WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY ] ?? '' );
 	}
 
 	/**

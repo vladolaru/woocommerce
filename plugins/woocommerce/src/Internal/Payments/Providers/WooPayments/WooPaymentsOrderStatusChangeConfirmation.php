@@ -115,9 +115,9 @@ class WooPaymentsOrderStatusChangeConfirmation {
 			'formatted_refund_amount'   => $this->format_in_order_currency( $order, $refund_amount ),
 			'refunded_amount'           => (float) $order->get_total_refunded(),
 			'charge_id'                 => $this->get_charge_id_for_active_mode( $order ),
-			'has_open_authorization'    => 'requires_capture' === $order->get_meta( '_intention_status', true ),
-			'test_mode'                 => WooPaymentsOrderMode::TEST === $order->get_meta( '_wcpay_mode', true ),
-			'disable_manual_refunds'    => 'failed' !== $order->get_meta( '_wcpay_refund_status', true ),
+			'has_open_authorization'    => 'requires_capture' === $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true ),
+			'test_mode'                 => WooPaymentsOrderMode::TEST === $order->get_meta( WooPaymentsPersistenceVocabulary::MODE_META_KEY, true ),
+			'disable_manual_refunds'    => 'failed' !== $order->get_meta( WooPaymentsPersistenceVocabulary::REFUND_STATUS_META_KEY, true ),
 			// Client 11.1.0 localizes `shouldUseExplicitPrice` for the disputed order notice's amount (admin/class-wc-payments-admin.php:1040).
 			'should_use_explicit_price' => ExplicitPriceFormatter::should_output_explicit_admin_price(),
 		);
@@ -132,8 +132,8 @@ class WooPaymentsOrderStatusChangeConfirmation {
 	 * @return string Provider charge ID, or an empty string when it must not be read.
 	 */
 	private function get_charge_id_for_active_mode( WC_Order $order ): string {
-		$charge_id  = $order->get_meta( '_charge_id', true );
-		$order_mode = $order->get_meta( '_wcpay_mode', true );
+		$charge_id  = $order->get_meta( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY, true );
+		$order_mode = $order->get_meta( WooPaymentsPersistenceVocabulary::MODE_META_KEY, true );
 
 		if ( ! is_scalar( $charge_id ) || ! is_scalar( $order_mode ) ) {
 			return '';

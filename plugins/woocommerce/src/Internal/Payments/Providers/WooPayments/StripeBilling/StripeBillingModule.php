@@ -211,7 +211,7 @@ class StripeBillingModule implements RegisterHooksInterface {
 					'subscription_status'    => 'any',
 					'meta_query'             => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
 						array(
-							'key'     => '_wcpay_subscription_id',
+							'key'     => WooPaymentsPersistenceVocabulary::SUBSCRIPTION_ID_META_KEY,
 							'compare' => 'EXISTS',
 						),
 					),

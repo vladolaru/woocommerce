@@ -7,6 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
 use WC_Order;
 use WP_REST_Request;
@@ -253,16 +255,16 @@ class FraudOutcomeTransactionsListRequest extends PaginatedListRequest {
 
 		$payment_intent_id                   = isset( $outcome['payment_intent_id'] ) && is_scalar( $outcome['payment_intent_id'] )
 			? (string) $outcome['payment_intent_id']
-			: (string) $order->get_meta( '_intent_id' );
+			: (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY );
 		$outcome['payment_intent']           = array();
 		$outcome['payment_intent']['id']     = '' !== $payment_intent_id ? $payment_intent_id : $order->get_transaction_id();
-		$outcome['payment_intent']['status'] = (string) $order->get_meta( '_intention_status' );
+		$outcome['payment_intent']['status'] = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY );
 
 		$outcome['amount']              = WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $order->get_total(), (string) $order->get_currency() );
 		$outcome['currency']            = $order->get_currency();
 		$outcome['customer_name']       = wc_clean( $order->get_formatted_billing_full_name() );
-		$outcome['manual_review']       = $order->get_meta( '_wcpay_fraud_outcome_manual_entry' );
-		$outcome['fraud_meta_box_type'] = $order->get_meta( '_wcpay_fraud_meta_box_type' );
+		$outcome['manual_review']       = $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_MANUAL_ENTRY_META_KEY );
+		$outcome['fraud_meta_box_type'] = $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY );
 
 		unset( $outcome['payment_intent_id'] );
 

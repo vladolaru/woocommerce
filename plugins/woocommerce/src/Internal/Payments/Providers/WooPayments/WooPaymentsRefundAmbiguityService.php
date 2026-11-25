@@ -281,7 +281,7 @@ class WooPaymentsRefundAmbiguityService {
 		// The first call's own row, still unlinked, records this refund, so this call never links a row of its own to it.
 		$first_row = is_array( $record ) && ! empty( $record['sent'] ) && '' !== $refund_id ? $this->get_unlinked_row( $order, (int) ( $record['wc_refund_id'] ?? 0 ), 0 ) : null;
 		if ( null !== $first_row ) {
-			$first_row->update_meta_data( '_wcpay_refund_id', $refund_id );
+			$first_row->update_meta_data( WooPaymentsPersistenceVocabulary::PROCESSED_REFUND_LINK_META_KEY, $refund_id );
 			$first_row->save_meta_data();
 		}
 
@@ -402,7 +402,7 @@ class WooPaymentsRefundAmbiguityService {
 		// it is linked and this call refused below, whatever its amount. The next call is a refund of its own.
 		$died_row = $record['sent'] && ! $is_recorded ? $this->get_unlinked_row( $order, $record['wc_refund_id'], $own_row_id ) : null;
 		if ( null !== $died_row ) {
-			$died_row->update_meta_data( '_wcpay_refund_id', $refund_id );
+			$died_row->update_meta_data( WooPaymentsPersistenceVocabulary::PROCESSED_REFUND_LINK_META_KEY, $refund_id );
 			$died_row->save_meta_data();
 		}
 
@@ -612,7 +612,7 @@ class WooPaymentsRefundAmbiguityService {
 	 */
 	private function is_recorded_on_order( WC_Order $order, string $refund_id ): bool {
 		foreach ( $this->get_fresh_refunds( $order ) as $refund ) {
-			if ( $refund_id === (string) $refund->get_meta( '_wcpay_refund_id', true ) ) {
+			if ( $refund_id === (string) $refund->get_meta( WooPaymentsPersistenceVocabulary::PROCESSED_REFUND_LINK_META_KEY, true ) ) {
 				return true;
 			}
 		}
@@ -647,7 +647,7 @@ class WooPaymentsRefundAmbiguityService {
 			$rows,
 			static fn( WC_Order_Refund $refund ): bool => self::is_manual_record_row( $refund )
 				|| $refund->get_refunded_payment()
-				|| '' !== (string) $refund->get_meta( '_wcpay_refund_id', true )
+				|| '' !== (string) $refund->get_meta( WooPaymentsPersistenceVocabulary::PROCESSED_REFUND_LINK_META_KEY, true )
 		);
 		$other_minor  = array_sum( array_map( static fn( WC_Order_Refund $refund ): int => WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $refund->get_amount(), $currency ), $settled_rows ) );
 		if ( $found_minor > WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $order->get_total(), $currency ) - $other_minor ) {
@@ -692,7 +692,7 @@ class WooPaymentsRefundAmbiguityService {
 	 */
 	private function get_unlinked_row( WC_Order $order, int $row_id, int $own_row_id ): ?WC_Order_Refund {
 		foreach ( $this->get_earlier_refund_rows( $order, $own_row_id ) as $row ) {
-			if ( 0 < $row_id && $row_id === $row->get_id() && '' === (string) $row->get_meta( '_wcpay_refund_id', true ) ) {
+			if ( 0 < $row_id && $row_id === $row->get_id() && '' === (string) $row->get_meta( WooPaymentsPersistenceVocabulary::PROCESSED_REFUND_LINK_META_KEY, true ) ) {
 				return $row;
 			}
 		}
@@ -719,7 +719,7 @@ class WooPaymentsRefundAmbiguityService {
 			if (
 				self::is_manual_record_row( $refund )
 				&& ! $refund->get_refunded_payment()
-				&& '' === (string) $refund->get_meta( '_wcpay_refund_id', true )
+				&& '' === (string) $refund->get_meta( WooPaymentsPersistenceVocabulary::PROCESSED_REFUND_LINK_META_KEY, true )
 				&& '' === (string) $refund->get_meta( DisputeEventHandler::LOST_DISPUTE_ID_REFUND_META_KEY, true )
 				&& null !== $created && $created->getTimestamp() >= $created_since
 				&& WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $refund->get_amount(), $currency ) === $amount_minor
@@ -757,7 +757,7 @@ class WooPaymentsRefundAmbiguityService {
 	 * @param string              $refund_id  The earlier attempt's refund.
 	 */
 	private function link_manual_record_row( WC_Order $order, array $record, WC_Order_Refund $manual_row, string $refund_id ): void {
-		$manual_row->update_meta_data( '_wcpay_refund_id', $refund_id );
+		$manual_row->update_meta_data( WooPaymentsPersistenceVocabulary::PROCESSED_REFUND_LINK_META_KEY, $refund_id );
 		$manual_row->save_meta_data();
 		$this->clear_record( $order );
 		$this->log_cleared( $order, $record, sprintf( 'the manual refund #%1$d the merchant recorded after the failure is for its refund %2$s, so it is linked to it and this call sends under its own key', $manual_row->get_id(), $refund_id ) );

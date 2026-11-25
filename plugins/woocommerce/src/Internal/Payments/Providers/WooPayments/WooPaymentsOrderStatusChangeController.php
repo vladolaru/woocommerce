@@ -133,11 +133,11 @@ class WooPaymentsOrderStatusChangeController implements RegisterHooksInterface {
 	 */
 	public function render_woopay_payment_method_name( $order_id = 0 ): void {
 		$order = wc_get_order( $order_id );
-		if ( ! $order instanceof WC_Order || ! $order->get_meta( 'is_woopay' ) ) {
+		if ( ! $order instanceof WC_Order || ! $order->get_meta( WooPaymentsPersistenceVocabulary::IS_WOOPAY_META_KEY ) ) {
 			return;
 		}
 
-		$last4 = (string) $order->get_meta( 'last4' );
+		$last4 = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::LAST4_META_KEY );
 		?>
 		<div class="wc-payment-gateway-method-name-woopay-wrapper">
 			<?php esc_html_e( 'Paid with', 'woocommerce' ); ?>
@@ -164,11 +164,11 @@ class WooPaymentsOrderStatusChangeController implements RegisterHooksInterface {
 	 */
 	public function render_transaction_fee_row( $order_id = 0 ): void {
 		$order = wc_get_order( $order_id );
-		if ( ! $order instanceof WC_Order || 'requires_capture' === $order->get_meta( '_intention_status' ) ) {
+		if ( ! $order instanceof WC_Order || 'requires_capture' === $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY ) ) {
 			return;
 		}
 
-		$transaction_fee = $order->get_meta( '_wcpay_transaction_fee' );
+		$transaction_fee = $order->get_meta( WooPaymentsPersistenceVocabulary::TRANSACTION_FEE_META_KEY );
 		if ( ! $transaction_fee ) {
 			return;
 		}

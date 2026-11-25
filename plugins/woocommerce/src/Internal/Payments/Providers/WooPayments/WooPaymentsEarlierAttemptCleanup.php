@@ -66,7 +66,7 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 	 * The values client 11.3.0 deletes (class-wc-payments-order-service.php:1313-1317): the charge, fee, net, currency
 	 * and mandate stay.
 	 */
-	private const REMOVED_META_KEYS = array( '_stripe_customer_id', '_payment_method_id', '_intent_id', '_intention_status', '_wcpay_mode' );
+	private const REMOVED_META_KEYS = array( WooPaymentsPersistenceVocabulary::STRIPE_CUSTOMER_ID_META_KEY, WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_ID_META_KEY, WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, WooPaymentsPersistenceVocabulary::MODE_META_KEY );
 
 	/**
 	 * Log reason: the order payment lock refused the cleanup.
@@ -243,11 +243,11 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 			return;
 		}
 
-		$intent_id     = (string) $order->get_meta( '_intent_id', true );
-		$stored_status = (string) $order->get_meta( '_intention_status', true );
+		$intent_id     = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true );
+		$stored_status = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true );
 		$read          = null;
 		if ( in_array( $stored_status, self::AUTHORIZED_STATUSES, true ) && 0 === strpos( $intent_id, 'pi_' ) ) {
-			$read = $this->read_stored_payment( $intent_id, (string) $order->get_meta( '_wcpay_mode', true ) );
+			$read = $this->read_stored_payment( $intent_id, (string) $order->get_meta( WooPaymentsPersistenceVocabulary::MODE_META_KEY, true ) );
 		}
 
 		$lock_token = $this->claim_order_payment_lock( $order, $intent_id );
@@ -286,10 +286,10 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 			return false;
 		}
 
-		$status = (string) $order->get_meta( '_intention_status', true );
-		if ( (string) $order->get_meta( '_intent_id', true ) !== $intent_id || $status !== $stored_status ) {
+		$status = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true );
+		if ( (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true ) !== $intent_id || $status !== $stored_status ) {
 			$this->log_reason( $order, self::REASON_VALUES_CHANGED, 'takeover cleanup found the stored payment changed after its first read', $intent_id );
-			$intent_id = (string) $order->get_meta( '_intent_id', true );
+			$intent_id = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true );
 			$read      = null;
 		}
 
@@ -661,7 +661,7 @@ class WooPaymentsEarlierAttemptCleanup implements RegisterHooksInterface {
 	 */
 	private static function is_taken_over_attempt( WC_Order $order ): bool {
 		return ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() )
-			&& '' !== (string) $order->get_meta( '_wcpay_mode', true );
+			&& '' !== (string) $order->get_meta( WooPaymentsPersistenceVocabulary::MODE_META_KEY, true );
 	}
 
 	/**

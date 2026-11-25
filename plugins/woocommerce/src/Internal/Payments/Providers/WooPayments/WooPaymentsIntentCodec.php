@@ -699,7 +699,7 @@ class WooPaymentsIntentCodec {
 	 */
 	private static function with_authorized_intent_status( array $data, string $status, string $intent_type ): array {
 		if ( 'si' !== $intent_type ) {
-			$data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] = array( '_intention_status' => $status );
+			$data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] = array( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY => $status );
 		}
 
 		return $data;

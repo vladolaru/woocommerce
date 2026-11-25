@@ -80,7 +80,7 @@ class WooPaymentsTestModeOrderEmailService implements RegisterHooksInterface {
 	 * @return mixed
 	 */
 	private function maybe_prepend_test_mode_marker( $text, $order ) {
-		if ( ! is_string( $text ) || ! $order instanceof WC_Order || WooPaymentsOrderMode::TEST !== $order->get_meta( '_wcpay_mode', true ) ) {
+		if ( ! is_string( $text ) || ! $order instanceof WC_Order || WooPaymentsOrderMode::TEST !== $order->get_meta( WooPaymentsPersistenceVocabulary::MODE_META_KEY, true ) ) {
 			return $text;
 		}
 

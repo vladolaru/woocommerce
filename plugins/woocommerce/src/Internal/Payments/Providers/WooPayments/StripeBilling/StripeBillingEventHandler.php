@@ -393,8 +393,8 @@ class StripeBillingEventHandler {
 
 		$authorization = '' !== $intent_id && ! $order->needs_payment() && $this->stores_one_uncaptured_authorization( $order )
 			? array(
-				'authorization_intent_id' => (string) $order->get_meta( '_intent_id', true ),
-				'authorization_charge_id' => (string) $order->get_meta( '_charge_id', true ),
+				'authorization_intent_id' => (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true ),
+				'authorization_charge_id' => (string) $order->get_meta( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY, true ),
 			)
 			: null;
 
@@ -411,10 +411,10 @@ class StripeBillingEventHandler {
 			throw new RuntimeException( sprintf( 'The payment of invoice %1$s could not be read for renewal order #%2$d, which holds an uncaptured authorization.', $wcpay_invoice_id, $order->get_id() ) );
 		}
 
-		$already_recorded = $intent_id === (string) $order->get_meta( '_intent_id', true )
+		$already_recorded = $intent_id === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true )
 			|| WooPaymentsOrderEffects::transaction_id_names_payment( $order, $intent_id, $charge_id );
 		$recorded_unpaid  = false;
-		$was_succeeded    = 'succeeded' === $order->get_meta( '_intention_status', true );
+		$was_succeeded    = 'succeeded' === $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true );
 
 		if ( null === $authorization && ! $already_recorded && $this->cannot_refund_the_invoice_amount( $order, $intent_id, $amount_paid ) ) {
 			// A refund from this order would be refused, so its charge is left to its transaction page, which then refunds at the platform.
@@ -425,9 +425,9 @@ class StripeBillingEventHandler {
 
 		if ( null !== $intent ) {
 			// Recording writes this mode too, after the success note reads it; a renewal has none stored, so it is set first.
-			$order->update_meta_data( '_wcpay_mode', $this->account_service->get_order_mode() );
+			$order->update_meta_data( WooPaymentsPersistenceVocabulary::MODE_META_KEY, $this->account_service->get_order_mode() );
 			if ( isset( $intent['customer'] ) && is_string( $intent['customer'] ) && '' !== $intent['customer'] ) {
-				$order->update_meta_data( '_stripe_customer_id', $intent['customer'] );
+				$order->update_meta_data( WooPaymentsPersistenceVocabulary::STRIPE_CUSTOMER_ID_META_KEY, $intent['customer'] );
 			}
 			$order->save();
 		}
@@ -507,7 +507,7 @@ class StripeBillingEventHandler {
 			// which payment_complete() leaves alone on a paid order, and the currency upper case, where the webhook writes it
 			// lower case.
 			$order->set_transaction_id( $intent_id );
-			$order->update_meta_data( '_wcpay_intent_currency', strtoupper( isset( $intent['currency'] ) && is_string( $intent['currency'] ) ? $intent['currency'] : $order->get_currency() ) );
+			$order->update_meta_data( WooPaymentsPersistenceVocabulary::INTENT_CURRENCY_META_KEY, strtoupper( isset( $intent['currency'] ) && is_string( $intent['currency'] ) ? $intent['currency'] : $order->get_currency() ) );
 			$order->save();
 		}
 
@@ -518,7 +518,7 @@ class StripeBillingEventHandler {
 			$this->add_invoice_note_once( $order, WooPaymentsOrderNoteService::INVOICE_NOTE_AUTHORIZATION_REPLACED, $facts, 'stripe_billing_invoice_collected|' . $wcpay_invoice_id );
 		} elseif ( $recorded_unpaid && ! $already_recorded ) {
 			// The order screen's refund goes to the stored charge, which is the invoice's only when nothing was stored before.
-			$wording = '' !== $charge_id && $charge_id === (string) $order->get_meta( '_charge_id', true )
+			$wording = '' !== $charge_id && $charge_id === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY, true )
 				? WooPaymentsOrderNoteService::INVOICE_NOTE_REFUND_FROM_ORDER
 				: WooPaymentsOrderNoteService::INVOICE_NOTE_REFUND_FROM_TRANSACTION_PAGE;
 			$this->add_invoice_note_once( $order, $wording, $invoice_facts + $this->get_collected_invoice_note_facts( $subscription, $order ), 'stripe_billing_invoice_collected|' . $wcpay_invoice_id );
@@ -552,9 +552,9 @@ class StripeBillingEventHandler {
 	 * @return bool
 	 */
 	private function stores_one_uncaptured_authorization( WC_Order $order ): bool {
-		$stored_intent_id = (string) $order->get_meta( '_intent_id', true );
+		$stored_intent_id = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true );
 
-		return 'requires_capture' === (string) $order->get_meta( '_intention_status', true )
+		return 'requires_capture' === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true )
 			&& '' !== $stored_intent_id
 			&& $stored_intent_id === (string) $order->get_transaction_id();
 	}
@@ -617,8 +617,8 @@ class StripeBillingEventHandler {
 	 * @return bool
 	 */
 	private function names_a_woopayments_payment( WC_Order $order, string $transaction_id ): bool {
-		return $transaction_id === (string) $order->get_meta( '_intent_id', true )
-			|| $transaction_id === (string) $order->get_meta( '_charge_id', true )
+		return $transaction_id === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true )
+			|| $transaction_id === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY, true )
 			|| 1 === preg_match( '/^(pi|ch|py)_\w+$/', $transaction_id );
 	}
 
@@ -978,9 +978,9 @@ class StripeBillingEventHandler {
 			return;
 		}
 
-		$order->update_meta_data( '_intent_id', $intent_id );
+		$order->update_meta_data( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, $intent_id );
 		if ( isset( $event_object['charge'] ) && is_string( $event_object['charge'] ) ) {
-			$order->update_meta_data( '_charge_id', $event_object['charge'] );
+			$order->update_meta_data( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY, $event_object['charge'] );
 		}
 		$order->payment_complete( $intent_id );
 		$order->add_order_note( __( 'The payment info couldn\'t be added to the order.', 'woocommerce' ) );
@@ -1018,9 +1018,9 @@ class StripeBillingEventHandler {
 	private function hold_renewal_without_intent( WC_Order $order, string $intent_id, array $event_object, array $hold_note_candidates ): void {
 		$meta = array();
 		if ( '' !== $intent_id ) {
-			$meta['_intent_id'] = $intent_id;
+			$meta[ WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY ] = $intent_id;
 			if ( isset( $event_object['charge'] ) && is_string( $event_object['charge'] ) ) {
-				$meta['_charge_id'] = $event_object['charge'];
+				$meta[ WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY ] = $event_object['charge'];
 			}
 		}
 

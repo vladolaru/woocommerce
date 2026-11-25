@@ -52,7 +52,7 @@ class WooPaymentsOrderEffects {
 	 */
 	public static function payment_method_details_meta( $details ): array {
 		$encoded = is_array( $details ) && array() !== $details ? wp_json_encode( $details ) : false;
-		return false === $encoded ? array() : array( '_wcpay_payment_method_details' => $encoded );
+		return false === $encoded ? array() : array( WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_DETAILS_META_KEY => $encoded );
 	}
 
 	/**
@@ -192,29 +192,29 @@ class WooPaymentsOrderEffects {
 		if ( $persist_payment_method_details && ! empty( $payment_method_details ) ) {
 			$encoded_details = wp_json_encode( $payment_method_details );
 			if ( false !== $encoded_details ) {
-				$meta['_wcpay_payment_method_details'] = $encoded_details;
+				$meta[ WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_DETAILS_META_KEY ] = $encoded_details;
 			}
 		}
 
 		if ( 'link' !== $wallet_type && isset( $payment_method_details['card']['last4'] ) ) {
-			$meta['last4'] = (string) $payment_method_details['card']['last4'];
+			$meta[ WooPaymentsPersistenceVocabulary::LAST4_META_KEY ] = (string) $payment_method_details['card']['last4'];
 			if ( isset( $payment_method_details['card']['brand'] ) ) {
-				$meta['_card_brand'] = (string) $payment_method_details['card']['brand'];
+				$meta[ WooPaymentsPersistenceVocabulary::CARD_BRAND_META_KEY ] = (string) $payment_method_details['card']['brand'];
 			}
 		}
 
 		if ( 'amazon_pay' === $payment_method_type && isset( $payment_method_details['amazon_pay']['funding']['card'] ) && is_array( $payment_method_details['amazon_pay']['funding']['card'] ) ) {
 			$funding_card = $payment_method_details['amazon_pay']['funding']['card'];
 			if ( isset( $funding_card['last4'] ) && is_scalar( $funding_card['last4'] ) ) {
-				$meta['last4'] = (string) $funding_card['last4'];
+				$meta[ WooPaymentsPersistenceVocabulary::LAST4_META_KEY ] = (string) $funding_card['last4'];
 			}
 			if ( isset( $funding_card['brand'] ) && is_scalar( $funding_card['brand'] ) ) {
-				$meta['_card_brand'] = strtolower( (string) $funding_card['brand'] );
+				$meta[ WooPaymentsPersistenceVocabulary::CARD_BRAND_META_KEY ] = strtolower( (string) $funding_card['brand'] );
 			}
 		}
 
 		if ( '' !== $express_checkout_type ) {
-			$meta['_wcpay_express_checkout_payment_method'] = $express_checkout_type;
+			$meta[ WooPaymentsPersistenceVocabulary::EXPRESS_CHECKOUT_PAYMENT_METHOD_META_KEY ] = $express_checkout_type;
 		}
 
 		$effective_type = '' !== $express_checkout_type ? $express_checkout_type : $payment_method_type;
@@ -248,27 +248,27 @@ class WooPaymentsOrderEffects {
 		$intent_currency        = isset( $intent['currency'] ) ? (string) $intent['currency'] : $order_currency;
 		$meta                   = array(
 			// Client 11.1.0 stores the intent model's currency, which its constructor uppercases (class-wc-payments-api-payment-intention.php:93, class-wc-payments-order-service.php:1361,1414).
-			'_wcpay_intent_currency'        => strtoupper( $intent_currency ),
-			'_wcpay_payment_transaction_id' => $balance_transaction_id,
+			WooPaymentsPersistenceVocabulary::INTENT_CURRENCY_META_KEY        => strtoupper( $intent_currency ),
+			WooPaymentsPersistenceVocabulary::PAYMENT_TRANSACTION_ID_META_KEY => $balance_transaction_id,
 		);
 
 		if ( null !== $order_mode ) {
-			$meta['_wcpay_mode'] = $order_mode;
+			$meta[ WooPaymentsPersistenceVocabulary::MODE_META_KEY ] = $order_mode;
 		}
 
 		if ( '' !== $charge_id ) {
-			$meta['_charge_id'] = $charge_id;
+			$meta[ WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY ] = $charge_id;
 		}
 
 		if ( isset( $charge['outcome']['risk_level'] ) ) {
-			$meta['_charge_risk_level'] = (string) $charge['outcome']['risk_level'];
+			$meta[ WooPaymentsPersistenceVocabulary::CHARGE_RISK_LEVEL_META_KEY ] = (string) $charge['outcome']['risk_level'];
 		}
 
 		if ( 'succeeded' === $status ) {
 			$meta = array_merge( $meta, self::completed_charge_meta( $intent, $charge, $settlement_meta, true, $was_held_for_review, $is_capture ) );
 		} elseif ( in_array( $status, array( 'requires_capture', 'processing' ), true ) ) {
-			$meta['_intention_status'] = $status;
-			$meta                      = array_merge( $meta, self::authorized_charge_meta( $intent, $charge, $settlement_meta, false, true ) );
+			$meta[ WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY ] = $status;
+			$meta = array_merge( $meta, self::authorized_charge_meta( $intent, $charge, $settlement_meta, false, true ) );
 		} elseif ( in_array( $status, array( 'requires_action', 'requires_confirmation' ), true ) ) {
 			$meta = array_merge( $meta, self::started_payment_meta( $intent, $order_currency ) );
 		}
@@ -299,12 +299,12 @@ class WooPaymentsOrderEffects {
 		$meta                   = array();
 		$balance_transaction_id = WooPaymentsIntentCodec::balance_transaction_id( $charge['balance_transaction'] ?? null );
 		if ( $include_payment_transaction_id && '' !== $balance_transaction_id ) {
-			$meta['_wcpay_payment_transaction_id'] = $balance_transaction_id;
+			$meta[ WooPaymentsPersistenceVocabulary::PAYMENT_TRANSACTION_ID_META_KEY ] = $balance_transaction_id;
 		}
 
 		$meta = array_merge( $meta, self::authorized_charge_meta( $intent, $charge, $settlement_meta, $was_held_for_review ) );
 		if ( ! $is_capture && ! self::is_card_charge( $charge ) ) {
-			$meta['_wcpay_fraud_meta_box_type'] = 'not_card';
+			$meta[ WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY ] = 'not_card';
 		}
 
 		return $meta;
@@ -323,7 +323,7 @@ class WooPaymentsOrderEffects {
 	private static function authorized_charge_meta( array $intent, array $charge, array $settlement_meta = array(), bool $was_held_for_review = false, bool $is_authorization = false ): array {
 		$meta = $settlement_meta;
 		if ( isset( $charge['outcome']['risk_level'] ) ) {
-			$meta['_charge_risk_level'] = (string) $charge['outcome']['risk_level'];
+			$meta[ WooPaymentsPersistenceVocabulary::CHARGE_RISK_LEVEL_META_KEY ] = (string) $charge['outcome']['risk_level'];
 		}
 
 		return array_merge( $meta, self::fraud_outcome_meta( $intent, $was_held_for_review, $is_authorization ) );
@@ -345,7 +345,7 @@ class WooPaymentsOrderEffects {
 		$meta                   = array();
 		$balance_transaction_id = WooPaymentsIntentCodec::balance_transaction_id( $charge['balance_transaction'] ?? null );
 		if ( '' === $existing_transaction_id && '' !== $balance_transaction_id ) {
-			$meta['_wcpay_payment_transaction_id'] = $balance_transaction_id;
+			$meta[ WooPaymentsPersistenceVocabulary::PAYMENT_TRANSACTION_ID_META_KEY ] = $balance_transaction_id;
 		}
 
 		return $meta + self::payment_method_details_meta( $charge['payment_method_details'] ?? array() );
@@ -363,10 +363,10 @@ class WooPaymentsOrderEffects {
 	 */
 	public static function started_payment_meta( array $intent, string $order_currency ): array {
 		return array(
-			'_intention_status'             => isset( $intent['status'] ) ? (string) $intent['status'] : 'requires_action',
-			'_wcpay_intent_currency'        => strtoupper( isset( $intent['currency'] ) ? (string) $intent['currency'] : $order_currency ),
-			'_wcpay_payment_transaction_id' => '',
-			'_wcpay_fraud_meta_box_type'    => self::is_card_intent( $intent ) ? 'payment_started' : 'not_card',
+			WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY             => isset( $intent['status'] ) ? (string) $intent['status'] : 'requires_action',
+			WooPaymentsPersistenceVocabulary::INTENT_CURRENCY_META_KEY        => strtoupper( isset( $intent['currency'] ) ? (string) $intent['currency'] : $order_currency ),
+			WooPaymentsPersistenceVocabulary::PAYMENT_TRANSACTION_ID_META_KEY => '',
+			WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY    => self::is_card_intent( $intent ) ? 'payment_started' : 'not_card',
 		);
 	}
 
@@ -389,12 +389,12 @@ class WooPaymentsOrderEffects {
 
 		$meta      = array(
 			// Client 11.1.0 capture keeps the uppercase value its authorization stored (class-wc-payments-api-payment-intention.php:93); only the webhook writes Stripe's lowercase.
-			'_wcpay_intent_currency' => strtoupper( isset( $intent['currency'] ) ? (string) $intent['currency'] : $order_currency ),
-			'_wcpay_mode'            => $order_mode,
+			WooPaymentsPersistenceVocabulary::INTENT_CURRENCY_META_KEY => strtoupper( isset( $intent['currency'] ) ? (string) $intent['currency'] : $order_currency ),
+			WooPaymentsPersistenceVocabulary::MODE_META_KEY            => $order_mode,
 		);
 		$charge_id = isset( $charge['id'] ) ? (string) $charge['id'] : '';
 		if ( '' !== $charge_id ) {
-			$meta['_charge_id'] = $charge_id;
+			$meta[ WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY ] = $charge_id;
 		}
 
 		$meta = array_merge( $meta, self::completed_charge_meta( $intent, $charge, $settlement_meta, false, $was_held_for_review, true ) );
@@ -408,7 +408,7 @@ class WooPaymentsOrderEffects {
 	 * @return array<string,string>
 	 */
 	public static function failed_capture_meta(): array {
-		return array( '_intention_status' => 'requires_capture' );
+		return array( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY => 'requires_capture' );
 	}
 
 	/**
@@ -443,15 +443,15 @@ class WooPaymentsOrderEffects {
 			}
 
 			$meta = array(
-				'_wcpay_fraud_outcome_status' => $fraud_outcome,
-				'_wcpay_fraud_meta_box_type'  => $box_type,
+				WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY => $fraud_outcome,
+				WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY  => $box_type,
 			);
 
 			if ( 'review' === $fraud_outcome && $is_authorization ) {
 				$ruleset_results = self::get_fraud_ruleset_results( $intent );
 				$encoded_results = wp_json_encode( $ruleset_results );
 				if ( array() !== $ruleset_results && is_string( $encoded_results ) ) {
-					$meta['_wcpay_fraud_ruleset_results'] = $encoded_results;
+					$meta[ WooPaymentsPersistenceVocabulary::FRAUD_RULESET_RESULTS_META_KEY ] = $encoded_results;
 				}
 			}
 
@@ -479,8 +479,8 @@ class WooPaymentsOrderEffects {
 		}
 
 		return array(
-			'_wcpay_fraud_outcome_status' => $fraud_outcome,
-			'_wcpay_fraud_meta_box_type'  => 'review_blocked',
+			WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY => $fraud_outcome,
+			WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY  => 'review_blocked',
 		);
 	}
 
@@ -521,9 +521,9 @@ class WooPaymentsOrderEffects {
 		$charge_id = isset( $charge['id'] ) && is_scalar( $charge['id'] ) ? (string) $charge['id'] : '';
 
 		return 'succeeded' === (string) ( $intent['status'] ?? '' )
-			&& 'requires_capture' === (string) $order->get_meta( '_intention_status', true )
+			&& 'requires_capture' === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true )
 			&& '' !== $intent_id
-			&& ( $stored_intent_id ?? (string) $order->get_meta( '_intent_id', true ) ) === $intent_id
+			&& ( $stored_intent_id ?? (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true ) ) === $intent_id
 			&& self::transaction_id_names_payment( $order, $intent_id, $charge_id );
 	}
 
@@ -565,7 +565,7 @@ class WooPaymentsOrderEffects {
 		$application_fee_amount = $charge['application_fee_amount'] ?? null;
 
 		return null !== $application_fee_amount
-			? array( '_wcpay_transaction_fee' => (string) self::interpret_stripe_amount( (int) $application_fee_amount, (string) ( $charge['currency'] ?? '' ) ) )
+			? array( WooPaymentsPersistenceVocabulary::TRANSACTION_FEE_META_KEY => (string) self::interpret_stripe_amount( (int) $application_fee_amount, (string) ( $charge['currency'] ?? '' ) ) )
 			: array();
 	}
 
@@ -593,8 +593,8 @@ class WooPaymentsOrderEffects {
 		$fee      = self::interpret_stripe_amount( $application_fee_amount, $currency );
 
 		return array(
-			'_wcpay_transaction_fee' => (string) $fee,
-			'_wcpay_net'             => (string) ( self::interpret_stripe_amount( (int) ( $intent['amount'] ?? 0 ), $currency ) - $fee ),
+			WooPaymentsPersistenceVocabulary::TRANSACTION_FEE_META_KEY => (string) $fee,
+			WooPaymentsPersistenceVocabulary::NET_META_KEY => (string) ( self::interpret_stripe_amount( (int) ( $intent['amount'] ?? 0 ), $currency ) - $fee ),
 		);
 	}
 
@@ -610,9 +610,9 @@ class WooPaymentsOrderEffects {
 			return null;
 		}
 
-		$meta = array( '_wcpay_transaction_fee' => (string) self::interpret_stripe_amount( (int) $totals['fee']['amount'], (string) $totals['fee']['currency'] ) );
+		$meta = array( WooPaymentsPersistenceVocabulary::TRANSACTION_FEE_META_KEY => (string) self::interpret_stripe_amount( (int) $totals['fee']['amount'], (string) $totals['fee']['currency'] ) );
 		if ( isset( $totals['net']['amount'], $totals['net']['currency'] ) ) {
-			$meta['_wcpay_net'] = (string) self::interpret_stripe_amount( (int) $totals['net']['amount'], (string) $totals['net']['currency'] );
+			$meta[ WooPaymentsPersistenceVocabulary::NET_META_KEY ] = (string) self::interpret_stripe_amount( (int) $totals['net']['amount'], (string) $totals['net']['currency'] );
 		}
 
 		return $meta;
@@ -648,10 +648,10 @@ class WooPaymentsOrderEffects {
 		return self::scalar_meta_from_keys(
 			$details,
 			array(
-				'reference'          => '_wcpay_multibanco_reference',
-				'entity'             => '_wcpay_multibanco_entity',
-				'hosted_voucher_url' => '_wcpay_multibanco_url',
-				'expires_at'         => '_wcpay_multibanco_expiry',
+				'reference'          => WooPaymentsPersistenceVocabulary::MULTIBANCO_REFERENCE_META_KEY,
+				'entity'             => WooPaymentsPersistenceVocabulary::MULTIBANCO_ENTITY_META_KEY,
+				'hosted_voucher_url' => WooPaymentsPersistenceVocabulary::MULTIBANCO_URL_META_KEY,
+				'expires_at'         => WooPaymentsPersistenceVocabulary::MULTIBANCO_EXPIRY_META_KEY,
 			)
 		);
 	}
@@ -670,10 +670,10 @@ class WooPaymentsOrderEffects {
 		$provider_status        = isset( $result['status'] ) ? (string) $result['status'] : '';
 		$refund_status          = WooPaymentsIntentCodec::is_pending_refund_status( $provider_status ) ? 'pending' : 'successful';
 		$balance_transaction_id = WooPaymentsIntentCodec::balance_transaction_id( $result['balance_transaction'] ?? null );
-		$refund_meta            = array( '_wcpay_refund_id' => $refund_id );
+		$refund_meta            = array( WooPaymentsPersistenceVocabulary::PROCESSED_REFUND_LINK_META_KEY => $refund_id );
 		$effect_data            = array(
 			PaymentOutcome::DATA_ORDER_META  => array(
-				'_wcpay_refund_status' => $refund_status,
+				WooPaymentsPersistenceVocabulary::REFUND_STATUS_META_KEY => $refund_status,
 				WooPaymentsPaymentOperationService::REFUND_AMBIGUITY_META => '',
 			),
 			PaymentOutcome::DATA_REFUND_META => $refund_meta,
@@ -681,7 +681,7 @@ class WooPaymentsOrderEffects {
 		);
 
 		if ( '' !== $balance_transaction_id ) {
-			$effect_data[ PaymentOutcome::DATA_REFUND_META ]['_wcpay_refund_transaction_id'] = $balance_transaction_id;
+			$effect_data[ PaymentOutcome::DATA_REFUND_META ][ WooPaymentsPersistenceVocabulary::REFUND_TRANSACTION_ID_META_KEY ] = $balance_transaction_id;
 		}
 
 		if ( '' !== $refund_note_identity ) {

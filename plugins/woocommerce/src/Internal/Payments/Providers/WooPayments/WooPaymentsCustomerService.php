@@ -498,11 +498,11 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 			}
 			$token_ids = $subscription->get_payment_tokens();
 			$token     = WC_Payment_Tokens::get( (int) end( $token_ids ) );
-			if ( ! $token instanceof WC_Payment_Token || $payment_method_id !== $token->get_token() || $stale_customer_id !== $subscription->get_meta( '_stripe_customer_id', true ) ) {
+			if ( ! $token instanceof WC_Payment_Token || $payment_method_id !== $token->get_token() || $stale_customer_id !== $subscription->get_meta( WooPaymentsPersistenceVocabulary::STRIPE_CUSTOMER_ID_META_KEY, true ) ) {
 				continue;
 			}
 
-			$subscription->update_meta_data( '_stripe_customer_id', $customer_id );
+			$subscription->update_meta_data( WooPaymentsPersistenceVocabulary::STRIPE_CUSTOMER_ID_META_KEY, $customer_id );
 			$subscription->save_meta_data();
 		}
 	}

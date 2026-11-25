@@ -67,13 +67,13 @@ class SubscriptionsController implements RegisterHooksInterface {
 	 * `includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:1226-1240`).
 	 */
 	private const SINGLE_PAYMENT_META_KEYS = array(
-		'_intent_id',
-		'_intention_status',
-		'_charge_id',
-		'_wcpay_payment_transaction_id',
-		'_wcpay_payment_method_details',
-		'_wcpay_transaction_fee',
-		'_wcpay_net',
+		WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY,
+		WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY,
+		WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY,
+		WooPaymentsPersistenceVocabulary::PAYMENT_TRANSACTION_ID_META_KEY,
+		WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_DETAILS_META_KEY,
+		WooPaymentsPersistenceVocabulary::TRANSACTION_FEE_META_KEY,
+		WooPaymentsPersistenceVocabulary::NET_META_KEY,
 		WooPaymentsPersistenceVocabulary::PAYMENT_DETAILS_REMOVED_META_KEY,
 		WooPaymentsPersistenceVocabulary::SUPERSEDED_INTENT_IDS_META_KEY,
 	);
@@ -292,7 +292,7 @@ class SubscriptionsController implements RegisterHooksInterface {
 			return $items;
 		}
 
-		$subscription_mode = $parent_order->get_meta( '_wcpay_mode' );
+		$subscription_mode = $parent_order->get_meta( WooPaymentsPersistenceVocabulary::MODE_META_KEY );
 		$current_mode      = wc_get_container()->get( WooPaymentsAccountService::class )->get_order_mode();
 		if ( ! is_string( $subscription_mode ) || '' === $subscription_mode || $subscription_mode === $current_mode ) {
 			return $items;
@@ -363,7 +363,7 @@ class SubscriptionsController implements RegisterHooksInterface {
 
 		$customer_id = $this->get_renewal_order_customer_id( $renewal_order );
 		if ( '' !== $customer_id ) {
-			$renewal_order->update_meta_data( '_stripe_customer_id', $customer_id );
+			$renewal_order->update_meta_data( WooPaymentsPersistenceVocabulary::STRIPE_CUSTOMER_ID_META_KEY, $customer_id );
 			$renewal_order->save_meta_data();
 		}
 
@@ -430,7 +430,7 @@ class SubscriptionsController implements RegisterHooksInterface {
 			: array();
 		$charge_id = isset( $data['charge_id'] )
 			? (string) $data['charge_id']
-			: ( isset( $meta['_charge_id'] ) ? (string) $meta['_charge_id'] : '' );
+			: ( isset( $meta[ WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY ] ) ? (string) $meta[ WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY ] : '' );
 
 		try {
 			/**
@@ -655,7 +655,7 @@ class SubscriptionsController implements RegisterHooksInterface {
 			return '';
 		}
 
-		return (string) $parent_order->get_meta( '_stripe_mandate_id', true );
+		return (string) $parent_order->get_meta( WooPaymentsPersistenceVocabulary::STRIPE_MANDATE_ID_META_KEY, true );
 	}
 
 	/**
@@ -665,14 +665,14 @@ class SubscriptionsController implements RegisterHooksInterface {
 	 * @return string Customer ID, or an empty string when not available.
 	 */
 	private function get_renewal_order_customer_id( WC_Order $renewal_order ): string {
-		$customer_id = (string) $renewal_order->get_meta( '_stripe_customer_id', true );
+		$customer_id = (string) $renewal_order->get_meta( WooPaymentsPersistenceVocabulary::STRIPE_CUSTOMER_ID_META_KEY, true );
 		if ( '' !== $customer_id ) {
 			return $customer_id;
 		}
 
 		$subscription = $this->get_subscription_for_renewal_order( $renewal_order );
 		if ( $subscription instanceof WC_Order ) {
-			$customer_id = (string) $subscription->get_meta( '_stripe_customer_id', true );
+			$customer_id = (string) $subscription->get_meta( WooPaymentsPersistenceVocabulary::STRIPE_CUSTOMER_ID_META_KEY, true );
 			if ( '' !== $customer_id ) {
 				return $customer_id;
 			}
@@ -683,7 +683,7 @@ class SubscriptionsController implements RegisterHooksInterface {
 			return '';
 		}
 
-		return (string) $parent_order->get_meta( '_stripe_customer_id', true );
+		return (string) $parent_order->get_meta( WooPaymentsPersistenceVocabulary::STRIPE_CUSTOMER_ID_META_KEY, true );
 	}
 
 	/**
@@ -736,7 +736,7 @@ class SubscriptionsController implements RegisterHooksInterface {
 			return null;
 		}
 
-		$payment_method_id = (string) $parent_order->get_meta( '_payment_method_id', true );
+		$payment_method_id = (string) $parent_order->get_meta( WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_ID_META_KEY, true );
 		if ( '' === $payment_method_id ) {
 			return null;
 		}
@@ -907,7 +907,7 @@ class SubscriptionsController implements RegisterHooksInterface {
 		}
 
 		$payment_method_type = substr( $gateway_id, strlen( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX ) );
-		$subscription->update_meta_data( '_wcpay_original_payment_method_id', $gateway_id );
+		$subscription->update_meta_data( WooPaymentsPersistenceVocabulary::ORIGINAL_PAYMENT_METHOD_ID_META_KEY, $gateway_id );
 		$subscription->set_requires_manual_renewal( true );
 		$subscription->save();
 		$subscription->add_order_note(

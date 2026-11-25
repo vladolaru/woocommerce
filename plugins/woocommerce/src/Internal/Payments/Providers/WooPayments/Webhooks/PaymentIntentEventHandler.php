@@ -369,7 +369,7 @@ class PaymentIntentEventHandler {
 
 		// An order found by the charge's metadata is recorded only while it still does not hold the charge: one that
 		// saved it before this claim is decided like any order found by its charge.
-		$record_only = $record_only && $charge_id !== (string) $order->get_meta( '_charge_id', true );
+		$record_only = $record_only && $charge_id !== (string) $order->get_meta( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY, true );
 		// An expiry of an abandoned attempt's kept charge is another charge, asked by the takeover's list as the other
 		// intent events are; a charge carries no intent creation time.
 		$is_superseded_expiry = $is_charge_event && $this->event_order_resolver->is_superseded_attempt( $order, $intent_id, 0 );
@@ -387,7 +387,7 @@ class PaymentIntentEventHandler {
 		} elseif ( 'payment_intent.succeeded' === $event_type && WooPaymentsIntentCodec::is_invoice_intent( $event_object ) ) {
 			// A Stripe Billing invoice's intent is settled by its invoice: only its payment meta is written here (client
 			// 11.3.0 class-wc-payments-webhook-processing-service.php:711-717).
-			$this->write_succeeded_payment_intent_record( $order, $event_object, self::RECORD_FILL_ONLY, (string) $order->get_meta( '_intent_id', true ), false );
+			$this->write_succeeded_payment_intent_record( $order, $event_object, self::RECORD_FILL_ONLY, (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true ), false );
 		} elseif ( 'payment_intent.succeeded' === $event_type ) {
 			$this->apply_succeeded_payment_intent( $order, $event_object, null, true );
 		} elseif ( 'payment_intent.amount_capturable_updated' === $event_type ) {
@@ -560,7 +560,7 @@ class PaymentIntentEventHandler {
 	 */
 	private function apply_succeeded_payment_intent( WC_Order $order, array $payment_intent, ?array $hold_note_candidates, bool $reports_intent_status ): void {
 		// Read before the payment meta below replaces it with the arriving intent.
-		$stored_intent_id = (string) $order->get_meta( '_intent_id', true );
+		$stored_intent_id = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true );
 		// The order keeps the payment method and title its checkout, redirect return or in-person capture wrote: client 11.1.0's
 		// webhook never sets them (includes/class-wc-payments-webhook-processing-service.php process_webhook_payment_intent_succeeded()).
 		$this->write_succeeded_payment_intent_record( $order, $payment_intent, self::RECORD_BEFORE_DECIDING, $stored_intent_id, $reports_intent_status );
@@ -595,7 +595,7 @@ class PaymentIntentEventHandler {
 	 * @param string              $stored_intent_id The intent the order stored before the event.
 	 */
 	private function log_success_not_a_capture_of_the_stored_authorization( WC_Order $order, array $payment_intent, string $stored_intent_id ): void {
-		if ( 'requires_capture' !== (string) $order->get_meta( '_intention_status', true ) || WooPaymentsOrderEffects::captures_the_authorization( $order, $payment_intent, $stored_intent_id ) ) {
+		if ( 'requires_capture' !== (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true ) || WooPaymentsOrderEffects::captures_the_authorization( $order, $payment_intent, $stored_intent_id ) ) {
 			return;
 		}
 
@@ -636,11 +636,11 @@ class PaymentIntentEventHandler {
 	 * @param array<string,mixed> $payment_intent Provider payment intent object.
 	 */
 	public function record_succeeded_payment_intent_under_lock( WC_Order $order, array $payment_intent ): void {
-		if ( 'succeeded' === (string) $order->get_meta( '_intention_status', true ) ) {
+		if ( 'succeeded' === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true ) ) {
 			return;
 		}
 
-		$stored_intent_id = (string) $order->get_meta( '_intent_id', true );
+		$stored_intent_id = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true );
 		$this->set_succeeded_payment_intent_meta( $order, $payment_intent );
 		$this->lifecycle_service->apply_meta_under_lock( $order, $this->get_succeeded_payment_intent_meta( $payment_intent, $order, $stored_intent_id ), array() );
 	}
@@ -673,10 +673,10 @@ class PaymentIntentEventHandler {
 			return;
 		}
 
-		$stored_status = (string) $order->get_meta( '_intention_status', true );
+		$stored_status = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true );
 		$this->set_succeeded_payment_intent_meta( $order, $payment_intent );
 		if ( $another_attempt || ( $reports_intent_status && $this->lifecycle_service->has_paid_status( $order ) ) ) {
-			$order->update_meta_data( '_intention_status', 'succeeded' );
+			$order->update_meta_data( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, 'succeeded' );
 		}
 		$order->save();
 
@@ -698,12 +698,12 @@ class PaymentIntentEventHandler {
 	 */
 	private function set_succeeded_payment_intent_meta( WC_Order $order, array $payment_intent ): void {
 		$values = array(
-			'_intent_id'             => $this->get_object_id( $payment_intent ),
-			'_charge_id'             => WooPaymentsIntentCodec::first_charge_id( $payment_intent ),
-			'_payment_method_id'     => $this->get_payment_method_id_from_intent( $payment_intent ),
+			WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY             => $this->get_object_id( $payment_intent ),
+			WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY             => WooPaymentsIntentCodec::first_charge_id( $payment_intent ),
+			WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_ID_META_KEY     => $this->get_payment_method_id_from_intent( $payment_intent ),
 			// Client 11.1.0 stores the event's raw, lowercase currency (class-wc-payments-webhook-processing-service.php:498,515).
-			'_wcpay_intent_currency' => isset( $payment_intent['currency'] ) ? (string) $payment_intent['currency'] : '',
-			'_stripe_mandate_id'     => $this->get_mandate_id_from_intent( $payment_intent ),
+			WooPaymentsPersistenceVocabulary::INTENT_CURRENCY_META_KEY => isset( $payment_intent['currency'] ) ? (string) $payment_intent['currency'] : '',
+			WooPaymentsPersistenceVocabulary::STRIPE_MANDATE_ID_META_KEY     => $this->get_mandate_id_from_intent( $payment_intent ),
 		);
 		foreach ( $values as $key => $value ) {
 			if ( '' !== $value && '0' !== $value ) {
@@ -711,8 +711,8 @@ class PaymentIntentEventHandler {
 			}
 		}
 
-		if ( '' === $values['_charge_id'] || '0' === $values['_charge_id'] ) {
-			$order->delete_meta_data( '_charge_id' );
+		if ( '' === $values[ WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY ] || '0' === $values[ WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY ] ) {
+			$order->delete_meta_data( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY );
 		}
 
 		foreach ( WooPaymentsOrderEffects::webhook_fee_meta( $payment_intent, WooPaymentsIntentCodec::first_charge( $payment_intent ) ) as $key => $value ) {
@@ -800,7 +800,7 @@ class PaymentIntentEventHandler {
 	 * @return string The other intent the order waits on, or '' when it waits on this intent or stores none.
 	 */
 	private function get_other_awaited_intent_id( WC_Order $order, string $intent_id ): string {
-		$awaited_intent_id = (string) $order->get_meta( '_intent_id', true );
+		$awaited_intent_id = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true );
 
 		return $awaited_intent_id !== $intent_id ? $awaited_intent_id : '';
 	}
@@ -883,9 +883,9 @@ class PaymentIntentEventHandler {
 		$charge = WooPaymentsIntentCodec::first_charge( $event_object );
 		$meta   = $this->without_empty_values(
 			array(
-				'_intention_status'  => isset( $event_object['status'] ) ? (string) $event_object['status'] : '',
-				'_wcpay_mode'        => $this->account_service->get_order_mode(),
-				'_wcpay_ipp_channel' => $this->get_ipp_channel_from_intent( $event_object ),
+				WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY  => isset( $event_object['status'] ) ? (string) $event_object['status'] : '',
+				WooPaymentsPersistenceVocabulary::MODE_META_KEY        => $this->account_service->get_order_mode(),
+				WooPaymentsPersistenceVocabulary::IPP_CHANNEL_META_KEY => $this->get_ipp_channel_from_intent( $event_object ),
 			)
 		);
 		if ( ! empty( $charge ) ) {
@@ -901,7 +901,7 @@ class PaymentIntentEventHandler {
 					$charge,
 					$settlement_meta,
 					false,
-					$captures_the_authorization ? 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ) : $order->has_status( OrderStatus::ON_HOLD ),
+					$captures_the_authorization ? 'review' === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY, true ) : $order->has_status( OrderStatus::ON_HOLD ),
 					$captures_the_authorization
 				),
 				$this->get_succeeded_payment_method_meta( $order, $charge, '' !== $stored_intent_id && $stored_intent_id !== $this->get_object_id( $event_object ) ),
@@ -931,7 +931,7 @@ class PaymentIntentEventHandler {
 				// A failure of another payment method, from an attempt the shopper replaced by paying another way, changes
 				// nothing (client 11.3.0 class-wc-payments-webhook-processing-service.php:548). Terminal (card_present)
 				// intents are exempt: their payment method is created at the reader and is never the one stored on the order.
-				if ( 'card_present' !== $payment_method_type && (string) $payment_method['id'] !== (string) $order->get_meta( '_payment_method_id', true ) ) {
+				if ( 'card_present' !== $payment_method_type && (string) $payment_method['id'] !== (string) $order->get_meta( WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_ID_META_KEY, true ) ) {
 					return null;
 				}
 
@@ -969,7 +969,7 @@ class PaymentIntentEventHandler {
 					// the intent it stores (class-wc-payments-order-service.php:545-560, :956-976).
 					$this->without_empty_values(
 						array(
-							'_intention_status' => isset( $event_object['status'] ) ? (string) $event_object['status'] : '',
+							WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY => isset( $event_object['status'] ) ? (string) $event_object['status'] : '',
 						)
 					) + ( 'card_present' === $payment_method_type ? array() : WooPaymentsOrderEffects::failed_payment_method_details_meta( $event_object ) ),
 					array(),
@@ -988,7 +988,7 @@ class PaymentIntentEventHandler {
 				$charge_id       = $this->get_object_id( $event_object );
 				$intent_id       = isset( $event_object['payment_intent'] ) && is_string( $event_object['payment_intent'] )
 					? $event_object['payment_intent']
-					: (string) $order->get_meta( '_intent_id', true );
+					: (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true );
 				$note_candidates = $this->order_note_service->format_capture_expired_note_candidates( $intent_id, $charge_id );
 
 				// The stored intention status still says requires_capture; only the live intent knows its status after
@@ -999,11 +999,11 @@ class PaymentIntentEventHandler {
 				$expired_intent = $this->api_client->get_payment_intention( $intent_id );
 
 				$meta = array(
-					'_charge_id'        => $charge_id,
-					'_intention_status' => isset( $expired_intent['status'] ) ? (string) $expired_intent['status'] : '',
+					WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY        => $charge_id,
+					WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY => isset( $expired_intent['status'] ) ? (string) $expired_intent['status'] : '',
 				);
-				if ( 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ) ) {
-					$meta['_wcpay_fraud_meta_box_type'] = 'review_expired';
+				if ( 'review' === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY, true ) ) {
+					$meta[ WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY ] = 'review_expired';
 				}
 
 				return new PaymentLifecycleEvent(
@@ -1090,7 +1090,7 @@ class PaymentIntentEventHandler {
 	private function add_buy_now_pay_later_failure_note( WC_Order $order, array $event_object ): void {
 		$last_payment_error = (array) $event_object['last_payment_error'];
 		$payment_method_id  = (string) $last_payment_error['payment_method']['id'];
-		if ( $payment_method_id !== (string) $order->get_meta( '_payment_method_id', true ) || $order->has_status( wc_get_is_paid_statuses() ) ) {
+		if ( $payment_method_id !== (string) $order->get_meta( WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_ID_META_KEY, true ) || $order->has_status( wc_get_is_paid_statuses() ) ) {
 			return;
 		}
 
@@ -1161,10 +1161,10 @@ class PaymentIntentEventHandler {
 	 * @return array<string,string>
 	 */
 	private function get_succeeded_payment_method_meta( WC_Order $order, array $charge, bool $another_attempt ): array {
-		$stored  = $order->get_meta( '_wcpay_payment_method_details', true );
+		$stored  = $order->get_meta( WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_DETAILS_META_KEY, true );
 		$details = is_string( $stored ) ? json_decode( $stored, true ) : $stored;
 		if ( '' === $stored || null === $stored || array() === $details ) {
-			return WooPaymentsOrderEffects::completed_charge_payment_method_backfill_meta( $charge, true, (string) $order->get_meta( '_wcpay_payment_transaction_id', true ) );
+			return WooPaymentsOrderEffects::completed_charge_payment_method_backfill_meta( $charge, true, (string) $order->get_meta( WooPaymentsPersistenceVocabulary::PAYMENT_TRANSACTION_ID_META_KEY, true ) );
 		}
 
 		$card_types     = array( 'card', 'card_present', 'interac_present' );

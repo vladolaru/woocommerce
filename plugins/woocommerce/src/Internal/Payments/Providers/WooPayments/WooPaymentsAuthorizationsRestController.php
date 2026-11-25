@@ -438,7 +438,7 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 	private function get_order_intent_id( WC_Order $order ): string {
 		$intent_id = (string) $order->get_transaction_id();
 		if ( '' === $intent_id ) {
-			$intent_id = (string) $order->get_meta( '_intent_id', true );
+			$intent_id = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true );
 		}
 
 		return $intent_id;
@@ -453,7 +453,7 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 	private function add_fraud_outcome_manual_entry( WC_Order $order, string $action ): void {
 		$current_user = wp_get_current_user();
 		$order->add_meta_data(
-			'_wcpay_fraud_outcome_manual_entry',
+			WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_MANUAL_ENTRY_META_KEY,
 			array(
 				'type'     => 'fraud_outcome_manual_' . $action,
 				'user'     => array(

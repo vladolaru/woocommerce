@@ -35,15 +35,15 @@ class WooPaymentsOrderEffectApplier {
 	 * (class-wc-payments-order-service.php:1818-1845, :1875-1884).
 	 */
 	private const INTENT_INFO_META_KEYS = array(
-		'_intent_id',
-		'_payment_method_id',
-		'_charge_id',
-		'_intention_status',
-		'_stripe_customer_id',
-		'_wcpay_intent_currency',
-		'_wcpay_payment_transaction_id',
-		'_charge_risk_level',
-		'_wcpay_payment_method_details',
+		WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY,
+		WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_ID_META_KEY,
+		WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY,
+		WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY,
+		WooPaymentsPersistenceVocabulary::STRIPE_CUSTOMER_ID_META_KEY,
+		WooPaymentsPersistenceVocabulary::INTENT_CURRENCY_META_KEY,
+		WooPaymentsPersistenceVocabulary::PAYMENT_TRANSACTION_ID_META_KEY,
+		WooPaymentsPersistenceVocabulary::CHARGE_RISK_LEVEL_META_KEY,
+		WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_DETAILS_META_KEY,
 	);
 
 	/**
@@ -52,10 +52,10 @@ class WooPaymentsOrderEffectApplier {
 	 * :2445, :2501; class-wc-payments-order-service.php:2275-2300).
 	 */
 	public const CHARGE_META_KEYS = array(
-		'_wcpay_mode',
-		'_wcpay_multi_currency_stripe_exchange_rate',
-		'_wcpay_transaction_fee',
-		'_wcpay_net',
+		WooPaymentsPersistenceVocabulary::MODE_META_KEY,
+		WooPaymentsPersistenceVocabulary::MULTI_CURRENCY_STRIPE_EXCHANGE_RATE_META_KEY,
+		WooPaymentsPersistenceVocabulary::TRANSACTION_FEE_META_KEY,
+		WooPaymentsPersistenceVocabulary::NET_META_KEY,
 	);
 
 	/**
@@ -63,9 +63,9 @@ class WooPaymentsOrderEffectApplier {
 	 * exchange rate, and the fee and net (class-wc-payment-gateway-wcpay.php:2701, :2708, :4662, :4664).
 	 */
 	public const CONFIRMATION_META_KEYS = array(
-		'_wcpay_multi_currency_stripe_exchange_rate',
-		'_wcpay_transaction_fee',
-		'_wcpay_net',
+		WooPaymentsPersistenceVocabulary::MULTI_CURRENCY_STRIPE_EXCHANGE_RATE_META_KEY,
+		WooPaymentsPersistenceVocabulary::TRANSACTION_FEE_META_KEY,
+		WooPaymentsPersistenceVocabulary::NET_META_KEY,
 	);
 
 	/**
@@ -181,7 +181,7 @@ class WooPaymentsOrderEffectApplier {
 
 			case WooPaymentsOrderEffectPlan::TYPE_SETUP_INTENT:
 				$payment_method_details     = array();
-				$previous_payment_method_id = (string) $context->get_order()->get_meta( '_payment_method_id', true );
+				$previous_payment_method_id = (string) $context->get_order()->get_meta( WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_ID_META_KEY, true );
 				if ( $plan->should_apply_token_effects() ) {
 					// As for a PaymentIntent, a token that cannot be saved is logged and the order completes without it (client 11.1.0 gw:2036-2067).
 					// A subscription payment method change takes no money, so it is refused instead and the subscription keeps its
@@ -428,7 +428,7 @@ class WooPaymentsOrderEffectApplier {
 				new PaymentLifecycleEvent(
 					$event_status,
 					$offline || '' === $intent_id ? null : $intent_id,
-					array_intersect_key( $effect_data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ], array_flip( array( '_intention_status', '_wcpay_fraud_meta_box_type' ) ) ),
+					array_intersect_key( $effect_data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ], array_flip( array( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY ) ) ),
 					array(),
 					$effect_data[ PaymentOutcome::DATA_NOTE ],
 					$offline ? null : $effect_data[ PaymentOutcome::DATA_NOTE_TYPE ],
@@ -480,7 +480,7 @@ class WooPaymentsOrderEffectApplier {
 		if ( PaymentOutcome::STATUS_FAILED !== $outcome->get_status() ) {
 			$this->lifecycle_service->apply_under_lock(
 				$order,
-				new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_FAILED, '' === $intent_id ? null : $intent_id, array( '_intention_status' => (string) ( $result['status'] ?? '' ) ), array(), $note_candidates[0], PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED, $note_candidates ),
+				new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_FAILED, '' === $intent_id ? null : $intent_id, array( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY => (string) ( $result['status'] ?? '' ) ), array(), $note_candidates[0], PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED, $note_candidates ),
 				new WooPaymentsPersistenceVocabulary()
 			);
 
@@ -496,7 +496,7 @@ class WooPaymentsOrderEffectApplier {
 			// The attach kept an earlier payment's record, so the failure writes only the intent status beside its note; the
 			// outcome's payment method and customer are written as the client writes them before the charge
 			// (class-wc-payment-gateway-wcpay.php:1969-1973).
-			$effect_data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] = array_intersect_key( $this->get_outcome_meta_data( $outcome ), array_flip( array( '_intention_status' ) ) );
+			$effect_data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] = array_intersect_key( $this->get_outcome_meta_data( $outcome ), array_flip( array( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY ) ) );
 		}
 
 		return $this->merge_effect_data_into_outcome( $outcome, $effect_data, $plan );
@@ -576,9 +576,9 @@ class WooPaymentsOrderEffectApplier {
 		$plan            = $outcome->get_effect_plan();
 		$returned_intent = $plan instanceof WooPaymentsOrderEffectPlan && in_array( $plan->get_type(), array( WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT, WooPaymentsOrderEffectPlan::TYPE_SETUP_INTENT ), true );
 		if ( $plan instanceof WooPaymentsOrderEffectPlan && WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT === $plan->get_type() ) {
-			$meta                = $this->compose_payment_intent_meta( $context->get_order(), $plan->get_provider_result(), $plan->writes_fee_meta(), false );
-			$meta['_wcpay_mode'] = $this->account_service->get_order_mode();
-			$outcome             = $this->merge_effect_data_into_outcome(
+			$meta = $this->compose_payment_intent_meta( $context->get_order(), $plan->get_provider_result(), $plan->writes_fee_meta(), false );
+			$meta[ WooPaymentsPersistenceVocabulary::MODE_META_KEY ] = $this->account_service->get_order_mode();
+			$outcome = $this->merge_effect_data_into_outcome(
 				$outcome,
 				array( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => $meta ),
 				$plan
@@ -674,15 +674,15 @@ class WooPaymentsOrderEffectApplier {
 	public function attach_intent_info( WC_Order $order, string $intent_id, array $meta, array $beside_keys = array(), bool $allow_update_on_success = false ): bool {
 		$keys    = $beside_keys;
 		$delete  = array();
-		$records = $allow_update_on_success || 'succeeded' !== (string) $order->get_meta( '_intention_status', true );
+		$records = $allow_update_on_success || 'succeeded' !== (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true );
 		if ( $records ) {
 			$order->set_transaction_id( $intent_id );
 			$keys = array_merge( self::INTENT_INFO_META_KEYS, $beside_keys );
 			// Client 11.3.0 sets the charge to null for an intent with no charge, which deletes it
 			// (class-wc-payments-order-service.php:1873-1884, :1137-1141). Its risk level stays: the client's setter skips a
 			// null one (:1833-1834, :1168-1171).
-			if ( '' === (string) ( $meta['_charge_id'] ?? '' ) ) {
-				$delete = array( '_charge_id' );
+			if ( '' === (string) ( $meta[ WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY ] ?? '' ) ) {
+				$delete = array( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY );
 			}
 		}
 
@@ -758,7 +758,7 @@ class WooPaymentsOrderEffectApplier {
 			(string) $order->get_currency(),
 			null,
 			$settlement_meta,
-			( ! $captures && $order->has_status( OrderStatus::ON_HOLD ) ) || 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ),
+			( ! $captures && $order->has_status( OrderStatus::ON_HOLD ) ) || 'review' === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY, true ),
 			$include_fee_meta || $captures,
 			$captures
 		);
@@ -865,8 +865,8 @@ class WooPaymentsOrderEffectApplier {
 			WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array_merge(
 				$meta,
 				array(
-					'_intention_status'          => $started_meta['_intention_status'],
-					'_wcpay_fraud_meta_box_type' => $started_meta['_wcpay_fraud_meta_box_type'],
+					WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY          => $started_meta[ WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY ],
+					WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY => $started_meta[ WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY ],
 				)
 			),
 			PaymentOutcome::DATA_NOTE             => $note_candidates[0],
@@ -887,7 +887,7 @@ class WooPaymentsOrderEffectApplier {
 	private function compose_capture_effect_data( WC_Order $order, PaymentOutcome $outcome, array $result, bool $include_fee_meta ): array {
 		$charge    = WooPaymentsIntentCodec::latest_charge( $result );
 		$intent_id = '' !== $outcome->get_provider_payment_id() ? $outcome->get_provider_payment_id() : (string) ( $result['id'] ?? '' );
-		$charge_id = isset( $charge['id'] ) ? (string) $charge['id'] : (string) $order->get_meta( '_charge_id', true );
+		$charge_id = isset( $charge['id'] ) ? (string) $charge['id'] : (string) $order->get_meta( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY, true );
 
 		if ( PaymentOutcome::STATUS_COMPLETED === $outcome->get_status() && 'succeeded' === (string) ( $result['status'] ?? '' ) ) {
 			$settlement_meta = empty( $charge )
@@ -907,7 +907,7 @@ class WooPaymentsOrderEffectApplier {
 					(string) $order->get_currency(),
 					$this->account_service->get_order_mode(),
 					$settlement_meta,
-					'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ),
+					'review' === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY, true ),
 					$include_fee_meta
 				),
 				PaymentOutcome::DATA_NOTE             => $note_candidates[0],
@@ -930,8 +930,8 @@ class WooPaymentsOrderEffectApplier {
 		$message         = WooPaymentsIntentCodec::with_minimum_capture_amount( $message, is_array( $data['extra_details'] ?? null ) ? $data['extra_details'] : array() );
 		$note_candidates = $this->note_service->format_capture_failed_note_candidates( $order, $intent_id, $charge_id, $message );
 		$meta            = WooPaymentsOrderEffects::failed_capture_meta();
-		if ( 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ) ) {
-			$meta['_wcpay_fraud_meta_box_type'] = 'review_failed';
+		if ( 'review' === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY, true ) ) {
+			$meta[ WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY ] = 'review_failed';
 		}
 
 		return array(
@@ -956,14 +956,14 @@ class WooPaymentsOrderEffectApplier {
 	private function compose_capture_expired_effect_data( WC_Order $order, PaymentOutcome $outcome, array $result ): array {
 		$charge          = WooPaymentsIntentCodec::latest_charge( $result );
 		$intent_id       = '' !== $outcome->get_provider_payment_id() ? $outcome->get_provider_payment_id() : (string) ( $result['id'] ?? '' );
-		$charge_id       = isset( $charge['id'] ) ? (string) $charge['id'] : (string) $order->get_meta( '_charge_id', true );
+		$charge_id       = isset( $charge['id'] ) ? (string) $charge['id'] : (string) $order->get_meta( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY, true );
 		$note_candidates = $this->note_service->format_capture_expired_note_candidates( $intent_id, $charge_id );
-		$meta            = array( '_intention_status' => 'canceled' );
+		$meta            = array( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY => 'canceled' );
 		if ( '' !== $charge_id ) {
-			$meta['_charge_id'] = $charge_id;
+			$meta[ WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY ] = $charge_id;
 		}
-		if ( 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ) ) {
-			$meta['_wcpay_fraud_meta_box_type'] = 'review_expired';
+		if ( 'review' === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY, true ) ) {
+			$meta[ WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY ] = 'review_expired';
 		}
 
 		return array(
@@ -997,7 +997,7 @@ class WooPaymentsOrderEffectApplier {
 			$note_candidates = $this->note_service->format_cancel_failed_note_candidates( $message );
 
 			return array(
-				WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array( '_intention_status' => $provider_status ),
+				WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY => $provider_status ),
 				PaymentOutcome::DATA_NOTE             => $note_candidates[0],
 				PaymentOutcome::DATA_NOTE_EQUIVALENTS => $note_candidates,
 			);
@@ -1009,12 +1009,12 @@ class WooPaymentsOrderEffectApplier {
 
 		$charge          = WooPaymentsIntentCodec::latest_charge( $result );
 		$intent_id       = '' !== $outcome->get_provider_payment_id() ? $outcome->get_provider_payment_id() : (string) ( $result['id'] ?? '' );
-		$charge_id       = isset( $charge['id'] ) ? (string) $charge['id'] : (string) $order->get_meta( '_charge_id', true );
+		$charge_id       = isset( $charge['id'] ) ? (string) $charge['id'] : (string) $order->get_meta( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY, true );
 		$payment_title   = $order->get_payment_method_title();
 		$other_title     = ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) && is_string( $payment_title ) ? trim( $payment_title ) : '';
 		$note_candidates = $this->note_service->format_capture_cancelled_note_candidates( $intent_id, $charge_id, $other_title );
 		$effect_data     = array(
-			PaymentOutcome::DATA_META_TO_DELETE   => array( '_wcpay_transaction_fee', '_wcpay_net' ),
+			PaymentOutcome::DATA_META_TO_DELETE   => array( WooPaymentsPersistenceVocabulary::TRANSACTION_FEE_META_KEY, WooPaymentsPersistenceVocabulary::NET_META_KEY ),
 			PaymentOutcome::DATA_NOTE             => $note_candidates[0],
 			PaymentOutcome::DATA_NOTE_TYPE        => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_CANCELED,
 			PaymentOutcome::DATA_NOTE_EQUIVALENTS => $note_candidates,
@@ -1083,11 +1083,11 @@ class WooPaymentsOrderEffectApplier {
 	 * @return void
 	 */
 	private function clear_setup_intent_card_identity( WC_Order $order ): void {
-		$order->delete_meta_data( 'last4' );
-		$order->delete_meta_data( '_card_brand' );
-		$order->delete_meta_data( '_wcpay_payment_method_details' );
-		$order->delete_meta_data( '_wcpay_raw_payment_method_details' );
-		$order->delete_meta_data( '_wcpay_express_checkout_payment_method' );
+		$order->delete_meta_data( WooPaymentsPersistenceVocabulary::LAST4_META_KEY );
+		$order->delete_meta_data( WooPaymentsPersistenceVocabulary::CARD_BRAND_META_KEY );
+		$order->delete_meta_data( WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_DETAILS_META_KEY );
+		$order->delete_meta_data( WooPaymentsPersistenceVocabulary::RAW_PAYMENT_METHOD_DETAILS_META_KEY );
+		$order->delete_meta_data( WooPaymentsPersistenceVocabulary::EXPRESS_CHECKOUT_PAYMENT_METHOD_META_KEY );
 	}
 
 	/**
@@ -1105,9 +1105,9 @@ class WooPaymentsOrderEffectApplier {
 			return array();
 		}
 
-		$details = json_decode( (string) $order->get_meta( '_wcpay_payment_method_details', true ), true );
+		$details = json_decode( (string) $order->get_meta( WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_DETAILS_META_KEY, true ), true );
 		$effects = is_array( $details ) ? WooPaymentsOrderEffects::compose_setup_intent_payment_method_display_details( $details ) : array();
-		if ( empty( $effects ) || 'card' !== $effects['payment_method_type'] || ! isset( $effects['meta']['last4'], $effects['meta']['_card_brand'] ) ) {
+		if ( empty( $effects ) || 'card' !== $effects['payment_method_type'] || ! isset( $effects['meta'][ WooPaymentsPersistenceVocabulary::LAST4_META_KEY ], $effects['meta'][ WooPaymentsPersistenceVocabulary::CARD_BRAND_META_KEY ] ) ) {
 			return array();
 		}
 
@@ -1144,7 +1144,7 @@ class WooPaymentsOrderEffectApplier {
 	private function compose_payment_method_display_details( WC_Order $order, array $result ): array {
 		return WooPaymentsOrderEffects::compose_payment_method_display_details(
 			$result,
-			(string) $order->get_meta( '_wcpay_express_checkout_payment_method', true )
+			(string) $order->get_meta( WooPaymentsPersistenceVocabulary::EXPRESS_CHECKOUT_PAYMENT_METHOD_META_KEY, true )
 		);
 	}
 
@@ -1515,10 +1515,10 @@ class WooPaymentsOrderEffectApplier {
 	 */
 	private function persist_zero_amount_details( WC_Order $order, PaymentOutcome $outcome, array $meta ): void {
 		if ( '' !== $outcome->get_payment_method_id() ) {
-			$order->update_meta_data( '_payment_method_id', $outcome->get_payment_method_id() );
+			$order->update_meta_data( WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_ID_META_KEY, $outcome->get_payment_method_id() );
 		}
 		if ( '' !== $outcome->get_customer_id() ) {
-			$order->update_meta_data( '_stripe_customer_id', $outcome->get_customer_id() );
+			$order->update_meta_data( WooPaymentsPersistenceVocabulary::STRIPE_CUSTOMER_ID_META_KEY, $outcome->get_customer_id() );
 		}
 		foreach ( $meta as $key => $value ) {
 			$order->update_meta_data( $key, $value );

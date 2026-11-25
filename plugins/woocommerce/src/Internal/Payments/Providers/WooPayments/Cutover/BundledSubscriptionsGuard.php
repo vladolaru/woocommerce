@@ -7,6 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+
 use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
@@ -31,7 +33,7 @@ class BundledSubscriptionsGuard {
 	/**
 	 * Subscription meta holding the Stripe subscription ID while Stripe Billing bills the subscription.
 	 */
-	private const STRIPE_BILLED_META_KEY = '_wcpay_subscription_id';
+	private const STRIPE_BILLED_META_KEY = WooPaymentsPersistenceVocabulary::SUBSCRIPTION_ID_META_KEY;
 
 	/**
 	 * Plugin file of WooCommerce Subscriptions, whatever folder it is installed in.

@@ -100,7 +100,7 @@ class WooPaymentsOrderDetailsService {
 
 			$order                            = $orders_by_charge_id[ $charge_id ];
 			$transaction['order']             = $this->build_list_order_info( $order );
-			$transaction['payment_intent_id'] = (string) $order->get_meta( '_intent_id' );
+			$transaction['payment_intent_id'] = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY );
 
 			// The key is left out when the order never had a warning, as client 11.2.0 class-list-transactions.php:309-316.
 			$early_fraud_warning = $order->get_meta( WooPaymentsPersistenceVocabulary::EARLY_FRAUD_WARNING_META_KEY, true );
@@ -170,7 +170,7 @@ class WooPaymentsOrderDetailsService {
 		$currency      = $order->get_currency();
 		$amount        = WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $order->get_total(), $currency );
 		$date_created  = $order->get_date_created();
-		$intent_id     = (string) $order->get_meta( '_intent_id', true );
+		$intent_id     = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true );
 		$intent_status = (string) $order->get_meta( '_intent_status', true );
 
 		$charge = array(
@@ -365,7 +365,7 @@ class WooPaymentsOrderDetailsService {
 			$order    = wc_get_order( $order_id );
 
 			if ( $order instanceof WC_Order ) {
-				$charge_id = (string) $order->get_meta( '_charge_id' );
+				$charge_id = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY );
 
 				return '' === $charge_id ? array() : array( $charge_id );
 			}
@@ -384,7 +384,7 @@ class WooPaymentsOrderDetailsService {
 
 				$charge_ids = array();
 				foreach ( $related_orders as $order ) {
-					$charge_ids[] = $order instanceof WC_Order ? (string) $order->get_meta( '_charge_id' ) : '';
+					$charge_ids[] = $order instanceof WC_Order ? (string) $order->get_meta( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY ) : '';
 				}
 
 				return array_values( array_filter( $charge_ids ) );
@@ -416,7 +416,7 @@ class WooPaymentsOrderDetailsService {
 		$orders = wc_get_orders(
 			array(
 				'limit'        => count( $charge_ids ),
-				'meta_key'     => '_charge_id', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
+				'meta_key'     => WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
 				'meta_value'   => $charge_ids, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
 				'meta_compare' => 'IN',
 			)
@@ -432,7 +432,7 @@ class WooPaymentsOrderDetailsService {
 				continue;
 			}
 
-			$charge_id = (string) $order->get_meta( '_charge_id' );
+			$charge_id = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY );
 			if ( '' !== $charge_id ) {
 				$orders_by_charge_id[ $charge_id ] = $order;
 			}
@@ -548,7 +548,7 @@ class WooPaymentsOrderDetailsService {
 			'customer_url'                   => $this->get_customer_url( $order ),
 			'customer_name'                  => trim( $order->get_formatted_billing_full_name() ),
 			'customer_email'                 => $order->get_billing_email(),
-			'fraud_meta_box_type'            => $order->get_meta( '_wcpay_fraud_meta_box_type' ),
+			'fraud_meta_box_type'            => $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY ),
 			// As client 11.3.0 (class-wc-payments-api-client.php:2373), a stored value that is not an IP address is empty.
 			'ip_address'                     => (string) rest_is_ip_address( $order->get_customer_ip_address() ),
 			'suggested_product_type'         => $this->determine_suggested_product_type( $order ),

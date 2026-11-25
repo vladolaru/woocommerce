@@ -157,7 +157,7 @@ class WooPaymentsIppReceiptEmail extends WC_Email {
 	 * @return void
 	 */
 	public function trigger( WC_Order $order, array $merchant_settings, array $charge ): void {
-		if ( 'mobile_pos' === $order->get_meta( '_wcpay_ipp_channel', true ) ) {
+		if ( 'mobile_pos' === $order->get_meta( WooPaymentsPersistenceVocabulary::IPP_CHANNEL_META_KEY, true ) ) {
 			return;
 		}
 

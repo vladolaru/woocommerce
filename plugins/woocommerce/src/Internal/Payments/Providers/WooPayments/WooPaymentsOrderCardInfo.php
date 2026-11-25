@@ -85,7 +85,7 @@ class WooPaymentsOrderCardInfo implements RegisterHooksInterface {
 
 		$details = $this->get_stored_details( $order );
 		if ( array() === $details && $order->get_id() ) {
-			if ( '' === $order->get_meta( '_payment_method_id', true ) ) {
+			if ( '' === $order->get_meta( WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_ID_META_KEY, true ) ) {
 				return $card_info;
 			}
 			// Another email or confirmation may have stored the card since this object was read.
@@ -93,7 +93,7 @@ class WooPaymentsOrderCardInfo implements RegisterHooksInterface {
 			$details = $this->get_stored_details( $order );
 		}
 		if ( array() === $details ) {
-			$payment_method_id = $order->get_meta( '_payment_method_id', true );
+			$payment_method_id = $order->get_meta( WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_ID_META_KEY, true );
 			if ( '' === $payment_method_id ) {
 				return $card_info;
 			}
@@ -124,7 +124,7 @@ class WooPaymentsOrderCardInfo implements RegisterHooksInterface {
 
 			$encoded_details = wp_json_encode( $details );
 			if ( false !== $encoded_details ) {
-				$order->update_meta_data( '_wcpay_payment_method_details', $encoded_details );
+				$order->update_meta_data( WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_DETAILS_META_KEY, $encoded_details );
 				$order->save_meta_data();
 			}
 		}
@@ -165,7 +165,7 @@ class WooPaymentsOrderCardInfo implements RegisterHooksInterface {
 	 * @return array<string,mixed>
 	 */
 	private function get_stored_details( WC_Order $order ): array {
-		$stored  = $order->get_meta( '_wcpay_payment_method_details', true );
+		$stored  = $order->get_meta( WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_DETAILS_META_KEY, true );
 		$details = is_string( $stored ) ? json_decode( $stored, true ) : null;
 		return is_array( $details ) ? $details : array();
 	}

@@ -41,7 +41,7 @@ class StripeBillingSubscriptionService {
 	/**
 	 * Subscription meta holding the Stripe subscription ID.
 	 */
-	public const SUBSCRIPTION_ID_META_KEY = '_wcpay_subscription_id';
+	public const SUBSCRIPTION_ID_META_KEY = WooPaymentsPersistenceVocabulary::SUBSCRIPTION_ID_META_KEY;
 
 	/**
 	 * Subscription meta holding the Stripe subscription ID once the subscription is migrated off Stripe Billing.

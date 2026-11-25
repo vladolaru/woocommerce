@@ -122,7 +122,7 @@ class WooPaymentsIntentConfirmationService {
 		$payment_method_id = WooPaymentsIntentCodec::result_payment_method_id( $intent );
 		if ( '' !== $payment_method_id ) {
 			$order->read_meta_data( true );
-			$order->update_meta_data( '_payment_method_id', $payment_method_id );
+			$order->update_meta_data( WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_ID_META_KEY, $payment_method_id );
 			$order->save();
 		}
 
@@ -171,7 +171,7 @@ class WooPaymentsIntentConfirmationService {
 			return;
 		}
 
-		$order->update_meta_data( '_payment_method_id', $payment_method_id );
+		$order->update_meta_data( WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_ID_META_KEY, $payment_method_id );
 		$order->save_meta_data();
 	}
 
@@ -182,7 +182,7 @@ class WooPaymentsIntentConfirmationService {
 	 * @param string   $status Intent status.
 	 */
 	private function save_intention_status( WC_Order $order, string $status ): void {
-		$order->update_meta_data( '_intention_status', $status );
+		$order->update_meta_data( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, $status );
 		$order->save();
 	}
 	// phpcs:enable Squiz.Commenting.FunctionCommentThrowTag.WrongNumber
@@ -215,7 +215,7 @@ class WooPaymentsIntentConfirmationService {
 	 * @return bool
 	 */
 	public function is_order_intent( WC_Order $order, string $intent_id ): bool {
-		return '' !== $intent_id && (string) $order->get_meta( '_intent_id', true ) === $intent_id;
+		return '' !== $intent_id && (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true ) === $intent_id;
 	}
 
 	/**
@@ -337,7 +337,7 @@ class WooPaymentsIntentConfirmationService {
 	public function confirm_fetched_intent_for_order( WC_Order $order, array $intent, bool $save_payment_method, bool $is_redirect_return = false, bool $zero_amount_plain_note = false ): void {
 		$status                     = isset( $intent['status'] ) ? (string) $intent['status'] : '';
 		$setup_payment_details      = null;
-		$previous_payment_method_id = (string) $order->get_meta( '_payment_method_id', true );
+		$previous_payment_method_id = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_ID_META_KEY, true );
 
 		if ( WooPaymentsIntentCodec::holds_money( $status ) ) {
 			$token_save_result = $this->maybe_save_payment_method_for_order( $order, $intent, $save_payment_method );
@@ -427,7 +427,7 @@ class WooPaymentsIntentConfirmationService {
 			} else {
 				// Every write goes on the one order read after the refusal, so none adds a second row of a key it saved.
 				$this->attach_charge_details_after_refusal( $stored_order, $event );
-				$stored_intent_id = (string) $stored_order->get_meta( '_intent_id', true );
+				$stored_intent_id = (string) $stored_order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true );
 				if ( '' === $stored_intent_id || (string) ( $intent['id'] ?? '' ) === $stored_intent_id ) {
 					$this->apply_display_details( $stored_order, $intent, $setup_payment_details );
 				}
@@ -465,11 +465,11 @@ class WooPaymentsIntentConfirmationService {
 	 * @param PaymentLifecycleEvent $event        Refused lifecycle event.
 	 */
 	private function attach_charge_details_after_refusal( WC_Order $stored_order, PaymentLifecycleEvent $event ): void {
-		if ( 'succeeded' === (string) $stored_order->get_meta( '_intention_status', true ) || (string) $stored_order->get_meta( '_intent_id', true ) !== (string) $event->get_payment_reference() ) {
+		if ( 'succeeded' === (string) $stored_order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true ) || (string) $stored_order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true ) !== (string) $event->get_payment_reference() ) {
 			return;
 		}
 
-		$charge_meta = array_intersect_key( $event->get_meta_to_update(), array_flip( array( '_charge_id', '_charge_risk_level', '_wcpay_payment_method_details' ) ) );
+		$charge_meta = array_intersect_key( $event->get_meta_to_update(), array_flip( array( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY, WooPaymentsPersistenceVocabulary::CHARGE_RISK_LEVEL_META_KEY, WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_DETAILS_META_KEY ) ) );
 		if ( empty( $charge_meta ) ) {
 			return;
 		}
@@ -496,7 +496,7 @@ class WooPaymentsIntentConfirmationService {
 	 */
 	public function apply_attached_payment_intent( WC_Order $order, array $intent ): void {
 		$known_method     = (string) $order->get_payment_method();
-		$known_intent_ids = array( (string) ( $intent['id'] ?? '' ), (string) $order->get_meta( '_intent_id', true ), '' );
+		$known_intent_ids = array( (string) ( $intent['id'] ?? '' ), (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true ), '' );
 		// The event is built again, and the hold decided, on the order read under the order payment lock it is applied under.
 		list( $event ) = $this->build_attached_lifecycle_event( $order, $intent );
 		wc_get_container()->get( WooPaymentsCompositionDataSettler::class )->run_settled(
@@ -523,7 +523,7 @@ class WooPaymentsIntentConfirmationService {
 	private static function is_still_attached_to( WC_Order $stored_order, string $known_method, array $known_intent_ids ): bool {
 		$method = (string) $stored_order->get_payment_method();
 
-		return ( $known_method === $method || WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( $method ) ) && in_array( (string) $stored_order->get_meta( '_intent_id', true ), $known_intent_ids, true );
+		return ( $known_method === $method || WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( $method ) ) && in_array( (string) $stored_order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true ), $known_intent_ids, true );
 	}
 
 	/**
@@ -540,8 +540,8 @@ class WooPaymentsIntentConfirmationService {
 			$intent,
 			new WooPaymentsIntentMappingContext(
 				$order->get_checkout_order_received_url(),
-				(string) $order->get_meta( '_payment_method_id', true ),
-				(string) $order->get_meta( '_stripe_customer_id', true ),
+				(string) $order->get_meta( WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_ID_META_KEY, true ),
+				(string) $order->get_meta( WooPaymentsPersistenceVocabulary::STRIPE_CUSTOMER_ID_META_KEY, true ),
 				'',
 				'pi',
 				$provider_redirect_url
@@ -597,7 +597,7 @@ class WooPaymentsIntentConfirmationService {
 				false,
 				array(
 					// Plugin 11.1.0 stores the order currency for setup intents (class-wc-payments-order-service.php:1361).
-					'_wcpay_intent_currency' => (string) $order->get_currency(),
+					WooPaymentsPersistenceVocabulary::INTENT_CURRENCY_META_KEY => (string) $order->get_currency(),
 				)
 			)
 			: WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false );
@@ -640,7 +640,7 @@ class WooPaymentsIntentConfirmationService {
 			$intent_meta += WooPaymentsOrderEffects::failed_payment_method_details_meta( $intent );
 		}
 		if ( ( $intent['status'] ?? '' ) !== $provider_status ) {
-			$intent_meta['_intention_status'] = $provider_status;
+			$intent_meta[ WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY ] = $provider_status;
 		}
 
 		$changes_nothing = true === ( $outcome->get_data()[ PaymentOutcome::DATA_NO_ORDER_CHANGE ] ?? false );

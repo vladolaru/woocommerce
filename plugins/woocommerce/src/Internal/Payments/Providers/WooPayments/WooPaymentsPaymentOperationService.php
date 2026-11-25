@@ -402,7 +402,7 @@ class WooPaymentsPaymentOperationService {
 	public function refund( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
 		$order = $context->get_order();
 		if ( $this->api_client->is_available() ) {
-			$charge_id = (string) $order->get_meta( '_charge_id', true );
+			$charge_id = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY, true );
 			if ( '' !== $charge_id ) {
 				$payment_data = $context->get_payment_data();
 				$request      = array(
@@ -447,10 +447,10 @@ class WooPaymentsPaymentOperationService {
 	 * @return bool
 	 */
 	private function is_interac_present_payment( WC_Order $order ): bool {
-		$stored_details = $order->get_meta( '_wcpay_payment_method_details', true );
+		$stored_details = $order->get_meta( WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_DETAILS_META_KEY, true );
 		$details        = is_string( $stored_details ) ? json_decode( $stored_details, true ) : null;
 		if ( ! is_array( $details ) || array() === $details ) {
-			$payment_method_id = $order->get_meta( '_payment_method_id', true );
+			$payment_method_id = $order->get_meta( WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_ID_META_KEY, true );
 			if ( ! is_string( $payment_method_id ) || '' === $payment_method_id ) {
 				return false;
 			}
@@ -487,7 +487,7 @@ class WooPaymentsPaymentOperationService {
 
 		$recorded_refund_ids = array();
 		foreach ( $order->get_refunds() as $wc_refund ) {
-			$recorded_refund_ids[] = (string) $wc_refund->get_meta( '_wcpay_refund_id', true );
+			$recorded_refund_ids[] = (string) $wc_refund->get_meta( WooPaymentsPersistenceVocabulary::PROCESSED_REFUND_LINK_META_KEY, true );
 		}
 
 		// Stripe lists a charge's refunds newest first.
@@ -843,7 +843,7 @@ class WooPaymentsPaymentOperationService {
 		$order->delete_meta_data( self::CHARGE_AMBIGUITY_META );
 		$order->update_meta_data( self::CHARGE_IDEMPOTENCY_KEY_META, $candidate );
 		$order->update_meta_data( self::CHARGE_IDEMPOTENCY_KEY_KEPT_AT_META, (string) time() );
-		$order->update_meta_data( '_wcpay_mode', $this->account_service->get_order_mode() );
+		$order->update_meta_data( WooPaymentsPersistenceVocabulary::MODE_META_KEY, $this->account_service->get_order_mode() );
 		$order->save_meta_data();
 
 		return $candidate;
@@ -934,7 +934,7 @@ class WooPaymentsPaymentOperationService {
 		// (class-wc-payment-gateway-wcpay.php:5459-5463).
 		$recovery_key = self::get_customer_recovery_idempotency_key( $sent_key );
 		$order->update_meta_data( self::CHARGE_IDEMPOTENCY_KEY_META, $recovery_key );
-		$order->update_meta_data( '_stripe_customer_id', $customer_id );
+		$order->update_meta_data( WooPaymentsPersistenceVocabulary::STRIPE_CUSTOMER_ID_META_KEY, $customer_id );
 		$order->save_meta_data();
 		try {
 			$result = $this->api_client->create_and_confirm_payment_intention( $request_data, $recovery_key );
@@ -1012,11 +1012,11 @@ class WooPaymentsPaymentOperationService {
 	 * @return string|null The tier that refuses, or null when the charge goes on.
 	 */
 	public function get_unread_payment_refusal_tier_for_order( WC_Order $order, string $failed_intent_id, bool $unknown ): ?string {
-		if ( $failed_intent_id !== (string) $order->get_meta( '_intent_id', true ) || ! $this->is_payment_of_this_mode( $order ) ) {
+		if ( $failed_intent_id !== (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true ) || ! $this->is_payment_of_this_mode( $order ) ) {
 			return null;
 		}
 
-		$stored_status = (string) $order->get_meta( '_intention_status', true );
+		$stored_status = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true );
 		if ( WooPaymentsIntentCodec::holds_money( $stored_status ) ) {
 			return self::UNREAD_PAYMENT_TIER_MONEY_HELD;
 		}
@@ -1034,7 +1034,7 @@ class WooPaymentsPaymentOperationService {
 	 * @param string   $tier  The tier that refused.
 	 */
 	private function log_charge_refused_over_unread_payment( WC_Order $order, string $tier ): void {
-		$intent_id = WooPaymentsLogger::get_loggable_provider_id( (string) $order->get_meta( '_intent_id', true ) );
+		$intent_id = WooPaymentsLogger::get_loggable_provider_id( (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true ) );
 		$this->logger->log_always(
 			sprintf(
 				'The charge for order #%1$d was not sent: its attached payment, intent %2$s, could not be read, and the order stores %3$s.',
@@ -1059,7 +1059,7 @@ class WooPaymentsPaymentOperationService {
 	 * @return bool
 	 */
 	private function is_payment_of_this_mode( WC_Order $order ): bool {
-		$stored_mode = (string) $order->get_meta( '_wcpay_mode', true );
+		$stored_mode = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::MODE_META_KEY, true );
 
 		return '' === $stored_mode || ( WooPaymentsOrderMode::TEST === $stored_mode ) === ( WooPaymentsOrderMode::TEST === $this->account_service->get_order_mode() );
 	}
@@ -1601,8 +1601,8 @@ class WooPaymentsPaymentOperationService {
 			if ( is_array( $intent ) ) {
 				$meta += WooPaymentsOrderEffects::failed_payment_method_details_meta( $intent );
 			}
-			$meta['_wcpay_fraud_meta_box_type']                         = 'allow';
-			$data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] = $meta;
+			$meta[ WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY ] = 'allow';
+			$data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]             = $meta;
 		}
 
 		return new PaymentOutcome(
@@ -1649,7 +1649,7 @@ class WooPaymentsPaymentOperationService {
 		$data = $outcome->get_data();
 		$meta = isset( $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ) && is_array( $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ) ? $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] : array();
 
-		$meta['_wcpay_mode']                                        = $this->account_service->get_order_mode();
+		$meta[ WooPaymentsPersistenceVocabulary::MODE_META_KEY ]    = $this->account_service->get_order_mode();
 		$data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] = $meta;
 
 		return new PaymentOutcome( $outcome->get_status(), $outcome->get_provider_payment_id(), $outcome->get_redirect_url(), $outcome->get_payment_method_id(), $outcome->get_customer_id(), $data );
@@ -1742,11 +1742,11 @@ class WooPaymentsPaymentOperationService {
 
 		$meta = isset( $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ) && is_array( $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ) ? $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] : array();
 
-		$meta['_wcpay_fraud_outcome_status'] = 'block';
-		$meta['_wcpay_fraud_meta_box_type']  = 'block';
-		$meta['_intention_status']           = 'canceled';
+		$meta[ WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY ] = 'block';
+		$meta[ WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY ]  = 'block';
+		$meta[ WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY ]     = 'canceled';
 		if ( array() !== $ruleset_results ) {
-			$meta['_wcpay_fraud_ruleset_results'] = (string) wp_json_encode( $ruleset_results );
+			$meta[ WooPaymentsPersistenceVocabulary::FRAUD_RULESET_RESULTS_META_KEY ] = (string) wp_json_encode( $ruleset_results );
 		}
 		$data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] = $meta;
 		$data[ PaymentOutcome::DATA_PRESERVE_ORDER_STATUS ]         = true;
@@ -1909,7 +1909,7 @@ class WooPaymentsPaymentOperationService {
 
 			return $outcome->with_effect_plan(
 				WooPaymentsOrderEffectPlan::for_zero_amount_without_intent(
-					array( '_wcpay_mode' => $this->account_service->get_order_mode() ),
+					array( WooPaymentsPersistenceVocabulary::MODE_META_KEY => $this->account_service->get_order_mode() ),
 					$this->get_saved_payment_token_id( $context )
 				)
 			);
@@ -1951,8 +1951,8 @@ class WooPaymentsPaymentOperationService {
 			$is_recurring,
 			array(
 				// Client 11.1.0 stores the order currency for setup intents (class-wc-payments-order-service.php:1361).
-				'_wcpay_intent_currency' => (string) $order->get_currency(),
-				'_wcpay_mode'            => $this->account_service->get_order_mode(),
+				WooPaymentsPersistenceVocabulary::INTENT_CURRENCY_META_KEY => (string) $order->get_currency(),
+				WooPaymentsPersistenceVocabulary::MODE_META_KEY            => $this->account_service->get_order_mode(),
 			)
 		);
 
@@ -2044,7 +2044,7 @@ class WooPaymentsPaymentOperationService {
 
 		// A scheduled renewal charges the customer on the renewal order, with no refresh and nothing stored on the user, as
 		// client 11.1.0 does (includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:421-424).
-		$order_customer_id = self::is_scheduled_renewal( $context ) ? (string) $context->get_order()->get_meta( '_stripe_customer_id', true ) : '';
+		$order_customer_id = self::is_scheduled_renewal( $context ) ? (string) $context->get_order()->get_meta( WooPaymentsPersistenceVocabulary::STRIPE_CUSTOMER_ID_META_KEY, true ) : '';
 		if ( '' !== $order_customer_id ) {
 			return $order_customer_id;
 		}
@@ -2137,11 +2137,11 @@ class WooPaymentsPaymentOperationService {
 	 * @return string One of the REFUSAL_* values, or an empty string when the operation may act on the intent.
 	 */
 	public static function get_status_change_refusal( WC_Order $order, string $intent_id ): string {
-		if ( (string) $order->get_meta( '_intent_id', true ) !== $intent_id ) {
+		if ( (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true ) !== $intent_id ) {
 			return self::REFUSAL_INTENT_CHANGED;
 		}
 
-		return in_array( (string) $order->get_meta( '_intention_status', true ), self::SETTLED_INTENT_STATUSES, true ) ? self::REFUSAL_INTENT_SETTLED : '';
+		return in_array( (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true ), self::SETTLED_INTENT_STATUSES, true ) ? self::REFUSAL_INTENT_SETTLED : '';
 	}
 
 	/**
@@ -2205,7 +2205,7 @@ class WooPaymentsPaymentOperationService {
 			'',
 			array(
 				self::DATA_STATUS_CHANGE_REFUSAL => $refusal,
-				WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array( '_intention_status' => (string) $fresh_order->get_meta( '_intention_status', true ) ),
+				WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY => (string) $fresh_order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true ) ),
 			)
 		);
 	}
@@ -2246,7 +2246,7 @@ class WooPaymentsPaymentOperationService {
 			array(
 				PaymentOutcome::DATA_ERROR_CODE => 'wcpay_core_invalid_request_parameter_stripe_id',
 				'operation'                     => $operation,
-				WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array( '_intention_status' => (string) $fresh_order->get_meta( '_intention_status', true ) ),
+				WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY => (string) $fresh_order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true ) ),
 			)
 		);
 	}
@@ -2268,7 +2268,7 @@ class WooPaymentsPaymentOperationService {
 	 */
 	private function refuse_a_target_of_another_order( PaymentOperationContext $context, string $operation, string $intent_id ): ?PaymentOutcome {
 		$order = $context->get_order();
-		if ( (string) $order->get_meta( '_intent_id', true ) === $intent_id ) {
+		if ( (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true ) === $intent_id ) {
 			return null;
 		}
 
@@ -2320,7 +2320,7 @@ class WooPaymentsPaymentOperationService {
 				PaymentOutcome::DATA_ERROR_MESSAGE => $refusal['message'],
 				'operation'                        => $operation,
 				PaymentOutcome::DATA_NOTE          => $refusal['note'],
-				WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array( '_intention_status' => (string) $fresh_order->get_meta( '_intention_status', true ) ),
+				WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY => (string) $fresh_order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true ) ),
 			)
 		);
 	}
@@ -2372,8 +2372,8 @@ class WooPaymentsPaymentOperationService {
 	 */
 	private function log_operation_on_an_order_naming_two_intents( WC_Order $order, string $operation, string $intent_id ): void {
 		$transaction_id   = (string) $order->get_transaction_id();
-		$stored_intent_id = (string) $order->get_meta( '_intent_id', true );
-		if ( '' === $transaction_id || '' === $stored_intent_id || $transaction_id === $stored_intent_id || 'requires_capture' !== (string) $order->get_meta( '_intention_status', true ) ) {
+		$stored_intent_id = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true );
+		if ( '' === $transaction_id || '' === $stored_intent_id || $transaction_id === $stored_intent_id || 'requires_capture' !== (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true ) ) {
 			return;
 		}
 
@@ -2407,7 +2407,7 @@ class WooPaymentsPaymentOperationService {
 	private function get_order_intent_id( WC_Order $order ): string {
 		$intent_id = (string) $order->get_transaction_id();
 
-		return '' === $intent_id ? (string) $order->get_meta( '_intent_id', true ) : $intent_id;
+		return '' === $intent_id ? (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true ) : $intent_id;
 	}
 
 	/**

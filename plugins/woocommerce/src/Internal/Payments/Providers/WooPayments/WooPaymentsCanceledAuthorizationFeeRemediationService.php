@@ -392,8 +392,8 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	 */
 	public function remediate_order( WC_Order $order, bool $dry_run = false ): bool {
 		try {
-			$fee                      = $order->get_meta( '_wcpay_transaction_fee', true );
-			$net                      = $order->get_meta( '_wcpay_net', true );
+			$fee                      = $order->get_meta( WooPaymentsPersistenceVocabulary::TRANSACTION_FEE_META_KEY, true );
+			$net                      = $order->get_meta( WooPaymentsPersistenceVocabulary::NET_META_KEY, true );
 			$woopayments_refunds      = $this->get_woopayments_refunds( $order->get_refunds() );
 			$woopayments_refund_count = count( $woopayments_refunds );
 			$woopayments_refund_total = 0.0;
@@ -469,10 +469,10 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 				do_action( 'woocommerce_refund_deleted', $refund_id, $parent_order_id );
 			}
 
-			$order->delete_meta_data( '_wcpay_transaction_fee' );
-			$order->delete_meta_data( '_wcpay_net' );
-			$order->delete_meta_data( '_wcpay_refund_id' );
-			$order->delete_meta_data( '_wcpay_refund_status' );
+			$order->delete_meta_data( WooPaymentsPersistenceVocabulary::TRANSACTION_FEE_META_KEY );
+			$order->delete_meta_data( WooPaymentsPersistenceVocabulary::NET_META_KEY );
+			$order->delete_meta_data( WooPaymentsPersistenceVocabulary::PROCESSED_REFUND_LINK_META_KEY );
+			$order->delete_meta_data( WooPaymentsPersistenceVocabulary::REFUND_STATUS_META_KEY );
 
 			if ( $would_change_status ) {
 				$order->set_status( OrderStatus::CANCELLED, '', false );
@@ -804,7 +804,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 			array_filter(
 				$refunds,
 				static function ( WC_Order_Refund $refund ): bool {
-					return '' !== (string) $refund->get_meta( '_wcpay_refund_id', true );
+					return '' !== (string) $refund->get_meta( WooPaymentsPersistenceVocabulary::PROCESSED_REFUND_LINK_META_KEY, true );
 				}
 			)
 		);

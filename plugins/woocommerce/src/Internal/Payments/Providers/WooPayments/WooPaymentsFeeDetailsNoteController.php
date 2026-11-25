@@ -503,7 +503,7 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 	 */
 	private function get_other_completion_note_event( WC_Order $order, PaymentLifecycleEvent $event ): PaymentLifecycleEvent {
 		$intent_id    = (string) $event->get_payment_reference();
-		$charge_id    = $event->get_meta_to_update()['_charge_id'] ?? (string) $order->get_meta( '_charge_id', true );
+		$charge_id    = $event->get_meta_to_update()[ WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY ] ?? (string) $order->get_meta( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY, true );
 		$note_service = wc_get_container()->get( WooPaymentsOrderNoteService::class );
 		$is_success   = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS === $event->get_note_type();
 		$candidates   = $is_success

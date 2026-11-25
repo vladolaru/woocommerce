@@ -130,8 +130,8 @@ class WooPaymentsFraudOrderTrackingService implements RegisterHooksInterface {
 		}
 
 		$seen   = array(
-			'_payment_method_id'  => $this->get_order_meta_string( $order, '_payment_method_id' ),
-			'_stripe_customer_id' => $this->get_order_meta_string( $order, '_stripe_customer_id' ),
+			WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_ID_META_KEY  => $this->get_order_meta_string( $order, WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_ID_META_KEY ),
+			WooPaymentsPersistenceVocabulary::STRIPE_CUSTOMER_ID_META_KEY => $this->get_order_meta_string( $order, WooPaymentsPersistenceVocabulary::STRIPE_CUSTOMER_ID_META_KEY ),
 		);
 		$writes = $this->get_subscription_order_tracking_meta_writes( $order );
 		if ( array() === $writes ) {
@@ -160,26 +160,26 @@ class WooPaymentsFraudOrderTrackingService implements RegisterHooksInterface {
 		$token_ids         = $order->get_payment_tokens();
 		$token_id          = end( $token_ids );
 		$token             = $token_id ? WC_Payment_Tokens::get( $token_id ) : null;
-		$payment_method_id = $this->get_order_meta_string( $order, '_payment_method_id' );
+		$payment_method_id = $this->get_order_meta_string( $order, WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_ID_META_KEY );
 
 		if ( ! $token instanceof WC_Payment_Token ) {
 			if ( '' === $payment_method_id ) {
 				$parent                   = $order->get_parent_id() ? wc_get_order( $order->get_parent_id() ) : false;
-				$parent_payment_method_id = $parent instanceof WC_Order ? $this->get_order_meta_string( $parent, '_payment_method_id' ) : '';
+				$parent_payment_method_id = $parent instanceof WC_Order ? $this->get_order_meta_string( $parent, WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_ID_META_KEY ) : '';
 				if ( '' === $parent_payment_method_id ) {
 					return array();
 				}
-				$writes['_payment_method_id'] = $parent_payment_method_id;
+				$writes[ WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_ID_META_KEY ] = $parent_payment_method_id;
 			}
 		} elseif ( $payment_method_id !== $token->get_token() ) {
-			$writes['_payment_method_id'] = $token->get_token();
+			$writes[ WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_ID_META_KEY ] = $token->get_token();
 		}
 
-		if ( '' === $this->get_order_meta_string( $order, '_stripe_customer_id' ) ) {
+		if ( '' === $this->get_order_meta_string( $order, WooPaymentsPersistenceVocabulary::STRIPE_CUSTOMER_ID_META_KEY ) ) {
 			$parent             = $order->get_parent_id() ? wc_get_order( $order->get_parent_id() ) : false;
-			$parent_customer_id = $parent instanceof WC_Order ? $this->get_order_meta_string( $parent, '_stripe_customer_id' ) : '';
+			$parent_customer_id = $parent instanceof WC_Order ? $this->get_order_meta_string( $parent, WooPaymentsPersistenceVocabulary::STRIPE_CUSTOMER_ID_META_KEY ) : '';
 			if ( '' !== $parent_customer_id ) {
-				$writes['_stripe_customer_id'] = $parent_customer_id;
+				$writes[ WooPaymentsPersistenceVocabulary::STRIPE_CUSTOMER_ID_META_KEY ] = $parent_customer_id;
 			}
 		}
 
@@ -218,7 +218,7 @@ class WooPaymentsFraudOrderTrackingService implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( '' === $this->get_order_meta_string( $order, '_payment_method_id' ) ) {
+		if ( '' === $this->get_order_meta_string( $order, WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_ID_META_KEY ) ) {
 			return;
 		}
 
@@ -311,12 +311,12 @@ class WooPaymentsFraudOrderTrackingService implements RegisterHooksInterface {
 			return false;
 		}
 
-		$payment_method_id = $this->get_order_meta_string( $order, '_payment_method_id' );
+		$payment_method_id = $this->get_order_meta_string( $order, WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_ID_META_KEY );
 		if ( '' === $payment_method_id ) {
 			return false;
 		}
 
-		$order_mode = $this->get_order_meta_string( $order, '_wcpay_mode' );
+		$order_mode = $this->get_order_meta_string( $order, WooPaymentsPersistenceVocabulary::MODE_META_KEY );
 		if ( '' !== $order_mode && ! $this->is_order_mode_compatible( $order_mode ) ) {
 			return false;
 		}
@@ -347,9 +347,9 @@ class WooPaymentsFraudOrderTrackingService implements RegisterHooksInterface {
 		return array_merge(
 			$order->get_data(),
 			array(
-				'_payment_method_id'  => $payment_method_id,
-				'_stripe_customer_id' => $this->get_order_meta_string( $order, '_stripe_customer_id' ),
-				'_wcpay_mode'         => $order_mode,
+				WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_ID_META_KEY  => $payment_method_id,
+				WooPaymentsPersistenceVocabulary::STRIPE_CUSTOMER_ID_META_KEY => $this->get_order_meta_string( $order, WooPaymentsPersistenceVocabulary::STRIPE_CUSTOMER_ID_META_KEY ),
+				WooPaymentsPersistenceVocabulary::MODE_META_KEY         => $order_mode,
 			)
 		);
 	}

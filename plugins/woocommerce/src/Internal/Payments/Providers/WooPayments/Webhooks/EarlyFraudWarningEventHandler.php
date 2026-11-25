@@ -143,7 +143,7 @@ class EarlyFraudWarningEventHandler {
 		try {
 			// Read the order past the request's caches: another request may have paid it or moved its charge since the lookup.
 			$fresh_order = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
-			if ( $warning['charge'] !== (string) $fresh_order->get_meta( '_charge_id', true ) ) {
+			if ( $warning['charge'] !== (string) $fresh_order->get_meta( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY, true ) ) {
 				throw new RuntimeException( esc_html( sprintf( 'WooPayments order did not match early fraud warning charge ID: %s', $warning['charge'] ) ) );
 			}
 

@@ -313,7 +313,7 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 			return new WP_Error( 'wcpay_order_payment_unresolved', __( "This order's last payment attempt is not resolved yet. Try again later.", 'woocommerce' ), array( 'status' => 409 ) );
 		}
 
-		$intent_id    = (string) $order->get_meta( '_intent_id', true );
+		$intent_id    = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true );
 		$failed_read  = null;
 		$intent       = WooPaymentsDuplicatePaymentPreventionService::get_attached_payment_that_holds_money( $order, $intent_id, $this->api_client, $failed_read );
 		$refusal_tier = null === $failed_read ? null : wc_get_container()->get( WooPaymentsPaymentOperationService::class )->get_unread_payment_refusal_tier_for_order(
@@ -382,7 +382,7 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 		}
 
 		$charge_id       = sanitize_text_field( (string) $request->get_param( 'charge_id' ) );
-		$order_charge_id = (string) $order->get_meta( '_charge_id', true );
+		$order_charge_id = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY, true );
 		if ( '' === $charge_id || '' === $order_charge_id || $charge_id !== $order_charge_id ) {
 			return new WP_Error(
 				'wcpay_refund_charge_order_mismatch',
@@ -445,7 +445,7 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 			return $timeline;
 		}
 
-		$manual_entry = $order->get_meta( '_wcpay_fraud_outcome_manual_entry', true );
+		$manual_entry = $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_MANUAL_ENTRY_META_KEY, true );
 		if ( ! is_array( $manual_entry ) || empty( $manual_entry ) ) {
 			return $timeline;
 		}
@@ -523,7 +523,7 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 		$orders = wc_get_orders(
 			array(
 				'limit'      => 1,
-				'meta_key'   => '_intent_id', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
+				'meta_key'   => WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
 				'meta_value' => $intention_id, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
 				'return'     => 'objects',
 			)
@@ -534,7 +534,7 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 		}
 
 		$order = reset( $orders );
-		return $order instanceof WC_Order && (string) $order->get_meta( '_intent_id', true ) === $intention_id ? $order : null;
+		return $order instanceof WC_Order && (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true ) === $intention_id ? $order : null;
 	}
 
 	/**
@@ -1010,7 +1010,7 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 		if ( null === $amount ) {
 			return new WP_Error( 'wcpay_refund_amount_required', __( 'Give the amount to refund: this charge belongs to an order.', 'woocommerce' ), array( 'status' => 400 ) );
 		}
-		$payment_currency = (string) $order->get_meta( '_wcpay_intent_currency', true );
+		$payment_currency = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_CURRENCY_META_KEY, true );
 		if ( '' !== $payment_currency && strtolower( $payment_currency ) !== strtolower( $order->get_currency() ) ) {
 			return new WP_Error( 'wcpay_refund_currency_mismatch', __( "This order's currency differs from its payment's. Refund it from the order page.", 'woocommerce' ), array( 'status' => 409 ) );
 		}

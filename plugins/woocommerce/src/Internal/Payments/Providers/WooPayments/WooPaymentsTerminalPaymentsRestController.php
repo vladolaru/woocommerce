@@ -236,7 +236,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 		try {
 			// Client 11.1.0 reads the order's customer, then its user's, and updates either at once
 			// (includes/admin/class-wc-rest-payments-orders-controller.php:480-492).
-			$customer_id = (string) $order->get_meta( '_stripe_customer_id', true );
+			$customer_id = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::STRIPE_CUSTOMER_ID_META_KEY, true );
 			if ( '' === $customer_id && 0 < $order->get_customer_id() ) {
 				$customer_id = (string) $this->customer_service->migrate_and_get_customer_id( $order->get_customer_id() );
 			}
@@ -246,7 +246,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 				$customer_id = $this->customer_service->get_or_create_customer_id_for_order_user( $order );
 			}
 
-			$order->update_meta_data( '_stripe_customer_id', $customer_id );
+			$order->update_meta_data( WooPaymentsPersistenceVocabulary::STRIPE_CUSTOMER_ID_META_KEY, $customer_id );
 			$order->save();
 
 			return new WP_REST_Response( array( 'id' => $customer_id ) );
@@ -465,7 +465,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 			$order->set_payment_method_title( __( 'WooCommerce In-Person Payments', 'woocommerce' ) );
 			$ipp_channel = $this->get_ipp_channel_from_intent( $intent );
 			if ( '' !== $ipp_channel ) {
-				$order->update_meta_data( '_wcpay_ipp_channel', $ipp_channel );
+				$order->update_meta_data( WooPaymentsPersistenceVocabulary::IPP_CHANNEL_META_KEY, $ipp_channel );
 			}
 			$order->save();
 			$this->get_composition_data_settler()->run_settled(
@@ -521,7 +521,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 			// The captured status is stored before the generated card is saved, as the client's capture stores it
 			// (class-wc-payments-order-service.php:529-532, :3443-3448), so when a later step fails, the app's retry finds the
 			// payment captured and is refused (class-wc-rest-payments-orders-controller.php:187-194).
-			$order->update_meta_data( '_intention_status', 'succeeded' );
+			$order->update_meta_data( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, 'succeeded' );
 			$order->save_meta_data();
 			$this->save_generated_card_for_subscriptions( $order, $intent );
 			$this->mark_terminal_payment_completed( $order, $result, $intent_id );
@@ -625,8 +625,8 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 	 * @return WP_Error|null
 	 */
 	private function get_uncapturable_order_error( WC_Order $order, string $intent_id ): ?WP_Error {
-		$stored_status = (string) $order->get_meta( '_intention_status', true );
-		$stored_intent = (string) $order->get_meta( '_intent_id', true );
+		$stored_status = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true );
+		$stored_intent = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true );
 
 		if ( in_array( $stored_status, array( 'succeeded', 'canceled', 'processing' ), true ) ) {
 			return new WP_Error( 'wcpay_payment_uncapturable', __( 'The payment cannot be captured for completed or processed orders.', 'woocommerce' ), array( 'status' => 409 ) );
@@ -738,7 +738,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 			// The captured status is saved before the completion, so a hook on the completion that moves an order needing no
 			// processing to Completed finds the payment captured: the end state the client's hook reaches by reading the intent.
 			$meta = array_merge(
-				array( '_intention_status' => 'succeeded' ),
+				array( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY => 'succeeded' ),
 				$this->order_data_service->get_settlement_exchange_rate_order_meta( $order, $charge, $this->account_service->get_account_default_currency() ),
 				WooPaymentsOrderEffects::attached_fee_meta( $charge )
 			);
@@ -794,27 +794,27 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 		$charge = WooPaymentsIntentCodec::latest_charge( $intent );
 
 		$order->set_transaction_id( $intent_id );
-		$order->update_meta_data( '_intention_status', $status );
-		$order->update_meta_data( '_wcpay_mode', $this->account_service->get_order_mode() );
+		$order->update_meta_data( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, $status );
+		$order->update_meta_data( WooPaymentsPersistenceVocabulary::MODE_META_KEY, $this->account_service->get_order_mode() );
 		$order->update_meta_data( 'receipt_url', get_rest_url( null, $this->route_namespace . '/payments/readers/receipts/' . $intent_id ) );
-		$order->update_meta_data( '_wcpay_fraud_meta_box_type', 'terminal_payment' );
+		$order->update_meta_data( WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY, 'terminal_payment' );
 
 		if ( isset( $intent['currency'] ) ) {
 			// Plugin 11.1.0 stores the intent model's uppercased currency (class-wc-rest-payments-orders-controller.php:215, class-wc-payments-api-payment-intention.php:93).
-			$order->update_meta_data( '_wcpay_intent_currency', strtoupper( (string) $intent['currency'] ) );
+			$order->update_meta_data( WooPaymentsPersistenceVocabulary::INTENT_CURRENCY_META_KEY, strtoupper( (string) $intent['currency'] ) );
 		}
 
 		$payment_method_id = $this->get_result_payment_method_id( $intent, $charge );
 		if ( '' !== $payment_method_id ) {
-			$order->update_meta_data( '_payment_method_id', $payment_method_id );
+			$order->update_meta_data( WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_ID_META_KEY, $payment_method_id );
 		}
 
 		if ( isset( $charge['id'] ) ) {
-			$order->update_meta_data( '_charge_id', (string) $charge['id'] );
+			$order->update_meta_data( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY, (string) $charge['id'] );
 		}
 
 		if ( isset( $charge['balance_transaction']['id'] ) ) {
-			$order->update_meta_data( '_wcpay_payment_transaction_id', (string) $charge['balance_transaction']['id'] );
+			$order->update_meta_data( WooPaymentsPersistenceVocabulary::PAYMENT_TRANSACTION_ID_META_KEY, (string) $charge['balance_transaction']['id'] );
 		}
 
 		$this->apply_payment_method_details( $order, $charge );
@@ -961,7 +961,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 	 * @param string   $message   Capture error message.
 	 */
 	private function record_failed_terminal_capture( WC_Order $order, string $intent_id, string $message ): void {
-		$charge_id       = (string) $order->get_meta( '_charge_id', true );
+		$charge_id       = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY, true );
 		$note_candidates = $this->note_service->format_capture_failed_note_candidates( $order, $intent_id, $charge_id, $message );
 
 		$this->note_service->add_note_once(
@@ -970,11 +970,11 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 			'',
 			$note_candidates,
 			static function () use ( $order ): void {
-				if ( 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ) ) {
-					$order->update_meta_data( '_wcpay_fraud_meta_box_type', 'review_failed' );
+				if ( 'review' === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY, true ) ) {
+					$order->update_meta_data( WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY, 'review_failed' );
 				}
 
-				$order->update_meta_data( '_intention_status', 'requires_capture' );
+				$order->update_meta_data( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, 'requires_capture' );
 				$order->save();
 			}
 		);
@@ -989,7 +989,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 	 * @param string   $intent_id Intent ID.
 	 */
 	private function record_expired_terminal_capture( WC_Order $order, string $intent_id ): void {
-		$charge_id       = (string) $order->get_meta( '_charge_id', true );
+		$charge_id       = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY, true );
 		$note_candidates = $this->note_service->format_capture_expired_note_candidates( $intent_id, $charge_id );
 
 		$this->note_service->add_note_once(
@@ -998,11 +998,11 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 			'',
 			$note_candidates,
 			static function () use ( $order ): void {
-				if ( 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ) ) {
-					$order->update_meta_data( '_wcpay_fraud_meta_box_type', 'review_expired' );
+				if ( 'review' === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY, true ) ) {
+					$order->update_meta_data( WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY, 'review_expired' );
 				}
 
-				$order->update_meta_data( '_intention_status', 'canceled' );
+				$order->update_meta_data( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, 'canceled' );
 				$order->update_status( 'failed' );
 			}
 		);
@@ -1022,8 +1022,8 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 
 		$encoded_payment_method_details = wp_json_encode( $payment_method_details );
 		if ( false !== $encoded_payment_method_details ) {
-			$order->update_meta_data( '_wcpay_payment_method_details', $encoded_payment_method_details );
-			$order->update_meta_data( '_wcpay_raw_payment_method_details', $encoded_payment_method_details );
+			$order->update_meta_data( WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_DETAILS_META_KEY, $encoded_payment_method_details );
+			$order->update_meta_data( WooPaymentsPersistenceVocabulary::RAW_PAYMENT_METHOD_DETAILS_META_KEY, $encoded_payment_method_details );
 		}
 
 		$card_details = array();
@@ -1034,11 +1034,11 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 		}
 
 		if ( isset( $card_details['last4'] ) ) {
-			$order->update_meta_data( 'last4', (string) $card_details['last4'] );
+			$order->update_meta_data( WooPaymentsPersistenceVocabulary::LAST4_META_KEY, (string) $card_details['last4'] );
 		}
 
 		if ( isset( $card_details['brand'] ) ) {
-			$order->update_meta_data( '_card_brand', (string) $card_details['brand'] );
+			$order->update_meta_data( WooPaymentsPersistenceVocabulary::CARD_BRAND_META_KEY, (string) $card_details['brand'] );
 		}
 	}
 

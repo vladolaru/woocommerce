@@ -73,7 +73,7 @@ class WooPaymentsEarlyFraudWarningOrderService {
 
 			// A warning stored in the other mode never clears, because its updates are dropped as a mode mismatch; an order
 			// without a mode reads as live.
-			$is_test_order = WooPaymentsOrderMode::TEST === $order->get_meta( '_wcpay_mode', true );
+			$is_test_order = WooPaymentsOrderMode::TEST === $order->get_meta( WooPaymentsPersistenceVocabulary::MODE_META_KEY, true );
 			if ( $is_test_order !== $is_test_mode ) {
 				continue;
 			}
@@ -92,7 +92,7 @@ class WooPaymentsEarlyFraudWarningOrderService {
 			$rows[] = array(
 				'order_id'     => $order->get_id(),
 				'order_number' => (string) $order->get_order_number(),
-				'charge_id'    => (string) $order->get_meta( '_charge_id', true ),
+				'charge_id'    => (string) $order->get_meta( WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY, true ),
 				'created'      => (int) $order->get_meta( WooPaymentsPersistenceVocabulary::EARLY_FRAUD_WARNING_ACTIONABLE_META_KEY, true ),
 			);
 		}

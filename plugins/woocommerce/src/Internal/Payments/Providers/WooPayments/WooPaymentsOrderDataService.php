@@ -19,7 +19,7 @@ use WC_Order;
  */
 class WooPaymentsOrderDataService {
 
-	private const META_KEY_STRIPE_EXCHANGE_RATE = '_wcpay_multi_currency_stripe_exchange_rate';
+	private const META_KEY_STRIPE_EXCHANGE_RATE = WooPaymentsPersistenceVocabulary::MULTI_CURRENCY_STRIPE_EXCHANGE_RATE_META_KEY;
 
 	/**
 	 * Check a direct refund against the stored balance before any order getter can round it for display.

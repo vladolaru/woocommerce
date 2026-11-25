@@ -30,17 +30,17 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 	 */
 	private const SETTINGS_FRAGMENT_FRAUD_PROTECTION = 'fraud-protection';
 
-	private const META_INTENT_ID = '_intent_id';
+	private const META_INTENT_ID = WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY;
 
-	private const META_CHARGE_ID = '_charge_id';
+	private const META_CHARGE_ID = WooPaymentsPersistenceVocabulary::CHARGE_ID_META_KEY;
 
-	private const META_RISK_LEVEL = '_charge_risk_level';
+	private const META_RISK_LEVEL = WooPaymentsPersistenceVocabulary::CHARGE_RISK_LEVEL_META_KEY;
 
-	private const META_FRAUD_META_BOX_TYPE = '_wcpay_fraud_meta_box_type';
+	private const META_FRAUD_META_BOX_TYPE = WooPaymentsPersistenceVocabulary::FRAUD_META_BOX_TYPE_META_KEY;
 
-	private const META_FRAUD_OUTCOME_STATUS = '_wcpay_fraud_outcome_status';
+	private const META_FRAUD_OUTCOME_STATUS = WooPaymentsPersistenceVocabulary::FRAUD_OUTCOME_STATUS_META_KEY;
 
-	private const META_FRAUD_RULESET_RESULTS = '_wcpay_fraud_ruleset_results';
+	private const META_FRAUD_RULESET_RESULTS = WooPaymentsPersistenceVocabulary::FRAUD_RULESET_RESULTS_META_KEY;
 
 	private const TYPE_ALLOW = 'allow';
 

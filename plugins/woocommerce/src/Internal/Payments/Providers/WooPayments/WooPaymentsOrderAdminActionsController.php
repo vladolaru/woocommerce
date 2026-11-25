@@ -447,8 +447,8 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 
 		return array(
 			'status'        => $order->get_status(),
-			'intent_id'     => (string) $order->get_meta( '_intent_id', true ),
-			'intent_status' => (string) $order->get_meta( '_intention_status', true ),
+			'intent_id'     => (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true ),
+			'intent_status' => (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true ),
 			'charge_key'    => (string) $order->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ),
 			'date_paid'     => null === $date_paid ? null : $date_paid->getTimestamp(),
 		);
@@ -467,7 +467,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 		}
 
 		try {
-			$answer = $this->api_client->get_payment_intention_for_mode( $intent_id, WooPaymentsOrderMode::TEST === (string) $order->get_meta( '_wcpay_mode', true ) );
+			$answer = $this->api_client->get_payment_intention_for_mode( $intent_id, WooPaymentsOrderMode::TEST === (string) $order->get_meta( WooPaymentsPersistenceVocabulary::MODE_META_KEY, true ) );
 		} catch ( Throwable $exception ) {
 			$this->logger->log_throwable( sprintf( 'The intent of unpaid order #%d could not be read before its cancel.', $order->get_id() ), $exception, array( 'order_id' => $order->get_id() ) );
 			$this->note_unpaid_read_outcome( $exception );
@@ -522,7 +522,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 *                                  or null when it could not tell.
 	 */
 	private function find_unpaid_order_charge( WC_Order $order ): ?array {
-		$mode = (string) $order->get_meta( '_wcpay_mode', true );
+		$mode = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::MODE_META_KEY, true );
 		if ( $this->unpaid_order_reads_stopped || ( '' !== $mode && wc_get_container()->get( WooPaymentsAccountService::class )->get_order_mode() !== $mode ) ) {
 			return null;
 		}
@@ -647,8 +647,8 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 			return null;
 		}
 
-		$stored_status = (string) $order->get_meta( '_intention_status', true );
-		$intent_id     = (string) $order->get_meta( '_intent_id', true );
+		$stored_status = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true );
+		$intent_id     = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true );
 		if ( '' === $intent_id ) {
 			return null;
 		}
@@ -703,7 +703,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 
 		try {
 			if ( '' === WooPaymentsPaymentOperationService::get_status_change_refusal( $this->lifecycle_service->get_fresh_order_from_data_store( $order ), $intent_id ) ) {
-				$this->lifecycle_service->apply_meta_under_lock( $order, array( '_intention_status' => $live_status ), array() );
+				$this->lifecycle_service->apply_meta_under_lock( $order, array( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY => $live_status ), array() );
 			}
 		} finally {
 			$this->order_payment_lock->release( $order, $vocabulary, $lock_token );
@@ -717,7 +717,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_authorized_woopayments_order( WC_Order $order ): bool {
-		if ( ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) || 'requires_capture' !== (string) $order->get_meta( '_intention_status', true ) ) {
+		if ( ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) || 'requires_capture' !== (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY, true ) ) {
 			return false;
 		}
 
@@ -748,7 +748,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 		if ( '' !== $read_intent_id ) {
 			$provider_data[ WooPaymentsPaymentOperationService::PROVIDER_DATA_READ_INTENT_ID ] = $read_intent_id;
 		} elseif ( $on_status_change ) {
-			$provider_data[ WooPaymentsPaymentOperationService::PROVIDER_DATA_STORED_INTENT_ID ] = (string) $order->get_meta( '_intent_id', true );
+			$provider_data[ WooPaymentsPaymentOperationService::PROVIDER_DATA_STORED_INTENT_ID ] = (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true );
 		}
 		// A refused status change is retried while a retry slot is left (schedule_retry()).
 		$retried = array( PaymentOperationContext::PAYMENT_DATA_RETRIED_ON_LOCK_REFUSAL => $on_status_change && isset( WebhookReliabilityService::RETRY_DELAYS_SECONDS[ $retry ] ) );
@@ -803,7 +803,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 			// Client 11.1.0 schedules the Fee details job after this capture even when its capture note already exists
 			// (class-wc-payments-order-service.php:1862-1874); a job already pending for the order is not scheduled again.
 			if ( $on_status_change && PaymentOutcome::STATUS_COMPLETED === $outcome->get_status() ) {
-				$intent_id = '' !== $outcome->get_provider_payment_id() ? $outcome->get_provider_payment_id() : (string) $order->get_meta( '_intent_id', true );
+				$intent_id = '' !== $outcome->get_provider_payment_id() ? $outcome->get_provider_payment_id() : (string) $order->get_meta( WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY, true );
 				$this->fee_details_note_controller->schedule( $order, $intent_id );
 			}
 		} catch ( Throwable $exception ) {

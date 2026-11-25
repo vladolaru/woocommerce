@@ -47,20 +47,20 @@ final class WooPaymentsOutcomeMetadataMapper implements ProviderOutcomeMetadataM
 		$plan             = $outcome->get_effect_plan();
 		$keeps_the_intent = PaymentOutcome::STATUS_FAILED === $outcome->get_status() && $plan instanceof WooPaymentsOrderEffectPlan && $plan->keeps_earlier_record();
 		if ( '' !== $outcome->get_provider_payment_id() && ! $keeps_the_intent ) {
-			$meta['_intent_id'] = $outcome->get_provider_payment_id();
+			$meta[ WooPaymentsPersistenceVocabulary::INTENT_ID_META_KEY ] = $outcome->get_provider_payment_id();
 		}
 
 		if ( '' !== $outcome->get_payment_method_id() ) {
-			$meta['_payment_method_id'] = $outcome->get_payment_method_id();
+			$meta[ WooPaymentsPersistenceVocabulary::PAYMENT_METHOD_ID_META_KEY ] = $outcome->get_payment_method_id();
 		}
 
 		if ( '' !== $outcome->get_customer_id() ) {
-			$meta['_stripe_customer_id'] = $outcome->get_customer_id();
+			$meta[ WooPaymentsPersistenceVocabulary::STRIPE_CUSTOMER_ID_META_KEY ] = $outcome->get_customer_id();
 		}
 
 		// A $0 order confirmed without an intent has no intention status; client 11.1.0 writes none there (gw:1673-1771).
-		if ( ! isset( $meta['_intention_status'] ) && ! ( $plan instanceof WooPaymentsOrderEffectPlan && WooPaymentsOrderEffectPlan::TYPE_ZERO_AMOUNT_WITHOUT_INTENT === $plan->get_type() ) ) {
-			$meta['_intention_status'] = $this->get_default_intention_status( $outcome );
+		if ( ! isset( $meta[ WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY ] ) && ! ( $plan instanceof WooPaymentsOrderEffectPlan && WooPaymentsOrderEffectPlan::TYPE_ZERO_AMOUNT_WITHOUT_INTENT === $plan->get_type() ) ) {
+			$meta[ WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY ] = $this->get_default_intention_status( $outcome );
 		}
 
 		ksort( $meta );
@@ -80,8 +80,8 @@ final class WooPaymentsOutcomeMetadataMapper implements ProviderOutcomeMetadataM
 	 */
 	public function get_failed_capture_or_cancel_outcome_meta( PaymentOutcome $outcome ): array {
 		$meta = $this->get_outcome_meta( $outcome );
-		if ( ! isset( $outcome->get_data()[ self::OUTCOME_META_KEY ]['_intention_status'] ) ) {
-			$meta['_intention_status'] = 'requires_capture';
+		if ( ! isset( $outcome->get_data()[ self::OUTCOME_META_KEY ][ WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY ] ) ) {
+			$meta[ WooPaymentsPersistenceVocabulary::INTENTION_STATUS_META_KEY ] = 'requires_capture';
 		}
 		ksort( $meta );
 
