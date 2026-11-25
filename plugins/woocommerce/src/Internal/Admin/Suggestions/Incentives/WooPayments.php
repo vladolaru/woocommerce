@@ -126,9 +126,6 @@ class WooPayments extends Incentive {
 			return false;
 		}
 
-		if ( ! $skip_extension_active_check && ! $cold_lookup && null !== $this->arbiter && $this->arbiter->is_awaiting_switch() ) {
-			return false;
-		}
 		// Instead of just extension active, we check if WooPayments is active and has an account.
 		if ( ! $skip_extension_active_check && $this->is_extension_active() && $this->has_wcpay_account_data() ) {
 			return false;
