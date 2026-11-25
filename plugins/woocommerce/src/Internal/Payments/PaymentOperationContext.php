@@ -18,6 +18,34 @@ use WC_Order;
 class PaymentOperationContext {
 
 	/**
+	 * Amount requested for the refund.
+	 *
+	 * @var string
+	 */
+	public const PAYMENT_DATA_AMOUNT = 'amount';
+
+	/**
+	 * Saved payment token selected by the payer.
+	 *
+	 * @var string
+	 */
+	public const PAYMENT_DATA_PAYMENT_TOKEN = 'payment_token';
+
+	/**
+	 * Reason supplied for the refund.
+	 *
+	 * @var string
+	 */
+	public const PAYMENT_DATA_REASON = 'reason';
+
+	/**
+	 * Whether to save the payment method after checkout.
+	 *
+	 * @var string
+	 */
+	public const PAYMENT_DATA_SAVE_PAYMENT_METHOD = 'save_payment_method';
+
+	/**
 	 * Payment data key the runtime sets on every refund: the ID of the WooCommerce refund row WooCommerce is refunding in
 	 * this request, validated under the order payment lock before the provider call, or 0 when there is none.
 	 *
@@ -128,8 +156,8 @@ class PaymentOperationContext {
 			$gateway_id,
 			'',
 			array(
-				'amount' => $amount,
-				'reason' => $reason,
+				self::PAYMENT_DATA_AMOUNT => $amount,
+				self::PAYMENT_DATA_REASON => $reason,
 			),
 			$provider_data,
 			$amount

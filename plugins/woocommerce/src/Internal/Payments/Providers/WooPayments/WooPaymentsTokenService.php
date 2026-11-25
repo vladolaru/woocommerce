@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\AmazonPayToken;
@@ -919,7 +920,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	public static function is_using_saved_payment_token( array $payment_data ): bool {
-		$payment_token = isset( $payment_data['payment_token'] ) ? (string) $payment_data['payment_token'] : '';
+		$payment_token = isset( $payment_data[ PaymentOperationContext::PAYMENT_DATA_PAYMENT_TOKEN ] ) ? (string) $payment_data[ PaymentOperationContext::PAYMENT_DATA_PAYMENT_TOKEN ] : '';
 
 		return '' !== $payment_token && 'new' !== $payment_token;
 	}

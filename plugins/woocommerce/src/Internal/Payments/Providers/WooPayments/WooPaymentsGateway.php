@@ -2572,7 +2572,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	private function maybe_add_order_pay_save_intent_to_confirmation_redirect( PaymentOperationContext $context, WC_Order $order, array $result ): array {
 		if (
 			! isset( $_POST['woocommerce_pay'] ) // phpcs:ignore WordPress.Security.NonceVerification.Missing
-			|| ! ( $context->get_payment_data()['save_payment_method'] ?? false )
+			|| ! ( $context->get_payment_data()[ PaymentOperationContext::PAYMENT_DATA_SAVE_PAYMENT_METHOD ] ?? false )
 			|| ! $this->is_confirmation_redirect_result( $result )
 		) {
 			return $result;
@@ -3110,8 +3110,8 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		$token_key = 'wc-' . $this->id . '-payment-token';
 
 		return array(
-			'payment_token'       => $this->sanitize_post_string( $token_key ),
-			'save_payment_method' => $is_subscription_change || ! empty( $_POST[ 'wc-' . $this->id . '-new-payment-method' ] ), // phpcs:ignore WordPress.Security.NonceVerification.Missing
+			PaymentOperationContext::PAYMENT_DATA_PAYMENT_TOKEN       => $this->sanitize_post_string( $token_key ),
+			PaymentOperationContext::PAYMENT_DATA_SAVE_PAYMENT_METHOD => $is_subscription_change || ! empty( $_POST[ 'wc-' . $this->id . '-new-payment-method' ] ), // phpcs:ignore WordPress.Security.NonceVerification.Missing
 		);
 	}
 
@@ -3155,11 +3155,11 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			WooPaymentsExpressPaymentMethodTypes::provider_data_from_checkout_value( $express_types_value ),
 			WooPaymentsExpressPaymentMethodTypes::provider_context_from_checkout_value( $this->sanitize_post_string( WooPaymentsExpressPaymentMethodTypes::CONTEXT_FIELD ) ),
 			array(
-				'cvc_confirmation'          => $this->sanitize_post_string( $cvc_key ),
-				'fingerprint'               => $this->sanitize_post_string( 'wcpay-fingerprint' ),
-				'payment_method_error'      => $this->sanitize_post_string( 'wcpay-payment-method-error-message' ),
-				'payment_method_error_code' => $this->sanitize_post_string( 'wcpay-payment-method-error-code' ),
-				'is_woopay'                 => ! empty( $_POST['is_woopay'] ), // phpcs:ignore WordPress.Security.NonceVerification.Missing
+				WooPaymentsProviderDataKey::CVC_CONFIRMATION => $this->sanitize_post_string( $cvc_key ),
+				WooPaymentsProviderDataKey::FINGERPRINT => $this->sanitize_post_string( 'wcpay-fingerprint' ),
+				'payment_method_error'                  => $this->sanitize_post_string( 'wcpay-payment-method-error-message' ),
+				'payment_method_error_code'             => $this->sanitize_post_string( 'wcpay-payment-method-error-code' ),
+				'is_woopay'                             => ! empty( $_POST['is_woopay'] ), // phpcs:ignore WordPress.Security.NonceVerification.Missing
 				WooPaymentsIntentRequestBuilder::PROVIDER_DATA_WOOPAY_INTENT_ID => $this->get_woopay_intent_id(),
 			)
 		);

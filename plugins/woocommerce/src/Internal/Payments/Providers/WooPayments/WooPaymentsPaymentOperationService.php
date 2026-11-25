@@ -407,8 +407,8 @@ class WooPaymentsPaymentOperationService {
 				$payment_data = $context->get_payment_data();
 				$request      = array(
 					'charge' => $charge_id,
-					'amount' => WooPaymentsCurrencyUtils::amount_to_minor_units( (float) ( $payment_data['amount'] ?? 0.0 ), (string) $order->get_currency() ),
-					'reason' => (string) ( $payment_data['reason'] ?? '' ),
+					'amount' => WooPaymentsCurrencyUtils::amount_to_minor_units( (float) ( $payment_data[ PaymentOperationContext::PAYMENT_DATA_AMOUNT ] ?? 0.0 ), (string) $order->get_currency() ),
+					'reason' => (string) ( $payment_data[ PaymentOperationContext::PAYMENT_DATA_REASON ] ?? '' ),
 					'source' => 'woocommerce_core',
 				);
 
@@ -1115,7 +1115,7 @@ class WooPaymentsPaymentOperationService {
 	 * @return bool
 	 */
 	private static function is_scheduled_renewal( PaymentOperationContext $context ): bool {
-		return true === ( $context->get_provider_data()['scheduled_subscription_payment'] ?? false );
+		return true === ( $context->get_provider_data()[ WooPaymentsProviderDataKey::SCHEDULED_SUBSCRIPTION_PAYMENT ] ?? false );
 	}
 
 	/**
@@ -1669,14 +1669,14 @@ class WooPaymentsPaymentOperationService {
 		$error_message = isset( $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] ) && is_scalar( $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] ) ? (string) $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] : '';
 
 		if (
-			true !== ( $provider_data['scheduled_subscription_payment'] ?? false ) ||
+			true !== ( $provider_data[ WooPaymentsProviderDataKey::SCHEDULED_SUBSCRIPTION_PAYMENT ] ?? false ) ||
 			PaymentOutcome::STATUS_FAILED !== $outcome->get_status() ||
 			! $this->is_unusable_saved_payment_method_failure( $error_code, $error_message )
 		) {
 			return $outcome;
 		}
 
-		$display_name                                  = isset( $provider_data['saved_payment_method_display_name'] ) && is_scalar( $provider_data['saved_payment_method_display_name'] ) ? (string) $provider_data['saved_payment_method_display_name'] : '';
+		$display_name                                  = isset( $provider_data[ WooPaymentsProviderDataKey::SAVED_PAYMENT_METHOD_DISPLAY_NAME ] ) && is_scalar( $provider_data[ WooPaymentsProviderDataKey::SAVED_PAYMENT_METHOD_DISPLAY_NAME ] ) ? (string) $provider_data[ WooPaymentsProviderDataKey::SAVED_PAYMENT_METHOD_DISPLAY_NAME ] : '';
 		$note_candidates                               = $this->note_service->format_unusable_saved_payment_method_note_candidates( $context->get_order(), $display_name );
 		$data[ PaymentOutcome::DATA_NOTE ]             = $note_candidates[0];
 		$data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] = $note_candidates;
@@ -1865,7 +1865,7 @@ class WooPaymentsPaymentOperationService {
 		// Client 11.1.0 counts a payment method change request as recurring (trait-wc-payments-subscriptions-utilities.php:53-66).
 		return $is_recurring
 			|| ! empty( $provider_data[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE ] )
-			|| ! empty( $payment_data['save_payment_method'] );
+			|| ! empty( $payment_data[ PaymentOperationContext::PAYMENT_DATA_SAVE_PAYMENT_METHOD ] );
 	}
 
 	/**
@@ -1876,7 +1876,7 @@ class WooPaymentsPaymentOperationService {
 	 */
 	private function get_saved_payment_token_id( PaymentOperationContext $context ): int {
 		$payment_data = $context->get_payment_data();
-		$token        = isset( $payment_data['payment_token'] ) && is_scalar( $payment_data['payment_token'] ) ? (string) $payment_data['payment_token'] : '';
+		$token        = isset( $payment_data[ PaymentOperationContext::PAYMENT_DATA_PAYMENT_TOKEN ] ) && is_scalar( $payment_data[ PaymentOperationContext::PAYMENT_DATA_PAYMENT_TOKEN ] ) ? (string) $payment_data[ PaymentOperationContext::PAYMENT_DATA_PAYMENT_TOKEN ] : '';
 
 		return 'new' === $token ? 0 : absint( $token );
 	}

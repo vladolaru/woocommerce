@@ -728,7 +728,7 @@ class PaymentProcessingService {
 	 */
 	private function has_saved_payment_token( PaymentOperationContext $context ): bool {
 		$payment_data  = $context->get_payment_data();
-		$payment_token = isset( $payment_data['payment_token'] ) ? (string) $payment_data['payment_token'] : '';
+		$payment_token = isset( $payment_data[ PaymentOperationContext::PAYMENT_DATA_PAYMENT_TOKEN ] ) ? (string) $payment_data[ PaymentOperationContext::PAYMENT_DATA_PAYMENT_TOKEN ] : '';
 
 		return '' !== $payment_token && 'new' !== $payment_token;
 	}

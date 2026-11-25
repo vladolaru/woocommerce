@@ -140,10 +140,10 @@ class WooPaymentsIntentRequestBuilder {
 		$order                = $context->get_order();
 		$payment_data         = $context->get_payment_data();
 		$provider_data        = $context->get_provider_data();
-		$is_scheduled_renewal = ! empty( $provider_data['scheduled_subscription_payment'] );
+		$is_scheduled_renewal = ! empty( $provider_data[ WooPaymentsProviderDataKey::SCHEDULED_SUBSCRIPTION_PAYMENT ] );
 		$is_renewal           = $is_scheduled_renewal || ( function_exists( 'wcs_order_contains_renewal' ) && (bool) wcs_order_contains_renewal( $order ) );
 		$is_recurring         = $is_renewal || $is_recurring;
-		$save_payment_method  = ! empty( $payment_data['save_payment_method'] ) || $is_recurring;
+		$save_payment_method  = ! empty( $payment_data[ PaymentOperationContext::PAYMENT_DATA_SAVE_PAYMENT_METHOD ] ) || $is_recurring;
 		$payment_type         = $is_recurring ? 'recurring' : 'single';
 		$subscription_payment = $is_renewal ? 'renewal' : ( $is_recurring ? 'initial' : 'no' );
 		$payment_method_types = $this->payment_method_types_for_request( $context, (string) $order->get_currency() );
@@ -166,13 +166,13 @@ class WooPaymentsIntentRequestBuilder {
 			$request_data['payment_method'] = $payment_credential;
 		}
 
-		if ( ! empty( $provider_data['cvc_confirmation'] ) ) {
-			$request_data['cvc_confirmation'] = (string) $provider_data['cvc_confirmation'];
+		if ( ! empty( $provider_data[ WooPaymentsProviderDataKey::CVC_CONFIRMATION ] ) ) {
+			$request_data['cvc_confirmation'] = (string) $provider_data[ WooPaymentsProviderDataKey::CVC_CONFIRMATION ];
 		}
 
 		if ( $is_scheduled_renewal ) {
 			$request_data['off_session'] = true;
-			$renewal_mandate             = isset( $provider_data['renewal_mandate'] ) ? (string) $provider_data['renewal_mandate'] : '';
+			$renewal_mandate             = isset( $provider_data[ WooPaymentsProviderDataKey::RENEWAL_MANDATE ] ) ? (string) $provider_data[ WooPaymentsProviderDataKey::RENEWAL_MANDATE ] : '';
 			if ( '' !== $renewal_mandate ) {
 				$request_data['mandate'] = $renewal_mandate;
 			}
@@ -308,7 +308,7 @@ class WooPaymentsIntentRequestBuilder {
 	public function setup_intent_request_data( PaymentOperationContext $context, string $payment_credential, string $customer_id, bool $is_recurring ): array {
 		$order                = $context->get_order();
 		$provider_data        = $context->get_provider_data();
-		$is_renewal           = ! empty( $provider_data['scheduled_subscription_payment'] );
+		$is_renewal           = ! empty( $provider_data[ WooPaymentsProviderDataKey::SCHEDULED_SUBSCRIPTION_PAYMENT ] );
 		$is_recurring         = $is_renewal || $is_recurring;
 		$payment_type         = $is_recurring ? 'recurring' : 'single';
 		$subscription_payment = $is_renewal ? 'renewal' : ( $is_recurring ? 'initial' : 'no' );
@@ -470,8 +470,8 @@ class WooPaymentsIntentRequestBuilder {
 	 */
 	private static function fingerprint_metadata( PaymentOperationContext $context ): array {
 		$provider_data = $context->get_provider_data();
-		$fingerprint   = isset( $provider_data['fingerprint'] ) && is_scalar( $provider_data['fingerprint'] )
-			? (string) $provider_data['fingerprint']
+		$fingerprint   = isset( $provider_data[ WooPaymentsProviderDataKey::FINGERPRINT ] ) && is_scalar( $provider_data[ WooPaymentsProviderDataKey::FINGERPRINT ] )
+			? (string) $provider_data[ WooPaymentsProviderDataKey::FINGERPRINT ]
 			: '';
 
 		return self::fingerprint_metadata_from_value( $fingerprint, $context->get_order() );
@@ -521,10 +521,10 @@ class WooPaymentsIntentRequestBuilder {
 			return $context;
 		}
 
-		$payment_token = (string) $payment_data['payment_token'];
+		$payment_token = (string) $payment_data[ PaymentOperationContext::PAYMENT_DATA_PAYMENT_TOKEN ];
 
 		$provider_data       = $context->get_provider_data();
-		$payment_method_type = ! empty( $provider_data['scheduled_subscription_payment'] )
+		$payment_method_type = ! empty( $provider_data[ WooPaymentsProviderDataKey::SCHEDULED_SUBSCRIPTION_PAYMENT ] )
 			? $this->token_service->resolve_payment_method_type_from_order_token_id( $payment_token, $context->get_order() )
 			: $this->token_service->resolve_payment_method_type_from_token_id( $payment_token, WooPaymentsCustomerService::get_request_token_user_id( $context->get_order() ) );
 
@@ -553,8 +553,8 @@ class WooPaymentsIntentRequestBuilder {
 	public function payment_credential_from_context( PaymentOperationContext $context ): string {
 		$payment_data = $context->get_payment_data();
 		if ( WooPaymentsTokenService::is_using_saved_payment_token( $payment_data ) ) {
-			$payment_token = (string) $payment_data['payment_token'];
-			if ( ! empty( $context->get_provider_data()['scheduled_subscription_payment'] ) ) {
+			$payment_token = (string) $payment_data[ PaymentOperationContext::PAYMENT_DATA_PAYMENT_TOKEN ];
+			if ( ! empty( $context->get_provider_data()[ WooPaymentsProviderDataKey::SCHEDULED_SUBSCRIPTION_PAYMENT ] ) ) {
 				return $this->token_service->resolve_payment_method_id_from_order_token_id( $payment_token, $context->get_order() );
 			}
 

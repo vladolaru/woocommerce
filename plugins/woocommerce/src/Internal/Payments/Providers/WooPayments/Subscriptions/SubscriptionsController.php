@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderDataKey;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodType;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
@@ -354,12 +355,12 @@ class SubscriptionsController implements RegisterHooksInterface {
 		}
 
 		$provider_data = array(
-			'scheduled_subscription_payment'    => true,
-			'saved_payment_method_display_name' => $token->get_display_name(),
+			WooPaymentsProviderDataKey::SCHEDULED_SUBSCRIPTION_PAYMENT    => true,
+			WooPaymentsProviderDataKey::SAVED_PAYMENT_METHOD_DISPLAY_NAME => $token->get_display_name(),
 		);
 		$mandate       = $this->get_renewal_order_mandate( $renewal_order );
 		if ( '' !== $mandate ) {
-			$provider_data['renewal_mandate'] = $mandate;
+			$provider_data[ WooPaymentsProviderDataKey::RENEWAL_MANDATE ] = $mandate;
 		}
 
 		$customer_id = $this->get_renewal_order_customer_id( $renewal_order );
@@ -378,8 +379,8 @@ class SubscriptionsController implements RegisterHooksInterface {
 					$gateway_id,
 					'',
 					array(
-						'payment_token'       => (string) $token->get_id(),
-						'save_payment_method' => false,
+						PaymentOperationContext::PAYMENT_DATA_PAYMENT_TOKEN       => (string) $token->get_id(),
+						PaymentOperationContext::PAYMENT_DATA_SAVE_PAYMENT_METHOD => false,
 					),
 					$provider_data
 				),

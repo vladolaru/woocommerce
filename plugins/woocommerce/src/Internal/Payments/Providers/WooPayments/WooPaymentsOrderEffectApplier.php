@@ -308,10 +308,10 @@ class WooPaymentsOrderEffectApplier {
 				$is_pending      = WooPaymentsIntentCodec::is_pending_refund_status( (string) ( $result['status'] ?? '' ) );
 				$note_candidates = $this->note_service->format_created_refund_note_candidates(
 					$context->get_order(),
-					(float) ( $payment_data['amount'] ?? 0.0 ),
+					(float) ( $payment_data[ PaymentOperationContext::PAYMENT_DATA_AMOUNT ] ?? 0.0 ),
 					(string) $context->get_order()->get_currency(),
 					$refund_id,
-					(string) ( $payment_data['reason'] ?? '' ),
+					(string) ( $payment_data[ PaymentOperationContext::PAYMENT_DATA_REASON ] ?? '' ),
 					$is_pending
 				);
 				$note_identity   = sprintf( 'refund:%s:%s', $refund_id, $is_pending ? 'created_pending' : 'created_successful' );
@@ -624,7 +624,7 @@ class WooPaymentsOrderEffectApplier {
 	 * @return bool
 	 */
 	private static function is_merchant_initiated( PaymentOperationContext $context ): bool {
-		return true === ( $context->get_provider_data()['scheduled_subscription_payment'] ?? false );
+		return true === ( $context->get_provider_data()[ WooPaymentsProviderDataKey::SCHEDULED_SUBSCRIPTION_PAYMENT ] ?? false );
 	}
 
 	/**
@@ -1432,12 +1432,12 @@ class WooPaymentsOrderEffectApplier {
 
 		try {
 			if ( WooPaymentsTokenService::is_using_saved_payment_token( $payment_data ) ) {
-				$payment_token_id = isset( $payment_data['payment_token'] ) ? (string) $payment_data['payment_token'] : '';
+				$payment_token_id = isset( $payment_data[ PaymentOperationContext::PAYMENT_DATA_PAYMENT_TOKEN ] ) ? (string) $payment_data[ PaymentOperationContext::PAYMENT_DATA_PAYMENT_TOKEN ] : '';
 				$token            = $this->token_service->get_valid_token_from_token_id( $payment_token_id, $payer_user_id );
 				return $token instanceof WC_Payment_Token && $this->attach_and_sync_token( $order, $token ) ? array() : null;
 			}
 
-			if ( empty( $payment_data['save_payment_method'] ) && ! $is_recurring ) {
+			if ( empty( $payment_data[ PaymentOperationContext::PAYMENT_DATA_SAVE_PAYMENT_METHOD ] ) && ! $is_recurring ) {
 				return array();
 			}
 
